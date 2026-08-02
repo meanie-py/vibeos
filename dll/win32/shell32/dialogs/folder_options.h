@@ -44,8 +44,15 @@ FolderOptionsFileTypesDlg(
     WPARAM wParam,
     LPARAM lParam);
 
-HBITMAP Create24BppBitmap(HDC hDC, INT cx, INT cy);
-HBITMAP BitmapFromIcon(HICON hIcon, INT cx, INT cy);
+/* EXTERN_C: defined in Rust now (shell32-rust/src/dialogs/folder_options.rs), and
+   filetypes.cpp calls BitmapFromIcon. Rust cannot emit a C++-mangled name, so the linkage
+   has to be C. Plain __cdecl — no WINAPI — so the Rust side declares them `extern "C"`,
+   not `extern "system"`; i386 is the only arch whose decoration catches that difference. */
+EXTERN_C HBITMAP Create24BppBitmap(HDC hDC, INT cx, INT cy);
+EXTERN_C HBITMAP BitmapFromIcon(HICON hIcon, INT cx, INT cy);
 
-extern LPCWSTR g_pszShell32;
-extern LPCWSTR g_pszSpace;
+/* Also Rust-defined, and filetypes.cpp reads both. These are POINTER-VALUED globals — the
+   C consumer loads the variable, not a buffer address — so the Rust side must export a
+   `static mut` of pointer type, not the array it points at. */
+EXTERN_C LPCWSTR g_pszShell32;
+EXTERN_C LPCWSTR g_pszSpace;

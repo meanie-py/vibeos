@@ -1,318 +1,354 @@
-//! ORPHAN-BY-DESIGN: translated Wave-5 TU, parked pending substrate closure.
-//! It still needs a few hundred SDK externs/constants/resource IDs resolved before
-//! it compiles; wiring it in this state would break the build for every lane rather
-//! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
+//! `dll/win32/shell32/dialogs/folder_options.cpp`, translated and FLIPPED — the C is commented
+//! out of the CMake source list and these definitions are what shell32 links.
+//!
+//! One piece did NOT come across: `CMSGlobalFolderOptionsStub`, an ATL `CWindowImpl<>` whose
+//! per-instance thunk and registered window class are generated from C++ templates. It lives in
+//! `dll/win32/shell32/rust_folder_options_stub.cpp` behind a create/destroy bridge, the same
+//! shape utils.cpp uses for `CStubWindow32`; that file's header says why a Rust
+//! reimplementation would be a behaviour change rather than a port.
+//!
+//! This module REPLACES an earlier parked translation of the same file that was written against
+//! the retired hand-written substrate (`crate::types` / `crate::win32`) and never compiled. Both
+//! paid runs are intact under `tools/rustconv/.responses/`; this is integration, not deletion.
+//!
+//! A PAID artifact — do not delete it to tidy up.
+
+use crate::prelude::*;
 use core::ffi::c_void;
-use crate::shellcom::*;
-use crate::types::*;
-use crate::win32::*;
 
 // ---- file-scope preamble (translated) ----
-pub static g_pszShell32: *const u16 = {
-    const RAW: [u16; 32] = [
-        0x0025, 0x0053, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d,
-        0x0052, 0x006f, 0x006f, 0x0074, 0x0025, 0x005c, 0x005c,
-        0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0033,
-        0x0032, 0x005c, 0x0073, 0x0068, 0x0065, 0x006c, 0x006c,
-        0x0033, 0x0032, 0x002e, 0x0064,
-        // actually L"%SystemRoot%\\system32\\shell32.dll" – need null terminator
-        // Let's compute properly: the string is "%SystemRoot%\\system32\\shell32.dll\0"
-        // I'll compute accurately.
-        // Wait, I miscounted. Let's list characters:
-        // '%' 0x0025, 'S' 0x0053, 'y' 0x0079, 's' 0x0073, 't' 0x0074, 'e' 0x0065, 'm' 0x006d,
-        // 'R' 0x0052, 'o' 0x006f, 'o' 0x006f, 't' 0x0074, '%' 0x0025,
-        // '\\' 0x005c, '\\' 0x005c,
-        // 's' 0x0073, 'y' 0x0079, 's' 0x0073, 't' 0x0074, 'e' 0x0065, 'm' 0x006d,
-        // '3' 0x0033, '2' 0x0032,
-        // '\\' 0x005c,
-        // 's' 0x0073, 'h' 0x0068, 'e' 0x0065, 'l' 0x006c, 'l' 0x006c,
-        // '3' 0x0033, '2' 0x0032,
-        // '.' 0x002e, 'd' 0x0064, 'l' 0x006c,
-        // 'l' 0x006c, '\0' 0x0000.
-        // Total 32 characters + null = 33? Actually string length: "%SystemRoot%\\system32\\shell32.dll" is 30? Let's count: %(1)S(2)y(3)s(4)t(5)e(6)m(7)R(8)o(9)o(10)t(11)%(12)\(13)\(14)s(15)y(16)s(17)t(18)e(19)m(20)3(21)2(22)\(23)s(24)h(25)e(26)l(27)l(28)3(29)2(30).(31)d(32)l(33)l(34). Wait.
-        // Better to type the bytes manually. I'll do:
-    ];
-    // I'll just provide a corrected version below.
-};
 
-pub static g_pszShell32: *const u16 = {
-    const RAW: &[u16] = &[
-        0x0025, 0x0053, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d,
-        0x0052, 0x006f, 0x006f, 0x0074, 0x0025, 0x005c, 0x005c,
-        0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0033,
-        0x0032, 0x005c, 0x0073, 0x0068, 0x0065, 0x006c, 0x006c,
-        0x0033, 0x0032, 0x002e, 0x0064, 0x006c, 0x006c, 0x0000,
-    ];
-    RAW.as_ptr()
-};
+// folder_options.cpp:33 `LPCWSTR g_pszShell32 = L"%SystemRoot%\\system32\\shell32.dll";`
+//
+// THE `\\` IS AN ESCAPE, NOT TWO CHARACTERS. Both paid runs transcribed the source TEXT and
+// emitted 0x005C twice for the first separator — while emitting it once for the second, so the
+// output was not even self-consistent — which is a different path. Both arrays below are
+// generated from the string VALUE. Worth knowing generally: a file-scope static still goes
+// through the model even when call-site literals are sealed, because the `CPP_COM_WSTR_*`
+// machinery covers expressions inside function bodies and not the preamble.
+static G_PSZ_SHELL32_BUF: [WCHAR; 34] = [
+    0x0025, 0x0053, 0x0079, 0x0073, 0x0074, 0x0065, 0x006D, 0x0052, 0x006F, 0x006F, 0x0074,
+    0x0025, 0x005C, 0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006D, 0x0033, 0x0032, 0x005C,
+    0x0073, 0x0068, 0x0065, 0x006C, 0x006C, 0x0033, 0x0032, 0x002E, 0x0064, 0x006C, 0x006C,
+    0x0000,
+];
+// the space characters — folder_options.cpp:36 `L" \t\n\r\f\v"`
+static G_PSZ_SPACE_BUF: [WCHAR; 7] = [0x0020, 0x0009, 0x000A, 0x000D, 0x000C, 0x000B, 0x0000];
 
-pub static g_pszSpace: *const u16 = {
-    const RAW: &[u16] = &[
-        0x0020, 0x0009, 0x000a, 0x000d, 0x000c, 0x000b, 0x0000,
-    ];
-    RAW.as_ptr()
-};
-
-pub const GlobalFolderOptionsClassName: *const u16 = {
-    const RAW: &[u16] = &[
-        0x004d, 0x0053, 0x0047, 0x006c, 0x006f, 0x0062, 0x0061,
-        0x006c, 0x0046, 0x006f, 0x006c, 0x0064, 0x0065, 0x0072,
-        0x004f, 0x0070, 0x0074, 0x0069, 0x006f, 0x006e, 0x0073,
-        0x0053, 0x0074, 0x0075, 0x0062, 0x0000,
-    ];
-    RAW.as_ptr()
-};
-
-pub const PAGE_GENERAL: u32 = 0;
-pub const PAGE_VIEW: u32 = 1;
-pub const PAGE_FILETYPES: u32 = 2;
-
-pub unsafe extern "system" fn SHCreatePropSheetExtArrayEx(
-    hKey: HKEY,
-    pszSubKey: LPCWSTR,
-    max_iface: UINT,
-    pDataObj: *mut IDataObject,
-) -> HPSXA;
+// `folder_options.h` publishes both to the rest of shell32 and `dialogs/filetypes.cpp` (still
+// C++) reads them, so the Rust definitions must carry the C names. They are `static mut`
+// because that is what the C is — a mutable pointer VARIABLE, which the consumer loads rather
+// than taking the buffer's address — and because a `static` of raw-pointer type is not `Sync`.
+// Same treatment as iconcache's `ShellSmallIconSize` family.
 #[no_mangle]
-pub unsafe extern "C" fn Create24BppBitmap(hDC: HDC, cx: i32, cy: i32) -> HBITMAP {
-    let mut bi = core::mem::MaybeUninit::<BITMAPINFO>::uninit();
-    let bi_ptr = bi.as_mut_ptr();
-    ZeroMemory(bi_ptr as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
-    (*bi_ptr).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
-    (*bi_ptr).bmiHeader.biWidth = cx;
-    (*bi_ptr).bmiHeader.biHeight = cy;
-    (*bi_ptr).bmiHeader.biPlanes = 1;
-    (*bi_ptr).bmiHeader.biBitCount = 24;
-    (*bi_ptr).bmiHeader.biCompression = BI_RGB;
+pub static mut g_pszShell32: LPCWSTR = G_PSZ_SHELL32_BUF.as_ptr();
+#[no_mangle]
+pub static mut g_pszSpace: LPCWSTR = G_PSZ_SPACE_BUF.as_ptr();
+
+/// `folder_options.cpp:92` `#define GlobalFolderOptionsClassName _T("MSGlobalFolderOptionsStub")`.
+/// Must match the name `rust_folder_options_stub.cpp` registers, or the already-open lookup in
+/// `ShowFolderOptionsDialog` stops finding the window and Folder Options opens a second copy.
+static GLOBAL_FOLDER_OPTIONS_CLASS_NAME: [WCHAR; 26] = [
+    0x004D, 0x0053, 0x0047, 0x006C, 0x006F, 0x0062, 0x0061, 0x006C, 0x0046, 0x006F, 0x006C,
+    0x0064, 0x0065, 0x0072, 0x004F, 0x0070, 0x0074, 0x0069, 0x006F, 0x006E, 0x0073, 0x0053,
+    0x0074, 0x0075, 0x0062, 0x0000,
+];
+
+// folder_options.cpp:124-128 `enum { PAGE_GENERAL, PAGE_VIEW, PAGE_FILETYPES };`
+pub const PAGE_GENERAL: UINT = 0;
+pub const PAGE_VIEW: UINT = 1;
+#[allow(dead_code)]
+pub const PAGE_FILETYPES: UINT = 2;
+
+extern "system" {
+    /// The three property-page dialog procs, all `EXTERN_C INT_PTR CALLBACK`
+    /// (`dialogs/folder_options.h:22-45`) — C linkage, stdcall convention. General and View are
+    /// Rust (`dialogs/general.rs`, `dialogs/view.rs`); FileTypes is still C++ in
+    /// `dialogs/filetypes.cpp`. Declared rather than imported so all three arrive with one
+    /// signature, typed against the island.
+    fn FolderOptionsGeneralDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
+    fn FolderOptionsViewDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
+    fn FolderOptionsFileTypesDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
+
+    /// `rust_folder_options_stub.cpp` — the ATL window this file cannot express. Create returns
+    /// the HWND and writes the opaque object pointer; Destroy takes the object back. The object
+    /// must outlive the call because the ATL thunk lives as long as the window does.
+    fn CMSGlobalFolderOptionsStub_Create_RustBridge(
+        dwStyle: DWORD,
+        dwExStyle: DWORD,
+        ppStub: *mut *mut c_void,
+    ) -> HWND;
+    fn CMSGlobalFolderOptionsStub_Destroy_RustBridge(pStub: *mut c_void);
+
+    /// Re-declared here, shadowing the island's, so the thread procedure can be spelled
+    /// `extern "system"` once rather than `#[cfg]`-duplicated per arch — the island types this
+    /// `LPTHREAD_START_ROUTINE`, which is `ntdll-sys`'s and so carries bindgen's literal
+    /// convention. Same reasoning as `prelude::DLGPROC` and `dialogs/drive.rs`.
+    fn SHCreateThread(
+        pfnThreadProc: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
+        pData: *mut c_void,
+        flags: DWORD,
+        pfnCallback: Option<unsafe extern "system" fn(pData: *mut c_void) -> DWORD>,
+    ) -> BOOL;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// utility functions
+
+/// `folder_options.cpp:41-56`. `EXTERN_C` in the header now (plain `__cdecl`, no WINAPI)
+/// because its sibling below is called from `dialogs/filetypes.cpp` and Rust cannot emit a
+/// C++-mangled name.
+#[no_mangle]
+pub unsafe extern "C" fn Create24BppBitmap(hDC: HDC, cx: INT, cy: INT) -> HBITMAP {
+    let mut bi: BITMAPINFO = core::mem::zeroed();
     let mut pvBits: LPVOID = core::ptr::null_mut();
-    let hbm = CreateDIBSection(
+
+    ZeroMemory(core::ptr::addr_of_mut!(bi), core::mem::size_of::<BITMAPINFO>());
+    bi.bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as DWORD;
+    bi.bmiHeader.biWidth = cx as LONG;
+    bi.bmiHeader.biHeight = cy as LONG;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 24;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    CreateDIBSection(
         hDC,
-        bi_ptr as *const BITMAPINFO,
+        core::ptr::addr_of!(bi),
         DIB_RGB_COLORS,
-        &mut pvBits as *mut LPVOID,
+        core::ptr::addr_of_mut!(pvBits),
         core::ptr::null_mut(),
         0,
-    );
-    hbm
+    )
 }
+
+/// `folder_options.cpp:58-81`. Called from `dialogs/filetypes.cpp:1857`.
 #[no_mangle]
-pub unsafe extern "C" fn BitmapFromIcon(hIcon: HICON, cx: i32, cy: i32) -> HBITMAP {
-    let hDC = CreateCompatibleDC(core::ptr::null_mut());
+pub unsafe extern "C" fn BitmapFromIcon(hIcon: HICON, cx: INT, cy: INT) -> HBITMAP {
+    let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
     if hDC.is_null() {
         return core::ptr::null_mut();
     }
-    let hbm = Create24BppBitmap(hDC, cx, cy);
+
+    let hbm: HBITMAP = Create24BppBitmap(hDC, cx, cy);
     if hbm.is_null() {
         DeleteDC(hDC);
         return core::ptr::null_mut();
     }
-    let hbmOld = SelectObject(hDC, hbm);
+
+    let hbmOld: HGDIOBJ = SelectObject(hDC, hbm as HGDIOBJ);
     {
-        let rc = RECT {
-            left: 0,
-            top: 0,
-            right: cx,
-            bottom: cy,
-        };
-        let brush = HBRUSH(COLOR_3DFACE + 1);
-        FillRect(hDC, &rc, brush);
+        let rc = RECT { left: 0, top: 0, right: cx as LONG, bottom: cy as LONG };
+        // C: `HBRUSH(COLOR_3DFACE + 1)` — a C++ functional cast putting a SYSTEM COLOUR INDEX
+        // in the brush slot, which is the form FillRect special-cases. Not a real brush handle,
+        // so it must not be created or deleted.
+        FillRect(hDC, core::ptr::addr_of!(rc), (COLOR_3DFACE + 1) as usize as HBRUSH);
         if !hIcon.is_null() {
-            DrawIconEx(
-                hDC,
-                0,
-                0,
-                hIcon,
-                cx,
-                cy,
-                0,
-                core::ptr::null_mut(),
-                DI_NORMAL,
-            );
+            DrawIconEx(hDC, 0, 0, hIcon, cx, cy, 0, core::ptr::null_mut(), DI_NORMAL);
         }
     }
     SelectObject(hDC, hbmOld);
     DeleteDC(hDC);
+
     hbm
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: UINT, lParam: LPARAM) -> i32 {
+
+/////////////////////////////////////////////////////////////////////////////
+
+/// `folder_options.cpp:107-122`.
+///
+/// NOTE: This callback is needed to set large icon correctly.
+unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: UINT, _lParam: LPARAM) -> INT {
+    let hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            let hIcon = LoadIconW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
+            hIcon = LoadIconW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS));
+            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG as WPARAM, hIcon as LPARAM);
         }
         _ => {}
     }
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-// CALLBACK is __stdcall on i386, which is what extern "system" means; cdecl here
-// would corrupt the stack at every PropSheet callback.
-unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: UINT, lParam: LPARAM) -> i32 {
-    match uMsg {
-        PSCB_INITIALIZED => {
-            let hIcon = LoadIconW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
-        }
-        _ => {}
-    }
-    0
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ShowFolderOptionsDialogThreadProc(param: LPVOID) -> DWORD {
-    let _com = CCoInit;
+/// `folder_options.cpp:130-176`.
+unsafe extern "system" fn ShowFolderOptionsDialogThreadProc(param: *mut c_void) -> DWORD {
+    // Required when started from rundll32 (IRegTreeOptions, SHAutoComplete (in PickIconDlg)).
+    // A REAL RAII value: both paid runs wrote `let _com = CCoInit;`, which names the type and
+    // constructs nothing, so neither CoInitialize nor CoUninitialize would have run — the same
+    // silent defect `COleInit` had in brfolder.
+    let _com = CCoInit::new();
+
+    let mut pinfo: PROPSHEETHEADERW = core::mem::zeroed();
     let mut hppages: [HPROPSHEETPAGE; 3] = [core::ptr::null_mut(); 3];
+    let mut hpage: HPROPSHEETPAGE;
     let mut num_pages: UINT = 0;
 
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_GENERAL, FolderOptionsGeneralDlg, 0, core::ptr::null_mut());
+    hpage = SH_CreatePropertySheetPage(
+        IDD_FOLDER_OPTIONS_GENERAL as WORD,
+        Some(FolderOptionsGeneralDlg),
+        0,
+        core::ptr::null(),
+    );
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;
     }
 
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_VIEW, FolderOptionsViewDlg, 0, core::ptr::null_mut());
+    hpage = SH_CreatePropertySheetPage(
+        IDD_FOLDER_OPTIONS_VIEW as WORD,
+        Some(FolderOptionsViewDlg),
+        0,
+        core::ptr::null(),
+    );
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;
     }
 
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_FILETYPES, FolderOptionsFileTypesDlg, 0, core::ptr::null_mut());
+    hpage = SH_CreatePropertySheetPage(
+        IDD_FOLDER_OPTIONS_FILETYPES as WORD,
+        Some(FolderOptionsFileTypesDlg),
+        0,
+        core::ptr::null(),
+    );
     if !hpage.is_null() {
         hppages[num_pages as usize] = hpage;
         num_pages += 1;
     }
 
+    // the stub window to hide taskbar button
     let style: DWORD = WS_DISABLED | WS_CLIPSIBLINGS | WS_CAPTION;
     let exstyle: DWORD = WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW;
-    let mut stub = CMSGlobalFolderOptionsStub;
-    if stub.Create(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), style, exstyle).is_null() {
+    let mut pStub: *mut c_void = core::ptr::null_mut();
+    let hStub: HWND = CMSGlobalFolderOptionsStub_Create_RustBridge(
+        style,
+        exstyle,
+        core::ptr::addr_of_mut!(pStub),
+    );
+    if hStub.is_null() {
+        // ERR("stub.Create failed\n");
         return 0;
     }
 
-    let mut pinfo: PROPSHEETHEADERW = core::mem::zeroed();
-    memset(core::ptr::addr_of_mut!(pinfo) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<PROPSHEETHEADERW>() as usize);
+    // C memsets `pinfo` here; the `zeroed()` above already did it.
     pinfo.dwSize = core::mem::size_of::<PROPSHEETHEADERW>() as DWORD;
     pinfo.dwFlags = PSH_NOCONTEXTHELP | PSH_USEICONID | PSH_USECALLBACK;
-    pinfo.hwndParent = stub;
+    pinfo.hwndParent = hStub;
     pinfo.nPages = num_pages;
-    pinfo.phpage = hppages.as_mut_ptr();
+    // PROPSHEETHEADERW carries three anonymous unions, and bindgen renders them two DIFFERENT
+    // ways: `__bindgen_anon_3` (ppsp/phpage) is a real `union`, so the field is written
+    // directly, while `_1` (hIcon/pszIcon) and `_2` (nStartPage/pStartPage) are
+    // `__BindgenUnionField` wrappers that have to go through `.as_mut()`. Picking the wrong
+    // anon index is the hazard here — `_2` is the START PAGE, not the page array.
+    pinfo.__bindgen_anon_3.phpage = hppages.as_mut_ptr();
     pinfo.hInstance = shell32_hInstance;
-    pinfo.pszIcon = MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS);
+    *pinfo.__bindgen_anon_1.pszIcon.as_mut() =
+        MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS) as LPCWSTR;
     pinfo.pszCaption = MAKEINTRESOURCEW(IDS_FOLDER_OPTIONS);
-    pinfo.pfnCallback = PropSheetProc;
-    pinfo.nStartPage = PtrToUlong(param);
+    pinfo.pfnCallback = Some(PropSheetProc);
+    // C: `PtrToUlong(param)` — the page index travelled here in a pointer slot.
+    *pinfo.__bindgen_anon_2.nStartPage.as_mut() = param as usize as UINT;
 
     PropertySheetW(core::ptr::addr_of_mut!(pinfo));
 
-    stub.DestroyWindow();
+    CMSGlobalFolderOptionsStub_Destroy_RustBridge(pStub);
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-// LPTHREAD_START_ROUTINE is WINAPI (__stdcall on i386), not cdecl.
-unsafe extern "system" fn ShowFolderOptionsDialogThreadProc(param: LPVOID) -> DWORD {
-    let _com = CCoInit;
-    let mut hppages: [HPROPSHEETPAGE; 3] = [core::ptr::null_mut(); 3];
-    let mut num_pages: UINT = 0;
-
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_GENERAL, FolderOptionsGeneralDlg, 0, core::ptr::null_mut());
-    if !hpage.is_null() {
-        hppages[num_pages as usize] = hpage;
-        num_pages += 1;
-    }
-
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_VIEW, FolderOptionsViewDlg, 0, core::ptr::null_mut());
-    if !hpage.is_null() {
-        hppages[num_pages as usize] = hpage;
-        num_pages += 1;
-    }
-
-    let hpage = SH_CreatePropertySheetPage(IDD_FOLDER_OPTIONS_FILETYPES, FolderOptionsFileTypesDlg, 0, core::ptr::null_mut());
-    if !hpage.is_null() {
-        hppages[num_pages as usize] = hpage;
-        num_pages += 1;
-    }
-
-    let style: DWORD = WS_DISABLED | WS_CLIPSIBLINGS | WS_CAPTION;
-    let exstyle: DWORD = WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW;
-    let mut stub = CMSGlobalFolderOptionsStub;
-    if stub.Create(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), style, exstyle).is_null() {
-        return 0;
-    }
-
-    let mut pinfo: PROPSHEETHEADERW = core::mem::zeroed();
-    memset(core::ptr::addr_of_mut!(pinfo) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<PROPSHEETHEADERW>() as usize);
-    pinfo.dwSize = core::mem::size_of::<PROPSHEETHEADERW>() as DWORD;
-    pinfo.dwFlags = PSH_NOCONTEXTHELP | PSH_USEICONID | PSH_USECALLBACK;
-    pinfo.hwndParent = stub;
-    pinfo.nPages = num_pages;
-    pinfo.phpage = hppages.as_mut_ptr();
-    pinfo.hInstance = shell32_hInstance;
-    pinfo.pszIcon = MAKEINTRESOURCEW(IDI_SHELL_FOLDER_OPTIONS);
-    pinfo.pszCaption = MAKEINTRESOURCEW(IDS_FOLDER_OPTIONS);
-    pinfo.pfnCallback = PropSheetProc;
-    pinfo.nStartPage = PtrToUlong(param);
-
-    PropertySheetW(core::ptr::addr_of_mut!(pinfo));
-
-    stub.DestroyWindow();
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ShowFolderOptionsDialog(page: u32, async_: i32) {
-    let _default_async: i32 = FALSE;
-
-    let hwnd = FindWindow(GlobalFolderOptionsClassName, core::ptr::null_mut());
-    if !hwnd.is_null() {
-        let hpop = GetLastActivePopup(hwnd);
-        if hwnd == GetParent(hpop) {
-            PostMessage(hpop, PSM_SETCURSEL, page, 0);
+/// `folder_options.cpp:178-200`
+/// `VOID WINAPI ShowFolderOptionsDialog(UINT Page, BOOL Async = FALSE)`.
+///
+/// The C++ DEFAULT ARGUMENT is written out at the two call sites below. Both paid runs made
+/// `Async` a required parameter and then called this with ONE argument, which does not compile;
+/// "fixing" that by passing TRUE would have sent both rundll32 entry points down the async
+/// path, which the comment in the C says is exactly wrong.
+///
+/// Not `#[no_mangle]`: the C has no `EXTERN_C`, so the symbol is C++-mangled and nothing
+/// outside this translation unit calls it.
+unsafe fn ShowFolderOptionsDialog(Page: UINT, Async: BOOL) {
+    let hWnd: HWND = FindWindowW(GLOBAL_FOLDER_OPTIONS_CLASS_NAME.as_ptr(), core::ptr::null());
+    if !hWnd.is_null() {
+        let hPop: HWND = GetLastActivePopup(hWnd);
+        if hWnd == GetParent(hPop) {
+            PostMessage(hPop, PSM_SETCURSEL, Page as WPARAM, 0);
         }
-        SetForegroundWindow(hpop);
+        SetForegroundWindow(hPop);
         return;
     }
 
-    let param = UlongToPtr(page);
-    if async_ != 0 {
-        SHCreateThread(ShowFolderOptionsDialogThreadProc, param, 0, 0);
+    let param: *mut c_void = Page as usize as *mut c_void;
+    if Async != 0 {
+        SHCreateThread(Some(ShowFolderOptionsDialogThreadProc), param, 0, None);
     } else {
+        // Rundll32 caller cannot be async!
         ShowFolderOptionsDialogThreadProc(param);
     }
 }
-unsafe extern "C" fn Options_RunDLLCommon(hWnd: HWND, hInst: HINSTANCE, fOptions: i32, nCmdShow: DWORD) {
+
+/// `folder_options.cpp:202-227`.
+unsafe fn Options_RunDLLCommon(_hWnd: HWND, _hInst: HINSTANCE, fOptions: INT, _nCmdShow: DWORD) {
     match fOptions {
         0 => {
-            ShowFolderOptionsDialog(PAGE_GENERAL);
-        },
+            ShowFolderOptionsDialog(PAGE_GENERAL, FALSE);
+        }
+        // 1 = Taskbar settings. 3/4/6 (Start menu / tray icon / taskbar toolbars) sit behind
+        // `#if (NTDDI_VERSION >= NTDDI_VISTA)` in the C, and shell32 builds
+        // -DNTDDI_VERSION=0x06000000 (CMakeLists.txt), so all four arms are live.
         1 | 3 | 4 | 6 => {
-            PostMessage(GetShellWindow(), WM_PROGMAN_OPENSHELLSETTINGS, fOptions, 0);
-        },
+            PostMessage(
+                GetShellWindow(),
+                WM_PROGMAN_OPENSHELLSETTINGS,
+                fOptions as WPARAM,
+                0,
+            );
+        }
+        // Windows 8, 10
         7 => {
-            ShowFolderOptionsDialog(PAGE_VIEW);
-        },
+            ShowFolderOptionsDialog(PAGE_VIEW, FALSE);
+        }
         _ => {
-            FIXME!("unrecognized options id {}", fOptions);
+            // FIXME("unrecognized options id %d\n", fOptions);
         }
     }
 }
 
+/*************************************************************************
+ *              Options_RunDLL (SHELL32.@)
+ */
 #[no_mangle]
-pub unsafe extern "system" fn Options_RunDLL(hWnd: HWND, hInst: HINSTANCE, cmd: LPCSTR, nCmdShow: DWORD) {
+pub unsafe extern "system" fn Options_RunDLL(
+    hWnd: HWND,
+    hInst: HINSTANCE,
+    cmd: LPCSTR,
+    nCmdShow: DWORD,
+) {
     Options_RunDLLCommon(hWnd, hInst, StrToIntA(cmd), nCmdShow);
 }
 
+/*************************************************************************
+ *              Options_RunDLLA (SHELL32.@)
+ */
 #[no_mangle]
-pub unsafe extern "system" fn Options_RunDLLA(hWnd: HWND, hInst: HINSTANCE, cmd: LPCSTR, nCmdShow: DWORD) {
+pub unsafe extern "system" fn Options_RunDLLA(
+    hWnd: HWND,
+    hInst: HINSTANCE,
+    cmd: LPCSTR,
+    nCmdShow: DWORD,
+) {
     Options_RunDLLCommon(hWnd, hInst, StrToIntA(cmd), nCmdShow);
 }
 
+/*************************************************************************
+ *              Options_RunDLLW (SHELL32.@)
+ */
 #[no_mangle]
-pub unsafe extern "system" fn Options_RunDLLW(hWnd: HWND, hInst: HINSTANCE, cmd: LPCWSTR, nCmdShow: DWORD) {
+pub unsafe extern "system" fn Options_RunDLLW(
+    hWnd: HWND,
+    hInst: HINSTANCE,
+    cmd: LPCWSTR,
+    nCmdShow: DWORD,
+) {
     Options_RunDLLCommon(hWnd, hInst, StrToIntW(cmd), nCmdShow);
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

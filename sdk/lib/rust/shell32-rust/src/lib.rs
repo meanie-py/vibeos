@@ -145,6 +145,11 @@ pub mod dialogs_recycler_prop;
 // its module header, and `gen_driver_types.sh`'s shell32 cell for the two headers it added.
 #[path = "dialogs/drive.rs"]
 pub mod dialogs_drive;
+// Folder Options. Its one ATL `CWindowImpl<>` stays C++ in `rust_folder_options_stub.cpp`
+// behind a create/destroy bridge — the class NAME is what `FindWindow` keys on, so a second
+// implementation would split the already-open lookup rather than replace it.
+#[path = "dialogs/folder_options.rs"]
+pub mod dialogs_folder_options;
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

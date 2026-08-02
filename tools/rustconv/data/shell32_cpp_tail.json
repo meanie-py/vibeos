@@ -34,7 +34,6 @@
     ],
     "leaf": [
       "dll/win32/shell32/changenotify.cpp",
-      "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/item_prop.cpp",
       "dll/win32/shell32/CDefViewUtil.cpp"
     ],
@@ -68,6 +67,7 @@
       "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/drive.cpp",
+      "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
       "dll/win32/shell32/dialogs/recycler_prop.cpp",
       "dll/win32/shell32/dialogs/view.cpp",
@@ -99,6 +99,9 @@
     ],
     "phantom_inline_linkage": [
       "dll/win32/shell32/rust_strsafe_shim.c"
+    ],
+    "atl_window_class": [
+      "dll/win32/shell32/rust_folder_options_stub.cpp"
     ]
   },
   "version": 1
