@@ -1445,6 +1445,206 @@ fn main() {
     let file_prelude_h = out.join("ref_file_prelude.h");
     fs::write(&file_prelude_h, &fp).unwrap();
 
+    // ══ reference TU #7 — dll/win32/msvcrt/errno.c ══════════════════════════════════
+    //
+    // This one is here to DELETE a transcription, not only to grade 18 more exports.
+    //
+    // Until now the harness owned a hand-written copy of msvcrt's Win32 -> errno map
+    // (fileimpl.c's `msvcrt_difftest_win32_to_errno`, 42 ERROR_* cases) and BOTH sides
+    // called it.  file.c stores through that map 54 times and file.rs does too, so the
+    // single most exercised mapping in the whole file suite was the one thing no row
+    // could ever grade: shared substrate is invisible to a differential test, both sides
+    // are wrong identically, and every row reports MATCH (§9.73).  With errno.c compiled
+    // as a reference TU the reference gets msvcrt's GENUINE mapper and the subject keeps
+    // Rust's, so the mapping becomes a difference the harness can see.
+    //
+    // The same swap fixes the errno SLOT.  refimpl.c used to define `_errno` over a
+    // `static __thread int` it invented; errno.c's real one returns
+    // `&msvcrt_get_thread_data()->thread_errno`.  Both sides now keep errno where msvcrt
+    // keeps it.
+    //
+    // fileimpl.c's deferral banner priced this at "a change to every existing test's
+    // plumbing", because refimpl.c's `_errno`/`_invalid_parameter` are environment with a
+    // test-visible call counter.  That is only true if the harness API moves.  It doesn't:
+    // ref_errno_get/ref_errno_set/ref_invalid_pmt_count/ref_invalid_pmt_reset keep their
+    // names and signatures across ~62 call sites in 8 files, and only the storage beneath
+    // them changes.  See refimpl.c for the counting wrapper, and for why installing the
+    // counter as a real handler is impossible at _MSVCR_VER = 0.
+    let errno_c = msvcrt_dir.join("errno.c");
+    assert!(errno_c.is_file(), "msvcrt reference source not found: {}", errno_c.display());
+
+    // From the OBJECT, like file.c and for the same reason: what got emitted is the
+    // authority, not what the source appears to say through the _MSVCR_VER arms.
+    let errno_obj =
+        repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/errno.c.obj");
+    let errno_code: Vec<String> = object_symbols(&repo, &errno_obj, &["T"]);
+    let errno_data: Vec<String> = object_symbols(&repo, &errno_obj, &["D", "B"]);
+    assert!(
+        errno_code.len() > 15 && !errno_data.is_empty(),
+        "errno.c object scrape found {} functions / {} data — a short list would leave \
+         symbols under their PLAIN names, colliding with the subject",
+        errno_code.len(),
+        errno_data.len()
+    );
+
+    // Three of errno.c's definitions already have a home in the msvcrt_ref_* IMPORT
+    // namespace that refstub/msvcrt.h sets up for every TU that includes it, and two of
+    // them land there by simply being compiled:
+    //
+    //   _errno            -> msvcrt_ref__errno            (refimpl.c's copy is deleted)
+    //   msvcrt_set_errno  -> msvcrt_ref_msvcrt_set_errno  (fileimpl.c's copy is deleted)
+    //
+    // The reference TUs and fileimpl.c already CALL those names, so errno.c's bodies drop
+    // straight into the sockets the hand-written ones vacated.  That is the whole trick,
+    // and it is why the rename wall below must skip them: renaming them to ref_* instead
+    // would leave every existing caller pointing at a symbol nothing defines.
+    //
+    // `_invalid_parameter` is the exception.  refimpl.c still occupies
+    // msvcrt_ref__invalid_parameter — it has to, that is where the call counter lives —
+    // so errno.c's body needs a name of its own to be delegated to.  It gets the ordinary
+    // ref_ wall treatment, which means the prelude has to UNDO refstub's mapping first.
+    //
+    // `__doserrno` is a fourth, and it is namespaced by a LOCAL `#define` rather than by
+    // refstub/msvcrt.h — refstub/msvcrt_file_prelude.h and fileimpl.c each spell it out,
+    // because when they were written errno.c was not a reference TU and the accessor was
+    // environment. The name they chose is what file.c calls, so errno.c's definition has
+    // to land there; the prelude repeats the mapping rather than moving it into
+    // refstub/msvcrt.h, which is included by TUs that must keep calling the SUBJECT's.
+    const ERRNO_NAMESPACED: &[&str] = &["_errno", "msvcrt_set_errno", "__doserrno"];
+    let errno_wall: Vec<&String> = errno_code
+        .iter()
+        .filter(|s| !ERRNO_NAMESPACED.contains(&s.as_str()))
+        .collect();
+
+    // Disjointness against every other reference TU, asserted rather than assumed.
+    {
+        let taken: std::collections::HashSet<&str> = all_symbols
+            .iter()
+            .copied()
+            .chain(scanf_symbols.iter().map(String::as_str))
+            .chain(file_symbols.iter().map(String::as_str))
+            .chain(file_data.iter().map(String::as_str))
+            .collect();
+        let clash: Vec<&str> = errno_wall
+            .iter()
+            .map(|s| s.as_str())
+            .chain(errno_data.iter().map(String::as_str))
+            .filter(|s| taken.contains(s))
+            .collect();
+        assert!(
+            clash.is_empty(),
+            "errno.c and another reference TU both define {clash:?} — one of them must \
+             stop being renamed into ref_*"
+        );
+    }
+
+    // The two PSDK headers errno.c includes that no other reference TU does.  Generated
+    // into OUT_DIR beside the scanf TU's windef/winbase/winternl/conio, for the same
+    // reason: the whole errno reference stays derived rather than checked in.
+    fs::write(
+        out.join("ntstatus.h"),
+        "/* GENERATED by build.rs — errno.c's `#include \"ntstatus.h\"`. It includes this\n\
+         * only for STATUS_INVALID_CRUNTIME_PARAMETER, used by the RaiseException arm of\n\
+         * _invalid_parameter, which is `#if _MSVCR_VER >= 80` and so not compiled here.\n\
+         * The value is still supplied rather than omitted: an empty header would make a\n\
+         * later _MSVCR_VER bump fail as an undeclared identifier instead of working. */\n\
+         #ifndef MSVCRT_DIFFTEST_NTSTATUS_H\n#define MSVCRT_DIFFTEST_NTSTATUS_H\n\
+         #define STATUS_INVALID_CRUNTIME_PARAMETER ((NTSTATUS)0xC0000417L)\n\
+         #endif\n",
+    )
+    .unwrap();
+    fs::write(
+        out.join("excpt.h"),
+        "/* GENERATED by build.rs — errno.c's `#include \"excpt.h\"`. Reached only by the\n\
+         * `#if _MSVCR_VER >= 80` RaiseException arm, which is not compiled here. */\n\
+         #ifndef MSVCRT_DIFFTEST_EXCPT_H\n#define MSVCRT_DIFFTEST_EXCPT_H\n\
+         #define EXCEPTION_NONCONTINUABLE 0x01\n#endif\n",
+    )
+    .unwrap();
+
+    let mut ep = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included at the top of the errno.c reference TU ONLY. */\n\
+         #ifndef MSVCRT_REF_ERRNO_PRELUDE_H\n#define MSVCRT_REF_ERRNO_PRELUDE_H\n\n\
+         /* ═══ stage 0: __doserrno, onto the name file.c already calls. ═══════════\n\
+          * refstub/msvcrt_file_prelude.h and fileimpl.c each spell this mapping out\n\
+          * locally — it predates errno.c being a reference TU — so the definition has to\n\
+          * meet them at msvcrt_ref___doserrno rather than at ref___doserrno.\n\
+          * BEFORE everything, so the one declaration refstub/msvcrt.h makes and the\n\
+          * definition errno.c emits are renamed together; doing it last renames only the\n\
+          * definition and the two then collide as conflicting types for one symbol. */\n\
+         #define __doserrno msvcrt_ref___doserrno\n\n\
+         /* ═══ stage 1: hide errno.c's own shells from glibc. ══════════════════════\n\
+          * Same reason as the scanf and file TUs: glibc declares strerror/perror and\n\
+          * friends, and several carry __REDIRECT or a macro, either of which would\n\
+          * attach itself to the name errno.c is about to DEFINE. */\n",
+    );
+    for sym in &errno_wall {
+        ep.push_str(&format!("#define {sym} msvcrt_ref_glibc_{sym}\n"));
+    }
+    ep.push_str(
+        "\n/* ═══ stage 2: the union prelude — sibling renames + the refstub. ════════\n\
+         * strcpy/strlen/wcslen/wcstombs are string.c's and wcs.c's, and this is what\n\
+         * binds them to ref_* instead of letting the reference's error strings run\n\
+         * through the HOST libc — or, worse, through cnt-rust's #[no_mangle] copies,\n\
+         * which is the code under test. */\n\
+         #include \"ref_prelude.h\"\n\n\
+         /* ═══ stage 3: file.c's renames, for the one symbol errno.c borrows. ═════\n\
+          * `perror` writes with `_write(2, ...)`, which file.c owns (reference TU #6).\n\
+          * Without this the call escapes to the host's _write — or to the SUBJECT's,\n\
+          * since file.rs exports one — and a reference that calls the code under test\n\
+          * is not a reference. The whole wall is applied rather than just _write: the\n\
+          * set is asserted disjoint from errno.c's own above, so it costs nothing, and\n\
+          * a future errno.c that reaches for another stream function stays correct. */\n",
+    );
+    for sym in &file_wall {
+        ep.push_str(&format!("#define {sym} ref_{sym}\n"));
+    }
+    ep.push_str(
+        "\n/* ═══ stage 4: un-hide errno.c's own shells and rename them for real. ════ */\n",
+    );
+    for sym in &errno_wall {
+        ep.push_str(&format!("#undef {sym}\n#define {sym} ref_{sym}\n"));
+    }
+    ep.push_str(
+        "\n/* ═══ stage 5: the exported STATE. ═══════════════════════════════════════\n\
+         * MSVCRT__sys_errlist / MSVCRT__sys_nerr. The subject defines both, so leaving\n\
+         * them plain is a duplicate-symbol link error — and if one copy won, strerror\n\
+         * on both sides would read ONE table and the row would compare a table against\n\
+         * itself. */\n",
+    );
+    for sym in &errno_data {
+        ep.push_str(&format!("#define {sym} ref_{sym}\n"));
+    }
+    ep.push_str(
+        "\n/* ═══ stage 6: _invalid_parameter, out of the import namespace. ══════════\n\
+         * refstub/msvcrt.h maps this to msvcrt_ref__invalid_parameter for every TU that\n\
+         * includes it — but refimpl.c DEFINES that name (the call counter every suite\n\
+         * reads), so leaving the mapping in place here is a duplicate symbol. Give\n\
+         * errno.c's body its own ref_ name; refimpl.c's wrapper counts, then calls it. */\n\
+         #undef _invalid_parameter\n#define _invalid_parameter ref__invalid_parameter\n\n\
+         /* ═══ stage 7: the DERIVED Win32/CRT constants. ══════════════════════════\n\
+          * errno.c's mapper dispatches on 42 ERROR_* codes and clamps against the errno\n\
+          * range. file.c reaches these through msvcrt_file_prelude.h, which also drags in\n\
+          * the whole FILE layout; errno.c touches no FILE field, so it takes the constant\n\
+          * header directly. Derived by the pinned cross-compiler, never transcribed —\n\
+          * a hand-written ERROR_* wall next to a switch on it is precisely the §9.112\n\
+          * shape, where a wrong or missing case silently becomes the default arm. */\n\
+         #include <msvcrt_crt_consts.h>\n\n\
+         /* ═══ stage 8: a prototype for the renamed __doserrno. ═══════════════════\n\
+          * errno.c's `msvcrt_set_errno` calls `__doserrno()` at line 135, 88 lines above\n\
+          * its definition, so without this the implicit-declaration rule types it `int()`\n\
+          * and truncates the returned POINTER to 32 bits. fileimpl.c carries the same\n\
+          * declaration for the same reason, and -Werror=implicit-function-declaration is\n\
+          * what turns it from a silent truncation into a build failure. Placed here, after\n\
+          * the refstub has supplied __msvcrt_ulong and CDECL, and after the stage-0 rename\n\
+          * so it describes the symbol errno.c actually emits. */\n\
+         __msvcrt_ulong * CDECL __doserrno(void);\n\n\
+         #endif /* MSVCRT_REF_ERRNO_PRELUDE_H */\n",
+    );
+    let errno_prelude_h = out.join("ref_errno_prelude.h");
+    fs::write(&errno_prelude_h, &ep).unwrap();
+
     // ── the reference TUs: the GENUINE string.c + wcs.c, renamed ────
     //
     // Both get the IDENTICAL flag set — the two -Werror= tripwires below are
@@ -1818,6 +2018,26 @@ fn main() {
         .cargo_metadata(false)
         .file(&file_c);
 
+    // The errno.c reference TU.  Same genuineness flags and tripwires; its own out_dir
+    // for the same cc-intermediate-collision reason as file.c's.
+    let mut errno_build = cc::Build::new();
+    errno_build
+        .out_dir(out.join("errno"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .warnings(false)
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .flag("-include")
+        .flag(errno_prelude_h.to_str().unwrap())
+        .file(&errno_c);
+
     // The POSIX-backed Win32 layer underneath it.  Its OWN TU, without the rename
     // prelude — like refimpl.c, and for the same reason: these must land under the
     // plain names file.c calls.
@@ -1995,6 +2215,7 @@ fn main() {
     objects.extend(pfflat_build.compile_intermediates());
     objects.extend(scanf_build.compile_intermediates());
     objects.extend(file_build.compile_intermediates());
+    objects.extend(errno_build.compile_intermediates());
     objects.extend(fileimpl_build.compile_intermediates());
     if subject_stdio {
         objects.extend(shim_build.compile_intermediates());

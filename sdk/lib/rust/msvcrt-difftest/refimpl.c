@@ -74,19 +74,28 @@ static int ref_ascii_space(int c)
 
 /* ------------------------------------------------------------------ *
  * errno
- * ------------------------------------------------------------------ */
-static __thread int ref_errno_value;
-
-int * __cdecl _errno(void)
-{
-    return &ref_errno_value;
-}
-
-/* Read/clear window for the tests: EINVAL / ERANGE / EILSEQ / STRUNCATE are
+ *
+ * `_errno` USED to be defined here, over a `static __thread int` this file
+ * invented.  It isn't any more: errno.c is a reference TU (#7), so the
+ * reference now gets msvcrt's GENUINE accessor, which returns
+ * `&msvcrt_get_thread_data()->thread_errno` — the thread_data this very file
+ * supplies below.  That is the point of making it a reference TU: a harness
+ * that models the errno slot cannot grade code whose contract IS the errno
+ * slot (§9.73), and file.c alone stores through it 54 times.
+ *
+ * The two accessors below keep their names and signatures precisely so this
+ * swap costs nothing elsewhere — they have ~62 call sites across 8 files in
+ * two crates, and every one of them still works because only the STORAGE
+ * moved.  fileimpl.c's deferral banner expected this to be "a change to every
+ * existing test's plumbing"; it is not, as long as the harness API is held
+ * fixed and only the implementation moves underneath it.
+ *
+ * Read/clear window for the tests: EINVAL / ERANGE / EILSEQ / STRUNCATE are
  * part of several msvcrt contracts, so a parity check should assert on them.
- * These two are exported un-namespaced (they are harness API, not msvcrt). */
-int  ref_errno_get(void)      { return ref_errno_value; }
-void ref_errno_set(int value) { ref_errno_value = value; }
+ * These two are exported un-namespaced (they are harness API, not msvcrt).
+ * ------------------------------------------------------------------ */
+int  ref_errno_get(void)      { return *_errno(); }
+void ref_errno_set(int value) { *_errno() = value; }
 
 /* ------------------------------------------------------------------ *
  * invalid-parameter handler
@@ -103,15 +112,39 @@ void ref_errno_set(int value) { ref_errno_value = value; }
  * counter existed on the subject side from wave 5 but nothing ever read it, so
  * `_ultoa_s`-class contracts (which set errno WITHOUT firing the handler) could
  * not be distinguished from `_ltoa_s`-class ones (which fire it).  See §9.66.
+ *
+ * Since errno.c became reference TU #7 this is a COUNTING WRAPPER rather than a
+ * replacement: it tallies, then calls errno.c's genuine body (which the errno
+ * prelude renames `ref__invalid_parameter`, out of the msvcrt_ref_* import
+ * namespace this definition occupies).  Two reasons to compose rather than
+ * choose.  The counter is harness API with call sites in 8 files, so it has to
+ * survive; and the real body is what a future _MSVCR_VER bump would change, so
+ * keeping it on the live path means the reference follows msvcrt instead of
+ * following this file.
+ *
+ * Composing is free HERE and would not be everywhere: at _MSVCR_VER = 0 that
+ * body is inert.  The `>= 140` thread-data handler is compiled out; the
+ * file-static `invalid_parameter_handler` it falls back on is writable only by
+ * `_set_invalid_parameter_handler`, which is itself `>= 80` and so does not
+ * exist — the slot is permanently NULL; and the `RaiseException` arm is `>= 80`
+ * too.  What remains is one `ERR(...)`, which refstub/wine/debug.h no-ops.  So
+ * the delegation adds no side effect, no output, and no undefined symbol.  (An
+ * earlier plan here was to install the counter AS a handler through the real
+ * dispatch.  There is no reachable slot to install it in.)
  * ------------------------------------------------------------------ */
 static __thread int ref_invalid_pmt_calls;
+
+/* errno.c's own body, under the name the errno reference prelude gives it. */
+void __cdecl ref__invalid_parameter(const wchar_t *expr, const wchar_t *func,
+                                    const wchar_t *file, unsigned int line,
+                                    uintptr_t arg);
 
 void __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
                                 const wchar_t *file, unsigned int line,
                                 uintptr_t arg)
 {
-    (void)expr; (void)func; (void)file; (void)line; (void)arg;
     ref_invalid_pmt_calls++;
+    ref__invalid_parameter(expr, func, file, line, arg);
 }
 
 int  ref_invalid_pmt_count(void) { return ref_invalid_pmt_calls; }
