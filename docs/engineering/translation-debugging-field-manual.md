@@ -1409,8 +1409,46 @@ fired on a symlink. `cmparse.rs` `CmpDoOpen` tested `ExtFlags & 0x00000040` wher
 took the reparse path instead of using `RealKcb`, and a KCB carrying `INVALID_CACHED_INFO` read
 `ValueCache.RealKcb` out of a union that at that point holds value-cache data. Note that
 `cmapi.rs` *already defined* `KEY_HIVE_ENTRY` correctly thirty lines up: having the constant
-available is no protection when the literal is typed anyway. The clear-mask scanner cannot see
-either one — both are `&` TESTS, not `&= ~` clears — which is the extension task.
+available is no protection when the literal is typed anyway.
+
+**The `&` TEST form is the bigger half of this class, and the scanner now reads it.** Extending
+`scan_mask_drift` from `&= ~NAME` clears to plain `X & NAME` tests found **twelve** more on its
+first sweep, in six subsystems, none of which any other lint can see. Worst of them: `ARM3`'s
+session-creation interlock tested *and `InterlockedCompareExchange`-SET* `0x200`
+(`PSF_WOW64_VA_SPACE_4GB_BIT`) where the C says `PSF_SESSION_CREATION_UNDERWAY_BIT` (**0x4000**),
+so it silently stamped a WOW64 address-space flag onto every process that creates a session —
+**a wrong literal that is written, not just read, corrupts state rather than mis-branching, and
+the test and the set agreeing with each other is exactly why nothing downstream complained.**
+Also `cmhvlist.rs` reading `KEY_COMP_NAME` as `0x0001` at four sites (that bit picks byte-per-char
+vs UTF-16, so every hive-list path was decoded wrongly in both directions), `ob`'s
+traverse-privilege fast path consulting `TOKEN_IS_RESTRICTED`, and kernel32's
+`UnhandledExceptionFilter` testing `0x80000001` — a value that is not any `SEM_*` flag — for
+*both* error-mode checks.
+
+Three things the extension needed, all worth stealing for the next scanner of this shape:
+
+- **Pair on (BASE, MEMBER), not on the member alone.** `cmapi.rs` tests `Kcb->Flags` against
+  `KEY_SYM_LINK` (0x10) and a plain local `Flags` against `REG_NO_LAZY_FLUSH` (0x04); both
+  lowercase to `flags`, and the live code held `0x04` in both — correct for the local, the bug
+  for the other. First-and-last identifier of the expression left of the `&` maps C `Kcb->Flags`
+  and Rust `(*Kcb).__bindgen_anon_5.Flags()` together without modelling member access.
+- **A test that VANISHED is not a finding.** Clears report `DROPPED` usefully; a missing test is
+  usually restructured control flow and buries the value comparisons in noise.
+- **Report only what the file cannot explain another way.** Quiet if the live code also *names*
+  the constant for that target, if there is more than one live literal, or if the C open-codes
+  that same literal itself — i8042prt masks `RawButtons & 0xfc00` in its own C, with only a
+  `DPRINT` beside it naming `MOUSE_LEFT_BUTTON_DOWN`. Those three rules took the sweep from 19
+  hits with 7 false to 12 with 0.
+
+**A `try/except` around a catalog load will hide the whole point of the tool.** `scan_mask_drift`
+called `build_c_catalog()` with no argument inside `except Exception: _CATALOG = {}`;
+`reactos_root` is required, so *every run since it was written* raised `TypeError`, swallowed it,
+and compared against an EMPTY catalog — silently downgrading every header-defined constant from a
+provable comparison to an `OPENCODED` shrug. It was invisible because the tool still printed
+findings and still exited non-zero. A verifier that cannot resolve its oracle must **fail**, not
+proceed. And `verify_constants`' curated ~25 headers are too narrow for a general flag check:
+`cmdata.h` and `ntoskrnl/include/internal/cm.h` own the registry's own flag families, so a
+repo-wide `#define` index (dropping any name with two *different* values) backs it now.
 
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
