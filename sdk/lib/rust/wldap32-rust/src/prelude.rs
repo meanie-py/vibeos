@@ -53,7 +53,11 @@ pub unsafe fn strcpyW(dst: *mut u16, src: *const u16) -> *mut u16 {
 }
 
 // ================= Win32 ======================================================================
-extern "C" {
+// `extern "system"`, not `extern "C"`: every one of these is WINAPI, which on i386 is stdcall,
+// so the import lib carries `_Name@N`. They were declared cdecl and nothing caught it because
+// wldap32-rust is translated but not yet flipped into the build — `cargo check` does not link,
+// so this would have surfaced as a wall of undefined symbols on the day of the flip.
+extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
     // `dwBytes` is SIZE_T == ULONG_PTR == pointer-width unsigned, which is exactly Rust
     // `usize` on every target. Spelling it `usize` rather than the bindgen `SIZE_T` alias

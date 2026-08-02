@@ -909,6 +909,13 @@ UNCOVERED: dict[str, str] = {
         "but scan_crate()/fix_crate() take a crate dir, and are covered by direct import at "
         "the bottom of this file. That gap let a WRITE-CAPABLE --fix ship untested."
     ),
+    "scan_import_cc": (
+        "main() resolves its oracle from the WHOLE repo — every .spec plus every "
+        "add_importlibs() — so a fixture directory has nothing to be judged against. "
+        "scan_crate()/read_spec()/crate_link_set()/c_defines() all take their inputs as "
+        "arguments and are driven with synthetic specs in tools/test_scan_import_cc.py "
+        "(15 tests), which pins each of the six blind spots its first whole-tree run had."
+    ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",

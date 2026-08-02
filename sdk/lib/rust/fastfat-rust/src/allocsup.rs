@@ -70,8 +70,6 @@ extern "system" {
     fn FatBuildZeroMdl(IrpContext: *mut IRP_CONTEXT, ByteCount: u32) -> *mut MDL;
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
-    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
-    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
     fn FatFreeClusters(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32, ClusterCount: u32);
     fn FatExceptionFilter(_: *const core::ffi::c_void, ExceptionInfo: *const core::ffi::c_void) -> i32;
     fn _SEH2_GetExceptionCode() -> i32;
@@ -87,6 +85,22 @@ extern "system" {
 fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
     fn CcIsFileCached(FileObject: *mut FILE_OBJECT) -> u8;
     fn CcSetFileSizes(FileObject: *mut FILE_OBJECT, Sizes: *mut CC_FILE_SIZES);
+}
+
+// Ex{Acquire,Release}FastMutexUnsafe are FASTCALL exports on i386 (`@Name@4`, per
+// ntoskrnl.spec and the bindgen island); everywhere else FASTCALL is the ordinary
+// convention. Declared "system" they asked the linker for `_Name@4`, and
+// rust_cohab_fat.c papered over the undefined symbol with stdcall trampolines
+// aliased in asm. The declaration was the thing that was wrong.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ExAcquireFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
+    fn ExReleaseFastMutexUnsafe(FastMutex: *mut core::ffi::c_void);
 }
 
 
