@@ -37,6 +37,9 @@ const UNICODE_NULL: u16 = 0;
 const STATUS_RETRY: i32 = 0xC000022Du32 as i32;
 const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: usize = 32;
 const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
+// Module scope, not function scope: CmpDoOpen tests this too, and a copy
+// buried in one function is how the other call site ended up open-coded.
+const REG_OPTION_CREATE_LINK: u32 = 0x00000002;
 
 extern "C" {
     pub static CmpKeyObjectType: POBJECT_TYPE;
@@ -506,7 +509,6 @@ pub unsafe extern "system" fn CmpDoCreate(
 
     const Volatile: u32 = 1;
     const REG_OPTION_VOLATILE: u32 = 0x00000001;
-    const REG_OPTION_CREATE_LINK: u32 = 0x00000002;
     const CM_KCB_READ_ONLY_KEY: u32 = 0x0080;
     const KEY_SYM_LINK: u16 = 0x0010;
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
