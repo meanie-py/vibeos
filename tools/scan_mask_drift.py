@@ -32,32 +32,55 @@ four of eight copies wrong — `CmLoadKey` setting 0x4 and `CmUnloadKey` 0x40 fo
 "refuse to resolve a key in a hive that is unloading" protection was inert on the
 unload path it exists for.
 
-WHAT IT REPORTS. For each `TARGET &= ~NAME` in the commented C, the live Rust
-must mask the same TARGET with the same NAME:
+TWO FORMS, reported side by side.
 
-  MISMATCH  live masks a LITERAL whose value != NAME's. A bug, or the C moved.
-            Zero tree-wide as of 2026-08-01; keep the baseline empty of these.
-  OPENCODED live masks a literal we cannot resolve NAME against. Usually just
+  CLEAR  `TARGET &= ~NAME` in the C; the live Rust must mask the same TARGET
+         with the same NAME. Printed as `<TARGET> &= ~<NAME>`.
+  TEST   `EXPR & NAME` in the C; the live Rust must not test that same operand
+         against a literal of a different value. Printed as `<EXPR> & <NAME>`.
+
+  MISMATCH  live holds a LITERAL whose value != NAME's. A bug, or the C moved.
+            Keep the baseline empty of these — every one of the twelve the TEST
+            form found on its first sweep was real.
+  OPENCODED live holds a literal we cannot resolve NAME against. Usually just
             wants the name back; occasionally a MISMATCH we could not prove.
-  DROPPED   nothing in live code masks that target at all. The mask, or the
-            branch holding it, did not survive translation.
+  DROPPED   nothing in live code masks that target at all. CLEAR form only —
+            see below.
 
-TARGET is the identifier immediately left of the `&`, so `p->Flags &= ~X` and
-`(*p).Flags &= !X` pair up on `Flags` without modelling either language's member
-access. Pairing on it is what makes this specific enough to gate: the same file
-routinely masks six different variables. Compared case-insensitively, and a
-`let` binding counts as its own target, because translation re-cases and rebinds.
+PAIRING. For CLEAR, TARGET is the identifier immediately left of the `&`, so
+`p->Flags &= ~X` and `(*p).Flags &= !X` meet on `Flags` without modelling either
+language's member access; a `let` binding counts as its own target, and case is
+ignored, because translation re-cases and rebinds.
+
+For TEST that is not enough, and the counter-example is worth keeping: cmapi.rs
+tests `Kcb->Flags` against KEY_SYM_LINK (0x10) and a plain local `Flags` against
+REG_NO_LAZY_FLUSH (0x04). Both lowercase to `flags`, and the live code held 0x04
+in both — correct for the local, the actual bug for the other. So TEST keys on
+(BASE, MEMBER): the first and last identifier of the expression left of the `&`,
+which maps C `Kcb->Flags` and Rust `(*Kcb).__bindgen_anon_5.Flags()` together,
+keeps the bare local apart, and follows a chain for free
+(`KeyBody->KeyControlBlock->Flags` is ("keybody", "flags") on both sides).
+
+NO `DROPPED` FOR THE TEST FORM. A clear-mask that vanishes is a lost side
+effect. A test that vanishes is usually control flow the translation
+restructured — inverted, folded into a match arm, hoisted — and reporting those
+buries the value comparisons that matter.
 
 OCCURRENCES ARE NOT COUNTED. "The C masks it 4 times, the Rust 3" looks like the
 obvious rule and is a trap: a C block repeats a statement once per call site,
 rustfmt merges paths, and a fix's own explanatory comment quoting the C reads as
 another C occurrence. Values are compared; absence is reported; counts are not.
 
-CALIBRATION, so nobody re-derives it: the live spelling is usually
+CALIBRATION, so nobody re-derives it. CLEAR: the live spelling is usually
 `&= !(NAME as ULONG)`, so a pattern accepting only `!NAME` reports ~4x noise
-(109 raw hits vs 27). And check the sibling arch before believing a DROPPED —
+(109 raw hits vs 27); and check the sibling arch before believing a DROPPED —
 amd64's `KeFlushCurrentTb` C really is CR3-only, so only the i386 copy had a
-branch to lose.
+branch to lose. TEST: a `~` discriminates the clear form and a bare `&` does
+not, so three suppressions carry the precision, each costing real findings and
+each worth it for something that gates — quiet if the live code also NAMES the
+constant for that target, if there is more than one live literal, or if the C
+open-codes that same literal itself. They took the first sweep from 19 hits
+with 7 false to 12 with 0.
 
 Usage:
     python3 tools/scan_mask_drift.py                 # full report
@@ -69,8 +92,10 @@ Suppress a verified false positive at the source, on the live line:
 
     Flags &= !0x3F;  // nolint: mask-drift (MEM_EXECUTE_OPTION_VALID_FLAGS is 0x3F)
 
-Output is line-number-free (`<file>: <TARGET> &= ~<NAME> [KIND]`) so unrelated
-edits never churn the baseline — only a genuinely new or changed mask does.
+The `--lint` line is line-number- AND value-free, so unrelated edits never churn
+the baseline — only a genuinely new or changed flag does. The full report adds
+the two values, because a MISMATCH without them makes every reader re-derive
+both.
 """
 
 from __future__ import annotations
@@ -445,9 +470,32 @@ AMP_RE = re.compile(r"&(?![&=])")
 # Words that can abut an expression without being part of it. Without these,
 # `if x & M` walks back through the space and yields the target ("if", "x").
 EXPR_KEYWORDS = {
-    "if", "while", "return", "let", "mut", "match", "else", "as", "in", "for",
-    "unsafe", "const", "static", "self", "Self", "do", "switch", "case",
-    "break", "continue", "and", "or", "not", "sizeof", "true", "false",
+    "if",
+    "while",
+    "return",
+    "let",
+    "mut",
+    "match",
+    "else",
+    "as",
+    "in",
+    "for",
+    "unsafe",
+    "const",
+    "static",
+    "self",
+    "Self",
+    "do",
+    "switch",
+    "case",
+    "break",
+    "continue",
+    "and",
+    "or",
+    "not",
+    "sizeof",
+    "true",
+    "false",
 }
 
 
@@ -568,7 +616,7 @@ def scan_tests(text: str, live: str, comments: list[str]) -> list[tuple[str, str
             live_lits.setdefault(key, set()).add(val)
     if nolint_lines:
         # Cheap and rare: only re-walk when the file actually suppresses.
-        for key, _expr, operand in bit_tests_by_line(live, nolint_lines):
+        for key, _expr, _operand in bit_tests_by_line(live, nolint_lines):
             live_lits.pop(key, None)
 
     local = in_file_consts(text)
@@ -717,9 +765,11 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str, str, str]]
                 continue
             want = resolve(name, local)
             if want is None:
-                out.append((rel, as_written[target], "&= ~", name, "OPENCODED", _detail(lits, name, want)))
+                detail = _detail(lits, name, want)
+                out.append((rel, as_written[target], "&= ~", name, "OPENCODED", detail))
             elif not any((lit & MASK32) == (want & MASK32) for lit in lits):
-                out.append((rel, as_written[target], "&= ~", name, "MISMATCH", _detail(lits, name, want)))
+                detail = _detail(lits, name, want)
+                out.append((rel, as_written[target], "&= ~", name, "MISMATCH", detail))
     return out
 
 
