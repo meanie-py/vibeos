@@ -1399,6 +1399,40 @@ neither call looks wrong on its own, so test the pair, not the function.
   and `patpge.rs` does enable PGE. That last one had no symptom anyone was chasing.
 - **Calibrate the pattern or drown:** the live spelling is usually `&= !(NAME as UINT)`, so
   accepting only `!NAME` reports ~4x noise (109 raw hits vs 27).
+
+**Two more from CM, both found by reading the commented C beside the live Rust.** `cmapi.rs`
+guarded `NtSetValueKey` on `Flags & 0x00000004` where the C says `KEY_SYM_LINK` (**0x0010**) —
+0x0004 is `KEY_HIVE_ENTRY`, so "don't let anyone mess with symlinks" fired on hive ROOTS
+(setting any value on `\Registry\Machine\System` and friends returned `ACCESS_DENIED`) and never
+fired on a symlink. `cmparse.rs` `CmpDoOpen` tested `ExtFlags & 0x00000040` where the C says
+`CM_KCB_SYM_LINK_FOUND` (**0x08**); 0x40 is `CM_KCB_INVALID_CACHED_INFO`, so a resolved symlink
+took the reparse path instead of using `RealKcb`, and a KCB carrying `INVALID_CACHED_INFO` read
+`ValueCache.RealKcb` out of a union that at that point holds value-cache data. Note that
+`cmapi.rs` *already defined* `KEY_HIVE_ENTRY` correctly thirty lines up: having the constant
+available is no protection when the literal is typed anyway. The clear-mask scanner cannot see
+either one — both are `&` TESTS, not `&= ~` clears — which is the extension task.
+
+### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
+
+Check the CASE of the first component before anything else. The registry root object is inserted
+into the root object directory as **`\REGISTRY`**, upper case (`CmpCreateRegistryRoot`), and
+`ObpLookupObjectName` only forces case-insensitivity when the *opened type* asks for it:
+`if (ObpCaseInsensitive) if (!ObjectType || ObjectType->TypeInfo.CaseInsensitive) Attributes |=
+OBJ_CASE_INSENSITIVE;`. Directory, SymbolicLink, Device and File all set that flag. **The Key
+type does not, and must not** — `ObTypes.c:217` asserts it against WS03 and expects FALSE. So a
+key open whose caller omits `OBJ_CASE_INSENSITIVE` matches that first component *exactly*, and
+`\Registry\...` misses `\REGISTRY`. Everything past the first component is CM's own subkey
+matching, which is case-insensitive regardless — so only that one component can ever be the
+problem.
+
+This is why NT spells every registry path it builds in upper case, and ReactOS does not.
+It surfaced through a symbolic link, because a link stores its target verbatim and
+`CmpGetSymbolicLink` hands that exact string back as a `REPARSE`: `CmpLinkKeyToHive` wrote
+`\Registry\User\.Default`, so `\REGISTRY\USER\S-1-5-18` resolved the link and then failed to find
+`Registry` next to `REGISTRY`. The bug looks maddeningly selective because most kernel callers do
+pass the attribute — win32k opened `…\S-1-5-18\Control Panel\Mouse` fine all along, and only a
+caller passing bare `OBJ_KERNEL_HANDLE` saw it. Grep for `w!("\\Registry` in kernel Rust; each
+hit is a latent instance, and the ones that matter are symlink TARGETS.
 - **Check the sibling arch before calling it drift** — amd64's `KeFlushCurrentTb` C really is
   CR3-only, so only i386 had a branch to lose.
 
@@ -2523,6 +2557,18 @@ forensics (`GetPageEntry`, `IoPageRead`, every step of `MmInitializeProcessAddre
 failure reports**, plus any *rate-limited anomaly* probe (`MiGrabDataSection`'s
 `INCREATE/INDELETE` spin fires 1:1000 and only when wedged — exactly the hang diagnostic you
 want); leave unconditional hot-path tracing dropped.
+
+**The same audit applies to upstream's own `DPRINT1`, and there the shortfall is repo-wide.**
+Across `sdk/lib/rust`: **2906** `DPRINT1(` sites in the commented-C trailers vs **306** live
+`dbg_print!`/`dbg_print_ex!` — so ~90% of ReactOS's kernel diagnostics did not survive
+translation. Unlike the trace ladders these are almost entirely *failure reports*, which is the
+subset this entry says to restore. Concretely: `CmpLinkKeyToHive` (`config-rust/src/cmsysini.rs`)
+has three failure returns and upstream prints on every one; all three were dropped, so when
+`\Registry\User\S-1-5-18` failed to appear there was no signal anywhere and no way to tell a
+failed `ZwCreateKey` from a failed `ZwSetValueKey` from a link that was created correctly.
+Restoring them and then getting **silence** back is what proved the create half was fine — an
+absence is only evidence once the print exists. Same counting recipe as above, with
+`grep -c 'DPRINT1(' <file>.rs` (commented C) against the live print count.
 
 ### A `cfg(debug_assertions)` block is not code that works — it is code with no evidence either way
 

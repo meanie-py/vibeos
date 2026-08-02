@@ -104,8 +104,29 @@ consequences of how far execution reaches and how much data there is to check. O
 per-test `fail` count, plus the named assertions behind it, means anything — which is why
 the ratchet reports per-test deltas and not a total.
 
+**The corpus cross-checks itself, so run the WHOLE sweep before believing a fix.** A change
+that satisfies the test you were chasing can contradict an assertion in a different test, and
+that other test is just as much the oracle. Worked example (task #73): `\REGISTRY\USER\S-1-5-18`
+failed to open with `STATUS_OBJECT_PATH_NOT_FOUND`, the reparse target `\Registry\User\.Default`
+missed the root directory entry `\REGISTRY` on a case-sensitive compare, and the obvious fix was
+to give the Key object type `TypeInfo.CaseInsensitive = TRUE` like Directory/SymbolicLink/Device
+/File have. It worked — CmSecurity went 900/2 → 1048/1, exactly as predicted — and the same
+sweep turned `ObTypes` 765/17 → 764/18, because **`ObTypes.c:217` checks that very field against
+WS03 and expects FALSE**. Registry key opens really are case-sensitive at the object-directory
+layer; that is *why* NT spells every registry path it builds `\REGISTRY\...` in upper case, and
+the actual defect was ReactOS spelling its symlink targets `\Registry\...`. One run, one
+contradicted assertion, and a plausible wrong fix died before it could be committed. Never grade
+a fix on the test it was aimed at.
+
 - `tools/conformance-baseline/<arch>/kmtest.txt`: one line per test —
   `name pass_count fail_count skip|crash|hang` at baseline time.
+- **Re-seed with `--write-baseline --only <TEST>…`, not a bare `--write-baseline`.** The
+  bare form rewrites every row from the single sweep in front of it, so the rows we know
+  are bistable (`IoDeviceObject` on all three arches, `ExPools` on arm64) get re-rolled
+  from one sample and whichever side that boot landed on becomes the permanent floor.
+  `--only` replaces just the named rows and leaves the rest at their banked sample; it
+  refuses a name the sweep never produced, and announces a name the baseline did not
+  carry yet rather than silently growing the file.
 - `./vibeos-cli conformance --arch X`: boot → run suite → parse → `summary.json` with
   `{new_failures: [], new_passes: [], baseline_drift: ...}`. **Report-only** until the
   baseline is stable across ≥3 runs (flaky tests get quarantined into a `flaky.txt`

@@ -872,6 +872,11 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                     if status == STATUS_REPARSE_OBJECT || (*ObjectName).Buffer.read() == b'\\' as u16 {
                         if !RootHandle.is_null() {
                             ObDereferenceObject(root_directory as PVOID);
+                            // C: `RootHandle = NULL;` right here. Without it the
+                            // exit path below derefs again — and by then
+                            // root_directory is ObpRootDirectoryObject, so the
+                            // extra release lands on the global root object.
+                            RootHandle = core::ptr::null_mut();
                         }
 
                         parent_directory = core::ptr::null_mut();

@@ -620,11 +620,20 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
         &mut Disposition,
     );
     
+    // The three diagnostics below are upstream's DPRINT1s. They were dropped in
+    // translation, which left every one of these failures completely silent —
+    // the link key simply never appears and nothing says why.
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CM: CmpLinkKeyToHive: couldn't create %S, Status = 0x%lx\r\n\0",
+            LinkKeyName,
+            Status
+        );
         return 0u8;
     }
 
     if Disposition != REG_CREATED_NEW_KEY {
+        crate::dbg_print!(b"CM: CmpLinkKeyToHive: %S already exists!\r\n\0", LinkKeyName);
         ZwClose(LinkKeyHandle);
         return 0u8;
     }
@@ -642,6 +651,11 @@ pub unsafe extern "system" fn CmpLinkKeyToHive(
     ObCloseHandle(LinkKeyHandle, 0i8);
 
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CM: CmpLinkKeyToHive: couldn't create symbolic link for %S, Status = 0x%lx\r\n\0",
+            TargetKeyName,
+            Status
+        );
         return 0u8;
     }
 
@@ -1590,6 +1604,11 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
     ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObjectCallback);
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_EXCLUSIVE | OBJ_PERMANENT;
+    // Deliberately NO `CaseInsensitive = TRUE` here. Setting it looks like the fix
+    // for mixed-case registry paths and is not: ObTypes.c:217 checks this exact
+    // field against WS03 and expects FALSE, so a Key open really is case-sensitive
+    // at the object-directory layer. That is why every registry path NT builds is
+    // spelled `\REGISTRY\...` — see CmpInitializeHiveList.
 
     ObCreateObjectType(&mut Name, &mut ObjectTypeInitializer, core::ptr::null_mut(), &raw mut CmpKeyObjectType)
 }
@@ -2097,15 +2116,28 @@ pub unsafe extern "system" fn CmpInitializeHiveList() {
 
     ExFreePoolWithTag(SecurityDescriptor as PVOID, 0x53646D43);
 
+    // `\REGISTRY`, upper case, and it is not cosmetic. A symbolic-link key stores
+    // its target verbatim and CmpGetSymbolicLink hands that string straight back to
+    // ObpLookupObjectName as a REPARSE, which resolves the leading `REGISTRY`
+    // component in the ROOT OBJECT DIRECTORY — where the registry root was inserted
+    // as `\REGISTRY` (CmpCreateRegistryRoot). That compare is case-SENSITIVE unless
+    // the caller passed OBJ_CASE_INSENSITIVE, because the Key object type does not
+    // declare itself case-insensitive (ObTypes.c:217 asserts exactly that against
+    // WS03, so making the type case-insensitive is not the fix — it fails a test).
+    // Upstream spells these `\Registry\...`, so opening one of these links from a
+    // caller that omits the attribute returned STATUS_OBJECT_PATH_NOT_FOUND: it hit
+    // the symlink, reparsed to `\Registry\User\.Default`, and then failed to find
+    // `Registry` next to `REGISTRY`. Everything past the first component is CM's own
+    // lookup, which is case-insensitive regardless.
     CmpLinkKeyToHive(
-        w!("\\Registry\\Machine\\Security\\SAM").as_ptr(),
-        w!("\\Registry\\Machine\\SAM\\SAM").as_ptr(),
+        w!("\\REGISTRY\\MACHINE\\SECURITY\\SAM").as_ptr(),
+        w!("\\REGISTRY\\MACHINE\\SAM\\SAM").as_ptr(),
     );
 
     CmpNoVolatileCreates = 0u8;
     CmpLinkKeyToHive(
-        w!("\\Registry\\User\\S-1-5-18").as_ptr(),
-        w!("\\Registry\\User\\.Default").as_ptr(),
+        w!("\\REGISTRY\\USER\\S-1-5-18").as_ptr(),
+        w!("\\REGISTRY\\USER\\.DEFAULT").as_ptr(),
     );
     CmpNoVolatileCreates = 1u8;
 }
