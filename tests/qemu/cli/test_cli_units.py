@@ -5107,3 +5107,114 @@ def test_rglob_stable_reraises_when_the_tree_is_genuinely_broken(tmp_path, monke
     monkeypatch.setattr(Path, "rglob", always_fails)
     with pytest.raises(OSError):
         provenance.rglob_stable(tmp_path, "libfoo_rust.a")
+
+
+# --- scan_boot_media_drift: the two boot media must stage the same CM hives ------
+
+_CMAKE_FIXTURE = """
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/boot/bootdata/system
+               ${CMAKE_BINARY_DIR}/boot/bootdata/sam
+        COMMAND native-mkhive -h:SYSTEM,SAM -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_inf}
+        DEPENDS native-mkhive ${_inf})
+
+    add_cd_file(
+        FILE ${CMAKE_BINARY_DIR}/boot/bootdata/system
+             ${CMAKE_BINARY_DIR}/boot/bootdata/sam
+        TARGET livecd_hives
+        DESTINATION reactos/system32/config
+        FOR livecd)
+
+    add_cd_file(
+        FILE ${CMAKE_BINARY_DIR}/boot/bootdata/BCD
+        TARGET bcd_hive
+        DESTINATION efi/boot
+        FOR bootcd regtest livecd)
+"""
+
+
+def _ramdisk_fixture(copied, required):
+    return (
+        "REQUIRED_FILES=(\n"
+        + "".join(f'    "$BUILD_DIR/boot/bootdata/{h}"\n' for h in required)
+        + ")\n\n"
+        + "".join(
+            f'RMC "$BUILD_DIR/boot/bootdata/{h}"   ::/reactos/system32/config/{h}\n' for h in copied
+        )
+    )
+
+
+def _run_drift(tmp_path, copied, required):
+    repo = Path(__file__).resolve().parents[3]
+    cmake = tmp_path / "CMakeMacros.cmake"
+    cmake.write_text(_CMAKE_FIXTURE)
+    ramdisk = tmp_path / "mkramdisk.sh"
+    ramdisk.write_text(_ramdisk_fixture(copied, required))
+    return subprocess.run(
+        [
+            "python3",
+            str(repo / "tools" / "scan_boot_media_drift.py"),
+            "--cmake",
+            str(cmake),
+            "--ramdisk",
+            str(ramdisk),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_boot_media_drift_passes_when_both_media_agree(tmp_path):
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+    assert r.returncode == 0, r.stdout
+    assert "findings=0" in r.stdout
+
+
+def test_boot_media_drift_catches_a_hive_missing_from_the_ramdisk(tmp_path):
+    """The #71 bug exactly: `sam` on the livecd, absent from the ramdisk. The kernel
+    fabricates an empty volatile hive rather than failing, so nothing else can see it."""
+    r = _run_drift(tmp_path, copied=["system"], required=["system"])
+    assert r.returncode == 1
+    assert "[RAMDISK_MISSING]" in r.stdout
+    assert "'sam'" in r.stdout
+
+
+def test_boot_media_drift_catches_a_copied_but_unguarded_hive(tmp_path):
+    """Copied without a REQUIRED_FILES entry: if the build stops emitting it, the copy
+    stages nothing and we are back to a fabricated hive with no error anywhere."""
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system"])
+    assert r.returncode == 1
+    assert "[RAMDISK_UNGUARDED]" in r.stdout
+    assert "'sam'" in r.stdout
+
+
+def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
+    """BCD goes to efi/boot for the EFI boot manager — it is not a \\REGISTRY\\MACHINE
+    hive and the ramdisk is not an ESP, so demanding it would be a false positive."""
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+    assert r.returncode == 0
+    assert "BCD" not in r.stdout
+
+
+def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_set(tmp_path):
+    """A parser that silently matches nothing would pass every tree forever. If the cmake
+    layout moves, this must fail rather than go quietly vacuous."""
+    cmake = tmp_path / "CMakeMacros.cmake"
+    cmake.write_text("# the hive blocks moved somewhere else\n")
+    ramdisk = tmp_path / "mkramdisk.sh"
+    ramdisk.write_text(_ramdisk_fixture([], []))
+    repo = Path(__file__).resolve().parents[3]
+    r = subprocess.run(
+        [
+            "python3",
+            str(repo / "tools" / "scan_boot_media_drift.py"),
+            "--cmake",
+            str(cmake),
+            "--ramdisk",
+            str(ramdisk),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 1
+    assert "[NO_REFERENCE]" in r.stdout

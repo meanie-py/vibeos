@@ -2133,6 +2133,14 @@ i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besi
 drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
 result differs, diff the media before diffing the code.
 
+**Mechanised.** `tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) now
+gates the invariant statically: every hive `add_cd_file` stages into `reactos/system32/config`
+`FOR livecd` must also be copied by `mkramdisk.sh` **and** listed in its `REQUIRED_FILES`, and
+`mkhive`'s `-h:` list must match the `OUTPUT` files cmake declares for it. Run against the tree
+as it stood before the fix it names `sam` and `security` outright. Scoped to the config
+directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
+`\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule
   `artifact.mtime >= newest .rs mtime` is a proxy, and a comment-only edit trips it. **A false
@@ -4331,6 +4339,18 @@ real net regression fails *some* tests with *varied* timings; starvation errors 
 identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), and above all
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
+
+**All-15-error also comes in a FAST costume, and the 600 s number is not the tell.** 2026-08-01:
+`15 errors in 28.59s` on a host at `build(cpuheavy) 4/4`, with the plain boot stage green and the
+desktop reached (explorer + taskbar in the serial log). The discriminator that matters is
+**error-vs-fail and uniformity, not the duration** — 15 *errors* is a fixture that never came up,
+whereas a real net regression produces *failures* in a *subset*. Confirmed in one step for free:
+re-running `pytest tests/qemu/test_net.py --arch amd64-uefi-net` against **the same unmodified
+media** gave `15 passed in 63.69s`. That re-run is the cheapest control available — it needs no
+rebuild and no second lane — so reach for it before theorising, especially when your change
+touches something with a plausible story for breaking the network (this one altered registry
+security descriptors, which made "it's contention" the *less* comfortable hypothesis and therefore
+the one worth actually testing).
 
 **Partial contention wears a different costume: ONE test, and the giveaway is the wall clock.**
 `test_tdi_selftest_roundtrip` timed out on `[NETSTACK] TDI self-test: RECEIVE OK` while the other

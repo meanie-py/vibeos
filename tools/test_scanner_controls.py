@@ -892,6 +892,14 @@ UNCOVERED: dict[str, str] = {
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    # Audits a PAIR of specific named files (--cmake / --ramdisk), not a tree, so the
+    # fixture-dir driver above cannot express it. Controls are the same shape and live
+    # in tests/qemu/cli/test_cli_units.py::test_boot_media_drift_* (5 tests): positive
+    # = the real #71 bug, a hive on the livecd and absent from the ramdisk; negatives =
+    # both media agreeing, and the BCD hive staged to efi/boot which it must NOT demand.
+    # It also self-checks for the dead-matcher failure this file exists to prevent: an
+    # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
+    "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",
