@@ -1218,7 +1218,18 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         }
     }
 
-    Status = crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("\\Registry\\Machine\\System\\ControlSet%03ld"), ControlSet);
+    // `\REGISTRY`, not `\Registry`, and the reason is that this string is a symlink
+    // TARGET. It gets handed straight back to ObpLookupObjectName as a REPARSE, which
+    // matches the leading component in the ROOT OBJECT DIRECTORY against the entry
+    // CmpCreateRegistryRoot made — spelled `REGISTRY`. That compare is case-SENSITIVE
+    // unless the caller passed OBJ_CASE_INSENSITIVE, because the Key object type is not
+    // case-insensitive (ObTypes.c:217 asserts exactly that against WS03). A target is
+    // stored verbatim and replayed for whoever opens the link, so it has to be spelled
+    // for the worst caller, not the one we happen to have. Only the first component is
+    // matched this way; everything after it is CM's own subkey matching, which is
+    // case-insensitive regardless — the rest is upper-cased purely to match the other
+    // registry paths NT builds.
+    Status = crate::rtl_string_cb_printf_w!(UnicodeBuffer.as_mut_ptr(), core::mem::size_of_val(&UnicodeBuffer), crate::wstr!("\\REGISTRY\\MACHINE\\SYSTEM\\CONTROLSET%03ld"), ControlSet);
     if !NT_SUCCESS(Status) {
         'Cleanup: loop {
             if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1348,7 +1359,9 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         crate::rtl_string_cb_printf_w!(
             UnicodeBuffer.as_mut_ptr(),
             core::mem::size_of_val(&UnicodeBuffer),
-            crate::wstr!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles\\%04ld"),
+            // A symlink target again — see the CONTROLSET%03ld comment above for why the
+            // leading component must be `\REGISTRY`.
+            crate::wstr!("\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\HARDWARE PROFILES\\%04ld"),
             HwProfile,
         );
         RtlInitUnicodeString(&mut KeyName, UnicodeBuffer.as_ptr());

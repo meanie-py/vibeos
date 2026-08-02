@@ -38,7 +38,9 @@ list(APPEND SOURCE
     # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in
     # rust_folder_options_stub.cpp below.
     rust_folder_options_stub.cpp
-    dialogs/item_prop.cpp
+    # dialogs/item_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/item_prop.rs); cohab
+    # via libshell32_rust.a. Its ShellPropSheetDialog "class" is a namespace of statics, so the
+    # four of them are plain free functions on the Rust side.
     # dialogs/general.cpp — replaced by Rust (shell32-rust/src/dialogs/general.rs); cohab via libshell32_rust.a
     # dialogs/recycler_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/recycler_prop.rs); cohab via libshell32_rust.a
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a

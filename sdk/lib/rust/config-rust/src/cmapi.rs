@@ -210,7 +210,11 @@ pub unsafe extern "system" fn CmpDoFlushAll(ForceFlush: u8) -> u8 {
     NextEntry = CmpHiveListHead.Flink;
     while NextEntry != core::ptr::addr_of_mut!(CmpHiveListHead) {
         Hive = (NextEntry as *mut u8).offset(-(core::mem::offset_of!(CMHIVE, HiveList) as isize)) as PCMHIVE;
-        if ((*Hive).Hive.HiveFlags & 0x00000001) == 0 {
+        // C: `!(Hive->Hive.HiveFlags & HIVE_NOLAZYFLUSH)`, which is 0x2. The
+        // literal here was 0x1 — HIVE_VOLATILE — so the lazy flusher skipped
+        // every VOLATILE hive (which has nothing to flush anyway) and happily
+        // flushed the hives that asked it not to.
+        if ((*Hive).Hive.HiveFlags & crate::hiveflags::HIVE_NOLAZYFLUSH) == 0 {
             CmpLockHiveFlusherExclusive(Hive);
 
             if ForceFlush != 0 && (*Hive).UseCount != 0 {

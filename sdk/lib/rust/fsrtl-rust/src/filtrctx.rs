@@ -11,6 +11,14 @@ use ntkrnl_sys::ex::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::mm::NonPagedPool;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// Both were written as bare literals that name other flags: Flags2's
+// filter-context opt-in was 0x40 (real value 0x02) and the file object's
+// extension bit was 0x20, i.e. FO_SEQUENTIAL_ONLY. A caller that DID support
+// filter contexts was refused, and one that did not could get through.
+// u8, not u32: FSRTL_ADVANCED_FCB_HEADER.Flags2 is a UCHAR.
+const FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS: u8 = 0x02;
+const FO_FILE_OBJECT_HAS_EXTENSION: u32 = 0x00800000;
+
 type FAST_MUTEX = _FAST_MUTEX;
 type LIST_ENTRY = _LIST_ENTRY;
 
@@ -166,7 +174,11 @@ pub unsafe extern "system" fn FsRtlInsertPerFileObjectContext(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if ((*FileObject).Flags & 0x00000020) == 0 {
+    // C: `!(FileObject->Flags & FO_FILE_OBJECT_HAS_EXTENSION)`, 0x00800000.
+    // The literal was 0x20 — FO_SEQUENTIAL_ONLY — so this asked "was the file
+    // opened for sequential access?" instead of "does it have the extension
+    // whose fields the rest of this function then dereferences?".
+    if ((*FileObject).Flags & FO_FILE_OBJECT_HAS_EXTENSION) == 0 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -210,7 +222,7 @@ pub unsafe extern "system" fn FsRtlInsertPerStreamContext(
     AdvFcbHeader: PFSRTL_ADVANCED_FCB_HEADER,
     PerStreamContext: PFSRTL_PER_STREAM_CONTEXT,
 ) -> NTSTATUS {
-    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & 0x00000040) == 0 {
+    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS) == 0 {
         return STATUS_INVALID_DEVICE_REQUEST;
     }
 
@@ -292,7 +304,7 @@ pub unsafe extern "system" fn FsRtlRemovePerStreamContext(
     let mut tmp_per_stream_context: PFSRTL_PER_STREAM_CONTEXT;
     let mut per_stream_context: PFSRTL_PER_STREAM_CONTEXT = core::ptr::null_mut();
 
-    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & 0x00000040) == 0 {
+    if AdvFcbHeader.is_null() || ((*AdvFcbHeader).Flags2 & FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS) == 0 {
         return core::ptr::null_mut();
     }
 

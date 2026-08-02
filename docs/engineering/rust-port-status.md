@@ -147,6 +147,54 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 18c part 3 (2026-08-02) — file.c is GRADED END TO END. 104 rows, 22,180 cases, 0
+DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **116 → 146 of 146**. The last
+thirty were left for last because each of the three families needed substrate that did not
+exist, and both pieces of it are reusable.
+
+**The eleven std-stream aliases needed each side to OWN its standard streams.** `putchar`
+is `fputc(c, stdout)` and takes no FILE, so the only way to compare is for `stdout` to be a
+different file on each side. It half was already — `stdout` is `&MSVCRT__iob[1]`, and the
+`_iob` rename wall gives each side its own array — but the fd underneath was NOT:
+`msvcrt_init_io` binds CRT fd 1 from `GetStdHandle`, which the substrate answered with host
+fd 1. Both sides were writing into the harness's own stdout, interleaved with each other
+and with `println!`. `ref_set_std_fds` (fileimpl.c) points the three standard handles at
+caller-supplied host fds, called once per side immediately before that side's init — the
+only reader of `GetStdHandle`. **Not `freopen`**, which reaches the same place by CLOSING
+host fd 1; the next `open` would then hand fd 1 to a temp file and silently swallow every
+`println!` the harness makes.
+
+**The sixteen `v*printf` shells needed a THIRD instantiation of file.c.** They are not
+callable in the `ref_*` one and never were: every one forwards `&valist` to the engine as a
+`va_list*`, coherent only where a `va_list` IS a plain pointer, so under the host's SysV
+register-save-area model `*valist` reinterprets the decayed pointer variable as the tag
+struct and reads wild memory. That is the same diagnosis `pfflat_` was built for on wcs.c,
+and the fix is the same shape: `fileflat_*` is file.c compiled again under refstub_printf's
+flat `char*` `<stdarg.h>`, which is the Windows x64 / aarch64 / i386 model — both the
+callable instantiation and the target-faithful one. build.rs's file prelude is now a
+closure over the prefix, and the stage-5 protos header is re-emitted with its thirteen
+`__asm__` labels retargeted (an asm label is a string baked into the header, so the second
+instantiation cannot share it). The `%I64d` and `1.000000e+010` cases in the corpus are the
+oracle-honesty canary: glibc prints `I64d` literally and a two-digit exponent.
+
+Two properties of the flat TU are by construction rather than oversight, and the rows are
+built around them: its four variadic openers (`_open`, `_wopen`, `_sopen`, `_wsopen`) are
+broken, because the flat `va_start` yields NULL — so the rows reach its stream layer
+through `_sopen_s` + `_fdopen`, neither of which is variadic. And `add_std_buffer` is
+unreachable on any redirected stream (it requires `_isatty`), which is the same answer a
+Windows CI job with redirected output gets.
+
+`_lock_file`/`_unlock_file` have two arms and neither is visible in a return value — both
+are `void`. The critical-section arm leaves `RecursionCount` in the FILE's own memory; the
+global-lock arm leaves nothing, so fileimpl.c's `_lock`/`_unlock` now record the slot
+number they were handed (`ref_get_last_lock`, same read-it-immediately discipline as
+`ref_get_last_share_mode`). The number is `_STREAM_LOCKS + index`, so it catches a wrong
+index as well as a wrong arm. Reaching `RecursionCount` went in as `(f as *const
+u8).add(48 + 12)` and **`scan_magic_offsets` rejected it, correctly** — a hand-computed
+struct offset is the same claim whether it is in shipping code or in the harness that
+grades it. It is a `#[repr(C)]` `FileCrit { file: Iobuf, crit: Crit }` now, with the sizes
+`const _: () = assert!(…)`ed to match msvcrt_crt_layout.h's `_Static_assert`s.
+
 **Wave 18c part 2 (2026-08-02) — the temp-name family, and THREE more shipping bugs. 93
 rows, 19,960 cases, 0 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **104 → 116 of
 146**. The twelve exports split on whether their names are comparable at all, and the split
@@ -650,8 +698,8 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `.cpp` files (60,258 physical lines), including retained companions/bridges, private dynamic
   objects, shared shellmenu/shelldesktop objects, procedural helpers, and the remaining
   monoliths — `CDefView.cpp`, `dialogs.cpp`, `filetypes.cpp`, `utils.cpp`, `shell32.cpp`.
-  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01 and `dialogs/drive.cpp` on
-  2026-08-02; the tail is now 45 `.cpp` / 40,798 lines, tracked by
+  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01, and `dialogs/drive.cpp`,
+  `dialogs/folder_options.cpp` and `dialogs/item_prop.cpp` on 2026-08-02; the tail is tracked by
   `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
   ledger are in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
@@ -737,6 +785,21 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `SHCreateThread` thread proc lost its `CALLBACK`/stdcall. Regenerating the island also
   normalized 236 fn-pointer slots to `extern "system"`, which let four `#[cfg]`-duplicated
   stdcall/C callback twins in `iconcache`/`shlexec`/`shlfileop` collapse to one body each.
+  `dialogs/item_prop.cpp` is flipped (2026-08-02) — the filesystem property-sheet entry points,
+  and the first **split-path** TU: nine free functions bought through `--free-functions`, and
+  four hand-written. Its `ShellPropSheetDialog` is a C++ `struct` used as a NAMESPACE (only
+  statics, no vtable, no `BEGIN_COM_MAP`, no `OBJECT_ENTRY`), so `--cpp-com` refuses it on the
+  deterministic preflight while `--free-functions` skips its methods as "class methods" — a
+  shape neither mode owns, and one that `--free-functions` drops SILENTLY. `--local-raii` does
+  reach the free-function path, which is what kept `CDataObjectHIDA`'s drop semantics out of the
+  model's hands. The flip also retired the last `SHELL_ShowItemIDListProperties_RustBridge`
+  trampoline: that shim existed only to escape C++ mangling, so `EXTERN_C` on the four
+  `precomp.h` declarations replaced it with a direct call.
+  Alongside it, `CRegKeyHandleArray` moved to a single definition in `shell32-rust/src/shfldr.rs`.
+  It had been re-derived independently in `cfs_folder.rs` and `desktop_folder.rs` and BOTH copies
+  had lost the destructor (the HKEY leak fixed on 2026-08-02); `item_prop` would have been the
+  third. The rule that fell out: a re-declared `extern` fn is cheap to repeat and this crate does
+  it 530 times, but a `Drop` gets exactly one home — a missing one is a leak no build can see.
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

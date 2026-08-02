@@ -38,6 +38,9 @@ const STATUS_RETRY: i32 = 0xC000022Du32 as i32;
 const STATUS_OBJECT_NAME_NOT_FOUND_MOD: i32 = 0xC0000034u32 as i32;
 const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: usize = 32;
 const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
+// Module scope, not function scope: CmpDoOpen tests this too, and a copy
+// buried in one function is how the other call site ended up open-coded.
+const REG_OPTION_CREATE_LINK: u32 = 0x00000002;
 
 extern "C" {
     pub static CmpKeyObjectType: POBJECT_TYPE;
@@ -507,7 +510,6 @@ pub unsafe extern "system" fn CmpDoCreate(
 
     const Volatile: u32 = 1;
     const REG_OPTION_VOLATILE: u32 = 0x00000001;
-    const REG_OPTION_CREATE_LINK: u32 = 0x00000002;
     const CM_KCB_READ_ONLY_KEY: u32 = 0x0080;
     const KEY_SYM_LINK: u16 = 0x0010;
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
@@ -687,7 +689,12 @@ unsafe fn CmpDoOpen(
             return 0xC0000022u32 as i32;
         }
 
-        if ((*Context).CreateOptions & 0x00000020) != 0 {
+        // C: `Context->CreateOptions & REG_OPTION_CREATE_LINK`, which is 0x2.
+        // The literal was 0x20, which is not any REG_OPTION_* bit at all, so
+        // this guard could never fire: creating a symlink over a key that
+        // already exists returned success and opened the existing key instead
+        // of STATUS_OBJECT_NAME_COLLISION.
+        if ((*Context).CreateOptions & REG_OPTION_CREATE_LINK) != 0 {
             return 0xC0000035u32 as i32;
         }
 

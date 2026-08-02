@@ -1409,8 +1409,46 @@ fired on a symlink. `cmparse.rs` `CmpDoOpen` tested `ExtFlags & 0x00000040` wher
 took the reparse path instead of using `RealKcb`, and a KCB carrying `INVALID_CACHED_INFO` read
 `ValueCache.RealKcb` out of a union that at that point holds value-cache data. Note that
 `cmapi.rs` *already defined* `KEY_HIVE_ENTRY` correctly thirty lines up: having the constant
-available is no protection when the literal is typed anyway. The clear-mask scanner cannot see
-either one — both are `&` TESTS, not `&= ~` clears — which is the extension task.
+available is no protection when the literal is typed anyway.
+
+**The `&` TEST form is the bigger half of this class, and the scanner now reads it.** Extending
+`scan_mask_drift` from `&= ~NAME` clears to plain `X & NAME` tests found **twelve** more on its
+first sweep, in six subsystems, none of which any other lint can see. Worst of them: `ARM3`'s
+session-creation interlock tested *and `InterlockedCompareExchange`-SET* `0x200`
+(`PSF_WOW64_VA_SPACE_4GB_BIT`) where the C says `PSF_SESSION_CREATION_UNDERWAY_BIT` (**0x4000**),
+so it silently stamped a WOW64 address-space flag onto every process that creates a session —
+**a wrong literal that is written, not just read, corrupts state rather than mis-branching, and
+the test and the set agreeing with each other is exactly why nothing downstream complained.**
+Also `cmhvlist.rs` reading `KEY_COMP_NAME` as `0x0001` at four sites (that bit picks byte-per-char
+vs UTF-16, so every hive-list path was decoded wrongly in both directions), `ob`'s
+traverse-privilege fast path consulting `TOKEN_IS_RESTRICTED`, and kernel32's
+`UnhandledExceptionFilter` testing `0x80000001` — a value that is not any `SEM_*` flag — for
+*both* error-mode checks.
+
+Three things the extension needed, all worth stealing for the next scanner of this shape:
+
+- **Pair on (BASE, MEMBER), not on the member alone.** `cmapi.rs` tests `Kcb->Flags` against
+  `KEY_SYM_LINK` (0x10) and a plain local `Flags` against `REG_NO_LAZY_FLUSH` (0x04); both
+  lowercase to `flags`, and the live code held `0x04` in both — correct for the local, the bug
+  for the other. First-and-last identifier of the expression left of the `&` maps C `Kcb->Flags`
+  and Rust `(*Kcb).__bindgen_anon_5.Flags()` together without modelling member access.
+- **A test that VANISHED is not a finding.** Clears report `DROPPED` usefully; a missing test is
+  usually restructured control flow and buries the value comparisons in noise.
+- **Report only what the file cannot explain another way.** Quiet if the live code also *names*
+  the constant for that target, if there is more than one live literal, or if the C open-codes
+  that same literal itself — i8042prt masks `RawButtons & 0xfc00` in its own C, with only a
+  `DPRINT` beside it naming `MOUSE_LEFT_BUTTON_DOWN`. Those three rules took the sweep from 19
+  hits with 7 false to 12 with 0.
+
+**A `try/except` around a catalog load will hide the whole point of the tool.** `scan_mask_drift`
+called `build_c_catalog()` with no argument inside `except Exception: _CATALOG = {}`;
+`reactos_root` is required, so *every run since it was written* raised `TypeError`, swallowed it,
+and compared against an EMPTY catalog — silently downgrading every header-defined constant from a
+provable comparison to an `OPENCODED` shrug. It was invisible because the tool still printed
+findings and still exited non-zero. A verifier that cannot resolve its oracle must **fail**, not
+proceed. And `verify_constants`' curated ~25 headers are too narrow for a general flag check:
+`cmdata.h` and `ntoskrnl/include/internal/cm.h` own the registry's own flag families, so a
+repo-wide `#define` index (dropping any name with two *different* values) backs it now.
 
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
@@ -1803,6 +1841,35 @@ The two fixes compose, and the order matters: expanding is what lets `--seal-fac
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
+### A C++ `struct` used as a NAMESPACE falls between both C++ modes, and one skips it silently
+**Symptom.** `rustconv translate --free-functions <tu>.cpp` reports its plan cheerfully and buys
+every free function, having printed one line you will scroll past:
+
+    [free-functions] skipping 4 class method(s) — these need --cpp-com --class: X_A, X_B, X_C, X_D
+
+The assembled module then calls `X().B(...)` — C++ syntax, no such Rust — so it does not compile,
+which is the lucky outcome. The unlucky one is a TU where the skipped methods happen not to be
+referenced from the free functions.
+
+**Cause.** shell32's `item_prop.cpp` declares `struct ShellPropSheetDialog` whose members are all
+`static`: it is a NAMESPACE, not a class. No vtable, no state, no `BEGIN_COM_MAP`, no
+`OBJECT_ENTRY`. `--cpp-com` refuses it correctly on the deterministic preflight —
+
+    no BEGIN_COM_MAP entries found / aggregation policy is unsupported / no OBJECT_ENTRY activation
+
+— and `--free-functions` classifies the same members as "class methods" and drops them. Neither
+mode owns the shape, and only one of the two says so loudly. The word `struct` in the source is
+what misleads: it does **not** imply the COM path.
+
+**Fix.** Buy the free functions, hand-write the statics as free functions, and name them the way
+rustconv's skip line already named them (`Struct_Method`) so the two halves line up. Do the same
+audit before scoping any C++ TU: `grep -c 'BEGIN_COM_MAP'` is the real discriminator, not `struct`.
+
+**`--local-raii` DOES reach `--free-functions`**, despite its `--help` saying "shell32 COM mode".
+Confirm with `--dry-run --prompt --fn <name>`: the lowering appears in the prompt followed by a
+mandatory usage mapping. That is what keeps a file-local RAII guard's drop semantics out of the
+model's hands — worth checking, because the guards are exactly what a C++ translation loses.
+
 ### Bodies that are present but hollow
 - **Stubbed/degraded bodies** — constant-return or pass-through. **A variadic function degraded
   to a non-formatting stub.** **`RTL_CONSTANT_STRING` global UNICODE_STRINGs stubbed to
@@ -2065,6 +2132,26 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
   `shell32-rust/src/shellutils.rs` is the worked example, including the `prelude` re-export that
   shadows the island's `u8` alias so the name still resolves to the real thing.
+
+  **A ported guard gets exactly ONE definition — unlike an `extern` declaration.** Re-declaring
+  an `extern` fn per module is normal FFI practice and shell32-rust does it 530 times over; a
+  re-derived RAII guard is not the same thing, because the failure mode is a leak no compiler,
+  linter or smoke test can see. Measured: `CRegKeyHandleArray` (shfldr.h) was re-derived
+  independently in `cfs_folder.rs` and `desktop_folder.rs` and **both copies had lost the
+  destructor** — the same defect twice, leaking up to 16 HKEYs per right-click, and the tell was
+  that two translations of two different TUs made the identical omission. A third TU wanting it
+  is the moment to consolidate, not to copy again. It now lives in `shell32-rust/src/shfldr.rs`.
+  Watch the TYPE WORLD when you consolidate: a crate with both a hand-written substrate and a
+  bindgen island has two `HKEY`s of the same width and different identity, so the shared module
+  must name which one it is in, and a consumer in the other world needs an explicit `use` (which
+  shadows a glob) rather than a silent coercion.
+
+  **Two different conversion operators can fire on ONE object in ONE call.** C++'s
+  `InitFunc(InitString, pDO, keys, keys)` passes `HKEY*` then `UINT*` from the same
+  `CRegKeyHandleArray`, and `SHOpenPropSheetW(.., keys, keys, ..)` passes `HKEY*` then `UINT`.
+  Translated, the repeated argument reads as a copy-paste and invites writing one expression
+  twice; it must become `keys.hKeys.as_mut_ptr()` and `&mut keys.cKeys`. Grep any flipped C++
+  for a call passing the same identifier twice adjacently and check the C++ signature.
 
 ### Element count vs byte count — the recurring arithmetic bug
 - **`write_bytes(ptr, v, size_of::<T>())`**: the count is in **ELEMENTS**, so a typed pointer
@@ -2842,6 +2929,22 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   both sides, so read it immediately after each side's call, never once at the end. Same
   family as the `_wctomb_s_l` stub above, reached from the opposite direction: not an error
   that never happens, an argument that never matters.
+- **A PROCESS-GLOBAL resource the substrate hands to both sides is shared substrate too —
+  and the CRT is not where you redirect it.** msvcrt's `putchar`/`puts`/`getchar`/`gets`
+  and eight kin take no FILE: they name `stdout` and `stdin`. Half the separation was
+  already there (`stdout` is `&MSVCRT__iob[1]`, and the `_iob` rename wall gives each side
+  its own array), which is exactly why it looked done — but `msvcrt_init_io` binds CRT fd 1
+  from `GetStdHandle`, and the substrate answered with the harness's OWN fd 1. Both sides
+  wrote to the same place, interleaved with each other and with the test's `println!`, and
+  nothing could read either back. Eleven exports were ungradeable and read as trivially
+  gradeable. **Give each side its own, and bind it BELOW the CRT**: a knob that points the
+  three standard handles at caller-supplied host fds, called once per side immediately
+  before that side's init, which is the only reader of `GetStdHandle`. The obvious
+  alternative is the trap — `freopen(path, "w", stdout)` reaches the same state by CLOSING
+  host fd 1, and the next `open` in the process hands fd 1 to a temp file, so the harness's
+  own diagnostics vanish into it silently. Generalises past stdio: any singleton the
+  environment supplies (a lock table, a TLS slot, a process-wide mode) is one definition
+  serving both sides until you make it two.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -2886,6 +2989,29 @@ prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, bec
 `ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
 dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
 `".%d"` is a format both agree on exactly.
+
+**The flat instantiation is a RECIPE, not a wcs.c special case — reach for it whenever the
+`&valist` idiom appears.** `file.c` needed the identical treatment for its sixteen
+`v*printf` shells, and the second one cost far less than the first because the shape was
+already known: make the TU's prelude a closure over the PREFIX rather than a string written
+once, point the engine's six symbols (`pf_printf_a/w`, `create_positional_ctx_a/w`,
+`arg_clbk_valist/positional`) at the flat instantiation and re-declare them after the
+redefine (`-Werror=implicit-function-declaration` catches you otherwise, which is the
+tripwire doing its job), and **re-emit the stage-5 protos header with its `__asm__` labels
+retargeted** — an asm label is a string baked into the generated header, so a name the
+`#define` wall cannot rename would otherwise be emitted under the FIRST instantiation's
+prefix and collide. Two properties of the resulting TU are load-bearing and worth stating
+where the rows can see them: its variadic entry points are broken by construction (the flat
+`va_start` yields NULL, so `_open`'s `_O_CREAT` arm reads a pmode through it), so drive it
+through non-variadic equivalents — `_sopen_s` + `_fdopen` where you would have used `fopen`.
+
+**Do not read the "cannot be graded" verdict above more broadly than it is.** It is about
+the `...` entry points, which need a real `va_start`. The `v*`-prefixed ones TAKE a
+`va_list` and are perfectly gradeable in the flat instantiation, off a hand-packed 8-byte
+slot buffer both sides read identically — the subject's `va_list` is `*mut u8` on every
+target. The distinction is exactly whether the harness has to CREATE the argument area or
+merely pass one, and it is the difference between 30 exports graded and 30 exports argued
+about.
 
 **And the end of that road: some code CANNOT be graded on the host at all — say so instead of
 building a harness that appears to.** Both instantiations above are unusable for msvcrt's
