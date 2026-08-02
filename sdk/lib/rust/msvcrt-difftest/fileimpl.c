@@ -1140,6 +1140,18 @@ wchar_t *msvcrt_wstrdupa(const char *str)
 const int ref_msvcrt_ENOENT = ENOENT;
 const int ref_msvcrt_EBADF = EBADF;
 
+/* ── the reference's doserrno window ─────────────────────────────────────
+ * The twin of refimpl.c's ref_errno_get/ref_errno_set, and it did not exist before
+ * errno.c became a reference TU: the slot was a file-static here, so nothing outside
+ * this file could read it and `msvcrt_set_errno`'s doserrno half was ungradeable even
+ * in principle.  It reads through the accessor rather than a stored pointer so it lands
+ * on whatever __doserrno() returns — which is now msvcrt's own
+ * `&msvcrt_get_thread_data()->thread_doserrno`.  subj_doserrno_get/set are the
+ * subject-side pair (subjectimpl.c); the two together are what lets a row assert that
+ * both sides mapped one ERROR_* code to the same errno AND kept the same doserrno. */
+unsigned int ref_doserrno_get(void)           { return *__doserrno(); }
+void         ref_doserrno_set(unsigned int v) { *__doserrno() = v; }
+
 
 
 /* ── the three Win32 entry points errno.c needs ──────────────────────────

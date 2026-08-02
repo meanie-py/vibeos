@@ -1623,6 +1623,20 @@ fn main() {
          * reads), so leaving the mapping in place here is a duplicate symbol. Give\n\
          * errno.c's body its own ref_ name; refimpl.c's wrapper counts, then calls it. */\n\
          #undef _invalid_parameter\n#define _invalid_parameter ref__invalid_parameter\n\n\
+         /* …and the rename must NOT capture errno.c's own CALLS, only its definition.\n\
+          * MSVCRT_INVALID_PMT is verbatim msvcrt (refstub/msvcrt.h:505, itself a copy of\n\
+          * dll/win32/msvcrt/msvcrt.h:376) and spells `_invalid_parameter`, so the #define\n\
+          * above redirected every MSVCRT_CHECK_PMT inside errno.c straight to its own body\n\
+          * and around refimpl.c's counter. The handler then fired without being counted:\n\
+          * `_wcserror_s(nc=0)` reported pmt=0 on the reference and pmt=1 on the subject,\n\
+          * and the SUBJECT was right. Naming the wrapper explicitly here restores the\n\
+          * composition — macro -> counter -> errno.c's real body — and leaves the bare\n\
+          * token free to rename the definition alone. */\n\
+         void __cdecl msvcrt_ref__invalid_parameter(const wchar_t *, const wchar_t *,\n\
+                                                    const wchar_t *, unsigned int, uintptr_t);\n\
+         #undef MSVCRT_INVALID_PMT\n\
+         #define MSVCRT_INVALID_PMT(x,err) (*_errno() = (err), \\\n\
+             msvcrt_ref__invalid_parameter(NULL, NULL, NULL, 0, 0))\n\n\
          /* ═══ stage 7: the DERIVED Win32/CRT constants. ══════════════════════════\n\
           * errno.c's mapper dispatches on 42 ERROR_* codes and clamps against the errno\n\
           * range. file.c reaches these through msvcrt_file_prelude.h, which also drags in\n\
@@ -1657,6 +1671,14 @@ fn main() {
             .include(&out)
             .define("__REACTOS__", None)
             .define("_MSVCR_VER", "0")
+            // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. refstub/msvcrt.h
+            // remaps the wchar_t TYPE with a #define, which cannot reach a wide literal —
+            // so without this the host emits 4-byte elements and the TU reads them as
+            // 2-byte. `L": "` becomes 3A 00 | 00 00, i.e. ":" then a NUL, and __wcserror
+            // silently produced "x:msg" where msvcrt produces "x: msg". Caught by the
+            // first graded row that ever reached one of these literals; string.c, wcs.c,
+            // locale.c and file.c carry 23 more between them.
+            .flag("-fshort-wchar")
             .warnings(false)
         // NOTE: NO `-w` here, on purpose.  `-w` silently defeats the two
         // -Werror= flags below (verified: gcc drops the diagnostic entirely).
@@ -1956,6 +1978,14 @@ fn main() {
         .include(&out)
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. refstub/msvcrt.h
+        // remaps the wchar_t TYPE with a #define, which cannot reach a wide literal —
+        // so without this the host emits 4-byte elements and the TU reads them as
+        // 2-byte. `L": "` becomes 3A 00 | 00 00, i.e. ":" then a NUL, and __wcserror
+        // silently produced "x:msg" where msvcrt produces "x: msg". Caught by the
+        // first graded row that ever reached one of these literals; string.c, wcs.c,
+        // locale.c and file.c carry 23 more between them.
+        .flag("-fshort-wchar")
         .warnings(false)
         // Same tripwires + genuineness flags as ref_tu, same reasons.
         .flag("-Werror=implicit-function-declaration")
@@ -1982,6 +2012,14 @@ fn main() {
         .include(&out) // windef.h / winbase.h / winternl.h / conio.h / the preludes
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. refstub/msvcrt.h
+        // remaps the wchar_t TYPE with a #define, which cannot reach a wide literal —
+        // so without this the host emits 4-byte elements and the TU reads them as
+        // 2-byte. `L": "` becomes 3A 00 | 00 00, i.e. ":" then a NUL, and __wcserror
+        // silently produced "x:msg" where msvcrt produces "x: msg". Caught by the
+        // first graded row that ever reached one of these literals; string.c, wcs.c,
+        // locale.c and file.c carry 23 more between them.
+        .flag("-fshort-wchar")
         .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
@@ -2005,6 +2043,14 @@ fn main() {
         .include(&out)
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. refstub/msvcrt.h
+        // remaps the wchar_t TYPE with a #define, which cannot reach a wide literal —
+        // so without this the host emits 4-byte elements and the TU reads them as
+        // 2-byte. `L": "` becomes 3A 00 | 00 00, i.e. ":" then a NUL, and __wcserror
+        // silently produced "x:msg" where msvcrt produces "x: msg". Caught by the
+        // first graded row that ever reached one of these literals; string.c, wcs.c,
+        // locale.c and file.c carry 23 more between them.
+        .flag("-fshort-wchar")
         .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
@@ -2027,6 +2073,14 @@ fn main() {
         .include(&out)
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. refstub/msvcrt.h
+        // remaps the wchar_t TYPE with a #define, which cannot reach a wide literal —
+        // so without this the host emits 4-byte elements and the TU reads them as
+        // 2-byte. `L": "` becomes 3A 00 | 00 00, i.e. ":" then a NUL, and __wcserror
+        // silently produced "x:msg" where msvcrt produces "x: msg". Caught by the
+        // first graded row that ever reached one of these literals; string.c, wcs.c,
+        // locale.c and file.c carry 23 more between them.
+        .flag("-fshort-wchar")
         .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
