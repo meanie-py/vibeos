@@ -1548,8 +1548,15 @@ results files. The single varying row is `IoDeviceObject` (below).
 
 ### The arm64 UP baseline was four days stale and under-ratcheting badly
 
-Re-seeded off that run. Nine rows moved, eight of them **up**, and the floor absorbed roughly
-**461 failures** that the ratchet had been treating as normal:
+Re-seeded off that run. Nine rows moved, eight of them **up**. Split the movement before
+reading it (field manual, "A conformance score is not a defect count"): eight rows kept an
+unchanged `pass+fail` total — pure fail→pass redistribution — and **`CmSecurity` alone gained
+coverage, 389 → 910 assertions**, because it had been bailing early. Its failures fell 89 → 4
+across that same +521 of newly-reached ground, which is luck as much as merit: a test that gets
+further can just as easily surface new failures, and would then read as a regression while
+being an improvement. Note also that zero is not the target — many of these only pass cleanly
+on real Windows and stock ReactOS fails them too, so the counts below are a change detector
+against our own history, not a distance from correct:
 
 | test | was (2026-07-26) | now | note |
 |---|---|---|---|
