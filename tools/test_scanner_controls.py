@@ -730,7 +730,141 @@ pub unsafe fn MiAlignDown(Address: usize) -> usize {
 //     Address &= ~0xFFF;
 """
 
+# scan_dropped_prints. Seeded from CmpLinkKeyToHive (task #76, 2026-08-02): three
+# failure returns, upstream prints on each, all three dropped — so when
+# \\REGISTRY\\USER\\S-1-5-18 did not appear there was no signal anywhere, and the
+# #73 hunt spent two build+boot cycles establishing what one grep would have
+# given free. The BAD fixture also carries the NOOP shape from the same sweep
+# (cmlib's `unsafe fn DPRINT1(_fmt) {}`), which is worse than a missing print
+# because it reads as covered.
+#
+# The GOOD case pins every false positive that cost this scanner precision, each
+# found by shipping it wrong first:
+#   * the wrapper/_impl split — 1490 functions tree-wide keep the prints in the
+#     body, so exact-name pairing calls every wrapper silent (143 false hits);
+#   * `rtl_string_cb_printf_w!` formats into a BUFFER and matched a "contains
+#     print" heuristic, hiding three real drops in CmpCreateControlSet;
+#   * DPRINT/TRACE/WARN are compiled out or off by default upstream, so dropping
+#     them loses nothing and flagging them would triple the harvest with nothing
+#     behind it;
+#   * a bare `FIXME(...)`/`ERR(...)` call IS the wine debug channel, not a stub;
+#   * a C function with no live Rust counterpart is untranslated, not silent.
+_DROPPEDPRINT_BAD = """\
+unsafe fn DPRINT1(_format: *const i8) {}
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) { return 0u8; }
+    if Disposition != REG_CREATED_NEW_KEY { return 0u8; }
+    1u8
+}
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+"""
+_DROPPEDPRINT_GOOD = """\
+unsafe extern "C" { fn FIXME(fmt: *const i8, ...); }
+
+pub unsafe fn CmpLinkKeyToHive(LinkKeyName: PCWSTR) -> u8 {
+    if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"couldn't create %S, Status = 0x%lx\\n\\0", LinkKeyName, Status);
+        return 0u8;
+    }
+    if Disposition != REG_CREATED_NEW_KEY {
+        crate::dbg_print!(b"%S already exists!\\n\\0", LinkKeyName);
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe extern "C" fn GdiSelectVisRgn(a: u32) { GdiSelectVisRgnImpl(a) }
+unsafe fn GdiSelectVisRgnImpl(a: u32) {
+    if a == 0 { crate::dbg_print!(b"no region\\n\\0"); }
+}
+
+pub unsafe fn CmpCreateControlSet(a: u32) -> u8 {
+    if a == 0 {
+        crate::dbg_print!(b"Failed to create ControlSet001\\n\\0");
+        crate::rtl_string_cb_printf_w!(buf, 8, w!("CONTROLSET%03ld"));
+        return 0u8;
+    }
+    1u8
+}
+
+pub unsafe fn RegisterCMMA(id: u32) -> i32 {
+    FIXME(b"stub\\0".as_ptr() as *const i8);
+    0
+}
+
+pub unsafe fn CmpQuiet(a: u32) -> u8 { if a == 0 { return 0u8; } 1u8 }
+
+// BOOLEAN
+// CmpLinkKeyToHive(PCWSTR LinkKeyName)
+// {
+//     if (!NT_SUCCESS(Status))
+//     {
+//         DPRINT1("couldn't create %S, Status = 0x%lx\\n", LinkKeyName, Status);
+//         return FALSE;
+//     }
+//     if (Disposition != REG_CREATED_NEW_KEY)
+//     {
+//         DPRINT1("%S already exists!\\n", LinkKeyName);
+//         return FALSE;
+//     }
+//     return TRUE;
+// }
+//
+// VOID GdiSelectVisRgn(ULONG a)
+// {
+//     if (!a) { DPRINT1("no region\\n"); }
+// }
+//
+// BOOLEAN CmpCreateControlSet(ULONG a)
+// {
+//     if (!a) { DPRINT1("Failed to create ControlSet001\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// LONG RegisterCMMA(ULONG id)
+// {
+//     FIXME("stub\\n");
+//     return 0;
+// }
+//
+// BOOLEAN CmpQuiet(ULONG a)
+// {
+//     if (!a) { DPRINT("quiet\\n"); TRACE("quiet\\n"); WARN("quiet\\n"); return FALSE; }
+//     return TRUE;
+// }
+//
+// BOOLEAN CmpNotTranslatedHere(ULONG a)
+// {
+//     if (!a) { DPRINT1("no live counterpart\\n"); return FALSE; }
+//     return TRUE;
+// }
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_dropped_prints",
+        script="tools/scan_dropped_prints.py",
+        argv=["--lint"],
+        bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
+        good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
+        pass_files=True,
+    ),
     Control(
         name="scan_mask_drift",
         script="tools/scan_mask_drift.py",
