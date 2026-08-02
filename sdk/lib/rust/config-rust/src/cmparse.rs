@@ -36,6 +36,7 @@ const TAG_CM: u32 = u32::from_le_bytes(*b"CM  "); // C: '  MC'  (multi-char lite
 const UNICODE_NULL: u16 = 0;
 const STATUS_RETRY: i32 = 0xC000022Du32 as i32;
 const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: usize = 32;
+const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
 
 extern "C" {
     pub static CmpKeyObjectType: POBJECT_TYPE;
@@ -700,7 +701,14 @@ unsafe fn CmpDoOpen(
         IsLockShared = 1u8;
 
         if (((**CachedKcb).__bindgen_anon_5.Flags() & 0x00000010) != 0) && ((Attributes & 0x00000100) == 0) {
-            if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & 0x00000040) != 0 {
+            // C: `ExtFlags & CM_KCB_SYM_LINK_FOUND`, which is 0x08
+            // (ntoskrnl/include/internal/cm.h). The literal here was 0x40 —
+            // CM_KCB_INVALID_CACHED_INFO. Two failure modes, both silent: a
+            // symlink whose target IS resolved took the reparse path instead of
+            // using RealKcb, and a KCB carrying INVALID_CACHED_INFO read
+            // `ValueCache.RealKcb` out of a union that at that point holds value
+            // cache data, not a KCB pointer.
+            if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) != 0 {
                 Kcb = (**CachedKcb).ValueCache.__bindgen_anon_1.RealKcb;
                 if (*Kcb).__bindgen_anon_1.Delete() != 0 {
                     CmpUnLockKcbArray(KcbsLocked);

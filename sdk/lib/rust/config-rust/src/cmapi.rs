@@ -24,6 +24,7 @@ pub type VALUE_SEARCH_RETURN_TYPE = u32;
 // Registry constants
 pub const KEY_HIVE_ENTRY: u32 = 0x00000004;
 pub const KEY_NO_DELETE: u32 = 0x00000008;
+pub const KEY_SYM_LINK: u32 = 0x00000010;
 pub const KEY_COMP_NAME: u16 = 0x0020;
 pub const REG_NOTIFY_CHANGE_NAME: u32 = 0x00000001;
 pub const REG_NOTIFY_CHANGE_LAST_SET: u32 = 0x00000004;
@@ -672,7 +673,13 @@ pub unsafe extern "system" fn CmSetValueKey(
                 break 'Quickie;
             }
 
-            if ((*Kcb).__bindgen_anon_5.Flags() & 0x00000004) != 0 &&
+            // C: `Kcb->Flags & KEY_SYM_LINK`. KEY_SYM_LINK is 0x0010
+            // (sdk/lib/cmlib/cmdata.h); the literal here was 0x0004, which is
+            // KEY_HIVE_ENTRY — so "don't let anyone mess with symlinks" guarded
+            // HIVE ROOTS (\Registry\Machine\System, ...\Software, ...\Sam,
+            // ...\Security, \Registry\User\.Default) and left symlink keys
+            // unguarded. Setting any value on a hive root returned ACCESS_DENIED.
+            if ((*Kcb).__bindgen_anon_5.Flags() & KEY_SYM_LINK) != 0 &&
                 ((Type != 6) ||
                  ValueName.is_null() ||
                  RtlEqualUnicodeString(
