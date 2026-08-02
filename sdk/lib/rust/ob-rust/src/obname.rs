@@ -708,7 +708,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                 directory = root_directory;
             }
 
-            if access_check_mode != 0 && (*AccessState).Flags & 0x10 == 0 {
+            if access_check_mode != 0 && (*AccessState).Flags & TOKEN_HAS_TRAVERSE_PRIVILEGE == 0 {
                 ObReferenceObject(directory as PVOID);
                 referenced_directory = directory;
 
@@ -958,7 +958,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
                                 } else {
                                     if remaining_name.Length == 0 {
                                         if InsertObject.is_null() {
-                                            if access_check_mode != 0 && (*AccessState).Flags & 0x10 == 0 {
+                                            if access_check_mode != 0 && (*AccessState).Flags & TOKEN_HAS_TRAVERSE_PRIVILEGE == 0 {
                                                 if ObpCheckTraverseAccess(directory as PVOID, 1, AccessState, 0, access_check_mode, &mut status) == 0 {
                                                     object = core::ptr::null_mut();
                                                     break;
@@ -1007,7 +1007,7 @@ pub unsafe extern "system" fn ObpLookupObjectName(
             } else {
                 if remaining_name.Length == 0 {
                     if InsertObject.is_null() {
-                        if access_check_mode != 0 && (*AccessState).Flags & 0x10 == 0 {
+                        if access_check_mode != 0 && (*AccessState).Flags & TOKEN_HAS_TRAVERSE_PRIVILEGE == 0 {
                             if ObpCheckTraverseAccess(directory as PVOID, 1, AccessState, 0, access_check_mode, &mut status) == 0 {
                                 object = core::ptr::null_mut();
                                 break;

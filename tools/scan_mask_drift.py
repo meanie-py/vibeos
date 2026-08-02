@@ -32,32 +32,55 @@ four of eight copies wrong — `CmLoadKey` setting 0x4 and `CmUnloadKey` 0x40 fo
 "refuse to resolve a key in a hive that is unloading" protection was inert on the
 unload path it exists for.
 
-WHAT IT REPORTS. For each `TARGET &= ~NAME` in the commented C, the live Rust
-must mask the same TARGET with the same NAME:
+TWO FORMS, reported side by side.
 
-  MISMATCH  live masks a LITERAL whose value != NAME's. A bug, or the C moved.
-            Zero tree-wide as of 2026-08-01; keep the baseline empty of these.
-  OPENCODED live masks a literal we cannot resolve NAME against. Usually just
+  CLEAR  `TARGET &= ~NAME` in the C; the live Rust must mask the same TARGET
+         with the same NAME. Printed as `<TARGET> &= ~<NAME>`.
+  TEST   `EXPR & NAME` in the C; the live Rust must not test that same operand
+         against a literal of a different value. Printed as `<EXPR> & <NAME>`.
+
+  MISMATCH  live holds a LITERAL whose value != NAME's. A bug, or the C moved.
+            Keep the baseline empty of these — every one of the twelve the TEST
+            form found on its first sweep was real.
+  OPENCODED live holds a literal we cannot resolve NAME against. Usually just
             wants the name back; occasionally a MISMATCH we could not prove.
-  DROPPED   nothing in live code masks that target at all. The mask, or the
-            branch holding it, did not survive translation.
+  DROPPED   nothing in live code masks that target at all. CLEAR form only —
+            see below.
 
-TARGET is the identifier immediately left of the `&`, so `p->Flags &= ~X` and
-`(*p).Flags &= !X` pair up on `Flags` without modelling either language's member
-access. Pairing on it is what makes this specific enough to gate: the same file
-routinely masks six different variables. Compared case-insensitively, and a
-`let` binding counts as its own target, because translation re-cases and rebinds.
+PAIRING. For CLEAR, TARGET is the identifier immediately left of the `&`, so
+`p->Flags &= ~X` and `(*p).Flags &= !X` meet on `Flags` without modelling either
+language's member access; a `let` binding counts as its own target, and case is
+ignored, because translation re-cases and rebinds.
+
+For TEST that is not enough, and the counter-example is worth keeping: cmapi.rs
+tests `Kcb->Flags` against KEY_SYM_LINK (0x10) and a plain local `Flags` against
+REG_NO_LAZY_FLUSH (0x04). Both lowercase to `flags`, and the live code held 0x04
+in both — correct for the local, the actual bug for the other. So TEST keys on
+(BASE, MEMBER): the first and last identifier of the expression left of the `&`,
+which maps C `Kcb->Flags` and Rust `(*Kcb).__bindgen_anon_5.Flags()` together,
+keeps the bare local apart, and follows a chain for free
+(`KeyBody->KeyControlBlock->Flags` is ("keybody", "flags") on both sides).
+
+NO `DROPPED` FOR THE TEST FORM. A clear-mask that vanishes is a lost side
+effect. A test that vanishes is usually control flow the translation
+restructured — inverted, folded into a match arm, hoisted — and reporting those
+buries the value comparisons that matter.
 
 OCCURRENCES ARE NOT COUNTED. "The C masks it 4 times, the Rust 3" looks like the
 obvious rule and is a trap: a C block repeats a statement once per call site,
 rustfmt merges paths, and a fix's own explanatory comment quoting the C reads as
 another C occurrence. Values are compared; absence is reported; counts are not.
 
-CALIBRATION, so nobody re-derives it: the live spelling is usually
+CALIBRATION, so nobody re-derives it. CLEAR: the live spelling is usually
 `&= !(NAME as ULONG)`, so a pattern accepting only `!NAME` reports ~4x noise
-(109 raw hits vs 27). And check the sibling arch before believing a DROPPED —
+(109 raw hits vs 27); and check the sibling arch before believing a DROPPED —
 amd64's `KeFlushCurrentTb` C really is CR3-only, so only the i386 copy had a
-branch to lose.
+branch to lose. TEST: a `~` discriminates the clear form and a bare `&` does
+not, so three suppressions carry the precision, each costing real findings and
+each worth it for something that gates — quiet if the live code also NAMES the
+constant for that target, if there is more than one live literal, or if the C
+open-codes that same literal itself. They took the first sweep from 19 hits
+with 7 false to 12 with 0.
 
 Usage:
     python3 tools/scan_mask_drift.py                 # full report
@@ -69,8 +92,10 @@ Suppress a verified false positive at the source, on the live line:
 
     Flags &= !0x3F;  // nolint: mask-drift (MEM_EXECUTE_OPTION_VALID_FLAGS is 0x3F)
 
-Output is line-number-free (`<file>: <TARGET> &= ~<NAME> [KIND]`) so unrelated
-edits never churn the baseline — only a genuinely new or changed mask does.
+The `--lint` line is line-number- AND value-free, so unrelated edits never churn
+the baseline — only a genuinely new or changed flag does. The full report adds
+the two values, because a MISMATCH without them makes every reader re-derive
+both.
 """
 
 from __future__ import annotations
@@ -91,6 +116,10 @@ GENERATED_RE = re.compile(r"automatically generated by rust-bindgen|@generated")
 # Cheap byte prefilter: no `& ~` anywhere means no commented-C mask to check.
 # Cuts the sweep from 3063 files to ~278 before any parsing happens.
 PREFILTER_RE = re.compile(rb"&=?\s*~")
+# ...and for the TEST form, a `&` against something that could be a constant
+# name. Far weaker than the mask prefilter — most files have one — but it still
+# skips the pure-data and pure-glue files before any tree-sitter parse.
+TEST_PREFILTER_RE = re.compile(rb"&\s*\(?\s*[A-Z][A-Z0-9_]{2,}")
 
 NOLINT_RE = re.compile(r"\bnolint\b\s*[:(\[]?\s*([a-z0-9_-]*)", re.I)
 NOLINT_IDS = {"", "all", "mask-drift", "mask_drift", "scan_mask_drift"}
@@ -239,6 +268,10 @@ def eval_const(expr: str) -> int | None:
     """
     s = expr.strip()
     s = re.sub(r"\bas\s+[\w:]+", "", s)
+    # C integer suffixes: `(0x00000002L)`, `4UL`. Must run BEFORE the Rust
+    # suffix strip, whose `\b` cannot see the boundary inside `0x2L`. Header
+    # values arrive spelled this way and would otherwise all fail to parse.
+    s = re.sub(r"(0[xX][0-9a-fA-F_]+|\b\d[\d_]*)[uUlL]+\b", r"\1", s)
     s = re.sub(
         r"\b(0[xX][0-9a-fA-F_]+|\d[\d_]*)(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)?\b",
         lambda m: m.group(1).replace("_", ""),
@@ -270,22 +303,82 @@ _CATALOG: dict[str, int] | None = None
 
 def catalog() -> dict[str, int]:
     """The C header catalog verify_constants curates. Loaded once, lazily —
-    a run whose files hold no resolvable literal never pays for it."""
+    a run whose files hold no resolvable literal never pays for it.
+
+    This used to call `build_c_catalog()` with no argument inside a bare
+    `except Exception: _CATALOG = {}`. `reactos_root` is required, so every
+    run raised TypeError, swallowed it, and scanned with an EMPTY catalog —
+    resolving names against in-file `const` definitions only. Nothing failed;
+    the tool just quietly stopped being able to prove anything about a
+    constant defined in a header, which is most of them, and reported those
+    as OPENCODED instead of comparing them. Hence: no bare except, and an
+    empty catalog is fatal rather than a degraded mode nobody can see.
+    """
     global _CATALOG
     if _CATALOG is None:
-        try:
-            from rustconv.verify_constants import build_c_catalog
+        from rustconv.verify_constants import build_c_catalog
 
-            _CATALOG = build_c_catalog()
-        except Exception:
-            _CATALOG = {}
+        _CATALOG = build_c_catalog(REPO)
+        if not _CATALOG:
+            raise SystemExit(
+                "scan_mask_drift: the C constant catalog came back EMPTY, so no name\n"
+                "could be resolved and every comparison would silently pass.\n"
+                "fix: check tools/rustconv/rustconv/verify_constants.py:build_c_catalog"
+            )
     return _CATALOG
+
+
+_DEFINES: dict[str, int] | None = None
+
+# Roots holding the C headers a translated `.rs` can name a constant from.
+DEFINE_ROOTS = ("sdk/include", "sdk/lib", "ntoskrnl/include", "drivers", "win32ss", "hal")
+DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Z][A-Z0-9_]{2,})[ \t]+(.+)$", re.M)
+
+
+def header_defines() -> dict[str, int]:
+    """`#define NAME <int>` across the tree, keeping only UNAMBIGUOUS names.
+
+    verify_constants' catalog is a curated list of ~25 headers, which is right
+    for its job and far too narrow for this one: the registry's own flag
+    families live in `sdk/lib/cmlib/cmdata.h` and
+    `ntoskrnl/include/internal/cm.h`, so `KEY_SYM_LINK` and
+    `CM_KCB_SYM_LINK_FOUND` — the two constants whose wrong literals prompted
+    this — resolved to nothing and downgraded a provable MISMATCH to a shrug.
+
+    A name defined with two DIFFERENT values anywhere in the tree is dropped
+    rather than guessed (the same ambiguity rule verify_constants applies to
+    enums). Two spellings of one value are fine: `REG_OPTION_CREATE_LINK` is
+    `2` in winnt_old.h and `(0x00000002L)` in cmtypes.h, and both parse to 2.
+    """
+    global _DEFINES
+    if _DEFINES is not None:
+        return _DEFINES
+    seen: dict[str, set[int]] = {}
+    for root in DEFINE_ROOTS:
+        for path in (REPO / root).rglob("*.h"):
+            try:
+                text = path.read_text(errors="replace")
+            except OSError:
+                continue
+            for m in DEFINE_RE.finditer(text):
+                val = eval_const(m.group(2).split("/*")[0].split("//")[0])
+                if val is not None:
+                    seen.setdefault(m.group(1), set()).add(val)
+    _DEFINES = {n: next(iter(v)) for n, v in seen.items() if len(v) == 1}
+    return _DEFINES
+
+
+def _detail(lits: list[int], name: str, want: int | None) -> str:
+    """`live 0x4, KEY_SYM_LINK=0x10` — the two numbers a reader needs."""
+    live = ", ".join(sorted({hex(v & MASK32) for v in lits}))
+    return f"live {live}, {name}=" + ("unresolved" if want is None else hex(want & MASK32))
 
 
 def resolve(name: str, local: dict[str, int]) -> int | None:
     if name in local:
         return local[name]
-    return catalog().get(name)
+    got = catalog().get(name)
+    return got if got is not None else header_defines().get(name)
 
 
 # ── comment / code split ─────────────────────────────────────────────
@@ -349,17 +442,255 @@ def statements(live: str) -> list[tuple[str, int, int]]:
     return out
 
 
+# ── the TEST form: `X & NAME` ────────────────────────────────────────
+# The clear-mask form above has `~` as its discriminator. A plain bitwise TEST
+# has none — every `&` in the file is a candidate — so precision has to come
+# from pairing the two sides on a richer key.
+#
+# Pairing on the bare identifier left of the `&`, which is all the clear-mask
+# form needs, is provably too weak here. cmapi.rs tests `Kcb->Flags` against
+# KEY_SYM_LINK (0x10) and a plain local `Flags` against REG_NO_LAZY_FLUSH
+# (0x04). Both lowercase to `flags`. The live code held 0x04 in both places —
+# CORRECT for the local, the actual bug for the Kcb one — so any rule keyed on
+# `flags` alone either passes both or fails both. The key is therefore
+# (BASE, MEMBER): first and last identifier of the expression left of the `&`.
+# That maps C `Kcb->Flags` and Rust `(*Kcb).__bindgen_anon_5.Flags()` onto the
+# same ("kcb", "flags") without modelling either language's member access, and
+# keeps the bare local at ("flags", "flags"). It survives chains for free —
+# `KeyBody->KeyControlBlock->Flags` is ("keybody", "flags") on both sides.
+#
+# NO `DROPPED` KIND HERE, deliberately. A clear-mask that vanishes is a lost
+# side effect and worth reporting. A vanished TEST is usually control flow the
+# translation restructured — inverted, folded into a match arm, hoisted — and
+# reporting those buries the value comparisons in noise. Only a live LITERAL
+# standing where the C named a constant is reported.
+IDENT_RE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*")
+AMP_RE = re.compile(r"&(?![&=])")
+
+# Words that can abut an expression without being part of it. Without these,
+# `if x & M` walks back through the space and yields the target ("if", "x").
+EXPR_KEYWORDS = {
+    "if",
+    "while",
+    "return",
+    "let",
+    "mut",
+    "match",
+    "else",
+    "as",
+    "in",
+    "for",
+    "unsafe",
+    "const",
+    "static",
+    "self",
+    "Self",
+    "do",
+    "switch",
+    "case",
+    "break",
+    "continue",
+    "and",
+    "or",
+    "not",
+    "sizeof",
+    "true",
+    "false",
+}
+
+
+def left_expr(s: str, i: int) -> str:
+    """Text of the expression immediately left of `s[i]` (a bitwise `&`).
+
+    A backward walk rather than a regex, because the shapes that matter are
+    `(*Kcb).__bindgen_anon_5.Flags()` and `Kcb->Flags` and no single regex
+    reads both without also swallowing the enclosing `if (`. Parens are
+    balanced as we go, so an unmatched `(` is the enclosing call/condition and
+    ends the walk.
+    """
+    j = i
+    depth = 0
+    while j > 0:
+        c = s[j - 1]
+        if c.isspace():
+            k = j - 1
+            while k > 0 and s[k - 1].isspace():
+                k -= 1
+            before = s[k - 1] if k > 0 else ""
+            after = s[j] if j < len(s) else ""
+            # Whitespace between two identifier characters separates two
+            # TOKENS — `if x`, `return x` — and no expression does that.
+            # Whitespace anywhere else (`Kcb -> Flags`, `) . Flags`) is slack.
+            if (before.isalnum() or before == "_") and (after.isalnum() or after == "_"):
+                break
+            j = k
+            continue
+        if c in ")]":
+            depth += 1
+        elif c in "([":
+            if depth == 0:
+                break
+            depth -= 1
+        elif c == ">" and s[j - 2 : j] == "->":
+            j -= 2
+            continue
+        elif not (c.isalnum() or c in "_.*"):
+            break
+        j -= 1
+    return s[j:i]
+
+
+def target_key(expr: str) -> tuple[str, str] | None:
+    """(base, member) for an lvalue expression, lowercased.
+
+    bindgen's anonymous-union members are dropped: a C bitfield read as
+    `Kcb->Flags` becomes `(*Kcb).__bindgen_anon_5.Flags()`, and the anon name
+    is both meaningless and unstable across a bindgen regeneration.
+    """
+    idents = [w for w in IDENT_RE.findall(expr) if w not in EXPR_KEYWORDS]
+    idents = [w for w in idents if not w.startswith("__bindgen")]
+    if not idents:
+        return None
+    return (idents[0].lower(), idents[-1].lower())
+
+
+def bit_tests(text: str) -> list[tuple[tuple[str, str], str, str]]:
+    """[(key, expr_as_written, operand)] for every `EXPR & OPERAND` in text."""
+    out = []
+    for m in AMP_RE.finditer(text):
+        i = m.start()
+        if i and text[i - 1] == "&":
+            continue  # right half of a `&&`
+        operand = trim_operand(text[i + 1 :].lstrip())
+        if not operand or operand[0] in "~!":
+            continue  # a clear-mask; the form above owns it
+        expr = left_expr(text, i)
+        if not expr.strip():
+            continue  # address-of / reference: `foo(&x)`, `= &mut y`
+        key = target_key(expr)
+        if key is not None:
+            out.append((key, expr.strip(), operand))
+    return out
+
+
+def scan_tests(text: str, live: str, comments: list[str]) -> list[tuple[str, str, str, str]]:
+    """[(target_as_written, name, kind, detail)] for the `X & NAME` form."""
+    c_names: dict[tuple[str, str], set[str]] = {}
+    c_lits: dict[tuple[str, str], set[int]] = {}
+    as_written: dict[tuple[str, str], str] = {}
+    for c in comments:
+        for key, expr, operand in bit_tests(c):
+            names = mask_names(operand)
+            if not names:
+                # The C tests this member against a LITERAL of its own. Keep it:
+                # a live literal the C also open-codes is explained, not drifted.
+                # i8042prt's mouse.c is the case — it masks `RawButtons & 0xfc00`
+                # and only a DPRINT beside it names MOUSE_LEFT_BUTTON_DOWN, so
+                # without this the faithful translation reads as a value bug.
+                val = eval_const(operand)
+                if val is not None:
+                    c_lits.setdefault(key, set()).add(val)
+                continue
+            # One name and nothing else. `Flags & (A | B)` states no single
+            # value to compare against, and guessing which half a literal
+            # stands for is how a prover turns into an asserter.
+            if len(names) != 1 or not re.fullmatch(r"\(?\s*[A-Z][A-Z0-9_]*\s*\)?", operand.strip()):
+                continue
+            c_names.setdefault(key, set()).update(names)
+            as_written.setdefault(key, expr)
+    if not c_names:
+        return []
+
+    nolint_lines = {i for i, ln in enumerate(text.splitlines()) if suppressed(ln)}
+    live_lits: dict[tuple[str, str], set[int]] = {}
+    live_names: dict[tuple[str, str], set[str]] = {}
+    for key, _expr, operand in bit_tests(live):
+        if key not in c_names:
+            continue
+        names = mask_names(operand)
+        if names:
+            live_names.setdefault(key, set()).update(names)
+            continue
+        val = eval_const(operand)
+        if val is not None:
+            live_lits.setdefault(key, set()).add(val)
+    if nolint_lines:
+        # Cheap and rare: only re-walk when the file actually suppresses.
+        for key, _expr, _operand in bit_tests_by_line(live, nolint_lines):
+            live_lits.pop(key, None)
+
+    local = in_file_consts(text)
+    out = []
+    for key, names in sorted(c_names.items()):
+        lits = sorted(live_lits.get(key, ()))
+        if not lits or len(names) > 1:
+            continue
+        name = next(iter(names))
+        # Two rules that the first real sweep forced, both about the same
+        # thing: a member is tested against MANY flags, and a literal is only
+        # evidence about THIS constant if nothing else could explain it.
+        #
+        #   - The live code names the constant somewhere for this target. Then
+        #     the translation kept it, and the literals are other flags whose
+        #     own C lines we did not pair. `Irp->Flags` tests IRP_PAGING_IO by
+        #     name and IRP_NOCACHE/IRP_SYNCH_PAGING_IO as 0x1 and 0x40.
+        #   - More than one distinct live literal. Which one is supposed to be
+        #     this constant? Any answer is a guess; `wParam & 0xf` next to
+        #     `wParam & 0xfff0` says nothing about DC_ACTIVE either way.
+        #
+        # Both cost real findings if the wrong literal happens to sit beside
+        # the right one. That is the correct trade for a gate: this reports
+        # only what the file cannot explain any other way.
+        #   - The C open-codes the same literal on this member itself.
+        if name in live_names.get(key, ()) or len(lits) > 1 or lits[0] in c_lits.get(key, ()):
+            continue
+        want = resolve(name, local)
+        if want is None:
+            out.append((as_written[key], name, "OPENCODED", _detail(lits, name, want)))
+        elif not any((lit & MASK32) == (want & MASK32) for lit in lits):
+            out.append((as_written[key], name, "MISMATCH", _detail(lits, name, want)))
+    return out
+
+
+def bit_tests_by_line(live: str, lines: set[int]):
+    """The subset of bit_tests() sitting on one of `lines` (0-based)."""
+    starts = [0]
+    for ch in live:
+        starts.append(starts[-1] + (1 if ch == "\n" else 0))
+    for m in AMP_RE.finditer(live):
+        if starts[m.start()] not in lines:
+            continue
+        operand = trim_operand(live[m.start() + 1 :].lstrip())
+        expr = left_expr(live, m.start())
+        if not operand or not expr.strip():
+            continue
+        key = target_key(expr)
+        if key is not None:
+            yield key, expr.strip(), operand
+
+
 # ── the scan ─────────────────────────────────────────────────────────
-def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
-    """[(rel, target, name, kind)] for one file."""
+def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str, str, str]]:
+    """[(rel, target, op, name, kind, detail)] for one file.
+
+    `op` is `&= ~` for the clear-mask form and `&` for the test form; it is
+    printed verbatim, so the two read differently in the baseline.
+    """
     src = path.read_bytes()
-    if not PREFILTER_RE.search(src):
+    has_mask = PREFILTER_RE.search(src) is not None
+    has_test = TEST_PREFILTER_RE.search(src) is not None
+    if not (has_mask or has_test):
         return []
     text = src.decode("utf8", "replace")
     if GENERATED_RE.search(text[:800]):
         return []
 
     live, comments = split_comments(src)
+    out: list[tuple[str, str, str, str, str, str]] = []
+    if has_test:
+        out += [(rel, t, "& ", n, k, d) for t, n, k, d in scan_tests(text, live, comments)]
+    if not has_mask:
+        return out
 
     # C side: lowercased TARGET -> {NAME: count}, plus the C's own casing to report.
     c_masks: dict[str, dict[str, int]] = {}
@@ -372,7 +703,7 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
                 c_masks.setdefault(key, {})
                 c_masks[key][name] = c_masks[key].get(name, 0) + 1
     if not c_masks:
-        return []
+        return out
 
     # Live side: TARGET -> (names masked, literal values masked).
     #
@@ -409,7 +740,6 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
                         live_lits.setdefault(t, []).append(val)
 
     local = in_file_consts(text)
-    out = []
     for target, names in sorted(c_masks.items()):
         if target in suppressed_targets:
             continue
@@ -425,7 +755,7 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
                 # do) reads as another C occurrence. Every count-based rule this
                 # started with reported those as drops.
                 if not masked_live:
-                    out.append((rel, as_written[target], name, "DROPPED"))
+                    out.append((rel, as_written[target], "&= ~", name, "DROPPED", ""))
                 continue
             # A literal masks this target where the C used a name. Compare — but
             # only when the C is unambiguous about which constant that is;
@@ -435,9 +765,11 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
                 continue
             want = resolve(name, local)
             if want is None:
-                out.append((rel, as_written[target], name, "OPENCODED"))
+                detail = _detail(lits, name, want)
+                out.append((rel, as_written[target], "&= ~", name, "OPENCODED", detail))
             elif not any((lit & MASK32) == (want & MASK32) for lit in lits):
-                out.append((rel, as_written[target], name, "MISMATCH"))
+                detail = _detail(lits, name, want)
+                out.append((rel, as_written[target], "&= ~", name, "MISMATCH", detail))
     return out
 
 
@@ -552,6 +884,133 @@ pub fn f(a: u32, b: u32) { let Foo = a & !(REAL_FLAG as ULONG); let _ = Foo; let
 """,
         ["DROPPED"],
     ),
+    # ── the TEST form ────────────────────────────────────────────────
+    (
+        "TEST: the KEY_SYM_LINK guard tests KEY_HIVE_ENTRY's bit instead",
+        """
+const KEY_SYM_LINK: u32 = 0x00000010;
+pub unsafe fn NtSetValueKey(Kcb: *mut KCB) -> u32 {
+    if ((*Kcb).__bindgen_anon_5.Flags() & 0x00000004) != 0 { return 0xC0000022; }
+    0
+}
+//     if ((Kcb->Flags & KEY_SYM_LINK) &&
+""",
+        ["MISMATCH"],
+    ),
+    (
+        "TEST: a bare local sharing the member name is NOT the same target",
+        # The reason the key is (BASE, MEMBER). `Kcb->Flags` is wrong here and
+        # the plain `Flags` parameter is right, with the SAME literal 0x04 —
+        # any rule keyed on `flags` alone passes both or fails both.
+        """
+const KEY_SYM_LINK: u32 = 0x00000010;
+const REG_NO_LAZY_FLUSH: u32 = 0x00000004;
+pub unsafe fn f(Kcb: *mut KCB, Flags: u32) -> u32 {
+    if ((*Kcb).__bindgen_anon_5.Flags() & 0x00000010) != 0 { return 1; }
+    if (Flags & 0x00000004u32) != 0 { return 2; }
+    0
+}
+//     if ((Kcb->Flags & KEY_SYM_LINK) &&
+//     if (Flags & REG_NO_LAZY_FLUSH) CmHive->Hive.HiveFlags |= HIVE_NOLAZYFLUSH;
+""",
+        [],
+    ),
+    (
+        "TEST: chained receiver pairs through the whole chain",
+        """
+const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
+pub unsafe fn f(CachedKcb: *mut *mut KCB) -> u32 {
+    if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & 0x00000040) != 0 { return 1; }
+    0
+}
+//         if (Kcb->ExtFlags & CM_KCB_SYM_LINK_FOUND)
+""",
+        [],  # C base `Kcb` vs live base `CachedKcb`: no pair, so no claim
+    ),
+    (
+        "TEST: correct literal that matches the named constant stays quiet",
+        """
+const KEY_COMP_NAME: u32 = 0x0020;
+pub unsafe fn f(Node: *mut NODE) -> bool { (*Node).Flags & 0x0020 != 0 }
+//     if (Node->Flags & KEY_COMP_NAME)
+""",
+        [],
+    ),
+    (
+        "TEST: `if x & M` must not pair on the keyword",
+        """
+const SOME_FLAG: u32 = 0x8;
+pub fn f(x: u32) -> bool { if x & 0x4 != 0 { true } else { false } }
+//     if (y & SOME_FLAG)
+""",
+        [],
+    ),
+    (
+        "TEST: address-of and references are not bitwise ANDs",
+        """
+const SOME_FLAG: u32 = 0x8;
+pub fn f(v: &mut Vec<u32>) { g(&mut v[0]); }
+//     h(&Thing);
+//     if (Thing->Bits & SOME_FLAG)
+""",
+        [],
+    ),
+    (
+        "TEST: `Flags & (A | B)` states no single value, so nothing is claimed",
+        """
+pub unsafe fn f(p: *mut P) -> bool { (*p).Flags & 0x0003 != 0 }
+//     if (p->Flags & (FLAG_A | FLAG_B))
+""",
+        [],
+    ),
+    (
+        "TEST: a nolint on the live line suppresses",
+        """
+const KEY_SYM_LINK: u32 = 0x00000010;
+pub unsafe fn f(Kcb: *mut KCB) -> bool {
+    (*Kcb).__bindgen_anon_5.Flags() & 0x00000004 != 0 // nolint: mask-drift (checked)
+}
+//     if ((Kcb->Flags & KEY_SYM_LINK) &&
+""",
+        [],
+    ),
+    (
+        "TEST: the C names it, the live code names it too — nothing to compare",
+        """
+pub unsafe fn f(Node: *mut NODE) -> bool { ((*Node).Flags & KEY_NO_DELETE as u16) == 0 }
+//         !(Node->Flags & KEY_NO_DELETE))
+""",
+        [],
+    ),
+    (
+        "TEST: the C open-codes the same literal, so the translation is faithful",
+        """
+const MOUSE_LEFT_BUTTON_DOWN: u32 = 0x0001;
+pub unsafe fn f(MouseInput: *mut MI) -> u16 { ((*MouseInput).RawButtons & 0xfc00) as u16 }
+// 		(MouseInput->RawButtons & 0xfc00);
+// 		MouseInput->RawButtons & MOUSE_LEFT_BUTTON_DOWN,
+""",
+        [],
+    ),
+    (
+        "TEST: two live literals on one member state nothing about either",
+        """
+const DC_ACTIVE: u32 = 0x0001;
+pub fn f(wParam: u32) -> u32 { (wParam & 0xf) | (wParam & 0xfff0) }
+//     if (wParam & DC_ACTIVE)
+""",
+        [],
+    ),
+    (
+        "TEST: the live code also names it, so the stray literal is another flag",
+        """
+pub unsafe fn f(Irp: *mut IRP) -> bool {
+    (*Irp).Flags & IRP_PAGING_IO != 0 || (*Irp).Flags & 0x40 != 0
+}
+//     if (Irp->Flags & IRP_PAGING_IO)
+""",
+        [],
+    ),
 ]
 
 
@@ -563,7 +1022,7 @@ def self_test() -> int:
         for i, (label, body, want) in enumerate(SELF_TEST):
             p = Path(td) / f"case{i}.rs"
             p.write_text(body)
-            got = sorted(k for _, _, _, k in scan_file(p, f"case{i}.rs"))
+            got = sorted(h[4] for h in scan_file(p, f"case{i}.rs"))
             if got != sorted(want):
                 bad += 1
                 print(f"FAIL  {label}\n      want {sorted(want)}, got {got}")
@@ -594,15 +1053,19 @@ def main() -> int:
             continue
 
     hits = sorted(set(hits))
-    for rel, target, name, kind in hits:
-        print(f"{rel}: {target} &= ~{name} [{kind}]")
+    for rel, target, op, name, kind, detail in hits:
+        # The baselined (`--lint`) line is line-number- AND value-free, so an
+        # unrelated edit never churns it. The full report carries the values,
+        # because a MISMATCH without them makes every reader re-derive both.
+        suffix = f"  ({detail})" if detail and not lint else ""
+        print(f"{rel}: {target} {op}{name} [{kind}]{suffix}")
 
     if not lint:
         by_kind: dict[str, int] = {}
-        for _, _, _, k in hits:
+        for *_, k, _d in hits:
             by_kind[k] = by_kind.get(k, 0) + 1
         summary = ", ".join(f"{v} {k}" for k, v in sorted(by_kind.items())) or "none"
-        print(f"\n{len(hits)} mask(s) the C clears that the live Rust does not: {summary}")
+        print(f"\n{len(hits)} bit-flag(s) whose live Rust contradicts its own C: {summary}")
         if hits:
             print(
                 "MISMATCH is a value bug or a moved C; OPENCODED wants the name back so it\n"

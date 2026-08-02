@@ -438,6 +438,24 @@ BOOL WINAPI SetStdHandle(DWORD id, HANDLE h)
     return TRUE;
 }
 
+/* Point the three standard handles at the caller's host fds.
+ *
+ * The default above is `fd_to_handle(slot)` — CRT fd 1 maps to HOST fd 1, the process's
+ * real stdout.  That is the honest default for a program, and it makes eleven of file.c's
+ * exports ungradeable: `putchar`, `puts`, `_putws` and their kin write to `stdout` with no
+ * FILE parameter, so the only way to compare what the two implementations produced is for
+ * each side to OWN its stdout.  Called once per side, immediately before that side's
+ * `msvcrt_init_io()`, which is the only reader of GetStdHandle — so the two sides come out
+ * of init bound to different files while the harness's own fd 1 is never touched.  A
+ * `freopen(path, "w", stdout)` would reach the same place by CLOSING host fd 1, and the
+ * next `open` would then hand fd 1 to a temp file and silently swallow every `println!`. */
+void ref_set_std_fds(int in_fd, int out_fd, int err_fd)
+{
+    SetStdHandle(STD_INPUT_HANDLE,  fd_to_handle(in_fd));
+    SetStdHandle(STD_OUTPUT_HANDLE, fd_to_handle(out_fd));
+    SetStdHandle(STD_ERROR_HANDLE,  fd_to_handle(err_fd));
+}
+
 /* ------------------------------------------------------------------ *
  * console
  * ------------------------------------------------------------------ */
@@ -1136,8 +1154,37 @@ static pthread_mutex_t *ref_lock_slot(int locknum)
     return &ref_locks[locknum];
 }
 
-void CDECL _lock(int locknum)   { pthread_mutex_lock(ref_lock_slot(locknum)); }
-void CDECL _unlock(int locknum) { pthread_mutex_unlock(ref_lock_slot(locknum)); }
+/* Which slot the last _lock / _unlock took.
+ *
+ * `_lock_file` has two arms and NOTHING ELSE distinguishes them: for a FILE inside the
+ * _iob array it takes global lock `_STREAM_LOCKS + (file - _iob)`, and for any other FILE
+ * it enters that FILE's own CRITICAL_SECTION.  The critical-section arm leaves a mark a
+ * row can read (RecursionCount, in the FILE's own memory, per side).  The _lock arm
+ * leaves NONE — a recursive pthread mutex taken and released is invisible — so without
+ * this recorder a row could not tell "took the right global lock" from "took the wrong
+ * one" from "took none at all", and the arm that guards the whole std-stream ring would
+ * be ungradeable.
+ *
+ * ONE definition serving both sides, like ref_get_last_share_mode: read it immediately
+ * after each side's call, never once at the end. */
+static int ref_last_lock_num   = -1;
+static int ref_last_unlock_num = -1;
+
+int ref_get_last_lock(void)   { return ref_last_lock_num; }
+int ref_get_last_unlock(void) { return ref_last_unlock_num; }
+void ref_reset_last_locks(void) { ref_last_lock_num = ref_last_unlock_num = -1; }
+
+void CDECL _lock(int locknum)
+{
+    ref_last_lock_num = locknum;
+    pthread_mutex_lock(ref_lock_slot(locknum));
+}
+
+void CDECL _unlock(int locknum)
+{
+    ref_last_unlock_num = locknum;
+    pthread_mutex_unlock(ref_lock_slot(locknum));
+}
 
 /* VERBATIM from dll/win32/msvcrt/data.c, which is not a reference TU. */
 wchar_t *msvcrt_wstrdupa(const char *str)

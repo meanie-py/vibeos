@@ -8,6 +8,10 @@ use crate::k32_externs::{
 use crate::proc_create::CreateProcessW;
 
 // MEM_IMAGE (== SEC_IMAGE) is not emitted by bindgen.
+const EXCEPTION_NESTED_CALL: ULONG = 0x10;
+const SEM_NOGPFAULTERRORBOX: ULONG = 0x0002;
+// psdk/winbase.h: RTL_SEM_NOGPFAULTERRORBOX is SEM_NOGPFAULTERRORBOX << 4.
+const RTL_SEM_NOGPFAULTERRORBOX: ULONG = SEM_NOGPFAULTERRORBOX << 4;
 const MEM_IMAGE: ULONG = 0x1000000;
 const IMAGE_DIRECTORY_ENTRY_RESOURCE: USHORT = 2;
 const EXCEPTION_CONTINUE_SEARCH: LONG = 0;
@@ -420,7 +424,11 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
     let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
     let mut ProcessInfo: PROCESS_INFORMATION = core::mem::zeroed();
 
-    if ((*ExceptionRecord).ExceptionFlags & 0x4) != 0 {
+    // C: `ExceptionRecord->ExceptionFlags & EXCEPTION_NESTED_CALL`, 0x10.
+    // The literal was 0x4 — EXCEPTION_EXIT_UNWIND — so "in case this is a
+    // nested exception, just kill the process" terminated on an ordinary exit
+    // unwind and let a genuinely nested exception run on.
+    if ((*ExceptionRecord).ExceptionFlags & EXCEPTION_NESTED_CALL) != 0 {
         NtTerminateProcess(
             -1isize as *mut core::ffi::c_void,
             (*ExceptionRecord).ExceptionCode as NTSTATUS,
@@ -470,8 +478,14 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
 
     PrintStackTrace(ExceptionInfo);
 
-    if ((GetErrorMode() & 0x80000001u32) != 0)
-        || ((RtlGetThreadErrorMode() & 0x80000001u32) != 0)
+    // C: `(GetErrorMode() & SEM_NOGPFAULTERRORBOX) ||
+    //     (RtlGetThreadErrorMode() & RTL_SEM_NOGPFAULTERRORBOX)`, 0x2 and 0x20.
+    // BOTH were written as 0x80000001, which is neither — bit 0 is
+    // SEM_FAILCRITICALERRORS and bit 31 is not defined at all. So the "caller
+    // asked us not to pop up a fault box" check consulted the wrong flag in
+    // both the Win32 and the NT per-thread error mode.
+    if ((GetErrorMode() & SEM_NOGPFAULTERRORBOX) != 0)
+        || ((RtlGetThreadErrorMode() & RTL_SEM_NOGPFAULTERRORBOX) != 0)
     {
         return 1;
     }

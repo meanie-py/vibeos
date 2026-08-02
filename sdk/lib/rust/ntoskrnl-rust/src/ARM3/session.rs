@@ -505,15 +505,21 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
     let mut data_page: [PFN_NUMBER; MI_SESSION_DATA_PAGES_MAXIMUM as usize] =
         [0; MI_SESSION_DATA_PAGES_MAXIMUM as usize];
 
+    // C: `Flags & PSF_SESSION_CREATION_UNDERWAY_BIT` / `Flags | ...`, 0x4000.
+    // Both halves were written as 0x200, which is PSF_WOW64_VA_SPACE_4GB_BIT —
+    // so this did not just test the wrong bit, it SET the wrong one on the
+    // EPROCESS, marking every process that creates a session as a 4GB-VA WOW64
+    // process. The test and the set agreed with each other, which is exactly
+    // why nothing downstream ever noticed.
     flags = (*process).__bindgen_anon_2.Flags;
     loop {
-        if (flags & 0x00000200) != 0 {
+        if (flags & PSF_SESSION_CREATION_UNDERWAY_BIT) != 0 {
             return STATUS_ALREADY_COMMITTED;
         }
 
         new_flags = InterlockedCompareExchange(
             &mut (*process).__bindgen_anon_2.Flags as *mut ULONG as *mut LONG,
-            (flags | 0x00000200) as LONG,
+            (flags | PSF_SESSION_CREATION_UNDERWAY_BIT) as LONG,
             flags as LONG,
         ) as ULONG;
         if new_flags == flags {

@@ -1457,6 +1457,10 @@ extern "C" {
 extern "C" {
     fn _ILSimpleGetTextW(pidl: LPCITEMIDLIST, szOut: LPWSTR, uOutSize: UINT) -> DWORD; // pidl.rs:1989
     fn _ILGetFileDateTime(pidl: LPCITEMIDLIST, pFt: *mut FILETIME) -> BOOL;            // pidl.rs:2180
+    /// `precomp.h:184` `EXTERN_C HRESULT SHELL_ShowItemIDListProperties(LPCITEMIDLIST)` —
+    /// implemented in `dialogs/item_prop.rs`. Called directly: the `_RustBridge` shim it used
+    /// to go through existed only to escape C++ mangling, and item_prop.cpp is no longer built.
+    fn SHELL_ShowItemIDListProperties(pidl: LPCITEMIDLIST) -> HRESULT;
 }
 
 // ── Bridges to retained C++ companions / C++-linkage helpers (implemented C++-side) ───────
@@ -1480,8 +1484,6 @@ extern "system" {
     fn CFSFolder_FormatSize_RustBridge(size: u64, buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     // utils.h:106 SHELL_CreateShell32DefaultExtractIcon(int, REFIID, LPVOID*)
     fn SHELL_CreateShell32DefaultExtractIcon_RustBridge(iconIndex: INT, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    // item_prop.cpp:199 SHELL_ShowItemIDListProperties(LPCITEMIDLIST)
-    fn SHELL_ShowItemIDListProperties_RustBridge(pidl: LPCITEMIDLIST) -> HRESULT;
     // CFSFolder.cpp:1479 void SHELL_FS_ProcessDisplayFilename(LPWSTR, DWORD)
     fn SHELL_FS_ProcessDisplayFilename_RustBridge(szPath: LPWSTR, dwFlags: DWORD);
     // shfldr.h:304 LPITEMIDLIST SHELL32_CreateSimpleIDListFromPath(LPCWSTR, DWORD)
@@ -2250,7 +2252,7 @@ pub unsafe fn CRecycleBin_InvokeCommand_body(this: *mut CRecycleBin, lpcmi: LPCM
         let hr = SHEmptyRecycleBinW((*lpcmi).hwnd, core::ptr::null_mut(), 0);
         return hr;
     } else if cmd_id == IDC_PROPERTIES as INT {
-        return SHELL_ShowItemIDListProperties_RustBridge(CSIDL_BITBUCKET as usize as LPCITEMIDLIST);
+        return SHELL_ShowItemIDListProperties(CSIDL_BITBUCKET as usize as LPCITEMIDLIST);
     }
     return E_INVALIDARG;
 }

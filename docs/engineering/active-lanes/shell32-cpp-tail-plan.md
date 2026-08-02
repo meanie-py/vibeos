@@ -330,13 +330,13 @@ and rshell both gate green.
 ## Wave 4 — procedural leaf/support TUs (15 files, 6,187 lines)
 
 ```text
-changenotify.cpp                   ~~debughlp.cpp~~ FLIPPED
-~~dialogs/drive.cpp~~ FLIPPED      dialogs/folder_options.cpp
-dialogs/item_prop.cpp             ~~dialogs/general.cpp~~ FLIPPED
-~~dialogs/recycler_prop.cpp~~ FL. ~~dialogs/view.cpp~~ FLIPPED
-~~folders.cpp~~ FLIPPED            ~~propsheet.cpp~~ FLIPPED
-~~shldataobject.cpp~~ FLIPPED      ~~shlfolder.cpp~~ FLIPPED
-~~stubs.cpp~~ FLIPPED              ~~systray.cpp~~ FLIPPED
+changenotify.cpp                        ~~debughlp.cpp~~ FLIPPED
+~~dialogs/drive.cpp~~ FLIPPED           ~~dialogs/folder_options.cpp~~ FLIPPED
+~~dialogs/item_prop.cpp~~ FLIPPED       ~~dialogs/general.cpp~~ FLIPPED
+~~dialogs/recycler_prop.cpp~~ FLIPPED   ~~dialogs/view.cpp~~ FLIPPED
+~~folders.cpp~~ FLIPPED                 ~~propsheet.cpp~~ FLIPPED
+~~shldataobject.cpp~~ FLIPPED           ~~shlfolder.cpp~~ FLIPPED
+~~stubs.cpp~~ FLIPPED                   ~~systray.cpp~~ FLIPPED
 CDefViewUtil.cpp
 ```
 
@@ -344,8 +344,17 @@ CDefViewUtil.cpp
 IOCTL surface (`DeviceIoControl` + the `winioctl.h` layouts) that the shell32 allowlist in
 `gen_driver_types.sh` never carried. Adding `ioapiset.h` and `psdk/winioctl.h` there is the
 durable fix and the regeneration is byte-reproducible; the `IOCTL_DISK_*` codes themselves are
-`CTL_CODE(...)` macros and are computed in `prelude.rs`. Remaining in this wave: `changenotify`,
-`dialogs/folder_options`, `dialogs/item_prop`, `CDefViewUtil`.
+`CTL_CODE(...)` macros and are computed in `prelude.rs`.
+
+`dialogs/item_prop.cpp` (FLIPPED 2026-08-02) is the wave's first **split-path** TU: nine free
+functions went through `--free-functions`, but its `ShellPropSheetDialog` is a C++ `struct` used
+as a namespace — only statics, no vtable, no `BEGIN_COM_MAP`, no activation — so `--cpp-com`
+refuses it on the deterministic preflight and `--free-functions` skips its four methods as
+"class methods". Neither mode owns that shape; the four are hand-written as free functions.
+Worth knowing before scoping any remaining TU: a `struct` in the source does NOT imply the COM
+path, and `--free-functions` will silently leave its methods out of the buy.
+
+Remaining in this wave: `changenotify`, `CDefViewUtil`.
 
 Translate by subsystem, preserving static tables/callback identity and export decoration.
 Prefer ordinary Rust modules in `shell32-rust`; create a new crate only for a real shared-link

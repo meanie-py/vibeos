@@ -51,6 +51,7 @@ macro_rules! w {
 const ArbiterRequestLegacyAssigned: _ARBITER_REQUEST_SOURCE = _ARBITER_REQUEST_SOURCE_ArbiterRequestLegacyAssigned;
 const IoQueryDeviceConfigurationData: usize = _IO_QUERY_DEVICE_DATA_FORMAT_IoQueryDeviceConfigurationData as usize;
 
+const DNF_LEGACY_RESOURCE_DEVICENODE: u32 = 0x00020000;
 const KEY_ALL_ACCESS: u32 = 0xF003F;
 const REG_OPTION_VOLATILE: u32 = 1;
 const REG_OPTION_NON_VOLATILE: u32 = 0;
@@ -1099,7 +1100,11 @@ pub unsafe extern "system" fn IoAssignResources(
 
     if !DeviceObject.is_null() {
         DeviceNode = IopGetDeviceNode(DeviceObject);
-        if !DeviceNode.is_null() && ((*DeviceNode).Flags & 0x400) == 0 {
+        // C: `!(DeviceNode->Flags & DNF_LEGACY_RESOURCE_DEVICENODE)`, 0x20000.
+        // The literal was 0x400 — DNF_RESOURCE_REQUIREMENTS_CHANGED — so the
+        // "new drivers must not call this API" bugcheck keyed off a transient
+        // rebalance bit instead of the permanent legacy marker.
+        if !DeviceNode.is_null() && ((*DeviceNode).Flags & DNF_LEGACY_RESOURCE_DEVICENODE) == 0 {
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::PNP_DETECTED_FATAL_ERROR,
                 0x2,
