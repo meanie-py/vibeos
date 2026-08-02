@@ -141,6 +141,10 @@ pub mod systray;
 pub mod dialogs_general;
 #[path = "dialogs/recycler_prop.rs"]
 pub mod dialogs_recycler_prop;
+// The format-drive dialog. It is the TU that made the island grow a disk IOCTL surface — see
+// its module header, and `gen_driver_types.sh`'s shell32 cell for the two headers it added.
+#[path = "dialogs/drive.rs"]
+pub mod dialogs_drive;
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

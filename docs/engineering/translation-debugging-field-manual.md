@@ -435,6 +435,32 @@ inherits its convention from the C declaration's macro, and the absence of one m
 `extern "system"` is not a safe default; it is a decision. Check every `pub type X = Option<...>`
 in translated output against the `typedef` in the C tail.
 
+**And the mirror image: a callback DEFINITION that lost the convention it did have.** Same file
+class, opposite direction, and it does not even need a typedef — `dialogs/drive.cpp`'s
+
+```c
+static DWORD CALLBACK FormatDriveThread(PVOID pThreadParameter);   /* CALLBACK == __stdcall */
+```
+
+came back as a plain `unsafe fn`, i.e. **Rust's own convention**, and is then handed to
+`SHCreateThread` to be called from a fresh thread. Nothing in the crate disagrees, because the
+value only becomes a `LPTHREAD_START_ROUTINE` at the FFI call. The tell is in the C: `CALLBACK`,
+`WINAPI`, `NTAPI`, `APIENTRY` and `STDMETHODCALLTYPE` all decorate a *definition*, and every one
+of them must survive as an `extern "..."` on the Rust `fn`. Grep the C tail for those five
+before believing a bare `unsafe fn`.
+
+**Where to spell it: `extern "system"`, not the literal the header used.** `system` IS stdcall
+on i386-windows and IS the C convention on 64-bit, so one spelling is right everywhere; writing
+the literal forces a `#[cfg]`-duplicated copy of the whole function per arch, and two bodies
+that must be edited in lockstep drift. That is not hypothetical — shell32 carried four such
+twins (`SIC_CompareEntries`, `sic_free`, `dde_cb`, `_DestroyCallback`) purely because the island
+spelled the slot `stdcall`. The generator-side fix is `normalize_island_abi.py`, which projects
+every ABI-identical fn-pointer slot to `extern "system"`; once an island has been regenerated
+through it, the twins collapse to one body. A slot that comes from a `-sys` crate instead of the
+island (`DLGPROC`, `LPTHREAD_START_ROUTINE` — both ntdll-sys) has NOT been through it, so
+re-declare that one API locally against an `extern "system"` fn-pointer, the way `prelude.rs`
+does for `DLGPROC`. The ABI is unchanged; only the spelling is.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and
@@ -976,6 +1002,26 @@ Two traps specific to this move:
   The same measure-first rule applies for its own sake: shellcom's `STRRET` stays hand-written
   because the island's is a bindgen anon-union (`__bindgen_anon_1` + `__BindgenUnionField`) and
   collapsing to it would rewrite `.u.pOleStr` across four landed files.
+- **An island's allowlist is grown by the TU you are translating NEXT, and regenerating it is
+  cheap and deterministic — do that before hand-declaring a missing surface.** shell32's
+  allowlist had no `ioapiset.h` and no `winioctl.h`, so `dialogs/drive.cpp` — which is nothing
+  but `DeviceIoControl` against `GET_LENGTH_INFORMATION` / `DISK_GEOMETRY` /
+  `PARTITION_INFORMATION{,_EX}` — had *no* layout for the buffers it fills and *no* value for the
+  codes it issues. That is the §9.112 shape one layer upstream, and the instinct to write the
+  six structs into the module by hand is exactly wrong: a hand-written layout is unverifiable,
+  and the next disk TU writes its own second copy.
+  Two things make the regeneration safe to reach for. It is **byte-reproducible** — re-running
+  `gen_driver_types.sh <module>` with no change to the script produced a diff of exactly the
+  seven declarations that `EXTERN_C` edits to `precomp.h` had made visible since the last run,
+  i.e. the island was simply stale, and a stale island is invisible until something needs the
+  missing name. And most of what an allowlisted header *would* add is already blocklisted to the
+  sibling `-sys` crate, so the diff is far smaller than the header: winioctl.h contributed only
+  the `FILE_DEVICE_*` / `METHOD_*` / `FILE_*_ACCESS` constants, because ntdll-sys already owns
+  every disk STRUCT and keeps their single identity.
+  What is still left over afterwards is the function-like macros — `CTL_CODE(t,f,m,a)` and
+  therefore all ~200 `IOCTL_*` codes assembled from it. Compute those in the prelude from the
+  island's own `FILE_DEVICE_*`/`METHOD_*` parts rather than transcribing the hex; a wrong IOCTL
+  is a runtime `ERROR_INVALID_FUNCTION`, not a compile error.
 - **`<stem>_extra.rs` is residue, not a spare copy — delete an entry the day bindgen learns to
   emit it.** `island_extra.rs` kept a hand-written `lstrcpynW` after all three arch islands
   began binding it (identically, `stdcall` vs the residue's `system`). A duplicate in the
@@ -1419,6 +1465,19 @@ argument is the assigned value, not an arm; and the `#define`'s own span must be
 parameter NAME is reported as a 43rd constant). 77 → 120 constants on msvcrt. **When an audit
 reports zero for a file you know dispatches, suspect the audit before believing the file** —
 `grep -c 'case '` against the finding count is a five-second control.
+
+**A C ENUM MEMBER is the shape most likely to get past you**, because bindgen renames it and the
+translation does not. bindgen prefixes each member with the enum's OWN name, so fmifs's
+`CALLBACKCOMMAND { PROGRESS, …, DONE, … }` becomes `CALLBACKCOMMAND_PROGRESS` /
+`CALLBACKCOMMAND_DONE`, and shell32 `dialogs/drive.cpp`'s format callback arrived written
+against the bare C spellings. `PROGRESS =>` as the FIRST arm is an irrefutable binding, so every
+command — including `DONE` — would have run the progress arm and read a `PBOOLEAN` through a
+`PDWORD`: no completion message box, no volume label written, and `Result` never set, so every
+format reports `SHFMT_ERROR`. Only the later or-pattern arm (`VOLUMEINUSE | INSUFFICIENTRIGHTS |
+…`) fails to compile, and it fails with E0408 — "variable is not bound in all patterns" — which
+reads as a pattern-syntax complaint, not as a report that the two arms above it are already
+broken. **Do not repair such an arm by transcribing ordinals from the C's declaration order**:
+here `DONE` is 11 and `DONEWITHSTRUCTURE` is 1. Take the names from the island.
 
 **A partial allowlist is the same bug, one layer down.** msvcrt-sys carried 13 of errno.h's 39
 codes because the list had grown per-wave on demand — and 9 of `msvcrt_set_errno`'s 18 targets

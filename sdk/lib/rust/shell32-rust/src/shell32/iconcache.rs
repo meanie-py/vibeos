@@ -137,8 +137,11 @@ unsafe extern "C" fn SIC_GetIconBPP() -> i32 {
         (nDefaultBPP) as i32
     }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn SIC_CompareEntries(
+// One definition, spelled `extern "system"`: that IS stdcall on i386 and the C
+// convention on 64-bit, and the island now spells the slot it goes into the same way
+// (normalize_island_abi.py). The `#[cfg]`-duplicated stdcall/C twins this replaces were
+// two bodies that had to be edited in lockstep forever.
+unsafe extern "system" fn SIC_CompareEntries(
     p1: *mut core::ffi::c_void,
     p2: *mut core::ffi::c_void,
     _lparam: LPARAM,
@@ -165,33 +168,6 @@ unsafe extern "stdcall" fn SIC_CompareEntries(
     _wcsicmp((*e1).sSourceFile, (*e2).sSourceFile) as i32
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn SIC_CompareEntries(
-    p1: *mut core::ffi::c_void,
-    p2: *mut core::ffi::c_void,
-    _lparam: LPARAM,
-) -> i32 {
-    let e1: *mut SIC_ENTRY = p1 as *mut SIC_ENTRY;
-    let e2: *mut SIC_ENTRY = p2 as *mut SIC_ENTRY;
-
-    if (*e1).dwSourceIndex != (*e2).dwSourceIndex {
-        return if (*e1).dwSourceIndex < (*e2).dwSourceIndex {
-            -1
-        } else {
-            1
-        };
-    }
-
-    if ((*e1).dwFlags & GIL_FORSHORTCUT) != ((*e2).dwFlags & GIL_FORSHORTCUT) {
-        return if ((*e1).dwFlags & GIL_FORSHORTCUT) < ((*e2).dwFlags & GIL_FORSHORTCUT) {
-            -1
-        } else {
-            1
-        };
-    }
-
-    _wcsicmp((*e1).sSourceFile, (*e2).sSourceFile) as i32
-}
 unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) -> HICON {
     let mut ShortcutIcon: HICON = core::ptr::null_mut();
     let mut ShortcutIconInfo: ICONINFO = core::mem::zeroed();
@@ -724,8 +700,11 @@ pub unsafe extern "C" fn SIC_Initialize() -> i32 {
 
     result
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut core::ffi::c_void) -> core::ffi::c_int {
+// One definition, spelled `extern "system"`: that IS stdcall on i386 and the C
+// convention on 64-bit, and the island now spells the slot it goes into the same way
+// (normalize_island_abi.py). The `#[cfg]`-duplicated stdcall/C twins this replaces were
+// two bodies that had to be edited in lockstep forever.
+unsafe extern "system" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut core::ffi::c_void) -> core::ffi::c_int {
     let _ = lparam;
     let p = ptr as *mut SIC_ENTRY;
     HeapFree(GetProcessHeap(), 0, (*p).sSourceFile.cast());
@@ -733,14 +712,6 @@ unsafe extern "stdcall" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut co
     return TRUE;
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn sic_free(ptr: *mut core::ffi::c_void, lparam: *mut core::ffi::c_void) -> core::ffi::c_int {
-    let _ = lparam;
-    let p = ptr as *mut SIC_ENTRY;
-    HeapFree(GetProcessHeap(), 0, (*p).sSourceFile.cast());
-    SHFree(ptr);
-    return TRUE;
-}
 #[no_mangle]
 pub unsafe extern "C" fn SIC_Destroy() {
     unsafe {

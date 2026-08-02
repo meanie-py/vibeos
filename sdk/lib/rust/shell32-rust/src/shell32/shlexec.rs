@@ -1566,8 +1566,11 @@ unsafe extern "C" fn SHELL_FindExecutable(
     retval
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn dde_cb(
+// One definition, spelled `extern "system"`: that IS stdcall on i386 and the C
+// convention on 64-bit, and the island now spells the slot it goes into the same way
+// (normalize_island_abi.py). The `#[cfg]`-duplicated stdcall/C twins this replaces were
+// two bodies that had to be edited in lockstep forever.
+unsafe extern "system" fn dde_cb(
     uType: UINT,
     uFmt: UINT,
     hConv: HCONV,
@@ -1581,20 +1584,6 @@ unsafe extern "stdcall" fn dde_cb(
     (NULL).cast()
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn dde_cb(
-    uType: UINT,
-    uFmt: UINT,
-    hConv: HCONV,
-    hsz1: HSZ,
-    hsz2: HSZ,
-    hData: HDDEDATA,
-    dwData1: ULONG_PTR,
-    dwData2: ULONG_PTR,
-) -> HDDEDATA {
-    // TRACE("dde_cb: %04x, %04x, %p, %p, %p, %p, %08lx, %08lx\n", uType, uFmt, hConv, hsz1, hsz2, hData, dwData1, dwData2);
-    (NULL).cast()
-}
 unsafe extern "C" fn dde_connect(
     key: PCWSTR,
     start: PCWSTR,

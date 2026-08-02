@@ -27,7 +27,7 @@ list(APPEND SOURCE
     changenotify.cpp
     # debughlp.cpp — replaced by Rust (shell32-rust/src/debughlp.rs); cohab via libshell32_rust.a
     dialogs/dialogs.cpp
-    dialogs/drive.cpp
+    # dialogs/drive.cpp — replaced by Rust (shell32-rust/src/dialogs/drive.rs); cohab via libshell32_rust.a
     dialogs/drvdefext.cpp
     # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
     # the shared SH_FormatByteSize/SH_FormatFileSizeWithBytes helpers and source-local

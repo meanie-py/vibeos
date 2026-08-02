@@ -2508,21 +2508,17 @@ pub unsafe extern "C" fn SHELL32_FileOperation(
 pub unsafe extern "system" fn SHFileOperationW(lpFileOp: *mut SHFILEOPSTRUCTW) -> i32 {
     SHELL32_FileOperation(lpFileOp, None, core::ptr::null_mut())
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
+// One definition, spelled `extern "system"`: that IS stdcall on i386 and the C
+// convention on 64-bit, and the island now spells the slot it goes into the same way
+// (normalize_island_abi.py). The `#[cfg]`-duplicated stdcall/C twins this replaces were
+// two bodies that had to be edited in lockstep forever.
+unsafe extern "system" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
     let lp = p as *mut _SHNAMEMAPPINGW;
     SHFree((*lp).pszOldPath as *mut c_void);
     SHFree((*lp).pszNewPath as *mut c_void);
     TRUE
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn _DestroyCallback(p: *mut core::ffi::c_void, pData: *mut core::ffi::c_void) -> i32 {
-    let lp = p as *mut _SHNAMEMAPPINGW;
-    SHFree((*lp).pszOldPath as *mut c_void);
-    SHFree((*lp).pszNewPath as *mut c_void);
-    TRUE
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn SHFreeNameMappings(hNameMapping: HANDLE) {

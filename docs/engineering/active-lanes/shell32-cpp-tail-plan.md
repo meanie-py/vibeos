@@ -330,15 +330,22 @@ and rshell both gate green.
 ## Wave 4 — procedural leaf/support TUs (15 files, 6,187 lines)
 
 ```text
-changenotify.cpp                   debughlp.cpp
-dialogs/drive.cpp                 dialogs/folder_options.cpp
-dialogs/item_prop.cpp             dialogs/general.cpp
-dialogs/recycler_prop.cpp         dialogs/view.cpp
-folders.cpp                       propsheet.cpp
-shldataobject.cpp                 shlfolder.cpp
-stubs.cpp                         systray.cpp
+changenotify.cpp                   ~~debughlp.cpp~~ FLIPPED
+~~dialogs/drive.cpp~~ FLIPPED      dialogs/folder_options.cpp
+dialogs/item_prop.cpp             ~~dialogs/general.cpp~~ FLIPPED
+~~dialogs/recycler_prop.cpp~~ FL. ~~dialogs/view.cpp~~ FLIPPED
+~~folders.cpp~~ FLIPPED            ~~propsheet.cpp~~ FLIPPED
+~~shldataobject.cpp~~ FLIPPED      ~~shlfolder.cpp~~ FLIPPED
+~~stubs.cpp~~ FLIPPED              ~~systray.cpp~~ FLIPPED
 CDefViewUtil.cpp
 ```
+
+`dialogs/drive.cpp` (FLIPPED 2026-08-02) is the one that moved the island: it needs a disk
+IOCTL surface (`DeviceIoControl` + the `winioctl.h` layouts) that the shell32 allowlist in
+`gen_driver_types.sh` never carried. Adding `ioapiset.h` and `psdk/winioctl.h` there is the
+durable fix and the regeneration is byte-reproducible; the `IOCTL_DISK_*` codes themselves are
+`CTL_CODE(...)` macros and are computed in `prelude.rs`. Remaining in this wave: `changenotify`,
+`dialogs/folder_options`, `dialogs/item_prop`, `CDefViewUtil`.
 
 Translate by subsystem, preserving static tables/callback identity and export decoration.
 Prefer ordinary Rust modules in `shell32-rust`; create a new crate only for a real shared-link
