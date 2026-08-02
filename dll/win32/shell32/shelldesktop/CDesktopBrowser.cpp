@@ -524,7 +524,12 @@ LRESULT CDesktopBrowser::OnDeviceChange(UINT uMsg, WPARAM wParam, LPARAM lParam,
     return 0;
 }
 
-extern VOID WINAPI ShowFolderOptionsDialog(UINT Page, BOOL Async);
+/* EXTERN_C: defined in Rust now (shell32-rust/src/dialogs/folder_options.rs), which cannot
+   emit the C++-mangled name this bare file-scope declaration used to ask for
+   (`__Z23ShowFolderOptionsDialogji@8`). WINAPI stays — it is the calling convention, and the
+   Rust side is `extern "system"` to match. Both arguments are passed explicitly here, so the
+   C++ default argument on the definition never applied at this call site. */
+EXTERN_C VOID WINAPI ShowFolderOptionsDialog(UINT Page, BOOL Async);
 
 LRESULT CDesktopBrowser::OnShowOptionsDlg(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled)
 {

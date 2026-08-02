@@ -1099,9 +1099,31 @@ inline emissions each TU already makes for itself.
 **A declaration can live in a `.cpp`, not only a header** — so grepping headers under-counts the
 work. `brfolder.cpp` declares `INT WINAPI Shell_GetCachedImageIndexW(...)` at its own file
 scope rather than including one, and that lone bare declaration was the only thing left holding
-a mangled reference after iconcache.cpp flipped. Conversely, check whether the header you *do*
-find already wraps itself: `wine/shell32_main.h` opens with `#ifdef __cplusplus extern "C" {`,
-so all four of iconcache's shell32-internal exports needed no edit at all.
+a mangled reference after iconcache.cpp flipped. `folder_options.cpp` repeated it exactly:
+`CDesktopBrowser.cpp` declares `extern VOID WINAPI ShowFolderOptionsDialog(UINT, BOOL);` at its
+own file scope, so the flip looked caller-free and failed at link on
+`__Z23ShowFolderOptionsDialogji@8`.
+**A symbol reached through a SHARED static library has as many providers as it has consumers,
+and changing its linkage changes all of them at once.** `ShowFolderOptionsDialog` again, one
+build later: `shelldesktop` is an OBJECT library linked into BOTH `shell32.dll` and
+`rshell.dll`, and each supplies the symbol from somewhere different — shell32 from the flipped
+Rust, rshell from a `misc.cpp` stub that shells out to `rundll32`. The CALLER's declaration
+decides the mangling, so `EXTERN_C` on the shared `CDesktopBrowser.cpp` declaration silently
+retargets rshell's link too: shell32.dll then builds and **rshell.dll** fails on
+`_ShowFolderOptionsDialog@8`, which looks like a shell32 problem and is not. Before flipping a
+symbol that a shared static/object library references, list that library's consumers
+(`grep -rn <lib> --include=CMakeLists.txt`) and check each for its own definition — and put the
+`EXTERN_C` on every provider in the same commit.
+
+**And beware how the search itself lies: `grep -rn <sym> | head` is not a completeness check.**
+That second case WAS searched across `.cpp`, and the one hit that mattered sorted past the
+tenth line. Truncating a search whose whole purpose is "prove there are no other references"
+turns a negative result into no result — count (`grep -c`), or read all of it. Conversely,
+check whether the header you *do* find already wraps itself: `wine/shell32_main.h` opens with
+`#ifdef __cplusplus extern "C" {`, so all four of iconcache's shell32-internal exports needed
+no edit at all. And when the header is reached through the PCH (`precomp.h` includes
+`dialogs/folder_options.h`), one `EXTERN_C` there covers every TU at once — check that before
+editing call sites one by one.
 **Exported DATA needs `#[no_mangle]` as much as exported functions do.** A flipped TU's
 `pub static mut` is Rust-private without it, and the link fails with
 `_ShellLargeIconSize: i386 cdecl — missing symbol`, which reads like an ABI problem and is not
