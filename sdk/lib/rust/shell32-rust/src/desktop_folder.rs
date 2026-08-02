@@ -2249,33 +2249,10 @@ pub const S_GREATERTHAN: HRESULT = S_FALSE;
     if (*ppOut).is_null() { E_OUTOFMEMORY } else { S_OK }
 }
 
-// -- CRegKeyHandleArray (shfldr.h:191) — { HKEY hKeys[16]; UINT cKeys; } --
-#[repr(C)]
-pub struct CRegKeyHandleArray { pub hKeys: [HKEY; 16], pub cKeys: UINT }
-impl CRegKeyHandleArray {
-    #[inline] fn len(&self) -> usize { self.cKeys as usize }
-    #[inline] fn as_ptr(&self) -> *const HKEY { self.hKeys.as_ptr() }
-}
-impl Default for CRegKeyHandleArray {
-    #[inline] fn default() -> Self { unsafe { core::mem::zeroed() } }
-}
-extern "C" {
-    /// `shfldr.h:184` `EXTERN_C void CloseRegKeyArray(HKEY*, UINT)` — implemented in
-    /// `shell32/shlfolder.rs`. DECLARED, not imported: that module is written against the
-    /// island's `HKEY` while this one uses `crate::types`, and two aliases of the same width
-    /// are still two different Rust types.
-    fn CloseRegKeyArray(array: *mut HKEY, cKeys: UINT);
-}
-/// The C++ struct's DESTRUCTOR (`shfldr.h:198`), which the translation dropped along with the
-/// rest of the class. `AddClassKeyToArray` OPENS each key, so without this every
-/// `IContextMenu` creation leaked up to 16 HKEYs — once per right-click on the desktop. Drop
-/// order matches C++: `keys` is declared before the `DEFCONTEXTMENU` that borrows it, so it is
-/// released after `SHCreateDefaultContextMenu` returns, exactly as the C++ scope exit did.
-impl Drop for CRegKeyHandleArray {
-    fn drop(&mut self) {
-        unsafe { CloseRegKeyArray(self.hKeys.as_mut_ptr(), self.cKeys) }
-    }
-}
+// -- CRegKeyHandleArray (shfldr.h:191) — one definition, in crate::shfldr --
+// Was re-derived here; `cfs_folder.rs` re-derived it too, and both copies had lost the
+// destructor. See `crate::shfldr` for why a Drop gets one home and an extern decl does not.
+use crate::shfldr::CRegKeyHandleArray;
 
 // -- STR_ bind-ctx object names (shobjidl.idl, ASCII → UTF-16) --
 static STR_PARSE_TRANSLATE_ALIASES: [WCHAR; 24] = [

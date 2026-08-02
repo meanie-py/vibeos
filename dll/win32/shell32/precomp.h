@@ -174,13 +174,18 @@ EXTERN_C HRESULT WINAPI
 SHMultiFileProperties(IDataObject *pDataObject, DWORD dwFlags);
 EXTERN_C HRESULT
 SHELL32_ShowPropertiesDialog(IDataObject *pdtobj);
-HRESULT
+// EXTERN_C because these three are now defined in Rust (shell32-rust/src/dialogs/item_prop.rs),
+// same as the four below. Declared plain, C++ mangles them and the remaining C++ callers
+// (CDrivesFolder.cpp, CRegFolder.cpp, CFSFolder.cpp, CRecycleBin.cpp) then look for a name no
+// #[no_mangle] symbol can satisfy. This header is the ONLY declaration site for all of them,
+// so it is also the whole lockstep.
+EXTERN_C HRESULT
 SHELL32_ShowFilesystemItemPropertiesDialogAsync(IDataObject *pDO);
 EXTERN_C HRESULT
 SHELL32_ShowFilesystemItemsPropertiesDialogAsync(HWND hOwner, IDataObject *pDO);
-HRESULT
+EXTERN_C HRESULT
 SHELL32_ShowShellExtensionProperties(const CLSID *pClsid, IDataObject *pDO);
-HRESULT
+EXTERN_C HRESULT
 SHELL_ShowItemIDListProperties(LPCITEMIDLIST pidl);
 
 typedef HDSA HDCMA; // DynamicContextMenuArray
