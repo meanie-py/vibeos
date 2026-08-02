@@ -78,9 +78,9 @@ pub use crate::atl::{
 // glob for `CCidaChildArrayHelper`: bindgen renders the C++ class as a bare layout with no
 // constructor, and the translated call sites need the real one.
 pub use crate::shellutils::{
-    hida_clipformat, CCidaChildArrayHelper, COleInit, DataObject_GetData, DataObject_GetOffset,
-    DataObject_SetData, DataObject_SetOffset, DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem,
-    ILIsSingle, ReleaseStgMedium, SHAlloc,
+    hida_clipformat, CCidaChildArrayHelper, CCoInit, COleInit, DataObject_GetData,
+    DataObject_GetOffset, DataObject_SetData, DataObject_SetOffset, DestroyCIDA,
+    HIDA_GetPIDLFolder, HIDA_GetPIDLItem, ILIsSingle, ReleaseStgMedium, SHAlloc,
 };
 
 // Accessor macros from `win32.rs`, but ONLY the ones whose signatures are type-neutral:
@@ -1261,8 +1261,13 @@ pub unsafe fn isspaceW(c: crate::island::WCHAR) -> crate::island::INT {
 }
 
 extern "C" {
-    /// `strsafe.h` — the bounded `swprintf`. Variadic: Rust can CALL a C variadic on stable
-    /// (only DEFINING one needs `rust_varargs_shim.c`), so this needs no trampoline.
+    /// `strsafe.h:515` — the bounded `swprintf`. Rust can CALL a C variadic on stable, but
+    /// there is nothing here to call: `STRSAFEAPI` is `static __inline`, so this is a PHANTOM
+    /// SYMBOL with no export, and the `extern` decl this used to be linked nowhere. It now
+    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_varargs_shim.c` (PART 3),
+    /// which calls the header's own `StringCchVPrintfW` and so keeps strsafe's truncation
+    /// contract rather than reimplementing it.
+    #[link_name = "StringCchPrintfW_RustBridge"]
     pub fn StringCchPrintfW(
         pszDest: crate::island::LPWSTR,
         cchDest: usize,

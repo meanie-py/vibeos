@@ -38,6 +38,14 @@ The sanctioned C shim is `rust_varargs_shim.c`: stable Rust cannot define the ex
 C-variadic `ShellMessageBoxA`. It must ultimately be built from Cargo (or the shared
 `varargs-rust` machinery), not used as a reason to retain shell32's CMake compilation.
 
+A second sanctioned shim landed with the shlexec flip — `rust_strsafe_shim.c`, ledger cohort
+`sanctioned/phantom_inline_linkage`. Its gap is **linkage, not language**: strsafe.h declares
+`StringCchPrintfW` as `STRSAFEAPI`, i.e. `static __inline`, so it is a phantom symbol with
+nothing for a Rust `extern` block to bind to (an `extern` for it compiles and fails at link).
+Calling a C variadic is already stable, so this is one forwarding trampoline into the header's
+own `StringCchVPrintfW`, kept in C so strsafe's truncation contract stays strsafe's. Any future
+strsafe inline Rust needs joins this file rather than getting reimplemented.
+
 ## Non-negotiable rails
 
 - Preserve paid outputs in `tools/rustconv/.responses/` and durable staging under
@@ -342,16 +350,21 @@ boundary. Remove each CMake entry in the same commit as its Rust module.
 
 Order them so shared substrate matures before the hardest control-flow files:
 
-1. `iconcache.cpp`
+1. ~~`iconcache.cpp`~~ — FLIPPED
 2. `dialogs/dialogs.cpp`
-3. `brfolder.cpp`
+3. ~~`brfolder.cpp`~~ — FLIPPED 2026-07-31
 4. `dialogs/filetypes.cpp`
 5. `utils.cpp`
 6. `CShellLink.cpp` (retained helper closure; activated class is already Rust)
-7. `shlexec.cpp`
-8. `shlfileop.cpp`
+7. ~~`shlexec.cpp`~~ — FLIPPED 2026-08-01
+8. ~~`shlfileop.cpp`~~ — FLIPPED 2026-08-01
 9. `CDefView.cpp`
 10. `shell32.cpp` (DLL/module/object-map capstone)
+
+The two hardest control-flow files (7, 8) landed ahead of 2/4/5 because their substrate — ATL,
+shellutils, layout, the `lpVtbl` COM shape — was already built by the earlier flips, and the
+"needs a printf-variadic `CStringW::Format`" blocker that had deferred both turned out to be
+false for shlexec and avoidable for shlfileop. See `shell32/mod.rs`.
 
 Keep translation function-granular and cache-durable. Large Rust outputs may be split into
 logical submodules, but C/C++ linkage and file-static semantics must be closed before the

@@ -1,9 +1,7 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! `dll/win32/shell32/shlexec.cpp`, translated and FLIPPED (2026-08-01) — the C is commented
+//! out of the CMake source list and these `#[no_mangle]` definitions are what shell32 links.
+//! What it was hiding, and what its substrate needed, is in `shell32/mod.rs` beside the
+//! `pub mod shlexec;`. This is a PAID artifact — do not delete it to tidy up.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_0C71B3CB5580: [WCHAR; 8] = [0x0063, 0x006F, 0x006D, 0x006D, 0x0061, 0x006E, 0x0064, 0x0000];
 pub static CPP_COM_WSTR_0D13EF6B270F: [WCHAR; 6] = [0x0050, 0x0041, 0x0054, 0x0048, 0x003D, 0x0000];
@@ -54,6 +52,52 @@ use crate::prelude::INVALID_FILE_ATTRIBUTES;
 // members; the translated call sites go through the C `lpVtbl`. Explicit beats glob.
 use crate::shellcom::{IContextMenu, IUnknown};
 
+// shell32's own helpers and the shlwapi imports the island's include closure does not reach.
+// Declared here rather than in the prelude for the reason `shlfileop` gives for its own block:
+// the Rust modules that DEFINE these are typed against `crate::types`, so importing one drags
+// its aliases into an island-first TU and splits every call site nominally.
+//
+// Three of these draw a `redeclared with a different signature` warning against the crate's
+// OTHER declaration of the same export, and every one is the alias spelling rather than the
+// ABI: `*mut *mut HKEY__` vs `*mut *mut c_void`, `extern "system"` vs `extern "stdcall"` on
+// i386. That is the same nominal split prelude.rs documents, and ~80 of these already exist
+// crate-wide. Arity, widths and pointer classes were checked against each counterpart.
+extern "system" {
+    /// shlwapi.
+    fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
+    /// shlobj.h — implemented in `wine/pidl.rs`.
+    fn ILGetSize(pidl: LPCITEMIDLIST) -> UINT;
+    /// `COpenWithMenu.cpp:100` has C++ linkage and no header declaration, so there is no
+    /// unmangled `SH32_InvokeOpenWith` to bind to — the same file already exports a WINAPI
+    /// bridge for exactly this, which `open_with_menu.rs` also uses. (`win32.rs` declares the
+    /// bare name in an `extern "system"` block; that one has no callers and would not link.)
+    #[link_name = "Shell32RustInvokeOpenWith"]
+    fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
+}
+extern "C" {
+    /// `shpolicy.c` — plain __cdecl, NOT WINAPI, so `extern "C"`: `extern "system"` would look
+    /// for `_SH32_InternalRestricted@4` and i386 is the only arch that catches the difference.
+    fn SH32_InternalRestricted(rest: DWORD) -> DWORD;
+    /// `classes.c` — both __cdecl, same reasoning.
+    fn HCR_GetDefaultVerbW(hkeyClass: HKEY, szVerb: LPCWSTR, szDest: LPWSTR, len: DWORD) -> BOOL;
+    fn HCR_GetProgIdKeyOfExtension(szExtension: PCWSTR, phKey: PHKEY, AllowFallback: BOOL) -> HRESULT;
+}
+extern "C" {
+    /// The interface ids. `IID_IShellExtInit` / `IID_IShellExecuteHookW` come from the island;
+    /// these three do not, because nothing else in shell32's include closure names them.
+    static IID_IUnknown: GUID;
+    static IID_IDataObject: GUID;
+    static IID_IObjectWithSite: GUID;
+}
+
+/// wtypes.idl:341. Verified against shlexec.cpp's own include closure with the cross-compiler
+/// rather than transcribed — a wrong constant compiles clean and misbehaves at runtime.
+const CLSCTX_INPROC_SERVER: DWORD = 1;
+
+/// `SHELL_ErrorBox` is already bound crate-wide against its `_RustBridge` WINAPI shim; import
+/// the one binding rather than declaring a second, which would be two symbols for one export.
+use crate::win32::SHELL_ErrorBox;
+
 // Deterministic from shobjidl.h. Declared file-locally like the five other TUs that use it —
 // see the note in `shellcom.rs` on why it does NOT live there.
 #[repr(C)]
@@ -75,16 +119,56 @@ pub struct IShellExtInitVtbl {
     ) -> HRESULT,
 }
 
+// shobjidl.h. The island DOES carry a name for each of these, and neither is usable here:
+// `IShellExecuteHookW` arrives as a bindgen C++ class whose vtable is OPAQUE
+// (`IShellExecuteHookW__bindgen_vtable(c_void)`), so `p.Execute(..)` resolves to nothing at all;
+// `IObjectWithSite` is re-exported from com-sys, whose slots are `Option<fn>` — calling one is
+// E0618 and `.unwrap()`ing it would put a panic on a COM call in a shipping DLL. Both are
+// declared file-locally, in the `lpVtbl` shape the rest of the crate uses. An item defined in
+// the module beats a glob import, so these shadow the island rather than colliding with it.
+#[repr(C)]
+pub struct IShellExecuteHookW {
+    pub lpVtbl: *const IShellExecuteHookWVtbl,
+}
+#[repr(C)]
+pub struct IShellExecuteHookWVtbl {
+    pub QueryInterface: unsafe extern "system" fn(
+        This: *mut IShellExecuteHookW, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void,
+    ) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellExecuteHookW) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellExecuteHookW) -> ULONG,
+    pub Execute:
+        unsafe extern "system" fn(This: *mut IShellExecuteHookW, pei: LPSHELLEXECUTEINFOW) -> HRESULT,
+}
+
+#[repr(C)]
+pub struct IObjectWithSite {
+    pub lpVtbl: *const IObjectWithSiteVtbl,
+}
+#[repr(C)]
+pub struct IObjectWithSiteVtbl {
+    pub QueryInterface: unsafe extern "system" fn(
+        This: *mut IObjectWithSite, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void,
+    ) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IObjectWithSite) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IObjectWithSite) -> ULONG,
+    pub SetSite:
+        unsafe extern "system" fn(This: *mut IObjectWithSite, pUnkSite: *mut IUnknown) -> HRESULT,
+    pub GetSite: unsafe extern "system" fn(
+        This: *mut IObjectWithSite, riid: REFIID, ppvSite: *mut *mut core::ffi::c_void,
+    ) -> HRESULT,
+}
+
 // ---- file-scope preamble (translated) ----
 pub const SEE_MASK_CLASSALL: u32 = SEE_MASK_CLASSNAME | SEE_MASK_CLASSKEY;
 
-pub type SHELL_ExecuteW32 = Option<unsafe extern "system" fn(
+pub type SHELL_ExecuteW32 = unsafe extern "C" fn(
     lpCmd: *const u16,
     env: *mut u16,
     shWait: i32,
     sei: *const SHELLEXECUTEINFOW,
     sei_out: *mut SHELLEXECUTEINFOW,
-) -> usize>;
+) -> UINT_PTR;
 
 #[repr(C)]
 pub struct _RUNASDLGDATA {
@@ -180,7 +264,7 @@ unsafe extern "C" fn InvokeShellExecuteHook(pszClsid: PCWSTR, pSEI: LPSHELLEXECU
     }
     let mut pWide: *mut IShellExecuteHookW = core::ptr::null_mut();
     if ((((*(*pUnk).lpVtbl).QueryInterface)(pUnk, core::ptr::addr_of!(IID_IShellExecuteHookW).cast(), core::ptr::addr_of_mut!(pWide).cast())) >= 0) {
-        let result = (*pWide).Execute(pSEI);
+        let result = ((*(*pWide).lpVtbl).Execute)(pWide, pSEI);
         if !pWide.is_null() {
             ((*(*pWide).lpVtbl).Release)(pWide);
         }
@@ -210,7 +294,7 @@ unsafe extern "C" fn TryShellExecuteHooks(pSEI: LPSHELLEXECUTEINFOW) -> HRESULT 
 
     let mut subkey: [u16; 256] = [0u16; 256];
     let mut pos = 0;
-    let mut s1: PCWSTR = REGSTR_PATH_EXPLORER;
+    let mut s1: PCWSTR = REGSTR_PATH_EXPLORER.as_ptr();
     while *s1 != 0 {
         subkey[pos] = *s1;
         s1 = s1.offset(1);
@@ -501,7 +585,7 @@ unsafe extern "C" fn SHELL_ArgifyW(
                         let mut buf: [u16; 100 as usize] =
                             [0u16; 100 as usize];
                         let hmem = SHAllocShared(
-                            pidl,
+                            pidl.cast(),
                             ILGetSize(pidl),
                             0,
                         );
@@ -595,7 +679,7 @@ unsafe extern "C" fn SHELL_GetPathFromIDListForExecuteW(pidl: LPCITEMIDLIST, psz
     let mut desktop: *mut IShellFolder = core::ptr::null_mut();
     let mut hr = SHGetDesktopFolder(core::ptr::addr_of_mut!(desktop));
     if hr >= 0 {
-        hr = ((*desktop).lpVtbl).GetDisplayNameOf(desktop, pidl, SHGDN_FORPARSING, core::ptr::addr_of_mut!(strret));
+        hr = ((*(*desktop).lpVtbl).GetDisplayNameOf)(desktop, pidl.cast(), SHGDN_FORPARSING, core::ptr::addr_of_mut!(strret).cast());
         if hr >= 0 {
             StrRetToStrNW(pszPath, uOutSize, core::ptr::addr_of_mut!(strret), pidl);
         }
@@ -641,7 +725,7 @@ unsafe extern "stdcall" fn RunAsDlgProc(
             );
             SendDlgItemMessageW(
                 hwnd,
-                IDC_RUNAS_OTHER,
+                IDC_RUNAS_OTHER as i32,
                 BM_CLICK,
                 0,
                 0,
@@ -722,19 +806,19 @@ unsafe extern "stdcall" fn RunAsDlgProc(
                         (*pData).Domain = (*pData).Name;
                         (*pData).Name = tmp;
                     }
-                    (*pData).LogonFlags = if GetKeyState(VK_SHIFT) < 0 {
+                    (*pData).LogonFlags = if GetKeyState(VK_SHIFT as i32) < 0 {
                         LOGON_NETCREDENTIALS_ONLY
                     } else {
                         LOGON_WITH_PROFILE
                     };
-                    (*pData).Safer = IsDlgButtonChecked(hwnd, IDC_RUNAS_SAFER as i32);
+                    (*pData).Safer = IsDlgButtonChecked(hwnd, IDC_RUNAS_SAFER as i32) as BOOL;
                     if IsDlgButtonChecked(hwnd, IDC_RUNAS_OTHER as i32) == 0 {
                         (*pData).Name = core::ptr::null_mut();
                     }
                     EndDialog(hwnd, (IDOK) as INT_PTR);
                 }
                 IDC_RUNAS_BROWSE => {
-                    return (SHELL_ErrorBox(hwnd, ERROR_NOT_SUPPORTED)) as isize;
+                    return SHELL_ErrorBox(hwnd as *mut c_void, ERROR_NOT_SUPPORTED) as INT_PTR;
                 }
                 _ => {}
             }
@@ -760,14 +844,14 @@ unsafe extern "C" fn RunAsDlgProc(
                 hwnd,
                 (IDC_RUNAS_NAME) as i32,
                 EM_LIMITTEXT,
-                (_countof((*pData).NameBuffer) - 1) as _,
+                (_countof!((*pData).NameBuffer) - 1) as _,
                 0,
             );
             SendDlgItemMessageW(
                 hwnd,
                 (IDC_RUNAS_PWD) as i32,
                 EM_LIMITTEXT,
-                (_countof((*pData).Password) - 1) as _,
+                (_countof!((*pData).Password) - 1) as _,
                 0,
             );
             SendDlgItemMessageW(
@@ -779,25 +863,26 @@ unsafe extern "C" fn RunAsDlgProc(
             );
             let hCtl = GetDlgItem(hwnd, (IDC_RUNAS_CURRENT) as i32);
             let mut fmtbuf: [u16; 200 as usize] = [0u16; 200 as usize];
-            let mut buf: [u16; (_countof(fmtbuf) + _countof((*pData).NameBuffer)) as usize] =
-                [0u16; (_countof(fmtbuf) + _countof((*pData).NameBuffer)) as usize];
-            let mut cch: DWORD = _countof((*pData).NameBuffer);
+            const FMTBUF_CCH: usize = 200; // WCHAR fmtbuf[200]
+            const BUF_CCH: usize = FMTBUF_CCH + MAX_PATH as usize; // + _countof(NameBuffer)
+            let mut buf: [u16; BUF_CCH] = [0u16; BUF_CCH];
+            let mut cch: DWORD = _countof!((*pData).NameBuffer);
             if GetUserNameW((*pData).NameBuffer.as_mut_ptr(), &mut cch) != 0 {
                 SendMessageW(
                     hCtl,
                     WM_GETTEXT,
-                    _countof(fmtbuf) as _,
+                    _countof!(fmtbuf) as _,
                     fmtbuf.as_mut_ptr() as LPARAM,
                 );
                 StringCchPrintfW(
                     fmtbuf.as_mut_ptr(),
-                    _countof(fmtbuf) as _,
+                    _countof!(fmtbuf) as _,
                     buf.as_mut_ptr(),
                     CPP_COM_WSTR_6E8A9C6CE19B.as_ptr(),
                 );
                 StringCchPrintfW(
                     buf.as_mut_ptr(),
-                    _countof(buf) as _,
+                    _countof!(buf) as _,
                     fmtbuf.as_mut_ptr(),
                     (*pData).NameBuffer.as_mut_ptr(),
                 );
@@ -827,21 +912,21 @@ unsafe extern "C" fn RunAsDlgProc(
         WM_COMMAND => {
             match LOWORD((wParam) as u32) as u32 {
                 IDCANCEL => {
-                    EndDialog(hwnd, ((IDCANCEL) as isize) as i64);
+                    EndDialog(hwnd, (IDCANCEL) as INT_PTR);
                 }
                 IDOK => {
                     SendDlgItemMessageW(
                         hwnd,
                         (IDC_RUNAS_NAME) as i32,
                         WM_GETTEXT,
-                        _countof((*pData).NameBuffer) as _,
+                        _countof!((*pData).NameBuffer) as _,
                         (*pData).NameBuffer.as_mut_ptr() as LPARAM,
                     );
                     SendDlgItemMessageW(
                         hwnd,
                         (IDC_RUNAS_PWD) as i32,
                         WM_GETTEXT,
-                        _countof((*pData).Password) as _,
+                        _countof!((*pData).Password) as _,
                         (*pData).Password.as_mut_ptr() as LPARAM,
                     );
                     (*pData).Name = (*pData).NameBuffer.as_mut_ptr();
@@ -861,10 +946,10 @@ unsafe extern "C" fn RunAsDlgProc(
                     if IsDlgButtonChecked(hwnd, (IDC_RUNAS_OTHER) as i32) == 0 {
                         (*pData).Name = core::ptr::null_mut();
                     }
-                    EndDialog(hwnd, ((IDOK) as isize) as i64);
+                    EndDialog(hwnd, (IDOK) as INT_PTR);
                 }
                 IDC_RUNAS_BROWSE => {
-                    return ((SHELL_ErrorBox(hwnd, ERROR_NOT_SUPPORTED)) as isize) as i64;
+                    return SHELL_ErrorBox(hwnd as *mut c_void, ERROR_NOT_SUPPORTED) as INT_PTR;
                 }
                 _ => {}
             }
@@ -883,8 +968,8 @@ unsafe extern "C" fn PromptAndRunProcessAs(
     pPI: *mut PROCESS_INFORMATION,
 ) -> HRESULT {
     let mut data: RUNASDLGDATA = core::mem::zeroed();
-    let error: UINT;
-    let dlgret: INT_PTR;
+    let mut error: UINT;
+    let mut dlgret: INT_PTR;
     let hwnd = SHELL_GetUsableDialogOwner(hwnd);
 
     'again: loop {
@@ -892,7 +977,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
             shell32_hInstance,
             MAKEINTRESOURCEW(IDD_RUN_AS),
             hwnd,
-            RunAsDlgProc,
+            Some(RunAsDlgProc),
             core::ptr::addr_of_mut!(data) as LPARAM,
         );
         if dlgret == (IDOK) as INT_PTR && !data.Name.is_null() {
@@ -922,7 +1007,7 @@ unsafe extern "C" fn PromptAndRunProcessAs(
                 | ERROR_ACCOUNT_RESTRICTION
                 | ERROR_INVALID_LOGON_HOURS
                 | ERROR_PASSWORD_EXPIRED => {
-                    SHELL_ErrorBox(hwnd, error);
+                    SHELL_ErrorBox(hwnd as *mut c_void, error);
                     continue 'again;
                 }
                 _ => {}
@@ -967,10 +1052,10 @@ unsafe extern "C" fn SHELL_ExecuteW(
     shWait: i32,
     psei: *const SHELLEXECUTEINFOW,
     psei_out: *mut SHELLEXECUTEINFOW,
-) -> usize {
+) -> UINT_PTR {
     let mut startup: STARTUPINFOW = core::mem::zeroed();
     let mut info: PROCESS_INFORMATION = core::mem::zeroed();
-    let mut retval: usize = (SE_ERR_NOASSOC) as usize;
+    let mut retval: UINT_PTR = (SE_ERR_NOASSOC) as UINT_PTR;
     let mut gcdret: u32 = 0;
     let mut lasterror: u32 = 0;
     let mut curdir: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
@@ -1000,7 +1085,10 @@ unsafe extern "C" fn SHELL_ExecuteW(
         &mut startup as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<STARTUPINFOW>(),
     );
-    startup.cb = core::mem::size_of_val(&STARTUPINFOW) as u32;
+    // C: `startup.cb = sizeof(STARTUPINFOW)`. `size_of_val(&STARTUPINFOW)` passed the TYPE where
+    // a value belongs; `cb` is how CreateProcess knows which fields to read, so a wrong one is a
+    // silently truncated startup record rather than a compile error anywhere else.
+    startup.cb = core::mem::size_of::<STARTUPINFOW>() as u32;
     startup.dwFlags = STARTF_USESHOWWINDOW;
     startup.wShowWindow = ((*psei).nShow) as u16;
     if ((*psei).fMask & SEE_MASK_NO_CONSOLE) == 0 {
@@ -1029,7 +1117,7 @@ unsafe extern "C" fn SHELL_ExecuteW(
         startup.dwFlags |= STARTF_SHELLPRIVATE;
     } else if (((*psei).fMask & SEE_MASK_HMONITOR) != 0) || !(*psei).hwnd.is_null() {
         if ((*psei).fMask & SEE_MASK_HMONITOR) != 0 {
-            startup.hStdOutput = (*psei).hMonitor;
+            startup.hStdOutput = *(*psei).__bindgen_anon_1.hMonitor.as_ref();
         } else if !(*psei).hwnd.is_null() {
             startup.hStdOutput = (MonitorFromWindow((*psei).hwnd, MONITOR_DEFAULTTONEAREST)).cast();
         }
@@ -1039,68 +1127,69 @@ unsafe extern "C" fn SHELL_ExecuteW(
     }
 
     let createdProcess: i32;
-    if !(*psei).lpVerb.is_null()
-        && StrCmpIW(CPP_COM_WSTR_878FA9FF9662.as_ptr(), (*psei).lpVerb) == 0
-    {
-        let hr = PromptAndRunProcessAs(
-            (*psei).hwnd,
-            lpCmd as PWSTR,
-            dwCreationFlags,
-            env,
-            lpDirectory,
-            &mut startup,
-            &mut info,
-        );
-        createdProcess = if hr == S_OK { 1 } else { 0 };
-        if hr == S_FALSE {
-            retval = 33;
-            'done: {
+    // The label spans exactly what C's `goto done` skips; the epilogue below is `done:`.
+    'done: {
+        if !(*psei).lpVerb.is_null()
+            && StrCmpIW(CPP_COM_WSTR_878FA9FF9662.as_ptr(), (*psei).lpVerb) == 0
+        {
+            let hr = PromptAndRunProcessAs(
+                (*psei).hwnd,
+                lpCmd as PWSTR,
+                dwCreationFlags,
+                env,
+                lpDirectory,
+                &mut startup,
+                &mut info,
+            );
+            createdProcess = if hr == S_OK { 1 } else { 0 };
+            if hr == S_FALSE {
+                retval = 33;
                 break 'done;
             }
+        } else {
+            createdProcess = CreateProcessW(
+                core::ptr::null_mut(),
+                lpCmd as PWSTR,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                FALSE,
+                dwCreationFlags,
+                env as *mut core::ffi::c_void,
+                lpDirectory,
+                &mut startup,
+                &mut info,
+            );
         }
-    } else {
-        createdProcess = CreateProcessW(
-            core::ptr::null_mut(),
-            lpCmd as PWSTR,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            FALSE,
-            dwCreationFlags,
-            env as *mut core::ffi::c_void,
-            lpDirectory,
-            &mut startup,
-            &mut info,
-        );
-    }
 
-    if createdProcess != 0 {
-        if shWait != 0 {
-            if WaitForInputIdle(info.hProcess, 30000)
-                == WAIT_FAILED
-            {
-                DbgPrint(
-                    b"WaitForInputIdle failed: Error %d\n\0".as_ptr() as _,
-                    GetLastError(),
-                );
+        if createdProcess != 0 {
+            if shWait != 0 {
+                if WaitForInputIdle(info.hProcess, 30000)
+                    == WAIT_FAILED
+                {
+                    DbgPrint(
+                        b"WaitForInputIdle failed: Error %d\n\0".as_ptr() as _,
+                        GetLastError(),
+                    );
+                }
+            }
+            retval = 33;
+
+            if ((*psei).fMask & SEE_MASK_NOCLOSEPROCESS) != 0 {
+                (*psei_out).hProcess = info.hProcess;
+            } else {
+                CloseHandle(info.hProcess);
+            }
+            CloseHandle(info.hThread);
+        } else {
+            lasterror = GetLastError();
+            retval = lasterror as UINT_PTR;
+            if retval >= 32 {
+                retval = (ERROR_BAD_FORMAT) as UINT_PTR;
             }
         }
-        retval = 33;
+    } // 'done
 
-        if ((*psei).fMask & SEE_MASK_NOCLOSEPROCESS) != 0 {
-            (*psei_out).hProcess = info.hProcess;
-        } else {
-            CloseHandle(info.hProcess);
-        }
-        CloseHandle(info.hThread);
-    } else {
-        lasterror = GetLastError();
-        retval = lasterror as usize;
-        if retval >= 32 {
-            retval = (ERROR_BAD_FORMAT) as usize;
-        }
-    }
-
-    'done: {
+    {
         DbgPrint(b"returning %lu\n\0".as_ptr() as _, retval);
         (*psei_out).hInstApp = (retval as *mut core::ffi::c_void).cast();
 
@@ -1171,11 +1260,11 @@ unsafe extern "C" fn SHELL_BuildEnvW(path: PCWSTR) -> PWSTR {
     return new_env.Detach();
 }
 unsafe extern "C" fn SHELL_TryAppPathW(szName: PCWSTR, lpResult: PWSTR, env: *mut PWSTR) -> u8 {
-    let mut hkApp: *mut c_void = core::ptr::null_mut();
+    let mut hkApp: HKEY = core::ptr::null_mut();
     let mut buffer: [u16; 1024] = [0; 1024];
     let mut len: u32;
     let mut dwType: u32 = 0;
-    let res: i32;
+    let mut res: i32;
     let mut found: u8 = (FALSE) as u8;
 
     if !env.is_null() {
@@ -1189,38 +1278,34 @@ unsafe extern "C" fn SHELL_TryAppPathW(szName: PCWSTR, lpResult: PWSTR, env: *mu
             res = RegOpenKeyExW(HKEY_LOCAL_MACHINE, buffer.as_ptr(), 0, KEY_READ, &mut hkApp);
         }
         if res != 0 {
-            'end: loop {
-                if !hkApp.is_null() {
-                    RegCloseKey((hkApp).cast());
-                }
-                return found;
-            }
-        }
-    }
-
-    len = (MAX_PATH * ((core::mem::size_of::<u16>() as u32) as usize) as u32) as u32;
-    res = SHRegQueryValueExW(hkApp, core::ptr::null(), core::ptr::null_mut(), &mut dwType, lpResult as *mut u8, &mut len);
-    if res != (ERROR_SUCCESS) as i32 || dwType != REG_SZ {
-        'end: loop {
             if !hkApp.is_null() {
-                RegCloseKey((hkApp).cast());
+                RegCloseKey(hkApp);
             }
             return found;
         }
+    }
+
+    len = MAX_PATH * core::mem::size_of::<u16>() as u32;
+    res = SHRegQueryValueExW(hkApp, core::ptr::null(), core::ptr::null_mut(), &mut dwType, lpResult.cast(), &mut len);
+    if res != (ERROR_SUCCESS) as i32 || dwType != REG_SZ {
+        if !hkApp.is_null() {
+            RegCloseKey(hkApp);
+        }
+        return found;
     }
 
     found = (TRUE) as u8;
 
     if !env.is_null() {
         len = core::mem::size_of_val(&buffer) as u32;
-        res = SHRegQueryValueExW(hkApp, CPP_COM_WSTR_9A56E6BBE687.as_ptr(), core::ptr::null(), &mut dwType, buffer.as_mut_ptr() as *mut u8, &mut len);
+        res = SHRegQueryValueExW(hkApp, CPP_COM_WSTR_9A56E6BBE687.as_ptr(), core::ptr::null_mut(), &mut dwType, buffer.as_mut_ptr().cast(), &mut len);
         if res == (ERROR_SUCCESS) as i32 && dwType == REG_SZ && buffer[0] != 0 {
             *env = SHELL_BuildEnvW(buffer.as_ptr());
         }
     }
 
     if !hkApp.is_null() {
-        RegCloseKey((hkApp).cast());
+        RegCloseKey(hkApp);
     }
     found
 }
@@ -1280,7 +1365,7 @@ unsafe extern "C" fn SHELL_FindExecutableByVerb(
 }
 unsafe extern "C" fn SHELL_FindExecutable(
     lpPath: PCWSTR,
-    lpFile: PCWSTR,
+    mut lpFile: PCWSTR,
     lpVerb: PCWSTR,
     lpResult: LPWSTR,
     resultLen: u32,
@@ -1333,10 +1418,10 @@ unsafe extern "C" fn SHELL_FindExecutable(
 
     let resolve_result = PathResolveW(
         xlpFile.as_mut_ptr(),
-        search_paths.as_ptr(),
+        search_paths.as_mut_ptr(),
         PRF_TRYPROGRAMEXTENSIONS | PRF_VERIFYEXISTS,
     );
-    let find_result = PathFindOnPathW(xlpFile.as_mut_ptr(), search_paths.as_ptr());
+    let find_result = PathFindOnPathW(xlpFile.as_mut_ptr(), search_paths.as_mut_ptr());
 
     if resolve_result != 0 || find_result != 0 {
         lpFile = xlpFile.as_ptr();
@@ -1417,7 +1502,7 @@ unsafe extern "C" fn SHELL_FindExecutable(
         retval = SHELL_FindExecutableByVerb(
             lpVerb,
             key,
-            classname.as_ptr(),
+            classname.as_mut_ptr(),
             command.as_mut_ptr(),
             core::mem::size_of_val(&command) as i32,
         );
@@ -1533,19 +1618,19 @@ unsafe extern "C" fn dde_connect(
     let mut applen: i32;
     let mut topiclen: i32;
     let mut ifexeclen: i32;
-    let exec: PWSTR;
+    let mut exec: PWSTR;
     let mut ddeInst: u32 = 0;
     let mut tid: u32 = 0;
     let mut resultLen: u32 = 0;
     let endkeyLen: usize;
     let hszApp: HSZ;
     let hszTopic: HSZ;
-    let hConv: HCONV;
+    let mut hConv: HCONV;
     let hDdeData: HDDEDATA;
     let mut ret: u32 = SE_ERR_NOASSOC;
     let unicode: u8 = if (GetVersion() & 0x80000000) == 0 { 1 } else { 0 };
 
-    if strlenW(key) + 1 > ARRAY_SIZE!(regkey) {
+    if strlenW(key) + 1 > ARRAY_SIZE!(regkey) as usize {
         return 2;
     }
     wcscpy(regkey.as_mut_ptr(), key);
@@ -1562,7 +1647,7 @@ unsafe extern "C" fn dde_connect(
         let mut ret_search: u32 = 0;
 
         if *start == '"' as u16 {
-            if strlenW(start.add(1)) + 1 > ARRAY_SIZE!(command) {
+            if strlenW(start.add(1)) + 1 > ARRAY_SIZE!(command) as usize {
                 return 2;
             }
             wcscpy(command.as_mut_ptr(), start.add(1));
@@ -1595,7 +1680,7 @@ unsafe extern "C" fn dde_connect(
         if ret_search == 0 {
             return ERROR_ACCESS_DENIED;
         }
-        if strlenW(ptr) + 1 > ARRAY_SIZE!(app) {
+        if strlenW(ptr) + 1 > ARRAY_SIZE!(app) as usize {
             return 2;
         }
         wcscpy(app.as_mut_ptr(), ptr);
@@ -1620,11 +1705,11 @@ unsafe extern "C" fn dde_connect(
     }
 
     if unicode != 0 {
-        if DdeInitializeW(&mut ddeInst, dde_cb, APPCMD_CLIENTONLY, 0) != DMLERR_NO_ERROR {
+        if DdeInitializeW(&mut ddeInst, Some(dde_cb), APPCMD_CLIENTONLY, 0) != DMLERR_NO_ERROR {
             return 2;
         }
     } else {
-        if DdeInitializeA(&mut ddeInst, dde_cb, APPCMD_CLIENTONLY, 0) != DMLERR_NO_ERROR {
+        if DdeInitializeA(&mut ddeInst, Some(dde_cb), APPCMD_CLIENTONLY, 0) != DMLERR_NO_ERROR {
             return 2;
         }
     }
@@ -1635,7 +1720,7 @@ unsafe extern "C" fn dde_connect(
     hConv = DdeConnect(ddeInst, hszApp, hszTopic, core::ptr::null_mut());
     exec = ddeexec;
     if hConv.is_null() {
-        ret = ((execfunc.unwrap())(start, env, TRUE, psei, psei_out)) as u32;
+        ret = (execfunc(start, env, TRUE, psei, psei_out)) as u32;
         if ret <= 32 {
             DdeUninitialize(ddeInst);
             return ret;
@@ -1672,13 +1757,13 @@ unsafe extern "C" fn dde_connect(
     }
 
     if unicode != 0 {
-        hDdeData = DdeClientTransaction(res as *mut u8, ((strlenW(res) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32, hConv, 0, 0, XTYP_EXECUTE, 30000, &mut tid);
+        hDdeData = DdeClientTransaction(res as *mut u8, ((strlenW(res) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32, hConv, core::ptr::null_mut(), 0, XTYP_EXECUTE, 30000, &mut tid);
     } else {
         let lenA: u32 = (WideCharToMultiByte(CP_ACP, 0, res, -(1 as i32), core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut())) as u32;
         let mut resA: CHeapPtr<i8> = CHeapPtr::new();
         resA.Allocate((lenA) as usize);
         WideCharToMultiByte(CP_ACP, 0, res, -(1 as i32), resA.m_pData, (lenA) as i32, core::ptr::null_mut(), core::ptr::null_mut());
-        hDdeData = DdeClientTransaction(resA.m_pData as *mut u8, lenA, hConv, 0, 0, XTYP_EXECUTE, 10000, &mut tid);
+        hDdeData = DdeClientTransaction(resA.m_pData as *mut u8, lenA, hConv, core::ptr::null_mut(), 0, XTYP_EXECUTE, 10000, &mut tid);
     }
     if !hDdeData.is_null() {
         DdeFreeDataHandle(hDdeData);
@@ -1741,7 +1826,7 @@ unsafe extern "C" fn execute_from_key(
 
     let tmp: LPWSTR =
         strstrW(key, CPP_COM_WSTR_0C71B3CB5580.as_ptr()) as LPWSTR;
-    assert!(tmp);
+    assert!(!tmp.is_null());
     wcscpy(tmp, CPP_COM_WSTR_C9E3E098911A.as_ptr());
 
     if RegQueryValueW(
@@ -1765,9 +1850,9 @@ unsafe extern "C" fn execute_from_key(
             execfunc,
             psei,
             psei_out,
-        )) as usize;
+        )) as UINT_PTR;
     } else if param[0] != 0 {
-        retval = (execfunc.unwrap())(param.as_mut_ptr(), env, FALSE, psei, psei_out);
+        retval = execfunc(param.as_mut_ptr(), env, FALSE, psei, psei_out);
     } else {
         DbgPrint(
             b"Nothing appropriate found for %s\n\0".as_ptr() as *const i8,
@@ -1852,7 +1937,7 @@ pub unsafe extern "system" fn FindExecutableW(
 
     if PathResolveW(
         res.as_mut_ptr(),
-        dirs.as_ptr(),
+        dirs.as_mut_ptr(),
         (PRF_TRYPROGRAMEXTENSIONS | PRF_FIRSTDIRDEF) as u32,
     ) != 0 {
         if PathIsExeW(res.as_ptr()) != 0
@@ -1899,7 +1984,7 @@ unsafe extern "C" fn ShellExecute_GetClassKey(sei: *const SHELLEXECUTEINFOW) -> 
     }
 
     let ext: PCWSTR = PathFindExtensionW((*sei).lpFile);
-    if StrIsNullOrEmpty(ext) == 0 {
+    if !StrIsNullOrEmpty(ext) {
         if (HCR_GetProgIdKeyOfExtension(ext, core::ptr::addr_of_mut!(hKey), FALSE))
             >= 0
         {
@@ -1932,7 +2017,7 @@ unsafe extern "C" fn shellex_get_dataobj(
         allocatedPidl = pidl as *mut ITEMIDLIST;
     }
 
-    let result = SHELL_GetUIObjectOfAbsoluteItem(core::ptr::null_mut(), pidl, core::ptr::addr_of!(IID_IDataObject), (dataObj).cast());
+    let result = SHELL_GetUIObjectOfAbsoluteItem(core::ptr::null_mut(), pidl, core::ptr::addr_of!(IID_IDataObject).cast(), (dataObj).cast());
 
     if !allocatedPidl.is_null() {
         CoTaskMemFree(allocatedPidl as *mut _);
@@ -1949,7 +2034,7 @@ unsafe extern "C" fn shellex_run_context_menu_default(
     let mut info: MENUITEMINFOW = core::mem::zeroed();
     let mut string: [u16; 0x80] = [0; 0x80];
     let mut def: i32 = -1;
-    let mut hmenu: HMENU = 0;
+    let mut hmenu: HMENU = core::ptr::null_mut();
     let mut r: HRESULT;
 
     r = ((*(*obj).lpVtbl).QueryInterface)(
@@ -2123,15 +2208,15 @@ unsafe extern "C" fn shellex_get_contextmenu(sei: *mut SHELLEXECUTEINFOW, cm: *m
 
     let mut shf: *mut IShellFolder = core::ptr::null_mut();
     let mut pidllast: LPCITEMIDLIST = core::ptr::null();
-    let hr: HRESULT = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(shf).cast(), &mut pidllast);
+    let hr: HRESULT = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder).cast(), core::ptr::addr_of_mut!(shf).cast(), &mut pidllast);
     if hr < 0 {
         return hr;
     }
 
-    let result = ((*shf).lpVtbl.as_ref().unwrap().GetUIObjectOf.unwrap())(shf, core::ptr::null_mut(), 1, &pidllast, core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), core::ptr::addr_of_mut!(cm).cast());
+    let result = ((*(*shf).lpVtbl).GetUIObjectOf)(shf, core::ptr::null_mut(), 1, (&pidllast as *const LPCITEMIDLIST).cast(), core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), cm.cast());
 
     if !shf.is_null() {
-        ((*shf).lpVtbl.as_ref().unwrap().Release.unwrap())(shf);
+        ((*(*shf).lpVtbl).Release)(shf);
     }
 
     if !allocatedPidl.is_null() {
@@ -2165,7 +2250,7 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     ici.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32;
     ici.fMask = SeeFlagsToCmicFlags((*sei).fMask) | CMIC_MASK_UNICODE;
     ici.nShow = (*sei).nShow;
-    if fDefault == 0 {
+    if !fDefault {
         ici.lpVerb = verb;
         ici.lpVerbW = (*sei).lpVerb;
     }
@@ -2183,11 +2268,11 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     let idFirst = 1;
     let idLast = 0x7fff;
     let hMenu = CreatePopupMenu();
-    hr = ((*(*cm).lpVtbl).QueryContextMenu)(cm, hMenu, 0, idFirst, idLast, if fDefault != 0 { CMF_DEFAULTONLY } else { 0 });
+    hr = ((*(*cm).lpVtbl).QueryContextMenu)(cm, hMenu.cast(), 0, idFirst, idLast, if fDefault { CMF_DEFAULTONLY } else { 0 });
     if !FAILED_UNEXPECTEDLY!(hr) {
-        if fDefault != 0 {
+        if fDefault {
             let mut uDefault = GetMenuDefaultItem(hMenu, (FALSE) as u32, 0);
-            uDefault = if uDefault != -1 { uDefault - (idFirst as i32) as u32 } else { 0 };
+            uDefault = if uDefault != u32::MAX { uDefault - (idFirst as i32) as u32 } else { 0 };
             ici.lpVerb = MAKEINTRESOURCEA(uDefault as u32);
             ici.lpVerbW = MAKEINTRESOURCEW(uDefault as u32);
         }
@@ -2208,10 +2293,10 @@ unsafe extern "C" fn ShellExecute_ContextMenuVerb(sei: *mut SHELLEXECUTEINFOW) -
     hr
 }
 unsafe extern "C" fn ShellExecute_FromContextMenuHandlers(sei: *mut SHELLEXECUTEINFOW) -> i32 {
-    let hkeycm: HKEY = core::ptr::null_mut();
+    let mut hkeycm: HKEY = core::ptr::null_mut();
     let mut szguid: [u16; 39] = [0u16; 39];
     let mut hr: i32;
-    let mut guid: GUID;
+    let mut guid: GUID = core::mem::zeroed();
     let mut i: u32;
     let mut r: i32;
 
@@ -2229,7 +2314,7 @@ unsafe extern "C" fn ShellExecute_FromContextMenuHandlers(sei: *mut SHELLEXECUTE
             if r != (ERROR_SUCCESS) as i32 {
                 break;
             }
-            hr = CLSIDFromString(szguid.as_ptr(), &mut guid);
+            hr = CLSIDFromString(szguid.as_ptr(), (&mut guid as *mut GUID).cast());
             if hr >= 0 {
                 hr = shellex_load_object_and_run(hkey, &guid, sei);
                 if hr >= 0 {
@@ -2256,7 +2341,7 @@ unsafe extern "C" fn SHELL_execute_class(
     let cmask: u32 = (*psei).fMask & SEE_MASK_CLASSALL;
     let mut resultLen: u32 = 0;
     let done: u8;
-    let rslt: UINT_PTR;
+    let mut rslt: UINT_PTR;
 
     if cmask != SEE_MASK_CLASSNAME {
         let mut wcmd: [u16; 1024] = [0u16; 1024];
@@ -2285,7 +2370,7 @@ unsafe extern "C" fn SHELL_execute_class(
         if resultLen > ARRAY_SIZE!(wcmd) {
             DbgPrint((b"Argify buffer not large enough... truncating\n\0".as_ptr()).cast());
         }
-        return (execfunc.unwrap())(
+        return execfunc(
             wcmd.as_mut_ptr(),
             core::ptr::null_mut(),
             FALSE,
@@ -2297,11 +2382,11 @@ unsafe extern "C" fn SHELL_execute_class(
     strcpyW(classname.as_mut_ptr(), (*psei).lpClass);
     rslt = (SHELL_FindExecutableByVerb(
         (*psei).lpVerb,
-        core::ptr::null(),
+        core::ptr::null_mut(),
         classname.as_mut_ptr(),
         execCmd.as_mut_ptr(),
         (core::mem::size_of_val(&execCmd) as u32) as i32,
-    )) as usize;
+    )) as UINT_PTR;
 
     if 33 > rslt {
         return rslt;
@@ -2357,13 +2442,13 @@ unsafe extern "C" fn SHELL_translate_idlist(
             appKnownSingular = (TRUE) as u8;
             (*sei).fMask &= !SEE_MASK_INVOKEIDLIST;
         } else {
+            // C: `WCHAR target[max(MAX_PATH, _countof(buffer))]`. `buffer` is itself
+            // `[WCHAR; MAX_PATH]` (declared at the top of this function), so both arms of the
+            // `max` are MAX_PATH and the size below is the C's size. The translator emitted the
+            // `max` as a dead local; dropped rather than left, since it computed nothing.
             let mut target: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
-            let _target_len = max(
-                MAX_PATH,
-                _countof!(buffer),
-            );
             let attribs: u32;
-            let resultLen: u32 = 0;
+            let mut resultLen: u32 = 0;
 
             strcpyW(target.as_mut_ptr(), buffer.as_mut_ptr());
             attribs = GetFileAttributesW(buffer.as_ptr());
@@ -2372,7 +2457,7 @@ unsafe extern "C" fn SHELL_translate_idlist(
                 && HCR_GetExecuteCommandW(
                     core::ptr::null_mut(),
                     CPP_COM_WSTR_EB4CE2024A43.as_ptr(),
-                    sei.lpVerb,
+                    (*sei).lpVerb,
                     buffer.as_mut_ptr(),
                     core::mem::size_of_val(&buffer) as u32,
                 ) != 0
@@ -2382,11 +2467,11 @@ unsafe extern "C" fn SHELL_translate_idlist(
                     dwApplicationNameLen,
                     buffer.as_ptr(),
                     target.as_ptr(),
-                    sei.lpIDList as LPITEMIDLIST,
+                    (*sei).lpIDList as LPITEMIDLIST,
                     core::ptr::null_mut::<u16>(),
                     &mut resultLen,
-                    if StrIsNullOrEmpty(sei.lpDirectory) == 0 {
-                        sei.lpDirectory
+                    if !StrIsNullOrEmpty((*sei).lpDirectory) {
+                        (*sei).lpDirectory
                     } else {
                         core::ptr::null_mut()
                     },
@@ -2416,13 +2501,13 @@ unsafe extern "C" fn SHELL_InvokePidl(
 ) -> BOOL {
     let mut psfFolder: *mut IShellFolder = core::ptr::null_mut();
     let mut pidlLast: LPCITEMIDLIST = core::ptr::null_mut();
-    let hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfFolder).cast(), &mut pidlLast);
+    let hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder).cast(), core::ptr::addr_of_mut!(psfFolder).cast(), &mut pidlLast);
     if FAILED_UNEXPECTEDLY!(hr) {
         return FALSE;
     }
 
     let mut pCM: *mut IContextMenu = core::ptr::null_mut();
-    let hr = ((*(*psfFolder).lpVtbl).GetUIObjectOf)(psfFolder, core::ptr::null_mut(), 1, &pidlLast, core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), core::ptr::addr_of_mut!(pCM).cast());
+    let hr = ((*(*psfFolder).lpVtbl).GetUIObjectOf)(psfFolder, core::ptr::null_mut(), 1, (&pidlLast as *const LPCITEMIDLIST).cast(), core::ptr::addr_of!(IID_IContextMenu).cast(), core::ptr::null_mut(), core::ptr::addr_of_mut!(pCM).cast());
     if FAILED_UNEXPECTEDLY!(hr) {
         ((*(*psfFolder).lpVtbl).Release)(psfFolder);
         return FALSE;
@@ -2436,13 +2521,13 @@ unsafe extern "C" fn SHELL_InvokePidl(
     let mut szVerb: [i8; (VERBKEY_CCHMAX) as usize] = [0; (VERBKEY_CCHMAX) as usize];
     if !(*sei).lpVerb.is_null() && *(*sei).lpVerb.offset(0 as isize) != 0 {
         WideCharToMultiByte(CP_ACP, 0, (*sei).lpVerb, -1, szVerb.as_mut_ptr() as *mut i8, (_countof!(szVerb)) as i32, core::ptr::null_mut(), core::ptr::null_mut());
-        szVerb[_countof!(szVerb) - 1] = ANSI_NULL;
+        szVerb[_countof!(szVerb) as usize - 1] = ANSI_NULL as i8;
         ici.lpVerb = szVerb.as_ptr();
     } else {
         let hMenu = CreatePopupMenu();
         let idCmdFirst: i32 = 1;
         let idCmdLast: i32 = 0x7FFF;
-        let hr = ((*(*pCM).lpVtbl).QueryContextMenu)(pCM, hMenu, 0, idCmdFirst as u32, idCmdLast as u32, CMF_DEFAULTONLY);
+        let hr = ((*(*pCM).lpVtbl).QueryContextMenu)(pCM, hMenu.cast(), 0, idCmdFirst as u32, idCmdLast as u32, CMF_DEFAULTONLY);
         if FAILED_UNEXPECTEDLY!(hr) {
             DestroyMenu(hMenu);
             ((*(*pCM).lpVtbl).Release)(pCM);
@@ -2452,7 +2537,7 @@ unsafe extern "C" fn SHELL_InvokePidl(
 
         let mut nDefaultID = GetMenuDefaultItem(hMenu, (FALSE) as u32, 0);
         DestroyMenu(hMenu);
-        if nDefaultID == -1 {
+        if nDefaultID == u32::MAX {
             nDefaultID = (idCmdFirst) as u32;
         }
 
@@ -2476,7 +2561,7 @@ unsafe extern "C" fn SHELL_quote_and_execute(
     execfunc: SHELL_ExecuteW32,
 ) -> UINT_PTR {
     let retval: UINT_PTR;
-    let len: u32;
+    let mut len: u32;
     let mut ququoted_cmd: *mut u16;
 
     len = (2 + lstrlenW(wcmd) + 1) as u32;
@@ -2504,7 +2589,7 @@ unsafe extern "C" fn SHELL_quote_and_execute(
             psei_out,
         );
     } else {
-        retval = (execfunc.unwrap())(ququoted_cmd, env, FALSE, psei, psei_out);
+        retval = execfunc(ququoted_cmd, env, FALSE, psei, psei_out);
     }
 
     LocalFree(ququoted_cmd as *mut core::ffi::c_void);
@@ -2572,14 +2657,14 @@ unsafe extern "C" fn SHELL_execute_url(
     LocalFree(lpstrProtocol as *mut _);
     retval
 }
-unsafe extern "C" fn do_error_dialog(retval: usize, hwnd: HWND, filename: *const u16) {
+unsafe extern "C" fn do_error_dialog(retval: UINT_PTR, hwnd: HWND, filename: *const u16) {
     let mut msg: [u16; 2048] = [0u16; 2048];
     let mut msgArguments: [usize; 3] = [0usize; 3];
     msgArguments[0] = filename as usize;
     msgArguments[1] = 0;
     msgArguments[2] = 0;
     let error_code: u32 = GetLastError();
-    if retval == (SE_ERR_NOASSOC) as usize {
+    if retval == (SE_ERR_NOASSOC) as UINT_PTR {
         LoadStringW(
             shell32_hInstance,
             IDS_SHLEXEC_NOASSOC,
@@ -2625,12 +2710,12 @@ unsafe extern "C" fn expand_environment(str: PCWSTR) -> PWSTR {
 unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_ExecuteW32) -> BOOL {
     let unsupportedFlags: u32 = SEE_MASK_CONNECTNETDRV | SEE_MASK_FLAG_DDEWAIT | SEE_MASK_ASYNCOK;
 
-    let len: u32;
-    let mut retval: usize = (SE_ERR_NOASSOC) as usize;
+    let mut len: u32;
+    let mut retval: UINT_PTR = (SE_ERR_NOASSOC) as UINT_PTR;
     let mut appKnownSingular: u8 = (FALSE) as u8;
 
     (*sei).hProcess = core::ptr::null_mut();
-    let mut sei_tmp: SHELLEXECUTEINFOW = *sei;
+    let mut sei_tmp: SHELLEXECUTEINFOW = core::ptr::read(sei);
 
     let hr: i32 = TryShellExecuteHooks(sei);
     if hr != S_FALSE {
@@ -2771,7 +2856,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
         appKnownSingular = (TRUE) as u8;
     }
 
-    if (sei_tmp.fMask & SEE_MASK_DOENVSUBST) != 0 && StrIsNullOrEmpty(sei_tmp.lpFile) == 0 {
+    if (sei_tmp.fMask & SEE_MASK_DOENVSUBST) != 0 && !StrIsNullOrEmpty(sei_tmp.lpFile) {
         let tmp: PWSTR = expand_environment(sei_tmp.lpFile);
         if !tmp.is_null() {
             wszApplicationName.Attach(tmp);
@@ -2798,7 +2883,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             core::ptr::addr_of_mut!(sei_tmp),
             sei,
             execfunc,
-        )) as usize;
+        )) as UINT_PTR;
         if retval <= 32 && (sei_tmp.fMask & SEE_MASK_FLAG_NO_UI) == 0 {
             let Info: OPENASINFO = OPENASINFO {
                 pcszFile: wszApplicationName.m_pData,
@@ -2806,7 +2891,10 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
                 oaifInFlags: (OAIF_ALLOW_REGISTRATION | OAIF_EXEC) as i32,
             };
 
-            DBG_UNREFERENCED_LOCAL_VARIABLE(Info);
+            // ntdef.h `DBG_UNREFERENCED_LOCAL_VARIABLE(L)` is `(void)L` — it only silences the
+            // warning. NOT lowered to a no-op `fn`: an out-of-line empty body is an optimization
+            // barrier that can uncloak a latent ABI mismatch as a `ud2`.
+            let _ = &Info;
             do_error_dialog(retval, sei_tmp.hwnd, wszApplicationName.m_pData);
         }
         return if retval > 32 { 1 } else { 0 };
@@ -2850,7 +2938,11 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
         );
     }
 
-    if UrlIsFileUrlW(sei_tmp.lpFile) != 0 {
+    // PHANTOM SYMBOL: shlwapi.h:643 is `#define UrlIsFileUrlW(x) UrlIsW(x, URLIS_FILEURL)`, so
+    // there is no export of that name to bind — an `extern` decl for it compiles and then fails
+    // to link. Call what the macro expands to; the island spells the enumerator with bindgen's
+    // doubled prefix.
+    if UrlIsW(sei_tmp.lpFile, URLIS_URLIS_FILEURL) != 0 {
         let mut buf: CHeapPtr<u16, CLocalAllocator> = CHeapPtr::new();
         let mut size: u32 = (MAX_PATH) as u32;
         if buf.Allocate((size) as usize) == 0 ||
@@ -2965,7 +3057,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             strcatW(wcmd, wszParameters);
         }
 
-        retval = (execfunc.unwrap())(
+        retval = execfunc(
             wcmd,
             core::ptr::null_mut(),
             FALSE,
@@ -2990,7 +3082,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
         core::ptr::addr_of_mut!(env) as *mut *mut u16,
         sei_tmp.lpIDList as LPITEMIDLIST,
         sei_tmp.lpParameters,
-    ) as usize;
+    ) as UINT_PTR;
     if retval > 32 {
         retval = (SHELL_quote_and_execute(
             wcmd,
@@ -3001,7 +3093,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             core::ptr::addr_of_mut!(sei_tmp),
             sei,
             execfunc,
-        )) as usize;
+        )) as UINT_PTR;
     } else if PathIsDirectoryW(lpFile) != 0 {
         let mut wExec: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
         let mut lpQuotedFile: CHeapPtr<u16, CLocalAllocator> = CHeapPtr::new();
@@ -3016,7 +3108,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
                 core::ptr::addr_of_mut!(env) as *mut *mut u16,
                 core::ptr::null_mut(),
                 core::ptr::null(),
-            ) as usize;
+            ) as UINT_PTR;
             if retval > 32 {
                 swprintf(
                     lpQuotedFile.m_pData,
@@ -3032,7 +3124,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
                     core::ptr::addr_of_mut!(sei_tmp),
                     sei,
                     execfunc,
-                )) as usize;
+                )) as UINT_PTR;
             }
         } else {
             retval = 0;
@@ -3044,7 +3136,7 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             core::ptr::addr_of_mut!(sei_tmp),
             sei,
             execfunc,
-        )) as usize;
+        )) as UINT_PTR;
     } else if strncmpiW(lpFile, CPP_COM_WSTR_94FDE40D078A.as_ptr(), 3) == 0 {
         let mut lpstrTmpFile: [u16; 256 as usize] = [0; 256 as usize];
         strcpyW(lpstrTmpFile.as_mut_ptr(), CPP_COM_WSTR_31DA8B28DF2D.as_ptr());
@@ -3056,12 +3148,12 @@ unsafe extern "C" fn SHELL_execute(sei: LPSHELLEXECUTEINFOW, execfunc: SHELL_Exe
             core::ptr::null(),
             core::ptr::null(),
             0,
-        ) as usize;
+        ) as UINT_PTR;
     }
 
     if retval <= 32 && (sei_tmp.fMask & SEE_MASK_FLAG_NO_UI) == 0 {
-        if retval == (SE_ERR_NOASSOC) as usize && ((*sei).fMask & SEE_MASK_CLASSALL) == 0 {
-            retval = (InvokeOpenWith(sei_tmp.hwnd, *sei)) as usize;
+        if retval == (SE_ERR_NOASSOC) as UINT_PTR && ((*sei).fMask & SEE_MASK_CLASSALL) == 0 {
+            retval = InvokeOpenWith(sei_tmp.hwnd, &mut *sei);
         }
         if retval <= 32 {
             do_error_dialog(retval, sei_tmp.hwnd, lpFile);
@@ -3096,7 +3188,7 @@ pub unsafe extern "system" fn ShellExecuteA(
     sei.lpDirectory = lpDirectory;
     sei.nShow = iShowCmd;
     sei.lpIDList = core::ptr::null_mut();
-    sei.lpClass = 0;
+    sei.lpClass = core::ptr::null();
     sei.hkeyClass = core::ptr::null_mut();
     sei.dwHotKey = 0;
     sei.hProcess = core::ptr::null_mut();
@@ -3127,16 +3219,19 @@ unsafe extern "C" fn ShellExecute_ShowError(
     pszCaption: LPCWSTR,
     dwError: DWORD,
 ) {}
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn ShellExecuteExA(sei: *mut SHELLEXECUTEINFOA) -> BOOL {
+#[no_mangle]
+pub unsafe extern "system" fn ShellExecuteExA(sei: *mut SHELLEXECUTEINFOA) -> BOOL {
     let mut wVerb: *mut u16 = core::ptr::null_mut();
     let mut wFile: *mut u16 = core::ptr::null_mut();
     let mut wParameters: *mut u16 = core::ptr::null_mut();
     let mut wDirectory: *mut u16 = core::ptr::null_mut();
     let mut wClass: *mut u16 = core::ptr::null_mut();
 
-    if (*sei).cbSize != SHELLEXECUTEINFOA {
-        (*sei).hInstApp = ERROR_ACCESS_DENIED as isize;
+    // C: `if (sei->cbSize != sizeof(SHELLEXECUTEINFOA))`. The translation dropped the `sizeof`
+    // and left the bare type name. This is the ENTRY GATE of a public export — it is what
+    // rejects a caller's malformed or wrong-version struct before any field is read.
+    if (*sei).cbSize != core::mem::size_of::<SHELLEXECUTEINFOA>() as DWORD {
+        (*sei).hInstApp = UlongToHandle(ERROR_ACCESS_DENIED).cast();
         SetLastError(ERROR_ACCESS_DENIED);
         return FALSE;
     }
@@ -3190,7 +3285,8 @@ unsafe extern "C" fn ShellExecute_ShowError(
 
 #[no_mangle]
 pub unsafe extern "system" fn ShellExecuteExW(sei: *mut SHELLEXECUTEINFOW) -> BOOL {
-    if (*sei).cbSize != SHELLEXECUTEINFOW {
+    // Same dropped `sizeof` as ShellExecuteExA above.
+    if (*sei).cbSize != core::mem::size_of::<SHELLEXECUTEINFOW>() as DWORD {
         (*sei).hInstApp = UlongToHandle(SE_ERR_ACCESSDENIED) as HINSTANCE;
         SetLastError(ERROR_ACCESS_DENIED);
         return FALSE;
@@ -3247,7 +3343,7 @@ pub unsafe extern "system" fn ShellExecuteW(
     sei.lpDirectory = lpDirectory;
     sei.nShow = (nShowCmd as u32) as i32;
     sei.lpIDList = core::ptr::null_mut();
-    sei.lpClass = 0;
+    sei.lpClass = core::ptr::null();
     sei.hkeyClass = core::ptr::null_mut();
     sei.dwHotKey = 0;
     sei.hProcess = core::ptr::null_mut();
@@ -3273,7 +3369,7 @@ pub unsafe extern "system" fn WOWShellExecute(
     let mut wFile: PWSTR = core::ptr::null_mut();
     let mut wParameters: PWSTR = core::ptr::null_mut();
     let mut wDirectory: PWSTR = core::ptr::null_mut();
-    let hProcess: HANDLE = 0;
+    let hProcess: HANDLE = core::ptr::null_mut();
 
     let mut seiW: SHELLEXECUTEINFOW = core::mem::zeroed();
 
@@ -3302,9 +3398,9 @@ pub unsafe extern "system" fn WOWShellExecute(
     seiW.fMask = 0;
     seiW.hwnd = hWnd;
     seiW.nShow = iShowCmd;
-    seiW.lpIDList = 0;
-    seiW.lpClass = 0;
-    seiW.hkeyClass = 0;
+    seiW.lpIDList = core::ptr::null_mut();
+    seiW.lpClass = core::ptr::null();
+    seiW.hkeyClass = core::ptr::null_mut();
     seiW.dwHotKey = 0;
     seiW.hProcess = hProcess;
 
@@ -3374,13 +3470,13 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
         }
     }
     *pszArg0.add(ich) = 0;
-    while iswspace((*pch) as i32) {
+    while iswspace((*pch) as i32) != 0 {
         pch = pch.add(1);
     }
     pch
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn ShellExecCmdLine(
+#[no_mangle]
+pub unsafe extern "system" fn ShellExecCmdLine(
     hwnd: HWND,
     pwszCommand: PCWSTR,
     pwszStartDir: PCWSTR,
@@ -3390,7 +3486,7 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
 ) -> HRESULT {
     let mut info: SHELLEXECUTEINFOW = core::mem::zeroed();
     let mut dwSize: u32;
-    let mut dwType: u32;
+    let mut dwType: u32 = 0;
     let mut dwFlags: u32 = SEE_MASK_DOENVSUBST | SEE_MASK_NOASYNC;
     let mut pszVerb: PCWSTR = core::ptr::null();
     let mut szFile = [0u16; (MAX_PATH) as usize];
@@ -3428,10 +3524,10 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
             ASSOCSTR_COMMAND,
             lpCommand,
             CPP_COM_WSTR_878FA9FF9662.as_ptr(),
-            core::ptr::null(),
+            core::ptr::null_mut(),
             &raw mut dwSize,
         );
-        if (hr as u32) >= 0 && dwSize != 0 {
+        if hr >= 0 && dwSize != 0 {
             pszVerb = CPP_COM_WSTR_878FA9FF9662.as_ptr();
         }
     }
@@ -3459,16 +3555,16 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
         }
 
         if (PathIsRelativeW(szFile.as_ptr()) != 0
-            && GetFullPathNameW(szFile.as_ptr(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
+            && GetFullPathNameW(szFile.as_ptr(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null_mut()) != 0
             && PathFileExistsW(szFile2.as_ptr()) != 0)
-            || SearchPathW(core::ptr::null(), szFile.as_ptr(), core::ptr::null(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null()) != 0
+            || SearchPathW(core::ptr::null(), szFile.as_ptr(), core::ptr::null(), _countof!(&szFile2), szFile2.as_mut_ptr(), core::ptr::null_mut()) != 0
         {
             StringCchCopyW(szFile.as_mut_ptr(), (_countof!(&szFile)) as usize, szFile2.as_ptr());
         }
 
         apPathList[0] = pwszStartDir;
         apPathList[1] = core::ptr::null();
-        PathFindOnPathExW(szFile.as_mut_ptr(), apPathList.as_ptr(), WHICH_DEFAULT);
+        PathFindOnPathExW(szFile.as_mut_ptr(), apPathList.as_mut_ptr(), WHICH_DEFAULT);
 
         if (dwSeclFlags & SECL_ALLOW_NONEXE) == 0 {
             if GetBinaryTypeW(szFile.as_ptr(), &raw mut dwType) == 0 {
@@ -3522,7 +3618,7 @@ unsafe extern "C" fn SplitParams(psz: *const u16, pszArg0: *mut u16, cchArg0: us
 
 #[no_mangle]
 pub unsafe extern "system" fn RealShellExecuteExA(
-    hwnd: isize,
+    hwnd: HWND,
     lpOperation: *const core::ffi::c_char,
     lpFile: *const core::ffi::c_char,
     lpParameters: *const core::ffi::c_char,
@@ -3530,12 +3626,12 @@ pub unsafe extern "system" fn RealShellExecuteExA(
     lpReturn: *mut core::ffi::c_char,
     lpTitle: *const core::ffi::c_char,
     lpReserved: *mut core::ffi::c_void,
-    nCmdShow: i32,
-    lphProcess: *mut isize,
-    dwFlags: u32,
-) -> isize {
+    nCmdShow: core::ffi::c_int,
+    lphProcess: PHANDLE,
+    dwFlags: DWORD,
+) -> HINSTANCE {
     TRACE!("(%p, %s, %s, %s, %s, %p, %s, %p, %u, %p, %lu)\n",
-        hwnd as *const core::ffi::c_void,
+        hwnd.cast::<core::ffi::c_void>(),
         debugstr_a(lpOperation),
         debugstr_a(lpFile),
         debugstr_a(lpParameters),
@@ -3561,7 +3657,7 @@ pub unsafe extern "system" fn RealShellExecuteExA(
 
     if !lpReserved.is_null() {
         exec_info.fMask |= SEE_MASK_USE_RESERVED;
-        exec_info.hInstApp = lpReserved as isize;
+        exec_info.hInstApp = lpReserved.cast();
     }
 
     if !lpTitle.is_null() {
@@ -3649,7 +3745,7 @@ pub unsafe extern "system" fn RealShellExecuteExW(
 
 #[no_mangle]
 pub unsafe extern "system" fn RealShellExecuteA(
-    hwnd: isize,
+    hwnd: HWND,
     lpOperation: *const i8,
     lpFile: *const i8,
     lpParameters: *const i8,
@@ -3657,9 +3753,9 @@ pub unsafe extern "system" fn RealShellExecuteA(
     lpReturn: *mut i8,
     lpTitle: *const i8,
     lpReserved: *mut core::ffi::c_void,
-    nCmdShow: i32,
-    lphProcess: *mut isize,
-) -> isize {
+    nCmdShow: core::ffi::c_int,
+    lphProcess: PHANDLE,
+) -> HINSTANCE {
     RealShellExecuteExA(
         hwnd,
         lpOperation,
@@ -3834,7 +3930,7 @@ pub unsafe extern "C" fn PathProcessCommandW(
 
     requiredSize
 }
-unsafe extern "C" fn ShellExec_RunDLL_Helper(hwnd: HWND, hInstance: HINSTANCE, pszCmdLine: PCWSTR, nCmdShow: i32) {
+unsafe extern "C" fn ShellExec_RunDLL_Helper(hwnd: HWND, hInstance: HINSTANCE, mut pszCmdLine: PCWSTR, nCmdShow: i32) {
     if pszCmdLine.is_null() || *pszCmdLine == 0 {
         return;
     }
