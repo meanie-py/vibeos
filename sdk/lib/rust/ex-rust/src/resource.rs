@@ -1207,6 +1207,21 @@ pub unsafe extern "system" fn ExSetResourceOwnerPointer(
     Resource: PERESOURCE,
     OwnerPointer: PVOID,
 ) {
+    // Captured FIRST, before any call clobbers the link register: the 0xE3 below
+    // reports which resource and thread, but never who asked for the transfer,
+    // and the two captures we have came from entirely different call contexts.
+    // arm64 only — that is the only arch the stop has ever been seen on, and the
+    // amd64 stack-scan heuristic (rtl-diag's RtlRaiseStatus) is too noisy to earn
+    // its keep here.
+    #[cfg(target_arch = "aarch64")]
+    let CallerPc: usize = {
+        let lr: usize;
+        core::arch::asm!("mov {}, x30", out(reg) lr, options(nomem, nostack, preserves_flags));
+        lr
+    };
+    #[cfg(not(target_arch = "aarch64"))]
+    let CallerPc: usize = 0;
+
     let OwnerPointer = opaque_ptr(OwnerPointer);
     let Thread = ExGetCurrentResourceThread();
 
@@ -1227,6 +1242,26 @@ pub unsafe extern "system" fn ExSetResourceOwnerPointer(
         let Owner = ExpFindEntryForThread(Resource, Thread, core::ptr::null_mut(), 0u8);
 
         if Owner.is_null() {
+            // Name the culprit before the stop. The discriminator is inline.thr:
+            // if it already equals ownerptr, ownership was transferred to this
+            // same owner once before and we are re-running a transfer for a
+            // reused context — the current thread legitimately owns nothing.
+            // Any other value means a genuinely foreign caller, which is a
+            // different bug. Everything else here is the resource's shape, which
+            // the four bugcheck parameters cannot carry.
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                c"[ERESOURCE] 0xE3 caller=%p res=%p thr=%p ownerptr=%p inline.thr=%p inline.cnt=%lu thisowner=%p active=%d entries=%lu flag=%04lx\n".as_ptr(),
+                CallerPc as *const core::ffi::c_void,
+                Resource as *const core::ffi::c_void,
+                Thread as *const core::ffi::c_void,
+                OwnerPointer as *const core::ffi::c_void,
+                (*Resource).OwnerEntry.OwnerThread as *const core::ffi::c_void,
+                owner_get_count(core::ptr::addr_of!((*Resource).OwnerEntry)),
+                ThisOwner as *const core::ffi::c_void,
+                (*Resource).ActiveCount as i32,
+                (*Resource).ActiveEntries as u32,
+                (*Resource).Flag as u32,
+            );
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                 Resource as ULONG_PTR,
