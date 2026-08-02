@@ -837,6 +837,14 @@ UNCOVERED: dict[str, str] = {
         "arguments and are driven with synthetic specs in tools/test_scan_import_cc.py "
         "(15 tests), which pins each of the six blind spots its first whole-tree run had."
     ),
+    "scan_octal_literals": (
+        "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
+        "pure functions over a string — scan_text()/strip_noise() — and are driven directly "
+        "in tools/test_scan_octal_literals.py (17 tests). A fixture DIRECTORY would prove "
+        "less than those do: every one of this lint's failure modes is a lexical shape "
+        "(float exponent, lifetime tick, nested block comment, raw string), and each is "
+        "pinned by the shape that actually produced a false positive."
+    ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",

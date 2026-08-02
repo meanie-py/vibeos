@@ -633,6 +633,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C octal literal that became a Rust DECIMAL one. `0444` is octal 292 in C and four
+    # hundred and forty-four in Rust, which has no C-style octal at all — so the mistake
+    # compiles, links, produces a plausible value, and no rustc lint has an opinion about
+    # it. msvcrt shipped `st_mode` 0o776 instead of 0o666 through six `_fstat*` exports on
+    # all three arches until a difftest row diverged on it. That is the point of scanning
+    # for it: msvcrt/cnt/rtl are the only translated modules with a differential harness,
+    # the other ~40 crates have no oracle at all, and every C source we translate is full
+    # of octal mode bits. Baseline is EMPTY and should stay that way.
+    sol = repo / "tools" / "scan_octal_literals.py"
+    specs.append(
+        (
+            "scan_octal_literals",
+            [py, str(sol)] if sol.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
     # link into the kernel PE are masked by --allow-multiple-definition (which is
     # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
