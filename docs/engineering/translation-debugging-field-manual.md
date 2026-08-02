@@ -786,6 +786,30 @@ Three faces, all seen live:
   reads as one operation wedging forever. **When a single op wedges but the system is live,
   check the debugcon capture for `PANIC:` before suspecting a lock.**
 
+### Faithful C unsigned underflow, panicking under debug overflow checks
+C's unsigned wraparound is **defined**, so `size_t len; len -= 2;` at `len == 1` is legal and
+the loop that follows walks off the end. Translate it as a plain `-=` and release is byte-
+identical (overflow-checks off) while **debug panic-aborts** — an assertion firing on
+behaviour the C standard guarantees. The cost is not theoretical: four such sites made the
+entire msvcrt difftest suite un-runnable under plain `cargo test`, so every single-row
+iteration had to go through `--release`, and `vibeos-cli difftest` builds release, so the
+gate never showed it.
+
+**Use `wrapping_sub`/`wrapping_add`, never a clamp.** The clamp is the tempting fix and it is
+wrong: it returns a *different answer* than msvcrt for exactly the inputs that reach it.
+`_mbsnbcmp_l`/`_mbsnbicmp_l` (mbcs.c:1414, 1527) hit `len -= clen` with `len == 1, clen == 2`
+whenever the last byte of the range is a lead byte, and the resulting over-read *is* the
+upstream contract; `_mbstowcs_s_l` (mbcs.c:3408-3413) indexes `wcstr[conv-1]` with `conv == 0`
+because its guard is `conv == size` and size may be zero. Reproducing an upstream
+out-of-bounds read is the job — a translation that "fixes" it silently diverges.
+
+Two tells that this is the class you are in, rather than a real translation bug: the C uses an
+**unsigned** counter (`size_t`/`ULONG`), and the panic is *only* under debug. Confirm by
+reading the C before touching anything — the same panic over a **signed** C counter, or one
+the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
+helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
+wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
+
 ### Wide/narrow literal sizing
 - **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
   string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
