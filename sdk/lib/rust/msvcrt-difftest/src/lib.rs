@@ -161,6 +161,11 @@ extern "C" {
     /// from whatever cnt-rust reports.
     pub fn ref_errno_get() -> c_int;
     pub fn ref_errno_set(value: c_int);
+    /// The doserrno twin (fileimpl.c). New with errno.c as reference TU #7 — before
+    /// that the slot was a file-static with no window, so the doserrno half of
+    /// `msvcrt_set_errno` could not be graded even in principle.
+    pub fn ref_doserrno_get() -> u32;
+    pub fn ref_doserrno_set(value: u32);
 }
 
 /// Reference-side errno codes, as msvcrt spells them.

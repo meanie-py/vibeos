@@ -1117,88 +1117,19 @@ wchar_t *msvcrt_wstrdupa(const char *str)
  * ENVIRONMENT with a test-visible call counter — swapping those is a change to
  * every existing test's plumbing, not a change to file.c.
  */
-/* The Win32 -> errno MAPPING, split out from the two stores it used to do.
+/* The Win32 -> errno MAPPING and the reference's errno store USED to live here — a
+ * hand-written transcription of msvcrt's 42-case switch, called by BOTH sides because
+ * neither had anything better.  That made the single most exercised mapping in the file
+ * suite the one thing no row could grade: shared substrate is invisible to a differential
+ * test, both sides are wrong identically, and every row reports MATCH (§9.73).  file.c
+ * stores through it 54 times, and so does file.rs.
  *
- * Both sides need `msvcrt_set_errno`: file.c calls it 54 times and so does file.rs.
- * When there was one definition it wrote through `_errno()` — which refstub/msvcrt.h
- * renames to `msvcrt_ref__errno` for every TU that includes it, this one included — so
- * the SUBJECT's failures set the REFERENCE's errno.  That is not just an unobservable
- * subject errno; it means a subject call CORRUPTS the slot the next reference call is
- * graded on.
- *
- * So the DESTINATION is per-side (msvcrt_set_errno below is renamed into the reference
- * namespace by refstub/msvcrt.h; subjectimpl.c defines the plain one) while the TABLE
- * stays a single transcription, un-namespaced, called by both.
- *
- * That the table itself is shared is a known limit, not a design goal: neither side's
- * mapping is graded, which is the §9.73 trap in miniature.  It closes the way the banner
- * above already says — errno.c as a reference TU, at which point the reference gets the
- * genuine mapper and the subject gets Rust.  Until then, sharing the table while
- * separating the stores is what makes file.c's OWN errno decisions gradeable: which code
- * it passes in, and when. */
-int msvcrt_difftest_win32_to_errno(int err)
-{
-    switch (err)
-    {
-#define ERR_CASE(oserr) case oserr:
-#define ERR_MAPS(oserr, crterr) case oserr: return crterr
-    ERR_CASE(ERROR_ACCESS_DENIED)
-    ERR_CASE(ERROR_NETWORK_ACCESS_DENIED)
-    ERR_CASE(ERROR_CANNOT_MAKE)
-    ERR_CASE(ERROR_SEEK_ON_DEVICE)
-    ERR_CASE(ERROR_LOCK_FAILED)
-    ERR_CASE(ERROR_FAIL_I24)
-    ERR_CASE(ERROR_CURRENT_DIRECTORY)
-    ERR_CASE(ERROR_DRIVE_LOCKED)
-    ERR_CASE(ERROR_NOT_LOCKED)
-    ERR_CASE(ERROR_INVALID_ACCESS)
-    ERR_CASE(ERROR_SHARING_VIOLATION)
-    ERR_MAPS(ERROR_LOCK_VIOLATION,       EACCES);
-    ERR_CASE(ERROR_FILE_NOT_FOUND)
-    ERR_CASE(ERROR_NO_MORE_FILES)
-    ERR_CASE(ERROR_BAD_PATHNAME)
-    ERR_CASE(ERROR_BAD_NETPATH)
-    ERR_CASE(ERROR_INVALID_DRIVE)
-    ERR_CASE(ERROR_BAD_NET_NAME)
-    ERR_CASE(ERROR_FILENAME_EXCED_RANGE)
-    ERR_MAPS(ERROR_PATH_NOT_FOUND,       ENOENT);
-    ERR_MAPS(ERROR_IO_DEVICE,            EIO);
-    ERR_MAPS(ERROR_BAD_FORMAT,           ENOEXEC);
-    ERR_MAPS(ERROR_INVALID_HANDLE,       EBADF);
-    ERR_CASE(ERROR_OUTOFMEMORY)
-    ERR_CASE(ERROR_INVALID_BLOCK)
-    ERR_CASE(ERROR_NOT_ENOUGH_QUOTA)
-    ERR_MAPS(ERROR_ARENA_TRASHED,        ENOMEM);
-    ERR_MAPS(ERROR_BUSY,                 EBUSY);
-    ERR_CASE(ERROR_ALREADY_EXISTS)
-    ERR_MAPS(ERROR_FILE_EXISTS,          EEXIST);
-    ERR_MAPS(ERROR_BAD_DEVICE,           ENODEV);
-    ERR_MAPS(ERROR_TOO_MANY_OPEN_FILES,  EMFILE);
-    ERR_MAPS(ERROR_DISK_FULL,            ENOSPC);
-    ERR_MAPS(ERROR_BROKEN_PIPE,          EPIPE);
-    ERR_MAPS(ERROR_POSSIBLE_DEADLOCK,    EDEADLK);
-    ERR_MAPS(ERROR_DIR_NOT_EMPTY,        ENOTEMPTY);
-    ERR_MAPS(ERROR_BAD_ENVIRONMENT,      E2BIG);
-    ERR_CASE(ERROR_WAIT_NO_CHILDREN)
-    ERR_MAPS(ERROR_CHILD_NOT_COMPLETE,   ECHILD);
-    ERR_CASE(ERROR_NO_PROC_SLOTS)
-    ERR_CASE(ERROR_MAX_THRDS_REACHED)
-    ERR_MAPS(ERROR_NESTING_NOT_ALLOWED,  EAGAIN);
-#undef ERR_CASE
-#undef ERR_MAPS
-    default:
-        return EINVAL;
-    }
-}
-
-/* The REFERENCE's store.  refstub/msvcrt.h renames this definition — and every
- * reference TU's calls to it — into msvcrt_ref_msvcrt_set_errno; the plain name is
- * subjectimpl.c's, over the subject's own two slots. */
-void msvcrt_set_errno(int err)
-{
-    *__doserrno() = err;
-    *_errno() = msvcrt_difftest_win32_to_errno(err);
-}
+ * Gone now.  errno.c is reference TU #7, so `msvcrt_set_errno` and `_errno` are msvcrt's
+ * GENUINE ones (renamed into the msvcrt_ref_* import namespace by refstub/msvcrt.h, which
+ * is exactly the socket the hand-written pair used to fill), while the subject keeps
+ * Rust's.  The mapping is finally a difference the harness can see.  `__doserrno` went
+ * with them: errno.c returns `&msvcrt_get_thread_data()->thread_doserrno`, so the slot
+ * this file used to invent is now where msvcrt actually keeps it. */
 
 /* ── the errno values the substrate test asserts ─────────────────────────
  * Exported from here, where the DERIVED msvcrt_crt_consts.h is in scope,
@@ -1209,9 +1140,57 @@ void msvcrt_set_errno(int err)
 const int ref_msvcrt_ENOENT = ENOENT;
 const int ref_msvcrt_EBADF = EBADF;
 
-/* errno.c's doserrno slot.  Its own storage, in the reference namespace, for
- * the same anti-circularity reason as _errno: the two sides must be able to
- * disagree, or a row that grades doserrno proves nothing. */
-static __thread __msvcrt_ulong ref_doserrno;
+/* ── the reference's doserrno window ─────────────────────────────────────
+ * The twin of refimpl.c's ref_errno_get/ref_errno_set, and it did not exist before
+ * errno.c became a reference TU: the slot was a file-static here, so nothing outside
+ * this file could read it and `msvcrt_set_errno`'s doserrno half was ungradeable even
+ * in principle.  It reads through the accessor rather than a stored pointer so it lands
+ * on whatever __doserrno() returns — which is now msvcrt's own
+ * `&msvcrt_get_thread_data()->thread_doserrno`.  subj_doserrno_get/set are the
+ * subject-side pair (subjectimpl.c); the two together are what lets a row assert that
+ * both sides mapped one ERROR_* code to the same errno AND kept the same doserrno. */
+unsigned int ref_doserrno_get(void)           { return *__doserrno(); }
+void         ref_doserrno_set(unsigned int v) { *__doserrno() = v; }
 
-__msvcrt_ulong * CDECL __doserrno(void) { return &ref_doserrno; }
+
+
+/* ── the three Win32 entry points errno.c needs ──────────────────────────
+ * errno.c's real external surface is 15 symbols (llvm-nm on the shipped object).
+ * Twelve already resolve: MultiByteToWideChar from nlsimpl.c, msvcrt_get_thread_data
+ * from refimpl.c, _write from file.c, strcpy/strlen/wcslen/wcstombs from the union
+ * TUs, malloc/free/_vsnprintf from the host, and ros_dbg_log/wine_dbgstr_wn drop out
+ * because refstub/wine/debug.h no-ops every channel macro.  These three are what is
+ * left.  They live here rather than in refimpl.c for the reason at the top of this
+ * file: this is the reference's OS layer, and these are OS calls.
+ *
+ * SetErrorMode is the only one with state, and modelling it as a plain read-modify-write
+ * is not a shortcut — it IS the contract `_seterrormode` exposes.  Process-wide rather
+ * than __thread, matching Win32: SEM_* is a process attribute.  The row that grades
+ * _seterrormode compares the value each side hands back, so the store has to be real. */
+static UINT ref_error_mode;
+
+UINT WINAPI SetErrorMode(UINT mode)
+{
+    UINT previous = ref_error_mode;
+    ref_error_mode = mode;
+    return previous;
+}
+
+/* lstrcpyW / lstrcatW — kernel32's UNCHECKED wide copies, which is why they are two
+ * lines rather than a call to wcscpy/wcscat.  Routing them through the CRT would send
+ * the reference through cnt-rust's #[no_mangle] wcscpy, i.e. through the code under
+ * test (the collision rule at the top of this file).  __wcserror is the only caller. */
+LPWSTR WINAPI lstrcpyW(LPWSTR dst, LPCWSTR src)
+{
+    LPWSTR out = dst;
+    while ((*out++ = *src++) != 0) {}
+    return dst;
+}
+
+LPWSTR WINAPI lstrcatW(LPWSTR dst, LPCWSTR src)
+{
+    LPWSTR end = dst;
+    while (*end) end++;
+    while ((*end++ = *src++) != 0) {}
+    return dst;
+}

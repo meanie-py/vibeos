@@ -31,9 +31,13 @@
 // would be grading an implementation against itself — MATCH for free. Likewise
 // `msvcrt_set_errno`: one definition wrote through the reference's `_errno()` for BOTH
 // sides, so a subject failure was invisible AND clobbered the slot the next reference call
-// would be graded on. The store is per-side now; the mapping table is still one
-// transcription (fileimpl.c), which is a limit this suite cannot see past and errno.c-as-
-// a-reference-TU is what retires.
+// would be graded on.
+//
+// Both halves of that are now closed. The store has been per-side since wave 18a, and the
+// MAPPING — which this comment used to record as a limit the suite could not see past — is
+// no longer shared either: errno.c is reference TU #7, so the 54 stores these rows drive
+// run through msvcrt's genuine 42-case mapper on the reference side and through Rust's on
+// the subject's. fileimpl.c's transcription, which both sides used to call, is deleted.
 //
 // What IS shared, deliberately, is the Win32 layer underneath (fileimpl.c) — kernel32 is
 // the environment, not the code under test. Both sides therefore allocate handles from one

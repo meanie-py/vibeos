@@ -1331,7 +1331,20 @@ pub unsafe extern "C" fn _mbsnbcmp_l(str: *const u8, cmp: *const u8, len: usize,
             if strc != cmpc {
                 return if strc < cmpc { -1 } else { 1 };
             }
-            len_remaining -= clen as usize;
+            // `wrapping_sub`, deliberately, and NOT a clamp — this reproduces the C.
+            // mbcs.c does `size_t len; len -= clen;` (lines 1414 and 1527, one per
+            // comparator), and reaches it with len == 1 and clen == 2 whenever the last
+            // byte of the range is a lead byte: the arms above set clen = 2 while
+            // explicitly handling `len < 2` for the character fetch. C's unsigned
+            // underflow is DEFINED, so len wraps huge, `while (len)` keeps going, and the
+            // comparison walks past the caller's length until a NUL or a mismatch. That
+            // over-read is upstream ReactOS/Wine behaviour we are bound to reproduce;
+            // clamping to 0 here would return a DIFFERENT answer than msvcrt.
+            //
+            // Plain `-=` was identical in release (overflow-checks off) but a panic under
+            // debug, which made the whole msvcrt difftest suite un-runnable with plain
+            // `cargo test` and forced every single-row iteration through --release.
+            len_remaining = len_remaining.wrapping_sub(clen as usize);
             str_ptr = str_ptr.add(clen as usize);
             cmp_ptr = cmp_ptr.add(clen as usize);
         }
@@ -1458,7 +1471,20 @@ pub unsafe extern "C" fn _mbsnbicmp_l(
             if strc != cmpc {
                 return if strc < cmpc { -1 } else { 1 };
             }
-            len_remaining -= clen as usize;
+            // `wrapping_sub`, deliberately, and NOT a clamp — this reproduces the C.
+            // mbcs.c does `size_t len; len -= clen;` (lines 1414 and 1527, one per
+            // comparator), and reaches it with len == 1 and clen == 2 whenever the last
+            // byte of the range is a lead byte: the arms above set clen = 2 while
+            // explicitly handling `len < 2` for the character fetch. C's unsigned
+            // underflow is DEFINED, so len wraps huge, `while (len)` keeps going, and the
+            // comparison walks past the caller's length until a NUL or a mismatch. That
+            // over-read is upstream ReactOS/Wine behaviour we are bound to reproduce;
+            // clamping to 0 here would return a DIFFERENT answer than msvcrt.
+            //
+            // Plain `-=` was identical in release (overflow-checks off) but a panic under
+            // debug, which made the whole msvcrt difftest suite un-runnable with plain
+            // `cargo test` and forced every single-row iteration through --release.
+            len_remaining = len_remaining.wrapping_sub(clen as usize);
             str_ptr = str_ptr.add(clen as usize);
             cmp_ptr = cmp_ptr.add(clen as usize);
         }
@@ -3430,10 +3456,15 @@ pub unsafe extern "C" fn _mbstowcs_s_l(
     if conv < size {
         *wcstr.add(conv) = 0;
         conv += 1;
-    } else if conv == size && count == _TRUNCATE && *wcstr.add(conv - 1) != 0 {
-        *wcstr.add(conv - 1) = 0;
+    // `wrapping_sub`, for the same reason as the comparators above: mbcs.c:3408-3413 spells
+    // these three `wcstr[conv-1]` with a `size_t conv`, and reaches them with conv == 0
+    // whenever size is 0 — `conv == size` is the guard, and it does not exclude zero. C
+    // wraps to SIZE_MAX and indexes there; we are bound to the same answer. Release codegen
+    // is unchanged, this only stops debug's overflow assertion firing on defined C.
+    } else if conv == size && count == _TRUNCATE && *wcstr.add(conv.wrapping_sub(1)) != 0 {
+        *wcstr.add(conv.wrapping_sub(1)) = 0;
         err = (STRUNCATE) as i32;
-    } else if conv == size && *wcstr.add(conv - 1) != 0 {
+    } else if conv == size && *wcstr.add(conv.wrapping_sub(1)) != 0 {
         MSVCRT_INVALID_PMT!(b"wcstr[size] is too small\0".as_ptr() as *const i8, (ERANGE) as i32);
         if size != 0 {
             *wcstr.add(0) = 0;

@@ -391,6 +391,15 @@ pthreadlocinfo CDECL get_locinfo(void);
  * layout — so it carries only the fields the reference TUs actually touch. (The
  * SUBJECT's copy in subjectimpl.c is the one that has to match msvcrt-sys, and
  * ref_integrity asserts that.) */
+/* The user-installable invalid-parameter handler.  errno.c declares a file-static of
+ * this type; at _MSVCR_VER = 0 nothing can ever write it (its only setter,
+ * _set_invalid_parameter_handler, is `#if _MSVCR_VER >= 80`), so the slot is
+ * permanently NULL and the dispatch always takes the else arm.  The TYPE is still
+ * needed to compile the declaration. */
+typedef void (__cdecl *_invalid_parameter_handler)(const wchar_t *, const wchar_t *,
+                                                   const wchar_t *, unsigned int,
+                                                   uintptr_t);
+
 typedef struct __thread_data {
     char           *strtok_next;
     wchar_t        *wcstok_next;
@@ -401,6 +410,16 @@ typedef struct __thread_data {
      * dll/win32/msvcrt/msvcrt.h, kept in field order. */
     char                           *tmpnam_buffer;
     wchar_t                        *wtmpnam_buffer;
+    /* errno.c's four slots, added when it became reference TU #7.  This is where
+     * msvcrt actually keeps errno: `_errno()` is `&msvcrt_get_thread_data()->thread_errno`
+     * and `__doserrno()` the doserrno one, so the reference no longer stores errno in
+     * something the harness invented.  strerror/_wcserror hand out pointers INTO the two
+     * buffers, which is why they are per-thread slots and not statics — that aliasing is
+     * part of the contract those rows grade. */
+    int                             thread_errno;
+    __msvcrt_ulong                  thread_doserrno;
+    char                           *strerror_buffer;
+    wchar_t                        *wcserror_buffer;
 } thread_data_t;
 
 #define LOCALE_FREE    0x1

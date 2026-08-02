@@ -98,12 +98,17 @@ static inline char* astrdupw_utf8(const wchar_t *wstr)
     return str;
 }
 
-/* errno.c's doserrno accessor.  errno.c is not a reference TU, so this is
- * ENVIRONMENT — supplied by refimpl.c — and takes the msvcrt_ref_* import
- * namespace for the same anti-circularity reason as _errno and GetLastError:
- * the reference must never be able to reach the code under test.  Declared
- * rather than left implicit because it returns a POINTER, which the implicit
- * `int()` rule would truncate to 32 bits before the first dereference. */
+/* errno.c's doserrno accessor, in the msvcrt_ref_* import namespace for the same
+ * anti-circularity reason as _errno and GetLastError: the reference must never be
+ * able to reach the code under test.  Declared rather than left implicit because it
+ * returns a POINTER, which the implicit `int()` rule would truncate to 32 bits
+ * before the first dereference.
+ *
+ * The mapping is spelled out HERE, and again in fileimpl.c and in build.rs's errno
+ * prelude, rather than living in refstub/msvcrt.h beside _errno — that header is also
+ * included by TUs which must keep calling the SUBJECT's __doserrno.  It used to be
+ * ENVIRONMENT (a slot fileimpl.c invented); since errno.c became reference TU #7 the
+ * definition it lands on is msvcrt's own, over msvcrt_get_thread_data()->thread_doserrno. */
 #define __doserrno msvcrt_ref___doserrno
 __msvcrt_ulong * CDECL __doserrno(void);
 
