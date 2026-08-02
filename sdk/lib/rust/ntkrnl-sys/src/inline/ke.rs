@@ -475,13 +475,43 @@ pub(crate) unsafe fn cswdep_spin_release(_lock: *mut ULONG_PTR) {}
 /// stamp is OBSERVABLE BEHAVIOUR, not a diagnostic: `KeTestSpinLock` reads it,
 /// and so does every DDK caller that inspects a held lock. The C and Rust
 /// halves of this funnel MUST agree — a lock stamped by one and not cleared by
-/// the other stays dirty forever. The two `KeBugCheckEx` validations that
-/// upstream pairs with the stamp stay OFF on both sides (`KI_VALIDATE_...`);
-/// they are what broke i386 boot when this was first enabled, and finding the
-/// mismatched acquire/release pairs is separate work.
+/// the other stays dirty forever. Of the two `KeBugCheckEx` validations that
+/// upstream pairs with the stamp (`KI_VALIDATE_...`, compiled out here), the
+/// release-side SPIN_LOCK_NOT_OWNED one stays OFF on both sides — it is what
+/// broke i386 boot when this was first enabled, and finding the mismatched
+/// acquire/release pairs is still separate work. The acquire-side
+/// SPIN_LOCK_ALREADY_OWNED one is now ON for `smp + dbg`; see the body for why
+/// that subset cannot false-positive. It reads the stamp without writing one,
+/// so it creates no C-vs-Rust asymmetry and needs no mirror in spinlock.h.
 #[inline]
 pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     cswdep_spin_acquire(spin_lock);
+    // Upstream's SPIN_LOCK_ALREADY_OWNED pre-check, which this tree compiles out:
+    // `_USE_DUMMY_PSEH=1` is defined globally (sdk/cmake/gcc.cmake), so
+    // KI_VALIDATE_SPINLOCK_OWNER is 0 — the stamp below is written and NOTHING
+    // ever reads it back. Restored here for the one case where it cannot be a
+    // false positive: on an MP kernel, finding our OWN thread stamped in a lock
+    // we are about to spin on is a guaranteed deadlock, because the only thread
+    // that can clear it is the one that is about to start spinning. The
+    // alternative is not a surviving boot, it is an unbounded silent spin at
+    // IRQL >= DISPATCH_LEVEL that takes the clock, every timer, and the whole
+    // machine down with it — which is precisely the arm64 `--smp 1` stall where
+    // a 30s SCM pipe wait sat for 185s and every subsystem went quiet at once.
+    //
+    // Deliberately paired with `smp`: on the UP kernel the spin below is
+    // compiled away entirely, so the same recursive acquire is harmless there
+    // and bugchecking on it would invent a failure the UP boot does not have.
+    // Deliberately NOT accompanied by upstream's release-side SPIN_LOCK_NOT_OWNED
+    // check — that one fires on every benign mismatched acquire/release pair and
+    // is what broke i386 boot when validation was first switched on. This takes
+    // only the subset that is provably already a hang.
+    //
+    // Precedent: KeTryToAcquireSpinLockAtDpcLevel (ntoskrnl-rust ke/spinlock.rs)
+    // has carried exactly this check for its own path without incident.
+    #[cfg(all(feature = "smp", feature = "dbg"))]
+    if core::ptr::read_volatile(spin_lock) == (current_thread() as ULONG_PTR | 1) {
+        ddk::KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, spin_lock as ULONG_PTR as _, 0, 0, 0);
+    }
     #[cfg(feature = "smp")]
     while InterlockedBitTestAndSet(spin_lock as *mut i32, 0) != 0 {
         // Locked — spin read-only (cache-friendly) until it's released.
