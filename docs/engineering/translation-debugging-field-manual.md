@@ -1355,6 +1355,30 @@ disabled for that hive forever.
   statement per call site. The scanner compares *values* and reports a target the live code
   never masks at all; it does not count.
 
+### A C OCTAL literal becomes a Rust DECIMAL one, silently
+`file.c` computes `buf->st_mode = _S_IFREG | 0444;` and `|= 0222`. Both literals survived
+translation unchanged — and Rust has no C-style octal, so a leading zero is just a leading
+zero. `0444` means four hundred and forty-four. msvcrt.dll shipped `st_mode` `0o776` where
+msvcrt reports `0o666` — the execute bits set on every regular file, on all three arches,
+through six `_fstat*` exports.
+
+**Nothing in the toolchain has an opinion about this.** It compiles, it links, the value is
+plausible, and the literal is *three characters* from correct while looking more right in its
+C form than its Rust one. It is not the LLM inventing a value (§9.113) — the value was
+transcribed perfectly; the BASE changed underneath it. Sealing does not help either: the token
+came across intact.
+
+Only a differential test caught it, which is the problem — msvcrt, cnt and rtl are the only
+translated modules with a harness, the other ~40 crates have no oracle at all, and every C
+source we translate is full of octal mode bits, ioctl numbers and terminal flags.
+**Fix: `tools/scan_octal_literals.py`** (empty baseline, gate-wired). It reports a bare
+`0[0-7]+` in numeric position *only where the two readings disagree* — `07` is seven either
+way, and a lint that flags it gets tuned out. Two false-positive classes it must handle, both
+of which it shipped first and then failed on: float exponents (`6.93e-01` — 78 findings in
+cnt-rust's math tables alone) and Rust's use of the char-literal quote for LIFETIMES, which
+makes `&'static` open a string that a regex-pass stripper closes on the next tick in the file.
+The scanner tokenizes left to right for that reason.
+
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per

@@ -38,6 +38,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
+    (".", ".", "tools/test_scan_octal_literals.py"),
     # Generalizes the two above from "this oracle has an oracle" to "every gate
     # lint has one, or a written reason it doesn't". A scanner reporting 0 means
     # nothing until something proves the matcher still fires: scan_bugcheck_codes
