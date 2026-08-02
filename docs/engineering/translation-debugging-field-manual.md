@@ -1915,6 +1915,58 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
 
+### The failure path survived; the sentence explaining it did not
+
+**Symptom.** Something does not happen and NOTHING says why. The key is not there, the handle is
+not created, the API returns a clean error code — and the serial log is empty, so the hunt starts
+from zero. `CmpLinkKeyToHive` has three failure returns and upstream prints on each; all three
+were dropped, so when `\REGISTRY\USER\S-1-5-18` did not appear there was no signal anywhere.
+Restoring the prints, then getting SILENCE back from them, is what proved the create half was
+fine and moved the hunt to the reparse — two build+boot cycles for a fact one grep would have
+given free.
+
+**Cause.** Translation keeps the code and drops the diagnostics. Measured across `sdk/lib/rust`:
+**2891 commented-out `DPRINT1` sites against 304 live prints** — roughly 90% of upstream's
+always-on kernel diagnostics are gone. No existing lint saw it, because `scan_silent_failures`
+matches SHAPES (`loop {}`, `.unwrap()`, `Err(_) => {}`) and a branch that returns a correct error
+code without printing is not a shape, it is an ABSENCE. Absence needs an oracle, and the oracle
+was already in the file: rustconv keeps the original C as trailing comments.
+
+**Fix.** `tools/scan_dropped_prints.py` pairs each commented-C function against the live Rust
+function of the same name and reports one that prints in the C and never in the Rust. Baselined
+(`tools/lint-baseline/scan_dropped_prints.txt`, 1425 rows) and gated by `vibeos-cli check`; burn
+down by subsystem. Restoring a print is cheap, mechanical, and strictly increases what the OS can
+tell you.
+
+Four things that cost precision, all of them found by being wrong first:
+
+- **Only count what upstream ACTUALLY emits.** DPRINT1, DbgPrint*, and wine ERR/FIXME are on by
+  default; DPRINT (3579 sites), TRACE (3442) and WARN (247) are compiled out or off, so dropping
+  them loses nothing. Scoring those would have tripled a harvest with nothing behind it.
+- **Pair through the wrapper/`_impl` split.** 910 `_body` + 580 `_impl` functions tree-wide, plus
+  a CamelCase `Impl`. The prints live in the body, so exact-name pairing calls every wrapper
+  silent and is wrong every time.
+- **Formatting into a buffer is not printing.** `rtl_string_cb_printf_w!` matched a "contains
+  print" heuristic and scored as live, hiding three genuinely dropped diagnostics in
+  `CmpCreateControlSet`.
+- **A print-shaped thing that prints nothing is worse than none**, because it reads as covered.
+  `cmlib-rust/cmheal.rs` defined `unsafe fn DPRINT1(_format) {}` reasoning that it matched "the C
+  NDEBUG build" — but NDEBUG silences DPRINT, never DPRINT1. `rtl-strings`' `path_wave` module
+  defined a no-op `DbgPrint` that SHADOWED the real one for the whole module, so four
+  "RtlGetFullPathName_Ustr() returned 0" reports on the path that answers
+  STATUS_OBJECT_NAME_INVALID went nowhere. Same shape in win32k (`ERR`, `FIXME`) and user32
+  (`ERR`). All are the thing AGENTS.md forbids outright — see `[§9.65]`: an out-of-line no-op is
+  also an optimization barrier that uncloaks latent ABI mismatches into a `ud2`. The scanner
+  reports them as `NOOP` and treats their callers as silent. Note the C-side equivalent is
+  invisible from a Rust scanner and must be grepped separately —
+  `dll/win32/{cabinet,mlang}/rust_cohab_stub.c` define no-op `ERR`/`FIXME`.
+
+**And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
+`_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash
+since the name is coming from user-mode"). Do not close such a finding by adding a bare print —
+that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
+looks like a missing diagnostic is a missing handler.
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds

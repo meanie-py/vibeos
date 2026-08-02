@@ -8822,8 +8822,14 @@ mod path_wave {
             .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
             + 1
     }
-    #[inline]
-    unsafe fn DbgPrint(_fmt: *const i8) {}
+    // Really DbgPrint, not a no-op. This shadowed the whole module: the four
+    // "RtlGetFullPathName_Ustr() returned 0" reports below sit on the path that
+    // answers STATUS_OBJECT_NAME_INVALID, so every DOS→NT path conversion that
+    // failed did so without a word on the serial port. Variadic, so extern "C"
+    // (cdecl) on every arch — the same binding RtlDumpResource already uses.
+    extern "C" {
+        fn DbgPrint(fmt: *const i8, ...) -> u32;
+    }
     #[inline]
     unsafe fn RtlInitEmptyUnicodeString(dest: *mut UNICODE_STRING, buf: PWSTR, max: u16) {
         (*dest).Length = 0;

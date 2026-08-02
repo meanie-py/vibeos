@@ -250,6 +250,7 @@ pub unsafe extern "system" fn CmGetSystemControlValues(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpSaveBootControlSet(ControlSet: u16) -> i32 {
+    crate::dbg_print!(b"CmpSaveBootControlSet(%lu)\n\0", ControlSet);
     STATUS_SUCCESS
 }
 
