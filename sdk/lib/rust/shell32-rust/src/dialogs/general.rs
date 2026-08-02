@@ -1,7 +1,8 @@
-//! ORPHAN-BY-DESIGN: translated Wave-5 TU, parked pending substrate closure.
-//! It still needs a few hundred SDK externs/constants/resource IDs resolved before
-//! it compiles; wiring it in this state would break the build for every lane rather
-//! than expose a regression. This is a PAID artifact — do not delete it to tidy up.
+//! `dll/win32/shell32/dialogs/general.cpp`, translated and FLIPPED — the C is commented out
+//! of the CMake source list and this module is what shell32 links. It was the first shell32
+//! TU to take its substrate from the bindgen island (`crate::prelude`) instead of the
+//! hand-written `types.rs`/`win32.rs`; see prelude.rs for why that is "instead of", not
+//! "as well as". A PAID artifact — do not delete it to tidy up.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_079544FA595D: [WCHAR; 42] = [0x0053, 0x006F, 0x0066, 0x0074, 0x0077, 0x0061, 0x0072, 0x0065, 0x005C, 0x004D, 0x0069, 0x0063, 0x0072, 0x006F, 0x0073, 0x006F, 0x0066, 0x0074, 0x005C, 0x0049, 0x006E, 0x0074, 0x0065, 0x0072, 0x006E, 0x0065, 0x0074, 0x0020, 0x0045, 0x0078, 0x0070, 0x006C, 0x006F, 0x0072, 0x0065, 0x0072, 0x005C, 0x004D, 0x0061, 0x0069, 0x006E, 0x0000];
 pub static CPP_COM_WSTR_09815BC5A072: [WCHAR; 17] = [0x0041, 0x006E, 0x0063, 0x0068, 0x006F, 0x0072, 0x0020, 0x0055, 0x006E, 0x0064, 0x0065, 0x0072, 0x006C, 0x0069, 0x006E, 0x0065, 0x0000];
