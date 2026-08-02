@@ -53,8 +53,11 @@ fn GDI_HANDLE_GET_INDEX(h: HANDLE) -> u32 { (h as usize as u32) & GDI_HANDLE_IND
 #[inline(always)] unsafe fn RtlCopyMemory(d: *mut c_void, s: *const c_void, n: usize) {
     core::ptr::copy_nonoverlapping(s as *const u8, d as *mut u8, n);
 }
-// ERR(...) debug channel → no-op (sibling convention)
-#[inline(always)] unsafe fn ERR(_msg: *const u8) {}
+// ERR(...) debug channel. NOT a no-op: win32k's ERR is unconditional upstream,
+// and both call sites report a failed region allocation that the code then
+// carries on past ("Expect drawing issues!").
+extern "C" { fn DbgPrint(fmt: *const u8, ...) -> u32; }
+#[inline(always)] unsafe fn ERR(msg: *const u8) { DbgPrint(msg); }
 // RECTL_vSetEmptyRect (rect.h FORCEINLINE) — zero all four edges.
 #[inline(always)] unsafe fn RECTL_vSetEmptyRect(prcl: *mut RECTL) {
     (*prcl).left = 0; (*prcl).top = 0; (*prcl).right = 0; (*prcl).bottom = 0;
