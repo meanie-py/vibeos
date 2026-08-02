@@ -1787,3 +1787,49 @@ The two MP baselines are stale for the same reason and are being re-seeded along
 `NpfsFileInfo` entirely (91 rows against UP's 93), and bank `CmSecurity` at pass=300 fail=89
 where the sweep now launches 1049 assertions — the smp2 sample was taken when the sweep died
 early. arm64's smp2 baseline was already re-seeded on 08-01 and is fine.
+
+### Result: the collapse holds on amd64 + arm64, and i386 has ONE real defect
+
+Re-measured on all three arches, `--repeat 2`, every row below identical across both rounds.
+
+| arch | rows the tightened UP floor flags at `--smp 1` |
+|---|---|
+| i386  | `IoInterrupt` 2145/0 → 1839/306 · `KeEvent` −132 pass · **`KeSpinLock` 710/75 → 706/79** · `IoDeviceObject` 185/4 → 184/5 |
+| amd64 | `IoInterrupt` 1095/0 → 939/156 · `KeEvent` −132 pass |
+| arm64 | `IoInterrupt` 1093/2 → 937/158 · `KeEvent` −132 pass |
+
+**Two of these are MP-conditional by construction and can never go to zero.**
+`IoInterrupt`'s `CheckSpinLock` branches on `KmtIsMultiProcessorBuild`; the MP kernel
+truthfully reports MP, takes the strict arm, and fails on the upstream owner stamp (see the
+baseline files for the full reasoning). `KeEvent` launches exactly 132 fewer assertions on
+every arch, with zero new failures — the MP-fatal sections the test skips on an MP build. The
+ratchet flags a dropped pass count even when nothing failed, which is correct conservatism.
+
+So **the criterion itself needed restating**: "UP:=smp1" cannot mean *zero ratchet regressions
+against the UP baseline* while kmtest branches on the build flavour. It means **zero
+UNEXPLAINED deltas**, against an enumerated list of MP-conditional rows.
+
+**The old "holds 19/19" was true against a floor that agreed with MP for the wrong reason.**
+Pre-stamp, a held lock read 0 on *both* kernels, so UP's `ok_eq_bool(*Lock != 0, TRUE)` failed
+306 and MP's `ok_eq_ulongptr(*Lock, 1)` failed the same 306 — identical counts, different
+causes. The UP floor banked `1839/306`, the MP run produced `1839/306`, and the comparison
+reported no delta. Restoring the stamp fixed UP only, and the re-seed made the floor honest,
+which is what let the coincidence show itself. Generalize: **a ratchet compares numbers, not
+reasons, so two rows can agree while measuring different things** — and a criterion built on
+"no delta" inherits that blindness.
+
+**The one genuine find is i386 `KeSpinLock` +4**, isolated against a UP control run on the same
+media (histograms sum exactly: UP 75, MP 79). The delta is `+5 "TryAcquire returned FALSE,
+expected TRUE"` and `−1 "Ret = TRUE, expected FALSE"`. `KeSpinLock.c:280-289` releases a lock,
+asserts it reads 0, then try-acquires expecting TRUE. The `expected 0` assertion fails 5× on
+*both* kernels — the lock is left DIRTY after release either way, and that half is already
+banked on UP. Only MP acts on it: its try-acquire is a real `InterlockedBitTestAndSet`, sees
+bit 0 still set, and returns FALSE, where UP's has no `CONFIG_SMP` body and returns TRUE
+unconditionally. A lock word that survives release is not cosmetic on MP — a genuine acquire on
+it spins forever at IRQL ≥ DISPATCH_LEVEL. Tracked as its own task; `cfdff72b41d` already named
+this hazard (`KeTryToAcquireSpinLockAtDpcLevel` stamping under plain `#if DBG`) and believed it
+closed, so some path still leaks.
+
+**Flip status: unchanged, `DefaultOS=` still selects UP.** amd64 and arm64 collapse cleanly
+modulo the two enumerated rows; i386 does not until the leaked lock word is understood, and it
+is the same shape as the two open MP blockers (#39's silent stall, #43's `0xE3`).
