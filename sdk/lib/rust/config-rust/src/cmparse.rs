@@ -718,6 +718,7 @@ unsafe fn CmpDoOpen(
             if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) != 0 {
                 Kcb = (**CachedKcb).ValueCache.__bindgen_anon_1.RealKcb;
                 if (*Kcb).__bindgen_anon_1.Delete() != 0 {
+                    crate::dbg_print!(b"The real KCB is deleted, attempt a reparse\n\0");
                     CmpUnLockKcbArray(KcbsLocked);
                     CmpAcquireKcbLockExclusiveByIndex(GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey));
                     CmpCleanUpKcbValueCache(*CachedKcb);
@@ -863,6 +864,7 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
     let mut Kcb: PCM_KEY_CONTROL_BLOCK = ParentKcb;
 
     if Hive != core::ptr::addr_of_mut!((*CmiVolatileHive).Hive) {
+        crate::dbg_print!(b"Invalid link node attempt\n\0");
         return STATUS_ACCESS_DENIED;
     }
 
@@ -1289,6 +1291,10 @@ unsafe fn CmpLookInCache(
     let mut LockedKcbs: *mut u32 = core::ptr::null_mut();
 
     if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+        crate::dbg_print!(
+            b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+            Kcb
+        );
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -1332,6 +1338,9 @@ unsafe fn CmpLookInCache(
                             if LockKcbsExclusive == 0 {
                                 CmpUnLockKcbArray(LockedKcbs);
                                 CmpDereferenceKeyControlBlock(*Kcb);
+                                crate::dbg_print!(
+                                    b"The current KCB or its parent is deleted, retrying looking in the cache\n\0"
+                                );
                                 return STATUS_RETRY;
                             }
 
@@ -1339,6 +1348,10 @@ unsafe fn CmpLookInCache(
                                 CmpRemoveKeyControlBlock(CurrentKcb);
                                 CmpUnLockKcbArray(LockedKcbs);
                                 CmpDereferenceKeyControlBlock(*Kcb);
+                                crate::dbg_print!(
+                                    b"The current KCB is deleted (KCB 0x%p)\n\0",
+                                    CurrentKcb
+                                );
                                 return STATUS_OBJECT_NAME_NOT_FOUND;
                             }
 
@@ -1378,6 +1391,10 @@ unsafe fn CmpLookInCache(
         *Kcb = CurrentKcb;
 
         if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+            crate::dbg_print!(
+                b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+                Kcb
+            );
             CmpUnLockKcbArray(LockedKcbs);
             return STATUS_UNSUCCESSFUL;
         }
@@ -1432,6 +1449,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
     );
 
     if SubkeysInTotal > CMP_SUBKEY_LEVELS_DEPTH_LIMIT as ULONG {
+        crate::dbg_print!(
+            b"The key path has too many subkeys - %lu\n\0",
+            SubkeysInTotal
+        );
         *LockedKcbs = core::ptr::null_mut();
         return 0xC0000106u32 as i32;
     }
@@ -1441,6 +1462,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
 
     if RemainingSubkeysInTotal == 0 && SubkeysInTotal == 0 {
         if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+            crate::dbg_print!(
+                b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+                Kcb
+            );
             return 0xC0000001u32 as i32;
         }
 
@@ -1469,6 +1494,7 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
     );
     if !NT_SUCCESS(Status) {
         if Status != 0xC000022Du32 as i32 {
+            crate::dbg_print!(b"CmpLookInCache() failed (Status 0x%lx)\n\0", Status);
             *LockedKcbs = core::ptr::null_mut();
             return Status;
         }
@@ -1485,6 +1511,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
             core::ptr::addr_of_mut!(MatchRemainingSubkeys),
         );
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(
+                b"CmpLookInCache() failed after retry (Status 0x%lx)\n\0",
+                Status
+            );
             *LockedKcbs = core::ptr::null_mut();
             return Status;
         }
@@ -3466,6 +3496,10 @@ pub unsafe extern "system" fn CmpParseKey(
     );
     // CMP_ASSERT_REGISTRY_LOCK();
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to look in cache, stop parsing (Status 0x%lx)\n\0",
+            Status
+        );
         ParentKcb = core::ptr::null_mut();
         // Goto Quickie.
         if !LockedKcbs.is_null() {

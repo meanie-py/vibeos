@@ -448,6 +448,11 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
     );
 
     if Status < 0 {
+        crate::dbg_print!(
+            b"ZwCreateFile(%wZ) failed, Status 0x%08lx.\n\0",
+            ObjectAttributes.ObjectName,
+            Status
+        );
         if !NameBuffer.is_null() {
             ExFreePoolWithTag(NameBuffer as *mut core::ffi::c_void, 0x20436d43u32);
         }

@@ -128,6 +128,7 @@ pub unsafe extern "system" fn CmpGetHiveName(
 
     (*HiveName).Buffer = ExAllocatePoolWithTag(PagedPool, NameSize, 0x20436d43u32) as *mut u16;
     if (*HiveName).Buffer.is_null() {
+        crate::dbg_print!(b"CmpGetHiveName: Unable to allocate memory\n\0");
         return 0u8;
     }
 
@@ -209,10 +210,15 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
         core::ptr::null_mut(),
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpAddToHiveFileList: Creation or opening of the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
         return Status;
     }
 
     if CmpGetHiveName(Hive, core::ptr::addr_of_mut!(HivePath)) == 0 {
+        crate::dbg_print!(b"CmpAddToHiveFileList: Unable to retrieve the hive name\n\0");
         Status = STATUS_NO_MEMORY;
         'Quickie: loop {
             if !HivePath.Buffer.is_null() {
@@ -235,6 +241,10 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
             core::ptr::addr_of_mut!(Length),
         );
         if Status != 0x80000005u32 as i32 {
+            crate::dbg_print!(
+                b"CmpAddToHiveFileList: Hive file name size query failed, status = 0x%08lx\n\0",
+                Status
+            );
             'Quickie: loop {
                 if !HivePath.Buffer.is_null() {
                     ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -279,6 +289,10 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
             *FilePath.offset((Length / core::mem::size_of::<u16>() as u32) as isize) = 0u16;
             Length += core::mem::size_of::<u16>() as u32;
         } else {
+            crate::dbg_print!(
+                b"CmpAddToHiveFileList: Hive file name query failed, status = 0x%08lx\n\0",
+                Status
+            );
             'Quickie: loop {
                 if !HivePath.Buffer.is_null() {
                     ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -303,6 +317,12 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
         FilePath as *mut core::ffi::c_void,
         Length,
     );
+    if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpAddToHiveFileList: Setting of entry in the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
+    }
 
     if !HivePath.Buffer.is_null() {
         ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
@@ -335,6 +355,10 @@ pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
         core::ptr::addr_of_mut!(ObjectAttributes),
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"CmpRemoveFromHiveFileList: Opening of the hive list failed, status = 0x%08lx\n\0",
+            Status
+        );
         return;
     }
 

@@ -1205,6 +1205,7 @@ pub unsafe extern "system" fn NtLoadKeyEx(
     }
 
     if SeSinglePrivilegeCheck(*core::ptr::addr_of!(SeRestorePrivilege), PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 
@@ -1793,6 +1794,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     let mut Handle: HANDLE = core::ptr::null_mut();
 
     if SeSinglePrivilegeCheck(SeRestorePrivilege, PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 

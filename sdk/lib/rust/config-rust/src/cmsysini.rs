@@ -1055,6 +1055,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
         &mut Disposition,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"Creating the Hardware Profile key failed\n\0");
         ProfilesHandle = core::ptr::null_mut();
         ProfileHandle = core::ptr::null_mut();
         if !ProfilesHandle.is_null() {
@@ -1084,6 +1085,7 @@ unsafe fn CmpCreateHardwareProfile(ControlSetHandle: HANDLE) -> NTSTATUS {
         &mut Disposition,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"Creating the Hardware Profile\\0000 key failed\n\0");
         if !ProfilesHandle.is_null() {
             NtClose(ProfilesHandle);
         }
@@ -1136,6 +1138,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
         Status = NtCreateKey(&mut KeyHandle, KEY_ALL_ACCESS, &mut ObjectAttributes, 0, core::ptr::null_mut(), 0, &mut Disposition);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to create ControlSet001 key: 0x%lx\n\0", Status);
             Status = Status;
             KeyHandle = core::ptr::null_mut();
             'Cleanup: loop {
@@ -1150,6 +1153,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
 
         Status = CmpCreateHardwareProfile(KeyHandle);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to create Hardware profile keys: 0x%lx\n\0", Status);
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
                 if !KeyHandle.is_null() { NtClose(KeyHandle); }
@@ -1170,6 +1174,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
         Status = NtOpenKey(&mut SelectHandle, KEY_READ, &mut ObjectAttributes);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to open select key: 0x%lx\n\0", Status);
             SelectHandle = core::ptr::null_mut();
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
@@ -1184,6 +1189,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         RtlInitUnicodeString(&mut KeyName, w!("Current").as_ptr());
         Status = NtQueryValueKey(SelectHandle, &mut KeyName, KeyValueFullInformation, ValueInfoBuffer.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of_val(&ValueInfoBuffer) as ULONG, &mut ResultLength);
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(b"Failed to open the Current value: 0x%lx\n\0", Status);
             'Cleanup: loop {
                 if !SelectHandle.is_null() { NtClose(SelectHandle); }
                 if !KeyHandle.is_null() { NtClose(KeyHandle); }
@@ -1797,6 +1803,7 @@ unsafe fn CmpGetRegistryPath() -> PCWSTR {
         ConfigPath = w!("\\SystemRoot\\").as_ptr();
     }
 
+    crate::dbg_print!(b"CmpGetRegistryPath: ConfigPath = '%S'\n\0", ConfigPath);
     ConfigPath
 }
 
@@ -1826,6 +1833,10 @@ unsafe fn CmpHasAlternateHiveDiverged(
         FileName,
         CM_CHECK_REGISTRY_DONT_PURGE_VOLATILES);
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to initialize the alternate hive to check for diversion (Status 0x%lx)\n\0",
+            Status
+        );
         *Diverged = 1u8;
         return;
     }
@@ -1959,9 +1970,17 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
             Length = (*CmHive).Hive.Storage[0].Length + 0x1000;
 
             if (*CmHive).Hive.Cluster != ClusterSize {
+                // The whole body of this branch upstream is the diagnostic, so
+                // dropping it left an `if` with nothing in it.
+                crate::dbg_print!(
+                    b"FIXME: Support for CmHive->Hive.Cluster (%lu) != ClusterSize (%lu) is unimplemented!\n\0",
+                    (*CmHive).Hive.Cluster,
+                    ClusterSize
+                );
             }
 
             if (*CmHive).Hive.BaseBlock.as_ref().unwrap().BootRecover == 2 {
+                crate::dbg_print!(b"FreeLdr recovered the hive (hive 0x%p)\n\0", CmHive);
                 RtlSetAllBits(core::ptr::addr_of_mut!((*CmHive).Hive.DirtyVector) as *mut _);
                 (*CmHive).Hive.DirtyCount = (*CmHive).Hive.DirtyVector.SizeOfBitMap;
                 HvSyncHive(&mut (*CmHive).Hive as PHHIVE);
@@ -1977,6 +1996,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                     PrimaryDisposition == 0x00000002 ||
                     SecondaryDisposition == 0x00000002 {
                     if HvWriteAlternateHive(&mut (*CmHive).Hive as PHHIVE) == 0 {
+                        crate::dbg_print!(b"Failed to write to alternate hive\n\0");
                         'Exit: {
                             break 'Exit;
                         }
@@ -2564,6 +2584,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         return;
     }
 
@@ -2585,6 +2610,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(SoftwareKeyHandle);
         return;
     }
@@ -2607,6 +2637,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(MicrosoftKeyHandle);
         NtClose(SoftwareKeyHandle);
         return;
@@ -2630,6 +2665,11 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         core::ptr::null_mut()
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to create key %wZ (Status: %08lx)\n\0",
+            core::ptr::addr_of!(KeyName),
+            Status
+        );
         NtClose(WindowsNtKeyHandle);
         NtClose(MicrosoftKeyHandle);
         NtClose(SoftwareKeyHandle);
