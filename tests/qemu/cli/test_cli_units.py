@@ -177,6 +177,68 @@ def test_write_baseline_announces_a_lowered_floor_but_allows_it():
     assert conformance_mod.baseline_lowering_note([_res("ExHardError", 31, 0)], base) is None
 
 
+def _fmt(r: dict) -> str:
+    return f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
+
+
+_BASELINE_FIXTURE = (
+    "# kmtest conformance baseline — parse_kmtest_serial.py format\n"
+    "# arch=i386\n"
+    "FsRtlLegal OK pass=100 fail=32 skip=0\n"
+    "IoDeviceObject OK pass=185 fail=4 skip=0\n"
+    "KeGuardedMutex OK pass=200 fail=87 skip=0\n"
+)
+
+
+def test_only_reseeds_the_named_rows_and_leaves_the_flaky_one_banked():
+    """The whole point of --only: IoDeviceObject is bistable on all three arches,
+    so a wholesale rewrite freezes whichever sample this boot happened to produce.
+    Re-seeding the deterministic rows must not touch it."""
+    results = [
+        _res("FsRtlLegal", 132, 0),
+        _res("IoDeviceObject", 184, 5),  # the unlucky side of the flake
+        _res("KeGuardedMutex", 287, 0),
+    ]
+    text, refusal = conformance_mod.merge_baseline_rows(
+        _BASELINE_FIXTURE, results, ["FsRtlLegal", "KeGuardedMutex"], _fmt
+    )
+    assert refusal is None
+    assert text is not None
+    assert "FsRtlLegal OK pass=132 fail=0" in text
+    assert "KeGuardedMutex OK pass=287 fail=0" in text
+    # untouched — still the banked sample, NOT this boot's 184/5
+    assert "IoDeviceObject OK pass=185 fail=4 skip=0" in text
+    # comments and ordering survive
+    assert text.startswith("# kmtest conformance baseline")
+    assert [ln.split()[0] for ln in text.splitlines() if not ln.startswith("#")] == [
+        "FsRtlLegal",
+        "IoDeviceObject",
+        "KeGuardedMutex",
+    ]
+
+
+def test_only_refuses_a_test_this_sweep_never_produced():
+    """Naming a test the sweep never launched must not silently no-op — that
+    reads as "re-seeded" while the stale row stays on the floor."""
+    text, refusal = conformance_mod.merge_baseline_rows(
+        _BASELINE_FIXTURE, [_res("FsRtlLegal", 132, 0)], ["FsRtlLegal", "KeSpinLock"], _fmt
+    )
+    assert text is None
+    assert refusal and "REFUSED" in refusal and "    KeSpinLock\n" in refusal
+
+
+def test_only_appends_a_row_the_baseline_does_not_carry_yet(capsys):
+    """An --only name that is new to the baseline is an addition, not a re-seed.
+    Appending raises the floor, which is fine — growing the file silently is not."""
+    text, refusal = conformance_mod.merge_baseline_rows(
+        _BASELINE_FIXTURE, [_res("CmSecurity", 900, 2)], ["CmSecurity"], _fmt
+    )
+    assert refusal is None
+    assert text is not None
+    assert text.rstrip().endswith("CmSecurity OK pass=900 fail=2 skip=0")
+    assert "did not carry" in capsys.readouterr().out
+
+
 def test_run_raises_loudly_instead_of_returning_empty(tiny_repo: Path):
     """The BUILD_INCOMPLETE train-halter class: _run used to swallow BOTH a
     non-zero exit and any exception, returning "". That silently shifted the

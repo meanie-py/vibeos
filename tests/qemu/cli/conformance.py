@@ -97,6 +97,51 @@ def baseline_lowering_note(results, base_map) -> str | None:
     )
 
 
+def merge_baseline_rows(existing_text: str, results, only, fmt):
+    """Re-seed ONLY the named rows, leaving every other row's banked sample alone.
+
+    A wholesale `--write-baseline` re-rolls EVERY row from the single sweep in
+    front of it, including the rows we know are bistable (IoDeviceObject on all
+    three arches, ExPools on arm64). One lucky boot then becomes the permanent
+    floor and the next honest run reads as a regression. Until this existed the
+    only safe way to re-seed a deterministic row was to hand-edit the file, which
+    is how the CmSecurity row was done — fine for one row, not for six.
+
+    Returns `(new_text, refusal)`; `refusal` is None on success.
+    """
+    by_name = {r["name"]: r for r in results}
+    missing = sorted(n for n in only if n not in by_name)
+    if missing:
+        return None, (
+            "[conformance] --write-baseline --only REFUSED: this sweep has no "
+            f"result for {len(missing)} named test(s):\n"
+            + "".join(f"    {n}\n" for n in missing)
+            + "  A named test that never launched cannot be re-seeded from this run."
+        )
+
+    wanted = list(dict.fromkeys(only))
+    seen: set[str] = set()
+    out = []
+    for line in existing_text.splitlines():
+        name = line.split()[0] if line.strip() and not line.startswith("#") else None
+        if name is not None and name in by_name and name in wanted:
+            out.append(fmt(by_name[name]))
+            seen.add(name)
+        else:
+            out.append(line)
+    # A named test the baseline does not carry yet is an ADDITION, not a re-seed.
+    # Appending is right — it raises the floor — but say so rather than silently
+    # growing the file.
+    added = [n for n in wanted if n not in seen]
+    out.extend(fmt(by_name[n]) for n in added)
+    if added:
+        print(
+            "[conformance] --only added "
+            f"{len(added)} test(s) the baseline did not carry: {', '.join(added)}"
+        )
+    return "\n".join(out) + "\n", None
+
+
 def _run_dir(arch: str) -> Path:
     ts = time.strftime("%Y%m%d-%H%M%S")
     d = Path("/tmp/vibeos-cli") / f"{ts}-conformance-{arch}"
@@ -479,7 +524,35 @@ def _conformance_once(args, repo: Path) -> int:
                 new_passes.append(r["name"])
 
     # --- 5. write baseline if asked ------------------------------------------
-    if args.write_baseline:
+    only = getattr(args, "only", None)
+    if only and not args.write_baseline:
+        print("[conformance] --only has no meaning without --write-baseline", file=sys.stderr)
+        return 2
+    if only and not have_baseline:
+        print(
+            f"[conformance] --only needs an existing baseline at {baseline_path};"
+            " seed the file first with a plain --write-baseline",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.write_baseline and only:
+        # Targeted re-seed: the coverage refusal below does not apply (nothing is
+        # dropped) and the lowering note is scoped to the rows actually touched.
+        selected = [r for r in results if r["name"] in set(only)]
+        note = baseline_lowering_note(selected, base_map)
+        if note:
+            print(note)
+        merged, refusal = merge_baseline_rows(baseline_path.read_text(), results, only, parser.fmt)
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 2
+        baseline_path.write_text(merged)
+        print(
+            f"[conformance] baseline re-seeded for {len(only)} row(s): {baseline_path}\n"
+            f"  {', '.join(only)}"
+        )
+    elif args.write_baseline:
         # A baseline is a RATCHET FLOOR, and --write-baseline replaces it wholesale
         # with this run's rows. So a sweep that launched fewer tests than the floor
         # — a boot flake, an early BUGCHECK, a drained-out timeout — silently

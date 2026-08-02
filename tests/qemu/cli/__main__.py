@@ -426,6 +426,16 @@ def build_parser() -> argparse.ArgumentParser:
         "has but this sweep never launched (only when a test was really retired)",
     )
     cf.add_argument(
+        "--only",
+        metavar="TEST",
+        nargs="+",
+        default=None,
+        help="with --write-baseline, re-seed ONLY these tests and leave every "
+        "other row at its banked sample. Use this whenever the sweep contains "
+        "a known-flaky test: a wholesale rewrite re-rolls those rows from one "
+        "sample and can freeze a lucky boot into the floor",
+    )
+    cf.add_argument(
         "--gate",
         action="store_true",
         help="exit nonzero on any ratchet regression (default: report-only)",
