@@ -32,6 +32,20 @@
 #define WC_NO_BEST_FIT_CHARS 0x0400
 #define MB_ERR_INVALID_CHARS 0x0008
 #define ERROR_INSUFFICIENT_BUFFER 122
+/* What kernel32 returns from MultiByteToWideChar / WideCharToMultiByte for a NULL
+ * source. It matters because msvcrt LEANS on it: `_tempnam` passes `_wtempnam`'s
+ * result straight to `astrdupw_utf8` with no guard between them, so a failed
+ * `GetTempFileNameW` arrives at the converter as NULL and the graceful answer is a
+ * 0 return, not a fault. See the guard in refimpl.c.
+ *
+ * Guarded because msvcrt_crt_consts.h DERIVES this same constant from msvcrt's own
+ * headers, and the two meet in every TU that includes both (fileimpl.c, and the
+ * file.c reference TU via msvcrt_file_prelude.h). The derived value is the source of
+ * truth and wins; this is only for refimpl.c, which deliberately does not include
+ * that header — it reads the HOST's errno, and the derived header displaces those. */
+#ifndef ERROR_INVALID_PARAMETER
+#define ERROR_INVALID_PARAMETER 87
+#endif
 /* What kernel32 returns from WideCharToMultiByte(CP_UTF8, ...) on an unpaired
  * surrogate — UTF-8 has no default character to substitute, so it refuses rather
  * than best-fitting.  It is the only EILSEQ signal a UTF-8 caller of wcsrtombs_l
