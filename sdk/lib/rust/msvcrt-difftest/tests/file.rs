@@ -358,6 +358,37 @@ extern "C" {
     /// which is what it was until this declaration existed.
     fn msvcrt_ref___doserrno() -> *mut u32;
 
+    // ══ wave 18c ══════════════════════════════════════════════════════════════════════
+    //
+    // `__utimbuf32`/`__utimbuf64` are two `__time32_t`/`__time64_t` in that order and
+    // nothing else, so the rows pass `*const i32`/`*const i64` pairs directly rather than
+    // mirroring a two-field struct whose layout `msvcrt_crt_layout.h` already pins.
+    fn _utime32(path: *const u8, t: *const i32) -> c_int;
+    fn _utime64(path: *const u8, t: *const i64) -> c_int;
+    fn _futime32(fd: c_int, t: *const i32) -> c_int;
+    fn _futime64(fd: c_int, t: *const i64) -> c_int;
+    fn _wutime32(path: *const u16, t: *const i32) -> c_int;
+    fn _wutime64(path: *const u16, t: *const i64) -> c_int;
+
+    fn _flushall() -> c_int;
+    fn _fcloseall() -> c_int;
+    fn _rmtmp() -> c_int;
+    fn _setmaxstdio(newmax: c_int) -> c_int;
+    fn _getmaxstdio() -> c_int;
+
+    fn ref__utime32(path: *const u8, t: *const i32) -> c_int;
+    fn ref__utime64(path: *const u8, t: *const i64) -> c_int;
+    fn ref__futime32(fd: c_int, t: *const i32) -> c_int;
+    fn ref__futime64(fd: c_int, t: *const i64) -> c_int;
+    fn ref__wutime32(path: *const u16, t: *const i32) -> c_int;
+    fn ref__wutime64(path: *const u16, t: *const i64) -> c_int;
+
+    fn ref__flushall() -> c_int;
+    fn ref__fcloseall() -> c_int;
+    fn ref__rmtmp() -> c_int;
+    fn ref__setmaxstdio(newmax: c_int) -> c_int;
+    fn ref__getmaxstdio() -> c_int;
+
     /// The `dwShareMode` the last `CreateFileW` was asked for (fileimpl.c).
     ///
     /// ONE definition serving both sides, so it has to be read immediately after each
@@ -1101,6 +1132,9 @@ unsafe fn run() {
     fd_plumbing_rows();
     wide_stream_rows();
     buffering_rows();
+    // ── wave 18c ──────────────────────────────────────────────────────────────────────
+    utime_rows();
+    global_stream_rows();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -4249,6 +4283,273 @@ unsafe fn buffering_rows() {
             Obs::with(g, gi),
             Obs::with(n, ni),
             format!("nullfile={nullfile} len={}", seed.len()),
+            tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18c — timestamps and the process-global stream ops
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// The utime family is six exports over one body: `_futime64` does the work, `_utime64` and
+// `_wutime64` open a descriptor and delegate, and the three `*32` twins widen their
+// `__time32_t` pair and delegate again. So the interesting axis is not the entry point but
+// the VALUE — whether a time survives `time_to_filetime`, the 100ns-since-1601 conversion,
+// `SetFileTime`, and the read back out through `_stat64`'s
+// `RtlTimeToSecondsSince1970` unchanged.
+//
+// No NULL-`t` case. `_futime64` reads `_time64(NULL)` for it, so the two sides stamp their
+// own wall clocks; they agree to the second almost always and straddle a boundary at
+// random, which is a flake rather than a test. The row says so instead of carrying a tag
+// that fails once a fortnight.
+
+/// Times a utime row draws from, all inside the range a 32-bit `__time32_t` can hold so the
+/// `*32` and `*64` variants are graded on identical values. 0 is the epoch itself, which is
+/// where a sign or bias error in the 1601 conversion shows up.
+const UTIMES: [i64; 6] = [0, 1, 1_000_000_000, 1_600_000_000, 2_000_000_000, 2_147_483_647];
+
+unsafe fn utime_rows() {
+    // `_utime32` / `_utime64` — the narrow path.
+    grade("_utime32+_utime64", &["ok", "enoent", "epoch"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("utime", &seed) } else { World::absent("utime") };
+        let wide64 = r.below(2) == 0;
+        let at = UTIMES[r.below(UTIMES.len())];
+        let mt = UTIMES[r.below(UTIMES.len())];
+        let t64 = [at, mt];
+        let t32 = [at as i32, mt as i32];
+
+        let g = Effects::subject(|| {
+            if wide64 {
+                _utime64(w.s(), t64.as_ptr()) as i64
+            } else {
+                _utime32(w.s(), t32.as_ptr()) as i64
+            }
+        });
+        let n = Effects::reference(|| {
+            if wide64 {
+                ref__utime64(w.r(), t64.as_ptr()) as i64
+            } else {
+                ref__utime32(w.r(), t32.as_ptr()) as i64
+            }
+        });
+        let (gi, ni) = stat_both(&w);
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "enoent" },
+            if at == 0 || mt == 0 { "epoch" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} 64={wide64} at={at} mt={mt}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_wutime32` / `_wutime64` — the wide path, which is the one that owns the body.
+    grade("_wutime32+_wutime64", &["ok", "enoent", "epoch"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("wutime", &seed) } else { World::absent("wutime") };
+        let wide64 = r.below(2) == 0;
+        let at = UTIMES[r.below(UTIMES.len())];
+        let mt = UTIMES[r.below(UTIMES.len())];
+        let t64 = [at, mt];
+        let t32 = [at as i32, mt as i32];
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let g = Effects::subject(|| {
+            if wide64 {
+                _wutime64(sw.as_ptr(), t64.as_ptr()) as i64
+            } else {
+                _wutime32(sw.as_ptr(), t32.as_ptr()) as i64
+            }
+        });
+        let n = Effects::reference(|| {
+            if wide64 {
+                ref__wutime64(rw.as_ptr(), t64.as_ptr()) as i64
+            } else {
+                ref__wutime32(rw.as_ptr(), t32.as_ptr()) as i64
+            }
+        });
+        let (gi, ni) = stat_both(&w);
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "enoent" },
+            if at == 0 || mt == 0 { "epoch" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} 64={wide64} at={at} mt={mt}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_futime32` / `_futime64` — straight at the body, over a descriptor.
+    grade("_futime32+_futime64", &["ok", "badfd", "epoch"], ROW_ITERS, |r| {
+        let seed = r.bytes_upto(16);
+        let w = World::new("futime", &seed);
+        let bad = r.below(5) == 0;
+        let wide64 = r.below(2) == 0;
+        let at = UTIMES[r.below(UTIMES.len())];
+        let mt = UTIMES[r.below(UTIMES.len())];
+        let t64 = [at, mt];
+        let t32 = [at as i32, mt as i32];
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_WRONLY | O_BINARY), ref__open(w.r(), O_WRONLY | O_BINARY))
+        };
+        let g = Effects::subject(|| {
+            if wide64 {
+                _futime64(sfd, t64.as_ptr()) as i64
+            } else {
+                _futime32(sfd, t32.as_ptr()) as i64
+            }
+        });
+        let n = Effects::reference(|| {
+            if wide64 {
+                ref__futime64(rfd, t64.as_ptr()) as i64
+            } else {
+                ref__futime32(rfd, t32.as_ptr()) as i64
+            }
+        });
+        if !bad {
+            _close(sfd);
+            ref__close(rfd);
+        }
+        let (gi, ni) = stat_both(&w);
+        let tags = vec![
+            if bad { "badfd" } else { "ok" },
+            if at == 0 || mt == 0 { "epoch" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("bad={bad} 64={wide64} at={at} mt={mt}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+}
+
+/// Each side's own file, through its own `_stat64`.
+///
+/// This is the only place in the suite where a `World` (two files) is stat'd rather than a
+/// `Shared` (one). It is sound here for the reason it is not sound for the stat rows
+/// themselves: those compare timestamps the FILESYSTEM chose, which two files created
+/// microseconds apart do not share, while these rows SET both timestamps to a value the row
+/// picked. What is left to differ is exactly what the utime call did with it.
+unsafe fn stat_both(w: &World) -> (Vec<u8>, Vec<u8>) {
+    let (mut sb, mut rb) = (QBuf::new(STAT_BUF), QBuf::new(STAT_BUF));
+    let (sp, rp) = (sb.p(), rb.p());
+    let sr = _stat64(w.s(), sp);
+    let rr = ref__stat64(w.r(), rp);
+    let mut gi = sb.img();
+    let mut ni = rb.img();
+    gi.extend_from_slice(&sr.to_le_bytes());
+    ni.extend_from_slice(&rr.to_le_bytes());
+    (gi, ni)
+}
+
+unsafe fn global_stream_rows() {
+    // `_flushall` — every buffered stream, at once. The return is the COUNT flushed, so it
+    // is also a statement about how many streams each side thinks it has open: the two
+    // rings have to have stayed in step for this to match, which no other row asserts
+    // directly.
+    grade("_flushall", &["some", "none"], ROW_ITERS, |r| {
+        let n_streams = r.below(4);
+        let payload = r.bytes_from(1, 24);
+        let worlds: Vec<World> =
+            (0..n_streams).map(|i| World::new(&format!("flushall{i}"), b"")).collect();
+        let mut sf: Vec<FILEP> = Vec::new();
+        let mut rf: Vec<FILEP> = Vec::new();
+        for w in &worlds {
+            let a = fopen(w.s(), b"wb\0".as_ptr());
+            let b = ref_fopen(w.r(), b"wb\0".as_ptr());
+            fwrite(payload.as_ptr() as *const c_void, 1, payload.len(), a);
+            ref_fwrite(payload.as_ptr() as *const c_void, 1, payload.len(), b);
+            sf.push(a);
+            rf.push(b);
+        }
+
+        let g = Effects::subject(|| _flushall() as i64);
+        let n = Effects::reference(|| ref__flushall() as i64);
+        // Read the files back BEFORE closing: fclose would flush them anyway, and then the
+        // row would pass over an implementation whose _flushall did nothing at all.
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        for w in &worlds {
+            let (sd, rd) = w.disk();
+            push_disk(&mut gi, sd);
+            push_disk(&mut ni, rd);
+        }
+        for f in sf {
+            fclose(f);
+        }
+        for f in rf {
+            ref_fclose(f);
+        }
+        let tags = vec![if n_streams > 0 { "some" } else { "none" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("streams={n_streams} len={}", payload.len()),
+            tags,
+        )
+    });
+
+    // `_fcloseall` — closes everything from index 3 up and returns the count. It consumes
+    // the streams, so the row must NOT close them again; that it leaves both rings equally
+    // empty is what `balanced()` then confirms.
+    grade("_fcloseall", &["some", "none"], ROW_ITERS, |r| {
+        let n_streams = r.below(4);
+        let worlds: Vec<World> =
+            (0..n_streams).map(|i| World::new(&format!("fcloseall{i}"), b"x")).collect();
+        for w in &worlds {
+            fopen(w.s(), b"rb\0".as_ptr());
+            ref_fopen(w.r(), b"rb\0".as_ptr());
+        }
+
+        let g = Effects::subject(|| _fcloseall() as i64);
+        let n = Effects::reference(|| ref__fcloseall() as i64);
+        let tags = vec![if n_streams > 0 { "some" } else { "none" }];
+        (
+            Obs::with(g, Vec::new()),
+            Obs::with(n, Vec::new()),
+            format!("streams={n_streams}"),
+            tags,
+        )
+    });
+
+    // `_setmaxstdio` / `_getmaxstdio` — the stream-table ceiling, and its three refusals:
+    // below `_IOB_ENTRIES`, above `MSVCRT_MAX_FILES`, or below the number of streams
+    // already handed out. The row RESTORES the value it found, because every later row's
+    // `msvcrt_get_file` reads it.
+    grade("_setmaxstdio+_getmaxstdio", &["ok", "too-low", "too-high"], ROW_ITERS, |r| {
+        let before_s = _getmaxstdio();
+        let before_r = ref__getmaxstdio();
+        let newmax = [512, 2048, 5, 99_999, 1][r.below(5)];
+
+        let g = Effects::subject(|| _setmaxstdio(newmax) as i64);
+        let n = Effects::reference(|| ref__setmaxstdio(newmax) as i64);
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.extend_from_slice(&_getmaxstdio().to_le_bytes());
+        ni.extend_from_slice(&ref__getmaxstdio().to_le_bytes());
+        _setmaxstdio(before_s);
+        ref__setmaxstdio(before_r);
+        let tags = vec![if n.ret > 0 {
+            "ok"
+        } else if newmax < 20 {
+            "too-low"
+        } else {
+            "too-high"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("newmax={newmax} before={before_s}/{before_r}"),
             tags,
         )
     });
