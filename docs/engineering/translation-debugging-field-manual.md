@@ -3634,6 +3634,36 @@ callee reads.
 Same shape as `NtOpenProcessToken` vs its `Ex` sibling and `NtSetValueKey` vs `NtQueryValueKey`
 — whichever variant a human read is right. Fix the tool, not the instance.
 
+### The kernel sets last-error in the 64-bit TEB and the 32-bit guest reads TEB32
+**Symptom.** A win32k API fails for a 32-bit process and `GetLastError()` returns 0, or the
+code the guest itself set before the call, or an error from some unrelated earlier call. The
+app gets the `FALSE` and never the reason. Nothing crashes, so it survives any number of green
+boots — and it silently disarms every test that discriminates on an error code.
+**Cause.** win32k reports failure with `EngSetLastError`, which writes
+`NtCurrentTeb()->LastErrorValue`. In kernel mode that is the thread's **64-bit** TEB; a 32-bit
+guest's `GetLastError()` reads `TEB32->LastErrorValue`, a different structure at
+`WowTebOffset`. Every code the whole USER/GDI surface produced landed in a TEB no 32-bit
+process ever reads. The mirror image is true too: `EngGetLastError` cannot see a value the
+guest set. The ntdll surface is unaffected — those syscalls return an NTSTATUS and the guest's
+own ntdll32 converts it into its own TEB32.
+**Fix.** Bridge it once at the syscall dispatcher, not in every `Eng*` caller. On entry copy
+the guest's value UP into the 64-bit TEB and remember it; on exit copy DOWN only if the 64-bit
+value **changed**. Both halves earn their place: without the copy-up, win32k's own
+save-and-restore idiom (`Error = EngGetLastError(); …; EngSetLastError(Error);`) faithfully
+preserves a stale value instead of the caller's; without the change test, an unconditional
+copy-down overwrites what a kernel→user callback's `SetLastError` just wrote, and turns a fix
+for failing calls into a corruption of succeeding ones.
+**Test it with two different codes out of one API.** One call driven two ways — a bad size
+answering `ERROR_INVALID_PARAMETER` and a bad flag answering `ERROR_INVALID_FLAGS` — proves the
+code *travelled*; a single expected code is also satisfied by a bridge that hardcodes, guesses,
+or zeroes. Pick an API whose client-side stub is a bare forward (`user32.spec`:
+`TrackMouseEvent` → `NtUserTrackMouseEvent`) so the code cannot have come from user mode. Then
+assert separately that a **succeeding** call leaves the guest's own last-error alone.
+**This is why an assertion that gates on a kernel error code is dead on arrival.** The bug was
+found by a control run whose test excused a failure unless `GetLastError()` was
+`ERROR_INVALID_PARAMETER` — a discriminator that could never fire. If a guest test branches on
+a code the kernel sets, prove the code arrives before trusting the branch.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
