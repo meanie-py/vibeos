@@ -659,7 +659,86 @@ _ALIAS_BAD_B = "type VBO = LARGE_INTEGER;\n"
 _ALIAS_GOOD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
 _ALIAS_GOOD_B = "use crate::types::VBO;\n"
 
+# scan_mask_drift. Seeded from E21 (2026-08-01): NtOpenKey masked a bare 0x0100
+# where the C masks ~KEY_WOW64_RES (0x0300), so KEY_WOW64_32KEY reached the object
+# access check and every RegOpenKeyEx asking for it got ACCESS_DENIED — while the
+# identical RegCreateKeyEx, which masks correctly, succeeded. The BAD fixture also
+# carries the second shape from the same hunt: i386 KeFlushCurrentTb dropped its
+# whole CR4.PGE branch, so there is no live mask of that target at all.
+#
+# The GOOD case pins the false positives an earlier version of this scanner
+# reported, every one of which cost a hand-audit:
+#   * the live spelling is usually `&= !(NAME as ULONG)`, not a bare `!NAME`;
+#   * translation re-cases locals, so the C's `Cr4` is the Rust's `cr4`;
+#   * a literal that MATCHES its named constant is correct, merely unnamed;
+#   * `~` over a bare literal names no constant to check.
+# It also pins the trap that made counting occurrences unusable: a fix's own
+# explanatory comment QUOTES the C, so the C statement appears twice while the
+# live code masks once. That must stay silent.
+_MASKDRIFT_BAD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    let mut DesiredAccess = DesiredAccess & !0x0100u32;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr3 = readcr3();
+    writecr3(cr3);
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+"""
+_MASKDRIFT_GOOD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+const MEM_EXECUTE_OPTION_VALID_FLAGS: u32 = 0x3F;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    // C: `DesiredAccess &= ~KEY_WOW64_RES;` — quoted here on purpose. An
+    // occurrence-counting rule reads this as a second C mask and reports a drop.
+    let mut DesiredAccess = DesiredAccess & !KEY_WOW64_RES;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr4: ULONG = readcr4();
+    writecr4(cr4 & !CR4_PGE);
+}
+
+pub unsafe fn DC_vPrepareDCsForBlit(dc: &mut DC) {
+    dc.flags &= !(DC_DIRTY_RAO as ULONG);
+}
+
+pub unsafe fn MiValidateExecuteOptions(ExecuteOptions: u32) -> bool {
+    (ExecuteOptions & !MEM_EXECUTE_OPTION_VALID_FLAGS) != 0
+}
+
+pub unsafe fn MiAlignDown(Address: usize) -> usize {
+    Address & !0xFFF
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+//     pdc->flags &= ~DC_DIRTY_RAO;
+//     if (ExecuteOptions & ~MEM_EXECUTE_OPTION_VALID_FLAGS)
+//     Address &= ~0xFFF;
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_mask_drift",
+        script="tools/scan_mask_drift.py",
+        argv=["--lint"],
+        bad={"ntapi.rs": _MASKDRIFT_BAD},
+        good={"ntapi.rs": _MASKDRIFT_GOOD},
+        pass_files=True,
+    ),
     Control(
         name="scan_type_alias_contradictions",
         script="tools/scan_type_alias_contradictions.py",
@@ -837,6 +916,13 @@ UNCOVERED: dict[str, str] = {
         "main() scans a fixed workspace root, so the subprocess harness cannot drive it — "
         "but scan_crate()/fix_crate() take a crate dir, and are covered by direct import at "
         "the bottom of this file. That gap let a WRITE-CAPABLE --fix ship untested."
+    ),
+    "scan_import_cc": (
+        "main() resolves its oracle from the WHOLE repo — every .spec plus every "
+        "add_importlibs() — so a fixture directory has nothing to be judged against. "
+        "scan_crate()/read_spec()/crate_link_set()/c_defines() all take their inputs as "
+        "arguments and are driven with synthetic specs in tools/test_scan_import_cc.py "
+        "(15 tests), which pins each of the six blind spots its first whole-tree run had."
     ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",

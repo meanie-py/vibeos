@@ -107,8 +107,11 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
 
-**Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def), `verify_abi.py` (extern
-blocks vs `ntoskrnl.spec` + bindgen), `verify_ffi.py` (workspace-wide),
+**Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
+`tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
+scoped by `add_importlibs` — the usermode half, and the only one that sees a wrong `extern
+"system"`), `verify_abi.py` (extern blocks vs `ntoskrnl.spec` + bindgen, `extern "C"` only),
+`verify_ffi.py` (workspace-wide),
 `tools/scan_ir_mismatch.py` (catches the fold *before* it folds, from `.ll`). Refined
 fold-truth model `[§9.102]`: **CC mismatch folds against both defs and declarations**;
 **signature mismatch (arity / int width / void-vs-value) folds only against a definition**;
@@ -144,6 +147,54 @@ So: an i386-only `undefined _Foo@N` after someone widens a type is a **real cros
 bug that i386 caught for you**, not an i386 quirk to work around. Fix every decl to match the
 definition, and fix the call-site casts with them — a widened parameter usually needs the
 argument expression widened too, or you have only moved the truncation.
+
+**The NO-`@N` variant: an `undefined _Foo` with no suffix at all is a Win32 API you declared
+`extern "C"`.** WINAPI is stdcall, so on i386 the convention IS the symbol name —
+`_SetErrorMode@4` vs `_SetErrorMode` — while on amd64/arm64 the two conventions coincide and
+the same declaration links green. errno.rs declared `SetErrorMode`/`lstrcpyW`/`lstrcatW`
+`extern "C"` and got exactly that: three undefined symbols, i386 only. **`cargo check` cannot
+see this class at all** — it type-checks, it does not link a DLL — so a lane whose gates are
+`check` + `check-tooling` + `difftest` hands a green tree to the merge queue and is bounced
+LINK_FAIL.
+
+**`tools/scan_import_cc.py` now closes that hole in `check` itself**, so this is a lint
+failure rather than a build you have to remember to run. The oracle is the `.spec` of the DLL
+that exports the name — spec2def turns that file into the import library, so it *is* the
+link-time truth — scoped per crate to the DLLs its module names in `add_importlibs()`.
+Scoping is the design and not a refinement: run unscoped, four of its first 22 findings were
+pure name collisions between unrelated modules (user32's stdcall `UserRealizePalette` vs
+win32k's FASTCALL one; ntoskrnl's exported `RtlAcquireSRWLockExclusive` vs its private
+same-named cdecl inline shim, both real symbols in one binary).
+
+**The reason it was worth building: the tree already held 14 more of these, in two shapes.**
+
+*Papered over at the link layer.* fastfat's `rust_cohab_fat.c` carried three asm-aliased
+stdcall trampolines (`_ExReleaseResourceLite@4`, `_ExAcquireFastMutexUnsafe@4`,
+`_ExReleaseFastMutexUnsafe@4`) tailing into the real FASTCALL exports, and its comment stated
+the diagnosis exactly right — "the Rust translation references them stdcall (`_Name@4`)" —
+then fixed everything except the two declarations. That is not a lapse: with no gate able to
+see a wrong-ABI import, a shim was the only tool that reached the symptom. The declarations
+are fixed and the trampolines are gone. **A wrong-ABI import wants the declaration fixed,
+never a trampoline.**
+
+*Latent — declared wrong, never called.* An unused extern emits no relocation, so it links
+green and detonates on first use. mscms had `memcpy` inside an `extern "fastcall"` block
+(with `RtlUlongByteSwap`, which really is fastcall) and every call site still commented out;
+shell32 had kernel32's `lstrlenA` in a block of CRT cdecl imports. wldap32-rust, translated
+but not yet flipped, had **nine** — `HeapAlloc`, `GetProcessHeap`, `MultiByteToWideChar` and
+friends, the whole Win32 section spelled `extern "C"`. Those nine were the clearest argument
+for the lint: they are unreachable by any build gate that exists, because nothing compiles
+that crate yet, and they would all have landed at once on flip day.
+
+Two things about the lint that will bite whoever extends it. Its findings are keyed on the
+`.spec` **flag order** — spec2def reads the convention token first and options *after* it
+(`spec2def.c:1026`), so a pattern written flags-first silently drops every flagged export
+(`@ stdcall -norelay GetProcessHeap()`, every `-arch=`, every `-private`) and the oracle
+quietly under-reports rather than failing. And a finding in a generated bindgen island is
+tagged `IMPORT_CC_ISLAND` because there the island transcribes the C header, so a clash with
+the spec is the *header* against the *spec* — an upstream inconsistency to judge, not a decl
+to rewrite. Four are baselined: ntdll exports `NtCurrentTeb` `@ stdcall -arch=win32` while
+`psfuncs.h` declares it with no `NTAPI`, and `KeInitializeSpinLock` is the same shape.
 
 ### Wrong-direction fix: aligning the DEF to a lying header `[§9.107]`
 Resolving a `scan_ir_mismatch` "def X vs decl system" by changing the **definition** to cdecl
@@ -1199,6 +1250,17 @@ against each other, not just against C.
 values are present, both are plausible, both appear in the header. Only the *pairing* is wrong.
 Diff the whole family in one read.
 
+**The same blindness scales past arches: one C macro can acquire N private Rust copies.**
+`RMAP_SEGMENT_MASK` (`~((ULONG_PTR)0xff)`, arch-invariant) had **six** — `mm/macros.rs` and
+`mm/section_table.rs` correct; `inline/mm.rs` pointer-width-dependent (`!0xFFF` on 64-bit);
+`ntkrnl-sys/src/mm.rs` `!1usize` with a matching `& 1` predicate; `mm/rmap.rs` the 32-bit-
+truncated `0xFFFFFF00`. Two of the wrong three were *harmless* — `!0xFFF` accepts exactly the
+same inputs a constructed segment address can take, and rmap.rs's truncation was laundered by an
+`as ULONG` cast — which is why they survived: **a wrong copy that happens to be unreachable-wrong
+keeps the population alive until one copy is reached.** Constructing with one copy and testing
+with another is the failure. When a macro is defined more than once in our tree, the count itself
+is the finding; grep the name before trusting any single definition.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -1208,6 +1270,47 @@ measured the vis region and `prgnRao` *correctly* at update time. **A hand-typed
 literal is the flag-cousin of the magic struct offset — treat it as wrong until proven right.**
 The constants were always available via the bindgen glob; the literals were pure debris.
 **Corollary: when a pipeline has N derived stages, probe the LAST consumer, not the producers.**
+
+**The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
+the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
+was already defined in that same file and used correctly by `NtCreateKey` sixty lines above.
+`KEY_WOW64_32KEY` therefore survived into `ObCheckObjectAccess`, which no key's DACL grants, so
+`RegOpenKeyEx(.., KEY_WOW64_32KEY)` returned `STATUS_ACCESS_DENIED` while the identical
+`RegCreateKeyEx` succeeded — and it hit native 64-bit callers (rapps, `reg /reg:32`, apphelp),
+not just WoW64 guests. **An asymmetry between two syscalls that share a contract is the tell:**
+neither call looks wrong on its own, so test the pair, not the function.
+- **A translated file carries its own oracle.** These files keep the original C as trailing
+  comments, so a commented `X &= ~NAME` with no live `!NAME` in the same file detects this whole
+  class — no header catalog, no C build. It re-found the bug above without being told, and also
+  turned up `ProbeAndCaptureObjectAttributes` masking `0x12F2` where the C says
+  `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), and i386 `KeFlushCurrentTb` having dropped its
+  `KF_GLOBAL_PAGE` branch outright — a plain CR3 reload does **not** flush global TLB entries,
+  and `patpge.rs` does enable PGE. That last one had no symptom anyone was chasing.
+- **Calibrate the pattern or drown:** the live spelling is usually `&= !(NAME as UINT)`, so
+  accepting only `!NAME` reports ~4x noise (109 raw hits vs 27).
+- **Check the sibling arch before calling it drift** — amd64's `KeFlushCurrentTb` C really is
+  CR3-only, so only i386 had a branch to lose.
+
+**Mechanised as `tools/scan_mask_drift.py`** (in `vibeos-cli check`, baseline-gated). Its first
+full sweep found the registry's whole `HIVE_*` family open-coded and four of eight copies wrong:
+`CmLoadKey` set `0x4` and `CmUnloadKey` `0x40` for `HIVE_IS_UNLOADING` (**0x20**), while
+`CmpParseKey` tested `0x4` and `CmpCreateKeyControlBlock` tested `0x200`. Only the load-side set
+and one of the two guards agreed *by accident*, so the C's "refuse to resolve a key in a hive
+that is unloading" protection could not fire on the unload path it exists for. Separately
+`CmpLoadHiveThread` cleared `0x80` instead of `HIVE_NOLAZYFLUSH` (**0x2**), leaving lazy flush
+disabled for that hive forever.
+- **A wrong flag is invisible in proportion to how consistently it is wrong.** Nothing here was
+  a compile error, and the writers and readers each looked locally fine. `verify_constants`
+  needs a *name* and these were bare literals; `scan_const_contradictions` needs *two* copies to
+  disagree and the one named copy was unique. The relationship to the C is the only oracle left.
+- **Fix the whole family, not the finding.** These are now one `pub mod hiveflags` that everyone
+  imports; the pre-existing `HIVE_NOLAZYFLUSH = 0x8` sitting in the const-contradiction baseline
+  was the same bug, already caught and parked. **A baseline is a work queue** — read it when the
+  scanner points you at that neighbourhood.
+- **The counting rule is a trap.** "C masks it N times, live masks it fewer" reads a fix's own
+  explanatory comment (which quotes the C) as another C occurrence, and a C block repeats a
+  statement per call site. The scanner compares *values* and reports a target the live code
+  never masks at all; it does not count.
 
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
@@ -1238,6 +1341,23 @@ property, not a convenience.** Prophylactic: allowlist the header that *owns* an
 Note constants that live only in a *secondary* `-sys` island need an explicit `use`
 (rtl8139's `CmResourceTypePort` is in `hal_bindgen_*.rs`) — allowlisting the header does
 nothing.
+
+**The audit was itself blind to a `case` label a MACRO generates**, which is the failure mode
+it exists to catch, arriving through its own front door. `find_switch_constants` walks the
+*unexpanded* AST for `case_statement` nodes, so msvcrt's `errno.c` — whose 42 arms are all
+`ERR_CASE(x)` / `ERR_MAPS(x, y)` — audited as **zero switch constants and a clean bill**. It now
+resolves such macros by substituting each parameter with a sentinel and re-parsing the body, so
+only a parameter that genuinely lands in a case-label *value* counts (`ERR_MAPS`'s second
+argument is the assigned value, not an arm; and the `#define`'s own span must be skipped or the
+parameter NAME is reported as a 43rd constant). 77 → 120 constants on msvcrt. **When an audit
+reports zero for a file you know dispatches, suspect the audit before believing the file** —
+`grep -c 'case '` against the finding count is a five-second control.
+
+**A partial allowlist is the same bug, one layer down.** msvcrt-sys carried 13 of errno.h's 39
+codes because the list had grown per-wave on demand — and 9 of `msvcrt_set_errno`'s 18 targets
+were missing, including `EDEADLK` (36 in msvcrt, **35 in glibc**) and `ENOTEMPTY` (41 vs 39).
+Nothing would have failed to compile; the model would have supplied a plausible host value.
+**Allowlist a header's whole family, not the names this wave happens to reference.**
 
 **The oracle history here is instructive and worth not repeating** `[§9.112a, §9.112b]`:
 1. The checker reported ✓ 0 while **273 live catch-alls sat in the tree** — two scope defects:
@@ -1416,6 +1536,31 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A deferral note outlives the premise that justified it
+`ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
+*"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
+path isn't exercised. Restore from virtual.c:4819-4869 once arm64 boot is fixed past
+CmCheckRegistry."* Honest, correct when written, and self-invalidating: arm64 has booted to a
+desktop for months, so the "isn't exercised" clause stopped being true and the note quietly
+became a live memory corruptor.
+
+What it was guarding matters. FreeLDR's identity-mapped page-table **pages** get recycled as
+user-space page tables while still holding FreeLDR's entries (VA==PA, global, EL1-only), and on
+ARM64 TTBR0 *is* the user half. A fresh user reservation therefore lands on valid-looking
+descriptors: the fault that should demand-page it never fires, and teardown decodes the stale
+descriptor into a PFN naming no frame (VA `0x50000` → pte `0x50703` → PFN `0x50`, far below
+QEMU virt's `0x40000000` DRAM base). `MmDeleteRmap` then reports mapping-not-in-list and
+`MmReleasePageMemoryConsumer` hands the allocator a frame that was never allocated — one
+deterministic corruption presenting as four different stop codes plus clean runs, depending on
+what later reused the frame. amd64 has the equivalent guard in `ARM3/sysldr.rs`, which is
+exactly why 148 x86 sweep rounds never reproduced it.
+
+**A deferral whose condition is a moving fact needs an executable trigger, not a sentence.** A
+comment cannot notice that its premise expired. Either wire the condition to something that
+fails loudly when it flips, or do the work. The tell when hunting: a note that names both the
+restoration source and a precondition — check the precondition *first*, because if it has
+already been met the note is describing a bug, not a plan.
+
 ### Whole functions vanish
 - **A parse failure in the SCANNER deletes a function from the plan, and every downstream check
   passes** `[§9.78]`. `#define CONST const` (winnt.h) is unknown to tree-sitter-c, so ws2_32
@@ -1456,6 +1601,25 @@ Measured: blanking recovered 1 of 3 bodies and reported 0 unextracted; expanding
 with a 500-file differential showing 499 identical, 1 gained, 0 lost. Same family as the `CONST`
 and `FAR`/`NEAR` normalisers. **When a scanner gap looks length- or name-dependent, suspect error
 recovery and fix the INPUT, not the recovery.**
+
+**Variant: a macro that generates the `case` LABEL, which also puts a macro on the invoice.**
+Wine writes switch arms as `ERR_CASE(ERROR_ACCESS_DENIED)` / `X(x) case (x): return #x;` — 31 TUs
+here do it. A bare `IDENT(ARG)` where a case label belongs is not a statement, and the blast radius
+is not the arm: on msvcrt's `errno.c` tree-sitter emitted **one `ERROR` node spanning lines
+132–451**, swallowing `msvcrt_set_errno` and `_errno` whole while the walk recovered the survivors
+from the wreckage. `unextracted` stayed **empty**, so the catalog looked healthy — and `translate`
+planned to bill for 16 functions, missing the two that matter most and *including `ERR_CASE`,
+which is a preprocessor directive*. Blanking the `#define` is again not enough (the invocations
+still do not parse); `_expand_case_macros` expands them to real `case` labels before the parse.
+Two traps if you touch it: recovery is **erratic, not monotonic** — two consecutive `ERR_CASE`
+lose the function while one, or four, or a semicolon-terminated `ERR_MAPS` among them, recover, so
+a fixture that "looks worse" can test nothing — and a name can be **redefined** with a different
+body in one TU (dinput's `FE(x)` is `type = #x` then `wave = #x`), so expansion must track the
+definition in force by POSITION, not keep a name→body map.
+
+The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
+at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
+cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
 ### Bodies that are present but hollow
 - **Stubbed/degraded bodies** — constant-return or pass-through. **A variadic function degraded
@@ -1647,6 +1811,18 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
+- **A predicate macro INLINED as a different predicate.** `balance.rs` rendered
+  `RMAP_IS_SEGMENT(Entry->Address)` — C's `((x) & ~0xff) == ~0xff` — as `Address & 1`. A segment
+  rmap address is `RMAP_SEGMENT_MASK | page_index`, so `& 1` asks "is the page index odd?": it
+  skipped half the segment entries and let the other half through as if they were process
+  mappings. `Entry->Process` on a segment entry is a `PCACHE_SECTION_PAGE_TABLE`, so the
+  balancer's page-out walk handed a page table to `ObReferenceObject`,
+  `ExAcquireRundownProtection`, and `KeStackAttachProcess`, then ran `MiAddressToPte` on the
+  `0xFFFF…FF00` pseudo-address and cleared an accessed bit through it. Both operands are
+  plausible bit tests on the same field, so nothing downstream can tell them apart. **When a
+  macro is inlined rather than called, the inlining is a translation of its BODY — diff the
+  body, not the name.** The general tell: an inlined predicate that is *simpler* than the C
+  macro it replaces.
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
@@ -2513,6 +2689,35 @@ test cannot see a lost *tolerance*** `[§9.64]` — a pure refactor dropped NULL
 and no generator that produces real NUL-terminated buffers could ever notice. Fix by making the
 tolerance a first-class assertion (`assert_null_tolerant()`).
 
+### A conformance score is not a defect count, and neither direction is self-explaining
+Two independent traps, both of which have produced wrong conclusions in this tree.
+
+**1. The denominator moves.** A kmtest that fails an early assertion often *bails* — skips a
+setup step, returns early, never reaches the rest of the file. Fix the early branch and the
+test suddenly runs hundreds of assertions it never reached before, so **total assertions is a
+variable, not a constant**, and a rising *fail* count can mean "we got further in", not "we
+broke something". The arm64 2026-08-01 re-seed is the worked example: of nine rows that moved,
+eight had an unchanged total (a pure fail→pass move) and **`CmSecurity` went 389 → 910
+assertions**, +521 of new ground, because it had been bailing early. Its failures dropped 89 → 4
+in the same step — but had those 521 new assertions gone the other way, the row would have read
+as a catastrophic regression while being an unambiguous improvement.
+**So: always split total-assertion change from fail↔pass movement before calling a row.**
+`(pass+fail)` unchanged = redistribution; `(pass+fail)` up = new coverage, and its failures are
+newly *visible*, not newly *created*. The mirror image is already known — a falling count can
+also be an improvement (amd64's `ExInterlocked` 662/40 → 180/0 when clang stopped deleting
+`__except` blocks), which is why the re-seed guard *announces* count changes instead of
+refusing them.
+
+**2. Zero is the wrong reference point.** Many kmtests only pass cleanly on *real Windows*.
+Stock ReactOS fails plenty of them too, so an absolute failure count is not a defect count, and
+"N failures remain" says nothing about whether we are behind or ahead of upstream — **we may
+well be exceeding it.** The ratchet's actual claim is narrow and worth stating precisely: *this
+row got worse than it was on this tree*. It is a change detector against our own history, not a
+distance-from-correct. Do not write "still N failures" as if it were technical debt, and do not
+budget work against driving a row to zero, without an upstream reference measurement to say
+zero is reachable. Cross-*arch* comparison is still fair game (it is the same codebase), which
+is why "arm64 fails 9 where i386 fails 4" is a real signal while "arm64 fails 9" is not.
+
 ### No ratio can catch a cost the harness stubs away — count, don't measure `[§9.76]`
 Every instrument was green and the OS booted **3× slower**: the Rust folded each character
 through `_towlower_l(c, NULL)`, and a NULL locale means **three Win32 calls per character**, in
@@ -2912,6 +3117,25 @@ language rules) over loosening what it reports.
   it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
   `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
   so a partial disable cannot silently desynchronise two funnels that must agree.
+  **Sequel (2026-08-01): restoring the stamp exposed a MISSING COMBINATION in the test.**
+  `IoInterrupt`'s `CheckSpinLock` branches `if (KmtIsMultiProcessorBuild) … else if
+  (KmtIsCheckedBuild) …`, so the MP branch — which demands `*Lock == 1` **exactly** — is
+  reached first and the checked branch is unreachable on an MP kernel. But
+  `KI_TRACK_SPINLOCK_OWNER` is gated on plain `#if DBG`, independent of `CONFIG_SMP`, so a
+  checked MP kernel stamps `thread|1` and cannot pass. Upstream ReactOS's own DBG+SMP build
+  fails it identically. **Symptom shape worth recognising: a test whose expectation is selected
+  by build flavour can be missing a COMBINATION of flavours, and then a kernel that behaves
+  identically under both flavours "regresses" purely by crossing the branch boundary.** Before
+  filing an MP regression, check whether the UP and MP kernels actually wrote different values
+  — here they wrote the same one.
+- **A baseline seeded before a behavioural fix invents a cross-arch pattern that does not
+  exist.** Same incident: today's post-stamp arm64 numbers compared against x86 baselines
+  seeded four days *before* the stamp landed (`cfdff72b41d`) read as "x86 MP passes, arm64 MP
+  fails" — an arch difference, and a tempting one, since arm64 is where MP is least mature. It
+  was purely the seed dates; the per-arch behaviour is identical. **A baseline is a measurement
+  with a timestamp, not a constant.** When a delta looks arch-specific, diff the baselines'
+  commit dates against the fix's date before theorising, and re-seed every arch that predates
+  it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW

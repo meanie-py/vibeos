@@ -56,6 +56,10 @@
 #define M32_FAIL_REG_QUERY    0xBAE4 /* the value we just set cannot be found */
 #define M32_FAIL_REG_VALUE    0xBAE5 /* found, but wrong type/length/data */
 #define M32_FAIL_REG_DELETE   0xBAE6 /* NtDeleteValueKey did not remove it */
+#define M32_FAIL_WOW_OPEN     0xBAE7 /* plain NtOpenKey failed — rung is invalid */
+#define M32_FAIL_WOW_64KEY    0xBAE8 /* NtOpenKey refused KEY_WOW64_64KEY */
+#define M32_FAIL_WOW_32KEY    0xBAE9 /* NtOpenKey refused KEY_WOW64_32KEY */
+#define M32_FAIL_WOW_CREATE   0xBAEA /* NtCreateKey refused a KEY_WOW64_* flag */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -445,6 +449,104 @@ static int CheckRegistryValueNames(void)
     return 0;
 }
 
+/* --- check 6: the KEY_WOW64_* access-mask flags ---------------------------- *
+ * KEY_WOW64_64KEY (0x0100) and KEY_WOW64_32KEY (0x0200) are not real access
+ * bits: no key's DACL grants them, so the kernel MUST strip them before the
+ * object-manager access check or the open is denied. NtCreateKey and NtOpenKey
+ * each do that in the C with `DesiredAccess &= ~KEY_WOW64_RES` (0x0300).
+ *
+ * NtOpenKey's Rust port dropped the named constant for a bare 0x0100 literal,
+ * so it stripped only the 64KEY bit and KEY_WOW64_32KEY reached
+ * ObCheckObjectAccess: RegOpenKeyEx(.., KEY_WOW64_32KEY) returned
+ * ACCESS_DENIED while the identical RegCreateKeyEx succeeded. Nothing about
+ * that is visible to the compiler, and it is not WoW64-specific — a native
+ * 64-bit `reg query /reg:32` hits it too.
+ *
+ * The rung opens one key four ways and reports each status, so a failure names
+ * the offending bit instead of just saying "registry broken". */
+
+typedef LONG(WINAPI *M32_OPENKEY_FN)(PHANDLE, ULONG, VOID *);
+
+#define M32_KEY_WOW64_64KEY 0x0100
+#define M32_KEY_WOW64_32KEY 0x0200
+
+static int CheckRegistryWow64Flags(void)
+{
+    static WCHAR KeyPath[] = L"\\Registry\\Machine\\Software";
+    static WCHAR ScratchPath[] = L"\\Registry\\Machine\\Software\\vibeos_m32wow";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_OPENKEY_FN OpenKey;
+    M32_CREATEKEY_FN CreateKey;
+    M32_USTR uKey;
+    M32_OA oa;
+    HANDLE key = NULL;
+    ULONG disp = 0;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    OpenKey = (M32_OPENKEY_FN)GetProcAddress(nt, "NtOpenKey");
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    if (!OpenKey || !CreateKey)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, KeyPath);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Control: no wow64 bit at all. If this fails the rung proves nothing —
+     * say so distinctly rather than blaming a flag. */
+    st = OpenKey(&key, KEY_READ, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: plain NtOpenKey failed, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_OPEN;
+    }
+    CloseHandle(key);
+
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: KEY_WOW64_64KEY refused, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_64KEY;
+    }
+    CloseHandle(key);
+
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_32KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: KEY_WOW64_32KEY refused, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_32KEY;
+    }
+    CloseHandle(key);
+
+    /* NtCreateKey is the sibling that masked correctly all along; assert the
+     * pair agrees so a future edit cannot silently break just one of them. */
+    M32InitUstr(&uKey, ScratchPath);
+    key = NULL;
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */ | M32_KEY_WOW64_32KEY,
+                   &oa, 0, NULL, 1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] wow64flags: NtCreateKey refused 32KEY, status =",
+                  (DWORD)st);
+        return M32_FAIL_WOW_CREATE;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] KEY_WOW64_32KEY/64KEY accepted by open+create\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -466,8 +568,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckRegistryValueNames();
     if (rc) ExitProcess(rc);
 
+    rc = CheckRegistryWow64Flags();
+    if (rc) ExitProcess(rc);
+
     Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
-           "all verified\n");
+           "+ wow64-flags all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }

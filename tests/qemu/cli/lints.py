@@ -522,6 +522,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # the NAMES agreeing. Only a whole-tree read catches it. Resolves aliases to a
     # width and reports only two KNOWN widths in one arch bucket; unresolvable RHS and
     # `#[cfg]`-gated pairs are skipped rather than guessed at (§9.113b's lesson).
+    # The oracle-FREE sibling of scan_inline_flag_literals: rustconv keeps the
+    # original C as trailing comments, so `X &= ~NAME` in the C with no live
+    # `!NAME` is a mask this file said it would apply and then didn't. Needs no
+    # header and no C build — a `verify_constants` catalog miss cannot hide a
+    # finding, which is how the 18 of 2026-07-24 hid. It found E21 unprompted
+    # (NtOpenKey masked 0x0100 where the C masks KEY_WOW64_RES = 0x0300 → every
+    # KEY_WOW64_32KEY open in the OS returned ACCESS_DENIED), i386
+    # KeFlushCurrentTb having lost its whole CR4.PGE branch, and then four wrong
+    # HIVE_* bits in config-rust where CmUnloadKey set 0x40 while CmpParseKey
+    # tested 0x4 — a guard against touching an unloading hive that could not fire.
+    # Baseline holds the DROPPED/OPENCODED residue (a dropped mask is often a
+    # deliberate reimplementation); MISMATCH is currently ZERO tree-wide and a new
+    # one is a value bug by construction. `--self-test` proves it still detects
+    # all four historical bugs — run it if you touch the patterns.
+    smd = repo / "tools" / "scan_mask_drift.py"
+    specs.append(
+        (
+            "scan_mask_drift",
+            [py, str(smd), "--lint"] if smd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     stac = repo / "tools" / "scan_type_alias_contradictions.py"
     specs.append(
         (
@@ -631,6 +653,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_cc_mismatch",
             [py, str(ccm)] if ccm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
+    # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
+    # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,
+    # which is the merge-queue gate. Wave 18c bounced that way (errno.rs declared kernel32's
+    # WINAPI SetErrorMode `extern "C"`, so the linker wanted `_SetErrorMode` and the import
+    # lib had `_SetErrorMode@4`), and the tree carries three older instances that were papered
+    # over with hand-written stdcall trampolines instead. Baseline holds 4 generated-island
+    # findings where the C HEADER and the .spec genuinely disagree upstream.
+    sic = repo / "tools" / "scan_import_cc.py"
+    specs.append(
+        (
+            "scan_import_cc",
+            [py, str(sic)] if sic.is_file() else ["MISSING"],
             "stdout",
         )
     )

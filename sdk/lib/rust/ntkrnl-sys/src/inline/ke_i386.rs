@@ -9,6 +9,11 @@ use crate::base::*;
 use crate::ddk;
 use core::arch::asm;
 
+/// ndk/i386/ketypes.h: the Requested Privilege Level bits of a segment selector.
+/// Module-level so both users share it — a per-function copy is how one of them
+/// drifted to 0x7 (see `KiGetGdtEntry`).
+const RPL_MASK: ULONG = 0x3;
+
 // ============================================================================
 // Control register access (stdcall-decorated global asm symbols)
 // ============================================================================
@@ -612,7 +617,6 @@ const _: () = assert!(core::mem::offset_of!(ddk::_KTRAP_FRAME, EFlags) == 0x70);
 /// UserMode forces CPL 3.
 #[no_mangle]
 pub unsafe extern "system" fn Ke386SanitizeSeg(Cs: ULONG, Mode: u8) -> ULONG {
-    const RPL_MASK: ULONG = 0x3;
     const KERNEL_MODE: u8 = 0;
     if Mode == KERNEL_MODE {
         Cs & (0xFFFF & !RPL_MASK)
@@ -787,7 +791,10 @@ core::arch::global_asm!(
 /// C: `return (PKGDTENTRY)((ULONG_PTR)pGdt + (Selector & ~RPL_MASK));`
 #[inline]
 pub unsafe fn KiGetGdtEntry(gdt: PVOID, selector: u16) -> *mut ddk::_KGDTENTRY {
-    (gdt as *mut u8).add((selector & !7u16) as usize) as *mut ddk::_KGDTENTRY
+    // RPL_MASK (0x3), not 0x7: the extra bit is TI, and masking it too would
+    // silently alias an LDT selector onto the GDT entry of the same index.
+    // Equivalent for every KGDT_* caller (all TI=0), wrong the moment one isn't.
+    (gdt as *mut u8).add((selector & !(RPL_MASK as u16)) as usize) as *mut ddk::_KGDTENTRY
 }
 
 /// KiSetGdtDescriptorBase — set base address in i386 GDT entry.

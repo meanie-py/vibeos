@@ -23,4 +23,10 @@
 // Cargo.toml for the full reason and what is owed to remove it.
 #[cfg(feature = "stdio")]
 pub mod file;
+// errno.c: 18/18 exports at `_MSVCR_VER=0` (the `>= 80` and `>= 140` blocks are not compiled,
+// so `__sys_nerr`, `__sys_errlist`, the `_invalid_parameter_noinfo` pair and the thread-local
+// handler accessors do not exist here). This file owns the Win32-error -> errno mapping that
+// file.c reaches from ~60 call sites, which is why it is a whole-file flip rather than a
+// partial: `msvcrt_set_errno` and the `_errno`/`__doserrno` storage are one contract.
+pub mod errno;
 pub mod mbcs;

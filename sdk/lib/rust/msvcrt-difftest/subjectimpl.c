@@ -32,55 +32,29 @@
 
 /* ------------------------------------------------------------------ *
  * errno — the SUBJECT's, independent of the reference's.
+ *
+ * The three definitions that used to live here (`_errno`, `__doserrno` and a
+ * hand-written `msvcrt_set_errno`) are GONE: msvcrt-crt-rust's errno.rs is the
+ * translation of errno.c and exports all three, so a copy here is a duplicate
+ * symbol — and, worse, a second store that the code under test would not be using.
+ *
+ * The Rust reads them out of `msvcrt_get_thread_data()`, which this file already
+ * provides (`subj_thread_data`, below), so the subject's errno now lives in the same
+ * per-thread struct msvcrt really keeps it in. These accessors follow it there; they
+ * stay un-namespaced on purpose, because classify.rs and the file/printf suites read
+ * them directly.
  * ------------------------------------------------------------------ */
-static __thread int subj_errno_value;
+extern void *msvcrt_get_thread_data(void);
+static int  *subj_errno_slot(void);
+static unsigned int *subj_doserrno_slot(void);
 
-int *_errno(void)
-{
-    return &subj_errno_value;
-}
+int  subj_errno_get(void)      { return *subj_errno_slot(); }
+void subj_errno_set(int value) { *subj_errno_slot() = value; }
 
-/* Harness API (un-namespaced on purpose — these are read by classify.rs). */
-int  subj_errno_get(void)      { return subj_errno_value; }
-void subj_errno_set(int value) { subj_errno_value = value; }
-
-/* The OTHER errno.  file.rs's `_wsopen_dispatch` clears it on the success path and
- * msvcrt_set_errno writes it on every failure, so a file row that only watched
- * `errno` would miss half the contract.  Reference-side, fileimpl.c owns the
- * matching `msvcrt_ref___doserrno`; separate storage here for the reason the banner
- * above gives about errno generally.
- *
- * `unsigned long` rather than msvcrt's `__msvcrt_ulong`, which is a 32-bit spelling
- * this TU has no header for — and 64-bit here would let a write past bit 31 go
- * unnoticed.  See the subj_doserrno_* accessors' width, which must match. */
-static __thread unsigned int subj_doserrno_value;
-
-unsigned int *__doserrno(void)
-{
-    return &subj_doserrno_value;
-}
-
-unsigned int subj_doserrno_get(void)           { return subj_doserrno_value; }
-void         subj_doserrno_set(unsigned int v) { subj_doserrno_value = v; }
-
-/* errno.c's Win32 -> errno store, SUBJECT side.
- *
- * file.rs calls this 54 times — it is how essentially every failure in the stream layer
- * reaches errno — and until this existed there was one plain definition, fileimpl.c's,
- * whose body writes through the `_errno()` that refstub/msvcrt.h renames into the
- * reference namespace.  So the subject's failures set the REFERENCE's errno: unobservable
- * here, and actively corrupting the slot the next reference call would be graded on.
- *
- * The mapping table stays fileimpl.c's single transcription; only the two stores are
- * per-side.  See the note there for why sharing the table is a documented limit and how
- * it retires (errno.c as a reference TU). */
-extern int msvcrt_difftest_win32_to_errno(int err);
-
-void msvcrt_set_errno(int err)
-{
-    subj_doserrno_value = (unsigned int)err;
-    subj_errno_value = msvcrt_difftest_win32_to_errno(err);
-}
+/* `unsigned int` rather than msvcrt's `__msvcrt_ulong`, which is a 32-bit spelling this
+ * TU has no header for — and 64-bit here would let a write past bit 31 go unnoticed. */
+unsigned int subj_doserrno_get(void)           { return *subj_doserrno_slot(); }
+void         subj_doserrno_set(unsigned int v) { *subj_doserrno_slot() = v; }
 
 /* ------------------------------------------------------------------ *
  * _wcsdup — NOT under test here, and on the path anyway.
@@ -287,6 +261,22 @@ static __thread subj_thread_data_t subj_thread_data;
 void *msvcrt_get_thread_data(void)
 {
     return &subj_thread_data;
+}
+
+/* The two errno slots the harness accessors at the top of this file read and write.
+ * Defined HERE, beside the struct, rather than up there: errno.rs reaches the same two
+ * fields through msvcrt-sys's bindgen offsets, and ref_integrity cross-checks those
+ * against this declaration — so the harness and the code under test are provably looking
+ * at the same bytes, which is the whole reason the storage moved out of two file-static
+ * `__thread` variables. */
+static int *subj_errno_slot(void)
+{
+    return &subj_thread_data.thread_errno;
+}
+
+static unsigned int *subj_doserrno_slot(void)
+{
+    return &subj_thread_data.thread_doserrno;
 }
 
 /* ── the SUBJECT's copy of the pinned MBCS fixture ─────────────────────────

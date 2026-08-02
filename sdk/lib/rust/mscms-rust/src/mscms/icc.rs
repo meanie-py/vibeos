@@ -3,6 +3,11 @@ use core::ffi::c_void;
 
 extern "fastcall" {
     fn RtlUlongByteSwap(ul: u32) -> u32;
+}
+// memcpy is msvcrt's, cdecl — it was in the FASTCALL block above, which on i386 asks the
+// linker for `@memcpy@12`. It links today only because every call site in this file is
+// still commented out; the first one uncommented would have been an undefined symbol.
+extern "C" {
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
 }
 

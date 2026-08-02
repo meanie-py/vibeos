@@ -42,8 +42,10 @@ pub const CM_CHECK_REGISTRY_VALIDATE_HIVE: u32 = 0x00000008;
 
 // Hive init types
 pub const HINIT_CREATE: u32 = 0;
-pub const HIVE_VOLATILE: u32 = 1;
 pub const HFILE_TYPE_PRIMARY: u32 = 0;
+
+// HiveFlags bits come from ONE place; see crate::hiveflags.
+pub use crate::hiveflags::{HIVE_IS_UNLOADING, HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 
 // Storage types
 pub const Stable: u32 = 0;
@@ -1700,11 +1702,15 @@ pub unsafe extern "system" fn CmLoadKey(
 
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!(CmpLoadHiveLock) as *mut _);
 
-    (*CmHive).Hive.HiveFlags |= 0x00000004u32;
+    // C: HiveFlags |= HIVE_IS_UNLOADING (0x20) — the grind wrote 0x4, which is
+    // HIVE_HAS_BEEN_REPLACED, and CmUnloadKey then wrote a third value again.
+    (*CmHive).Hive.HiveFlags |= HIVE_IS_UNLOADING;
     (*CmHive).CreatorOwner = KeGetCurrentThread() as *mut _;
 
+    // REG_NO_LAZY_FLUSH (0x4) is the caller's flag; the hive bit it sets is
+    // HIVE_NOLAZYFLUSH (0x2), not 0x8 (HIVE_HAS_BEEN_FREED).
     if (Flags & 0x00000004u32) != 0 {
-        (*CmHive).Hive.HiveFlags |= 0x00000008u32;
+        (*CmHive).Hive.HiveFlags |= HIVE_NOLAZYFLUSH;
     }
 
     Status = CmpLinkHiveToMaster(
@@ -1723,7 +1729,7 @@ pub unsafe extern "system" fn CmLoadKey(
             CmpUnlockHiveFlusher(CmHive);
         }
 
-        (*CmHive).Hive.HiveFlags &= !0x00000004u32;
+        (*CmHive).Hive.HiveFlags &= !HIVE_IS_UNLOADING;
         (*CmHive).CreatorOwner = core::ptr::null_mut();
     } else {
         // DPRINT removed
@@ -1799,7 +1805,6 @@ pub unsafe extern "system" fn CmUnloadKey(
     const REG_FORCE_UNLOAD: u32 = 1;
     const TAG_CMHIVE: u32 = 0x4D48434D;
     const TAG_CM: u32 = 0x20204D43;
-    const HIVE_IS_UNLOADING: u32 = 0x00000040;
 
     CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK();
 

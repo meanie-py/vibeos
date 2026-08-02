@@ -1186,6 +1186,10 @@ extern "C" {
     pub fn iswspace(c: INT) -> INT;
     pub fn strcpy(dst: *mut CHAR, src: *const CHAR) -> *mut CHAR;
     pub fn free(block: *mut c_void);
+}
+// lstrlenA is not a CRT function — it is kernel32's, WINAPI, so `_lstrlenA@4` on i386.
+// It sat in the cdecl block above and links only because nothing calls it yet.
+extern "system" {
     pub fn lstrlenA(s: *const CHAR) -> INT;
 }
 
