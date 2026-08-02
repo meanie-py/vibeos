@@ -1957,6 +1957,14 @@ i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besi
 drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
 result differs, diff the media before diffing the code.
 
+**Mechanised.** `tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) now
+gates the invariant statically: every hive `add_cd_file` stages into `reactos/system32/config`
+`FOR livecd` must also be copied by `mkramdisk.sh` **and** listed in its `REQUIRED_FILES`, and
+`mkhive`'s `-h:` list must match the `OUTPUT` files cmake declares for it. Run against the tree
+as it stood before the fix it names `sam` and `security` outright. Scoped to the config
+directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
+`\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule
   `artifact.mtime >= newest .rs mtime` is a proxy, and a comment-only edit trips it. **A false

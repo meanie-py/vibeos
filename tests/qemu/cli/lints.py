@@ -451,6 +451,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Registry hives the livecd stages into system32\config but the arm64 ramdisk does
+    # not. The two media are assembled by unrelated machinery (add_cd_file vs a hand-
+    # written mkramdisk.sh), so they drift, and the drift is SILENT BY CONSTRUCTION: a
+    # hive that fails to open is not an error, it is fabricated — CmpLinkHiveToMaster
+    # conjures an empty volatile one whose root takes CmpHiveRootSecurityDescriptor().
+    # arm64 booted with an empty SAM for months and read as *more* correct than x86,
+    # because the fabricated descriptor is exactly what the CmSecurity kmtest expects,
+    # which sent the investigation at the wrong arch. Static, free, and it names the
+    # missing hive. Baseline EMPTY.
+    sbm = repo / "tools" / "scan_boot_media_drift.py"
+    specs.append(
+        (
+            "scan_boot_media_drift",
+            [py, str(sbm), "--lint"] if sbm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (

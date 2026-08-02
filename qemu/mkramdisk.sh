@@ -82,7 +82,13 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"
     "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"
     "$BUILD_DIR/dll/ntdll/ntdll.dll"
+    # All five CM hives. A hive that is missing here does NOT fail the boot: the
+    # kernel fabricates an empty volatile one in its place (see the copy list
+    # below). So every hive the livecd stages into system32/config must be listed
+    # here too, and tools/scan_boot_media_drift.py gates exactly that.
     "$BUILD_DIR/boot/bootdata/system"
+    "$BUILD_DIR/boot/bootdata/default"
+    "$BUILD_DIR/boot/bootdata/software"
     "$BUILD_DIR/boot/bootdata/sam"
     "$BUILD_DIR/boot/bootdata/security"
     "$BUILD_DIR/drivers/storage/class/ramdisk/ramdisk.sys"
