@@ -1705,3 +1705,46 @@ Also settled here: the wedge is **not** a regression of the §9.89 SamSs handsha
 elapses and the box keeps running. Ours prints no `result=` at all and every subsystem stops
 within a few lines of each other — the 30 s `PipeTimeout` never expiring is what indicts the
 clock rather than the service.
+
+## arm64 media asymmetry CLOSED — the MP pair is now a boot pick, not a build (2026-08-02)
+
+The last place where "which kernel runs" was a property of *how the media was built* rather
+than *which entry freeldr selects*. x86 has shipped both pairs in every `livecd.iso` since the
+halmp twin landed, with `vm.smp_selected_iso` repointing `DefaultOS=` in a copy of the image.
+arm64 did it the other way round: `mkramdisk.sh --smp` staged `ntkrnlmp.exe` + `halmp.dll`
+**only then**, and rewrote the single `[ReactOS_Arm64]` entry's `Options=` in place. So a
+`--smp N` run on media built without `--smp-kernel` silently booted UP — identical-looking
+media, no error, one CPU — which is precisely the false-green `_smp_check` exists to catch,
+and it is why `smoke.py` carried an `arch.startswith("arm64")` branch telling you to go
+rebuild. That branch is gone.
+
+Now: `mkramdisk.sh` stages the MP pair unconditionally (and mkramdisk *requires* the two
+outputs, so a build that could not produce them fails there instead of shipping media whose
+MP entry names files that are not on it), and `qemu/freeldr.ini` ships
+`[ReactOS_Arm64_UP]` + `[ReactOS_Arm64_MP]`. `DefaultOS=` stays on UP.
+
+**The names are the same length on purpose.** `DefaultOS=ReactOS_Arm64_UP` and
+`..._MP` are both 26 bytes, so selecting the MP pair is a one-byte `U`→`M` poke into a copy of
+`boot.img` — no padding, no mtools at boot time, and the *same* `smp_selected_iso` all three
+arches already used. Measured: 0.68 s for a 294 MB image, exactly 1 byte different, idempotent.
+Keep them equal-length; `test_mp_entry_names_are_equal_length_to_the_defaults_they_replace`
+guards it so renaming one half fails in pytest rather than at boot.
+
+Proven on ONE build of ONE media, built with **no** `--smp`:
+
+| run | freeldr loaded |
+|---|---|
+| `smoke --arch arm64`            | `ntoskrnl.exe` + `hal.dll` |
+| `smoke --arch arm64 --smp 1`    | `ntkrnlmp.exe` + `halmp.dll` |
+
+**A bug the unit tests could not have caught, and the guard did.** The first real `boot.img`
+built from the two-entry ini refused to patch: `expected exactly one DefaultOS=, found 2`. The
+second hit was the new ini's own *comment* explaining the equal-length rule, which says
+`DefaultOS=` in prose. The search is now anchored to a line start — which is where freeldr
+reads the key anyway — and the fixture carries that comment plus uefildr's bare `DefaultOS`
+token so the distinction stays tested. Worth remembering as a shape: a synthetic fixture
+agreed with the code, and only the real artifact disagreed. The same pass replaced a
+per-offset `startswith` comprehension that walked all 294 MB in Python with `bytes.find`.
+
+Not changed, deliberately: `DefaultOS=` still selects UP on every arch. The flip waits on the
+remaining MP defects (the rare `--smp 1` wedge and the `0xE3`), not on media plumbing.

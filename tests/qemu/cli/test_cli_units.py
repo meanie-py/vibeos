@@ -92,6 +92,65 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert b"LiveCD_Debug" not in patched
 
 
+def _fake_boot_img(default_os: bytes = b"ReactOS_Arm64_UP") -> bytes:
+    """arm64 qemu/boot.img: FAT, not ISO9660, but the ini's bytes sit in it just as
+    literally.
+
+    Two decoys, both taken from the real image rather than invented:
+      - the uefildr blob carries a bare `DefaultOS` token, which is why the needle
+        keeps the `=`;
+      - the shipped ini's own comment about keeping the entry names equal-length
+        says `DefaultOS=` mid-line, which is why the search is anchored to a line
+        start. That one is not hypothetical: it took the patcher down on the first
+        real boot.img built with the two-entry ini, and the guard raised instead of
+        poking the comment.
+    """
+    return (
+        b"\x00" * 32
+        + b"uefildr: DefaultOS\x00"
+        + b"[FREELOADER]\r\nDefaultOS="
+        + default_os
+        + b"\r\nTimeOut=0\r\n"
+        + b"; flipping DefaultOS= between them is an equal-length poke\r\n"
+        + b"[ReactOS_Arm64_UP]\r\nOptions=/SOS /RDPATH=\\ramdisk.img\r\n"
+        + b"[ReactOS_Arm64_MP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+        + b"\x00" * 32
+    )
+
+
+def test_smp_patch_selects_the_arm64_mp_entry_with_no_padding(tmp_path: Path):
+    """arm64 was the last arch getting its MP pair from a different BUILD. Its two
+    entry names are equal length on purpose, so the poke needs no `\\r\\n;` filler."""
+    src = tmp_path / "boot.img"
+    src.write_bytes(_fake_boot_img())
+    out = vm_mod.smp_selected_iso(src, tmp_path / "work")
+    assert out != src, "must not patch the build tree's media in place"
+    patched = out.read_bytes()
+    assert len(patched) == len(src.read_bytes())
+    assert b"DefaultOS=ReactOS_Arm64_MP\r\n" in patched
+    assert b"DefaultOS=ReactOS_Arm64_UP" not in patched
+    # the [ReactOS_Arm64_UP] SECTION must survive; only the selector moves
+    assert b"[ReactOS_Arm64_UP]" in patched
+    # equal-length swap => the ONLY difference is the one byte U -> M
+    assert sum(x != y for x, y in zip(src.read_bytes(), patched)) == 1
+
+
+def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
+    src = tmp_path / "boot.img"
+    src.write_bytes(_fake_boot_img(default_os=b"ReactOS_Arm64_MP"))
+    assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
+
+
+def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
+    """The in-place poke can pad a shorter replacement but never a longer one, and
+    arm64 relies on an exact-length swap. Guard the table itself so renaming one
+    half of a pair fails here instead of at boot."""
+    for shipped, mp in vm_mod._MP_ENTRY_FOR.items():
+        assert len(mp) <= len(shipped), f"{mp!r} longer than {shipped!r}: cannot patch in place"
+        if len(mp) != len(shipped):
+            assert len(shipped) - len(mp) != 1, "1-byte remainder cannot terminate the line"
+
+
 def test_smp_iso_patch_is_idempotent(tmp_path: Path):
     """Media built with --smp-kernel already defaults to the MP entry; patching it
     again must be a no-op that returns the original path, not a needless copy."""
@@ -110,9 +169,11 @@ def test_smp_iso_patch_raises_rather_than_booting_up_media(tmp_path: Path):
     a.write_bytes(_fake_iso(smp_section=False))
     with pytest.raises(RuntimeError, match="LiveCD_SMP"):
         vm_mod.smp_selected_iso(a, work)
-    # two DefaultOS= lines: cannot tell which one freeldr reads
+    # two DefaultOS= LINES: cannot tell which one freeldr reads. (Line-initial on
+    # purpose — a mid-line mention is a comment and must NOT count; see
+    # _fake_boot_img, where exactly that distinction was a real bug.)
     b = tmp_path / "b.iso"
-    b.write_bytes(_fake_iso() + b"DefaultOS=LiveCD\r\n")
+    b.write_bytes(_fake_iso() + b"\r\nDefaultOS=LiveCD\r\n")
     with pytest.raises(RuntimeError, match="exactly one"):
         vm_mod.smp_selected_iso(b, work)
     # value too short to overwrite in place
