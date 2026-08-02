@@ -131,8 +131,11 @@ def test_smp_patch_selects_the_arm64_mp_entry_with_no_padding(tmp_path: Path):
     assert b"DefaultOS=ReactOS_Arm64_UP" not in patched
     # the [ReactOS_Arm64_UP] SECTION must survive; only the selector moves
     assert b"[ReactOS_Arm64_UP]" in patched
-    # equal-length swap => the ONLY difference is the one byte U -> M
-    assert sum(x != y for x, y in zip(src.read_bytes(), patched)) == 1
+    # equal-length swap => the ONLY difference is the one byte U -> M.
+    # strict= is the assertion, not lint appeasement: a length change would make
+    # zip truncate and still report "1 differing byte", passing a test whose whole
+    # point is that the poke did not resize the image.
+    assert sum(x != y for x, y in zip(src.read_bytes(), patched, strict=True)) == 1
 
 
 def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
@@ -3172,6 +3175,66 @@ def test_isolation_preflight_blocks_cross_worktree_links(tmp_path):
     assert run.classification == "ISOLATION_FAIL"
 
 
+def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool):
+    """Drive _maybe_canonize with cmake stubbed out, returning (cmds, build_dir).
+
+    `cache=None` models the case that actually bites: a build dir this worktree
+    has never configured. Both cmake options gating the kmtest corpus default
+    OFF, so nothing but an explicit -D on the fresh configure can turn them on.
+    """
+    repo = tmp_path / "wt"
+    build_dir = repo / "build-i386"
+    build_dir.mkdir(parents=True, exist_ok=True)  # one test probes twice
+    if cache is not None:
+        (build_dir / "CMakeCache.txt").write_text(cache)
+
+    cmds: list[list[str]] = []
+
+    class _Cp:
+        returncode, stdout, stderr = 0, "", ""
+
+    run = build_mod.Run("build", "i386", ts=1700000000)
+    monkeypatch.setattr(run, "run", lambda cmd, **kw: (cmds.append(cmd), _Cp())[1])
+    monkeypatch.setattr(build_mod.canon, "is_canonical", lambda _bd: canonical)
+    monkeypatch.setattr(build_mod.canon, "available", lambda: True)
+    monkeypatch.setattr(build_mod.canon, "ensure_toolchain", lambda _r: True)
+    monkeypatch.setattr(build_mod.canon, "wrap", lambda _r, cmd: cmd)
+    monkeypatch.setattr(build_mod.canon, "carried_options", lambda _bd: [])
+    return cmds, run, repo, build_dir
+
+
+def test_sticky_kmtests_rides_the_fresh_configure(monkeypatch, tmp_path):
+    # The fresh-worktree hole: no cache => carried_options carries nothing, so the
+    # opt-in has to be named on the configure itself or it is dropped on exactly
+    # the one run that cannot detect it (2026-08-02 — a full media built with no
+    # kmtest corpus, surfacing as `[KMTEST-SWEEP] launch FAILED` minutes later).
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=None, canonical=False)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert any("-DENABLE_ROSTESTS_KMTESTS=ON" in c for c in cmds), cmds
+
+
+def test_sticky_kmtests_reconfigures_a_dir_that_lacks_it(monkeypatch, tmp_path):
+    cmds, run, repo, bd = _canonize_probe(
+        monkeypatch, tmp_path, cache="ENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n", canonical=True
+    )
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS_KMTESTS=ON", "."]], cmds
+
+
+def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_path):
+    # Sticky means a later PLAIN build must not flip it back OFF — the opposite of
+    # --lockdep, which is reconciled every build so a gate can't inherit it. An ON
+    # cache with nothing requested must produce no reconfigure at all.
+    on = "ENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=())
+    assert cmds == [], "a plain build reconfigured a sticky flag it was not asked about"
+
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
+    assert cmds == [], "already ON should be a no-op, not a redundant reconfigure"
+
+
 # --- conformance verb (quest M4) -------------------------------------------
 def _conf_repo_root() -> Path:
     # tests/qemu/cli/test_cli_units.py -> repo root is parents[3]
@@ -3184,6 +3247,42 @@ def test_conformance_arch_normalization():
     assert m.get("i386", "i386") == "i386-uefi"
     assert m.get("arm64", "arm64") == "arm64"  # arm64 is itself
     assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
+
+
+def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path):
+    """conformance must pass --kmtests, and must NOT force an arm64 --smp-kernel.
+
+    Both cmake options gating the corpus default OFF, so a build dir this worktree
+    just created has no tests in it; the old preflight only refused when a cache
+    existed and said OFF, and returned None — sailing through — when there was no
+    cache at all. The arm64 half is the tail of the MP-media work: every media now
+    carries both kernel/HAL pairs and vm.smp_selected_iso repoints DefaultOS= in a
+    copy at boot, so forcing --smp-kernel would cost a media re-roll AND make the
+    --smp 1 and --smp 2 sweeps need two builds of one commit.
+
+    Nothing here may depend on the ambient checkout being provisioned: the merge
+    queue gates in a fresh worktree that legitimately lacks the gitignored payload
+    exes (see the note in test_worktree_provisioning_preflight).
+    """
+    from types import SimpleNamespace
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
+    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
+    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
+    monkeypatch.setattr(
+        conformance_mod.subprocess,
+        "run",
+        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=1))[1],
+    )
+    for arch in ("i386", "arm64"):
+        seen.clear()
+        args = SimpleNamespace(
+            arch=arch, smp=2, no_build=False, write_baseline=False, only=None, timeout=None
+        )
+        assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
+        assert seen and "--kmtests" in seen[0], seen
+        assert "--smp-kernel" not in seen[0], f"{arch}: media re-roll is no longer needed"
 
 
 def test_worktree_provisioning_preflight(tmp_path):
@@ -3278,27 +3377,6 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
     bp.write_text("KeEvent OK pass=42733 fail=0 skip=0\nNpfsFileInfo OK pass=1 fail=0 skip=0\n")
     regs = parser.compare(results, parser.load_baseline(bp))
     assert any("NpfsFileInfo" in r and "CRASH" in r for r in regs)
-
-
-def test_conformance_rostests_preflight(tmp_path):
-    # no build dir -> None (unknown); either option ON -> True; both off/absent -> False.
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is None
-    bd = tmp_path / "build-amd64"
-    bd.mkdir()
-    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\nENABLE_ROSTESTS:BOOL=ON\n")
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
-    # the fleet-default config: parent OFF but KMTESTS ON, parent listed FIRST
-    # (the first-match bug this guards against).
-    (bd / "CMakeCache.txt").write_text(
-        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=ON\n"
-    )
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is True
-    (bd / "CMakeCache.txt").write_text(
-        "ENABLE_ROSTESTS:BOOL=OFF\nENABLE_ROSTESTS_KMTESTS:BOOL=OFF\n"
-    )
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
-    (bd / "CMakeCache.txt").write_text("FOO:BOOL=ON\n")
-    assert conformance_mod._rostests_enabled(tmp_path, "amd64") is False
 
 
 # --- cohab staleness: the mtime chain (.rs -> cargo .a -> copied .a -> binary) -----------

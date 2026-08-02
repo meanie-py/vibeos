@@ -89,6 +89,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Pair with `smoke --smp N` to boot it with N vCPUs",
     )
     b.add_argument(
+        "--kmtests",
+        action="store_true",
+        help="configure the build dir with -DENABLE_ROSTESTS_KMTESTS=ON so the "
+        "kmtest corpus is built and staged. STICKY: a later plain build keeps it "
+        "(unlike --lockdep and friends, which reconcile back OFF). `conformance` "
+        "passes this itself; you want it by hand only to provision a fresh "
+        "worktree ahead of time",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "
