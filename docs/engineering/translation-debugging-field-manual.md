@@ -416,6 +416,25 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+### A file-local fn-pointer TYPEDEF given a convention the C never had
+The transmute entry above is about erasing a convention; this is about *inventing* one, and it
+is easier to miss because there is no bindgen slot to disagree with — the typedef and both its
+users are all in the file being translated, so the crate is self-consistent and compiles.
+`shlexec.cpp` declares
+
+```c
+typedef UINT_PTR (*SHELL_ExecuteW32)(const WCHAR *lpCmd, WCHAR *env, BOOL shWait, ...);
+static UINT_PTR SHELL_ExecuteW(const WCHAR *lpCmd, ...);   /* no WINAPI on either */
+```
+
+and the translation spelled the typedef `unsafe extern "system" fn(..)`, i.e. **stdcall on
+i386**, while the function it is assigned from is `extern "C"`. Both are plain `__cdecl` in the
+C: no `WINAPI`, no `STDMETHODCALLTYPE`. On i386 that is caller-and-callee disagreeing about who
+pops the arguments, once per `ShellExecuteEx`. The rule is mechanical — **a fn-pointer typedef
+inherits its convention from the C declaration's macro, and the absence of one means cdecl.**
+`extern "system"` is not a safe default; it is a decision. Check every `pub type X = Option<...>`
+in translated output against the `typedef` in the C tail.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and
@@ -1274,6 +1293,17 @@ against each other, not just against C.
 values are present, both are plausible, both appear in the header. Only the *pairing* is wrong.
 Diff the whole family in one read.
 
+**The same blindness scales past arches: one C macro can acquire N private Rust copies.**
+`RMAP_SEGMENT_MASK` (`~((ULONG_PTR)0xff)`, arch-invariant) had **six** — `mm/macros.rs` and
+`mm/section_table.rs` correct; `inline/mm.rs` pointer-width-dependent (`!0xFFF` on 64-bit);
+`ntkrnl-sys/src/mm.rs` `!1usize` with a matching `& 1` predicate; `mm/rmap.rs` the 32-bit-
+truncated `0xFFFFFF00`. Two of the wrong three were *harmless* — `!0xFFF` accepts exactly the
+same inputs a constructed segment address can take, and rmap.rs's truncation was laundered by an
+`as ULONG` cast — which is why they survived: **a wrong copy that happens to be unreachable-wrong
+keeps the population alive until one copy is reached.** Constructing with one copy and testing
+with another is the failure. When a macro is defined more than once in our tree, the count itself
+is the finding; grep the name before trusting any single definition.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -1283,6 +1313,47 @@ measured the vis region and `prgnRao` *correctly* at update time. **A hand-typed
 literal is the flag-cousin of the magic struct offset — treat it as wrong until proven right.**
 The constants were always available via the bindgen glob; the literals were pure debris.
 **Corollary: when a pipeline has N derived stages, probe the LAST consumer, not the producers.**
+
+**The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
+the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
+was already defined in that same file and used correctly by `NtCreateKey` sixty lines above.
+`KEY_WOW64_32KEY` therefore survived into `ObCheckObjectAccess`, which no key's DACL grants, so
+`RegOpenKeyEx(.., KEY_WOW64_32KEY)` returned `STATUS_ACCESS_DENIED` while the identical
+`RegCreateKeyEx` succeeded — and it hit native 64-bit callers (rapps, `reg /reg:32`, apphelp),
+not just WoW64 guests. **An asymmetry between two syscalls that share a contract is the tell:**
+neither call looks wrong on its own, so test the pair, not the function.
+- **A translated file carries its own oracle.** These files keep the original C as trailing
+  comments, so a commented `X &= ~NAME` with no live `!NAME` in the same file detects this whole
+  class — no header catalog, no C build. It re-found the bug above without being told, and also
+  turned up `ProbeAndCaptureObjectAttributes` masking `0x12F2` where the C says
+  `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), and i386 `KeFlushCurrentTb` having dropped its
+  `KF_GLOBAL_PAGE` branch outright — a plain CR3 reload does **not** flush global TLB entries,
+  and `patpge.rs` does enable PGE. That last one had no symptom anyone was chasing.
+- **Calibrate the pattern or drown:** the live spelling is usually `&= !(NAME as UINT)`, so
+  accepting only `!NAME` reports ~4x noise (109 raw hits vs 27).
+- **Check the sibling arch before calling it drift** — amd64's `KeFlushCurrentTb` C really is
+  CR3-only, so only i386 had a branch to lose.
+
+**Mechanised as `tools/scan_mask_drift.py`** (in `vibeos-cli check`, baseline-gated). Its first
+full sweep found the registry's whole `HIVE_*` family open-coded and four of eight copies wrong:
+`CmLoadKey` set `0x4` and `CmUnloadKey` `0x40` for `HIVE_IS_UNLOADING` (**0x20**), while
+`CmpParseKey` tested `0x4` and `CmpCreateKeyControlBlock` tested `0x200`. Only the load-side set
+and one of the two guards agreed *by accident*, so the C's "refuse to resolve a key in a hive
+that is unloading" protection could not fire on the unload path it exists for. Separately
+`CmpLoadHiveThread` cleared `0x80` instead of `HIVE_NOLAZYFLUSH` (**0x2**), leaving lazy flush
+disabled for that hive forever.
+- **A wrong flag is invisible in proportion to how consistently it is wrong.** Nothing here was
+  a compile error, and the writers and readers each looked locally fine. `verify_constants`
+  needs a *name* and these were bare literals; `scan_const_contradictions` needs *two* copies to
+  disagree and the one named copy was unique. The relationship to the C is the only oracle left.
+- **Fix the whole family, not the finding.** These are now one `pub mod hiveflags` that everyone
+  imports; the pre-existing `HIVE_NOLAZYFLUSH = 0x8` sitting in the const-contradiction baseline
+  was the same bug, already caught and parked. **A baseline is a work queue** — read it when the
+  scanner points you at that neighbourhood.
+- **The counting rule is a trap.** "C masks it N times, live masks it fewer" reads a fix's own
+  explanatory comment (which quotes the C) as another C occurrence, and a C block repeats a
+  statement per call site. The scanner compares *values* and reports a target the live code
+  never masks at all; it does not count.
 
 ### A C OCTAL literal becomes a Rust DECIMAL one, silently
 `file.c` computes `buf->st_mode = _S_IFREG | 0444;` and `|= 0222`. Both literals survived
@@ -1532,6 +1603,31 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A deferral note outlives the premise that justified it
+`ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
+*"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
+path isn't exercised. Restore from virtual.c:4819-4869 once arm64 boot is fixed past
+CmCheckRegistry."* Honest, correct when written, and self-invalidating: arm64 has booted to a
+desktop for months, so the "isn't exercised" clause stopped being true and the note quietly
+became a live memory corruptor.
+
+What it was guarding matters. FreeLDR's identity-mapped page-table **pages** get recycled as
+user-space page tables while still holding FreeLDR's entries (VA==PA, global, EL1-only), and on
+ARM64 TTBR0 *is* the user half. A fresh user reservation therefore lands on valid-looking
+descriptors: the fault that should demand-page it never fires, and teardown decodes the stale
+descriptor into a PFN naming no frame (VA `0x50000` → pte `0x50703` → PFN `0x50`, far below
+QEMU virt's `0x40000000` DRAM base). `MmDeleteRmap` then reports mapping-not-in-list and
+`MmReleasePageMemoryConsumer` hands the allocator a frame that was never allocated — one
+deterministic corruption presenting as four different stop codes plus clean runs, depending on
+what later reused the frame. amd64 has the equivalent guard in `ARM3/sysldr.rs`, which is
+exactly why 148 x86 sweep rounds never reproduced it.
+
+**A deferral whose condition is a moving fact needs an executable trigger, not a sentence.** A
+comment cannot notice that its premise expired. Either wire the condition to something that
+fails loudly when it flips, or do the work. The tell when hunting: a note that names both the
+restoration source and a precondition — check the precondition *first*, because if it has
+already been met the note is describing a bug, not a plan.
+
 ### Whole functions vanish
 - **A parse failure in the SCANNER deletes a function from the plan, and every downstream check
   passes** `[§9.78]`. `#define CONST const` (winnt.h) is unknown to tree-sitter-c, so ws2_32
@@ -1697,6 +1793,32 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **`SUCCEEDED(hr)` → `(hr as u32) >= 0`** — unconditionally true, so the FAILURE branch is
+  unreachable. `SUCCEEDED` is `hr >= 0` on the SIGNED HRESULT; cast to unsigned first and every
+  error becomes a success. Sibling of the `!`-on-an-integer bug below and just as silent: it
+  feeds a condition, so there is no type error to catch it. `shlexec`'s verb probe took the
+  `runas` path whenever `AssocQueryStringW` *failed*. Grep any HRESULT compared `>= 0` or `< 0`
+  for an intervening `as u32` / `as DWORD`.
+- **`goto L` lowered to a block that jumps to ITSELF** — `'L: { break 'L; }` placed at the goto
+  SITE rather than spanning what the goto skips. It compiles, it is a no-op, and execution falls
+  straight through into the code the `goto` existed to bypass. In `SHELL_ExecuteW` the
+  runas-cancelled path set `retval = 33` and then fell into the `else` arm that overwrites
+  `retval` with `GetLastError()`. The tell is an `unused label` warning on the REAL label at the
+  function tail — the jump never reaches it. Related but distinct from the replication shape in
+  "A C lexer was masking Rust output" above: replication is faithful (each copy returns), a
+  self-referential block is not.
+- **An out-parameter passed by ADDRESS instead of BY VALUE.** A C++ `T*& out` or `T** out`
+  parameter has already lowered to `*mut *mut T` in Rust, so `addr_of_mut!(out)` adds a level of
+  indirection: the callee writes into THIS frame's parameter slot and the caller's pointer is
+  never filled. `shellex_get_contextmenu` passed `addr_of_mut!(cm)` where the C wrote
+  `IID_NULL_PPV_ARG(IContextMenu, &cm)` on a `CComPtr<IContextMenu>&`. Whenever the C takes `&x`
+  on a REFERENCE parameter, the Rust wants the parameter itself.
+- **An A/W pair whose twins disagree on TYPES.** Only one of the two gets read carefully, and
+  the other keeps whatever the translation guessed. `RealShellExecuteA`/`ExA` (SHELL32.265/266)
+  had `HWND`, `PHANDLE` and the `HINSTANCE` return flattened to `isize` while the W twins were
+  spelled correctly. i386 hides it — `isize` and a pointer are both 4 bytes — so nothing fails
+  until an arch or a caller disagrees. Diff the two signatures against each other, not just each
+  against the C.
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
   **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
@@ -1782,6 +1904,18 @@ N+1 as evidence that the fix for bug N was wrong.**
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
+- **A predicate macro INLINED as a different predicate.** `balance.rs` rendered
+  `RMAP_IS_SEGMENT(Entry->Address)` — C's `((x) & ~0xff) == ~0xff` — as `Address & 1`. A segment
+  rmap address is `RMAP_SEGMENT_MASK | page_index`, so `& 1` asks "is the page index odd?": it
+  skipped half the segment entries and let the other half through as if they were process
+  mappings. `Entry->Process` on a segment entry is a `PCACHE_SECTION_PAGE_TABLE`, so the
+  balancer's page-out walk handed a page table to `ObReferenceObject`,
+  `ExAcquireRundownProtection`, and `KeStackAttachProcess`, then ran `MiAddressToPte` on the
+  `0xFFFF…FF00` pseudo-address and cleared an accessed bit through it. Both operands are
+  plausible bit tests on the same field, so nothing downstream can tell them apart. **When a
+  macro is inlined rather than called, the inlining is a translation of its BODY — diff the
+  body, not the name.** The general tell: an inlined predicate that is *simpler* than the C
+  macro it replaces.
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
@@ -1832,6 +1966,17 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
   temporary trap.
+- **The `sizeof` OPERATOR itself vanishing** — the sibling of the entry below, and it survives
+  a green C build because the C compiled fine and only the Rust ever sees the loss. Three shapes,
+  all from shell32: `HeapAlloc(h, 0, len * sizeof(WCHAR))` became `len * 0` (a ZERO-byte
+  allocation that `MultiByteToWideChar` then wrote `len` wide chars into, on every ANSI entry
+  point of `shlfileop`); `startup.cb = sizeof(STARTUPINFOW)` became
+  `size_of_val(&STARTUPINFOW)`, passing the TYPE where a value belongs; and both
+  `if (sei->cbSize != sizeof(SHELLEXECUTEINFO{A,W}))` gates in `shlexec` lost the `sizeof`
+  outright, leaving a bare type name — that comparison is the version check every caller of a
+  public `ShellExecuteEx` is validated by. The first two compile to something wrong; the third
+  does not compile, which is the only reason it was found. **Grep the translation for
+  `size_of_val(&` on a bare type name, and diff every `sizeof` in the C tail against the Rust.**
 - **A literal size where a `sizeof` belonged** — cdrom's media-change SRB used `32` for an
   18-byte sense buffer → deterministic i386 `BAD_POOL_HEADER 0x19 (0x5)` at driver init,
   TCG-only timing `[§9.100]`. Useful trick: **the 0x19 parameters encode `line!()` as param3**,
@@ -2064,6 +2209,41 @@ Two consequences, escalating:
   content-hash, because the gate flow is build→smoke back-to-back.
 - **A green cargo build does not imply boot-tested.** Only a clean boot of the actually-rebuilt
   `.sys` does.
+
+### A file MISSING from the arm64 ramdisk is fabricated by the kernel, not reported
+**Symptom.** A cross-arch conformance sweep showed `\REGISTRY\MACHINE\SAM` reporting the
+*expected* 4-ACE ACL on arm64 and a "wrong" 5-ACE one on both x86 arches. arm64 looked like
+the correct side, so the investigation started by hunting an x86 kernel bug.
+
+**Cause.** `qemu/mkramdisk.sh` hand-lists the files it stages and had drifted from the livecd:
+it copied three of the five hives `mkhive` emits (`system`, `default`, `software`), omitting
+`sam` and `security`. The livecd's `add_cd_file` list (`sdk/cmake/CMakeMacros.cmake`) carries
+all five. Nothing anywhere reported the gap — `CmpLoadHiveThread` cannot open the file, sets
+`Allocate`, and `CmpLinkHiveToMaster` **fabricates an empty volatile hive** whose root key gets
+`CmpHiveRootSecurityDescriptor()`. The key then exists, opens with SUCCESS, and answers queries.
+arm64 had been booting with an empty SAM the whole time, samsrv re-creating the domain
+structure into volatile state every boot.
+
+**Why it inverted the diagnosis.** The fabricated descriptor is *character-for-character* what
+the test expects, because both come from the same function. So the arch with the missing data
+scored BETTER than the arch reading the real hive. **A test result that looks more correct on
+one arch is evidence about that arch's INPUTS before it is evidence about its code.**
+
+**Fix.** Stage all five; list them in `REQUIRED_FILES` so a missing one hard-fails instead of
+being fabricated. Confirmed by prediction: arm64 `CmSecurity` moved 663/74 → **659/87**, exactly
+i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besides.
+
+**Generalize.** Two hand-maintained media lists that must agree, with no mechanism forcing it,
+drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
+result differs, diff the media before diffing the code.
+
+**Mechanised.** `tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) now
+gates the invariant statically: every hive `add_cd_file` stages into `reactos/system32/config`
+`FOR livecd` must also be copied by `mkramdisk.sh` **and** listed in its `REQUIRED_FILES`, and
+`mkhive`'s `-h:` list must match the `OUTPUT` files cmake declares for it. Run against the tree
+as it stood before the fix it names `sam` and `security` outright. Scoped to the config
+directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
+`\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
 
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule
@@ -2627,6 +2807,35 @@ test cannot see a lost *tolerance*** `[§9.64]` — a pure refactor dropped NULL
 and no generator that produces real NUL-terminated buffers could ever notice. Fix by making the
 tolerance a first-class assertion (`assert_null_tolerant()`).
 
+### A conformance score is not a defect count, and neither direction is self-explaining
+Two independent traps, both of which have produced wrong conclusions in this tree.
+
+**1. The denominator moves.** A kmtest that fails an early assertion often *bails* — skips a
+setup step, returns early, never reaches the rest of the file. Fix the early branch and the
+test suddenly runs hundreds of assertions it never reached before, so **total assertions is a
+variable, not a constant**, and a rising *fail* count can mean "we got further in", not "we
+broke something". The arm64 2026-08-01 re-seed is the worked example: of nine rows that moved,
+eight had an unchanged total (a pure fail→pass move) and **`CmSecurity` went 389 → 910
+assertions**, +521 of new ground, because it had been bailing early. Its failures dropped 89 → 4
+in the same step — but had those 521 new assertions gone the other way, the row would have read
+as a catastrophic regression while being an unambiguous improvement.
+**So: always split total-assertion change from fail↔pass movement before calling a row.**
+`(pass+fail)` unchanged = redistribution; `(pass+fail)` up = new coverage, and its failures are
+newly *visible*, not newly *created*. The mirror image is already known — a falling count can
+also be an improvement (amd64's `ExInterlocked` 662/40 → 180/0 when clang stopped deleting
+`__except` blocks), which is why the re-seed guard *announces* count changes instead of
+refusing them.
+
+**2. Zero is the wrong reference point.** Many kmtests only pass cleanly on *real Windows*.
+Stock ReactOS fails plenty of them too, so an absolute failure count is not a defect count, and
+"N failures remain" says nothing about whether we are behind or ahead of upstream — **we may
+well be exceeding it.** The ratchet's actual claim is narrow and worth stating precisely: *this
+row got worse than it was on this tree*. It is a change detector against our own history, not a
+distance-from-correct. Do not write "still N failures" as if it were technical debt, and do not
+budget work against driving a row to zero, without an upstream reference measurement to say
+zero is reachable. Cross-*arch* comparison is still fair game (it is the same codebase), which
+is why "arm64 fails 9 where i386 fails 4" is a real signal while "arm64 fails 9" is not.
+
 ### No ratio can catch a cost the harness stubs away — count, don't measure `[§9.76]`
 Every instrument was green and the OS booted **3× slower**: the Rust folded each character
 through `_towlower_l(c, NULL)`, and a NULL locale means **three Win32 calls per character**, in
@@ -3026,6 +3235,25 @@ language rules) over loosening what it reports.
   it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
   `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
   so a partial disable cannot silently desynchronise two funnels that must agree.
+  **Sequel (2026-08-01): restoring the stamp exposed a MISSING COMBINATION in the test.**
+  `IoInterrupt`'s `CheckSpinLock` branches `if (KmtIsMultiProcessorBuild) … else if
+  (KmtIsCheckedBuild) …`, so the MP branch — which demands `*Lock == 1` **exactly** — is
+  reached first and the checked branch is unreachable on an MP kernel. But
+  `KI_TRACK_SPINLOCK_OWNER` is gated on plain `#if DBG`, independent of `CONFIG_SMP`, so a
+  checked MP kernel stamps `thread|1` and cannot pass. Upstream ReactOS's own DBG+SMP build
+  fails it identically. **Symptom shape worth recognising: a test whose expectation is selected
+  by build flavour can be missing a COMBINATION of flavours, and then a kernel that behaves
+  identically under both flavours "regresses" purely by crossing the branch boundary.** Before
+  filing an MP regression, check whether the UP and MP kernels actually wrote different values
+  — here they wrote the same one.
+- **A baseline seeded before a behavioural fix invents a cross-arch pattern that does not
+  exist.** Same incident: today's post-stamp arm64 numbers compared against x86 baselines
+  seeded four days *before* the stamp landed (`cfdff72b41d`) read as "x86 MP passes, arm64 MP
+  fails" — an arch difference, and a tempting one, since arm64 is where MP is least mature. It
+  was purely the seed dates; the per-arch behaviour is identical. **A baseline is a measurement
+  with a timestamp, not a constant.** When a delta looks arch-specific, diff the baselines'
+  commit dates against the fix's date before theorising, and re-seed every arch that predates
+  it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
@@ -3581,6 +3809,45 @@ looking at" shape as the out-cell entry above; both lists have to come from `mar
 **Testing one:** round-trip it — set, read back BY THE SAME NAME, delete, confirm gone. A wrong
 `Buffer` cannot survive that. Checking only that the call returned success passes on a broken
 build right up until the box dies.
+
+### A struct that carries its own `sizeof` is rejected before a single field is read
+**Symptom.** A whole family of Win32 APIs returns `FALSE` with `ERROR_INVALID_PARAMETER` for
+every 32-bit process and only for 32-bit processes. Nothing crashes, nothing is logged, and the
+marshaller for the struct is provably correct field for field.
+**Cause.** The struct's leading `cbSize`/`lStructSize` is the caller stating its own `sizeof`,
+and the callee version-checks it against the **host** `sizeof`. The guest wrote a number that
+is only true on the guest, so the call is refused before the payload is looked at. A
+field-perfect marshaller copies that number faithfully and is therefore still broken — this is
+the one field where a verbatim copy of a same-width, same-offset field is *wrong*.
+**Fix.** Rewrite the size on the way in and restore it on the way out, and do it **guarded on
+the value**: only when it is exactly the 32-bit `sizeof`. A struct with several legal sizes
+(`MONITORINFO` vs `MONITORINFOEXW`) must still reach the kernel with the size the caller chose,
+and garbage must still be rejected as garbage. The restore matters as much as the rewrite: the
+callee restamps the field with the host size, and handing that back leaves the caller holding a
+number that does not describe its own struct.
+**You need the bounce buffer too, and the size fix hides that you don't.** Once the size check
+passes, the callee writes the HOST-sized struct — `GUITHREADINFO` is 48 in the guest and 72 on
+the host, so "fixing" the size alone converts a silent no-op into 24 bytes of caller-stack
+corruption. Test with a canary immediately after the struct; a rewrite with no bounce passes a
+success check and fails the canary.
+**The size can also be an ARGUMENT** (`NtUserSendInput`'s third parameter, `sizeof(INPUT)`),
+which no struct-layout diff can associate with the pointer it describes — those stay
+hand-written. Live instances on vibeos: `TrackMouseEvent` (16→24, so no 32-bit app ever
+received `WM_MOUSELEAVE`), `GetCursorInfo` (20→24), `GetGUIThreadInfo` (48→72),
+`GetComboBoxInfo` (52→64), `GetMenuInfo` (28→40), `SendInput` (28→40).
+**Before you believe a WIDENING verdict, check what the callee does with the pointer.**
+`NtUserThunkedMenuInfo` declares `LPCMENUINFO` and diffs as a clean 28→40 widening, but
+win32k casts it to `PROSMENUINFO` and reads *`cbSize` bytes* — anything in
+`[sizeof(MENUINFO), sizeof(ROSMENUINFO)]`. The payload is a **caller-declared variable
+size**, so a generated marshaller hands over a 40-byte bounce and lets the kernel read past
+the end of it: a bug the marshaller INTRODUCES, where the flat thunk it replaced at least
+passed a real, correctly-sized caller pointer. Marshal only the size class you can name and
+pass the rest through. A prototype is a claim about the declared type, not about what the
+callee reads.
+**Third time for the same meta-bug.** The hand-written `NtUserThunkedMenuItemInfo` thunk set
+`M64.cbSize = sizeof(M64)` from day one; the generator that produced the other five did not.
+Same shape as `NtOpenProcessToken` vs its `Ex` sibling and `NtSetValueKey` vs `NtQueryValueKey`
+— whichever variant a human read is right. Fix the tool, not the instance.
 
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
@@ -4145,10 +4412,28 @@ introduced at any heap exit — it is an external stray write.**
   ≥150 s.** A trickle of early serial (87/581 bytes) is CD load, not a hang.
 - **A crash that varies its victim per boot is a CASCADE from an earlier first cause** — chase
   the earliest detectable corruption, not the visible victim.
+- **Read `hang-cpustate.txt` FIRST — a hang is the one failure with no PC of its own.** On a boot
+  timeout the harness now asks QEMU where every vCPU is parked (`info status` / `info cpus` /
+  `info registers -a`) *before* killing the VM, symbolicates each PC, and drops the result in the
+  run dir next to `summary.json` (also surfaced as `cpu_state` + `hang:` salient lines). A guest
+  spinning in a kernel spinlock does not block QEMU's main loop, which is why the monitor still
+  answers a box that has gone silent. Both backends used to run `-monitor none`, so for years
+  every wedge was triaged from the serial tail alone and nobody ever asked the VM where it
+  stopped.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed
   usermode PC that disassembles to `b .` (`-O0` is the workaround until the pass is identified).
+  (Sampling is now automatic on a timeout — see `hang-cpustate.txt` above; hand-sampling is for
+  when you need the *repeated* samples that distinguish a spin from slow progress.)
+- **A timed wait that overruns its own timeout indicts the CLOCK, not the thing being waited on.**
+  Read the timeout out of the source and compare it against how long the round actually ran: the
+  SCM's `PipeTimeout` is 30 s (`services-rust/src/database.rs`), so an arm64 `--smp 1` round that
+  sat at `ScmStartUserModeService(SamSs): waiting for connect` for 185 s was not a slow service —
+  a 30 s wait cannot take 185 s unless nothing is expiring timers. Discriminator against the
+  §9.89 handshake bug, which has the same last-line: **that** one prints `connect result=1053`
+  when the 30 s elapses and the box keeps running; a stall with **no** `result=` line at all, and
+  every other subsystem's serial stopping within a few lines of it, is a whole-machine freeze.
 - **The smoke `full.log` is a TRUNCATED TAIL** (~140 lines). For a full capture read
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
@@ -4229,6 +4514,18 @@ real net regression fails *some* tests with *varied* timings; starvation errors 
 identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), and above all
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
+
+**All-15-error also comes in a FAST costume, and the 600 s number is not the tell.** 2026-08-01:
+`15 errors in 28.59s` on a host at `build(cpuheavy) 4/4`, with the plain boot stage green and the
+desktop reached (explorer + taskbar in the serial log). The discriminator that matters is
+**error-vs-fail and uniformity, not the duration** — 15 *errors* is a fixture that never came up,
+whereas a real net regression produces *failures* in a *subset*. Confirmed in one step for free:
+re-running `pytest tests/qemu/test_net.py --arch amd64-uefi-net` against **the same unmodified
+media** gave `15 passed in 63.69s`. That re-run is the cheapest control available — it needs no
+rebuild and no second lane — so reach for it before theorising, especially when your change
+touches something with a plausible story for breaking the network (this one altered registry
+security descriptors, which made "it's contention" the *less* comfortable hypothesis and therefore
+the one worth actually testing).
 
 **Partial contention wears a different costume: ONE test, and the giveaway is the wall clock.**
 `test_tdi_selftest_roundtrip` timed out on `[NETSTACK] TDI self-test: RECEIVE OK` while the other

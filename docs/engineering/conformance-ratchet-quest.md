@@ -86,6 +86,24 @@ hangs: `[KMTEST:BEGIN <name>]` / `[KMTEST:END <name> pass=N fail=M]`.
 
 ## The ratchet (M4)
 
+**The TOTAL assertion count is not a score, and it moves BOTH ways for good reasons.**
+Read `fail`, and read it per test; `pass` and `pass+fail` are not correctness metrics.
+
+- **Up.** A test that bailed early now gets further in, so assertions that never executed
+  start executing. More correctness, more assertions — the common case, and the one that
+  makes a growing total look alarming when it is the opposite.
+- **Down.** Fixing wrong *data* can DELETE passing assertions. `VCheckAcl__` iterates the
+  ACL's actual `AceCount` but only `va_arg`-compares while `i < expected`, so every surplus
+  ACE still earns 4 structural passes (size/alignment) before it `continue`s. When the
+  SECURITY hive-root descriptor was corrected from the fabricated 4 ACEs to the right 2
+  (task #72), CmSecurity went **906/4 → 900/2**: 8 passing assertions removed, 2 failures
+  fixed, strictly more correct. Predicted before the run and confirmed exactly.
+
+So: a falling `pass` is not a regression, and a rising `pass` is not progress. Both are
+consequences of how far execution reaches and how much data there is to check. Only the
+per-test `fail` count, plus the named assertions behind it, means anything — which is why
+the ratchet reports per-test deltas and not a total.
+
 - `tools/conformance-baseline/<arch>/kmtest.txt`: one line per test —
   `name pass_count fail_count skip|crash|hang` at baseline time.
 - `./vibeos-cli conformance --arch X`: boot → run suite → parse → `summary.json` with

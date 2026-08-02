@@ -418,6 +418,8 @@ pub unsafe fn RosGetProcessEffectiveVersion() -> UINT {
 unsafe extern "system" {
     fn OleInitialize(pvReserved: *mut c_void) -> HRESULT;
     fn OleUninitialize();
+    fn CoInitialize(pvReserved: *mut c_void) -> HRESULT;
+    fn CoUninitialize();
 }
 
 /// `CCoInitBase<OleInitialize, OleUninitialize>` — ctor initialises OLE, dtor uninitialises it
@@ -438,6 +440,28 @@ impl Drop for COleInit {
     fn drop(&mut self) {
         if self.hr >= 0 {
             unsafe { OleUninitialize() };
+        }
+    }
+}
+
+/// `CCoInitBase<CoInitialize, CoUninitialize>` (shellutils.h:622) — the other instantiation of
+/// the same template, and it carries the identical trap: the island's opaque `pub type CCoInit
+/// = u8` swallows `CCoInit init;` into a binding that initialises nothing and drops nothing.
+pub struct CCoInit {
+    pub hr: HRESULT,
+}
+
+impl CCoInit {
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { hr: CoInitialize(core::ptr::null_mut()) }
+    }
+}
+
+impl Drop for CCoInit {
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe { CoUninitialize() };
         }
     }
 }

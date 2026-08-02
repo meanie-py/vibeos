@@ -587,6 +587,67 @@ pub unsafe extern "system" fn MmCreatePhysicalMapping(
     MmCreateVirtualMappingUnsafeEx(Process, Address, flProtect, Page, 1u8)
 }
 
+/// Zero any leftover VALID descriptors over a user VA range that is being
+/// freshly reserved.
+///
+/// FreeLDR's identity-mapped page-table PAGES get recycled as user-space page
+/// tables while still holding FreeLDR's own entries (VA==PA, global, EL1-only),
+/// so a brand-new memory area can sit on top of live-looking descriptors. Two
+/// consequences, both observed on the arm64 kmtest sweep: the fault that should
+/// demand-page the range never fires, and teardown decodes the stale descriptor
+/// into a PFN that names no frame (VA 0x50000 -> pte 0x50703 -> PFN 0x50, far
+/// below the 0x40000000 DRAM base) — which MmDeleteRmap reports as
+/// mapping-not-in-list, after which MmReleasePageMemoryConsumer hands the
+/// allocator a frame that was never allocated.
+///
+/// amd64 carries the same guard per-path in ARM3/sysldr.rs, which is why this
+/// reproduced on arm64 only. Doing it once at memory-area creation covers
+/// VirtualAlloc and section views together instead of path by path.
+pub(crate) unsafe fn MiPurgeStaleUserPtes(StartVa: ULONG_PTR, EndVa: ULONG_PTR) {
+    // ARM64 descriptor bits[1:0]: 0b11 = table/page entry, 0b01 = 2MB block.
+    // HARDWARE_PTE names bit 1 NotLargePage (sdk/include/ndk/arm64/mmtypes.h);
+    // there is no shared accessor for it because bit 1 is `Write` on x86.
+    const NOT_LARGE_PAGE: ULONG_PTR = 1 << 1;
+    const BLOCK_MASK: ULONG_PTR = 0x1F_FFFF;
+
+    let mut need_flush = false;
+    let mut Va = StartVa;
+
+    while Va < EndVa {
+        let PointerPxe = MiAddressToPxe(Va as PVOID);
+        let PointerPpe = MiAddressToPpe(Va as PVOID);
+        let PointerPde = MiAddressToPde(Va as PVOID);
+
+        // Nothing is mapped this far down — skip the whole 2MB instead of
+        // walking it page by page. This runs on every user reservation,
+        // including multi-megabyte section views, so the common case must not
+        // be O(pages).
+        if !(*PointerPxe).valid() || !(*PointerPpe).valid() || !(*PointerPde).valid() {
+            Va = (Va | BLOCK_MASK) + 1;
+            continue;
+        }
+
+        if ((*PointerPde).Long & NOT_LARGE_PAGE) == 0 {
+            // A 2MB block descriptor: drop it and skip its whole span.
+            (*PointerPde).Long = 0;
+            need_flush = true;
+            Va = (Va | BLOCK_MASK) + 1;
+            continue;
+        }
+
+        let PointerPte = MiAddressToPte(Va as PVOID);
+        if (*PointerPte).valid() {
+            (*PointerPte).Long = 0;
+            need_flush = true;
+        }
+        Va += PAGE_SIZE as ULONG_PTR;
+    }
+
+    if need_flush {
+        crate::ke::arm64::stubs::KeFlushEntireTb(1, 1);
+    }
+}
+
 unsafe fn MmDeleteVirtualMappingEx(
     Process: PEPROCESS,
     Address: PVOID,
@@ -631,6 +692,17 @@ unsafe fn MmDeleteVirtualMappingEx(
             Address as usize & !(PAGE_SIZE - 1),
             PsGetCurrentThread() as usize,
             OldPte.page_frame_number() as u32,
+        );
+        // Beside it, the raw descriptor. A PFN that names no frame is ambiguous
+        // on its own — a hardware descriptor pointing somewhere wrong, or a
+        // software PTE decoded with the hardware layout? `valid()` cannot settle
+        // it (bit 0 only). The low 32 bits carry the type/valid bits and the
+        // whole address field whenever the PFN is small — the failing case.
+        crate::ke::flightrec::flightrec_log(
+            crate::ke::flightrec::OP_PAGE_PTE,
+            Address as usize & !(PAGE_SIZE - 1),
+            PsGetCurrentThread() as usize,
+            OldPte.Long as u32,
         );
 
         KeInvalidateTlbEntry(Address);

@@ -210,7 +210,13 @@ pub unsafe extern "system" fn KiInitializeContextThread(
         (*Thread).NpxState = NPX_STATE_NOT_LOADED;
         (*Thread).Header.__bindgen_anon_1.__bindgen_anon_1.__bindgen_anon_1.NpxIrql = PASSIVE_LEVEL;
 
-        (*Context).ContextFlags &= !0x00000010u32;
+        // C: `ContextFlags &= ~CONTEXT_DEBUG_REGISTERS`, i.e. ~(CONTEXT_i386|0x10)
+        // = ~0x10010 — it also strips the ARCH bit. Deliberately not copied: the
+        // only consumer is the `Context->ContextFlags | ContextFlags` argument
+        // below, and the local `ContextFlags` re-adds CONTEXT_i386 either way, so
+        // the two differ solely in what the caller's CONTEXT record retains, which
+        // KeInitThread never reads. Clearing 0x10 alone leaves the record valid.
+        (*Context).ContextFlags &= !0x00000010u32; // nolint: mask-drift (audited; see above)
 
         TrapFrame = core::ptr::addr_of_mut!((*InitFrame).TrapFrame);
 

@@ -29,89 +29,47 @@ pub mod shlfolder;
 pub mod iconcache;
 
 // ---------------------------------------------------------------------------------------------
-// STILL PARKED. The C++ SUBSTRATE that blocked them is now largely built: `crate::atl` supplies
-// CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray and `crate::shellutils` the shellutils.h/utils.h
-// header inlines, so what is left per file is ordinary integration work rather than a missing
-// foundation. Counts measured with all six wired, after the substrate landed:
+// ALL SIX ARE FLIPPED (shlexec, the last, on 2026-08-01). Nothing here is parked any more, so
+// the counts and per-file blocker lists that used to live in this header are gone with the
+// blockers; each module's own doc comment records what it needed and what it was hiding.
 //
-//     shlexec.rs    94     shlfileop.rs  227     iconcache.rs    0 <- flipped
-//     brfolder.rs    0 <- flipped     shlfolder.rs    0 <- flipped     shldataobject 0 <- flipped
+// What the batch cost, kept because it is the reusable part: the C++ SUBSTRATE these TUs lean
+// on is `crate::atl` (CComPtr/CHeapPtr/CComHeapPtr/CSimpleArray/CStringW), `crate::shellutils`
+// (the shellutils.h/utils.h header inlines, plus the CCoInit/COleInit RAII pair), `crate::layout`
+// (ui/layout.h) and `crate::shellcom` (the `lpVtbl` shape for interfaces the island renders as
+// opaque C++ classes). A header inline or a C++ template reaches no TU, so rustconv never sees a
+// body for one and the name simply does not resolve — those are ports, not translations.
 //
-// shlfileop's SUBSTRATE is now closed too (2026-08-01), so its remaining errors are its own
-// tail. What it needed, none of which a compiler can point at while the module is parked:
-//   * `CStringW::{LoadStringW, from_resource, Format*}` — the 7 `Format` sites are CONCRETE
-//     ARITIES, not one variadic macro. Format sizes with `_scwprintf` then prints with
-//     `swprintf`, and handing both calls the same already-evaluated locals is what stops a
-//     caller's argument being evaluated twice. Resource IDs load from `shell32_hInstance`,
-//     NOT `GetModuleHandleW(NULL)` — that would read explorer's string table.
-//   * An `lpVtbl`-shaped `IProgressDialog`. All three islands render it OPAQUE
-//     (`IProgressDialog__bindgen_vtable(c_void)`) because it is a C++ pure-virtual class, so
-//     `p.SetTitle(..)` resolved to NOTHING. 14 call sites are now explicit vtable dispatch.
-//   * Phantom symbols: `DSA_GetItemCount` is a commctrl.h MACRO, `IsDotDir`/`GET_FILENAME` are
-//     file-local C macros, `StringCbCopyW`/`MAKELANGID` are header inlines. None has an export
-//     to bind, so an `extern` decl for any of them compiles and then fails to link.
-//   * `TRASH_CanTrashFile`/`TRASH_TrashFile` ARE real functions — `CRecycleBin.h` now declares
-//     them `EXTERN_C` so the C++ definition and the Rust caller agree on the unmangled name.
+// Two traps worth keeping, both of which cost real time here:
 //
 // Do NOT add ULARGE_INTEGER or the ERROR_*/FILE_ATTRIBUTE_*/LANG_* constants to this crate:
 // they already arrive through `ntdll_sys::nt::*`, which a scan of the `island_*.rs` files
 // alone does not reveal. A second definition is E0659 at every use, not a shadow.
 //
-// shlexec went 349 -> 94 on 2026-07-31/08-01, and its recorded blocker was WRONG: it has ZERO
-// `CStringW::Format` calls, so it never needed the printf-variadic decision at all (that is
-// shlfileop's, 7 sites). What it needed was the plain string type — `crate::atl::CStringW`,
-// LocalAlloc-backed, ported operation-by-operation from `sdk/lib/atl/cstringt.h` — plus the
-// `shlexec.cpp` name residue, all of it now landed and shared: the wine/unicode.h A/W aliases
-// (`strcpyW`/`strstrW`/`strrchrW`/`strncmpiW`/`isspaceW`), the CRT wide fns and
-// `HKEY_LOCAL_MACHINE` in `island_extra`, `SeeFlagsToCmicFlags` + `__SHCloneStrW{,toA}` in
-// `shellutils` (all three are HEADER inlines, so they reach no TU), a dozen shlwapi/shell32
-// externs in the prelude, and an `lpVtbl`-shaped `IShellExtInit` in `shellcom`.
-// What is LEFT is this file's own tail, ~94 errors: mostly pointer/handle conversions
-// (`int`->`*mut`, `&ref`->raw) that a bulk numeric pass must NOT touch, plus the arch-DIVERGENT
-// numeric sites. On those last ones do what `crate-repair` says and name the semantic alias
-// (SIZE_T / UINT_PTR / INT_PTR / LONG_PTR): `as usize` is u32 on i386 and u64 elsewhere, so
-// either literal width is wrong on some arch. No shared substrate remains, so it blocks nothing.
-//
 // If you bulk-apply casts from rustc spans, GUARD MATCH PATTERNS. A cast is not legal in a
 // pattern; `crate-repair` declines those by design and a hand-rolled pass that forgets to
 // silently writes `(SE_ERR_FNF) as usize => ...`, which does not compile. Cast the SCRUTINEE.
 //
-// brfolder went 244 -> 86 on 2026-07-31: every SUBSTRATE gap it had is now closed and landed
-// (14 more TreeView_* wrappers and `TV_ITEM` in the prelude, `crate::layout` for the whole of
-// `ui/layout.h`, `SHELL_IsContextMenuMsg` / `SHILClone` / `RosGetProcessEffectiveVersion` in
-// `shellutils`, `Deref`+`Get`+`GetAddressOf`+`put` on the ATL pointers, and real signatures
-// for `IShellFolderVtbl::SetNameOf` and `IEnumIDListVtbl::{Skip,Reset}` plus an
-// `lpVtbl`-shaped `IContextMenu` in `shellcom`). What is LEFT is only this file's own numeric
-// and pointer casts — no shared substrate, so it blocks nothing else. `rustconv crate-repair`
-// declines the remainder by design (78 are `match`-pattern casts), so they are a hand pass.
-//
 // WARNING for whoever runs `crate-repair` on this crate: **it edits shared MACRO DEFINITIONS
-// to satisfy errors reported at their EXPANSION sites, once per call site.** Seen twice, on two
-// different macros:
+// to satisfy errors reported at their EXPANSION sites, once per call site.** Seen three times,
+// on two different macros:
 //   * `_countof!` — rewritten `u32` -> `i32` plus compensating casts in three ALREADY-LANDED
 //     files. C's `sizeof(a)/sizeof(*a)` is unsigned.
 //   * `ARRAY_SIZE!` — stacked into
 //     `(((((((($a).len()) as u32) as usize) as u32) as usize) as u32) as usize) as u32`
-//     while repairing shlexec (2026-07-31).
+//     while repairing shlexec (2026-07-31), and rustc asks for the same edit AGAIN at the three
+//     `strlenW(x) + 1 > ARRAY_SIZE!(y)` sites in that file (it wants `.try_into().unwrap()` in
+//     the macro body). Cast at the call site: `> ARRAY_SIZE!(y) as usize`.
 // Revert the macro every time and cast at the call site instead. The test that it was pure
 // blast radius: re-run `cargo check` after reverting — the error count does not move (it did
-// not, on either occasion).
+// not, on any of the three occasions).
 //
-// Read those against the pre-substrate numbers (shldataobject 22, iconcache 68, shlfolder 75,
-// shlfileop 227, brfolder 235, shlexec 415) and note that brfolder went UP, 235 -> 244: making
-// the ATL types resolve does not only remove errors, it also un-masks the ones that were hiding
-// behind an unresolved name. A rising count on a file is progress, not regression.
+// One measurement worth remembering: resolving a name does not only REMOVE errors, it also
+// un-masks the ones that were hiding behind it. brfolder went 235 -> 244 when the ATL types
+// started resolving, and shlexec's E0308 count went 56 -> 61 when its externs landed. A rising
+// count on a file mid-grind is progress, not regression.
 //
-// What each still needs, in cheapest-first order:
-//
-//   * shlfileop / shlexec (227 / 349) — both additionally want `CStringW`, which `atl.rs`
-//     deliberately does NOT yet provide. Its measured surface is new()/Left/GetLength/IsEmpty/
-//     SetString/GetBuffer/ReleaseBuffer/as_ptr/`+=` plus 14 `Format` calls. `Format` is
-//     printf-variadic, and stable Rust cannot DEFINE a variadic fn — it needs a trampoline in
-//     `dll/win32/shell32/rust_varargs_shim.c`, the same mechanism ShellMessageBoxA already uses.
-//     Designing CStringW before that decision is made would be guesswork, so it waits.
-//
-// Each carries an `//! ORPHAN-BY-DESIGN:` banner. PAID artifacts — do not delete them to tidy up.
+// These were PAID artifacts — do not delete a translated `.rs` to tidy up.
 //
 /// brfolder.cpp — the SHBrowseForFolder dialog. FLIPPED 2026-07-31: 86 -> 0. The residue was
 /// this file's own casts plus four defects a green C build hides: amd64 widths baked into
@@ -119,5 +77,24 @@ pub mod iconcache;
 /// `BrFolder_GetName` OVERLOADS dropped, and a `COleInit` RAII local left uninitialised so
 /// neither OleInitialize nor OleUninitialize ran.
 pub mod brfolder;
-// pub mod shlexec;
+/// shlexec.cpp — ShellExecute and the whole verb / association / DDE launch path, and the last
+/// of the six to flip (2026-08-01: 94 -> 0). Six defects a green C build hides, every one of
+/// them somewhere C's type system declines to have an opinion:
+///   * THREE dropped `sizeof`s. `sizeof(STARTUPINFOW)` became `size_of_val(&STARTUPINFOW)`, and
+///     both `cbSize != sizeof(SHELLEXECUTEINFO{A,W})` entry gates lost the `sizeof` outright —
+///     that comparison is what validates a caller's struct before any field of it is read.
+///   * The `SHELL_ExecuteW32` typedef was `extern "system"` where neither the C typedef nor
+///     `SHELL_ExecuteW` carries WINAPI. stdcall vs cdecl: on i386, caller and callee would have
+///     disagreed about who pops the arguments.
+///   * `SUCCEEDED(hr)` translated to `(hr as u32) >= 0`, which is unconditionally true, so a
+///     FAILED `AssocQueryStringW` still selected the "runas" verb.
+///   * `goto done` became a self-referential `'done: { break 'done; }` — a jump to itself, so
+///     the runas-cancelled path fell through and overwrote its `retval = 33` with an error.
+///   * `GetUIObjectOf(.., addr_of_mut!(cm))` took the address of the out-parameter instead of
+///     passing it, so `shellex_get_contextmenu` never filled its caller's pointer.
+///   * `RealShellExecuteA`/`ExA` (SHELL32.265/266) had HWND, PHANDLE and HINSTANCE flattened to
+///     `isize` while their W twins were typed correctly.
+/// `UrlIsFileUrlW` was one more phantom symbol: shlwapi.h:643 `#define`s it to
+/// `UrlIsW(x, URLIS_FILEURL)`, so no export of that name exists to link against.
+pub mod shlexec;
 pub mod shlfileop;

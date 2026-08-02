@@ -827,6 +827,126 @@ def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     assert "MiInsertStandbyListAtFront+40" in out
 
 
+# `info registers -a` as QEMU 9 actually prints it for the arm64 `virt` machine.
+_ARM64_REGS = """\
+=== info status ===
+VM status: running
+
+=== info cpus ===
+* CPU #0: thread_id=41521
+  CPU #1: thread_id=41522
+
+=== info registers -a ===
+
+CPU#0
+ PC=ffff800004001234 X00=0000000000000001 X01=ffffa00006122c00
+X02=0000000000000000 X03=0000000000000001
+PSTATE=204003c5 --C- EL1h
+
+CPU#1
+ PC=ffff8000040567ac X00=0000000000000000 X01=0000000000000000
+PSTATE=604003c5 -ZC- EL1h
+"""
+
+
+def test_cpu_pcs_credits_each_vcpu_with_its_own_pc():
+    # The whole point is telling one wedged CPU from another. A parser that
+    # searched the blob globally would report CPU#0's PC twice and quietly erase
+    # the difference between "one CPU spinning" and "both stuck in the same place".
+    assert triage.cpu_pcs(_ARM64_REGS) == [
+        (0, "ffff800004001234"),
+        (1, "ffff8000040567ac"),
+    ]
+
+
+def test_cpu_pcs_reads_x86_program_counters_too():
+    # amd64 says RIP=, i386 says EIP=, arm64 says PC= — and none of the three is
+    # 0x-prefixed, which is why this cannot reuse triage._PC.
+    assert triage.cpu_pcs("CPU#0\nRIP=fffff80000401000 RFL=00000246\n") == [(0, "fffff80000401000")]
+    assert triage.cpu_pcs("CPU#0\nEIP=805148fd EFL=00000246\n") == [(0, "805148fd")]
+
+
+def test_cpu_pcs_survives_a_dump_with_no_registers():
+    # capture_cpu_state() never raises, so it can hand back "<unavailable: ...>"
+    # instead of a register block. That must yield no PCs, not an exception.
+    assert triage.cpu_pcs("=== info registers -a ===\n<unavailable: OSError()>\n") == []
+
+
+def test_symbolicate_cpu_state_names_the_function_each_cpu_is_parked_in(tmp_path):
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho 'x\tKxAcquireSpinLock+24\t-'\n")
+    out = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, mp=True)
+    assert out == [
+        "CPU#0 0xffff800004001234 -> x\tKxAcquireSpinLock+24\t-",
+        "CPU#1 0xffff8000040567ac -> x\tKxAcquireSpinLock+24\t-",
+    ]
+
+
+def test_symbolicate_cpu_state_reports_the_raw_pc_when_the_index_is_missing(tmp_path):
+    # No addr2sym.sh in this tree. A bare address still localizes a hang far
+    # better than the nothing we had before, so it must not be swallowed.
+    out = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS)
+    assert out == [
+        "CPU#0 0xffff800004001234 -> (unresolved)",
+        "CPU#1 0xffff8000040567ac -> (unresolved)",
+    ]
+
+
+def test_symbolicate_cpu_state_resolves_mp_addresses_against_the_MP_index(tmp_path):
+    # ntkrnlmp.exe is a different binary from ntoskrnl.exe; resolving an MP hang
+    # against the UP index names the wrong function and does it silently.
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    mp = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, mp=True)
+    assert "--mp" in mp[0], mp[0]
+    up = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS)
+    assert "--mp" not in up[0], up[0]
+
+
+def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
+    # wait_for_boot samples the instant the boot times out. Re-sampling later
+    # would agree on a true hang but disagree on a merely-slow boot, which by
+    # then has moved on — reporting the wrong place as "where it was stuck".
+    from . import smoke as smoke_mod
+
+    class _StubVm:
+        hang_cpu_state = "CPU#0\nPC=ffff800004001234\n"
+
+        def capture_cpu_state(self):
+            raise AssertionError("must not re-sample when the deadline capture exists")
+
+    path, lines = smoke_mod._cpu_state(
+        _StubVm(),  # type: ignore[arg-type]
+        tmp_path,
+        tmp_path,
+        "arm64",
+        "",
+    )
+    assert lines == ["CPU#0 0xffff800004001234 -> (unresolved)"]
+    assert path and Path(path).read_text().startswith("CPU#0")
+
+
+def test_cpu_state_falls_back_to_a_live_sample(tmp_path):
+    from . import smoke as smoke_mod
+
+    class _StubVm:
+        hang_cpu_state = ""
+
+        def capture_cpu_state(self):
+            return "CPU#0\nPC=ffff8000040567ac\n"
+
+    _path, lines = smoke_mod._cpu_state(
+        _StubVm(),  # type: ignore[arg-type]
+        tmp_path,
+        tmp_path,
+        "arm64",
+        "",
+    )
+    assert lines == ["CPU#0 0xffff8000040567ac -> (unresolved)"]
+
+
 def test_triage_kernel_panic_via_debugcon():
     # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
     # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)
@@ -5107,3 +5227,114 @@ def test_rglob_stable_reraises_when_the_tree_is_genuinely_broken(tmp_path, monke
     monkeypatch.setattr(Path, "rglob", always_fails)
     with pytest.raises(OSError):
         provenance.rglob_stable(tmp_path, "libfoo_rust.a")
+
+
+# --- scan_boot_media_drift: the two boot media must stage the same CM hives ------
+
+_CMAKE_FIXTURE = """
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/boot/bootdata/system
+               ${CMAKE_BINARY_DIR}/boot/bootdata/sam
+        COMMAND native-mkhive -h:SYSTEM,SAM -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_inf}
+        DEPENDS native-mkhive ${_inf})
+
+    add_cd_file(
+        FILE ${CMAKE_BINARY_DIR}/boot/bootdata/system
+             ${CMAKE_BINARY_DIR}/boot/bootdata/sam
+        TARGET livecd_hives
+        DESTINATION reactos/system32/config
+        FOR livecd)
+
+    add_cd_file(
+        FILE ${CMAKE_BINARY_DIR}/boot/bootdata/BCD
+        TARGET bcd_hive
+        DESTINATION efi/boot
+        FOR bootcd regtest livecd)
+"""
+
+
+def _ramdisk_fixture(copied, required):
+    return (
+        "REQUIRED_FILES=(\n"
+        + "".join(f'    "$BUILD_DIR/boot/bootdata/{h}"\n' for h in required)
+        + ")\n\n"
+        + "".join(
+            f'RMC "$BUILD_DIR/boot/bootdata/{h}"   ::/reactos/system32/config/{h}\n' for h in copied
+        )
+    )
+
+
+def _run_drift(tmp_path, copied, required):
+    repo = Path(__file__).resolve().parents[3]
+    cmake = tmp_path / "CMakeMacros.cmake"
+    cmake.write_text(_CMAKE_FIXTURE)
+    ramdisk = tmp_path / "mkramdisk.sh"
+    ramdisk.write_text(_ramdisk_fixture(copied, required))
+    return subprocess.run(
+        [
+            "python3",
+            str(repo / "tools" / "scan_boot_media_drift.py"),
+            "--cmake",
+            str(cmake),
+            "--ramdisk",
+            str(ramdisk),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_boot_media_drift_passes_when_both_media_agree(tmp_path):
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+    assert r.returncode == 0, r.stdout
+    assert "findings=0" in r.stdout
+
+
+def test_boot_media_drift_catches_a_hive_missing_from_the_ramdisk(tmp_path):
+    """The #71 bug exactly: `sam` on the livecd, absent from the ramdisk. The kernel
+    fabricates an empty volatile hive rather than failing, so nothing else can see it."""
+    r = _run_drift(tmp_path, copied=["system"], required=["system"])
+    assert r.returncode == 1
+    assert "[RAMDISK_MISSING]" in r.stdout
+    assert "'sam'" in r.stdout
+
+
+def test_boot_media_drift_catches_a_copied_but_unguarded_hive(tmp_path):
+    """Copied without a REQUIRED_FILES entry: if the build stops emitting it, the copy
+    stages nothing and we are back to a fabricated hive with no error anywhere."""
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system"])
+    assert r.returncode == 1
+    assert "[RAMDISK_UNGUARDED]" in r.stdout
+    assert "'sam'" in r.stdout
+
+
+def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
+    """BCD goes to efi/boot for the EFI boot manager — it is not a \\REGISTRY\\MACHINE
+    hive and the ramdisk is not an ESP, so demanding it would be a false positive."""
+    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+    assert r.returncode == 0
+    assert "BCD" not in r.stdout
+
+
+def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_set(tmp_path):
+    """A parser that silently matches nothing would pass every tree forever. If the cmake
+    layout moves, this must fail rather than go quietly vacuous."""
+    cmake = tmp_path / "CMakeMacros.cmake"
+    cmake.write_text("# the hive blocks moved somewhere else\n")
+    ramdisk = tmp_path / "mkramdisk.sh"
+    ramdisk.write_text(_ramdisk_fixture([], []))
+    repo = Path(__file__).resolve().parents[3]
+    r = subprocess.run(
+        [
+            "python3",
+            str(repo / "tools" / "scan_boot_media_drift.py"),
+            "--cmake",
+            str(cmake),
+            "--ramdisk",
+            str(ramdisk),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 1
+    assert "[NO_REFERENCE]" in r.stdout

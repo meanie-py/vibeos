@@ -43,7 +43,6 @@
       "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
-      "dll/win32/shell32/shlexec.cpp",
       "dll/win32/shell32/CDefView.cpp",
       "dll/win32/shell32/shell32.cpp"
     ],
@@ -76,6 +75,7 @@
       "dll/win32/shell32/iconcache.cpp",
       "dll/win32/shell32/propsheet.cpp",
       "dll/win32/shell32/shldataobject.cpp",
+      "dll/win32/shell32/shlexec.cpp",
       "dll/win32/shell32/shlfileop.cpp",
       "dll/win32/shell32/shlfolder.cpp",
       "dll/win32/shell32/stubs.cpp",
@@ -96,6 +96,9 @@
   "sanctioned": {
     "variadic_abi": [
       "dll/win32/shell32/rust_varargs_shim.c"
+    ],
+    "phantom_inline_linkage": [
+      "dll/win32/shell32/rust_strsafe_shim.c"
     ]
   },
   "version": 1

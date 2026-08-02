@@ -45,6 +45,33 @@ static void WowAmNx(unsigned char *d, const unsigned char *s)
     WowAmCpy(d, s, 4);
 }
 
+/* A leading self-describing size ("cbSize"): the guest states ITS sizeof and
+ * the callee compares against the HOST's, so a verbatim copy fails the very
+ * version check the field exists for. Rewrite it — but ONLY when it is
+ * exactly the 32-bit sizeof, so a struct with more than one legal size
+ * (MONITORINFO vs MONITORINFOEXW) still reaches the kernel with the size the
+ * guest actually chose, and a garbage value still gets rejected as garbage. */
+static void WowAmSizeIn(unsigned char *d, const unsigned char *s,
+                        ULONG g32, ULONG h64)
+{
+    ULONG v;
+    WowAmCpy((unsigned char *)&v, s, 4);
+    if (v == g32) v = h64;
+    WowAmCpy(d, (const unsigned char *)&v, 4);
+}
+
+/* ...and undo it on the way back: the kernel restamps cbSize with the host
+ * sizeof, which would leave the guest holding a size that does not describe
+ * its own struct. */
+static void WowAmSizeOut(unsigned char *d, const unsigned char *s,
+                         ULONG g32, ULONG h64)
+{
+    ULONG v;
+    WowAmCpy((unsigned char *)&v, s, 4);
+    if (v == h64) v = g32;
+    WowAmCpy(d, (const unsigned char *)&v, 4);
+}
+
 static int WowAmStrEq(const char *a, const char *b)
 {
     while (*a && *a == *b) { a++; b++; }
@@ -66,6 +93,90 @@ static void WowAmOut__UNICODE_STRING(const unsigned char *s, unsigned char *d)
     WowAmCpy(d + 2, s + 2, 2); /* MaximumLength */
     WowAmNx(d + 4, s + 8); /* Buffer */
 }
+/* struct tagCOMBOBOXINFO: 52 -> 64 bytes */
+static void WowAmIn_tagCOMBOBOXINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmZero(d, 64);
+    WowAmSizeIn(d + 0, s + 0, 52, 64); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 16); /* rcItem */
+    WowAmCpy(d + 20, s + 20, 16); /* rcButton */
+    WowAmCpy(d + 36, s + 36, 4); /* stateButton */
+    WowAmSx(d + 40, s + 40); /* hwndCombo */
+    WowAmSx(d + 48, s + 44); /* hwndItem */
+    WowAmSx(d + 56, s + 48); /* hwndList */
+}
+
+static void WowAmOut_tagCOMBOBOXINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmSizeOut(d + 0, s + 0, 52, 64); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 16); /* rcItem */
+    WowAmCpy(d + 20, s + 20, 16); /* rcButton */
+    WowAmCpy(d + 36, s + 36, 4); /* stateButton */
+    WowAmNx(d + 40, s + 40); /* hwndCombo */
+    WowAmNx(d + 44, s + 48); /* hwndItem */
+    WowAmNx(d + 48, s + 56); /* hwndList */
+}
+/* struct tagCURSORINFO: 20 -> 24 bytes */
+static void WowAmIn_tagCURSORINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmZero(d, 24);
+    WowAmSizeIn(d + 0, s + 0, 20, 24); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* flags */
+    WowAmSx(d + 8, s + 8); /* hCursor */
+    WowAmCpy(d + 16, s + 12, 8); /* ptScreenPos */
+}
+
+static void WowAmOut_tagCURSORINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmSizeOut(d + 0, s + 0, 20, 24); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* flags */
+    WowAmNx(d + 8, s + 8); /* hCursor */
+    WowAmCpy(d + 12, s + 16, 8); /* ptScreenPos */
+}
+/* struct tagGUITHREADINFO: 48 -> 72 bytes */
+static void WowAmIn_tagGUITHREADINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmZero(d, 72);
+    WowAmSizeIn(d + 0, s + 0, 48, 72); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* flags */
+    WowAmSx(d + 8, s + 8); /* hwndActive */
+    WowAmSx(d + 16, s + 12); /* hwndFocus */
+    WowAmSx(d + 24, s + 16); /* hwndCapture */
+    WowAmSx(d + 32, s + 20); /* hwndMenuOwner */
+    WowAmSx(d + 40, s + 24); /* hwndMoveSize */
+    WowAmSx(d + 48, s + 28); /* hwndCaret */
+    WowAmCpy(d + 56, s + 32, 16); /* rcCaret */
+}
+
+static void WowAmOut_tagGUITHREADINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmSizeOut(d + 0, s + 0, 48, 72); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* flags */
+    WowAmNx(d + 8, s + 8); /* hwndActive */
+    WowAmNx(d + 12, s + 16); /* hwndFocus */
+    WowAmNx(d + 16, s + 24); /* hwndCapture */
+    WowAmNx(d + 20, s + 32); /* hwndMenuOwner */
+    WowAmNx(d + 24, s + 40); /* hwndMoveSize */
+    WowAmNx(d + 28, s + 48); /* hwndCaret */
+    WowAmCpy(d + 32, s + 56, 16); /* rcCaret */
+}
+/* struct tagTRACKMOUSEEVENT: 16 -> 24 bytes */
+static void WowAmIn_tagTRACKMOUSEEVENT(const unsigned char *s, unsigned char *d)
+{
+    WowAmZero(d, 24);
+    WowAmSizeIn(d + 0, s + 0, 16, 24); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* dwFlags */
+    WowAmSx(d + 8, s + 8); /* hwndTrack */
+    WowAmCpy(d + 16, s + 12, 4); /* dwHoverTime */
+}
+
+static void WowAmOut_tagTRACKMOUSEEVENT(const unsigned char *s, unsigned char *d)
+{
+    WowAmSizeOut(d + 0, s + 0, 16, 24); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 4); /* dwFlags */
+    WowAmNx(d + 8, s + 8); /* hwndTrack */
+    WowAmCpy(d + 12, s + 16, 4); /* dwHoverTime */
+}
 
 static NTSTATUS WowAmThunk_NtUserChangeDisplaySettings(ULONG *a)
 {
@@ -79,11 +190,67 @@ static NTSTATUS WowAmThunk_NtUserChangeDisplaySettings(ULONG *a)
     if (g0) WowAmOut__UNICODE_STRING(b0, (unsigned char *)(ULONG_PTR)a[0]);
     return (NTSTATUS)(ULONG)r;
 }
+static NTSTATUS WowAmThunk_NtUserGetComboBoxInfo(ULONG *a)
+{
+    extern ULONGLONG NtUserGetComboBoxInfo(ULONGLONG, ULONGLONG);
+    unsigned char b1[64] __attribute__((aligned(16)));
+    const unsigned char *g1 = (const unsigned char *)(ULONG_PTR)a[1];
+    ULONGLONG r;
+    (void)a;
+    if (g1) WowAmIn_tagCOMBOBOXINFO(g1, b1);
+    r = NtUserGetComboBoxInfo((ULONGLONG)(LONGLONG)(LONG)a[0], (g1 ? (ULONGLONG)(ULONG_PTR)b1 : 0));
+    if (g1) WowAmOut_tagCOMBOBOXINFO(b1, (unsigned char *)(ULONG_PTR)a[1]);
+    return (NTSTATUS)(ULONG)r;
+}
+static NTSTATUS WowAmThunk_NtUserGetCursorInfo(ULONG *a)
+{
+    extern ULONGLONG NtUserGetCursorInfo(ULONGLONG);
+    unsigned char b0[24] __attribute__((aligned(16)));
+    const unsigned char *g0 = (const unsigned char *)(ULONG_PTR)a[0];
+    ULONGLONG r;
+    (void)a;
+    if (g0) WowAmIn_tagCURSORINFO(g0, b0);
+    r = NtUserGetCursorInfo((g0 ? (ULONGLONG)(ULONG_PTR)b0 : 0));
+    if (g0) WowAmOut_tagCURSORINFO(b0, (unsigned char *)(ULONG_PTR)a[0]);
+    return (NTSTATUS)(ULONG)r;
+}
+static NTSTATUS WowAmThunk_NtUserGetGUIThreadInfo(ULONG *a)
+{
+    extern ULONGLONG NtUserGetGUIThreadInfo(ULONGLONG, ULONGLONG);
+    unsigned char b1[72] __attribute__((aligned(16)));
+    const unsigned char *g1 = (const unsigned char *)(ULONG_PTR)a[1];
+    ULONGLONG r;
+    (void)a;
+    if (g1) WowAmIn_tagGUITHREADINFO(g1, b1);
+    r = NtUserGetGUIThreadInfo((ULONGLONG)(LONGLONG)(LONG)a[0], (g1 ? (ULONGLONG)(ULONG_PTR)b1 : 0));
+    if (g1) WowAmOut_tagGUITHREADINFO(b1, (unsigned char *)(ULONG_PTR)a[1]);
+    return (NTSTATUS)(ULONG)r;
+}
+static NTSTATUS WowAmThunk_NtUserTrackMouseEvent(ULONG *a)
+{
+    extern ULONGLONG NtUserTrackMouseEvent(ULONGLONG);
+    unsigned char b0[24] __attribute__((aligned(16)));
+    const unsigned char *g0 = (const unsigned char *)(ULONG_PTR)a[0];
+    ULONGLONG r;
+    (void)a;
+    if (g0) WowAmIn_tagTRACKMOUSEEVENT(g0, b0);
+    r = NtUserTrackMouseEvent((g0 ? (ULONGLONG)(ULONG_PTR)b0 : 0));
+    if (g0) WowAmOut_tagTRACKMOUSEEVENT(b0, (unsigned char *)(ULONG_PTR)a[0]);
+    return (NTSTATUS)(ULONG)r;
+}
 
 NTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)
 {
     if (WowAmStrEq(Name, "NtUserChangeDisplaySettings"))
         return WowAmThunk_NtUserChangeDisplaySettings(Arguments);
+    if (WowAmStrEq(Name, "NtUserGetComboBoxInfo"))
+        return WowAmThunk_NtUserGetComboBoxInfo(Arguments);
+    if (WowAmStrEq(Name, "NtUserGetCursorInfo"))
+        return WowAmThunk_NtUserGetCursorInfo(Arguments);
+    if (WowAmStrEq(Name, "NtUserGetGUIThreadInfo"))
+        return WowAmThunk_NtUserGetGUIThreadInfo(Arguments);
+    if (WowAmStrEq(Name, "NtUserTrackMouseEvent"))
+        return WowAmThunk_NtUserTrackMouseEvent(Arguments);
     return WOW64_MANUAL_UNIMPL;
 }
 

@@ -991,6 +991,9 @@ class QemuVM:
         self.serial = SerialClient()
         self._proc: subprocess.Popen | None = None
         self._boot_output: str = ""
+        # Where each vCPU was parked when a boot timed out; filled by
+        # wait_for_boot, empty on every other outcome. See capture_cpu_state.
+        self.hang_cpu_state: str = ""
         self._watchdog: threading.Timer | None = None
         self._slot_fd: int | None = None
         self._slot_index: int | None = None
@@ -1480,6 +1483,17 @@ class QemuVM:
         except TimeoutError:
             # Save whatever serial output was captured before the timeout
             self._boot_output = self.serial.partial_output
+            # ...and, while the guest is still alive, where each vCPU is parked.
+            # Done HERE rather than at the call sites because every consumer of a
+            # hung boot reaches it through this one except: smoke's _one_boot, the
+            # pytest `vm` fixture that conformance shells out to, and farm. Wiring
+            # them individually would have left the conformance sweep — the very
+            # place the arm64 --smp 1 stall shows up — with no capture at all.
+            self.hang_cpu_state = self.capture_cpu_state()
+            try:
+                (self.work_dir / "hang-cpustate.txt").write_text(self.hang_cpu_state)
+            except OSError:
+                pass
             raise
 
         # Wait for desktop to come up (user-mode processes need time after
@@ -1543,6 +1557,34 @@ class QemuVM:
         if not path.exists():
             raise RuntimeError(f"screendump failed: {result}")
         return path
+
+    def capture_cpu_state(self) -> str:
+        """Where every vCPU is parked, straight from the QEMU monitor.
+
+        The only witness to a hang that prints nothing. A guest spinning in a
+        kernel spinlock — or wedged with its clock dead — does not block QEMU's
+        main loop, so the monitor still answers while the guest is stuck; that
+        asymmetry is what makes this work at all. Until this existed, both
+        backends ran with `-monitor none` and a wedged boot was killed without
+        ever being asked where it stopped, so every silent hang had to be
+        triaged from the serial tail alone.
+
+        `info cpus` no longer carries a PC (QEMU 5.0 replaced query-cpus with
+        query-cpus-fast, which dropped the field), so the PC comes from
+        `info registers -a` — the `-a` is what makes it cover every vCPU
+        instead of just the monitor's currently selected one.
+
+        Never raises: a diagnostic that can itself fail the run is worse than
+        no diagnostic, and this one runs on a path that is already failing.
+        """
+        chunks = []
+        for cmd in ("info status", "info cpus", "info registers -a"):
+            try:
+                body = self.qmp.hmp(cmd).strip()
+            except Exception as exc:  # QMP dead//timed out — say so, don't raise
+                body = f"<unavailable: {exc!r}>"
+            chunks.append(f"=== {cmd} ===\n{body}")
+        return "\n\n".join(chunks) + "\n"
 
     def read_debugcon(self) -> bytes:
         """Read raw debugcon (bochs debug port 0xE9) output."""

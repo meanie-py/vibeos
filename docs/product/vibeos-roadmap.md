@@ -479,6 +479,67 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **FIXED (E22, 2026-08-01): every 32-bit process silently lost the `cbSize`-validated USER32
+  APIs.** `TrackMouseEvent` (so no 32-bit app ever received `WM_MOUSELEAVE`/`WM_MOUSEHOVER`),
+  `GetCursorInfo`, `GetGUIThreadInfo`, `GetComboBoxInfo`, `GetMenuInfo` and `SendInput` (all
+  synthesized input) returned `FALSE`/`ERROR_INVALID_PARAMETER` under WoW64 and nowhere else.
+  Each struct states its own `sizeof` and win32k version-checks it against the **host** size,
+  so the call was refused before the payload was read — a *field-perfect* marshaller does not
+  help, which is why five of the six were waiting on a generator that copied `cbSize`
+  verbatim. `marshalgen` now emits a value-guarded size rewrite (`WowAmSizeIn`/`WowAmSizeOut`)
+  and `NtUserSendInput`, whose size is an argument rather than a field, is hand-written.
+  Audit baseline 209 → 203. Field manual: "A struct that carries its own `sizeof` is rejected
+  before a single field is read".
+- **OPEN (task #82): every error code win32k sets is invisible to a 32-bit guest.**
+  `win32k-rust/src/error.rs:38` — `EngSetLastError` writes `NtCurrentTeb()->LastErrorValue`,
+  which in kernel mode is the **64-bit** TEB, while a 32-bit guest reads `TEB32` at
+  `WowTebOffset`. win32k reports failure by setting last-error and returning FALSE, so a
+  32-bit app gets the FALSE and never the reason; apps that branch on the code
+  (`ERROR_CLASS_ALREADY_EXISTS`, `ERROR_NO_MORE_ITEMS` in an enumeration loop) misbehave.
+  `EngGetLastError` has the mirror problem. The whole USER/GDI surface; ntdll is unaffected
+  (NTSTATUS returns, converted by the guest's own ntdll32). Found by E22's unfixed-media
+  control run, which printed `TrackMouseEvent(TME_QUERY) failed, err = 0x00000000` on the
+  exact path where win32k had just set `ERROR_INVALID_PARAMETER`. Fix belongs in wow64.dll's
+  win32k dispatch (copy down after the call) but needs a decision on success-path semantics,
+  so it is NOT bundled into E22.
+- **OPEN: `NtUserGetMouseMovePointsEx` never fills its output buffer** (`win32k-rust/src/
+  ntmouse.rs`, `GMMP_USE_DISPLAY_POINTS`) — it probes `lpptOut` and returns `nBufPoints`
+  without writing a single point, so `GetMouseMovePointsEx` hands every caller an
+  uninitialized array. Pre-existing and **not** WoW64-specific; found while scoping E22, which
+  deliberately left the call unmarshalled rather than convert an honest failure into a
+  success with garbage. It stays on the marshalgen-audit baseline until the kernel side is
+  real (2 entries).
+- **FIXED (2026-08-01): the registry's `HIVE_*` flag family was open-coded and half wrong.**
+  `scan_mask_drift`'s first sweep found eight bare literals across five config-rust files, four
+  of them with the wrong value. `CmLoadKey` set `0x4` and `CmUnloadKey` set `0x40` for
+  `HIVE_IS_UNLOADING` (**0x20**); the two guards that consume it tested `0x4` (cmparse) and
+  `0x200` (cmkcbncb). Only the load-side set and the cmparse test agreed, *by coincidence*, so
+  the C's "don't resolve a key in a hive that is unloading" protection was inert on the unload
+  path — `CmpParseKey` and `CmpCreateKeyControlBlock` would happily open keys and build KCBs in
+  a hive mid-unload. `CmpLoadHiveThread` cleared `0x80` instead of `HIVE_NOLAZYFLUSH` (**0x2**),
+  so that hive stayed excluded from the lazy flusher permanently, and `cmdata`'s SAM entry was
+  tagged `0x8` (`HIVE_HAS_BEEN_FREED`) for the same flag. All eight now import one
+  `config_rust::hiveflags`. Field manual: "A hand-typed bit-flag literal that names the wrong
+  member".
+- **FIXED (E21, 2026-08-01): `NtOpenKey` denied every `KEY_WOW64_32KEY` open.** The Rust port
+  masked a bare `0x0100` where the C masks `KEY_WOW64_RES` (0x0300), so the 32KEY bit reached
+  `ObCheckObjectAccess` and came back `STATUS_ACCESS_DENIED` — while the identical
+  `RegCreateKeyEx`, which masks correctly, succeeded. Hit **native 64-bit** callers too (rapps,
+  `reg /reg:32`, apphelp), not only WoW64 guests. Proven by positive control: unfixed media
+  reported `wow64flags: KEY_WOW64_32KEY refused, status = 0xc0000022`; fixed media 9/9 ladder.
+  The same commit fixed two more in that file: `NtOpenKey` stored `*KeyHandle = NULL` **before**
+  any probe and only ever checked alignment, never the user/kernel boundary (kernel-mode write
+  to a caller-supplied address — the #67/#68 class), and `ProbeAndCaptureObjectAttributes`
+  open-coded `0x12F2` for `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), rejecting `OBJ_OPENLINK` /
+  `OBJ_FORCE_ACCESS_CHECK` (latent — every `NtLoadKey*` caller passes `OBJ_CASE_INSENSITIVE`
+  alone). Regression-guarded by marshal32 rung `CheckRegistryWow64Flags` (0xBAE7–0xBAEA), so
+  `smoke --ladder` now catches it. **This is NOT registry redirection** — Wow6432Node is still
+  entirely absent (task #66). Stripping the flags in the kernel is the correct interim
+  behaviour and is what the C intends: both registry views stay identical.
+- **FIXED (2026-08-01): i386 `KeFlushCurrentTb` under-flushed the TLB.** It dropped the C's
+  `KF_GLOBAL_PAGE` branch, so the CR4.PGE toggle never ran and global TLB entries survived
+  every flush — and `patpge.rs` does enable PGE. Found by the commented-C mask oracle with no
+  symptom to go on; amd64's C genuinely is CR3-only, so only the i386 copy had drifted.
 - **`msvcrt-difftest`'s `the_fd_layer_works_and_reports_length` is FLAKY under cargo's
   parallel test threads → spurious DIFFTEST_FAIL that convicts an innocent lane — NEW, OPEN**
   (2026-08-01). A shell32-com batch whose only delta was a **parked** `shlexec.rs` plus
@@ -1461,6 +1522,44 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   to a stack that `MmDeleteKernelStack` already released, the reaper/SwapBusy path is the
   target, not paging.
 
+  > ## CLOSED (2026-08-01): stale FreeLDR identity PTEs in recycled user page tables
+  >
+  > **Root cause.** FreeLDR's identity-mapped page-table *pages* get recycled as user-space page
+  > tables while still holding FreeLDR's own entries (VA==PA, global, EL1-only), and on ARM64
+  > TTBR0 **is** the user half. A freshly reserved user range therefore sits on valid-looking
+  > descriptors, so (a) the fault that should demand-page it never fires, and (b) teardown
+  > decodes the stale descriptor into a PFN that names no frame — VA `0x50000` → pte `0x50703`
+  > → PFN `0x50`, far below QEMU virt's `0x40000000` DRAM base. `MmDeleteRmap` then reports
+  > mapping-not-in-list, and `MmReleasePageMemoryConsumer(MC_USER, 0x50)` hands the allocator a
+  > frame that was **never allocated** — the deterministic corruption behind all four stop codes.
+  >
+  > Why arm64 only: amd64 carries the equivalent guard in `ARM3/sysldr.rs`
+  > (`#[cfg(target_arch = "x86_64")]`), whose comment describes this exact failure mode. 148 x86
+  > sweep rounds could not reproduce it.
+  >
+  > **Fix.** `MiPurgeStaleUserPtes` (`arm64/page.rs`), called from `MmCreateMemoryArea` — the one
+  > choke point every user VA reservation passes through, so VirtualAlloc and section views are
+  > covered together instead of path by path. Skips 2MB at a time when the PDE is absent, so the
+  > common case is not O(pages). Also restored the ARM64 block of `NtAllocateVirtualMemory` that
+  > the port had skipped behind an expired premise (field manual, "A deferral note outlives the
+  > premise that justified it") — correct on its own merits, though it does **not** cover the
+  > section-view path that this bug took.
+  >
+  > **Evidence.** `[MMGUARD] rmap.MmDeleteRmap mapping-not-in-list` fired once per run on every
+  > run across 3+ media builds; after the fix, **0 hits**, and `ZwMapViewOfSection` went
+  > **pass=121 fail=13 → pass=123 fail=11**. The extra passes are the independent corroboration:
+  > silencing a guard cannot make test assertions succeed. Ratchet holds, sweep 91/88 in 67s (no
+  > boot slowdown from the purge).
+  >
+  > **What cracked it** (method worth reusing): the raw descriptor. `Page` alone was ambiguous
+  > for days, and two intermediate readings were wrong — `balance.rs`'s `RMAP_IS_SEGMENT` bug was
+  > real but not this, and `valid()` is only bit 0 so it cannot distinguish a hardware descriptor
+  > from a software PTE. Logging `OldPte.Long` into the always-on flight recorder, keyed by VA,
+  > settled it in one boot. A probe gated on `pfn < MmLowestPhysicalPage` fired zero times and was
+  > **uninterpretable** — never use a probe whose silence has a hidden precondition.
+  >
+  > <details><summary>Original 2026-07-29 characterization (kept — the reasoning that got here)</summary>
+  >
   > ## ROOT CAUSE CANDIDATE FOUND (2026-07-29): `MmDeleteRmap` loses the mapping, on EVERY run
   >
   > **The arm64 blocker's crash face is not a flake. The corruption is deterministic; only its
@@ -1559,6 +1658,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   > into a parameter name by the translator), and the phys-vs-virt unmap branch is selected by
   > `FreePage.is_none()`, with the function pointers laundered through `usize` + transmute to
   > stop LLVM folding them — check that indirection still matches the C's intent.
+  >
+  > </details>
 
   **THE TRIGGER IS LOCALISED (2026-07-29, 21 rounds in 44 min): the process teardown between
   `ZwMapViewOfSection` and `ZwWaitForMultipleObjects`.** Three failing arm64 rounds, three

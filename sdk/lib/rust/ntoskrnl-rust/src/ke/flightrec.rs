@@ -53,6 +53,11 @@ pub const OP_LOCKDEP_ABBA: u32 = 33;
 // data = the PFN, truncated to the ring's 24 data bits.
 pub const OP_PAGE_MAP: u32 = 48;
 pub const OP_PAGE_UNMAP: u32 = 49;
+/// The RAW low 32 bits of the descriptor that OP_PAGE_UNMAP just swapped out,
+/// logged beside it. The PFN alone cannot say whether it came from a hardware
+/// descriptor or from a software PTE decoded with the hardware layout — and
+/// `valid()` is only bit 0, so it cannot settle that either.
+pub const OP_PAGE_PTE: u32 = 50;
 
 /// Link-time tap for crates below ntoskrnl-rust in the dep graph (ntkrnl-sys
 /// inlines can't `use` this crate — the dependency points the other way).
@@ -127,6 +132,7 @@ pub fn flightrec_op_name(op: u32) -> *const u8 {
         OP_LOCKDEP_ABBA => b"lockdep-abba\0".as_ptr(),
         OP_PAGE_MAP => b"page-map\0".as_ptr(),
         OP_PAGE_UNMAP => b"page-unmap\0".as_ptr(),
+        OP_PAGE_PTE => b"page-pte-raw\0".as_ptr(),
         _ => b"?\0".as_ptr(),
     }
 }

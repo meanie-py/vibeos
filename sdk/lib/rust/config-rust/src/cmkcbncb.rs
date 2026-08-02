@@ -675,7 +675,9 @@ pub unsafe extern "system" fn CmpCreateKeyControlBlock(
     let mut HashLock: u8;
     let mut p: *mut u16;
 
-    if (((*Hive).HiveFlags & 0x00000200) != 0) &&
+    // C: HiveFlags & HIVE_IS_UNLOADING (0x20). 0x200 is not a HiveFlags bit at all,
+    // so this guard never fired for any hive in any state.
+    if (((*Hive).HiveFlags & crate::hiveflags::HIVE_IS_UNLOADING) != 0) &&
         ((*(Hive as PCMHIVE)).CreatorOwner as *mut core::ffi::c_void != KeGetCurrentThread() as *mut core::ffi::c_void)
     {
         return core::ptr::null_mut();

@@ -1530,7 +1530,134 @@ them at all.
    both `-smp 1` and `-smp 2`, so it is not an SMP defect; it blocks the arm64 baseline seed and
    any trustworthy arm64 ratchet. First symbolicated kernel-side instance and the next
    distinguishing test are in the roadmap entry.
+   **CLOSED 2026-08-01** (`1266bb6c8477`) — stale FreeLDR identity PTEs in recycled user page
+   tables; `MiPurgeStaleUserPtes` at `MmCreateMemoryArea`. See the roadmap entry.
 2. **BUILD_INCOMPLETE** (roadmap) — instrumented, awaiting an occurrence to name itself.
+   **CLOSED** — root-caused as the post-main ninja-optional passes re-emitting shared cohab
+   staticlibs and stranding the main pass's binaries stale; fixed by a ninja-reaffirm pass.
 
 `ExHardError` is NO LONGER on this list: the failure count proves the LPC round-trip succeeds,
 so the six are the OS becoming more correct, and all three UP baselines now record 24/6.
+
+## arm64 re-measured post-page-reuse-fix (2026-08-01): one NEW blocker, and it is real
+
+With the page-reuse corruption gone the arm64 sweep is finally deterministic enough to seed and
+to reason about, so this is the first *trustworthy* arm64 collapse measurement. Three UP rounds
+on the merged tree: **91 launched / 88 ok / 3 bad**, and rounds 1 and 2 were byte-identical
+results files. The single varying row is `IoDeviceObject` (below).
+
+### The arm64 UP baseline was four days stale and under-ratcheting badly
+
+Re-seeded off that run. Nine rows moved, eight of them **up**. Split the movement before
+reading it (field manual, "A conformance score is not a defect count"): eight rows kept an
+unchanged `pass+fail` total — pure fail→pass redistribution — and **`CmSecurity` alone gained
+coverage, 389 → 910 assertions**, because it had been bailing early. Its failures fell 89 → 4
+across that same +521 of newly-reached ground, which is luck as much as merit: a test that gets
+further can just as easily surface new failures, and would then read as a regression while
+being an improvement. Note also that zero is not the target — many of these only pass cleanly
+on real Windows and stock ReactOS fails them too, so the counts below are a change detector
+against our own history, not a distance from correct:
+
+| test | was (2026-07-26) | now | note |
+|---|---|---|---|
+| `CmSecurity` | 300 / 89 | **906 / 4** | total assertions 391 → 910: it had been bailing early |
+| `IoInterrupt` | 937 / 158 | **1093 / 2** | the spinlock owner stamp — see below |
+| `KeGuardedMutex` | 1566 / 87 | **1653 / 0** | |
+| `FsRtlLegal` | 2496 / 32 | **2528 / 0** | |
+| `KeSpinLock` | 281 / 42 | **321 / 2** | |
+| `ExSingleList` | 201 / 51 | **240 / 12** | |
+| `ExDoubleList` | 110 / 36 | **130 / 16** | |
+| `ZwMapViewOfSection` | 120 / 14 | **123 / 11** | the page-reuse fix |
+| `IoDeviceObject` | 181 / 8 | **180 / 9** | LOWERED on purpose — bistable, see below |
+
+`IoDeviceObject` is the one lowering, and it is a bistable read of uninitialised memory rather
+than noise: `KmtGetPoolTag(ServiceKeyName.Buffer)` reads the POOL_HEADER in front of a pointer
+that is not a tagged pool allocation, so it returns `0x00000000` on some boots (which also fails
+the follow-on `KmtGetPoolType` check) and a garbage pointer-high-half on others (which passes it
+by luck). Eight of the nine failures are fully deterministic. Seating the floor at the worse
+value stops the arm64 ratchet reporting a phantom regression on 2 of every 3 runs; the honest
+fix is the arm64-only `IoDeviceObject` divergence (9 failures vs i386's 4 / amd64's 5).
+
+### `--smp 1` has TWO deltas, and only one of them is the documented MP-skip
+
+| delta | verdict |
+|---|---|
+| `KeEvent` 42733 → 42601 | the documented MP-skip. Expected. |
+| `IoInterrupt` 1093/2 → 937/158 | **not an SMP defect** — an upstream test gap. Explained below. |
+
+All 156 are one assertion, `IoInterrupt.c:42`, fired once per iteration:
+
+    *(TestContext->Interrupt->ActualLock) = 18446737476741476673, expected 1
+
+`0xfffffa00060fb141` is `KeGetCurrentThread() | 1` — the spinlock **owner stamp**, which
+`KI_TRACK_SPINLOCK_OWNER` writes on any checked build (upstream gates it on plain `#if DBG`,
+and `ntkrnl-sys inline/ke.rs` mirrors it under `feature = "dbg"`). The test's `CheckSpinLock`
+macro asks `KmtIsMultiProcessorBuild` FIRST and then demands `*Lock == 1` exactly; its
+checked-build branch (`*Lock != 0`) is only reachable when the MP test already failed. **There
+is no MP∧checked case**, so a correct DBG+SMP ReactOS kernel cannot pass it — upstream's own
+would fail identically.
+
+The kernel does the same thing under both kernels; only the test's expectation branch changes.
+Four independent data points fit, which is what makes this a conclusion rather than a story:
+
+| kernel | branch taken | `*Lock` holds | observed |
+|---|---|---|---|
+| pre-stamp UP | checked → "nonzero" | `0` | fails 156 ✓ arm64 937/158, amd64 939/156 |
+| pre-stamp MP | MP → "== 1" | `1` (interlocked bit) | passes ✓ amd64 smp2 1095/0 |
+| post-stamp UP | checked → "nonzero" | `thread\|1` | passes ✓ arm64 today 1093/2 |
+| post-stamp MP | MP → "== 1" | `thread\|1` | fails 156 ✓ arm64 today 937/158 |
+
+**Consequence worth acting on: all five x86 baselines are pre-stamp.** They were seeded
+2026-07-26; `cfdff72b41d` ("restore the spinlock owner STAMP — a checked build that behaved
+free") landed 2026-07-30. The next x86 sweep will therefore show a 156-assertion swing in *both*
+directions — UP improving, MP regressing — with no source change behind either. Re-seed i386
+and amd64 (UP + smp2) before reading anything into an x86 `IoInterrupt` delta. This is also the
+trap that nearly cost this analysis: comparing today's arm64 numbers against those stale x86
+baselines makes the delta look *inverted* by arch, which it is not.
+
+### THE new blocker: arm64 MP wedges at lsass, ~30% of boots, and UP never does
+
+Round 2 of 3 never reached the desktop. No BUGCHECK, no `[MMGUARD]`, no Rust panic — the serial
+simply stops after:
+
+    [SERVICES] ScmStartUserModeService(SamSs): waiting for connect
+
+A good round continues `connect result=0` → `START returned=0`. So SCM launched lsass and lsass
+never connected to its control pipe. (`CreateProcessW returned pid=0` and the
+`NtControlPipe0 (disposition=0)` line both appear on GOOD rounds too — neither is the anomaly.)
+
+The durable ledger (`~/vibeos-flake-farm/conformance.jsonl`, 430 records) makes the attribution
+clean, because the UP:=smp1 experiment holds the CPU count fixed at 1 and varies only the
+kernel/HAL pair. **Filter to rounds that actually booted first** — see the classifier caveat
+below, without which every number here is wrong:
+
+| arch | smp | booted | clean | `B:no-launch` | stalled | bugcheck | 1s non-runs |
+|---|---|---|---|---|---|---|---|
+| arm64 | **0 (UP)** | 28 | **28** | **0** | **0** | **0** | 1 |
+| arm64 | **1 (MP)** | 126 | 88 | **14** | 11 | 13 | 46 |
+| arm64 | 2 (MP) | 2 | 2 | 0 | 0 | 0 | 0 |
+| amd64 | 0 (UP) | 14 | 14 | 0 | 0 | 0 | 0 |
+| amd64 | 2 (MP) | 63 | 59 | 4 | 0 | 0 | 0 |
+| i386 | 0 (UP) | 22 | 20 | 0 | 0 | 2 | 0 |
+| i386 | 2 (MP) | 130 | 130 | 0 | 0 | 0 | 0 |
+
+**arm64 UP is 28/28 clean; arm64 MP fails 38 of 126 booted rounds (~30%), across three faces.**
+The 13 bugchecks were the page-reuse faces and should now go to zero, which leaves
+`B:no-launch` (14) and `stalled` (11) as the live MP-only failures. 13 of the 14 `B:no-launch`
+are pre-fix (2026-07-29); today's is the first post-fix one, so the post-fix rate is one
+occurrence, **not** a measured rate — do not quote 1-in-3 as a frequency off n=3.
+
+**Classifier caveat that changes every number: `shape` is derived from `launched == 0`, so it
+lumps "the kernel never booted" together with "the harness never ran".** 46 of arm64's 92
+`-smp 1` records have `elapsed_s` of 1 (or −1) — instant aborts, the `SMOKE_NO_SUMMARY` face,
+not kernel failures at all. Taking `B:no-launch` at face value gives 52 and an apparent 41%
+lsass-wedge rate; the real figure is 14 and ~11%. **Discriminate on `elapsed_s > 60` before
+reading this ledger**, and note the separate historical face-B (roadmap) that *reached the
+desktop* and then swept nothing for 87 minutes — a third thing again, also filed under `B:`.
+Teaching the classifier to split these three is owed.
+
+**This blocks the `DefaultOS` flip on arm64** — and it is squarely an MP-kernel defect, not
+media, not CPU count, not the page-reuse bug. Next step is a repro loop that keeps the serial
+per round (`--repeat` overwrites `qemu/arm64_smoke_live.log`): the wedge is silent, so the
+discriminator is *where* lsass stops, which needs lsass-side markers or a debugger attach at
+the pipe connect, compared against a UP round's lsass trace that completes.

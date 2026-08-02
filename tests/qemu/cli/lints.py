@@ -451,6 +451,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Registry hives the livecd stages into system32\config but the arm64 ramdisk does
+    # not. The two media are assembled by unrelated machinery (add_cd_file vs a hand-
+    # written mkramdisk.sh), so they drift, and the drift is SILENT BY CONSTRUCTION: a
+    # hive that fails to open is not an error, it is fabricated — CmpLinkHiveToMaster
+    # conjures an empty volatile one whose root takes CmpHiveRootSecurityDescriptor().
+    # arm64 booted with an empty SAM for months and read as *more* correct than x86,
+    # because the fabricated descriptor is exactly what the CmSecurity kmtest expects,
+    # which sent the investigation at the wrong arch. Static, free, and it names the
+    # missing hive. Baseline EMPTY.
+    sbm = repo / "tools" / "scan_boot_media_drift.py"
+    specs.append(
+        (
+            "scan_boot_media_drift",
+            [py, str(sbm), "--lint"] if sbm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (
@@ -505,6 +522,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # the NAMES agreeing. Only a whole-tree read catches it. Resolves aliases to a
     # width and reports only two KNOWN widths in one arch bucket; unresolvable RHS and
     # `#[cfg]`-gated pairs are skipped rather than guessed at (§9.113b's lesson).
+    # The oracle-FREE sibling of scan_inline_flag_literals: rustconv keeps the
+    # original C as trailing comments, so `X &= ~NAME` in the C with no live
+    # `!NAME` is a mask this file said it would apply and then didn't. Needs no
+    # header and no C build — a `verify_constants` catalog miss cannot hide a
+    # finding, which is how the 18 of 2026-07-24 hid. It found E21 unprompted
+    # (NtOpenKey masked 0x0100 where the C masks KEY_WOW64_RES = 0x0300 → every
+    # KEY_WOW64_32KEY open in the OS returned ACCESS_DENIED), i386
+    # KeFlushCurrentTb having lost its whole CR4.PGE branch, and then four wrong
+    # HIVE_* bits in config-rust where CmUnloadKey set 0x40 while CmpParseKey
+    # tested 0x4 — a guard against touching an unloading hive that could not fire.
+    # Baseline holds the DROPPED/OPENCODED residue (a dropped mask is often a
+    # deliberate reimplementation); MISMATCH is currently ZERO tree-wide and a new
+    # one is a value bug by construction. `--self-test` proves it still detects
+    # all four historical bugs — run it if you touch the patterns.
+    smd = repo / "tools" / "scan_mask_drift.py"
+    specs.append(
+        (
+            "scan_mask_drift",
+            [py, str(smd), "--lint"] if smd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     stac = repo / "tools" / "scan_type_alias_contradictions.py"
     specs.append(
         (

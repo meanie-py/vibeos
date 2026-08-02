@@ -659,7 +659,86 @@ _ALIAS_BAD_B = "type VBO = LARGE_INTEGER;\n"
 _ALIAS_GOOD_A = "pub type VBO = ULONG32;\n" + _ALIAS_FP
 _ALIAS_GOOD_B = "use crate::types::VBO;\n"
 
+# scan_mask_drift. Seeded from E21 (2026-08-01): NtOpenKey masked a bare 0x0100
+# where the C masks ~KEY_WOW64_RES (0x0300), so KEY_WOW64_32KEY reached the object
+# access check and every RegOpenKeyEx asking for it got ACCESS_DENIED — while the
+# identical RegCreateKeyEx, which masks correctly, succeeded. The BAD fixture also
+# carries the second shape from the same hunt: i386 KeFlushCurrentTb dropped its
+# whole CR4.PGE branch, so there is no live mask of that target at all.
+#
+# The GOOD case pins the false positives an earlier version of this scanner
+# reported, every one of which cost a hand-audit:
+#   * the live spelling is usually `&= !(NAME as ULONG)`, not a bare `!NAME`;
+#   * translation re-cases locals, so the C's `Cr4` is the Rust's `cr4`;
+#   * a literal that MATCHES its named constant is correct, merely unnamed;
+#   * `~` over a bare literal names no constant to check.
+# It also pins the trap that made counting occurrences unusable: a fix's own
+# explanatory comment QUOTES the C, so the C statement appears twice while the
+# live code masks once. That must stay silent.
+_MASKDRIFT_BAD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    let mut DesiredAccess = DesiredAccess & !0x0100u32;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr3 = readcr3();
+    writecr3(cr3);
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+"""
+_MASKDRIFT_GOOD = """\
+const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+const CR4_PGE: ULONG = 0x00000080;
+const MEM_EXECUTE_OPTION_VALID_FLAGS: u32 = 0x3F;
+
+pub unsafe fn NtOpenKey(DesiredAccess: u32) -> u32 {
+    // C: `DesiredAccess &= ~KEY_WOW64_RES;` — quoted here on purpose. An
+    // occurrence-counting rule reads this as a second C mask and reports a drop.
+    let mut DesiredAccess = DesiredAccess & !KEY_WOW64_RES;
+    DesiredAccess
+}
+
+pub unsafe fn KeFlushCurrentTb() {
+    let cr4: ULONG = readcr4();
+    writecr4(cr4 & !CR4_PGE);
+}
+
+pub unsafe fn DC_vPrepareDCsForBlit(dc: &mut DC) {
+    dc.flags &= !(DC_DIRTY_RAO as ULONG);
+}
+
+pub unsafe fn MiValidateExecuteOptions(ExecuteOptions: u32) -> bool {
+    (ExecuteOptions & !MEM_EXECUTE_OPTION_VALID_FLAGS) != 0
+}
+
+pub unsafe fn MiAlignDown(Address: usize) -> usize {
+    Address & !0xFFF
+}
+
+//     DesiredAccess &= ~KEY_WOW64_RES;
+//     Cr4 = __readcr4();
+//     __writecr4(Cr4 & ~CR4_PGE);
+//     pdc->flags &= ~DC_DIRTY_RAO;
+//     if (ExecuteOptions & ~MEM_EXECUTE_OPTION_VALID_FLAGS)
+//     Address &= ~0xFFF;
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_mask_drift",
+        script="tools/scan_mask_drift.py",
+        argv=["--lint"],
+        bad={"ntapi.rs": _MASKDRIFT_BAD},
+        good={"ntapi.rs": _MASKDRIFT_GOOD},
+        pass_files=True,
+    ),
     Control(
         name="scan_type_alias_contradictions",
         script="tools/scan_type_alias_contradictions.py",
@@ -813,6 +892,14 @@ UNCOVERED: dict[str, str] = {
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    # Audits a PAIR of specific named files (--cmake / --ramdisk), not a tree, so the
+    # fixture-dir driver above cannot express it. Controls are the same shape and live
+    # in tests/qemu/cli/test_cli_units.py::test_boot_media_drift_* (5 tests): positive
+    # = the real #71 bug, a hive on the livecd and absent from the ramdisk; negatives =
+    # both media agreeing, and the BCD hive staged to efi/boot which it must NOT demand.
+    # It also self-checks for the dead-matcher failure this file exists to prevent: an
+    # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
+    "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",
