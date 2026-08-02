@@ -15,7 +15,8 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // filter-context opt-in was 0x40 (real value 0x02) and the file object's
 // extension bit was 0x20, i.e. FO_SEQUENTIAL_ONLY. A caller that DID support
 // filter contexts was refused, and one that did not could get through.
-const FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS: u32 = 0x02;
+// u8, not u32: FSRTL_ADVANCED_FCB_HEADER.Flags2 is a UCHAR.
+const FSRTL_FLAG2_SUPPORTS_FILTER_CONTEXTS: u8 = 0x02;
 const FO_FILE_OBJECT_HAS_EXTENSION: u32 = 0x00800000;
 
 type FAST_MUTEX = _FAST_MUTEX;
