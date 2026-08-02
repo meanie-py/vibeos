@@ -87,4 +87,10 @@ BOOL WINAPI GetStringTypeW(DWORD type, const wchar_t *src, int count, WORD *char
 int WINAPI WideCharToMultiByte(UINT page, DWORD flags, const wchar_t *src, int srclen,
                                char *dst, int dstlen, const char *defchar, BOOL *used);
 
+/* The narrow twin, which ctype.c calls and this header did not declare — so it
+ * was an implicit `int()` for as long as `-w` kept the tripwire quiet.  Harmless
+ * only because it returns BOOL; its pointer-returning neighbours were not.
+ * Defined in refimpl.c beside GetStringTypeW. */
+BOOL WINAPI GetStringTypeExA(LCID lcid, DWORD type, const char *src, int len, WORD *out);
+
 #endif /* __WINE_WINNLS_H */

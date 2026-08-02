@@ -137,6 +137,12 @@ CONSTANTS: dict[str, list[str]] = {
         "_IONBF",
     ],
     "stdio / io.h": [
+        # msvcrt's BUFSIZ is 512; glibc's is 8192.  `setbuf` is literally
+        # `setvbuf(file, buf, buf ? _IOFBF : _IONBF, BUFSIZ)`, so a reference TU
+        # that took glibc's sized every setbuf'd stream 16x too large and every
+        # graded row over it compared 512 against 8192.  Same shape as _IONBF
+        # above, and found the same way: by a row that finally reached it.
+        "BUFSIZ",
         "TMP_MAX_S",
         "STDIN_FILENO",
         "STDOUT_FILENO",
@@ -281,6 +287,8 @@ CONSTANTS: dict[str, list[str]] = {
 # every other errno row kept passing — the §9.66 shape exactly.  Deriving them
 # from msvcrt's own headers and displacing glibc's is what makes that impossible.
 DISPLACE = {
+    # glibc 8192 vs msvcrt 512 — see the stdio/io.h group above.
+    "BUFSIZ",
     # glibc numbers these 0/1/2 and msvcrt 0x0000/0x0040/0x0004. The clash that
     # matters is _IONBF: msvcrt.h aliases MSVCRT__NOBUF to it below _MSVCR_VER 140,
     # and glibc's 2 collides bit-for-bit with _IOWRT.

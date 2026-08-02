@@ -1963,9 +1963,13 @@ pub unsafe extern "C" fn _fstat64(fd: i32, buf: *mut _stat64) -> i32 {
             release_ioinfo(info);
             return -1;
         }
-        (*buf).st_mode = (_S_IFREG | 0444) as u16;
+        // 0o444 / 0o222, NOT 0444 / 0222. The C is octal; Rust reads a leading zero as
+        // part of a DECIMAL literal, so the original translation shipped 444|222 = 0o776
+        // where msvcrt reports 0o666 — the execute bits set on every regular file, on all
+        // three arches. Caught by wave 18b's first _fstat64 row.
+        (*buf).st_mode = (_S_IFREG | 0o444) as u16;
         if (basic_info.FileAttributes & FILE_ATTRIBUTE_READONLY) == 0 {
-            (*buf).st_mode |= 0222 as u16;
+            (*buf).st_mode |= 0o222 as u16;
         }
         (*buf).st_size = std_info.EndOfFile.QuadPart;
         RtlTimeToSecondsSince1970(&basic_info.LastAccessTime as *const _ as *mut LARGE_INTEGER, &mut dw);

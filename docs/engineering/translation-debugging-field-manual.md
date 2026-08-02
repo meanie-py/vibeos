@@ -2677,6 +2677,20 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
   private header. **Audit the whole block against the SDK, not just the one that got caught**
   (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
+- **A shim that DISCARDS an input argument makes that argument ungradeable, and every row
+  over it is vacuous.** msvcrt-difftest's `CreateFileW` had `(void)share;` and ignored
+  `dwFlagsAndAttributes`. Both are inputs Win32 acts on and POSIX has no equivalent for, so
+  dropping them looked reasonable — except that mapping `_SH_DENY*` onto `dwShareMode` is the
+  *entire* reason `_fsopen`/`_wfsopen`/`_sopen_s`/`_wsopen_s` exist as separate exports, and
+  `FILE_ATTRIBUTE_READONLY` is the *only* observable consequence of `_umask`. Delete either
+  mapping and every row still opens the file, returns the same descriptor, and leaves the same
+  bytes on disk. Two fixes, and which one applies differs: where the host CAN model the
+  effect, model it (`FILE_ATTRIBUTE_READONLY` on create → `fchmod`); where it genuinely
+  cannot, **record the argument and export a getter**, so the row compares what each side
+  ASKED FOR and the mapping stops being invisible. The recording is one definition serving
+  both sides, so read it immediately after each side's call, never once at the end. Same
+  family as the `_wctomb_s_l` stub above, reached from the opposite direction: not an error
+  that never happens, an argument that never matters.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
