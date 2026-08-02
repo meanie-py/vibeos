@@ -1,6 +1,14 @@
 #![no_builtins]
-// Wave 18a — grade `msvcrt-crt-rust/src/msvcrt/file.rs` against the GENUINE
+// Waves 18a and 18b — grade `msvcrt-crt-rust/src/msvcrt/file.rs` against the GENUINE
 // `dll/win32/msvcrt/file.c` it replaces.
+//
+// 18a took the narrow fd and stream layers. 18b takes what that left: the entire UTF-16
+// door, the nine-export stat family, the 64-bit positioning twins, descriptor plumbing
+// (`_dup2`, `_pipe`, the fd↔HANDLE pair, `_locking`, `_umask`), the wide stream
+// characters, and `setvbuf`/`_filbuf`/`_flsbuf` — the buffer selection every other stream
+// call goes through. Each section carries its own banner explaining what makes it
+// separable and, where something is NOT separable, saying so instead of implying coverage
+// it does not have.
 //
 // file.c's 189 exports went live in msvcrt.dll ahead of any host oracle: the flip was
 // gated by a link, `scan_ud2`, and three boots. Those catch what they catch — a missing
@@ -86,9 +94,6 @@ extern "C" {
     fn _filelength(fd: c_int) -> i32;
     fn _filelengthi64(fd: c_int) -> i64;
     fn _dup(od: c_int) -> c_int;
-    // `_dup2` is deliberately absent: it REPLACES a descriptor rather than allocating
-    // one, so a row over it has to keep both sides' tables in step by hand and
-    // `balanced()` cannot help. It is on wave 18b's list with the rest.
     fn _commit(fd: c_int) -> c_int;
     fn _chsize(fd: c_int, size: i32) -> c_int;
     fn _setmode(fd: c_int, mode: c_int) -> c_int;
@@ -161,6 +166,179 @@ extern "C" {
     fn ref__unlink(path: *const u8) -> c_int;
     fn ref__access(path: *const u8, mode: c_int) -> c_int;
 
+    // ══ wave 18b ══════════════════════════════════════════════════════════════════════
+    //
+    // `wchar_t` and `wint_t` are BOTH `unsigned short` here — msvcrt's, and the reference
+    // TU's too since it is compiled `-fshort-wchar`. Spelling them `u16` rather than
+    // importing a typedef is deliberate: a host `wchar_t` is 32 bits, and a declaration
+    // that picked the host's width would pass half a string and grade the wreckage.
+    //
+    // The stat buffers are `*mut c_void`. The four structs (`_stat`, `_stat64`,
+    // `_stati64`, and the 32/64 hybrids) differ only in the width of three fields, the
+    // rows compare them as BYTES including padding, and a Rust mirror of each would be a
+    // second opinion about a layout `refstub/msvcrt_crt_layout.h` already pins.
+
+    // ── the SUBJECT ───────────────────────────────────────────────────────────────────
+    fn _wfopen(path: *const u16, mode: *const u16) -> FILEP;
+    fn _wfopen_s(pfile: *mut FILEP, path: *const u16, mode: *const u16) -> c_int;
+    fn _wfsopen(path: *const u16, mode: *const u16, share: c_int) -> FILEP;
+    fn _wfreopen(path: *const u16, mode: *const u16, f: FILEP) -> FILEP;
+    fn _wfreopen_s(pf: *mut FILEP, path: *const u16, mode: *const u16, f: FILEP) -> c_int;
+    fn _wsopen_s(
+        fd: *mut c_int,
+        path: *const u16,
+        oflags: c_int,
+        shflags: c_int,
+        pmode: c_int,
+    ) -> c_int;
+    fn _wcreat(path: *const u16, pmode: c_int) -> c_int;
+    fn _wfdopen(fd: c_int, mode: *const u16) -> FILEP;
+    fn _wremove(path: *const u16) -> c_int;
+    fn _wunlink(path: *const u16) -> c_int;
+    fn _wrename(old: *const u16, new: *const u16) -> c_int;
+    fn _waccess(path: *const u16, mode: c_int) -> c_int;
+    fn _waccess_s(path: *const u16, mode: c_int) -> c_int;
+    fn _wchmod(path: *const u16, flags: c_int) -> c_int;
+
+    fn _fsopen(path: *const u8, mode: *const u8, share: c_int) -> FILEP;
+    fn freopen(path: *const u8, mode: *const u8, f: FILEP) -> FILEP;
+    fn freopen_s(pf: *mut FILEP, path: *const u8, mode: *const u8, f: FILEP) -> c_int;
+    fn _sopen_s(
+        fd: *mut c_int,
+        path: *const u8,
+        oflags: c_int,
+        shflags: c_int,
+        pmode: c_int,
+    ) -> c_int;
+    fn _creat(path: *const u8, pmode: c_int) -> c_int;
+    fn _chmod(path: *const u8, flags: c_int) -> c_int;
+    fn _access_s(path: *const u8, mode: c_int) -> c_int;
+    fn _fdopen(fd: c_int, mode: *const u8) -> FILEP;
+
+    fn _stat(path: *const u8, buf: *mut c_void) -> c_int;
+    fn _stat64(path: *const u8, buf: *mut c_void) -> c_int;
+    fn _stati64(path: *const u8, buf: *mut c_void) -> c_int;
+    fn _wstat(path: *const u16, buf: *mut c_void) -> c_int;
+    fn _wstat64(path: *const u16, buf: *mut c_void) -> c_int;
+    fn _wstati64(path: *const u16, buf: *mut c_void) -> c_int;
+    fn _fstat(fd: c_int, buf: *mut c_void) -> c_int;
+    fn _fstat64(fd: c_int, buf: *mut c_void) -> c_int;
+    fn _fstati64(fd: c_int, buf: *mut c_void) -> c_int;
+
+    fn _fseeki64(f: FILEP, off: i64, whence: c_int) -> c_int;
+    fn _ftelli64(f: FILEP) -> i64;
+    fn _telli64(fd: c_int) -> i64;
+    fn fgetpos(f: FILEP, pos: *mut i64) -> c_int;
+    fn fsetpos(f: FILEP, pos: *mut i64) -> c_int;
+
+    fn _dup2(od: c_int, nd: c_int) -> c_int;
+    fn _get_osfhandle(fd: c_int) -> isize;
+    fn _open_osfhandle(h: isize, oflags: c_int) -> c_int;
+    fn _pipe(pfds: *mut c_int, size: u32, textmode: c_int) -> c_int;
+    fn _locking(fd: c_int, mode: c_int, nbytes: i32) -> c_int;
+    fn _umask(mask: c_int) -> c_int;
+    fn _chsize_s(fd: c_int, size: i64) -> c_int;
+
+    fn fgetwc(f: FILEP) -> u16;
+    fn getwc(f: FILEP) -> u16;
+    fn fputwc(wc: u16, f: FILEP) -> u16;
+    fn fgetws(s: *mut u16, size: c_int, f: FILEP) -> *mut u16;
+    fn fputws(s: *const u16, f: FILEP) -> c_int;
+    fn ungetwc(wc: u16, f: FILEP) -> u16;
+
+    fn setvbuf(f: FILEP, buf: *mut u8, mode: c_int, size: usize) -> c_int;
+    fn setbuf(f: FILEP, buf: *mut u8);
+    fn _filbuf(f: FILEP) -> c_int;
+    fn _flsbuf(c: c_int, f: FILEP) -> c_int;
+    fn getc(f: FILEP) -> c_int;
+    fn putc(c: c_int, f: FILEP) -> c_int;
+    fn _getw(f: FILEP) -> c_int;
+    fn _putw(v: c_int, f: FILEP) -> c_int;
+    fn clearerr_s(f: FILEP) -> c_int;
+
+    // ── the REFERENCE ─────────────────────────────────────────────────────────────────
+    fn ref__wfopen(path: *const u16, mode: *const u16) -> FILEP;
+    fn ref__wfopen_s(pfile: *mut FILEP, path: *const u16, mode: *const u16) -> c_int;
+    fn ref__wfsopen(path: *const u16, mode: *const u16, share: c_int) -> FILEP;
+    fn ref__wfreopen(path: *const u16, mode: *const u16, f: FILEP) -> FILEP;
+    fn ref__wfreopen_s(
+        pf: *mut FILEP,
+        path: *const u16,
+        mode: *const u16,
+        f: FILEP,
+    ) -> c_int;
+    fn ref__wsopen_s(
+        fd: *mut c_int,
+        path: *const u16,
+        oflags: c_int,
+        shflags: c_int,
+        pmode: c_int,
+    ) -> c_int;
+    fn ref__wcreat(path: *const u16, pmode: c_int) -> c_int;
+    fn ref__wfdopen(fd: c_int, mode: *const u16) -> FILEP;
+    fn ref__wremove(path: *const u16) -> c_int;
+    fn ref__wunlink(path: *const u16) -> c_int;
+    fn ref__wrename(old: *const u16, new: *const u16) -> c_int;
+    fn ref__waccess(path: *const u16, mode: c_int) -> c_int;
+    fn ref__waccess_s(path: *const u16, mode: c_int) -> c_int;
+    fn ref__wchmod(path: *const u16, flags: c_int) -> c_int;
+
+    fn ref__fsopen(path: *const u8, mode: *const u8, share: c_int) -> FILEP;
+    fn ref_freopen(path: *const u8, mode: *const u8, f: FILEP) -> FILEP;
+    fn ref_freopen_s(pf: *mut FILEP, path: *const u8, mode: *const u8, f: FILEP) -> c_int;
+    fn ref__sopen_s(
+        fd: *mut c_int,
+        path: *const u8,
+        oflags: c_int,
+        shflags: c_int,
+        pmode: c_int,
+    ) -> c_int;
+    fn ref__creat(path: *const u8, pmode: c_int) -> c_int;
+    fn ref__chmod(path: *const u8, flags: c_int) -> c_int;
+    fn ref__access_s(path: *const u8, mode: c_int) -> c_int;
+    fn ref__fdopen(fd: c_int, mode: *const u8) -> FILEP;
+
+    fn ref__stat(path: *const u8, buf: *mut c_void) -> c_int;
+    fn ref__stat64(path: *const u8, buf: *mut c_void) -> c_int;
+    fn ref__stati64(path: *const u8, buf: *mut c_void) -> c_int;
+    fn ref__wstat(path: *const u16, buf: *mut c_void) -> c_int;
+    fn ref__wstat64(path: *const u16, buf: *mut c_void) -> c_int;
+    fn ref__wstati64(path: *const u16, buf: *mut c_void) -> c_int;
+    fn ref__fstat(fd: c_int, buf: *mut c_void) -> c_int;
+    fn ref__fstat64(fd: c_int, buf: *mut c_void) -> c_int;
+    fn ref__fstati64(fd: c_int, buf: *mut c_void) -> c_int;
+
+    fn ref__fseeki64(f: FILEP, off: i64, whence: c_int) -> c_int;
+    fn ref__ftelli64(f: FILEP) -> i64;
+    fn ref__telli64(fd: c_int) -> i64;
+    fn ref_fgetpos(f: FILEP, pos: *mut i64) -> c_int;
+    fn ref_fsetpos(f: FILEP, pos: *mut i64) -> c_int;
+
+    fn ref__dup2(od: c_int, nd: c_int) -> c_int;
+    fn ref__get_osfhandle(fd: c_int) -> isize;
+    fn ref__open_osfhandle(h: isize, oflags: c_int) -> c_int;
+    fn ref__pipe(pfds: *mut c_int, size: u32, textmode: c_int) -> c_int;
+    fn ref__locking(fd: c_int, mode: c_int, nbytes: i32) -> c_int;
+    fn ref__umask(mask: c_int) -> c_int;
+    fn ref__chsize_s(fd: c_int, size: i64) -> c_int;
+
+    fn ref_fgetwc(f: FILEP) -> u16;
+    fn ref_getwc(f: FILEP) -> u16;
+    fn ref_fputwc(wc: u16, f: FILEP) -> u16;
+    fn ref_fgetws(s: *mut u16, size: c_int, f: FILEP) -> *mut u16;
+    fn ref_fputws(s: *const u16, f: FILEP) -> c_int;
+    fn ref_ungetwc(wc: u16, f: FILEP) -> u16;
+
+    fn ref_setvbuf(f: FILEP, buf: *mut u8, mode: c_int, size: usize) -> c_int;
+    fn ref_setbuf(f: FILEP, buf: *mut u8);
+    fn ref__filbuf(f: FILEP) -> c_int;
+    fn ref__flsbuf(c: c_int, f: FILEP) -> c_int;
+    fn ref_getc(f: FILEP) -> c_int;
+    fn ref_putc(c: c_int, f: FILEP) -> c_int;
+    fn ref__getw(f: FILEP) -> c_int;
+    fn ref__putw(v: c_int, f: FILEP) -> c_int;
+    fn ref_clearerr_s(f: FILEP) -> c_int;
+
     // ── the two sides' observable state ───────────────────────────────────────────────
     fn subj_errno_get() -> c_int;
     fn subj_errno_set(v: c_int);
@@ -179,6 +357,14 @@ extern "C" {
     /// sides or not at all: half of a compared field is just a row that always diverges,
     /// which is what it was until this declaration existed.
     fn msvcrt_ref___doserrno() -> *mut u32;
+
+    /// The `dwShareMode` the last `CreateFileW` was asked for (fileimpl.c).
+    ///
+    /// ONE definition serving both sides, so it has to be read immediately after each
+    /// side's call rather than once at the end. That is the whole trick: Windows share
+    /// modes have no POSIX behaviour to observe, so without this the `_SH_DENY*` mapping
+    /// — the only thing distinguishing `_fsopen` from `fopen` — would be ungradeable.
+    fn ref_get_last_share_mode() -> u32;
 }
 
 // msvcrt's own <fcntl.h> / <io.h> values, derived by the pinned cross-compiler
@@ -200,6 +386,38 @@ const SEEK_END: c_int = 2;
 
 /// `_access` modes. 0 = exists, 2 = write, 4 = read, 6 = both.
 const ACCESS_MODES: [c_int; 4] = [0, 2, 4, 6];
+
+// ── wave 18b's additions, from the same header and for the same reason ────────────────
+const O_EXCL: c_int = 0x0400;
+const O_NOINHERIT: c_int = 0x0080;
+
+/// `_SH_DENYNO` / `_SH_DENYRD` / `_SH_DENYWR` / `_SH_DENYRW`.
+///
+/// Nothing on POSIX ENFORCES a share mode, so the substrate cannot make one observable by
+/// behaving differently. What it can do is record the `dwShareMode` each side asked
+/// `CreateFileW` for — see `ref_get_last_share_mode` — which turns the `_SH_DENY*`
+/// mapping into something a row can compare. The rows grade the REQUEST, not its
+/// enforcement, and say so.
+const SHARE_MODES: [c_int; 4] = [0x0040, 0x0030, 0x0020, 0x0010];
+
+const S_IWRITE: c_int = 0x0080;
+const S_IREAD: c_int = 0x0100;
+
+const LK_UNLCK: c_int = 0;
+const LK_LOCK: c_int = 1;
+const LK_RLCK: c_int = 3;
+
+/// `setvbuf` modes. `_IONBF` is 4 here, not glibc's 2 — msvcrt aliases it to `MSVCRT__NOBUF`
+/// at `_MSVCR_VER < 140`, which is the version this DLL is built at.
+const IOFBF: c_int = 0;
+const IOLBF: c_int = 0x0040;
+const IONBF: c_int = 4;
+
+/// `wint_t` is 16 bits in msvcrt, so its EOF is `0xFFFF` and not `-1`. Getting this wrong
+/// is silent: the comparison simply never fires and every wide row grades as if the stream
+/// never ended.
+const WEOF: u16 = 0xFFFF;
+const CEOF: c_int = -1;
 
 // ══════════════════════════════════════════════════════════════════════════════════════
 // The oracle
@@ -515,6 +733,82 @@ impl World {
     fn disk(&self) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
         (std::fs::read(&self.sp).ok(), std::fs::read(&self.rp).ok())
     }
+    /// The same two paths as msvcrt's 16-bit `wchar_t`, for the `_w*` rows.
+    fn ws(&self) -> Vec<u16> {
+        wpath(&self.sc)
+    }
+    fn wr(&self) -> Vec<u16> {
+        wpath(&self.rc)
+    }
+    /// Whether each side's file is read-only, as the HOST sees it — the observation the
+    /// `_chmod`/`_wchmod` rows turn on. Read through `std::fs` for the same reason the
+    /// contents are: an implementation that reports its own permission bits back to itself
+    /// passes over a filesystem where it never changed anything.
+    fn readonly(&self) -> (Option<bool>, Option<bool>) {
+        let ro = |p: &PathBuf| std::fs::metadata(p).ok().map(|m| m.permissions().readonly());
+        (ro(&self.sp), ro(&self.rp))
+    }
+}
+
+/// ONE file, read by BOTH sides.
+///
+/// The read-only rows — `_stat` and its eight relatives — compare a `struct _stat64` whose
+/// `st_atime`/`st_mtime`/`st_ctime` come from the filesystem, and `_fstat64` additionally
+/// reports `st_dev`/`st_rdev` as the fd number. Two files created microseconds apart carry
+/// different timestamps, so a `World` would make every one of those rows diverge on fields
+/// neither implementation computes. Nothing in these rows writes, so one file is the
+/// honest fixture — and the fd numbers still agree, because `balanced()` keeps the two
+/// tables in step.
+struct Shared {
+    c: CString,
+    p: PathBuf,
+}
+
+impl Shared {
+    fn new(tag: &str, seed: &[u8]) -> Shared {
+        let (c, p) = tmp_path(tag);
+        std::fs::write(&p, seed).unwrap();
+        Shared { c, p }
+    }
+    fn absent(tag: &str) -> Shared {
+        let (c, p) = tmp_path(tag);
+        Shared { c, p }
+    }
+    fn n(&self) -> *const u8 {
+        self.c.as_ptr() as *const u8
+    }
+    fn w(&self) -> Vec<u16> {
+        wpath(&self.c)
+    }
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.p);
+    }
+}
+
+/// A path as msvcrt's 16-bit `wchar_t`, NUL-terminated.
+///
+/// The widening is byte-for-byte, which is exact for ASCII and wrong for anything else — a
+/// real ANSI→UTF-16 conversion this is not. So it is ASSERTED rather than assumed: this
+/// harness is entitled to require an ASCII temp directory, but it is not entitled to hand
+/// the wide entry points a mangled path and grade the wreckage against the narrow rows.
+fn wpath(c: &CString) -> Vec<u16> {
+    let b = c.to_bytes();
+    assert!(
+        b.is_ascii(),
+        "temp path {:?} is not ASCII — wpath()'s byte widening is not a real ANSI->UTF-16 \
+         conversion, so the wide rows would run over a different path than the narrow ones. \
+         Point TMPDIR at an ASCII path.",
+        String::from_utf8_lossy(b)
+    );
+    b.iter().map(|&x| x as u16).chain(core::iter::once(0)).collect()
+}
+
+/// A narrow mode string (`b"rb\0"`) as its wide twin, NUL included.
+fn wmode(m: &[u8]) -> Vec<u16> {
+    m.iter().map(|&x| x as u16).collect()
 }
 
 impl Drop for World {
@@ -688,7 +982,9 @@ fn main() {
 
     let res = unsafe { &*core::ptr::addr_of!(RESULTS) };
     let (mut m, mut d, mut u) = (0, 0, 0);
-    println!("\n=== wave 18a: msvcrt-crt-rust file.rs (SHIPPING) vs GENUINE msvcrt file.c ===\n");
+    println!(
+        "\n=== wave 18a+b: msvcrt-crt-rust file.rs (SHIPPING) vs GENUINE msvcrt file.c ===\n"
+    );
     for r in res {
         let tag = match r.v {
             V::Match => {
@@ -766,6 +1062,30 @@ unsafe fn assert_shims_live() {
     assert_eq!(fclose(a), 0);
     assert_eq!(ref_fclose(b2), 0);
 
+    // Wave 18b brought a second batch of names glibc also exports — `getc`, `setvbuf`,
+    // `freopen`, `fgetpos`, `fgetwc`. They bind through the same mechanism `fopen` just
+    // demonstrated, but "the same mechanism" is an inference, and not inferring is this
+    // function's entire job. `getc` is the discriminator: handed a msvcrt `FILE*`, glibc's
+    // would read msvcrt's `_ptr` field as `_IO_FILE`'s flags and answer nonsense.
+    // Run on BOTH sides, and that is not symmetry for its own sake. `getc` fills the
+    // stream's buffer, and `_bufsiz` is slot state that `fopen` does NOT reset — it is
+    // whatever the previous tenant left. Doing this to the subject alone left slot 3
+    // carrying 4096 on one side and 0 on the other, and the next three rows to reach that
+    // slot (`fopen`, `fopen_s`, `fread` — all wave 18a, all previously green) diverged on
+    // a field none of them was about.
+    let h = fopen(c.as_ptr() as *const u8, b"rb\0".as_ptr());
+    let h2 = ref_fopen(c.as_ptr() as *const u8, b"rb\0".as_ptr());
+    assert!(!h.is_null() && !h2.is_null(), "fopen could not reopen the fixture");
+    assert_eq!(
+        getc(h),
+        b'v' as c_int,
+        "`getc` did not read the first byte of a msvcrt FILE* — it is glibc's, and every \
+         wave 18b row that calls an unprefixed name is grading the host libc"
+    );
+    assert_eq!(ref_getc(h2), b'v' as c_int);
+    assert_eq!(fclose(h), 0);
+    assert_eq!(ref_fclose(h2), 0);
+
     let _ = std::fs::remove_file(&p);
 }
 
@@ -773,6 +1093,14 @@ unsafe fn run() {
     fd_layer_rows();
     stream_rows();
     path_rows();
+    // ── wave 18b ──────────────────────────────────────────────────────────────────────
+    wide_path_rows();
+    narrow_open_rows();
+    stat_rows();
+    position_rows();
+    fd_plumbing_rows();
+    wide_stream_rows();
+    buffering_rows();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -1835,6 +2163,2092 @@ unsafe fn path_rows() {
             Obs::with(g, Vec::new()),
             Obs::with(n, Vec::new()),
             format!("exists={exists} mode={mode}"),
+            tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — the wide path
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Wave 18a graded the narrow entry points and nothing else, which left msvcrt's ENTIRE
+// UTF-16 door ungraded: `_wfopen`, `_wsopen_s`, `_wrename`, `_wstat64` and their nine
+// relatives went live in msvcrt.dll with a link and three boots behind them, exactly as
+// the narrow ones did. That matters more here than it looks, because the wide path is not
+// a thin shim over the narrow one — it is the OTHER WAY ROUND. msvcrt implements the wide
+// call and reaches Win32's `*W` directly; the narrow entry points are the ones that
+// convert (`wstrdupa_utf8`) and delegate. So the wide side is where the real bodies live,
+// and until this section every one of them was covered only by its narrow caller.
+//
+// The row shapes are deliberately the same as their narrow twins — same corpus, same
+// tags, same disk comparison. A wide row that diverges where its narrow twin matches is
+// then a statement about the conversion, not about the fixture.
+
+/// Wide rows that walk a string a character at a time do real I/O per character, so they
+/// run fewer cases than the scalar rows. The `require` tags, not the count, are what
+/// assert the interesting branches ran.
+const WIDE_ITERS: usize = 120;
+
+unsafe fn wide_path_rows() {
+    // `_wfopen` — the wide `fopen`, across the mode matrix and both existence cases.
+    grade("_wfopen", &["ok", "fail", "created"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(24);
+        let w = if exists { World::new("wfopen", &seed) } else { World::absent("wfopen") };
+        let mode = wmode(MODES[r.below(MODES.len())]);
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _wfopen(sw.as_ptr(), mode.as_ptr());
+            !sf.is_null() as i64
+        });
+        let n = Effects::reference(|| {
+            rf = ref__wfopen(rw.as_ptr(), mode.as_ptr());
+            !rf.is_null() as i64
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![
+            if n.ret == 1 { "ok" } else { "fail" },
+            if !exists && n.ret == 1 { "created" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_wfopen_s` — the `_s` shell, including the NULL out-pointer the handler must catch.
+    grade("_wfopen_s", &["ok", "fail", "nullout"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("wfopens", &seed) } else { World::absent("wfopens") };
+        let mode = wmode(MODES[r.below(MODES.len())]);
+        let nullout = r.below(8) == 0;
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let sp = if nullout { core::ptr::null_mut() } else { &mut sf as *mut FILEP };
+        let rp = if nullout { core::ptr::null_mut() } else { &mut rf as *mut FILEP };
+        let g = Effects::subject(|| _wfopen_s(sp, sw.as_ptr(), mode.as_ptr()) as i64);
+        let n = Effects::reference(|| ref__wfopen_s(rp, rw.as_ptr(), mode.as_ptr()) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if nullout {
+            "nullout"
+        } else if n.ret == 0 {
+            "ok"
+        } else {
+            "fail"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} nullout={nullout}"),
+            tags,
+        )
+    });
+
+    // `_wfsopen` — `_wfopen` plus a share mode, which is the only thing that makes it a
+    // separate export. The mode is compared as the `dwShareMode` each side ASKED FOR,
+    // read straight back out of the shim; nothing here enforces sharing, and a row that
+    // pretended otherwise would be claiming coverage the substrate cannot provide.
+    grade("_wfsopen", &["ok", "fail"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("wfsopen", &seed) } else { World::absent("wfsopen") };
+        let mode = wmode(MODES[r.below(MODES.len())]);
+        let share = SHARE_MODES[r.below(SHARE_MODES.len())];
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _wfsopen(sw.as_ptr(), mode.as_ptr(), share);
+            !sf.is_null() as i64
+        });
+        let sshare = ref_get_last_share_mode();
+        let n = Effects::reference(|| {
+            rf = ref__wfsopen(rw.as_ptr(), mode.as_ptr(), share);
+            !rf.is_null() as i64
+        });
+        let rshare = ref_get_last_share_mode();
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        gi.extend_from_slice(&sshare.to_le_bytes());
+        ni.extend_from_slice(&rshare.to_le_bytes());
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if n.ret == 1 { "ok" } else { "fail" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} share={share:#x}"),
+            tags,
+        )
+    });
+
+    // `_wfreopen` — the interesting part is the FAILURE path: msvcrt closes the incoming
+    // stream whether or not the new path opens, so a row that only tested success would
+    // leave the "did it free the FILE" question — and with it every later row's stream
+    // numbering — completely unexamined.
+    grade("_wfreopen", &["ok", "fail"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("wfreopA", &seed);
+        let dest_exists = r.below(3) != 0;
+        let d = if dest_exists {
+            World::new("wfreopB", &seed)
+        } else {
+            World::absent("wfreopB")
+        };
+        let mode = wmode(MODES[r.below(MODES.len())]);
+        let (dw_s, dw_r) = (d.ws(), d.wr());
+
+        let sf0 = fopen(w.s(), b"rb\0".as_ptr());
+        let rf0 = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _wfreopen(dw_s.as_ptr(), mode.as_ptr(), sf0);
+            !sf.is_null() as i64
+        });
+        let n = Effects::reference(|| {
+            rf = ref__wfreopen(dw_r.as_ptr(), mode.as_ptr(), rf0);
+            !rf.is_null() as i64
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = d.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if n.ret == 1 { "ok" } else { "fail" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("dest_exists={dest_exists}"),
+            tags,
+        )
+    });
+
+    // `_wfreopen_s` — four NULL guards, each of which must fire the handler and return
+    // EINVAL rather than dereference.
+    grade("_wfreopen_s", &["ok", "fail", "guard"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("wfreopsA", &seed);
+        // See the narrow twin: an absent destination opened for READING is the only route
+        // into the failure arm, because every "w"/"a" mode creates it.
+        let dest_exists = r.below(3) != 0;
+        let d =
+            if dest_exists { World::new("wfreopsB", &seed) } else { World::absent("wfreopsB") };
+        let mode = wmode(if dest_exists { MODES[r.below(MODES.len())] } else { b"rb\0" });
+        // 0 = no guard, 1 = NULL out, 2 = NULL path, 3 = NULL mode, 4 = NULL stream.
+        let guard = if r.below(3) == 0 { 1 + r.below(4) } else { 0 };
+        let (dw_s, dw_r) = (d.ws(), d.wr());
+        let null_w: *const u16 = core::ptr::null();
+
+        let sf0 = fopen(w.s(), b"rb\0".as_ptr());
+        let rf0 = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let sp = if guard == 1 { core::ptr::null_mut() } else { &mut sf as *mut FILEP };
+        let rp = if guard == 1 { core::ptr::null_mut() } else { &mut rf as *mut FILEP };
+        let (spath, rpath) = if guard == 2 {
+            (null_w, null_w)
+        } else {
+            (dw_s.as_ptr(), dw_r.as_ptr())
+        };
+        let pmode = if guard == 3 { null_w } else { mode.as_ptr() };
+        let (sin, rin) = if guard == 4 {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (sf0, rf0)
+        };
+
+        let g = Effects::subject(|| _wfreopen_s(sp, spath, pmode, sin) as i64);
+        let n = Effects::reference(|| ref__wfreopen_s(rp, rpath, pmode, rin) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        // A guard that fired left the INCOMING streams open — nothing consumed them.
+        if guard != 0 {
+            if !sf0.is_null() {
+                fclose(sf0);
+            }
+            if !rf0.is_null() {
+                ref_fclose(rf0);
+            }
+        }
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = d.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if guard != 0 {
+            "guard"
+        } else if n.ret == 0 {
+            "ok"
+        } else {
+            "fail"
+        }];
+        (Obs::with(g, gi), Obs::with(n, ni), format!("guard={guard}"), tags)
+    });
+
+    // `_wsopen_s` — the whole oflag matrix through the SECURE dispatcher, whose two extra
+    // guards (NULL fd out-pointer; a `pmode` carrying bits outside `_S_IREAD|_S_IWRITE`
+    // when `_O_CREAT` is set) exist only on this path and are unreachable from `_wopen`.
+    grade("_wsopen_s", &["ok", "fail", "nullfd", "badpmode"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("wsopens", &seed) } else { World::absent("wsopens") };
+        let flags = gen_oflags(r) | (if r.below(6) == 0 { O_EXCL } else { 0 });
+        let share = SHARE_MODES[r.below(SHARE_MODES.len())];
+        let nullfd = r.below(10) == 0;
+        let badpmode = r.below(6) == 0;
+        let pmode = if badpmode { S_IREAD | 0x4000 } else { S_IREAD | S_IWRITE };
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let (mut sfd, mut rfd) = (-1, -1);
+        let sp = if nullfd { core::ptr::null_mut() } else { &mut sfd as *mut c_int };
+        let rp = if nullfd { core::ptr::null_mut() } else { &mut rfd as *mut c_int };
+        let g = Effects::subject(|| _wsopen_s(sp, sw.as_ptr(), flags, share, pmode) as i64);
+        let sshare = ref_get_last_share_mode();
+        let n =
+            Effects::reference(|| ref__wsopen_s(rp, rw.as_ptr(), flags, share, pmode) as i64);
+        let rshare = ref_get_last_share_mode();
+        let mut gi = fd_state_subject(sfd);
+        let mut ni = fd_state_reference(rfd);
+        gi.extend_from_slice(&sshare.to_le_bytes());
+        ni.extend_from_slice(&rshare.to_le_bytes());
+        if sfd >= 0 {
+            _close(sfd);
+        }
+        if rfd >= 0 {
+            ref__close(rfd);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![
+            if nullfd {
+                "nullfd"
+            } else if badpmode && (flags & O_CREAT) != 0 {
+                "badpmode"
+            } else if n.ret == 0 {
+                "ok"
+            } else {
+                "fail"
+            },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} flags={flags:#x} pmode={pmode:#x} nullfd={nullfd}"),
+            tags,
+        )
+    });
+
+    // `_wcreat` — `_wopen` with `_O_CREAT|_O_TRUNC|_O_RDWR` baked in. The truncation is
+    // the observable part: over an existing file the contents must be GONE.
+    grade("_wcreat", &["created", "truncated"], ROW_ITERS, |r| {
+        let exists = r.below(2) == 0;
+        let seed = r.bytes_from(1, 16);
+        let w = if exists { World::new("wcreat", &seed) } else { World::absent("wcreat") };
+        let pmode = if r.below(2) == 0 { S_IREAD | S_IWRITE } else { S_IWRITE };
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let g = Effects::subject(|| _wcreat(sw.as_ptr(), pmode) as i64);
+        let n = Effects::reference(|| ref__wcreat(rw.as_ptr(), pmode) as i64);
+        let (mut gi, mut ni) = (fd_state_subject(g.ret as c_int), fd_state_reference(n.ret as c_int));
+        if g.ret >= 0 {
+            _close(g.ret as c_int);
+        }
+        if n.ret >= 0 {
+            ref__close(n.ret as c_int);
+        }
+        // _wcreat can leave the file read-only; make it removable again on every host.
+        make_writable(&[&w.sp, &w.rp]);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if exists { "truncated" } else { "created" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} pmode={pmode:#x}"),
+            tags,
+        )
+    });
+
+    // `_wfdopen` — wrap an existing descriptor in a FILE. The failure arm matters for the
+    // bookkeeping as much as for the answer: on failure the caller still owns the fd, and
+    // a row that closed it only on success would drift the two tables apart.
+    grade("_wfdopen", &["ok", "badfd", "badmode"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("wfdopen", &seed);
+        let bad = r.below(6) == 0;
+        let badmode = r.below(6) == 0;
+        let mode = if badmode { wmode(b"q\0") } else { wmode(MODES[r.below(MODES.len())]) };
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDWR | O_BINARY), ref__open(w.r(), O_RDWR | O_BINARY))
+        };
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _wfdopen(sfd, mode.as_ptr());
+            !sf.is_null() as i64
+        });
+        let n = Effects::reference(|| {
+            rf = ref__wfdopen(rfd, mode.as_ptr());
+            !rf.is_null() as i64
+        });
+        let gi = stream_state_subject(sf);
+        let ni = stream_state_reference(rf);
+        // fclose consumes the fd; if the wrap failed the fd is still ours to close.
+        if !sf.is_null() {
+            fclose(sf);
+        } else if !bad {
+            _close(sfd);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        } else if !bad {
+            ref__close(rfd);
+        }
+        let tags = vec![if bad {
+            "badfd"
+        } else if badmode {
+            "badmode"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("bad={bad} badmode={badmode}"),
+            tags,
+        )
+    });
+
+    // `_wremove` / `_wunlink` — `_wremove` IS `_wunlink` in file.c, graded separately so
+    // that staying the same answer is a checked property rather than an assumption.
+    for (name, subj, refn) in [
+        (
+            "_wremove",
+            _wremove as unsafe extern "C" fn(*const u16) -> c_int,
+            ref__wremove as unsafe extern "C" fn(*const u16) -> c_int,
+        ),
+        ("_wunlink", _wunlink, ref__wunlink),
+    ] {
+        grade(name, &["ok", "enoent"], ROW_ITERS, |r| {
+            let exists = r.below(3) != 0;
+            let seed = r.bytes_upto(16);
+            let w = if exists { World::new("wrm", &seed) } else { World::absent("wrm") };
+            let (sw, rw) = (w.ws(), w.wr());
+            let g = Effects::subject(|| subj(sw.as_ptr()) as i64);
+            let n = Effects::reference(|| refn(rw.as_ptr()) as i64);
+            let (sd, rd) = w.disk();
+            let (mut gi, mut ni) = (Vec::new(), Vec::new());
+            push_disk(&mut gi, sd);
+            push_disk(&mut ni, rd);
+            let tags = vec![if n.ret == 0 { "ok" } else { "enoent" }];
+            (Obs::with(g, gi), Obs::with(n, ni), format!("exists={exists}"), tags)
+        });
+    }
+
+    // `_wrename` — same three cases as the narrow `rename`, including the destination
+    // that already exists, which Win32 refuses where POSIX would overwrite.
+    grade("_wrename", &["ok", "enoent", "dest-exists"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let dest_exists = r.below(3) == 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("wren", &seed) } else { World::absent("wren") };
+        let d = World::new("wrendst", if dest_exists { b"x" } else { b"" });
+        if !dest_exists {
+            let _ = std::fs::remove_file(&d.sp);
+            let _ = std::fs::remove_file(&d.rp);
+        }
+        let (sw, rw, dsw, drw) = (w.ws(), w.wr(), d.ws(), d.wr());
+
+        let g = Effects::subject(|| _wrename(sw.as_ptr(), dsw.as_ptr()) as i64);
+        let n = Effects::reference(|| ref__wrename(rw.as_ptr(), drw.as_ptr()) as i64);
+        let (sd, rd) = w.disk();
+        let (sd2, rd2) = d.disk();
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        push_disk(&mut gi, sd);
+        push_disk(&mut gi, sd2);
+        push_disk(&mut ni, rd);
+        push_disk(&mut ni, rd2);
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "enoent" },
+            if dest_exists { "dest-exists" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} dest_exists={dest_exists}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_waccess` — the wide `_access`. This is the body; the narrow one delegates here.
+    grade("_waccess", &["ok", "enoent", "readonly"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(8);
+        let w = if exists { World::new("wacc", &seed) } else { World::absent("wacc") };
+        let readonly = exists && r.below(3) == 0;
+        if readonly {
+            set_readonly(&[&w.sp, &w.rp]);
+        }
+        let mode = ACCESS_MODES[r.below(ACCESS_MODES.len())];
+        let (sw, rw) = (w.ws(), w.wr());
+        let g = Effects::subject(|| _waccess(sw.as_ptr(), mode) as i64);
+        let n = Effects::reference(|| ref__waccess(rw.as_ptr(), mode) as i64);
+        make_writable(&[&w.sp, &w.rp]);
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "enoent" },
+            if readonly { "readonly" } else { "" },
+        ];
+        (
+            Obs::with(g, Vec::new()),
+            Obs::with(n, Vec::new()),
+            format!("exists={exists} readonly={readonly} mode={mode}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_waccess_s` / `_access_s` — two guards each, and both RETURN `*_errno()` rather
+    // than a literal, so the row is as much about the errno slot as about the answer.
+    grade("_waccess_s", &["ok", "enoent", "nullpath", "badmode"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(8);
+        let w = if exists { World::new("waccs", &seed) } else { World::absent("waccs") };
+        let nullpath = r.below(8) == 0;
+        let badmode = r.below(6) == 0;
+        let mode = if badmode { 1 } else { ACCESS_MODES[r.below(ACCESS_MODES.len())] };
+        let (sw, rw) = (w.ws(), w.wr());
+        let null_w: *const u16 = core::ptr::null();
+        let (sp, rp) = if nullpath { (null_w, null_w) } else { (sw.as_ptr(), rw.as_ptr()) };
+        let g = Effects::subject(|| _waccess_s(sp, mode) as i64);
+        let n = Effects::reference(|| ref__waccess_s(rp, mode) as i64);
+        let tags = vec![if nullpath {
+            "nullpath"
+        } else if badmode {
+            "badmode"
+        } else if n.ret == 0 {
+            "ok"
+        } else {
+            "enoent"
+        }];
+        (
+            Obs::with(g, Vec::new()),
+            Obs::with(n, Vec::new()),
+            format!("exists={exists} nullpath={nullpath} mode={mode}"),
+            tags,
+        )
+    });
+
+    // `_wchmod` — the only row whose answer lives in the filesystem's permission bits
+    // rather than in a return value, so it is read back through `std::fs`, out of process,
+    // exactly like the file contents everywhere else in this suite.
+    grade("_wchmod", &["readonly", "writable", "enoent"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(8);
+        let w = if exists { World::new("wchmod", &seed) } else { World::absent("wchmod") };
+        let readonly = r.below(2) == 0;
+        let flags = if readonly { S_IREAD } else { S_IREAD | S_IWRITE };
+        let (sw, rw) = (w.ws(), w.wr());
+
+        let g = Effects::subject(|| _wchmod(sw.as_ptr(), flags) as i64);
+        let n = Effects::reference(|| ref__wchmod(rw.as_ptr(), flags) as i64);
+        let (sro, rro) = w.readonly();
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.push(ro_byte(sro));
+        ni.push(ro_byte(rro));
+        make_writable(&[&w.sp, &w.rp]);
+        let tags = vec![if !exists {
+            "enoent"
+        } else if readonly {
+            "readonly"
+        } else {
+            "writable"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} readonly={readonly}"),
+            tags,
+        )
+    });
+}
+
+/// Read-only-ness as one image byte. `None` (no such file) gets a marker distinct from
+/// both booleans — "the call deleted it" and "the call left it writable" are different
+/// answers.
+fn ro_byte(v: Option<bool>) -> u8 {
+    match v {
+        None => 0xDE,
+        Some(true) => 1,
+        Some(false) => 0,
+    }
+}
+
+/// Clear the read-only bit so the fixture can be removed. `_wcreat`/`_chmod` rows can
+/// leave a file the harness would otherwise leak on hosts where the bit blocks removal.
+fn make_writable(paths: &[&PathBuf]) {
+    for p in paths {
+        if let Ok(m) = std::fs::metadata(p) {
+            let mut perm = m.permissions();
+            perm.set_readonly(false);
+            let _ = std::fs::set_permissions(p, perm);
+        }
+    }
+}
+
+fn set_readonly(paths: &[&PathBuf]) {
+    for p in paths {
+        if let Ok(m) = std::fs::metadata(p) {
+            let mut perm = m.permissions();
+            perm.set_readonly(true);
+            let _ = std::fs::set_permissions(p, perm);
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — the narrow openers wave 18a did not reach
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// These are the `A` twins of the section above. Each one converts its path and delegates
+// to the wide body already graded, so what these rows add is exactly the conversion and
+// the delegation — which is where a narrow-only bug would have to live.
+
+unsafe fn narrow_open_rows() {
+    // `_fsopen` — `fopen` plus a share mode.
+    grade("_fsopen", &["ok", "fail"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("fsopen", &seed) } else { World::absent("fsopen") };
+        let mode = MODES[r.below(MODES.len())];
+        let share = SHARE_MODES[r.below(SHARE_MODES.len())];
+
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _fsopen(w.s(), mode.as_ptr(), share);
+            !sf.is_null() as i64
+        });
+        let sshare = ref_get_last_share_mode();
+        let n = Effects::reference(|| {
+            rf = ref__fsopen(w.r(), mode.as_ptr(), share);
+            !rf.is_null() as i64
+        });
+        let rshare = ref_get_last_share_mode();
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        gi.extend_from_slice(&sshare.to_le_bytes());
+        ni.extend_from_slice(&rshare.to_le_bytes());
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if n.ret == 1 { "ok" } else { "fail" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} share={share:#x}"),
+            tags,
+        )
+    });
+
+    // `freopen` — including the failure arm, which still consumes the incoming stream.
+    grade("freopen", &["ok", "fail"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("freopA", &seed);
+        let dest_exists = r.below(3) != 0;
+        let d = if dest_exists { World::new("freopB", &seed) } else { World::absent("freopB") };
+        let mode = MODES[r.below(MODES.len())];
+
+        let sf0 = fopen(w.s(), b"rb\0".as_ptr());
+        let rf0 = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = freopen(d.s(), mode.as_ptr(), sf0);
+            !sf.is_null() as i64
+        });
+        let n = Effects::reference(|| {
+            rf = ref_freopen(d.r(), mode.as_ptr(), rf0);
+            !rf.is_null() as i64
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = d.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if n.ret == 1 { "ok" } else { "fail" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("dest_exists={dest_exists}"),
+            tags,
+        )
+    });
+
+    // `freopen_s` — the four NULL guards.
+    grade("freopen_s", &["ok", "fail", "guard"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("freopsA", &seed);
+        // A destination that does not exist, opened for READING, is the only way into the
+        // failure arm — every "w"/"a" mode creates it. Without both halves the row's
+        // `fail` tag names a branch the fuzz cannot enter, which is an UNEXERCISED and
+        // not a pass.
+        let dest_exists = r.below(3) != 0;
+        let d = if dest_exists { World::new("freopsB", &seed) } else { World::absent("freopsB") };
+        let mode: &[u8] = if dest_exists { MODES[r.below(MODES.len())] } else { b"rb\0" };
+        let guard = if r.below(3) == 0 { 1 + r.below(4) } else { 0 };
+        let null_a: *const u8 = core::ptr::null();
+
+        let sf0 = fopen(w.s(), b"rb\0".as_ptr());
+        let rf0 = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let sp = if guard == 1 { core::ptr::null_mut() } else { &mut sf as *mut FILEP };
+        let rp = if guard == 1 { core::ptr::null_mut() } else { &mut rf as *mut FILEP };
+        let (spath, rpath) = if guard == 2 { (null_a, null_a) } else { (d.s(), d.r()) };
+        let pmode = if guard == 3 { null_a } else { mode.as_ptr() };
+        let (sin, rin) = if guard == 4 {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (sf0, rf0)
+        };
+
+        let g = Effects::subject(|| freopen_s(sp, spath, pmode, sin) as i64);
+        let n = Effects::reference(|| ref_freopen_s(rp, rpath, pmode, rin) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        if guard != 0 {
+            if !sf0.is_null() {
+                fclose(sf0);
+            }
+            if !rf0.is_null() {
+                ref_fclose(rf0);
+            }
+        }
+        if !sf.is_null() {
+            fclose(sf);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        }
+        let (sd, rd) = d.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if guard != 0 {
+            "guard"
+        } else if n.ret == 0 {
+            "ok"
+        } else {
+            "fail"
+        }];
+        (Obs::with(g, gi), Obs::with(n, ni), format!("guard={guard}"), tags)
+    });
+
+    // `_sopen_s` — the secure dispatcher's two extra guards, narrow side.
+    grade("_sopen_s", &["ok", "fail", "nullfd", "badpmode"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(16);
+        let w = if exists { World::new("sopens", &seed) } else { World::absent("sopens") };
+        let flags = gen_oflags(r) | (if r.below(6) == 0 { O_EXCL } else { 0 });
+        let share = SHARE_MODES[r.below(SHARE_MODES.len())];
+        let nullfd = r.below(10) == 0;
+        let badpmode = r.below(6) == 0;
+        let pmode = if badpmode { S_IREAD | 0x4000 } else { S_IREAD | S_IWRITE };
+
+        let (mut sfd, mut rfd) = (-1, -1);
+        let sp = if nullfd { core::ptr::null_mut() } else { &mut sfd as *mut c_int };
+        let rp = if nullfd { core::ptr::null_mut() } else { &mut rfd as *mut c_int };
+        let g = Effects::subject(|| _sopen_s(sp, w.s(), flags, share, pmode) as i64);
+        let sshare = ref_get_last_share_mode();
+        let n = Effects::reference(|| ref__sopen_s(rp, w.r(), flags, share, pmode) as i64);
+        let rshare = ref_get_last_share_mode();
+        let mut gi = fd_state_subject(sfd);
+        let mut ni = fd_state_reference(rfd);
+        gi.extend_from_slice(&sshare.to_le_bytes());
+        ni.extend_from_slice(&rshare.to_le_bytes());
+        if sfd >= 0 {
+            _close(sfd);
+        }
+        if rfd >= 0 {
+            ref__close(rfd);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![
+            if nullfd {
+                "nullfd"
+            } else if badpmode && (flags & O_CREAT) != 0 {
+                "badpmode"
+            } else if n.ret == 0 {
+                "ok"
+            } else {
+                "fail"
+            },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} flags={flags:#x} nullfd={nullfd}"),
+            tags,
+        )
+    });
+
+    // `_creat` — truncation over an existing file is the observable part.
+    grade("_creat", &["created", "truncated"], ROW_ITERS, |r| {
+        let exists = r.below(2) == 0;
+        let seed = r.bytes_from(1, 16);
+        let w = if exists { World::new("creat", &seed) } else { World::absent("creat") };
+        let pmode = if r.below(2) == 0 { S_IREAD | S_IWRITE } else { S_IWRITE };
+
+        let g = Effects::subject(|| _creat(w.s(), pmode) as i64);
+        let n = Effects::reference(|| ref__creat(w.r(), pmode) as i64);
+        let (mut gi, mut ni) =
+            (fd_state_subject(g.ret as c_int), fd_state_reference(n.ret as c_int));
+        if g.ret >= 0 {
+            _close(g.ret as c_int);
+        }
+        if n.ret >= 0 {
+            ref__close(n.ret as c_int);
+        }
+        make_writable(&[&w.sp, &w.rp]);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if exists { "truncated" } else { "created" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} pmode={pmode:#x}"),
+            tags,
+        )
+    });
+
+    // `_chmod` — read back out of process, like its wide twin.
+    grade("_chmod", &["readonly", "writable", "enoent"], ROW_ITERS, |r| {
+        let exists = r.below(4) != 0;
+        let seed = r.bytes_upto(8);
+        let w = if exists { World::new("chmod", &seed) } else { World::absent("chmod") };
+        let readonly = r.below(2) == 0;
+        let flags = if readonly { S_IREAD } else { S_IREAD | S_IWRITE };
+
+        let g = Effects::subject(|| _chmod(w.s(), flags) as i64);
+        let n = Effects::reference(|| ref__chmod(w.r(), flags) as i64);
+        let (sro, rro) = w.readonly();
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.push(ro_byte(sro));
+        ni.push(ro_byte(rro));
+        make_writable(&[&w.sp, &w.rp]);
+        let tags = vec![if !exists {
+            "enoent"
+        } else if readonly {
+            "readonly"
+        } else {
+            "writable"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("exists={exists} readonly={readonly}"),
+            tags,
+        )
+    });
+
+    // `_access_s` — the narrow twin of the `_waccess_s` guards.
+    grade("_access_s", &["ok", "enoent", "nullpath", "badmode"], ROW_ITERS, |r| {
+        let exists = r.below(3) != 0;
+        let seed = r.bytes_upto(8);
+        let w = if exists { World::new("accs", &seed) } else { World::absent("accs") };
+        let nullpath = r.below(8) == 0;
+        let badmode = r.below(6) == 0;
+        let mode = if badmode { 1 } else { ACCESS_MODES[r.below(ACCESS_MODES.len())] };
+        let null_a: *const u8 = core::ptr::null();
+        let (sp, rp) = if nullpath { (null_a, null_a) } else { (w.s(), w.r()) };
+        let g = Effects::subject(|| _access_s(sp, mode) as i64);
+        let n = Effects::reference(|| ref__access_s(rp, mode) as i64);
+        let tags = vec![if nullpath {
+            "nullpath"
+        } else if badmode {
+            "badmode"
+        } else if n.ret == 0 {
+            "ok"
+        } else {
+            "enoent"
+        }];
+        (
+            Obs::with(g, Vec::new()),
+            Obs::with(n, Vec::new()),
+            format!("exists={exists} nullpath={nullpath} mode={mode}"),
+            tags,
+        )
+    });
+
+    // `_fdopen` — narrow twin of `_wfdopen`, same fd-ownership rule on the failure arm.
+    grade("_fdopen", &["ok", "badfd", "badmode"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 16);
+        let w = World::new("fdopen", &seed);
+        let bad = r.below(6) == 0;
+        let badmode = r.below(6) == 0;
+        let mode: &[u8] = if badmode { b"q\0" } else { MODES[r.below(MODES.len())] };
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDWR | O_BINARY), ref__open(w.r(), O_RDWR | O_BINARY))
+        };
+        let mut sf: FILEP = core::ptr::null_mut();
+        let mut rf: FILEP = core::ptr::null_mut();
+        let g = Effects::subject(|| {
+            sf = _fdopen(sfd, mode.as_ptr());
+            !sf.is_null() as i64
+        });
+        let n = Effects::reference(|| {
+            rf = ref__fdopen(rfd, mode.as_ptr());
+            !rf.is_null() as i64
+        });
+        let gi = stream_state_subject(sf);
+        let ni = stream_state_reference(rf);
+        if !sf.is_null() {
+            fclose(sf);
+        } else if !bad {
+            _close(sfd);
+        }
+        if !rf.is_null() {
+            ref_fclose(rf);
+        } else if !bad {
+            ref__close(rfd);
+        }
+        let tags = vec![if bad {
+            "badfd"
+        } else if badmode {
+            "badmode"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("bad={bad} badmode={badmode}"),
+            tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — the stat family
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Nine exports over four structs that differ only in the width of `st_size` and the three
+// timestamps. That is the whole bug surface: every one of them is `_wstat64` plus a field
+// narrowing (`msvcrt_stat64_to_stat`, `…_to_stat32i64`, `…_to_stat64i32`, `…_to_stati64`),
+// and a narrowing that truncates the wrong field, or writes one field too many, produces
+// a struct that is right in the fields anyone casually checks and wrong in the rest.
+//
+// So the rows compare the buffer as BYTES, guards included, and deliberately over-allocate
+// past the struct: a converter that writes `_stat64`'s 56 bytes into a `_stat` is then a
+// divergence in the trailing poison rather than an invisible overrun of the caller's stack.
+//
+// Both sides run over ONE file (see `Shared`) — the timestamps are the point of the struct
+// and two files do not have the same ones.
+
+/// Generous enough for every variant, and the slack is compared: it is where an
+/// over-wide write lands.
+const STAT_BUF: usize = 128;
+
+/// A guarded destination buffer with 8-byte alignment.
+///
+/// `Buf` is a `Vec<u8>`, whose allocation is 1-aligned, and every stat struct here carries
+/// `__int64` fields. Handing the C an interior pointer into a `Vec<u8>` would have it
+/// perform unaligned 64-bit stores — which happens to work on x86-64 and is undefined
+/// everywhere, including here. Backing this one with `Vec<u64>` makes the alignment right
+/// by construction, and the leading and trailing `u64`s are the poison guards.
+struct QBuf(Vec<u64>);
+
+impl QBuf {
+    fn new(n: usize) -> QBuf {
+        QBuf(vec![0xA7A7_A7A7_A7A7_A7A7; n.div_ceil(8) + 2])
+    }
+    fn p(&mut self) -> *mut c_void {
+        unsafe { (self.0.as_mut_ptr() as *mut u8).add(8) as *mut c_void }
+    }
+    fn img(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+}
+
+unsafe fn stat_rows() {
+    // ── the path-taking narrow trio ───────────────────────────────────────────────────
+    for (name, subj, refn) in [
+        (
+            "_stat64",
+            _stat64 as unsafe extern "C" fn(*const u8, *mut c_void) -> c_int,
+            ref__stat64 as unsafe extern "C" fn(*const u8, *mut c_void) -> c_int,
+        ),
+        ("_stat", _stat, ref__stat),
+        ("_stati64", _stati64, ref__stati64),
+    ] {
+        grade(name, &["ok", "enoent", "empty"], ROW_ITERS, |r| {
+            let exists = r.below(4) != 0;
+            let seed = r.bytes_upto(64);
+            let f = if exists {
+                Shared::new("stat", &seed)
+            } else {
+                Shared::absent("stat")
+            };
+            let (mut sb, mut rb) = (QBuf::new(STAT_BUF), QBuf::new(STAT_BUF));
+            let (sp, rp) = (sb.p(), rb.p());
+            let g = Effects::subject(|| subj(f.n(), sp) as i64);
+            let n = Effects::reference(|| refn(f.n(), rp) as i64);
+            let tags = vec![
+                if n.ret == 0 { "ok" } else { "enoent" },
+                if exists && seed.is_empty() { "empty" } else { "" },
+            ];
+            (
+                Obs::with(g, sb.img()),
+                Obs::with(n, rb.img()),
+                format!("exists={exists} len={}", seed.len()),
+                tags.into_iter().filter(|t| !t.is_empty()).collect(),
+            )
+        });
+    }
+
+    // ── the path-taking wide trio ─────────────────────────────────────────────────────
+    for (name, subj, refn) in [
+        (
+            "_wstat64",
+            _wstat64 as unsafe extern "C" fn(*const u16, *mut c_void) -> c_int,
+            ref__wstat64 as unsafe extern "C" fn(*const u16, *mut c_void) -> c_int,
+        ),
+        ("_wstat", _wstat, ref__wstat),
+        ("_wstati64", _wstati64, ref__wstati64),
+    ] {
+        grade(name, &["ok", "enoent", "empty"], ROW_ITERS, |r| {
+            let exists = r.below(4) != 0;
+            let seed = r.bytes_upto(64);
+            let f = if exists {
+                Shared::new("wstat", &seed)
+            } else {
+                Shared::absent("wstat")
+            };
+            let wp = f.w();
+            let (mut sb, mut rb) = (QBuf::new(STAT_BUF), QBuf::new(STAT_BUF));
+            let (sp, rp) = (sb.p(), rb.p());
+            let g = Effects::subject(|| subj(wp.as_ptr(), sp) as i64);
+            let n = Effects::reference(|| refn(wp.as_ptr(), rp) as i64);
+            let tags = vec![
+                if n.ret == 0 { "ok" } else { "enoent" },
+                if exists && seed.is_empty() { "empty" } else { "" },
+            ];
+            (
+                Obs::with(g, sb.img()),
+                Obs::with(n, rb.img()),
+                format!("exists={exists} len={}", seed.len()),
+                tags.into_iter().filter(|t| !t.is_empty()).collect(),
+            )
+        });
+    }
+
+    // ── the fd-taking trio ────────────────────────────────────────────────────────────
+    //
+    // `_fstat64` reports `st_dev` and `st_rdev` as the DESCRIPTOR, so this row is also the
+    // one that would notice the two fd tables drifting — the fd numbers are inside the
+    // compared image, not merely alongside it.
+    for (name, subj, refn) in [
+        (
+            "_fstat64",
+            _fstat64 as unsafe extern "C" fn(c_int, *mut c_void) -> c_int,
+            ref__fstat64 as unsafe extern "C" fn(c_int, *mut c_void) -> c_int,
+        ),
+        ("_fstat", _fstat, ref__fstat),
+        ("_fstati64", _fstati64, ref__fstati64),
+    ] {
+        grade(name, &["ok", "badfd", "empty"], ROW_ITERS, |r| {
+            let seed = r.bytes_upto(64);
+            let f = Shared::new("fstat", &seed);
+            let bad = r.below(5) == 0;
+            let (sfd, rfd) = if bad {
+                (4096, 4096)
+            } else {
+                (_open(f.n(), O_RDONLY | O_BINARY), ref__open(f.n(), O_RDONLY | O_BINARY))
+            };
+            let (mut sb, mut rb) = (QBuf::new(STAT_BUF), QBuf::new(STAT_BUF));
+            let (sp, rp) = (sb.p(), rb.p());
+            let g = Effects::subject(|| subj(sfd, sp) as i64);
+            let n = Effects::reference(|| refn(rfd, rp) as i64);
+            if !bad {
+                _close(sfd);
+                ref__close(rfd);
+            }
+            let tags = vec![
+                if bad { "badfd" } else { "ok" },
+                if !bad && seed.is_empty() { "empty" } else { "" },
+            ];
+            (
+                Obs::with(g, sb.img()),
+                Obs::with(n, rb.img()),
+                format!("bad={bad} len={}", seed.len()),
+                tags.into_iter().filter(|t| !t.is_empty()).collect(),
+            )
+        });
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — 64-bit positioning
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Wave 18a graded `fseek`/`ftell`/`_lseek`/`_tell`, all of which take and return a 32-bit
+// offset. The `i64` twins are separate exports with separate bodies, and the reason they
+// exist is precisely the case a 32-bit row cannot construct. The rows below still run over
+// small files — creating a 3 GB fixture per case is not a trade this suite should make —
+// so what they pin is the CONTRACT (arguments threaded through at full width, the same
+// error codes, the same interaction with the buffer), not the >4 GB arithmetic. Said
+// plainly rather than left implied, because a green row here is weaker than it looks.
+
+unsafe fn position_rows() {
+    // `_fseeki64` + `_ftelli64` — the pair, since a seek is only observable through a tell.
+    grade("_fseeki64+_ftelli64", &["ok", "fail", "clears-eof"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 40);
+        let w = World::new("seek64", &seed);
+        let whence = [SEEK_SET, SEEK_CUR, SEEK_END][r.below(3)];
+        let off = (r.below(seed.len() + 8) as i64) - 4;
+        let drain = r.below(3) == 0;
+
+        let sf = fopen(w.s(), b"rb\0".as_ptr());
+        let rf = ref_fopen(w.r(), b"rb\0".as_ptr());
+        if drain {
+            // Latch EOF first: a seek must clear it, and nothing else in this row would.
+            let mut b = [0u8; 64];
+            fread(b.as_mut_ptr() as *mut c_void, 1, 64, sf);
+            fgetc(sf);
+            ref_fread(b.as_mut_ptr() as *mut c_void, 1, 64, rf);
+            ref_fgetc(rf);
+        }
+        let g = Effects::subject(|| _fseeki64(sf, off, whence) as i64);
+        let n = Effects::reference(|| ref__fseeki64(rf, off, whence) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        gi.extend_from_slice(&_ftelli64(sf).to_le_bytes());
+        ni.extend_from_slice(&ref__ftelli64(rf).to_le_bytes());
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "fail" },
+            if drain { "clears-eof" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} off={off} whence={whence} drain={drain}", seed.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_telli64` — the fd-layer twin, read after a seek that `_lseeki64` performed.
+    grade("_telli64", &["ok", "badfd"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 40);
+        let w = World::new("telli64", &seed);
+        let bad = r.below(5) == 0;
+        let skip = r.below(seed.len() + 4) as i64;
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDONLY | O_BINARY), ref__open(w.r(), O_RDONLY | O_BINARY))
+        };
+        if !bad {
+            _lseeki64(sfd, skip, SEEK_SET);
+            ref__lseeki64(rfd, skip, SEEK_SET);
+        }
+        let g = Effects::subject(|| _telli64(sfd));
+        let n = Effects::reference(|| ref__telli64(rfd));
+        if !bad {
+            _close(sfd);
+            ref__close(rfd);
+        }
+        let tags = vec![if bad { "badfd" } else { "ok" }];
+        (
+            Obs::with(g, Vec::new()),
+            Obs::with(n, Vec::new()),
+            format!("len={} skip={skip} bad={bad}", seed.len()),
+            tags,
+        )
+    });
+
+    // `fgetpos` + `fsetpos` — a save/restore round trip. The `fpos_t` is compared as the
+    // OPAQUE VALUE it is: msvcrt defines it as an `__int64` byte offset, and a row that
+    // only checked "reading twice from the restored position gives the same bytes" would
+    // pass just as well over an implementation that stored something else entirely.
+    //
+    // NO null-`pos` case, deliberately. This row had one and it segfaulted — in the
+    // SUBJECT first, which read like a missing guard until the C said otherwise:
+    // msvcrt's `fgetpos` is `*pos = _ftelli64(file);` with nothing in front of it, and
+    // `fsetpos` dereferences just as bare. Rust is faithful. A row over a NULL there
+    // would be grading a crash against a crash, and the guard it seems to demand would
+    // be a DIVERGENCE from the thing this file exists to match.
+    grade("fgetpos+fsetpos", &["at-start", "mid-file"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(4, 40);
+        let w = World::new("fpos", &seed);
+        let skip = r.below(seed.len());
+
+        let sf = fopen(w.s(), b"rb\0".as_ptr());
+        let rf = ref_fopen(w.r(), b"rb\0".as_ptr());
+        fseek(sf, skip as i32, SEEK_SET);
+        ref_fseek(rf, skip as i32, SEEK_SET);
+        let (mut spos, mut rpos) = (0i64, 0i64);
+        let sp = &mut spos as *mut i64;
+        let rp = &mut rpos as *mut i64;
+
+        let g = Effects::subject(|| fgetpos(sf, sp) as i64);
+        let n = Effects::reference(|| ref_fgetpos(rf, rp) as i64);
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.extend_from_slice(&spos.to_le_bytes());
+        ni.extend_from_slice(&rpos.to_le_bytes());
+        // Walk away, then come back and prove we are where we said we were.
+        fgetc(sf);
+        fgetc(sf);
+        ref_fgetc(rf);
+        ref_fgetc(rf);
+        gi.extend_from_slice(&(fsetpos(sf, sp) as i32).to_le_bytes());
+        ni.extend_from_slice(&(ref_fsetpos(rf, rp) as i32).to_le_bytes());
+        gi.extend_from_slice(&fgetc(sf).to_le_bytes());
+        ni.extend_from_slice(&ref_fgetc(rf).to_le_bytes());
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        // Tagged by WHERE the position was taken. The obvious pair — "it worked" vs "it
+        // failed" — is not available: `fgetpos` fails only when `_ftelli64` returns -1,
+        // which this row's streams never do, so a `fail` tag would be an UNEXERCISED
+        // forever and a `ok`/`restored` split would be one tag wearing two names.
+        let tags = vec![if skip == 0 { "at-start" } else { "mid-file" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} skip={skip}", seed.len()),
+            tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — descriptor plumbing
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+unsafe fn fd_plumbing_rows() {
+    // `_dup2` — REPLACES a descriptor rather than allocating one, which is why wave 18a
+    // left it out: `balanced()` probes the allocator, and an implementation that got
+    // `_dup2` wrong could still allocate correctly. So the row opens two descriptors per
+    // side and closes two, keeping the allocator's view identical, and puts BOTH
+    // descriptors' state in the compared image — which is where a wrong `_dup2` shows.
+    grade("_dup2", &["ok", "badsrc", "baddst"], ROW_ITERS, |r| {
+        let a_seed = r.bytes_from(1, 24);
+        let b_seed = r.bytes_from(1, 24);
+        let wa = World::new("dup2a", &a_seed);
+        let wb = World::new("dup2b", &b_seed);
+        let badsrc = r.below(6) == 0;
+        let baddst = r.below(6) == 0;
+
+        let sa = _open(wa.s(), O_RDONLY | O_BINARY);
+        let ra = ref__open(wa.r(), O_RDONLY | O_BINARY);
+        let sb = _open(wb.s(), O_RDONLY | O_BINARY);
+        let rb = ref__open(wb.r(), O_RDONLY | O_BINARY);
+        let (ssrc, rsrc) = if badsrc { (4096, 4096) } else { (sa, ra) };
+        let (sdst, rdst) = if baddst { (-1, -1) } else { (sb, rb) };
+
+        let g = Effects::subject(|| _dup2(ssrc, sdst) as i64);
+        let n = Effects::reference(|| ref__dup2(rsrc, rdst) as i64);
+        let mut gi = fd_state_subject(sa);
+        let mut ni = fd_state_reference(ra);
+        gi.extend(fd_state_subject(sb));
+        ni.extend(fd_state_reference(rb));
+        _close(sa);
+        _close(sb);
+        ref__close(ra);
+        ref__close(rb);
+        let tags = vec![if badsrc {
+            "badsrc"
+        } else if baddst {
+            "baddst"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("badsrc={badsrc} baddst={baddst}"),
+            tags,
+        )
+    });
+
+    // `_get_osfhandle` + `_open_osfhandle` — the fd↔HANDLE door.
+    //
+    // The raw handle CANNOT be compared. Each side opens its own descriptor and the shim
+    // derives the handle from the host fd, so the two are different numbers by
+    // construction and always would be. What is compared is the VALIDITY CLASS, plus
+    // everything downstream of it: the fd `_open_osfhandle` hands back for that handle,
+    // and that fd's position/length/EOF. A row that compared the handle itself would have
+    // to be deleted, not fixed.
+    //
+    // Note the cleanup: the new fd owns the same handle as the old one, so closing both
+    // closes it twice. That is deliberate and symmetric — msvcrt frees the table slot
+    // whether or not `CloseHandle` succeeds, and doing it identically on both sides keeps
+    // the allocator in step while also grading the second close's errno.
+    grade("_get/_open_osfhandle", &["ok", "badfd", "badhandle"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 24);
+        let w = World::new("osfh", &seed);
+        let bad = r.below(6) == 0;
+        let badhandle = r.below(6) == 0;
+        let oflags = O_RDONLY
+            | (if r.below(2) == 0 { O_BINARY } else { O_TEXT })
+            | (if r.below(3) == 0 { O_NOINHERIT } else { 0 });
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDONLY | O_BINARY), ref__open(w.r(), O_RDONLY | O_BINARY))
+        };
+        let g = Effects::subject(|| (_get_osfhandle(sfd) == -1) as i64);
+        let n = Effects::reference(|| (ref__get_osfhandle(rfd) == -1) as i64);
+        let (sh, rh) = if badhandle {
+            (-1isize, -1isize)
+        } else {
+            (_get_osfhandle(sfd), ref__get_osfhandle(rfd))
+        };
+
+        let (mut snew, mut rnew) = (-1, -1);
+        let g2 = Effects::subject(|| {
+            snew = _open_osfhandle(sh, oflags);
+            snew as i64
+        });
+        let n2 = Effects::reference(|| {
+            rnew = ref__open_osfhandle(rh, oflags);
+            rnew as i64
+        });
+        let mut gi = fd_state_subject(snew);
+        let mut ni = fd_state_reference(rnew);
+        gi.extend_from_slice(&(g2.errno).to_le_bytes());
+        ni.extend_from_slice(&(n2.errno).to_le_bytes());
+        gi.extend_from_slice(&(g2.pmt).to_le_bytes());
+        ni.extend_from_slice(&(n2.pmt).to_le_bytes());
+        if snew >= 0 {
+            _close(snew);
+        }
+        if rnew >= 0 {
+            ref__close(rnew);
+        }
+        if !bad {
+            _close(sfd);
+            ref__close(rfd);
+        }
+        let tags = vec![if bad {
+            "badfd"
+        } else if badhandle {
+            "badhandle"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("bad={bad} badhandle={badhandle} oflags={oflags:#x}"),
+            tags,
+        )
+    });
+
+    // `_pipe` — two descriptors from one call, then a round trip through them. The
+    // payload is kept small on purpose: a write larger than the host pipe buffer would
+    // block forever with nothing to drain it, and a hung difftest is a worse failure mode
+    // than an ungraded byte.
+    grade("_pipe", &["ok", "roundtrip"], ROW_ITERS, |r| {
+        let payload = r.bytes_from(1, 64);
+        let textmode = if r.below(2) == 0 { O_BINARY } else { O_TEXT };
+        let size = 512 + r.below(2048) as u32;
+
+        let (mut sfds, mut rfds) = ([-1, -1], [-1, -1]);
+        let g = Effects::subject(|| _pipe(sfds.as_mut_ptr(), size, textmode) as i64);
+        let n = Effects::reference(|| ref__pipe(rfds.as_mut_ptr(), size, textmode) as i64);
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.extend_from_slice(&sfds[0].to_le_bytes());
+        gi.extend_from_slice(&sfds[1].to_le_bytes());
+        ni.extend_from_slice(&rfds[0].to_le_bytes());
+        ni.extend_from_slice(&rfds[1].to_le_bytes());
+        let mut full_roundtrip = false;
+        if g.ret == 0 && n.ret == 0 {
+            let (mut sb, mut rb) = (Buf::new(payload.len()), Buf::new(payload.len()));
+            let (sp, rp) = (sb.p(), rb.p());
+            let sw = _write(sfds[1], payload.as_ptr() as *const c_void, payload.len() as u32);
+            let rw = ref__write(rfds[1], payload.as_ptr() as *const c_void, payload.len() as u32);
+            let sr = _read(sfds[0], sp as *mut c_void, payload.len() as u32);
+            let rr = ref__read(rfds[0], rp as *mut c_void, payload.len() as u32);
+            gi.extend_from_slice(&sw.to_le_bytes());
+            ni.extend_from_slice(&rw.to_le_bytes());
+            gi.extend_from_slice(&sr.to_le_bytes());
+            ni.extend_from_slice(&rr.to_le_bytes());
+            gi.extend(sb.img());
+            ni.extend(rb.img());
+            // Every byte written came back. Tagged separately from "the call returned 0"
+            // because those are different claims, and a `require` list that spells the
+            // same condition twice asserts nothing.
+            full_roundtrip = rr == payload.len() as c_int && rw == payload.len() as c_int;
+        }
+        for fd in sfds {
+            if fd >= 0 {
+                _close(fd);
+            }
+        }
+        for fd in rfds {
+            if fd >= 0 {
+                ref__close(fd);
+            }
+        }
+        let tags = vec![
+            if n.ret == 0 { "ok" } else { "" },
+            if full_roundtrip { "roundtrip" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} textmode={textmode:#x}", payload.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_locking` — byte-range locks.
+    //
+    // The CONFLICT arm is not reachable from one process: POSIX `fcntl` locks are held per
+    // process, so a second overlapping lock from this same process replaces the first
+    // instead of failing. The row therefore grades the three arms it CAN reach — a
+    // successful lock/unlock, an out-of-range mode, and a closed descriptor — and says so
+    // rather than carrying a `require` tag that would fail forever.
+    grade("_locking", &["ok", "badfd", "badmode"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(8, 40);
+        let w = World::new("lock", &seed);
+        let bad = r.below(6) == 0;
+        let badmode = r.below(6) == 0;
+        let mode = if badmode { 7 } else { [LK_UNLCK, LK_LOCK, LK_RLCK][r.below(3)] };
+        let nbytes = 1 + r.below(seed.len()) as i32;
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDWR | O_BINARY), ref__open(w.r(), O_RDWR | O_BINARY))
+        };
+        let g = Effects::subject(|| _locking(sfd, mode, nbytes) as i64);
+        let n = Effects::reference(|| ref__locking(rfd, mode, nbytes) as i64);
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        if !bad {
+            gi.extend(fd_state_subject(sfd));
+            ni.extend(fd_state_reference(rfd));
+            // Release whatever was taken; the descriptor close would do it anyway, but
+            // relying on that would leave the unlock path itself ungraded.
+            _locking(sfd, LK_UNLCK, nbytes);
+            ref__locking(rfd, LK_UNLCK, nbytes);
+            _close(sfd);
+            ref__close(rfd);
+        }
+        let tags = vec![if bad {
+            "badfd"
+        } else if badmode {
+            "badmode"
+        } else {
+            "ok"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("bad={bad} mode={mode} nbytes={nbytes}"),
+            tags,
+        )
+    });
+
+    // `_umask` — a getter/setter over one `static int`, so on its own it is a tautology.
+    // What makes the row worth having is the SECOND half: the mask is consulted by
+    // `_wsopen_dispatch`, which marks a newly-created file read-only when the umask has
+    // taken `_S_IWRITE` out of the mode. So the row sets the mask, creates a file through
+    // it, and reads the resulting permission back out of process.
+    grade("_umask", &["masked", "unmasked"], ROW_ITERS, |r| {
+        let masked = r.below(2) == 0;
+        let mask = if masked { S_IWRITE } else { 0 };
+        let w = World::absent("umask");
+
+        let g = Effects::subject(|| _umask(mask) as i64);
+        let n = Effects::reference(|| ref__umask(mask) as i64);
+        let sfd = _open(w.s(), O_CREAT | O_WRONLY | O_BINARY, S_IREAD | S_IWRITE);
+        let rfd = ref__open(w.r(), O_CREAT | O_WRONLY | O_BINARY, S_IREAD | S_IWRITE);
+        if sfd >= 0 {
+            _close(sfd);
+        }
+        if rfd >= 0 {
+            ref__close(rfd);
+        }
+        let (sro, rro) = w.readonly();
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        gi.push(ro_byte(sro));
+        ni.push(ro_byte(rro));
+        // Put the mask back before the next row inherits it.
+        _umask(0);
+        ref__umask(0);
+        make_writable(&[&w.sp, &w.rp]);
+        let tags = vec![if masked { "masked" } else { "unmasked" }];
+        (Obs::with(g, gi), Obs::with(n, ni), format!("mask={mask:#x}"), tags)
+    });
+
+    // `_chsize_s` — the 64-bit `_chsize`, plus the negative-size guard that only exists
+    // on this variant.
+    grade("_chsize_s", &["grow", "shrink", "badfd", "negative"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 32);
+        let w = World::new("chsize_s", &seed);
+        let bad = r.below(6) == 0;
+        let negative = r.below(6) == 0;
+        let size = if negative { -1 } else { r.below(seed.len() * 2 + 8) as i64 };
+
+        let (sfd, rfd) = if bad {
+            (4096, 4096)
+        } else {
+            (_open(w.s(), O_RDWR | O_BINARY), ref__open(w.r(), O_RDWR | O_BINARY))
+        };
+        let g = Effects::subject(|| _chsize_s(sfd, size) as i64);
+        let n = Effects::reference(|| ref__chsize_s(rfd, size) as i64);
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        if !bad {
+            gi.extend(fd_state_subject(sfd));
+            ni.extend(fd_state_reference(rfd));
+            _close(sfd);
+            ref__close(rfd);
+        }
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if negative {
+            "negative"
+        } else if bad {
+            "badfd"
+        } else if size as usize > seed.len() {
+            "grow"
+        } else {
+            "shrink"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} size={size} bad={bad}", seed.len()),
+            tags,
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — the wide stream layer
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// `_fgetwc_nolock` forks on the descriptor's text mode and the two arms have nothing in
+// common. In binary (or any Unicode text mode) it assembles the `wchar_t` from TWO
+// `_fgetc_nolock` calls; in ANSI text mode it reads one byte, asks `isleadbyte` whether a
+// second is coming, and converts the 1-2 byte sequence with `mbtowc`. Every row below
+// therefore runs both modes and tags them, because a row that only opened `"rb"` would
+// grade half a function and report a full MATCH.
+//
+// What is NOT separable here: `isleadbyte`/`mbtowc`/`wctomb` are ONE definition shared by
+// both sides (they live in mbcs.c and locale.c, neither of which is a reference TU). A
+// conversion bug is invisible to these rows by construction — §9.73. They grade the
+// stream logic around the converter, which is the part file.c owns. mbcs.c's own converter
+// is graded in `tests/mbcs.rs`.
+
+/// A guarded destination buffer of `wchar_t`, not bytes.
+///
+/// `Buf` is a `Vec<u8>`, whose allocation is 1-aligned; handing its interior to a
+/// `wchar_t*` parameter would have the C write 16-bit stores through a possibly-odd
+/// address. Backing this one with `Vec<u16>` makes the alignment right by construction.
+struct WBuf(Vec<u16>);
+
+impl WBuf {
+    fn new(n: usize) -> WBuf {
+        WBuf(vec![0xA7A7; n + 2 * GUARD])
+    }
+    fn p(&mut self) -> *mut u16 {
+        unsafe { self.0.as_mut_ptr().add(GUARD) }
+    }
+    fn img(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+}
+
+/// The wide characters a row writes. ASCII and the two text-mode-significant bytes are
+/// over-weighted deliberately; the >0x7F values are what reach `wctomb`'s failure path in
+/// ANSI text mode, where the character has no representation and the write must report it
+/// rather than emit a replacement.
+fn gen_wchar(r: &mut Rng) -> u16 {
+    match r.below(8) {
+        0 => 0x000A,
+        1 => 0x000D,
+        2 => 0x001A,
+        3 => 0x00E9,
+        4 => 0x20AC,
+        _ => 0x20 + (r.next() % 0x5F) as u16,
+    }
+}
+
+unsafe fn wide_stream_rows() {
+    // `fgetwc` / `getwc` — `getwc` IS `fgetwc` in file.c, so both names run the same row
+    // and staying identical is a checked property.
+    grade("fgetwc+getwc", &["binary", "text", "weof"], WIDE_ITERS, |r| {
+        let seed = r.bytes_upto(24);
+        let w = World::new("fgetwc", &seed);
+        let text = r.below(2) == 0;
+        let mode: &[u8] = if text { b"r\0" } else { b"rb\0" };
+        let via_getwc = r.below(2) == 0;
+        let take = 1 + r.below(12);
+
+        let sf = fopen(w.s(), mode.as_ptr());
+        let rf = ref_fopen(w.r(), mode.as_ptr());
+        let (mut sw, mut rw): (Vec<u16>, Vec<u16>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for _ in 0..take {
+                sw.push(if via_getwc { getwc(sf) } else { fgetwc(sf) });
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for _ in 0..take {
+                rw.push(if via_getwc { ref_getwc(rf) } else { ref_fgetwc(rf) });
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sw.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rw.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![
+            if text { "text" } else { "binary" },
+            if rw.contains(&WEOF) { "weof" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} take={take} getwc={via_getwc}", seed.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `fputwc` — the disk image is the answer here, and it is read back by the host.
+    grade("fputwc", &["binary", "text", "unconvertible"], WIDE_ITERS, |r| {
+        let w = World::new("fputwc", b"");
+        let text = r.below(2) == 0;
+        let mode: &[u8] = if text { b"w\0" } else { b"wb\0" };
+        let chars: Vec<u16> = (0..1 + r.below(8)).map(|_| gen_wchar(r)).collect();
+
+        let sf = fopen(w.s(), mode.as_ptr());
+        let rf = ref_fopen(w.r(), mode.as_ptr());
+        let (mut sr, mut rr): (Vec<u16>, Vec<u16>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for &c in &chars {
+                sr.push(fputwc(c, sf));
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for &c in &chars {
+                rr.push(ref_fputwc(c, rf));
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![
+            if text { "text" } else { "binary" },
+            if rr.contains(&WEOF) { "unconvertible" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("n={} text={text}", chars.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `fgetws` — the wide `fgets`. `size` of 1 must produce an empty string and not a
+    // character, and a `size` of 0 must not write at all; both are guard bytes away from
+    // an overrun, which is why the destination is guarded.
+    grade("fgetws", &["ok", "eof", "size1", "newline"], WIDE_ITERS, |r| {
+        let seed = r.bytes_from(1, 40);
+        let w = World::new("fgetws", &seed);
+        let text = r.below(2) == 0;
+        let mode: &[u8] = if text { b"r\0" } else { b"rb\0" };
+        let size = r.below(12) as c_int;
+
+        let sf = fopen(w.s(), mode.as_ptr());
+        let rf = ref_fopen(w.r(), mode.as_ptr());
+        let (mut sb, mut rb) = (WBuf::new(size.max(0) as usize), WBuf::new(size.max(0) as usize));
+        let (sp, rp) = (sb.p(), rb.p());
+        let g = Effects::subject(|| !fgetws(sp, size, sf).is_null() as i64);
+        let n = Effects::reference(|| !ref_fgetws(rp, size, rf).is_null() as i64);
+        let mut gi = sb.img();
+        let mut ni = rb.img();
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![
+            if size == 1 {
+                "size1"
+            } else if n.ret == 0 {
+                "eof"
+            } else {
+                "ok"
+            },
+            if seed.contains(&0x0A) { "newline" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} size={size} text={text}", seed.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `fputws` — the wide `fputs`.
+    grade("fputws", &["binary", "text", "empty"], WIDE_ITERS, |r| {
+        let w = World::new("fputws", b"");
+        let text = r.below(2) == 0;
+        let mode: &[u8] = if text { b"w\0" } else { b"wb\0" };
+        let mut s: Vec<u16> = (0..r.below(10)).map(|_| gen_wchar(r)).collect();
+        s.push(0);
+
+        let sf = fopen(w.s(), mode.as_ptr());
+        let rf = ref_fopen(w.r(), mode.as_ptr());
+        let g = Effects::subject(|| fputws(s.as_ptr(), sf) as i64);
+        let n = Effects::reference(|| ref_fputws(s.as_ptr(), rf) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        fclose(sf);
+        ref_fclose(rf);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![
+            if text { "text" } else { "binary" },
+            if s.len() == 1 { "empty" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("n={} text={text}", s.len() - 1),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `ungetwc` — push a wide character back and read it again. The `WEOF` argument is
+    // required to be rejected, and the second consecutive pushback is where msvcrt's
+    // one-character limit shows.
+    grade("ungetwc", &["ok", "weof-arg", "twice"], WIDE_ITERS, |r| {
+        let seed = r.bytes_from(2, 32);
+        let w = World::new("ungetwc", &seed);
+        let text = r.below(2) == 0;
+        let mode: &[u8] = if text { b"r\0" } else { b"rb\0" };
+        let weof_arg = r.below(6) == 0;
+        let twice = r.below(3) == 0;
+        let push = if weof_arg { WEOF } else { gen_wchar(r) };
+
+        let sf = fopen(w.s(), mode.as_ptr());
+        let rf = ref_fopen(w.r(), mode.as_ptr());
+        fgetwc(sf);
+        ref_fgetwc(rf);
+        let (mut sr, mut rr): (Vec<u16>, Vec<u16>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            sr.push(ungetwc(push, sf));
+            if twice {
+                sr.push(ungetwc(push, sf));
+            }
+            sr.push(fgetwc(sf));
+            0
+        });
+        let n = Effects::reference(|| {
+            rr.push(ref_ungetwc(push, rf));
+            if twice {
+                rr.push(ref_ungetwc(push, rf));
+            }
+            rr.push(ref_fgetwc(rf));
+            0
+        });
+        let mut gi: Vec<u8> = sr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![
+            if weof_arg { "weof-arg" } else { "ok" },
+            if twice { "twice" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("push={push:#x} twice={twice} text={text}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18b — buffering and the byte-at-a-time entry points
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// `setvbuf` is the only public way to reach the buffer-selection code that wave 18a's
+// header calls out as the behaviour with no other window, and `_filbuf`/`_flsbuf` are the
+// refill and spill that every other stream call goes through. Wave 18a graded them only
+// indirectly, through whatever buffering `fopen` happened to choose.
+
+/// msvcrt's `BUFSIZ`. `setbuf` passes it to `setvbuf`, so a user buffer handed to `setbuf`
+/// must be at least this large or the CRT writes past it.
+const MSVCRT_BUFSIZ: usize = 512;
+
+unsafe fn buffering_rows() {
+    // `setvbuf` — the three modes, a user buffer and a CRT-allocated one, and all three
+    // guards. The compared image is the FILE's buffer state, which is the only place the
+    // decision is visible.
+    grade("setvbuf", &["fbf", "lbf", "nbf", "userbuf", "guard"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 40);
+        let w = World::new("setvbuf", &seed);
+        // 0 = none, 1 = NULL file, 2 = bad mode, 3 = size out of range.
+        let guard = if r.below(4) == 0 { 1 + r.below(3) } else { 0 };
+        let mode = match guard {
+            2 => 99,
+            // `_IONBF` is EXEMPT from the size check (`mode==_IONBF || (size>=2 && …)`),
+            // so drawing it here would leave the row tagged "guard" over a case where no
+            // guard fired — a coverage claim for a branch that never ran.
+            3 => [IOFBF, IOLBF][r.below(2)],
+            _ => [IOFBF, IOLBF, IONBF][r.below(3)],
+        };
+        let size = if guard == 3 { 1 } else { 2 + r.below(4096) };
+        let userbuf = guard == 0 && r.below(2) == 0;
+        let (mut sbuf, mut rbuf) = (vec![0u8; size + 64], vec![0u8; size + 64]);
+
+        let sf = fopen(w.s(), b"rb\0".as_ptr());
+        let rf = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let (sarg, rarg) = if userbuf {
+            (sbuf.as_mut_ptr(), rbuf.as_mut_ptr())
+        } else {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        };
+        let (sfile, rfile) = if guard == 1 {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (sf, rf)
+        };
+        let g = Effects::subject(|| setvbuf(sfile, sarg, mode, size) as i64);
+        let n = Effects::reference(|| ref_setvbuf(rfile, rarg, mode, size) as i64);
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        // Drive one read through whatever buffering was just selected.
+        let (mut sb, mut rb) = (Buf::new(8), Buf::new(8));
+        let (sp, rp) = (sb.p(), rb.p());
+        fread(sp as *mut c_void, 1, 8, sf);
+        ref_fread(rp as *mut c_void, 1, 8, rf);
+        gi.extend(sb.img());
+        ni.extend(rb.img());
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![if guard != 0 {
+            "guard"
+        } else if userbuf {
+            "userbuf"
+        } else if mode == IONBF {
+            "nbf"
+        } else if mode == IOLBF {
+            "lbf"
+        } else {
+            "fbf"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("guard={guard} mode={mode} size={size} userbuf={userbuf}"),
+            tags,
+        )
+    });
+
+    // `setbuf` — `setvbuf` with the mode and size implied by whether a buffer was passed.
+    // It returns nothing, so the FILE's buffer state IS the entire observation.
+    grade("setbuf", &["userbuf", "nobuf"], ROW_ITERS, |r| {
+        let seed = r.bytes_from(1, 40);
+        let w = World::new("setbuf", &seed);
+        let userbuf = r.below(2) == 0;
+        let (mut sbuf, mut rbuf) = (vec![0u8; MSVCRT_BUFSIZ], vec![0u8; MSVCRT_BUFSIZ]);
+
+        let sf = fopen(w.s(), b"rb\0".as_ptr());
+        let rf = ref_fopen(w.r(), b"rb\0".as_ptr());
+        let (sarg, rarg) = if userbuf {
+            (sbuf.as_mut_ptr(), rbuf.as_mut_ptr())
+        } else {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        };
+        let g = Effects::subject(|| {
+            setbuf(sf, sarg);
+            0
+        });
+        let n = Effects::reference(|| {
+            ref_setbuf(rf, rarg);
+            0
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        let (mut sb, mut rb) = (Buf::new(8), Buf::new(8));
+        let (sp, rp) = (sb.p(), rb.p());
+        fread(sp as *mut c_void, 1, 8, sf);
+        ref_fread(rp as *mut c_void, 1, 8, rf);
+        gi.extend(sb.img());
+        ni.extend(rb.img());
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![if userbuf { "userbuf" } else { "nobuf" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("userbuf={userbuf} len={}", seed.len()),
+            tags,
+        )
+    });
+
+    // `_filbuf` / `_flsbuf` — the refill and the spill, called directly rather than
+    // through a `getc`/`putc` that might not reach them.
+    grade("_filbuf+_flsbuf", &["fil", "fil-eof", "fls"], ROW_ITERS, |r| {
+        let seed = r.bytes_upto(24);
+        let w = World::new("filbuf", &seed);
+        let writing = r.below(2) == 0;
+        let ch = (r.next() % 256) as c_int;
+
+        let (mut gi, mut ni) = (Vec::new(), Vec::new());
+        let (sf, rf) = if writing {
+            (fopen(w.s(), b"wb\0".as_ptr()), ref_fopen(w.r(), b"wb\0".as_ptr()))
+        } else {
+            (fopen(w.s(), b"rb\0".as_ptr()), ref_fopen(w.r(), b"rb\0".as_ptr()))
+        };
+        let g = Effects::subject(|| (if writing { _flsbuf(ch, sf) } else { _filbuf(sf) }) as i64);
+        let n = Effects::reference(|| {
+            (if writing { ref__flsbuf(ch, rf) } else { ref__filbuf(rf) }) as i64
+        });
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if writing {
+            "fls"
+        } else if n.ret == CEOF as i64 {
+            "fil-eof"
+        } else {
+            "fil"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("writing={writing} len={} ch={ch}", seed.len()),
+            tags,
+        )
+    });
+
+    // `getc` / `putc` — msvcrt exports these as real functions, not macros, so they are
+    // graded like any other export rather than assumed identical to `fgetc`/`fputc`.
+    grade("getc+putc", &["get", "get-eof", "put"], ROW_ITERS, |r| {
+        let seed = r.bytes_upto(24);
+        let w = World::new("getcputc", &seed);
+        let writing = r.below(2) == 0;
+        let ch = (r.next() % 256) as c_int;
+        let take = 1 + r.below(6);
+
+        let (sf, rf) = if writing {
+            (fopen(w.s(), b"wb\0".as_ptr()), ref_fopen(w.r(), b"wb\0".as_ptr()))
+        } else {
+            (fopen(w.s(), b"rb\0".as_ptr()), ref_fopen(w.r(), b"rb\0".as_ptr()))
+        };
+        let (mut sr, mut rr): (Vec<c_int>, Vec<c_int>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for _ in 0..take {
+                sr.push(if writing { putc(ch, sf) } else { getc(sf) });
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for _ in 0..take {
+                rr.push(if writing { ref_putc(ch, rf) } else { ref_getc(rf) });
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rr.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(sf));
+        ni.extend(stream_state_reference(rf));
+        fclose(sf);
+        ref_fclose(rf);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if writing {
+            "put"
+        } else if rr.contains(&CEOF) {
+            "get-eof"
+        } else {
+            "get"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("writing={writing} take={take} len={}", seed.len()),
+            tags,
+        )
+    });
+
+    // `_getw` / `_putw` — an `int` at a time, in host byte order. `_getw` on a file with
+    // fewer than four bytes left must latch `_IOEOF` and return `EOF`, and "fewer than
+    // four" is a partial read it has already consumed — which is why the row varies the
+    // seed length around a multiple of four rather than only past the end.
+    grade("_getw+_putw", &["get", "get-short", "put"], ROW_ITERS, |r| {
+        let len = r.below(10);
+        let seed = r.bytes(len);
+        let w = World::new("getwputw", &seed);
+        let writing = r.below(2) == 0;
+        let val = r.next() as i32;
+
+        let (sf, rf) = if writing {
+            (fopen(w.s(), b"wb\0".as_ptr()), ref_fopen(w.r(), b"wb\0".as_ptr()))
+        } else {
+            (fopen(w.s(), b"rb\0".as_ptr()), ref_fopen(w.r(), b"rb\0".as_ptr()))
+        };
+        let g = Effects::subject(|| (if writing { _putw(val, sf) } else { _getw(sf) }) as i64);
+        let n = Effects::reference(|| {
+            (if writing { ref__putw(val, rf) } else { ref__getw(rf) }) as i64
+        });
+        let mut gi = stream_state_subject(sf);
+        let mut ni = stream_state_reference(rf);
+        fclose(sf);
+        ref_fclose(rf);
+        let (sd, rd) = w.disk();
+        push_disk(&mut gi, sd);
+        push_disk(&mut ni, rd);
+        let tags = vec![if writing {
+            "put"
+        } else if len < 4 {
+            "get-short"
+        } else {
+            "get"
+        }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("writing={writing} len={len} val={val:#x}"),
+            tags,
+        )
+    });
+
+    // `clearerr_s` — `clearerr` with a NULL guard and an `errno_t` return.
+    grade("clearerr_s", &["cleared", "nullfile"], ROW_ITERS, |r| {
+        let seed = r.bytes_upto(8);
+        let w = World::new("clearerrs", &seed);
+        let nullfile = r.below(4) == 0;
+
+        let sf = fopen(w.s(), b"rb\0".as_ptr());
+        let rf = ref_fopen(w.r(), b"rb\0".as_ptr());
+        // Latch EOF so that clearing it is observable.
+        let mut b = [0u8; 64];
+        fread(b.as_mut_ptr() as *mut c_void, 1, 64, sf);
+        fgetc(sf);
+        ref_fread(b.as_mut_ptr() as *mut c_void, 1, 64, rf);
+        ref_fgetc(rf);
+        let (sarg, rarg) = if nullfile {
+            (core::ptr::null_mut(), core::ptr::null_mut())
+        } else {
+            (sf, rf)
+        };
+        let g = Effects::subject(|| clearerr_s(sarg) as i64);
+        let n = Effects::reference(|| ref_clearerr_s(rarg) as i64);
+        let gi = stream_state_subject(sf);
+        let ni = stream_state_reference(rf);
+        fclose(sf);
+        ref_fclose(rf);
+        let tags = vec![if nullfile { "nullfile" } else { "cleared" }];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("nullfile={nullfile} len={}", seed.len()),
             tags,
         )
     });
