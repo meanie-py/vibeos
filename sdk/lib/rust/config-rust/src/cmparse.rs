@@ -35,6 +35,7 @@ const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFFu32;
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  "); // C: '  MC'  (multi-char literal is big-endian)
 const UNICODE_NULL: u16 = 0;
 const STATUS_RETRY: i32 = 0xC000022Du32 as i32;
+const STATUS_OBJECT_NAME_NOT_FOUND_MOD: i32 = 0xC0000034u32 as i32;
 const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: usize = 32;
 const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
 
@@ -3364,6 +3365,63 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
 // Local flag values mirror ntoskrnl/include/internal/cm.h.
 #[no_mangle]
 pub unsafe extern "system" fn CmpParseKey(
+    ParseObject: PVOID,
+    ObjectType: PVOID,
+    AccessState: PACCESS_STATE,
+    AccessMode: KPROCESSOR_MODE,
+    Attributes: u32,
+    CompleteName: PUNICODE_STRING,
+    RemainingName: PUNICODE_STRING,
+    Context: PVOID,
+    SecurityQos: PVOID,
+    Object: *mut PVOID,
+) -> NTSTATUS {
+    // WoW64 registry redirection. Every key open in the system reaches this
+    // parse procedure, so the whole feature lives in this wrapper: pick the
+    // view, splice WOW6432NODE into the name if it applies, and fall back to
+    // the 64-bit key when the 32-bit one does not exist. See cmwow64.rs.
+    //
+    // The flag consume ALSO runs for native processes, and must: it is what
+    // clears KEY_WOW64_* before ObCheckObjectAccess sees them (E21/#79). It is
+    // done here rather than in NtOpenKey/NtCreateKey so the bits survive long
+    // enough to choose a view.
+    let View32 = crate::cmwow64::CmpWow64ConsumeViewFlags(AccessState);
+
+    let mut Redirected = if View32 {
+        crate::cmwow64::CmpWow64BuildRedirectedName(ParseObject, RemainingName)
+    } else {
+        None
+    };
+
+    let Some(ref mut Redir) = Redirected else {
+        return CmpParseKeyInner(
+            ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+            CompleteName, RemainingName, Context, SecurityQos, Object,
+        );
+    };
+
+    // A create must land in the 32-bit view or it isn't isolation; only reads
+    // fall back. CM_PARSE_CONTEXT.CreateOperation is the same discriminator
+    // CmpParseKeyInner uses to decide it is a create at all.
+    let IsCreate = !Context.is_null() && (*(Context as PCM_PARSE_CONTEXT)).CreateOperation != 0;
+
+    let mut Status = CmpParseKeyInner(
+        ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+        CompleteName, core::ptr::addr_of_mut!(Redir.Name), Context, SecurityQos, Object,
+    );
+
+    if Status == STATUS_OBJECT_NAME_NOT_FOUND_MOD && !IsCreate {
+        Status = CmpParseKeyInner(
+            ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+            CompleteName, RemainingName, Context, SecurityQos, Object,
+        );
+    }
+
+    Redir.free();
+    Status
+}
+
+unsafe fn CmpParseKeyInner(
     ParseObject: PVOID,
     ObjectType: PVOID,
     AccessState: PACCESS_STATE,

@@ -4006,6 +4006,71 @@ found by a control run whose test excused a failure unless `GetLastError()` was
 `ERROR_INVALID_PARAMETER` — a discriminator that could never fire. If a guest test branches on
 a code the kernel sets, prove the code arrives before trusting the branch.
 
+### Registry redirection: the interception point is the PARSE, and the exemptions cannot be symlinks
+**Symptom.** A 32-bit process shares the 64-bit `HKLM\Software`, so per-app registration has no
+isolation and a COM `InprocServer32` read by a 32-bit app names a DLL it cannot load. Nothing
+fails loudly; it is a fidelity gap that only bites once two component sets exist.
+**Cause / where it goes.** Registry opens are overwhelmingly RELATIVE — advapi32 caches a
+handle to `\REGISTRY\MACHINE` and passes `RootDirectory` + `"Software\Foo"` — so a path rewrite
+in `wow64.dll` (where FILESYSTEM redirection lives) would have to resolve the root handle to a
+path on every single open, which is both a syscall per open and stateful. Do it in CM's parse
+procedure instead: `NtOpenKey`/`NtCreateKey` both funnel into `ObOpenObjectByName` →
+`CmpParseKey`, and Ob's only parse-procedure bypass is for *directory* objects, which a key
+never is. One wrapper there is a complete interception point and needs nothing above CM to
+cooperate.
+**Ob hands the parse procedure a remaining name in TWO shapes, and both occur on every boot.**
+An open by ABSOLUTE path arrives with a LEADING separator (parent `\REGISTRY`, remaining
+`\Machine\Software\...`); an open RELATIVE to a key handle arrives without one (parent
+`\REGISTRY\MACHINE`, remaining `SYSTEM\...`). Code that assumes exactly one separator sits
+*between* the parent path and the remaining name works for the relative form and silently does
+nothing for the absolute one — the first cut of E24 compared `\Machine\Softwar` against
+`MACHINE\SOFTWARE` on every absolute open and declined to redirect. Skip leading separators
+before comparing, and carry that offset into wherever you splice. This failure mode is
+**inert, not broken**: nothing crashes, no status is wrong, the feature simply never happens.
+**Beware a hand-built test suite that shares the code's blind spot.** The same E24 splice was
+checked offline against 16 hand-written cases and passed 16/16 — because every case had been
+invented in the relative shape, the same shape the author had reasoned about. A test written
+from the implementer's mental model inherits that model's gaps by construction. What found the
+bug was a kernel trace printing the REAL arguments; the harness only became trustworthy once
+its cases were transcribed from that trace. If a pure-logic harness is worth writing at all,
+seed it from observed inputs rather than imagined ones.
+**And make the assertion name what it FOUND, not just what it wanted.** The guest rung failed
+with "default view is not in Wow6432Node" and did not print the name it had just been handed —
+so answering "then what IS it?" cost a full 30-minute build plus a boot, for a string the
+assertion was already holding.
+
+**Two traps worth knowing before you design it.**
+- **Shared-key exemptions cannot be registry symlinks.** It is tempting — CM already resolves
+  them, and Windows really does keep `Software\Wow6432Node\Classes` as a link. But a link
+  target is an ABSOLUTE path that Ob re-parses, and the re-parse redirects it *again*: a link
+  from `Software\Wow6432Node\Policies` to `Software\Policies` bounces straight back into
+  `Software\Wow6432Node\Policies`. Exemptions have to be a table the redirect itself consults,
+  which is what Windows' redirection table is.
+- **The view has to be sticky per handle, and it comes free.** Redirect only when the SOFTWARE
+  boundary is crossed INSIDE the remaining name. If the caller's root handle is already at or
+  below SOFTWARE, that handle was resolved under some view already and relative opens must stay
+  in it — so "do nothing" is the correct answer, and a 32-bit app that opened SOFTWARE with
+  `KEY_WOW64_64KEY` keeps the 64-bit view beneath it without any per-handle state.
+**Redirection without population is a regression, and a miss-fallback is the cheap way out.**
+Nothing populates `Wow6432Node` on a system that ships one component set, so redirecting reads
+into it hides every OS key a 32-bit app needs. Either mirror the 64-bit subtree (Windows'
+answer, via the installer) or retry the unredirected name when the redirected open returns
+`OBJECT_NAME_NOT_FOUND` (Wine's answer). The fallback must be READS ONLY — a create that falls
+back has no isolation, which was the point. And the node itself still has to exist in the hive:
+`NtCreateKey` creates only the LAST component, so a create redirected into a missing
+`Wow6432Node` fails on the intermediate.
+**`KEY_WOW64_32KEY`/`64KEY` stop being strippable the moment views differ.** They are view
+selectors, not access bits — no key's ACL grants either, so one left set denies the open (that
+was E21). Stripping them early is correct only while the two views are identical; after that,
+`KEY_WOW64_64KEY` is a WoW64 process's only route back to the 64-bit view. Move the strip down
+to the parse so the bits survive long enough to pick a view and still never reach the access
+check.
+**Test that the two views DISAGREE, not that a write succeeded.** With no redirection at all a
+create still succeeds and a read still finds it. Assert the default-view handle's own
+`NtQueryKey(KeyNameInformation)` says `Wow6432Node`, AND that the identical path under
+`KEY_WOW64_64KEY` cannot see the value just written — two independent encodings, so faking one
+still fails the other.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the

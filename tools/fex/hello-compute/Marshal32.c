@@ -48,6 +48,12 @@
  *      merely appear: bad size -> ERROR_INVALID_PARAMETER, bad flag -> a
  *      DIFFERENT code, and a SUCCEEDING call must leave the guest's own
  *      last-error alone.
+ *   9. Wow6432Node registry redirection (E24): a 32-bit process gets its own
+ *      view of HKLM\Software. Asserts the two views DISAGREE — the default
+ *      view's own KeyNameInformation must say Wow6432Node, and the identical
+ *      path opened with KEY_WOW64_64KEY must not see the value just written —
+ *      plus that a 64-bit-only key still resolves from the 32-bit view, which
+ *      is the miss-fallback the whole design rests on.
  *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBADx names the failing
  * rung so serial alone triages ([WINLOGON] marshal32.exe exit = 0x...).
@@ -97,6 +103,11 @@
 #define M32_FAIL_LERR_FLAGS   0xBAF7 /* bad flag bit: not ERROR_INVALID_FLAGS */
 #define M32_FAIL_LERR_QUERY   0xBAF8 /* the succeeding control call failed */
 #define M32_FAIL_LERR_CLOBBER 0xBAF9 /* ...and ate the guest's own last-error */
+#define M32_FAIL_RDIR_CREATE  0xBAFA /* couldn't create the scratch key at all */
+#define M32_FAIL_RDIR_NAME    0xBAFB /* default view did NOT land in Wow6432Node */
+#define M32_FAIL_RDIR_LEAK    0xBAFC /* the 64-bit view can see the 32-bit value */
+#define M32_FAIL_RDIR_64VIEW  0xBAFD /* KEY_WOW64_64KEY did not reach the 64-bit view */
+#define M32_FAIL_RDIR_SHARED  0xBAFE /* a 64-bit-only key stopped resolving */
 #define M32_PASS              0x600D
 
 static void Report(const char *msg)
@@ -122,6 +133,28 @@ static void ReportHex(const char *label, DWORD v)
         buf[i++] = Digits[(v >> n) & 0xf];
     buf[i++] = '\n';
     buf[i] = 0;
+    OutputDebugStringA(buf);
+}
+
+/* Report a COUNTED wide string (registry paths are not NUL-terminated when
+ * they come back in a KEY_NAME_INFORMATION). Non-ASCII is not expected on
+ * these paths and is shown as '?' rather than silently dropped.
+ *
+ * This exists because rung 9 once failed with "default view is not in
+ * Wow6432Node" and did not say what the name WAS — which cost a full
+ * build-and-boot cycle to answer. An assertion should name what it found,
+ * not only what it wanted. */
+static void ReportWide(const char *label, const WCHAR *s, ULONG chars)
+{
+    char buf[256];
+    ULONG i = 0, j = 0;
+
+    while (label[i] && j < sizeof(buf) - 4)
+        buf[j++] = label[i++];
+    for (i = 0; i < chars && j < sizeof(buf) - 3; i++)
+        buf[j++] = (s[i] > 0 && s[i] < 0x80) ? (char)s[i] : '?';
+    buf[j++] = '\n';
+    buf[j] = 0;
     OutputDebugStringA(buf);
 }
 
@@ -816,6 +849,182 @@ static int CheckWin32kLastError(void)
     return 0;
 }
 
+/* --- check 9: Wow6432Node registry redirection (E24) ----------------------- *
+ * A 32-bit process must get its own view of HKLM\Software. The kernel splices
+ * WOW6432NODE in at the SOFTWARE boundary (CmpParseKey -> cmwow64.rs), so the
+ * SAME path names two different keys depending on who is asking.
+ *
+ * "The write went somewhere" is not evidence — with no redirection at all a
+ * create still succeeds and a read still finds it. So this rung asserts the
+ * two views DISAGREE, by two independent routes:
+ *   (a) the default-view handle's OWN NAME (NtQueryKey/KeyNameInformation)
+ *       must contain Wow6432Node. That says WHERE it went, from the kernel's
+ *       mouth, not from ours.
+ *   (b) the identical path opened with KEY_WOW64_64KEY must NOT see the value
+ *       we just wrote. That says the two views are genuinely distinct
+ *       objects. Unredirected, (a) and (b) both fail; a bridge that faked
+ *       either one would still have to satisfy the other.
+ *
+ * (c) then pins the property the whole design rests on: a key that exists ONLY
+ * in the 64-bit hive must still resolve from the 32-bit view, via the
+ * miss-fallback. Nothing populates Wow6432Node on this system, so without that
+ * fallback every OS key a 32-bit app reads would vanish — redirection without
+ * population is a regression, and this is the assertion that would catch it.
+ * It passes before AND after the feature: it is a guard, not a detector. */
+
+typedef LONG(WINAPI *M32_QUERYKEY_FN)(HANDLE, ULONG, VOID *, ULONG, PULONG);
+
+#define M32_KEY_NAME_INFORMATION 3
+#define M32_RDIR_SENTINEL 0x5EDC0024u
+
+/* Case-insensitive search for a wide needle in a counted wide haystack. */
+static int M32WideContains(const WCHAR *hay, ULONG hayChars, const WCHAR *needle)
+{
+    ULONG n = 0, i, j;
+
+    while (needle[n])
+        n++;
+    if (hayChars < n)
+        return 0;
+
+    for (i = 0; i + n <= hayChars; i++)
+    {
+        for (j = 0; j < n; j++)
+        {
+            WCHAR a = hay[i + j], b = needle[j];
+            if (a >= L'a' && a <= L'z') a = (WCHAR)(a - 32);
+            if (b >= L'a' && b <= L'z') b = (WCHAR)(b - 32);
+            if (a != b)
+                break;
+        }
+        if (j == n)
+            return 1;
+    }
+    return 0;
+}
+
+static int CheckRegistryRedirection(void)
+{
+    static WCHAR ScratchPath[] = L"\\Registry\\Machine\\Software\\vibeos_m32redir";
+    static WCHAR SharedPath[] = L"\\Registry\\Machine\\Software\\Microsoft";
+    static WCHAR ValName[] = L"Wow64RedirectProbe";
+    static WCHAR NodeName[] = L"Wow6432Node";
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    M32_CREATEKEY_FN CreateKey;
+    M32_OPENKEY_FN OpenKey;
+    M32_SETVAL_FN SetValue;
+    M32_QUERYVAL_FN QueryValue;
+    M32_QUERYKEY_FN QueryKey;
+    M32_USTR uKey, uVal;
+    M32_OA oa;
+    M32_KVPI info;
+    /* KEY_NAME_INFORMATION: ULONG NameLength; WCHAR Name[]. */
+    struct { ULONG NameLength; WCHAR Name[256]; } nameInfo;
+    HANDLE key = NULL, key64 = NULL;
+    ULONG disp = 0, got = 0;
+    DWORD data = M32_RDIR_SENTINEL;
+    LONG st;
+
+    if (!nt)
+        return M32_FAIL_REG_NTDLL;
+    CreateKey = (M32_CREATEKEY_FN)GetProcAddress(nt, "NtCreateKey");
+    OpenKey = (M32_OPENKEY_FN)GetProcAddress(nt, "NtOpenKey");
+    SetValue = (M32_SETVAL_FN)GetProcAddress(nt, "NtSetValueKey");
+    QueryValue = (M32_QUERYVAL_FN)GetProcAddress(nt, "NtQueryValueKey");
+    QueryKey = (M32_QUERYKEY_FN)GetProcAddress(nt, "NtQueryKey");
+    if (!CreateKey || !OpenKey || !SetValue || !QueryValue || !QueryKey)
+        return M32_FAIL_REG_NTDLL;
+
+    M32InitUstr(&uKey, ScratchPath);
+    M32InitUstr(&uVal, ValName);
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &uKey;
+    oa.Attributes = 0x40; /* OBJ_CASE_INSENSITIVE */
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    /* Default view. For a 32-bit process this must resolve into Wow6432Node.
+     * Volatile: a probe must not survive the boot. */
+    st = CreateKey(&key, 0xF003F /* KEY_ALL_ACCESS */, &oa, 0, NULL,
+                   1 /* REG_OPTION_VOLATILE */, &disp);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: scratch create failed, status =", (DWORD)st);
+        return M32_FAIL_RDIR_CREATE;
+    }
+    st = SetValue(key, &uVal, 0, 4 /* REG_DWORD */, &data, sizeof(data));
+    if (st < 0)
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: scratch set failed, status =", (DWORD)st);
+        return M32_FAIL_RDIR_CREATE;
+    }
+
+    /* (a) ask the KERNEL where that handle actually points. */
+    nameInfo.NameLength = 0;
+    st = QueryKey(key, M32_KEY_NAME_INFORMATION, &nameInfo, sizeof(nameInfo), &got);
+    if (st < 0 ||
+        !M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: default view is not in Wow6432Node, status =",
+                  (DWORD)st);
+        if (st >= 0)
+            ReportWide("[marshal32] redirect: the kernel calls that handle ",
+                       nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
+        return M32_FAIL_RDIR_NAME;
+    }
+    CloseHandle(key);
+
+    /* (b) the SAME path in the 64-bit view must be a different key, so the
+     * value we just wrote must not be visible through it. */
+    key64 = NULL;
+    st = OpenKey(&key64, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st >= 0)
+    {
+        got = 0;
+        st = QueryValue(key64, &uVal, 2 /* KeyValuePartialInformation */,
+                        &info, sizeof(info), &got);
+        CloseHandle(key64);
+        if (st >= 0)
+        {
+            Report("[marshal32] redirect: 64-bit view can see the 32-bit value\n");
+            return M32_FAIL_RDIR_LEAK;
+        }
+    }
+    /* NOT finding the key at all is the expected outcome here: nothing created
+     * it in the 64-bit hive. Only a successful VALUE read is a failure. */
+
+    /* (c) a key that exists only 64-bit must still resolve from the 32-bit
+     * view, or every OS key a 32-bit app reads would disappear. */
+    M32InitUstr(&uKey, SharedPath);
+    key = NULL;
+    st = OpenKey(&key, KEY_READ, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: 64-bit-only key stopped resolving, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_SHARED;
+    }
+    CloseHandle(key);
+
+    /* And the explicit 64-bit selector must still work on it. */
+    key = NULL;
+    st = OpenKey(&key, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: KEY_WOW64_64KEY failed on a shared key, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_64VIEW;
+    }
+    CloseHandle(key);
+
+    Report("[marshal32] Wow6432Node redirection: private 32-bit view, "
+           "64-bit view distinct, miss falls back\n");
+    return 0;
+}
+
 int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 {
     int rc;
@@ -846,8 +1055,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     rc = CheckWin32kLastError();
     if (rc) ExitProcess(rc);
 
+    rc = CheckRegistryRedirection();
+    if (rc) ExitProcess(rc);
+
     Report("[marshal32] PASS: TBI + IOCP + monitors + out-cells + reg-names "
-           "+ wow64-flags + cbSize + last-error all verified\n");
+           "+ wow64-flags + cbSize + last-error + reg-redirect all verified\n");
     ExitProcess(M32_PASS);
     return 0;
 }
