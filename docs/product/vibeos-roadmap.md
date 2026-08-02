@@ -538,9 +538,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   open-coded `0x12F2` for `~OBJ_VALID_KERNEL_ATTRIBUTES` (0x107F2), rejecting `OBJ_OPENLINK` /
   `OBJ_FORCE_ACCESS_CHECK` (latent — every `NtLoadKey*` caller passes `OBJ_CASE_INSENSITIVE`
   alone). Regression-guarded by marshal32 rung `CheckRegistryWow64Flags` (0xBAE7–0xBAEA), so
-  `smoke --ladder` now catches it. **This is NOT registry redirection** — Wow6432Node is still
-  entirely absent (task #66). Stripping the flags in the kernel is the correct interim
-  behaviour and is what the C intends: both registry views stay identical.
+  `smoke --ladder` now catches it. **This is NOT registry redirection** — that landed
+  separately as E24 below, which also moved this strip out of `NtOpenKey`/`NtCreateKey` and
+  into `CmpParseKey`, because once the two views differ the flags have to select one before
+  being cleared.
+- **FIXED (E24, 2026-08-02): Wow6432Node registry redirection was entirely absent (task #66).**
+  A 32-bit process shared the 64-bit `HKLM\Software`, so nothing it wrote was isolated and a
+  COM `InprocServer32` it read named a 64-bit DLL it could not load. Implemented in CM, as one
+  wrapper around `CmpParseKey` (`config-rust/src/cmwow64.rs`): every key open funnels through
+  that parse procedure — Ob's only bypass is for directory objects, which a key never is — so
+  it catches direct `NtOpenKey` callers as well as advapi32. Rewriting paths in `wow64.dll`
+  (where FILESYSTEM redirection lives) was rejected: registry opens are overwhelmingly
+  RELATIVE, so it would have cost a handle-to-path syscall on every open. Gated on
+  `EPROCESS.Wow64Process`, so the all-64-bit boot path cannot be affected, and compiled to
+  `false` on i386. **Deliberate deviation from Windows:** a redirected open that misses falls
+  back to the 64-bit key (Wine's model) instead of hiding it, because nothing populates
+  Wow6432Node here and redirecting reads into an empty node would have hidden every OS key a
+  32-bit app reads. Writes still land in the private node. Revisit when we ship 32-bit-only
+  components. Proven by marshal32 rung 9 (0xBAFA–0xBAFE), which asserts the two views
+  *disagree* — the default handle's own `KeyNameInformation` says Wow6432Node AND the same
+  path under `KEY_WOW64_64KEY` cannot see the value just written.
 - **FIXED (2026-08-01): i386 `KeFlushCurrentTb` under-flushed the TLB.** It dropped the C's
   `KF_GLOBAL_PAGE` branch, so the CR4.PGE toggle never ran and global TLB entries survived
   every flush — and `patpge.rs` does enable PGE. Found by the commented-C mask oracle with no

@@ -2918,3 +2918,165 @@ unless `GetLastError()` was `ERROR_INVALID_PARAMETER` — a discriminator that
 An assertion that cannot fail is worse than no assertion. Any guest-side test
 that branches on a code the kernel sets is dead on arrival until this bridge
 exists; prove the code arrives before trusting the branch.
+
+---
+
+**Phase E24 — Wow6432Node registry redirection (2026-08-02, task #66).** The
+last structurally-missing WoW64 feature: a 32-bit process shared the 64-bit
+`HKLM\Software`, so nothing it wrote was isolated and a COM `InprocServer32` it
+read named a 64-bit DLL it could not load.
+
+*Where it went, and why not where the task proposed.* Filesystem redirection
+lives in `wow64.dll` (`wow64_manual.c` rewrites `\system32\` → `\syswow64\`),
+so the obvious symmetry was to rewrite key paths there too. That does not work:
+registry opens are overwhelmingly RELATIVE — advapi32 caches a handle to
+`\REGISTRY\MACHINE` and passes `RootDirectory` + `"Software\Foo"` — so a
+user-mode rewrite would have to resolve the root handle to a path on every
+open, a syscall per open and stateful besides. It went into CM instead, as one
+wrapper around `CmpParseKey` (`sdk/lib/rust/config-rust/src/cmwow64.rs`).
+`NtOpenKey` and `NtCreateKey` both funnel into `ObOpenObjectByName` →
+`CmpParseKey`, and Ob's only parse-procedure bypass (`obname.rs`) is for
+*directory* objects, which a key never is — so that wrapper sees every key open
+in the system, including callers that reach `NtOpenKey` directly and never
+touch advapi32.
+
+*The rule is one line.* When the parse crosses `\REGISTRY\MACHINE\SOFTWARE`
+into a child, splice `WOW6432NODE` in. Everything else falls out:
+
+- **The view is sticky per handle, for free.** Redirect only when the SOFTWARE
+  boundary lands INSIDE the remaining name. If the caller's root handle is
+  already at or below SOFTWARE it was resolved under some view already, so
+  "do nothing" is correct — and a 32-bit app that opened SOFTWARE with
+  `KEY_WOW64_64KEY` keeps the 64-bit view beneath it with no per-handle state.
+- **`\REGISTRY\USER` is untouched**, so HKCU never redirects, which is right.
+- **The native boot path cannot be affected.** The gate is
+  `EPROCESS.Wow64Process != NULL`; smss, csrss, winlogon and explorer are all
+  64-bit. On i386 the whole thing compiles to `false`.
+
+*Two design traps, both hit and both reversed before writing code.* The first:
+shared-key exemptions look like they should be registry SYMLINKS — CM already
+resolves them and Windows really does keep `Software\Wow6432Node\Classes` as
+one. They cannot be. A link target is an absolute path Ob re-parses, and the
+re-parse redirects it AGAIN, so a link from `Software\Wow6432Node\Policies` to
+`Software\Policies` bounces straight back to itself. Exemptions have to be a
+table the redirect consults — which is exactly what Windows' redirection table
+is, and why it is one.
+
+The second is the task's own hard rule, *redirection without population is a
+regression*. Nothing populates `Wow6432Node` here, so redirecting reads into it
+would hide every OS key a 32-bit app needs — `Microsoft\Windows NT\CurrentVersion`
+and the shell's `Explorer` keys among them. Windows' answer is to mirror the
+subtree from the installer; we have no installer and a 1199-key mirror would
+drift. So this takes Wine's answer instead: a redirected open that returns
+`OBJECT_NAME_NOT_FOUND` is retried unredirected. Writes get a private node,
+reads still find the 64-bit keys, and no population is owed. The fallback is
+**reads only** — a create that fell back would have no isolation, which was the
+entire point. `HKLM\Software\Wow6432Node` is still created in `hivesft.inf`,
+because `NtCreateKey` creates only the LAST path component and a create
+redirected into a missing intermediate would fail.
+
+Two deliberate deviations to record, both reversible:
+
+1. **Real Windows HIDES 64-bit-only keys from a 32-bit process; we fall back to
+   them.** The precise consequence is that isolation comes from CREATE, not
+   from the access mask: a 32-bit process that OPENS an existing 64-bit-only
+   key for write falls back and writes the SHARED key, where Windows would have
+   failed the open. That is the safe direction — refusing it instead breaks
+   every 32-bit app that updates an OS key — but it is a real gap. Revisit if
+   we ever ship 32-bit-only components with their own registrations, at which
+   point the fallback starts masking a genuine "this component is 64-bit only"
+   answer.
+2. **`Classes` lands at `Software\Wow6432Node\Classes`, where Windows puts it
+   at `Software\Classes\Wow6432Node`.** Windows reconciles the two by making
+   the former a symlink to the latter; we cannot, per the re-parse trap above.
+   Nothing here reads the Windows location, and with the fallback a 32-bit COM
+   lookup resolves to the shared 64-bit registration exactly as it did before
+   E24 — so this is invisible today. It becomes real if a 32-bit-only COM
+   server is ever registered, and the fix then is a second redirect root for
+   `Software\Classes` plus the `CLSID`/`Interface`/`DirectShow`/`Media Type`
+   subset Windows actually redirects, rather than a symlink.
+
+*E21's strip had to move.* `KEY_WOW64_32KEY`/`64KEY` are view selectors, not
+access bits: no key's ACL grants either, so one left set denies the open, which
+is why E21 stripped them in `NtOpenKey`/`NtCreateKey`. That is correct only
+while the two views are identical. The moment they differ, `KEY_WOW64_64KEY` is
+a WoW64 process's ONLY route back to the 64-bit view — ole32 uses exactly that
+for HKCR. So the strip moved down into `CmpParseKey`, where the bits first pick
+a view and are then cleared before any access check. Same invariant E21
+established, now enforced at the one choke point every key open passes through
+instead of at two callers. marshal32's rung 6 is the regression guard on it.
+
+*Testing it: prove the two views DISAGREE.* "The write succeeded" is not
+evidence — with no redirection at all a create still succeeds and a read still
+finds it. marshal32 rung 9 asserts two independent things: the default-view
+handle's own `NtQueryKey(KeyNameInformation)` must say `Wow6432Node` (where it
+went, from the kernel's mouth), and the identical path opened with
+`KEY_WOW64_64KEY` must NOT see the value just written (the views are genuinely
+distinct objects). Faking either one still fails the other. A third check then
+pins the property the whole design rests on — a 64-bit-only key must still
+resolve from the 32-bit view — which passes before AND after, so it is a guard
+on the fallback rather than a detector of the original bug.
+
+*The control run, done the E20/E22/E23 way — rung first, against media that
+does NOT have the fix.* Redirection was disabled with a one-line early return
+(leaving the flag consume in place, so the media is exactly "before E24"), and
+the ladder reported:
+
+```
+[WINLOGON] marshal32.exe exit = 0xbafb
+[marshal32] redirect: default view is not in Wow6432Node, status = 0x00000000
+```
+
+`status = 0x00000000` is the part that makes this a control rather than a
+coincidence: `NtQueryKey` SUCCEEDED and handed back a real key name that simply
+has no `Wow6432Node` in it. Had the rung failed because the query itself broke,
+that field would carry the error and the assertion would prove nothing. The
+other eight rungs stayed green, so the failure is isolated to rung 9 rather
+than a sick guest.
+
+Fixed media, amd64, ladder **9/9**:
+
+```
+[marshal32] Wow6432Node redirection: private 32-bit view, 64-bit view distinct, miss falls back
+[WINLOGON] marshal32.exe exit = 0x600d
+```
+
+*The first cut of this was INERT, and the story is the most useful part of the
+phase.* It built clean, passed every lint, regressed nothing — and redirected
+nothing. Ob hands the parse procedure a remaining name in TWO shapes: an
+ABSOLUTE-path open arrives with a LEADING separator (parent `\REGISTRY`,
+remaining `\Machine\Software\...`), a RELATIVE open without one (parent
+`\REGISTRY\MACHINE`, remaining `SYSTEM\...`). Both happen constantly. The code
+assumed one separator sat *between* parent and remaining, so every absolute
+open compared `\Machine\Softwar` against `MACHINE\SOFTWARE`, failed, and
+silently declined. Fix: skip leading separators before comparing and carry the
+offset into the splice.
+
+*The offline harness passed 16/16 and was still wrong, which is the lesson.*
+The splice is pure string arithmetic, so it was lifted into a host harness and
+run against parent-at-`\REGISTRY` vs `\REGISTRY\MACHINE` vs at/below SOFTWARE;
+`SOFTWARE` with and without a tail; lowercase; `SOFTWAREX` (must NOT match);
+`SOFTWARE\WOW6432NODE\FOO` and `SOFTWARE\Wow6432Node` (idempotence, both
+cases); `SOFTWARE\WOW6432NODEX` (a prefix of the node name is a DIFFERENT key
+and must still redirect); HKCU; and names stopping short of the boundary. All
+16 passed — because all 16 had been INVENTED in the relative shape, the shape
+the author had in mind. **A hand-built test inherits the implementer's blind
+spot by construction.** What actually found it was a kernel trace printing the
+real arguments, and the harness only became trustworthy once its cases were
+transcribed from that trace (now 22/22, six of them real). Seed a pure-logic
+harness from observed inputs, not imagined ones.
+
+*And the rung did not say what it saw.* It reported "default view is not in
+Wow6432Node" while holding the name the kernel had just given it. Answering
+"then what IS it?" cost a full build plus a boot for a string already in hand.
+marshal32 gained a `ReportWide` helper and now prints it; an assertion should
+name what it found, not only what it wanted.
+
+*One non-obvious kernel requirement.* `CmpConstructName` walks the KCB parent
+chain and reads hive cells, so it needs `CmpLockRegistry()` + the KCB shared +
+a `Delete` check between them — the sequence `CmpQueryKeyName` uses. The
+redirect builder runs BEFORE `CmpParseKey`'s own locking
+(`CmpBuildHashStackAndLookupCache` is what takes the registry lock), so it
+acquires and drops its own. Calling the inner parse twice for the fallback is
+safe for the same reason: each invocation is lock-balanced, acquiring in the
+cache lookup and releasing on every exit.
