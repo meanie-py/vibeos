@@ -827,6 +827,126 @@ def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     assert "MiInsertStandbyListAtFront+40" in out
 
 
+# `info registers -a` as QEMU 9 actually prints it for the arm64 `virt` machine.
+_ARM64_REGS = """\
+=== info status ===
+VM status: running
+
+=== info cpus ===
+* CPU #0: thread_id=41521
+  CPU #1: thread_id=41522
+
+=== info registers -a ===
+
+CPU#0
+ PC=ffff800004001234 X00=0000000000000001 X01=ffffa00006122c00
+X02=0000000000000000 X03=0000000000000001
+PSTATE=204003c5 --C- EL1h
+
+CPU#1
+ PC=ffff8000040567ac X00=0000000000000000 X01=0000000000000000
+PSTATE=604003c5 -ZC- EL1h
+"""
+
+
+def test_cpu_pcs_credits_each_vcpu_with_its_own_pc():
+    # The whole point is telling one wedged CPU from another. A parser that
+    # searched the blob globally would report CPU#0's PC twice and quietly erase
+    # the difference between "one CPU spinning" and "both stuck in the same place".
+    assert triage.cpu_pcs(_ARM64_REGS) == [
+        (0, "ffff800004001234"),
+        (1, "ffff8000040567ac"),
+    ]
+
+
+def test_cpu_pcs_reads_x86_program_counters_too():
+    # amd64 says RIP=, i386 says EIP=, arm64 says PC= — and none of the three is
+    # 0x-prefixed, which is why this cannot reuse triage._PC.
+    assert triage.cpu_pcs("CPU#0\nRIP=fffff80000401000 RFL=00000246\n") == [(0, "fffff80000401000")]
+    assert triage.cpu_pcs("CPU#0\nEIP=805148fd EFL=00000246\n") == [(0, "805148fd")]
+
+
+def test_cpu_pcs_survives_a_dump_with_no_registers():
+    # capture_cpu_state() never raises, so it can hand back "<unavailable: ...>"
+    # instead of a register block. That must yield no PCs, not an exception.
+    assert triage.cpu_pcs("=== info registers -a ===\n<unavailable: OSError()>\n") == []
+
+
+def test_symbolicate_cpu_state_names_the_function_each_cpu_is_parked_in(tmp_path):
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\necho 'x\tKxAcquireSpinLock+24\t-'\n")
+    out = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, mp=True)
+    assert out == [
+        "CPU#0 0xffff800004001234 -> x\tKxAcquireSpinLock+24\t-",
+        "CPU#1 0xffff8000040567ac -> x\tKxAcquireSpinLock+24\t-",
+    ]
+
+
+def test_symbolicate_cpu_state_reports_the_raw_pc_when_the_index_is_missing(tmp_path):
+    # No addr2sym.sh in this tree. A bare address still localizes a hang far
+    # better than the nothing we had before, so it must not be swallowed.
+    out = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS)
+    assert out == [
+        "CPU#0 0xffff800004001234 -> (unresolved)",
+        "CPU#1 0xffff8000040567ac -> (unresolved)",
+    ]
+
+
+def test_symbolicate_cpu_state_resolves_mp_addresses_against_the_MP_index(tmp_path):
+    # ntkrnlmp.exe is a different binary from ntoskrnl.exe; resolving an MP hang
+    # against the UP index names the wrong function and does it silently.
+    tool = tmp_path / "qemu" / "addr2sym.sh"
+    tool.parent.mkdir(parents=True)
+    tool.write_text('#!/bin/sh\necho "ARGS:$*"\n')
+    mp = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS, mp=True)
+    assert "--mp" in mp[0], mp[0]
+    up = triage.symbolicate_cpu_state(tmp_path, "arm64", _ARM64_REGS)
+    assert "--mp" not in up[0], up[0]
+
+
+def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
+    # wait_for_boot samples the instant the boot times out. Re-sampling later
+    # would agree on a true hang but disagree on a merely-slow boot, which by
+    # then has moved on — reporting the wrong place as "where it was stuck".
+    from . import smoke as smoke_mod
+
+    class _StubVm:
+        hang_cpu_state = "CPU#0\nPC=ffff800004001234\n"
+
+        def capture_cpu_state(self):
+            raise AssertionError("must not re-sample when the deadline capture exists")
+
+    path, lines = smoke_mod._cpu_state(
+        _StubVm(),  # type: ignore[arg-type]
+        tmp_path,
+        tmp_path,
+        "arm64",
+        "",
+    )
+    assert lines == ["CPU#0 0xffff800004001234 -> (unresolved)"]
+    assert path and Path(path).read_text().startswith("CPU#0")
+
+
+def test_cpu_state_falls_back_to_a_live_sample(tmp_path):
+    from . import smoke as smoke_mod
+
+    class _StubVm:
+        hang_cpu_state = ""
+
+        def capture_cpu_state(self):
+            return "CPU#0\nPC=ffff8000040567ac\n"
+
+    _path, lines = smoke_mod._cpu_state(
+        _StubVm(),  # type: ignore[arg-type]
+        tmp_path,
+        tmp_path,
+        "arm64",
+        "",
+    )
+    assert lines == ["CPU#0 0xffff8000040567ac -> (unresolved)"]
+
+
 def test_triage_kernel_panic_via_debugcon():
     # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
     # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)
