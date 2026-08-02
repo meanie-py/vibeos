@@ -671,7 +671,10 @@ unsafe fn CmpDoOpen(
     let mut KeyBody: PCM_KEY_BODY = core::ptr::null_mut();
     let mut Kcb: PCM_KEY_CONTROL_BLOCK = core::ptr::null_mut();
 
-    if (((*Hive).HiveFlags & 0x00000004) != 0) &&
+    // C: HiveFlags & HIVE_IS_UNLOADING. 0x4 is HIVE_HAS_BEEN_REPLACED — it happened
+    // to match CmLoadKey's equally-wrong 0x4, so this guard worked on the LOAD path
+    // and silently did nothing on the unload path it exists for.
+    if (((*Hive).HiveFlags & crate::hiveflags::HIVE_IS_UNLOADING) != 0) &&
         ((*(Hive as PCMHIVE)).CreatorOwner != KeGetCurrentThread() as _)
     {
         return 0xC0000034u32 as i32;

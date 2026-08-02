@@ -9,8 +9,7 @@ use ntkrnl_sys::ddk::{CMHIVE, CmpInitHiveFromFile, CmpInitializeHiveList, CmpLoc
 use ntkrnl_sys::opaque_ptr;
 // Constants not in ntkrnl_sys::constants
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  ");
-const HIVE_VOLATILE: u32 = 1;
-const HIVE_NOLAZYFLUSH: u32 = 2;
+use crate::hiveflags::{HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 const STATUS_NO_SUCH_USER: NTSTATUS = 0xC0000064_u32 as i32;
 const STATUS_WRONG_PASSWORD: NTSTATUS = 0xC000006A_u32 as i32;
 const STATUS_ACCOUNT_RESTRICTION: NTSTATUS = 0xC000006E_u32 as i32;
