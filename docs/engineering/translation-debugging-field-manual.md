@@ -4116,6 +4116,18 @@ identically. **Do not `--allow-stale`, do not re-gate** (it will starve again), 
 **never broad-kill QEMUs** — use `./vibeos-cli kill`. Starvation must be *visible*: it used to
 read as "my build is slow".
 
+**All-15-error also comes in a FAST costume, and the 600 s number is not the tell.** 2026-08-01:
+`15 errors in 28.59s` on a host at `build(cpuheavy) 4/4`, with the plain boot stage green and the
+desktop reached (explorer + taskbar in the serial log). The discriminator that matters is
+**error-vs-fail and uniformity, not the duration** — 15 *errors* is a fixture that never came up,
+whereas a real net regression produces *failures* in a *subset*. Confirmed in one step for free:
+re-running `pytest tests/qemu/test_net.py --arch amd64-uefi-net` against **the same unmodified
+media** gave `15 passed in 63.69s`. That re-run is the cheapest control available — it needs no
+rebuild and no second lane — so reach for it before theorising, especially when your change
+touches something with a plausible story for breaking the network (this one altered registry
+security descriptors, which made "it's contention" the *less* comfortable hypothesis and therefore
+the one worth actually testing).
+
 **Partial contention wears a different costume: ONE test, and the giveaway is the wall clock.**
 `test_tdi_selftest_roundtrip` timed out on `[NETSTACK] TDI self-test: RECEIVE OK` while the other
 14 passed — which reads exactly like a real regression in the MDL data path, and it failed all
