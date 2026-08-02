@@ -2259,6 +2259,23 @@ impl CRegKeyHandleArray {
 impl Default for CRegKeyHandleArray {
     #[inline] fn default() -> Self { unsafe { core::mem::zeroed() } }
 }
+extern "C" {
+    /// `shfldr.h:184` `EXTERN_C void CloseRegKeyArray(HKEY*, UINT)` — implemented in
+    /// `shell32/shlfolder.rs`. DECLARED, not imported: that module is written against the
+    /// island's `HKEY` while this one uses `crate::types`, and two aliases of the same width
+    /// are still two different Rust types.
+    fn CloseRegKeyArray(array: *mut HKEY, cKeys: UINT);
+}
+/// The C++ struct's DESTRUCTOR (`shfldr.h:198`), which the translation dropped along with the
+/// rest of the class. `AddClassKeyToArray` OPENS each key, so without this every
+/// `IContextMenu` creation leaked up to 16 HKEYs — once per right-click on the desktop. Drop
+/// order matches C++: `keys` is declared before the `DEFCONTEXTMENU` that borrows it, so it is
+/// released after `SHCreateDefaultContextMenu` returns, exactly as the C++ scope exit did.
+impl Drop for CRegKeyHandleArray {
+    fn drop(&mut self) {
+        unsafe { CloseRegKeyArray(self.hKeys.as_mut_ptr(), self.cKeys) }
+    }
+}
 
 // -- STR_ bind-ctx object names (shobjidl.idl, ASCII → UTF-16) --
 static STR_PARSE_TRANSLATE_ALIASES: [WCHAR; 24] = [
