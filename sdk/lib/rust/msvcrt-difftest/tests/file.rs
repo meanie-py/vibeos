@@ -416,6 +416,41 @@ extern "C" {
     fn ref__wtempnam(dir: *const u16, prefix: *const u16) -> *mut u16;
     fn ref__getmaxstdio() -> c_int;
 
+    // ── wave 18c part 3: the std-stream aliases and the FILE lock ─────────────────────
+    //
+    // `wint_t` is `unsigned short` here, so the wide getters and putters are `u16` and
+    // their EOF is `WEOF` (0xFFFF), not -1. Declaring them `c_int` would make every
+    // failure compare as 0x0000FFFF against a sign-extended -1 and pass by accident.
+    fn __iob_func() -> FILEP;
+    fn getchar() -> c_int;
+    fn _fgetchar() -> c_int;
+    fn getwchar() -> u16;
+    fn _fgetwchar() -> u16;
+    fn gets(buf: *mut u8) -> *mut u8;
+    fn _getws(buf: *mut u16) -> *mut u16;
+    fn putchar(c: c_int) -> c_int;
+    fn _fputchar(c: c_int) -> c_int;
+    fn _fputwchar(wc: u16) -> u16;
+    fn puts(s: *const u8) -> c_int;
+    fn _putws(s: *const u16) -> c_int;
+    fn _lock_file(f: FILEP);
+    fn _unlock_file(f: FILEP);
+
+    fn ref___iob_func() -> FILEP;
+    fn ref_getchar() -> c_int;
+    fn ref__fgetchar() -> c_int;
+    fn ref_getwchar() -> u16;
+    fn ref__fgetwchar() -> u16;
+    fn ref_gets(buf: *mut u8) -> *mut u8;
+    fn ref__getws(buf: *mut u16) -> *mut u16;
+    fn ref_putchar(c: c_int) -> c_int;
+    fn ref__fputchar(c: c_int) -> c_int;
+    fn ref__fputwchar(wc: u16) -> u16;
+    fn ref_puts(s: *const u8) -> c_int;
+    fn ref__putws(s: *const u16) -> c_int;
+    fn ref__lock_file(f: FILEP);
+    fn ref__unlock_file(f: FILEP);
+
     /// The `dwShareMode` the last `CreateFileW` was asked for (fileimpl.c).
     ///
     /// ONE definition serving both sides, so it has to be read immediately after each
@@ -423,6 +458,84 @@ extern "C" {
     /// modes have no POSIX behaviour to observe, so without this the `_SH_DENY*` mapping
     /// — the only thing distinguishing `_fsopen` from `fopen` — would be ungradeable.
     fn ref_get_last_share_mode() -> u32;
+
+    /// Point the three standard handles at the caller's host fds, for the side that is
+    /// about to run `msvcrt_init_io()`. See the long note at the definition (fileimpl.c):
+    /// without it both sides' `stdout` IS the harness's own fd 1 and the eleven exports
+    /// that write there cannot be compared at all.
+    fn ref_set_std_fds(in_fd: c_int, out_fd: c_int, err_fd: c_int);
+
+    /// Which global lock slot the last `_lock` / `_unlock` took, or -1 (fileimpl.c). The
+    /// only window onto `_lock_file`'s non-critical-section arm; same read-it-immediately
+    /// discipline as `ref_get_last_share_mode`.
+    fn ref_get_last_lock() -> c_int;
+    fn ref_get_last_unlock() -> c_int;
+    fn ref_reset_last_locks();
+
+    // ── wave 18c part 3: the `v*printf` shells, against the FLAT instantiation ────────
+    //
+    // **The reference here is `fileflat_*`, never `ref_*`, and that is not a preference.**
+    // Every one of these forwards `&valist` as a `va_list*`, which is coherent only where
+    // a `va_list` IS a plain pointer. `ref_*` is compiled under the host's SysV
+    // register-save-area model, where `*valist` reinterprets the decayed pointer variable
+    // as the tag struct — a wild read, not a wrong answer. `fileflat_*` is the same file.c
+    // compiled under refstub_printf's flat `char*` `<stdarg.h>`, which IS the Windows
+    // x64 / aarch64 / i386 model, so it is both the callable instantiation and the
+    // target-faithful one. Identical reasoning to `pfflat_` for wcs.c; see build.rs.
+    //
+    // `Va` is `*mut u8` on BOTH sides: msvcrt-crt-rust's `va_list` is `*mut u8` on every
+    // target (prelude.rs), so the two consume the SAME hand-packed 8-byte-slot buffer.
+    fn vfprintf(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn vfprintf_s(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn _vfprintf_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn _vfprintf_s_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn _vfprintf_p(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn _vfprintf_p_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn vfwprintf(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn vfwprintf_s(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn _vfwprintf_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn _vfwprintf_s_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn _vfwprintf_p(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn _vfwprintf_p_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn vprintf(fmt: *const u8, v: *mut u8) -> c_int;
+    fn vprintf_s(fmt: *const u8, v: *mut u8) -> c_int;
+    fn vwprintf(fmt: *const u16, v: *mut u8) -> c_int;
+    fn vwprintf_s(fmt: *const u16, v: *mut u8) -> c_int;
+
+    fn fileflat_msvcrt_init_io();
+    fn fileflat___iob_func() -> FILEP;
+    fn fileflat__sopen_s(
+        fd: *mut c_int,
+        path: *const u8,
+        oflags: c_int,
+        shflags: c_int,
+        pmode: c_int,
+    ) -> c_int;
+    fn fileflat__fdopen(fd: c_int, mode: *const u8) -> FILEP;
+    fn fileflat_fclose(f: FILEP) -> c_int;
+    fn fileflat_fflush(f: FILEP) -> c_int;
+    fn fileflat_fseek(f: FILEP, off: i32, whence: c_int) -> c_int;
+    fn fileflat_ftell(f: FILEP) -> i32;
+    fn fileflat_feof(f: FILEP) -> c_int;
+    fn fileflat_ferror(f: FILEP) -> c_int;
+    fn fileflat__fileno(f: FILEP) -> c_int;
+
+    fn fileflat_vfprintf(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn fileflat_vfprintf_s(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn fileflat__vfprintf_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat__vfprintf_s_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat__vfprintf_p(f: FILEP, fmt: *const u8, v: *mut u8) -> c_int;
+    fn fileflat__vfprintf_p_l(f: FILEP, fmt: *const u8, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat_vfwprintf(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn fileflat_vfwprintf_s(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn fileflat__vfwprintf_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat__vfwprintf_s_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat__vfwprintf_p(f: FILEP, fmt: *const u16, v: *mut u8) -> c_int;
+    fn fileflat__vfwprintf_p_l(f: FILEP, fmt: *const u16, loc: *mut c_void, v: *mut u8) -> c_int;
+    fn fileflat_vprintf(fmt: *const u8, v: *mut u8) -> c_int;
+    fn fileflat_vprintf_s(fmt: *const u8, v: *mut u8) -> c_int;
+    fn fileflat_vwprintf(fmt: *const u16, v: *mut u8) -> c_int;
+    fn fileflat_vwprintf_s(fmt: *const u16, v: *mut u8) -> c_int;
 }
 
 // msvcrt's own <fcntl.h> / <io.h> values, derived by the pinned cross-compiler
@@ -890,6 +1003,101 @@ fn push_disk(img: &mut Vec<u8>, d: Option<Vec<u8>>) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════
+// The two sides' standard streams
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Eleven of file.c's exports take no FILE parameter — `putchar`, `puts`, `getchar`,
+// `gets` and their kin all name `stdout` or `stdin` directly — so the ONLY way to compare
+// what the two implementations did is for each side to own its standard streams. It does,
+// as a consequence of the `_iob` rename wall: `stdout` is `&MSVCRT__iob[1]` on the subject
+// and `&ref_MSVCRT__iob[1]` on the reference, two different FILEs.
+//
+// What they did NOT own is the fd underneath. `msvcrt_init_io` binds CRT fd 1 from
+// `GetStdHandle(STD_OUTPUT_HANDLE)`, which the substrate answers with host fd 1 — so both
+// sides' `putchar` wrote into the harness's own stdout, mixed with each other and with
+// `println!`, and unreadable afterwards. `ref_set_std_fds` moves each side onto its own
+// three files instead, once, before that side's init.
+
+const SUBJ: char = 's';
+const REF: char = 'r';
+/// The THIRD world: file.c compiled a second time under the flat `va_list`, which is the
+/// only instantiation the `v*printf` shells are callable in. It needs its own standard
+/// streams for the same reason the other two do — `vprintf` names `stdout` and nothing
+/// else. See the extern block's note, and build.rs.
+const FLAT: char = 'f';
+
+/// One side's stdin / stdout / stderr backing file.
+fn std_path(side: char, which: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("msvcrt-file-{}-std{which}-{side}", std::process::id()))
+}
+
+/// Open the three files and hand their host fds to the substrate. The fds are LEAKED on
+/// purpose: they live as long as the CRT's fd table does, which is the process.
+unsafe fn bind_std_streams(side: char) {
+    use std::os::fd::IntoRawFd;
+    let mut fds = [-1 as c_int; 3];
+    for (i, which) in ["in", "out", "err"].iter().enumerate() {
+        let p = std_path(side, which);
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&p)
+            .unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+        fds[i] = f.into_raw_fd();
+    }
+    ref_set_std_fds(fds[0], fds[1], fds[2]);
+}
+
+/// `sizeof(struct _iobuf)`, which is the stride of the `_iob` array. Asserted against the
+/// pinned cross-compiler by refstub/msvcrt_crt_layout.h (`sizeof(FILE) == 48`), and
+/// checked against both implementations at run time by `assert_shims_live`, which walks
+/// this stride and demands `_fileno` answer 0, 1, 2.
+const IOB_STRIDE: usize = core::mem::size_of::<Iobuf>();
+
+/// msvcrt's `CRITICAL_SECTION`, and the `file_crit` a heap FILE really is.
+///
+/// Same status as `Iobuf` below, and declared for the same reason: `_lock_file`'s
+/// critical-section arm leaves its mark in `RecursionCount`, and reaching it by byte
+/// arithmetic would be a hand-rolled layout offset — the pattern `scan_magic_offsets`
+/// forbids, and it caught this. Spelled as types instead, so the offsets come from the
+/// declaration; every one of them is `_Static_assert`ed against the pinned cross-compiler
+/// in refstub/msvcrt_crt_layout.h.
+#[repr(C)]
+struct Crit {
+    debug_info: *mut c_void,
+    lock_count: c_int,
+    recursion_count: c_int,
+    owning_thread: *mut c_void,
+    lock_semaphore: *mut c_void,
+    spin_count: usize,
+}
+
+/// file.c's `typedef struct { FILE file; CRITICAL_SECTION crit; } file_crit` — what
+/// `file_get_cs` casts a FILE outside the `_iob` array to.
+#[repr(C)]
+struct FileCrit {
+    file: Iobuf,
+    crit: Crit,
+}
+
+const _: () = assert!(core::mem::size_of::<Crit>() == 40, "CRITICAL_SECTION size drifted");
+const _: () = assert!(core::mem::size_of::<Iobuf>() == 48, "FILE size drifted");
+
+/// `stdin`/`stdout`/`stderr` for the subject and the reference, through each side's own
+/// `__iob_func` — which is itself one of the exports graded below.
+unsafe fn s_std(i: usize) -> FILEP {
+    (__iob_func() as *mut u8).add(i * IOB_STRIDE) as FILEP
+}
+unsafe fn r_std(i: usize) -> FILEP {
+    (ref___iob_func() as *mut u8).add(i * IOB_STRIDE) as FILEP
+}
+unsafe fn f_std(i: usize) -> FILEP {
+    (fileflat___iob_func() as *mut u8).add(i * IOB_STRIDE) as FILEP
+}
+
 /// msvcrt's `struct _iobuf`, as the harness sees it.
 ///
 /// The layout is pinned by refstub/msvcrt_file_pre.h and asserted by
@@ -1047,10 +1255,22 @@ fn main() {
         // harness supplying the environment, in the same spirit as ref_set_console_fd.
         std::env::set_var("TMP", std::env::temp_dir());
 
+        // Each side gets its OWN stdin/stdout/stderr, bound BEFORE that side's init
+        // because `msvcrt_init_io` is the only reader of `GetStdHandle`. See
+        // `ref_set_std_fds` (fileimpl.c) for why this is not `freopen`.
+        bind_std_streams(REF);
         ref_msvcrt_init_io();
+        bind_std_streams(FLAT);
+        fileflat_msvcrt_init_io();
+        bind_std_streams(SUBJ);
         msvcrt_init_io();
         assert_shims_live();
         run();
+        for side in [SUBJ, REF, FLAT] {
+            for which in ["in", "out", "err"] {
+                let _ = std::fs::remove_file(std_path(side, which));
+            }
+        }
     }
 
     let res = unsafe { &*core::ptr::addr_of!(RESULTS) };
@@ -1159,6 +1379,42 @@ unsafe fn assert_shims_live() {
     assert_eq!(fclose(h), 0);
     assert_eq!(ref_fclose(h2), 0);
 
+    // Wave 18c part 3 rests on two claims the rows below cannot make for themselves.
+    //
+    // FIRST, that `IOB_STRIDE` is the real one. Every std-stream row addresses `stdin` and
+    // `stdout` as `__iob_func() + i * IOB_STRIDE`, and a stride that were wrong by a field
+    // would hand both sides a misaligned interior pointer — which does not crash, because
+    // the array is contiguous. It reads a `_ptr` as a `_flag` and grades the rubble. The
+    // check is msvcrt's own contract: `msvcrt_init_io` sets `_file = i` for the first
+    // three, so walking the stride must produce exactly 0, 1, 2.
+    for i in 0..3 {
+        assert_eq!(
+            _fileno(s_std(i)),
+            i as c_int,
+            "the subject's _iob[{i}] does not carry fd {i} — IOB_STRIDE is wrong, or \
+             __iob_func did not answer the base of the array"
+        );
+        assert_eq!(ref__fileno(r_std(i)), i as c_int, "the reference's _iob[{i}] likewise");
+    }
+
+    // SECOND, that `putchar` and friends are the SUBJECT's. They are glibc names too, and
+    // this batch is the worst case for that: glibc's `putchar` writes to the process's
+    // real stdout, so a row grading it would compare two empty files and report MATCH for
+    // every case. The discriminator is that the byte must land in the file THIS side's
+    // standard output was bound to.
+    assert_eq!(putchar(b'Q' as c_int), b'Q' as c_int);
+    assert_eq!(fflush(s_std(1)), 0);
+    assert_eq!(
+        std::fs::read(std_path(SUBJ, "out")).unwrap(),
+        b"Q",
+        "the subject's `putchar` did not write to the stdout it was bound to — it is \
+         glibc's, and every std-stream row would compare two files nothing ever wrote to"
+    );
+    assert_eq!(ref_putchar(b'Q' as c_int), b'Q' as c_int);
+    assert_eq!(ref_fflush(r_std(1)), 0);
+    assert_eq!(std::fs::read(std_path(REF, "out")).unwrap(), b"Q", "the reference's likewise");
+    reset_stdout();
+
     let _ = std::fs::remove_file(&p);
 }
 
@@ -1178,6 +1434,8 @@ unsafe fn run() {
     utime_rows();
     global_stream_rows();
     tempname_rows();
+    std_stream_rows();
+    vprintf_rows();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -4922,6 +5180,924 @@ unsafe fn tempname_rows() {
             Obs::with(g, gi),
             Obs::with(n, ni),
             format!("wide={wide}"),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18c part 3a — the std-stream aliases, __iob_func, and the FILE lock
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// Fourteen exports whose whole content is WHICH STREAM they name. `putchar(c)` is
+// `fputc(c, stdout)` and nothing else; `getchar()` is `fgetc(stdin)`. `fputc` and `fgetc`
+// are already graded (wave 18a), so what is left to grade here is precisely the part a
+// reading of the C makes look trivial — and which is exactly where a translation goes
+// wrong, because `stdout` is `&_iob[1]` and `stderr` is `&_iob[2]` and an off-by-one
+// there produces a function that works perfectly until someone looks at the file.
+//
+// That is only checkable because each side now owns its three streams: see
+// `bind_std_streams`. Every row below resets both sides' stdout, or seeds both sides'
+// stdin, before the call — so a case grades what THIS case did rather than an accumulated
+// history that would make the first divergence poison every later one.
+//
+// The standard streams come out of `msvcrt_init_io` in TEXT mode (`WX_TEXT`, because
+// `GetFileType` on a regular file answers `FILE_TYPE_DISK`), which is what Windows gives a
+// redirected console too. So `\n` really does become `\r\n` on the way out and `\r\n`
+// really does collapse on the way in, and the rows draw those bytes deliberately rather
+// than hoping the fuzz finds them.
+//
+// `gets` and `_getws` have NO destination bound — `gets(buf)` is `gets_s(buf, (size_t)-1)`
+// — so their rows keep the seed short and the destination guarded. That is not defensive
+// padding: an implementation that miscounted would overrun into the guard, and the guard
+// bytes are in the compared image.
+
+/// Both sides' stdin, seeded to the same bytes with both streams rewound. Written through
+/// the PATH rather than the fd, so the CRT's buffer and offset are reset by `rewind` — the
+/// call under test then starts from a known state instead of from the previous case's.
+unsafe fn seed_stdin(bytes: &[u8]) {
+    std::fs::write(std_path(SUBJ, "in"), bytes).unwrap();
+    std::fs::write(std_path(REF, "in"), bytes).unwrap();
+    rewind(s_std(0));
+    ref_rewind(r_std(0));
+}
+
+/// One side's output stream (`1` = stdout, `2` = stderr), emptied and repositioned.
+///
+/// Three steps and the order is the whole point: `fflush` first, because a byte still in
+/// the buffer would otherwise be written AFTER the truncation and land at offset 0 of the
+/// next case; then truncate through the path; then `fseek` back to 0, because truncating
+/// the file does not move the descriptor and the next write would leave a hole of NULs
+/// where the previous case's bytes were.
+unsafe fn reset_out(slot: usize) {
+    let which = ["in", "out", "err"][slot];
+    fflush(s_std(slot));
+    ref_fflush(r_std(slot));
+    std::fs::write(std_path(SUBJ, which), b"").unwrap();
+    std::fs::write(std_path(REF, which), b"").unwrap();
+    fseek(s_std(slot), 0, SEEK_SET);
+    ref_fseek(r_std(slot), 0, SEEK_SET);
+}
+
+unsafe fn reset_stdout() {
+    reset_out(1);
+}
+
+/// What each side's stdout holds, flushed first. Read by the HOST, never back through the
+/// implementation that wrote it.
+unsafe fn stdout_bytes() -> (Vec<u8>, Vec<u8>) {
+    fflush(s_std(1));
+    ref_fflush(r_std(1));
+    (
+        std::fs::read(std_path(SUBJ, "out")).unwrap_or_default(),
+        std::fs::read(std_path(REF, "out")).unwrap_or_default(),
+    )
+}
+
+/// A byte string safe to hand a NUL-terminated `puts`: no 0x00, and the three bytes text
+/// mode treats specially over-weighted (`\n` becomes `\r\n` on the way out, `\r\n`
+/// collapses on the way in, and 0x1A ends a text-mode read). The 0x80..0xFF draw is what
+/// reaches the multibyte converter on the wide rows, where a byte with no `wchar_t` has to
+/// be reported rather than substituted.
+fn gen_line(r: &mut Rng, n: usize) -> Vec<u8> {
+    (0..n)
+        .map(|_| match r.below(8) {
+            0 => 0x0A,
+            1 => 0x0D,
+            2 => 0x1A,
+            3 => 0x80 + (r.next() % 0x80) as u8,
+            _ => 0x20 + (r.next() % 0x5F) as u8,
+        })
+        .collect()
+}
+
+unsafe fn std_stream_rows() {
+    // `getchar` / `_fgetchar` — `getchar` IS `fgetc(stdin)` and `_fgetchar` is the same
+    // line again, so both names run one row and staying identical is a checked property.
+    grade("getchar+_fgetchar", &["plain", "alias", "ok", "eof"], ROW_ITERS, |r| {
+        let seed = r.bytes_upto(24);
+        seed_stdin(&seed);
+        let alias = r.below(2) == 0;
+        let take = 1 + r.below(12);
+
+        let (mut sv, mut rv): (Vec<c_int>, Vec<c_int>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for _ in 0..take {
+                sv.push(if alias { _fgetchar() } else { getchar() });
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for _ in 0..take {
+                rv.push(if alias { ref__fgetchar() } else { ref_getchar() });
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(s_std(0)));
+        ni.extend(stream_state_reference(r_std(0)));
+        let tags = vec![
+            if alias { "alias" } else { "plain" },
+            if rv.iter().any(|&c| c >= 0) { "ok" } else { "" },
+            if rv.contains(&CEOF) { "eof" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} take={take} alias={alias}", seed.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `getwchar` / `_fgetwchar` — the wide twin. stdin is an ANSI text descriptor, so
+    // `_fgetwc_nolock` takes the `isleadbyte`/`mbtowc` arm rather than assembling two
+    // bytes; that converter is shared substrate (§9.73) and what this grades is the stream
+    // logic around it.
+    grade("getwchar+_fgetwchar", &["plain", "alias", "ok", "weof"], WIDE_ITERS, |r| {
+        let seed = r.bytes_upto(24);
+        seed_stdin(&seed);
+        let alias = r.below(2) == 0;
+        let take = 1 + r.below(12);
+
+        let (mut sv, mut rv): (Vec<u16>, Vec<u16>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for _ in 0..take {
+                sv.push(if alias { _fgetwchar() } else { getwchar() });
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for _ in 0..take {
+                rv.push(if alias { ref__fgetwchar() } else { ref_getwchar() });
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(s_std(0)));
+        ni.extend(stream_state_reference(r_std(0)));
+        let tags = vec![
+            if alias { "alias" } else { "plain" },
+            if rv.iter().any(|&c| c != WEOF) { "ok" } else { "" },
+            if rv.contains(&WEOF) { "weof" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("len={} take={take} alias={alias}", seed.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `gets` / `_getws` — read a line from stdin into an UNBOUNDED destination.
+    //
+    // `gets` is `gets_s(buf, (size_t)-1)`, which makes the `!len` arm of gets_s dead from
+    // this entry point and the row says so rather than tagging an outcome it cannot reach.
+    // What IS reachable, and what the row is really for: `\r` is DROPPED rather than
+    // stored, `\n` terminates without being stored, and a read that hits EOF having stored
+    // nothing returns NULL — three separate decisions, none of them visible in the return
+    // value alone, all of them visible in the destination image.
+    grade("gets+_getws", &["narrow", "wide", "line", "nothing"], ROW_ITERS, |r| {
+        let wide = r.below(2) == 0;
+        // Short and NUL-free: an unbounded destination means the seed length IS the bound.
+        let k = r.below(40);
+        let seed = gen_line(r, k);
+        seed_stdin(&seed);
+        let (mut sb, mut rb) = (Buf::new(96), Buf::new(96));
+        let (mut swb, mut rwb) = (WBuf::new(96), WBuf::new(96));
+        let (sp, rp) = (sb.p(), rb.p());
+        let (swp, rwp) = (swb.p(), rwb.p());
+
+        // 0 = NULL, 1 = the destination it was handed, 2 = some OTHER pointer. Both
+        // functions contractually return `buf` itself on success, and "returned non-NULL"
+        // would grade a body that returned the END of what it wrote as correct.
+        let ret_class = |got: *const u8, want: *const u8| -> i64 {
+            if got.is_null() {
+                0
+            } else if got == want {
+                1
+            } else {
+                2
+            }
+        };
+        let g = Effects::subject(|| {
+            if wide {
+                ret_class(_getws(swp) as *const u8, swp as *const u8)
+            } else {
+                ret_class(gets(sp), sp)
+            }
+        });
+        let n = Effects::reference(|| {
+            if wide {
+                ret_class(ref__getws(rwp) as *const u8, rwp as *const u8)
+            } else {
+                ret_class(ref_gets(rp), rp)
+            }
+        });
+        let (mut gi, mut ni) = if wide { (swb.img(), rwb.img()) } else { (sb.img(), rb.img()) };
+        gi.extend(stream_state_subject(s_std(0)));
+        ni.extend(stream_state_reference(r_std(0)));
+        let tags = vec![
+            if wide { "wide" } else { "narrow" },
+            if n.ret != 0 { "line" } else { "nothing" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("wide={wide} len={}", seed.len()),
+            tags,
+        )
+    });
+
+    // `putchar` / `_fputchar` — one byte to stdout, and the answer is the FILE.
+    grade("putchar+_fputchar", &["plain", "alias", "newline", "high"], ROW_ITERS, |r| {
+        reset_stdout();
+        let alias = r.below(2) == 0;
+        let chars: Vec<c_int> =
+            (0..1 + r.below(8)).map(|_| gen_line(r, 1)[0] as c_int).collect();
+
+        let (mut sv, mut rv): (Vec<c_int>, Vec<c_int>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for &c in &chars {
+                sv.push(if alias { _fputchar(c) } else { putchar(c) });
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for &c in &chars {
+                rv.push(if alias { ref__fputchar(c) } else { ref_putchar(c) });
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(s_std(1)));
+        ni.extend(stream_state_reference(r_std(1)));
+        let (sd, rd) = stdout_bytes();
+        push_disk(&mut gi, Some(sd));
+        push_disk(&mut ni, Some(rd));
+        let tags = vec![
+            if alias { "alias" } else { "plain" },
+            if chars.contains(&0x0A) { "newline" } else { "" },
+            if chars.iter().any(|&c| c >= 0x7F) { "high" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("n={} alias={alias}", chars.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `_fputwchar` — the wide twin, and the only one of the eleven with no narrow partner.
+    // stdout is an ANSI text descriptor, so an unconvertible character must be REPORTED
+    // (WEOF) rather than emitted as a replacement; `gen_wchar` draws U+20AC for that arm.
+    grade("_fputwchar", &["ok", "newline", "unconvertible"], WIDE_ITERS, |r| {
+        reset_stdout();
+        let chars: Vec<u16> = (0..1 + r.below(8)).map(|_| gen_wchar(r)).collect();
+
+        let (mut sv, mut rv): (Vec<u16>, Vec<u16>) = (Vec::new(), Vec::new());
+        let g = Effects::subject(|| {
+            for &c in &chars {
+                sv.push(_fputwchar(c));
+            }
+            0
+        });
+        let n = Effects::reference(|| {
+            for &c in &chars {
+                rv.push(ref__fputwchar(c));
+            }
+            0
+        });
+        let mut gi: Vec<u8> = sv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let mut ni: Vec<u8> = rv.iter().flat_map(|c| c.to_le_bytes()).collect();
+        gi.extend(stream_state_subject(s_std(1)));
+        ni.extend(stream_state_reference(r_std(1)));
+        let (sd, rd) = stdout_bytes();
+        push_disk(&mut gi, Some(sd));
+        push_disk(&mut ni, Some(rd));
+        let tags = vec![
+            if rv.iter().any(|&c| c != WEOF) { "ok" } else { "" },
+            if chars.contains(&0x000A) { "newline" } else { "" },
+            if rv.contains(&WEOF) { "unconvertible" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("n={}", chars.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `puts` / `_putws` — a whole string plus a newline, and NEITHER is a one-liner.
+    //
+    // `puts` measures with `strlen`, writes the body with `_fwrite_nolock`, checks that
+    // count, then writes "\n" as a SECOND call and reports `0` or `EOF` — so the return is
+    // not the byte count and an implementation that returned one would look right until a
+    // caller compared against 0. `_putws` goes through `fputws` and turns any negative
+    // into `WEOF`, whose value is 0xFFFF and not -1. Both bracket the pair of writes in
+    // ONE `_lock_file`, which is the reason they are not simply `fputs` + `fputc`.
+    grade("puts+_putws", &["narrow", "wide", "empty", "newline"], ROW_ITERS, |r| {
+        reset_stdout();
+        let wide = r.below(2) == 0;
+        let k = r.below(24);
+        let body = gen_line(r, k);
+        let mut narrow = body.clone();
+        narrow.push(0);
+        let mut widestr: Vec<u16> = body.iter().map(|&b| b as u16).collect();
+        widestr.push(0);
+
+        let g = Effects::subject(|| {
+            if wide {
+                _putws(widestr.as_ptr()) as i64
+            } else {
+                puts(narrow.as_ptr()) as i64
+            }
+        });
+        let n = Effects::reference(|| {
+            if wide {
+                ref__putws(widestr.as_ptr()) as i64
+            } else {
+                ref_puts(narrow.as_ptr()) as i64
+            }
+        });
+        let mut gi = stream_state_subject(s_std(1));
+        let mut ni = stream_state_reference(r_std(1));
+        let (sd, rd) = stdout_bytes();
+        push_disk(&mut gi, Some(sd));
+        push_disk(&mut ni, Some(rd));
+        let tags = vec![
+            if wide { "wide" } else { "narrow" },
+            if body.is_empty() { "empty" } else { "" },
+            if body.contains(&0x0A) { "newline" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("wide={wide} len={}", body.len()),
+            tags.into_iter().filter(|t| !t.is_empty()).collect(),
+        )
+    });
+
+    // `__iob_func` — one line (`return iob_get_file(0)`) and NOT gradeable by comparison:
+    // the two sides answer different addresses by construction, which is the entire point
+    // of the `_iob` rename wall.
+    //
+    // What IS comparable is what the answer MEANS. Walk it by `IOB_STRIDE` and each slot
+    // must be the standard stream that index names — proved by USING it: slot 0 must be
+    // the stdin this side's `getchar` reads, slots 1 and 2 must be the files this side's
+    // stdout and stderr were bound to. A pointer off by one entry, or a stride off by a
+    // field, fails here; a pointer that merely differs between the sides does not.
+    grade("__iob_func", &["stdin", "stdout", "stderr"], ROW_ITERS, |r| {
+        let i = r.below(3);
+        let byte = gen_line(r, 1)[0];
+        reset_out(1);
+        reset_out(2);
+        let k = 1 + r.below(8);
+        let seed = gen_line(r, k);
+        seed_stdin(&seed);
+
+        let g = Effects::subject(|| {
+            let f = (__iob_func() as *mut u8).add(i * IOB_STRIDE) as FILEP;
+            let ret = if i == 0 { fgetc(f) } else { fputc(byte as c_int, f) };
+            fflush(f);
+            ret as i64
+        });
+        let n = Effects::reference(|| {
+            let f = (ref___iob_func() as *mut u8).add(i * IOB_STRIDE) as FILEP;
+            let ret = if i == 0 { ref_fgetc(f) } else { ref_fputc(byte as c_int, f) };
+            ref_fflush(f);
+            ret as i64
+        });
+        let which = ["in", "out", "err"][i];
+        let mut gi = stream_state_subject(s_std(i));
+        let mut ni = stream_state_reference(r_std(i));
+        push_disk(&mut gi, std::fs::read(std_path(SUBJ, which)).ok());
+        push_disk(&mut ni, std::fs::read(std_path(REF, which)).ok());
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("slot={i}"),
+            vec![["stdin", "stdout", "stderr"][i]],
+        )
+    });
+
+    // `_lock_file` / `_unlock_file` — two arms, and the arm chosen is the whole function.
+    //
+    // A FILE inside the `_iob` array takes the GLOBAL lock `_STREAM_LOCKS + (file - _iob)`;
+    // any other FILE enters its own CRITICAL_SECTION. Neither is visible in a return value
+    // — both are `void` — so each arm needs its own window:
+    //
+    //   * the global-lock arm reports through `ref_get_last_lock` (fileimpl.c), which
+    //     records the slot number `_lock` was handed. That number is `28 + index`, so it
+    //     catches a wrong index as well as a wrong arm.
+    //   * the critical-section arm reports through the section's own `RecursionCount`,
+    //     which lives in the FILE's memory and is therefore per-side already.
+    //
+    // The heap FILE comes from `fopen`, not from `tmpfile`: it has to be a FILE OUTSIDE
+    // the array, and the row asserts that by checking the arm the reference took.
+    grade("_lock_file+_unlock_file", &["iob", "heap"], ROW_ITERS, |r| {
+        // 20 = _IOB_ENTRIES. Beyond it fileimpl.c's ref_lock_slot aborts, which is the
+        // correct response to a lock number msvcrt cannot produce.
+        let iob = r.below(2) == 0;
+        let idx = r.below(20);
+        let w = World::new("lockfile", b"vibeos");
+
+        let (sf, rf) = if iob {
+            (s_std(idx), r_std(idx))
+        } else {
+            (fopen(w.s(), b"rb\0".as_ptr()), ref_fopen(w.r(), b"rb\0".as_ptr()))
+        };
+        let recursion = |f: FILEP| -> c_int {
+            if iob {
+                -1
+            } else {
+                (*(f as *const FileCrit)).crit.recursion_count
+            }
+        };
+
+        // The `ret` channel carries the state WHILE the lock is held — the slot `_lock`
+        // was handed, and the section's recursion depth — because both are gone by the
+        // time `_unlock_file` returns. The image carries what is left afterwards.
+        let held = |lock: c_int, rec: c_int| -> i64 { ((lock as i64) << 32) | (rec as u32) as i64 };
+
+        ref_reset_last_locks();
+        let g = Effects::subject(|| {
+            _lock_file(sf);
+            let inside = held(ref_get_last_lock(), recursion(sf));
+            _unlock_file(sf);
+            inside
+        });
+        let mut gi = Vec::new();
+        gi.extend_from_slice(&ref_get_last_unlock().to_le_bytes());
+        gi.extend_from_slice(&recursion(sf).to_le_bytes());
+        ref_reset_last_locks();
+        let n = Effects::reference(|| {
+            ref__lock_file(rf);
+            let inside = held(ref_get_last_lock(), recursion(rf));
+            ref__unlock_file(rf);
+            inside
+        });
+        let mut ni = Vec::new();
+        ni.extend_from_slice(&ref_get_last_unlock().to_le_bytes());
+        ni.extend_from_slice(&recursion(rf).to_le_bytes());
+        if !iob {
+            fclose(sf);
+            ref_fclose(rf);
+        }
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("iob={iob} idx={idx}"),
+            vec![if iob { "iob" } else { "heap" }],
+        )
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+// Wave 18c part 3b — the sixteen `v*printf` shells
+// ══════════════════════════════════════════════════════════════════════════════════════
+//
+// These are the last of file.c's exports, and the reason they went last is that the
+// reference is not callable. Every one forwards `&valist` to the engine as a `va_list*`,
+// an idiom coherent only where a `va_list` IS a plain pointer — so under the host's SysV
+// register-save-area model `*valist` reinterprets the decayed pointer variable as the tag
+// struct and reads wild memory. `fileflat_*` is file.c compiled a SECOND time under
+// refstub_printf's flat `char*` `<stdarg.h>`, which is the Windows x64 / aarch64 / i386
+// model; it is both the callable instantiation and the target-faithful one. Same
+// diagnosis and same fix as `pfflat_` for wcs.c — see build.rs.
+//
+// # What is left to grade once the engine is out of scope
+//
+// `printf_port.rs` grades the ENGINE and `printf_shells.rs` grades the string-writing
+// shells around it. What neither can see is the two helpers these sixteen funnel through,
+// `vfprintf_helper` and `vfwprintf_helper`, and their decisions are all about the STREAM:
+//
+//   * which `options` bits the shell contributes — `_s` adds
+//     INVOKE_INVALID_PARAM_HANDLER, `_p` adds POSITIONAL_PARAMS on top of it, plain adds
+//     neither, and a shell that mixed them up would still format perfectly;
+//   * the NULL checks, which are `MSVCRT_CHECK_PMT` — so a NULL file or format must
+//     return -1 AND fire the invalid-parameter handler, not just return -1;
+//   * `create_positional_ctx`'s three outcomes: found positional specifiers (use them),
+//     found none (drop the flag and re-run as ordinary), or malformed (fire the handler,
+//     set EINVAL, and return its negative code);
+//   * that the pair of writes is bracketed by ONE `_lock_file` and that `add_std_buffer`'s
+//     temporary buffer, if taken, is removed again.
+//
+// # Two limits, stated rather than implied
+//
+// `add_std_buffer` is UNREACHABLE here and would be on any redirected stream: it requires
+// `_isatty(file->_file)`, and these standard streams are regular files. That is the same
+// answer a Windows CI job with redirected output gets, so it is a property of the
+// environment rather than a gap in the harness — but it does mean `tmp_buf` is always
+// FALSE and the `remove_std_buffer` arm never runs.
+//
+// The subject's engine is Rust's `pf_printf_a` and the reference's is `pfflat_pf_printf_a`;
+// a divergence in FORMATTING would show up here as well as in printf_port, and printf_port
+// is where it would be diagnosed. These rows keep a `%I64d` case in the corpus for the
+// same reason printf_shells does — glibc prints `I64d` literally, so an oracle that ever
+// escaped to the host libc fails loudly instead of grading quietly.
+
+/// One argument, as it goes into the packed slot area.
+#[derive(Clone, Copy)]
+enum A {
+    I(i32),
+    L(i64),
+    F(f64),
+    S(&'static [u8]),
+    W(&'static [u16]),
+    P(u64),
+}
+
+/// Hand-packed argument area: one 8-byte slot per argument, which is the Windows-x64 and
+/// aarch64 model and the one the flat reference was compiled for. The subject reads it
+/// the same way — msvcrt-crt-rust's `va_list` is `*mut u8` on every target.
+fn vpack(args: &[A]) -> Vec<u64> {
+    let mut slots: Vec<u64> = args
+        .iter()
+        .map(|a| match *a {
+            A::I(v) => v as u32 as u64,
+            A::L(v) => v as u64,
+            A::F(v) => v.to_bits(),
+            A::S(b) => b.as_ptr() as u64,
+            A::W(w) => w.as_ptr() as u64,
+            A::P(p) => p,
+        })
+        .collect();
+    // Slack: an engine that over-reads finds zeros rather than the harness's stack.
+    slots.extend([0u64; 4]);
+    slots
+}
+
+static VW_HELLO: &[u16] = &[b'v' as u16, b'i' as u16, b'b' as u16, b'e' as u16, b'o' as u16, 0];
+static VW_POS: &[u16] = &[b'p' as u16, b'o' as u16, b's' as u16, 0];
+
+/// `(format, args, kind)` — `kind` is what the format needs from the shell, so a row can
+/// hand a positional format only to a `_p` variant and still reach the "no specifiers
+/// found, drop the flag" arm on the others.
+#[derive(Clone, Copy, PartialEq)]
+enum K {
+    Ordinary,
+    Positional,
+    MalformedPositional,
+}
+
+fn vprintf_corpus() -> Vec<(&'static str, Vec<A>, K)> {
+    vec![
+        ("plain text, no conversions", vec![], K::Ordinary),
+        ("%d", vec![A::I(42)], K::Ordinary),
+        ("%d %d %d", vec![A::I(-1), A::I(0), A::I(2147483647)], K::Ordinary),
+        ("%u %x %X %o", vec![A::I(-1), A::I(0xDEAD), A::I(0xBEEF), A::I(64)], K::Ordinary),
+        ("[%s]", vec![A::S(b"vibeos\0")], K::Ordinary),
+        ("[%10s][%-10s]", vec![A::S(b"ab\0"), A::S(b"cd\0")], K::Ordinary),
+        ("%c%c%c", vec![A::I(b'v' as i32), A::I(b'!' as i32), A::I(b'\n' as i32)], K::Ordinary),
+        ("%f %e %g", vec![A::F(3.5), A::F(1e10), A::F(0.000125)], K::Ordinary),
+        ("%.3f|%+.0f", vec![A::F(2.0 / 3.0), A::F(-0.5)], K::Ordinary),
+        // The oracle canary: glibc has no %I64 conversion and prints it literally.
+        ("%I64d", vec![A::L(-1_234_567_890_123)], K::Ordinary),
+        ("%p", vec![A::P(0x1234_5678)], K::Ordinary),
+        ("%ls", vec![A::W(VW_HELLO)], K::Ordinary),
+        ("100%% done", vec![], K::Ordinary),
+        ("%*d", vec![A::I(8), A::I(7)], K::Ordinary),
+        ("%1$s-%2$d", vec![A::S(b"pos\0"), A::I(9)], K::Positional),
+        ("%2$d/%1$s/%2$d", vec![A::S(b"twice\0"), A::I(5)], K::Positional),
+        ("%0$d", vec![A::I(1)], K::MalformedPositional),
+    ]
+}
+
+/// The wide corpus is the narrow one with `%s` taking a WIDE string, because that is what
+/// `%s` means to `pf_printf_w`. Spelling it out rather than deriving it keeps the two
+/// readable side by side.
+fn vwprintf_corpus() -> Vec<(&'static str, Vec<A>, K)> {
+    vec![
+        ("plain text, no conversions", vec![], K::Ordinary),
+        ("%d", vec![A::I(42)], K::Ordinary),
+        ("%d %d %d", vec![A::I(-1), A::I(0), A::I(2147483647)], K::Ordinary),
+        ("%u %x %X %o", vec![A::I(-1), A::I(0xDEAD), A::I(0xBEEF), A::I(64)], K::Ordinary),
+        ("[%s]", vec![A::W(VW_HELLO)], K::Ordinary),
+        ("[%10s][%-10s]", vec![A::W(VW_POS), A::W(VW_HELLO)], K::Ordinary),
+        ("%c%c%c", vec![A::I(b'v' as i32), A::I(b'!' as i32), A::I(b'\n' as i32)], K::Ordinary),
+        ("%f %e %g", vec![A::F(3.5), A::F(1e10), A::F(0.000125)], K::Ordinary),
+        ("%.3f|%+.0f", vec![A::F(2.0 / 3.0), A::F(-0.5)], K::Ordinary),
+        ("%I64d", vec![A::L(-1_234_567_890_123)], K::Ordinary),
+        ("%p", vec![A::P(0x1234_5678)], K::Ordinary),
+        ("%hs", vec![A::S(b"narrow\0")], K::Ordinary),
+        ("100%% done", vec![], K::Ordinary),
+        ("%*d", vec![A::I(8), A::I(7)], K::Ordinary),
+        ("%1$s-%2$d", vec![A::W(VW_POS), A::I(9)], K::Positional),
+        ("%2$d/%1$s/%2$d", vec![A::W(VW_HELLO), A::I(5)], K::Positional),
+        ("%0$d", vec![A::I(1)], K::MalformedPositional),
+    ]
+}
+
+fn wide_of(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = s.bytes().map(|b| b as u16).collect();
+    v.push(0);
+    v
+}
+
+/// A scratch destination FILE on the subject and on the flat reference.
+///
+/// Opened WITHOUT a variadic entry point, which is a hard requirement rather than a style
+/// choice: `fopen` reaches `_wsopen`, and in the flat instantiation `va_start` yields NULL
+/// so its `_O_CREAT` arm would read a pmode through a null pointer. `_sopen_s` + `_fdopen`
+/// is the same descriptor and the same FILE with no `va_arg` anywhere on the path, and
+/// both sides take it so the two FILEs start out identical.
+struct VWorld {
+    sf: FILEP,
+    ff: FILEP,
+    sfd: c_int,
+    ffd: c_int,
+    sp: PathBuf,
+    fp: PathBuf,
+}
+
+impl VWorld {
+    unsafe fn new(tag: &str) -> VWorld {
+        let (sc, sp) = tmp_path(&format!("{tag}-s"));
+        let (fc, fp) = tmp_path(&format!("{tag}-f"));
+        let flags = O_CREAT | O_TRUNC | O_RDWR | O_BINARY;
+        let (mut sfd, mut ffd) = (-1, -1);
+        assert_eq!(
+            _sopen_s(&mut sfd, sc.as_ptr() as *const u8, flags, SHARE_MODES[0], S_IREAD | S_IWRITE),
+            0
+        );
+        assert_eq!(
+            fileflat__sopen_s(
+                &mut ffd,
+                fc.as_ptr() as *const u8,
+                flags,
+                SHARE_MODES[0],
+                S_IREAD | S_IWRITE
+            ),
+            0
+        );
+        let sf = _fdopen(sfd, b"wb+\0".as_ptr());
+        let ff = fileflat__fdopen(ffd, b"wb+\0".as_ptr());
+        assert!(!sf.is_null() && !ff.is_null(), "_fdopen refused a descriptor _sopen_s made");
+        VWorld { sf, ff, sfd, ffd, sp, fp }
+    }
+
+    /// What each side wrote, flushed first and read back by the HOST.
+    unsafe fn bytes(&self) -> (Vec<u8>, Vec<u8>) {
+        fflush(self.sf);
+        fileflat_fflush(self.ff);
+        (
+            std::fs::read(&self.sp).unwrap_or_default(),
+            std::fs::read(&self.fp).unwrap_or_default(),
+        )
+    }
+}
+
+impl Drop for VWorld {
+    fn drop(&mut self) {
+        unsafe {
+            fclose(self.sf);
+            fileflat_fclose(self.ff);
+        }
+        let _ = std::fs::remove_file(&self.sp);
+        let _ = std::fs::remove_file(&self.fp);
+    }
+}
+
+/// The stream state a `v*printf` row compares. `_fileno` is checked against the descriptor
+/// `_fdopen` was HANDED rather than compared across the sides: the flat world is a third
+/// fd table and its numbering has no contract with the subject's, but "the FILE reports
+/// the fd it was built on" is a contract each side owes on its own.
+unsafe fn vstate_subject(f: FILEP, fd: c_int) -> Vec<u8> {
+    let mut v = vec![(_fileno(f) == fd) as u8];
+    v.extend_from_slice(&ftell(f).to_le_bytes());
+    v.push((feof(f) != 0) as u8);
+    v.push((ferror(f) != 0) as u8);
+    v.extend(buffer_state(f));
+    v
+}
+
+unsafe fn vstate_flat(f: FILEP, fd: c_int) -> Vec<u8> {
+    let mut v = vec![(fileflat__fileno(f) == fd) as u8];
+    v.extend_from_slice(&fileflat_ftell(f).to_le_bytes());
+    v.push((fileflat_feof(f) != 0) as u8);
+    v.push((fileflat_ferror(f) != 0) as u8);
+    v.extend(buffer_state(f));
+    v
+}
+
+/// The subject's stdout and the FLAT side's, emptied and repositioned. The reference's is
+/// left alone — these rows never touch it.
+unsafe fn reset_flat_stdout() {
+    fflush(s_std(1));
+    fileflat_fflush(f_std(1));
+    std::fs::write(std_path(SUBJ, "out"), b"").unwrap();
+    std::fs::write(std_path(FLAT, "out"), b"").unwrap();
+    fseek(s_std(1), 0, SEEK_SET);
+    fileflat_fseek(f_std(1), 0, SEEK_SET);
+}
+
+/// Which of the six narrow FILE shells a case drives, and what `options` it contributes.
+/// The order is the declaration order in file.c, so the table reads against the source.
+const NARROW_SHELLS: usize = 6;
+const WIDE_SHELLS: usize = 6;
+
+unsafe fn vprintf_rows() {
+    // The six narrow shells that take a FILE.
+    grade(
+        "vfprintf family",
+        &["plain", "secure", "positional", "pos-dropped", "malformed", "nullfile", "nullfmt"],
+        ROW_ITERS,
+        |r| {
+            let corpus = vprintf_corpus();
+            let (fmt, args, kind) = corpus[r.below(corpus.len())].clone();
+            // A `_p` shell for a positional format, any shell for an ordinary one — so
+            // the "found no specifiers, drop the flag" arm is reached on the _p variants
+            // too, and the positional arm is never asked of a shell that cannot take it.
+            let which = if kind == K::Ordinary { r.below(NARROW_SHELLS) } else { 4 + r.below(2) };
+            let bad = r.below(8);
+            let (nullfile, nullfmt) = (bad == 0, bad == 1);
+
+            let mut cfmt = fmt.as_bytes().to_vec();
+            cfmt.push(0);
+            let fp: *const u8 = if nullfmt { core::ptr::null() } else { cfmt.as_ptr() };
+            let mut slots = vpack(&args);
+            let vp = slots.as_mut_ptr() as *mut u8;
+            let w = VWorld::new("vfprintf");
+            let (sf, ff) = if nullfile { (core::ptr::null_mut(), core::ptr::null_mut()) } else { (w.sf, w.ff) };
+            let loc: *mut c_void = core::ptr::null_mut();
+
+            let g = Effects::subject(|| {
+                match which {
+                    0 => vfprintf(sf, fp, vp),
+                    1 => vfprintf_s(sf, fp, vp),
+                    2 => _vfprintf_l(sf, fp, loc, vp),
+                    3 => _vfprintf_s_l(sf, fp, loc, vp),
+                    4 => _vfprintf_p(sf, fp, vp),
+                    _ => _vfprintf_p_l(sf, fp, loc, vp),
+                }
+                .into()
+            });
+            let n = Effects::reference(|| {
+                match which {
+                    0 => fileflat_vfprintf(ff, fp, vp),
+                    1 => fileflat_vfprintf_s(ff, fp, vp),
+                    2 => fileflat__vfprintf_l(ff, fp, loc, vp),
+                    3 => fileflat__vfprintf_s_l(ff, fp, loc, vp),
+                    4 => fileflat__vfprintf_p(ff, fp, vp),
+                    _ => fileflat__vfprintf_p_l(ff, fp, loc, vp),
+                }
+                .into()
+            });
+            let mut gi = vstate_subject(w.sf, w.sfd);
+            let mut ni = vstate_flat(w.ff, w.ffd);
+            let (sd, fd_) = w.bytes();
+            push_disk(&mut gi, Some(sd));
+            push_disk(&mut ni, Some(fd_));
+            let tags = vec![
+                match which {
+                    0 | 2 => "plain",
+                    1 | 3 => "secure",
+                    _ if kind == K::Positional => "positional",
+                    _ if kind == K::Ordinary => "pos-dropped",
+                    _ => "malformed",
+                },
+                if nullfile { "nullfile" } else { "" },
+                if nullfmt { "nullfmt" } else { "" },
+            ];
+            (
+                Obs::with(g, gi),
+                Obs::with(n, ni),
+                format!("which={which} fmt={fmt:?} nullfile={nullfile} nullfmt={nullfmt}"),
+                tags.into_iter().filter(|t| !t.is_empty()).collect(),
+            )
+        },
+    );
+
+    // The six wide shells that take a FILE. Same structure, and the destination is a
+    // BINARY stream on both sides so `pf_printf_w`'s output goes through `wctomb` in one
+    // place rather than being re-translated by the text layer underneath it.
+    grade(
+        "vfwprintf family",
+        &["plain", "secure", "positional", "pos-dropped", "malformed", "nullfile", "nullfmt"],
+        ROW_ITERS,
+        |r| {
+            let corpus = vwprintf_corpus();
+            let (fmt, args, kind) = corpus[r.below(corpus.len())].clone();
+            let which = if kind == K::Ordinary { r.below(WIDE_SHELLS) } else { 4 + r.below(2) };
+            let bad = r.below(8);
+            let (nullfile, nullfmt) = (bad == 0, bad == 1);
+
+            let wfmt = wide_of(fmt);
+            let fp: *const u16 = if nullfmt { core::ptr::null() } else { wfmt.as_ptr() };
+            let mut slots = vpack(&args);
+            let vp = slots.as_mut_ptr() as *mut u8;
+            let w = VWorld::new("vfwprintf");
+            let (sf, ff) = if nullfile { (core::ptr::null_mut(), core::ptr::null_mut()) } else { (w.sf, w.ff) };
+            let loc: *mut c_void = core::ptr::null_mut();
+
+            let g = Effects::subject(|| {
+                match which {
+                    0 => vfwprintf(sf, fp, vp),
+                    1 => vfwprintf_s(sf, fp, vp),
+                    2 => _vfwprintf_l(sf, fp, loc, vp),
+                    3 => _vfwprintf_s_l(sf, fp, loc, vp),
+                    4 => _vfwprintf_p(sf, fp, vp),
+                    _ => _vfwprintf_p_l(sf, fp, loc, vp),
+                }
+                .into()
+            });
+            let n = Effects::reference(|| {
+                match which {
+                    0 => fileflat_vfwprintf(ff, fp, vp),
+                    1 => fileflat_vfwprintf_s(ff, fp, vp),
+                    2 => fileflat__vfwprintf_l(ff, fp, loc, vp),
+                    3 => fileflat__vfwprintf_s_l(ff, fp, loc, vp),
+                    4 => fileflat__vfwprintf_p(ff, fp, vp),
+                    _ => fileflat__vfwprintf_p_l(ff, fp, loc, vp),
+                }
+                .into()
+            });
+            let mut gi = vstate_subject(w.sf, w.sfd);
+            let mut ni = vstate_flat(w.ff, w.ffd);
+            let (sd, fd_) = w.bytes();
+            push_disk(&mut gi, Some(sd));
+            push_disk(&mut ni, Some(fd_));
+            let tags = vec![
+                match which {
+                    0 | 2 => "plain",
+                    1 | 3 => "secure",
+                    _ if kind == K::Positional => "positional",
+                    _ if kind == K::Ordinary => "pos-dropped",
+                    _ => "malformed",
+                },
+                if nullfile { "nullfile" } else { "" },
+                if nullfmt { "nullfmt" } else { "" },
+            ];
+            (
+                Obs::with(g, gi),
+                Obs::with(n, ni),
+                format!("which={which} fmt={fmt:?} nullfile={nullfile} nullfmt={nullfmt}"),
+                tags.into_iter().filter(|t| !t.is_empty()).collect(),
+            )
+        },
+    );
+
+    // `vprintf` / `vprintf_s` / `vwprintf` / `vwprintf_s` — the four that name `stdout`.
+    //
+    // One line each (`return vfprintf(stdout, format, valist)`), and the line is the whole
+    // function: the only thing to get wrong is WHICH `_iob` entry, which is invisible in a
+    // return value and obvious in the file. Graded exactly as the aliases above are.
+    grade("vprintf+vwprintf", &["narrow", "wide", "plain", "secure", "nullfmt"], ROW_ITERS, |r| {
+        reset_flat_stdout();
+        let wide = r.below(2) == 0;
+        let secure = r.below(2) == 0;
+        let corpus = if wide { vwprintf_corpus() } else { vprintf_corpus() };
+        // The stdout four are `vfprintf`/`vfprintf_s`, neither of which carries
+        // POSITIONAL_PARAMS — a positional format would take the "no specifiers" arm and
+        // print the text verbatim on both sides, which is true but uninteresting here.
+        let ordinary: Vec<_> = corpus.into_iter().filter(|c| c.2 == K::Ordinary).collect();
+        let (fmt, args, _) = ordinary[r.below(ordinary.len())].clone();
+        let nullfmt = r.below(8) == 0;
+
+        let mut cfmt = fmt.as_bytes().to_vec();
+        cfmt.push(0);
+        let wfmt = wide_of(fmt);
+        let np: *const u8 = if nullfmt { core::ptr::null() } else { cfmt.as_ptr() };
+        let wp: *const u16 = if nullfmt { core::ptr::null() } else { wfmt.as_ptr() };
+        let mut slots = vpack(&args);
+        let vp = slots.as_mut_ptr() as *mut u8;
+
+        let g = Effects::subject(|| {
+            match (wide, secure) {
+                (false, false) => vprintf(np, vp),
+                (false, true) => vprintf_s(np, vp),
+                (true, false) => vwprintf(wp, vp),
+                (true, true) => vwprintf_s(wp, vp),
+            }
+            .into()
+        });
+        let n = Effects::reference(|| {
+            match (wide, secure) {
+                (false, false) => fileflat_vprintf(np, vp),
+                (false, true) => fileflat_vprintf_s(np, vp),
+                (true, false) => fileflat_vwprintf(wp, vp),
+                (true, true) => fileflat_vwprintf_s(wp, vp),
+            }
+            .into()
+        });
+        let mut gi = buffer_state(s_std(1));
+        let mut ni = buffer_state(f_std(1));
+        fflush(s_std(1));
+        fileflat_fflush(f_std(1));
+        push_disk(&mut gi, std::fs::read(std_path(SUBJ, "out")).ok());
+        push_disk(&mut ni, std::fs::read(std_path(FLAT, "out")).ok());
+        let tags = vec![
+            if wide { "wide" } else { "narrow" },
+            if secure { "secure" } else { "plain" },
+            if nullfmt { "nullfmt" } else { "" },
+        ];
+        (
+            Obs::with(g, gi),
+            Obs::with(n, ni),
+            format!("wide={wide} secure={secure} fmt={fmt:?} nullfmt={nullfmt}"),
             tags.into_iter().filter(|t| !t.is_empty()).collect(),
         )
     });

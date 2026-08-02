@@ -2842,6 +2842,22 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   both sides, so read it immediately after each side's call, never once at the end. Same
   family as the `_wctomb_s_l` stub above, reached from the opposite direction: not an error
   that never happens, an argument that never matters.
+- **A PROCESS-GLOBAL resource the substrate hands to both sides is shared substrate too —
+  and the CRT is not where you redirect it.** msvcrt's `putchar`/`puts`/`getchar`/`gets`
+  and eight kin take no FILE: they name `stdout` and `stdin`. Half the separation was
+  already there (`stdout` is `&MSVCRT__iob[1]`, and the `_iob` rename wall gives each side
+  its own array), which is exactly why it looked done — but `msvcrt_init_io` binds CRT fd 1
+  from `GetStdHandle`, and the substrate answered with the harness's OWN fd 1. Both sides
+  wrote to the same place, interleaved with each other and with the test's `println!`, and
+  nothing could read either back. Eleven exports were ungradeable and read as trivially
+  gradeable. **Give each side its own, and bind it BELOW the CRT**: a knob that points the
+  three standard handles at caller-supplied host fds, called once per side immediately
+  before that side's init, which is the only reader of `GetStdHandle`. The obvious
+  alternative is the trap — `freopen(path, "w", stdout)` reaches the same state by CLOSING
+  host fd 1, and the next `open` in the process hands fd 1 to a temp file, so the harness's
+  own diagnostics vanish into it silently. Generalises past stdio: any singleton the
+  environment supplies (a lock table, a TLS slot, a process-wide mode) is one definition
+  serving both sides until you make it two.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -2886,6 +2902,29 @@ prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, bec
 `ref_create_mbcinfo` formats its codepage with `sprintf(buf, ".%d", cp)` and every mbcs case
 dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
 `".%d"` is a format both agree on exactly.
+
+**The flat instantiation is a RECIPE, not a wcs.c special case — reach for it whenever the
+`&valist` idiom appears.** `file.c` needed the identical treatment for its sixteen
+`v*printf` shells, and the second one cost far less than the first because the shape was
+already known: make the TU's prelude a closure over the PREFIX rather than a string written
+once, point the engine's six symbols (`pf_printf_a/w`, `create_positional_ctx_a/w`,
+`arg_clbk_valist/positional`) at the flat instantiation and re-declare them after the
+redefine (`-Werror=implicit-function-declaration` catches you otherwise, which is the
+tripwire doing its job), and **re-emit the stage-5 protos header with its `__asm__` labels
+retargeted** — an asm label is a string baked into the generated header, so a name the
+`#define` wall cannot rename would otherwise be emitted under the FIRST instantiation's
+prefix and collide. Two properties of the resulting TU are load-bearing and worth stating
+where the rows can see them: its variadic entry points are broken by construction (the flat
+`va_start` yields NULL, so `_open`'s `_O_CREAT` arm reads a pmode through it), so drive it
+through non-variadic equivalents — `_sopen_s` + `_fdopen` where you would have used `fopen`.
+
+**Do not read the "cannot be graded" verdict above more broadly than it is.** It is about
+the `...` entry points, which need a real `va_start`. The `v*`-prefixed ones TAKE a
+`va_list` and are perfectly gradeable in the flat instantiation, off a hand-packed 8-byte
+slot buffer both sides read identically — the subject's `va_list` is `*mut u8` on every
+target. The distinction is exactly whether the harness has to CREATE the argument area or
+merely pass one, and it is the difference between 30 exports graded and 30 exports argued
+about.
 
 **And the end of that road: some code CANNOT be graded on the host at all — say so instead of
 building a harness that appears to.** Both instantiations above are unusable for msvcrt's
