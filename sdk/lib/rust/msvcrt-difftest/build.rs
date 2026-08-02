@@ -1225,6 +1225,10 @@ fn main() {
          void __cdecl _unlock_file(FILE*);\n\
          int  __cdecl _getch(void);\n\
          int  __cdecl _ungetch(int);\n\n\
+         /* scanf.c calls ctype.c's `isspace`, which the wall above has already\n\
+          * renamed to `ref_isspace` — so glibc's <ctype.h> declaration no longer\n\
+          * applies to it and nothing else did either. Same class as file.c's 53. */\n\
+         int __cdecl ref_isspace(int c);\n\n\
          #endif /* MSVCRT_REF_SCANF_PRELUDE_H */\n",
     );
     let scanf_prelude_h = out.join("ref_scanf_prelude.h");
@@ -1440,6 +1444,15 @@ fn main() {
          * fall to C's implicit-declaration rule and become `int()` — every 64-bit\n\
          * return silently truncated, in code that compiles and links. */\n\
          #include <msvcrt_file_protos.h>\n\n\
+         /* ═══ stage 6: a prototype for every function file.c CALLS. ══════════════\n\
+          * Stage 5 covers what file.c DEFINES; this covers the other 53 — the Win32\n\
+          * layer under it, the msvcrt internals from TUs we do not compile, and the\n\
+          * sibling reference TUs' exports. Same rule, same consequence, and it went\n\
+          * unnoticed for four waves because fileimpl.c's HANDLEs are small integers\n\
+          * that survive being truncated to 32 bits. `msvcrt_wstrdupa` returns a real\n\
+          * malloc pointer and does not: it SIGSEGV'd the first row that reached it.\n\
+          * Also after the wall, so the sibling calls name the ref_* definitions. */\n\
+         #include <msvcrt_shim_decls.h>\n\n\
          #endif /* MSVCRT_REF_FILE_PRELUDE_H */\n",
     );
     let file_prelude_h = out.join("ref_file_prelude.h");
@@ -1654,6 +1667,25 @@ fn main() {
           * the refstub has supplied __msvcrt_ulong and CDECL, and after the stage-0 rename\n\
           * so it describes the symbol errno.c actually emits. */\n\
          __msvcrt_ulong * CDECL __doserrno(void);\n\n\
+         /* ═══ stage 9: a prototype for every function errno.c CALLS. ════════════\n\
+          * Exactly four, spelled out here rather than pulled from\n\
+          * refstub/msvcrt_shim_decls.h: that header declares the whole Win32 surface\n\
+          * file.c needs, and errno.c's prelude deliberately carries none of the\n\
+          * structs it names (it touches no FILE field, so it takes the constants\n\
+          * header directly). Including it here would demand SECURITY_ATTRIBUTES,\n\
+          * CRITICAL_SECTION, IO_STATUS_BLOCK and six more that this TU has no reason\n\
+          * to know about.\n\
+          *\n\
+          * Written with the underlying types rather than the LPWSTR/UINT spellings\n\
+          * for the same reason — typedefs resolve, so these stay compatible with\n\
+          * fileimpl.c's definitions without dragging in windef.\n\
+          *\n\
+          * The two `lstr*` return a pointer, so the implicit-declaration rule was\n\
+          * truncating one here too; harmless only because errno.c discards it. */\n\
+         unsigned int WINAPI SetErrorMode(unsigned int mode);\n\
+         wchar_t * WINAPI lstrcpyW(wchar_t *dst, const wchar_t *src);\n\
+         wchar_t * WINAPI lstrcatW(wchar_t *dst, const wchar_t *src);\n\
+         int CDECL ref__write(int fd, const void *buf, unsigned int count);\n\n\
          #endif /* MSVCRT_REF_ERRNO_PRELUDE_H */\n",
     );
     let errno_prelude_h = out.join("ref_errno_prelude.h");
@@ -1679,18 +1711,28 @@ fn main() {
             // first graded row that ever reached one of these literals; string.c, wcs.c,
             // locale.c and file.c carry 23 more between them.
             .flag("-fshort-wchar")
-            .warnings(false)
-        // NOTE: NO `-w` here, on purpose.  `-w` silently defeats the two
-        // -Werror= flags below (verified: gcc drops the diagnostic entirely).
+        // NOTE: NO `.warnings(false)` here, and that is the whole point.
         //
-        // Those two are the harness's single most important safety net.  A
-        // missing stub macro degrades, under C's implicit-declaration rule,
-        // into a *call* to an undefined int-returning function — code that
-        // still links and is silently wrong.  Both known instances were
-        // exactly this shape:
+        // `cc::Build::warnings(false)` emits `-w`, and gcc's `-w` DISARMS the two
+        // -Werror= flags below — in either order, and even if the warning is
+        // explicitly re-enabled afterwards.  This comment used to say "NO `-w`
+        // here, on purpose" with `.warnings(false)` on the line directly above
+        // it: the intent was recorded, the call defeated it, and every reference
+        // TU compiled for four waves with its most important tripwire off.
+        // Omitting the call entirely is what actually works — cc then emits
+        // neither `-w` nor `-Wall`, so the build stays quiet and the two errors
+        // below stay live.
+        //
+        // They are the harness's single most important safety net.  A missing
+        // declaration degrades, under C's implicit-declaration rule, into a
+        // *call* to an undefined int-returning function — code that still links
+        // and is silently wrong.  Every known instance is that shape:
         //   * `ARRAY_SIZE(lps)` in strstr's KMP path → a bogus needle length;
         //   * `get_locinfo()` → an `int` return, truncating the locinfo
-        //     pointer to 32 bits → SIGSEGV on the first deref.
+        //     pointer to 32 bits → SIGSEGV on the first deref;
+        //   * and the 53 undeclared shims that motivated refstub/msvcrt_shim_decls.h,
+        //     which hid behind small HANDLE values until `msvcrt_wstrdupa`
+        //     returned a real malloc pointer and crashed wave 18b's first row.
         // Fail loud instead.
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
@@ -1720,7 +1762,6 @@ fn main() {
         .include(&out) // cloc_tables.h — the C locale's pclmap/pcumap, lifted from locale.c
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
-        .warnings(false)
         // Same tripwire, same reason (see above) — refimpl.c is where a
         // typo'd stub name would otherwise become an implicit `int f()`.
         .flag("-Werror=implicit-function-declaration")
@@ -1743,7 +1784,6 @@ fn main() {
         // to the reference's state. locale_layout.h is deliberately namespace-free.
         .include(&refstub)
         .include(&out)
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -1761,7 +1801,6 @@ fn main() {
     nls_build
         .include(&refstub)
         .include(&out)
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -1789,8 +1828,7 @@ fn main() {
     // and a folded pair would make the control vacuously perfect forever.
     let perfctl_twin = |twin: &str| {
         let mut b = cc::Build::new();
-        b.warnings(false)
-            .flag("-Werror=implicit-function-declaration")
+        b.flag("-Werror=implicit-function-declaration")
             .flag("-Werror=implicit-int")
             .flag("-fno-builtin")
             .define("PERF_CTL_TWIN", twin)
@@ -1986,7 +2024,6 @@ fn main() {
         // first graded row that ever reached one of these literals; string.c, wcs.c,
         // locale.c and file.c carry 23 more between them.
         .flag("-fshort-wchar")
-        .warnings(false)
         // Same tripwires + genuineness flags as ref_tu, same reasons.
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
@@ -2020,7 +2057,6 @@ fn main() {
         // first graded row that ever reached one of these literals; string.c, wcs.c,
         // locale.c and file.c carry 23 more between them.
         .flag("-fshort-wchar")
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -2051,7 +2087,6 @@ fn main() {
         // first graded row that ever reached one of these literals; string.c, wcs.c,
         // locale.c and file.c carry 23 more between them.
         .flag("-fshort-wchar")
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -2081,7 +2116,6 @@ fn main() {
         // first graded row that ever reached one of these literals; string.c, wcs.c,
         // locale.c and file.c carry 23 more between them.
         .flag("-fshort-wchar")
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -2101,7 +2135,6 @@ fn main() {
         .include(&out)
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")
@@ -2195,7 +2228,6 @@ fn main() {
         .include(&out)
         .define("__REACTOS__", None)
         .define("_MSVCR_VER", "0")
-        .warnings(false)
         .flag("-Werror=implicit-function-declaration")
         .flag("-Werror=implicit-int")
         .flag("-U_FORTIFY_SOURCE")

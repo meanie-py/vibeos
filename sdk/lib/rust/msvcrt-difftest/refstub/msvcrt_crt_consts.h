@@ -67,6 +67,8 @@
 #define _IONBF 4
 
 /* stdio / io.h */
+#undef  BUFSIZ
+#define BUFSIZ        0x00000200
 #define TMP_MAX_S     0x7FFFFFFF
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
