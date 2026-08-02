@@ -394,30 +394,24 @@ def faulting_pc(serial: str) -> str | None:
     return None
 
 
-def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
-    """Best-effort: resolve a faulting PC via the offline index. Skips silently
-    if the index/tool is missing (graceful degradation), and REFUSES rather than
-    returning a match whose offset proves it is meaningless."""
-    pc = faulting_pc(serial)
-    if not pc:
-        return None
+def _resolve_addr(
+    repo: Path, arch: str, pc: str, *, mp: bool = False, reloc: str | None = None
+) -> str | None:
+    """One address -> "0xADDR -> symbol+off" via the offline index, or None.
+
+    Skips silently if the index/tool is missing (graceful degradation), and
+    REFUSES rather than returning a match whose offset proves it is meaningless.
+    """
     tool = repo / "qemu" / "addr2sym.sh"
     if not tool.is_file():
         return None
-    # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
-    # no runtime base, and works on the arches that have no reloc entry at all.
-    mod_off = faulting_module_offset(serial)
-    reloc = None if mod_off else _RELOC_BY_ARCH.get(arch)
-    if mod_off:
-        pc = hex(_PE_IMAGE_BASE + mod_off[1])
     argv = ["bash", str(tool), arch]
     if reloc:
         argv += ["--reloc", reloc]
-    # ntkrnlmp.exe is a different binary from ntoskrnl.exe, so an MP crash
+    # ntkrnlmp.exe is a different binary from ntoskrnl.exe, so an MP address
     # resolved against the UP index names the wrong function — and it does so
-    # silently, because some symbol always sorts below the address. freeldr
-    # announces which one it loaded, so read it off the serial we already have.
-    if "ntkrnlmp.exe" in serial:
+    # silently, because some symbol always sorts below the address.
+    if mp:
         argv.append("--mp")
     argv.append(pc)
     try:
@@ -434,3 +428,55 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
         # whichever kernel symbol happened to sort below it.
         return f"{pc} -> (no symbol: nearest is {int(off.group(1)):#x} away — outside any function)"
     return f"{pc} -> {out}"
+
+
+def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
+    """Best-effort: resolve a faulting PC via the offline index."""
+    pc = faulting_pc(serial)
+    if not pc:
+        return None
+    # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
+    # no runtime base, and works on the arches that have no reloc entry at all.
+    mod_off = faulting_module_offset(serial)
+    reloc = None if mod_off else _RELOC_BY_ARCH.get(arch)
+    if mod_off:
+        pc = hex(_PE_IMAGE_BASE + mod_off[1])
+    # freeldr announces which kernel it loaded, so read it off the serial.
+    return _resolve_addr(repo, arch, pc, mp="ntkrnlmp.exe" in serial, reloc=reloc)
+
+
+# `info registers -a` groups its output per vCPU behind a bare `CPU#<n>` line,
+# and prints the program counter UNPREFIXED under an arch-specific name: PC= on
+# arm64, RIP= on amd64, EIP= on i386. Deliberately not `_PC` above — that one
+# requires an `0x` prefix, which the monitor never emits.
+_CPU_BANNER = re.compile(r"^CPU#(\d+)\b", re.MULTILINE)
+_CPU_PC = re.compile(r"\b(?:PC|RIP|EIP)=([0-9A-Fa-f]{8,16})\b")
+
+
+def cpu_pcs(state: str) -> list[tuple[int, str]]:
+    """[(cpu_index, pc_hex)] parsed out of a `capture_cpu_state()` blob.
+
+    Slices the dump at each `CPU#n` banner and takes the FIRST program counter
+    inside that slice, so a vCPU is credited only with its own register block.
+    """
+    banners = list(_CPU_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        pc = _CPU_PC.search(state, m.end(), end)
+        if pc:
+            found.append((int(m.group(1)), pc.group(1)))
+    return found
+
+
+def symbolicate_cpu_state(repo: Path, arch: str, state: str, *, mp: bool = False) -> list[str]:
+    """One "CPU#n 0xADDR -> symbol" line per vCPU we could locate.
+
+    This is the payoff of capturing the state at all: on a silent wedge the
+    symbol here names the function the box died in, which serial cannot.
+    """
+    lines = []
+    for idx, pc in cpu_pcs(state):
+        sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=_RELOC_BY_ARCH.get(arch))
+        lines.append(f"CPU#{idx} {sym or f'0x{pc} -> (unresolved)'}")
+    return lines

@@ -4255,10 +4255,28 @@ introduced at any heap exit — it is an external stray write.**
   ≥150 s.** A trickle of early serial (87/581 bytes) is CD load, not a hang.
 - **A crash that varies its victim per boot is a CASCADE from an earlier first cause** — chase
   the earliest detectable corruption, not the visible victim.
+- **Read `hang-cpustate.txt` FIRST — a hang is the one failure with no PC of its own.** On a boot
+  timeout the harness now asks QEMU where every vCPU is parked (`info status` / `info cpus` /
+  `info registers -a`) *before* killing the VM, symbolicates each PC, and drops the result in the
+  run dir next to `summary.json` (also surfaced as `cpu_state` + `hang:` salient lines). A guest
+  spinning in a kernel spinlock does not block QEMU's main loop, which is why the monitor still
+  answers a box that has gone silent. Both backends used to run `-monitor none`, so for years
+  every wedge was triaged from the serial tail alone and nobody ever asked the VM where it
+  stopped.
 - **A foreign binary that is stuck is usually one of three shapes** `[§9.29]`: sample the guest
   PC a dozen times via QMP `info registers` — all samples at one PC means a spin; parked in a
   wait with no file I/O (break on `NtReadFile`/`NtDelayExecution`); or spinning at a fixed
   usermode PC that disassembles to `b .` (`-O0` is the workaround until the pass is identified).
+  (Sampling is now automatic on a timeout — see `hang-cpustate.txt` above; hand-sampling is for
+  when you need the *repeated* samples that distinguish a spin from slow progress.)
+- **A timed wait that overruns its own timeout indicts the CLOCK, not the thing being waited on.**
+  Read the timeout out of the source and compare it against how long the round actually ran: the
+  SCM's `PipeTimeout` is 30 s (`services-rust/src/database.rs`), so an arm64 `--smp 1` round that
+  sat at `ScmStartUserModeService(SamSs): waiting for connect` for 185 s was not a slow service —
+  a 30 s wait cannot take 185 s unless nothing is expiring timers. Discriminator against the
+  §9.89 handshake bug, which has the same last-line: **that** one prints `connect result=1053`
+  when the 30 s elapses and the box keeps running; a stall with **no** `result=` line at all, and
+  every other subsystem's serial stopping within a few lines of it, is a whole-machine freeze.
 - **The smoke `full.log` is a TRUNCATED TAIL** (~140 lines). For a full capture read
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it

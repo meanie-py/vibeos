@@ -116,6 +116,33 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     return str(png)
 
 
+def _cpu_state(
+    vm: QemuVM, work: Path, repo: Path, arch: str, serial: str
+) -> tuple[str | None, list[str]]:
+    """Persist where each vCPU was parked on a hang, symbolicated. (path, lines).
+
+    Only meaningful for a timeout: every other failure already carries its own
+    PC on serial. Returns ([], None) rather than raising — see
+    QemuVM.capture_cpu_state on why a diagnostic must never fail its own run.
+    """
+    # Prefer what wait_for_boot grabbed AT the deadline over a fresh sample taken
+    # some seconds later: on a hang the two agree, but if the box was merely slow
+    # the later one has moved on and would misreport where it was stuck.
+    state = vm.hang_cpu_state
+    if not state:
+        try:
+            state = vm.capture_cpu_state()
+        except Exception:
+            return None, []
+    lines = triage.symbolicate_cpu_state(repo, arch, state, mp="ntkrnlmp.exe" in serial)
+    path = work / "hang-cpustate.txt"
+    try:
+        path.write_text(state + ("\n" + "\n".join(lines) + "\n" if lines else ""))
+    except OSError:
+        return None, lines
+    return str(path), lines
+
+
 # freeldr announces every image it loads; the kernel is the first one. Used to
 # prove WHICH kernel a `--smp` run actually booted (see _one_boot).
 _KERNEL_LOAD_RE = re.compile(r"\[FLDR\] load \S*[\\/](ntoskrnl\.exe|ntkrnlmp\.exe)", re.IGNORECASE)
@@ -372,6 +399,13 @@ def _one_boot(
         # was still flowing near the deadline the box was making progress (host
         # contention / slow TCG), not stuck — so a retry, not a regression, is the move.
         if outcome == "timeout":
+            # A hang is the ONE failure with no PC of its own: no bugcheck banner,
+            # no panic, nothing on serial. Ask QEMU directly, while the VM is still
+            # alive (vm.stop() is in the `finally` below).
+            cpu_path, cpu_lines = _cpu_state(vm, work, repo, arch, text)
+            if cpu_path:
+                tri["cpu_state"] = cpu_path
+            tri["salient"].extend(f"hang: {ln}" for ln in cpu_lines)
             silent_s = diag.get("silent_s", 0.0)
             if silent_s < 5.0:
                 hint = (
