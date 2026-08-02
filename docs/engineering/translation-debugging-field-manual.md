@@ -1699,6 +1699,29 @@ of them were **ours**, not the model's:
   C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
   judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
   `seal_calls` already made about the callee name in that identical `extern` construct.
+- **A DIRECTIVE is not code, and an array PARAMETER's bound is not a value** (found on shell32
+  `changenotify.cpp`, 8 rejected paid attempts across two functions). Three new shapes of the same
+  unsatisfiable-envelope class, all now handled by `lex_mask.directive_spans` + `fact_seal.
+  _signature_array_bound_spans`. `DumpEvent` defines `DUMPEV(x)` **inside its own body**, pastes
+  `SHCNE_##x`, and `#undef`s it at the end; that sealed as `#define __RUSTCONV_CALL_0000__(x)`,
+  `__RUSTCONV_FACT_0001__##x` and `#undef __RUSTCONV_FACT_0003__` — a macro DEFINITION name
+  demanded back "as the called function identifier in executable Rust", and one half of a token
+  paste demanded back as a value. Nothing inside a `#`-directive can be sealed. Separately,
+  `DoGetAliasPIDLs(LPITEMIDLIST apidls[2], ...)` sealed the `2`: a C array parameter **decays to a
+  pointer**, so the Rust signature has nowhere to put it. Scope that exclusion to the parameter
+  list, *not* "everything before the first brace" — `int a[2] = {0, 1};` has its first brace at the
+  INITIALIZER, and the loose rule silently stopped sealing a real local's bound (caught only by an
+  existing zero-init test).
+  **The macro-authority blind spot behind it:** `-E -dM` dumps only macros **still defined when
+  preprocessing ends**, so a `#define`/`#undef` pair inside a TU is invisible to it and its
+  invocations get sealed as runtime calls. `function_like_macros` now also scans the TU's own text.
+  Residual, deliberately left: an ALL_CAPS **argument** to a function-like macro that pastes it
+  (`DUMPEV(INTERRUPT)` → `SHCNE_##x`) is still fact-sealed, and restores to `INTERRUPT` when the
+  Rust needs `SHCNE_INTERRUPT`. Closing it means threading the macro set into `fact_seal`; until
+  then such a function fails LOUDLY, which is the correct behaviour, not a silent wrong answer.
+  Diagnosis rule that saves the money: **when a worker is rejected twice for the same token, read
+  the sealed prompt (`--dry-run --prompt --fn NAME`, free) before paying for a third attempt.**
+  Four retries is the tool telling you the envelope is impossible, not the model being weak.
 - **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
   walks raw C, so it also seals tokens in code the compiler emits but the build never enters, and
   then DEMANDS them of a translation that is right to omit them. Two flavours, one class:

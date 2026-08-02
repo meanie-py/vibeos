@@ -39,7 +39,7 @@ from dataclasses import dataclass
 
 from .ddk_enum_constants import DDK_ENUM_CONSTANTS
 from .dead_regions import dead_region_spans, in_dead_region
-from .lex_mask import opens_a_literal
+from .lex_mask import directive_spans, opens_a_literal
 
 
 class FactSealError(RuntimeError):
@@ -247,6 +247,52 @@ def _aggregate_zero_init_spans(masked: str) -> set[tuple[int, int]]:
     return {match.span(1) for match in _ZERO_INIT_RE.finditer(masked)}
 
 
+def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
+    """`[...]` ranges inside the function's OWN parameter list.
+
+    A C array parameter decays to a pointer, so the bound in `LPITEMIDLIST apidls[2]` has no
+    counterpart anywhere in the Rust signature — sealing that `2` demands a token the
+    translation cannot place, and the audit then rejects every attempt. shell32's
+    `DoGetAliasPIDLs` burned four paid retries on exactly this before the prompt was read.
+
+    Scoped to the PARAMETER LIST specifically — the first balanced `(...)` of the signature —
+    and not merely "before the first brace". `int a[2] = {0, 1};` has its first brace at the
+    INITIALIZER, so the looser rule silently stopped sealing a real local array's bound.
+    A bound in the body is a genuine value and must stay sealed.
+    """
+    body = masked.find("{")
+    opening = masked.find("(")
+    if opening < 0 or (body >= 0 and body < opening):
+        return []  # no signature here (a bare statement, or a body with no parameter list)
+    depth = 0
+    closing = -1
+    for index in range(opening, len(masked)):
+        if masked[index] == "(":
+            depth += 1
+        elif masked[index] == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+    if closing < 0:
+        return []
+
+    spans: list[tuple[int, int]] = []
+    depth = 0
+    start = -1
+    for index in range(opening, closing):
+        char = masked[index]
+        if char == "[":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "]" and depth > 0:
+            depth -= 1
+            if depth == 0:
+                spans.append((start, index + 1))
+    return spans
+
+
 def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     """Replace each value occurrence with a unique opaque identifier.
 
@@ -261,11 +307,18 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     declared = _declared_names(masked) if dialect == "c" else frozenset()
     # Positions where a symbol is a TYPE, not a value. Both are the same judgement
     # the scanner already makes for `(TYPE *)value`; neither can hold a constant.
-    type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked)
+    # Applied to the INTEGER scanner as well as the symbol one — an array bound is very nearly
+    # always a literal, so filtering only symbols would have missed every real case.
+    signature_bounds = _signature_array_bound_spans(masked)
+    type_spans = _block_scope_prototype_spans(masked) + _named_cast_spans(masked) + signature_bounds
+    # Nothing inside a `#define`/`#undef`/`#if` can be sealed — see lex_mask.directive_spans.
+    directive = directive_spans(text)
 
     zero_init = _aggregate_zero_init_spans(masked)
     for match in _INTEGER_RE.finditer(masked):
         if (match.start(), match.end()) in zero_init:
+            continue
+        if any(a <= match.start() < b for a, b in signature_bounds):
             continue
         spans.append((match.start(), match.end(), "integer"))
 
@@ -314,6 +367,7 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
 
     # No token can match both patterns (the generated set excludes ALL_CAPS names),
     # but sorting also makes numbering stable.
+    spans = [s for s in spans if not any(directive[i] for i in range(s[0], s[1]))]
     spans.sort()
     dead_spans = dead_region_spans(text, masked)
     facts: list[SealedFact] = []

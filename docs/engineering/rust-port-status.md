@@ -800,6 +800,18 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   had lost the destructor (the HKEY leak fixed on 2026-08-02); `item_prop` would have been the
   third. The rule that fell out: a re-declared `extern` fn is cheap to repeat and this crate does
   it 530 times, but a `Drop` gets exactly one home — a missing one is a leak no build can see.
+  `changenotify.cpp` is flipped (2026-08-02) — the CLIENT half of shell change notification
+  (`SHChangeNotify`, `SHChangeNotifyRegister`, the shared-memory delivery ticket and handbag);
+  the SERVER half in `shelldesktop/CChangeNotifyServer.cpp` is untouched C++. 22 of its 24
+  functions bought, 2 hand-written. Its `CChangeNotifyBroker` is an ATL **window** class, not a
+  COM one, so no C++ mode applies — it and `CreateNotificationBroker` stay in
+  `rust_changenotify_broker_stub.cpp` (second entry in `sanctioned.atl_window_class`). First TU
+  in the wave needing **no `EXTERN_C` lockstep**: every declared name was already inside an
+  `extern "C"` block and the rest have no header declaration. The two hand-written functions are
+  the interesting part — the seal envelope for each was *unsatisfiable*, and fixing that closed
+  three sealer defects (preprocessor directives, array-parameter bounds, and `-E -dM` not
+  reporting a macro the TU `#undef`s). Field manual: "A DIRECTIVE is not code, and an array
+  PARAMETER's bound is not a value".
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

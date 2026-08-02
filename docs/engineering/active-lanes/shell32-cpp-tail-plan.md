@@ -232,6 +232,15 @@ fails every cargo-linked binary (§9.132).
 | blocked on `--local-raii CDataObjectHIDA` | 3 | `shldataobject`, `dialogs/item_prop`, `shlfolder` |
 | also need `--cpp-com --class` for 13 methods | 3 | `changenotify`, `dialogs/item_prop`, `CDefViewUtil` |
 
+**That last row was wrong about two of its three TUs, and the error is instructive.** "Has class
+methods" was read as "needs `--cpp-com`", but that mode wants a real activatable COM class
+(`BEGIN_COM_MAP` + `DECLARE_NOT_AGGREGATABLE` + `OBJECT_ENTRY`) and refuses anything else on its
+deterministic preflight. `item_prop`'s `ShellPropSheetDialog` turned out to be a `struct` used as
+a NAMESPACE (hand-written as free functions) and `changenotify`'s `CChangeNotifyBroker` an ATL
+WINDOW class (left in C++). Neither was bought as a COM class; both flipped anyway. Only
+`CDefViewUtil` actually carries a `BEGIN_COM_MAP` — check with `grep -c BEGIN_COM_MAP`, which is
+the discriminator this table lacked.
+
 The RAII blocker is a *deliberate* pre-payment refusal (§9.131), not a defect. Writing the
 lowering is tractable and self-consistent: `CDataObjectHIDA`'s create/destroy already exist in
 `shell_item_array.rs` as externs onto the `_RustBridge` pair that `shldataobject.cpp` defines —
@@ -330,7 +339,7 @@ and rshell both gate green.
 ## Wave 4 — procedural leaf/support TUs (15 files, 6,187 lines)
 
 ```text
-changenotify.cpp                        ~~debughlp.cpp~~ FLIPPED
+~~changenotify.cpp~~ FLIPPED            ~~debughlp.cpp~~ FLIPPED
 ~~dialogs/drive.cpp~~ FLIPPED           ~~dialogs/folder_options.cpp~~ FLIPPED
 ~~dialogs/item_prop.cpp~~ FLIPPED       ~~dialogs/general.cpp~~ FLIPPED
 ~~dialogs/recycler_prop.cpp~~ FLIPPED   ~~dialogs/view.cpp~~ FLIPPED
@@ -354,7 +363,26 @@ refuses it on the deterministic preflight and `--free-functions` skips its four 
 Worth knowing before scoping any remaining TU: a `struct` in the source does NOT imply the COM
 path, and `--free-functions` will silently leave its methods out of the buy.
 
-Remaining in this wave: `changenotify`, `CDefViewUtil`.
+`changenotify.cpp` (FLIPPED 2026-08-02) is the wave's second split-path TU, and a different
+split from `item_prop`: its `CChangeNotifyBroker` is an ATL **window** class (`CWindowImpl<>` +
+`BEGIN_MSG_MAP` + `DECLARE_WND_CLASS_EX`), not a COM one, so neither C++ mode applies and there
+is nothing to buy — the per-instance thunk and message map are C++ templates with no Rust
+spelling. It stays in C++ in `rust_changenotify_broker_stub.cpp`, the second entry in the tail
+JSON's `sanctioned.atl_window_class`, and `CreateNotificationBroker` goes with it because it
+`new`s the object, subclasses the window, and leaves it owned by ATL. The discriminator to reach
+for is `grep -c BEGIN_COM_MAP`, not the `class`/`struct` keyword.
+
+It is also the first TU here to need **no `EXTERN_C` lockstep at all**: all 15 of its declared
+names already sat inside an `extern "C"` block (`wine/shell32_main.h` wraps lines 26–324,
+shlobj.h 35–2528) and its other 8 exports have no header declaration to mangle. Audit before
+assuming otherwise — it is a full-tree grep, not a guess.
+
+Two of its 24 functions are hand-written because the SEAL envelope was unsatisfiable, not
+because the model failed: see the field manual bullet "A DIRECTIVE is not code, and an array
+PARAMETER's bound is not a value". Both sealer defects are fixed; the diagnosis rule is to read
+the free `--dry-run --prompt` after the second rejection rather than paying for a third.
+
+Remaining in this wave: `CDefViewUtil`.
 
 Translate by subsystem, preserving static tables/callback identity and export decoration.
 Prefer ordinary Rust modules in `shell32-rust`; create a new crate only for a real shared-link
