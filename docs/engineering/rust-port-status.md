@@ -147,9 +147,24 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 18c part 1 (2026-08-02) — timestamps and the process-global stream ops. 89 rows,
+19,080 cases, 0 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **93 → 104 of 146**.
+The utime family is six exports over one body (`_futime64` does the work; the path and `*32`
+variants delegate), so the axis that matters is the VALUE — whether a time survives
+`time_to_filetime`, the 100ns-since-1601 conversion, `SetFileTime` and the read back through
+`_stat64` unchanged. Graded across the epoch, 1, and `INT32_MAX`. **No NULL-`t` case**:
+`_futime64` stamps `_time64(NULL)` for it, so the two sides read their own wall clocks and
+straddle a second boundary at random — a flake, not a test. `_flushall` and `_fcloseall`
+return COUNTS, which makes them the only rows that assert the two FILE rings have stayed in
+step; `_setmaxstdio` restores what it found, because every later row's `msvcrt_get_file`
+reads it. The 42 still ungraded are the std-stream aliases, the `v*printf` shells, the
+temp-name family, and `_lock_file`/`_unlock_file`/`__iob_func`.
+
 **Wave 18b (2026-08-01) — the wide door, stat, and the rest of the plumbing. 83 rows,
 17,760 cases, 0 DIVERGE / 0 UNEXERCISED, both profiles.** file.c's graded spec exports went
-**40 → 95 of 146**. 18a took the narrow fd and stream layers and nothing else, which left the
+**36 → 93 of 146** (the commit message says 40 → 95; that count matched export names
+anywhere in the test file, including the section banners that merely NAME what a family
+covers. Measured against comment-stripped code it is 36 → 93). 18a took the narrow fd and stream layers and nothing else, which left the
 entire UTF-16 surface ungraded — and that is backwards from how it reads: msvcrt IMPLEMENTS the
 wide call and reaches Win32's `*W` directly, while the narrow entry points convert and delegate.
 The wide side is where the bodies are. Added: the wide path (`_wfopen`/`_s`, `_wfsopen`,
