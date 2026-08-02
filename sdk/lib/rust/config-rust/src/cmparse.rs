@@ -686,7 +686,12 @@ unsafe fn CmpDoOpen(
             return 0xC0000022u32 as i32;
         }
 
-        if ((*Context).CreateOptions & 0x00000020) != 0 {
+        // C: `Context->CreateOptions & REG_OPTION_CREATE_LINK`, which is 0x2.
+        // The literal was 0x20, which is not any REG_OPTION_* bit at all, so
+        // this guard could never fire: creating a symlink over a key that
+        // already exists returned success and opened the existing key instead
+        // of STATUS_OBJECT_NAME_COLLISION.
+        if ((*Context).CreateOptions & REG_OPTION_CREATE_LINK) != 0 {
             return 0xC0000035u32 as i32;
         }
 
