@@ -3786,6 +3786,45 @@ looking at" shape as the out-cell entry above; both lists have to come from `mar
 `Buffer` cannot survive that. Checking only that the call returned success passes on a broken
 build right up until the box dies.
 
+### A struct that carries its own `sizeof` is rejected before a single field is read
+**Symptom.** A whole family of Win32 APIs returns `FALSE` with `ERROR_INVALID_PARAMETER` for
+every 32-bit process and only for 32-bit processes. Nothing crashes, nothing is logged, and the
+marshaller for the struct is provably correct field for field.
+**Cause.** The struct's leading `cbSize`/`lStructSize` is the caller stating its own `sizeof`,
+and the callee version-checks it against the **host** `sizeof`. The guest wrote a number that
+is only true on the guest, so the call is refused before the payload is looked at. A
+field-perfect marshaller copies that number faithfully and is therefore still broken — this is
+the one field where a verbatim copy of a same-width, same-offset field is *wrong*.
+**Fix.** Rewrite the size on the way in and restore it on the way out, and do it **guarded on
+the value**: only when it is exactly the 32-bit `sizeof`. A struct with several legal sizes
+(`MONITORINFO` vs `MONITORINFOEXW`) must still reach the kernel with the size the caller chose,
+and garbage must still be rejected as garbage. The restore matters as much as the rewrite: the
+callee restamps the field with the host size, and handing that back leaves the caller holding a
+number that does not describe its own struct.
+**You need the bounce buffer too, and the size fix hides that you don't.** Once the size check
+passes, the callee writes the HOST-sized struct — `GUITHREADINFO` is 48 in the guest and 72 on
+the host, so "fixing" the size alone converts a silent no-op into 24 bytes of caller-stack
+corruption. Test with a canary immediately after the struct; a rewrite with no bounce passes a
+success check and fails the canary.
+**The size can also be an ARGUMENT** (`NtUserSendInput`'s third parameter, `sizeof(INPUT)`),
+which no struct-layout diff can associate with the pointer it describes — those stay
+hand-written. Live instances on vibeos: `TrackMouseEvent` (16→24, so no 32-bit app ever
+received `WM_MOUSELEAVE`), `GetCursorInfo` (20→24), `GetGUIThreadInfo` (48→72),
+`GetComboBoxInfo` (52→64), `GetMenuInfo` (28→40), `SendInput` (28→40).
+**Before you believe a WIDENING verdict, check what the callee does with the pointer.**
+`NtUserThunkedMenuInfo` declares `LPCMENUINFO` and diffs as a clean 28→40 widening, but
+win32k casts it to `PROSMENUINFO` and reads *`cbSize` bytes* — anything in
+`[sizeof(MENUINFO), sizeof(ROSMENUINFO)]`. The payload is a **caller-declared variable
+size**, so a generated marshaller hands over a 40-byte bounce and lets the kernel read past
+the end of it: a bug the marshaller INTRODUCES, where the flat thunk it replaced at least
+passed a real, correctly-sized caller pointer. Marshal only the size class you can name and
+pass the rest through. A prototype is a claim about the declared type, not about what the
+callee reads.
+**Third time for the same meta-bug.** The hand-written `NtUserThunkedMenuItemInfo` thunk set
+`M64.cbSize = sizeof(M64)` from day one; the generator that produced the other five did not.
+Same shape as `NtOpenProcessToken` vs its `Ex` sibling and `NtSetValueKey` vs `NtQueryValueKey`
+— whichever variant a human read is right. Fix the tool, not the instance.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the

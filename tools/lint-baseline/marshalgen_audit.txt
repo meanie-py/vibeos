@@ -190,9 +190,6 @@ FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_hGetColorTransform(pxlo) WIDENING -> struct
 FLAT-DIVERGENT: win32k NtGdiXLATEOBJ_iXlate(pxlo) WIDENING -> struct _XLATEOBJ
 FLAT-DIVERGENT: win32k NtUserBuildHimcList(phList) SCALAR_WIDEN -> HIMC: 4->8 scalar pointee
 FLAT-DIVERGENT: win32k NtUserGetClipboardData(pgcd) SEMANTIC -> struct tagGETCLIPBDATA: union/bitfield with divergent layout
-FLAT-DIVERGENT: win32k NtUserGetComboBoxInfo(pcbi) WIDENING -> struct tagCOMBOBOXINFO
-FLAT-DIVERGENT: win32k NtUserGetCursorInfo(pci) WIDENING -> struct tagCURSORINFO
-FLAT-DIVERGENT: win32k NtUserGetGUIThreadInfo(lpgui) WIDENING -> struct tagGUITHREADINFO
 FLAT-DIVERGENT: win32k NtUserGetImeHotKey(lphKL) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
 FLAT-DIVERGENT: win32k NtUserGetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserGetKeyboardLayoutList(pHklBuff) SCALAR_WIDEN -> HKL: 4->8 scalar pointee
@@ -203,7 +200,4 @@ FLAT-DIVERGENT: win32k NtUserGetRawInputBuffer(pData) SEMANTIC -> struct tagRAWI
 FLAT-DIVERGENT: win32k NtUserGetRawInputDeviceList(pRawInputDeviceList) WIDENING -> struct tagRAWINPUTDEVICELIST
 FLAT-DIVERGENT: win32k NtUserGetRegisteredRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
 FLAT-DIVERGENT: win32k NtUserRegisterRawInputDevices(pRawInputDevices) WIDENING -> struct tagRAWINPUTDEVICE
-FLAT-DIVERGENT: win32k NtUserSendInput(pInput) SEMANTIC -> struct tagINPUT: union/bitfield with divergent layout
 FLAT-DIVERGENT: win32k NtUserSetImeInfoEx(pImeInfoEx) SEMANTIC -> struct tagIMEINFOEX: union/bitfield with divergent layout
-FLAT-DIVERGENT: win32k NtUserThunkedMenuInfo(lpcmi) WIDENING -> struct tagMENUINFO
-FLAT-DIVERGENT: win32k NtUserTrackMouseEvent(lpEventTrack) WIDENING -> struct tagTRACKMOUSEEVENT

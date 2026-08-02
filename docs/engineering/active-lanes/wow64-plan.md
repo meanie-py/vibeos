@@ -2720,3 +2720,115 @@ cannot survive that: either the set faults, or it lands under a garbage name and
 the query misses, or the delete removes nothing. Checking only that the set
 returned success would have passed on the broken build right up until the
 machine died.
+
+**Phase E21 — `NtOpenKey` denied every `KEY_WOW64_32KEY` open, native callers
+included (2026-08-01, task #79).** `KEY_WOW64_64KEY` (0x0100) and
+`KEY_WOW64_32KEY` (0x0200) are not access bits — no key's DACL grants them — so
+the kernel must strip them before the object-manager check. The C does that
+with `DesiredAccess &= ~KEY_WOW64_RES` (0x0300) in both `NtCreateKey` and
+`NtOpenKey`. `NtOpenKey`'s Rust port had lost the name for a bare `0x0100`, so
+it stripped only the 64KEY bit and `RegOpenKeyEx(.., KEY_WOW64_32KEY)` returned
+`ACCESS_DENIED` while the identical `RegCreateKeyEx` succeeded.
+
+Two things about this are worth keeping. It is **not WoW64-specific** — a
+native 64-bit `reg query /reg:32` hits it too; the lane only found it because
+it was surveying the WoW64 registry story. And task #66 had recorded the
+premise "the `KEY_WOW64_*` flags are unhandled", which was **wrong**: they were
+handled, and one of the two had been mistranslated. A task description is not
+evidence. The `marshal32` rung opens one key four ways so a failure names the
+offending bit instead of saying "registry broken".
+
+**Phase E22 — the self-describing size: a field-perfect marshaller is still a
+broken one (2026-08-01, task #81).** Third slice of the E10 audit baseline
+after E19 (out-cells) and E20 (`UNICODE_STRING`), and the first one that is not
+about *widths* at all.
+
+A struct that carries its own `sizeof` gets version-checked against the
+**host's** `sizeof`. So for this family the marshalling problem is not that the
+guest's bytes land in the wrong places — it is that the call never gets that
+far:
+
+```
+win32k-rust/src/ntmouse.rs     SafeTME.cbSize != size_of::<TRACKMOUSEEVENT>()  -> ERROR_INVALID_PARAMETER
+win32k-rust/src/cursoricon.rs  (*pci).cbSize  == size_of::<CURSORINFO>()       -> else ERROR_INVALID_PARAMETER
+win32k-rust/src/misc.rs        SafeGui.cbSize != size_of::<GUITHREADINFO>()    -> ERROR_INVALID_PARAMETER
+win32k-rust/src/window.rs      (*pcbi).cbSize <  size_of::<COMBOBOXINFO>()     -> ERROR_INVALID_PARAMETER
+win32k-rust/src/input.rs       cbSize as usize != size_of::<INPUT>()           -> ERROR_INVALID_PARAMETER
+```
+
+| struct | guest | host | the API a 32-bit app loses |
+|---|---|---|---|
+| `TRACKMOUSEEVENT` | 16 | 24 | `TrackMouseEvent` — no `WM_MOUSELEAVE`/`WM_MOUSEHOVER` at all |
+| `CURSORINFO` | 20 | 24 | `GetCursorInfo` |
+| `GUITHREADINFO` | 48 | 72 | `GetGUIThreadInfo` |
+| `COMBOBOXINFO` | 52 | 64 | `GetComboBoxInfo` |
+| `MENUINFO` | 28 | 40 | `GetMenuInfo`/`SetMenuInfo` |
+| `INPUT` | 28 | 40 | `SendInput` — all synthesized input |
+
+None of these crash. They return `FALSE` and set `ERROR_INVALID_PARAMETER`, for
+every 32-bit process, forever — which is exactly why six applets' worth of
+ladder never noticed. The audit found them because the audit does not need a
+guest to call something before it will look at it.
+
+*What the generator learned.* `marshalgen`'s `_gen_struct_marshaller` copied
+every same-width field verbatim, which is correct for every field except this
+one: the guest wrote a number that is only true on the guest. It now emits
+`WowAmSizeIn`/`WowAmSizeOut` for a 4-byte leading field with a size-ish name,
+**guarded on the value**: rewrite it only when it is exactly the 32-bit
+`sizeof`, so a struct with more than one legal size (`MONITORINFO` vs
+`MONITORINFOEXW`) still reaches the kernel with the size the guest chose, and
+garbage still gets rejected as garbage. The copy-out undoes the rewrite — the
+kernel restamps `cbSize` with the host size, and handing that back would leave
+the guest holding a number that does not describe its own struct.
+
+The hand-written `NtUserThunkedMenuItemInfo` thunk had `M64.cbSize =
+sizeof(M64)` in it from the day it was written. The generator did not, and the
+five syscalls that were waiting on the generator got the broken version. That
+is E19's `NtOpenProcessToken`-vs-`Ex` and E20's `NtSetValueKey`-vs-
+`NtQueryValueKey` a third time: **the sibling that a human looked at is right
+and the one the tool produced is wrong**, which is the argument for teaching
+the tool rather than fixing the instance.
+
+*`SendInput` is hand-written*, because its size is a syscall **argument**, not
+a leading field — no struct diff can associate arg 2 with arg 1. It diverges
+twice over anyway: the union is at offset 4 in the guest and 8 on the host, and
+each arm's `dwExtraInfo` widens 4→8, so the array stride is 28 vs 40.
+`dwExtraInfo` is **zero**-extended, unlike every handle in this layer, because
+it is app-defined data the guest reads back through `GetMessageExtraInfo` and
+sign-extension would corrupt any value with bit 31 set.
+
+*`NtUserThunkedMenuInfo` is hand-written too, and it is the more instructive
+one — the generator was about to introduce a bug.* Its prototype says
+`LPCMENUINFO` and the layout diff is a clean 28→40 WIDENING, so `marshalgen`
+generated a marshaller for it happily. But win32k casts the pointer to
+`PROSMENUINFO` and `UserMenuInfo` reads **`cbSize` bytes** out of the caller,
+accepting anything in `[sizeof(MENUINFO), sizeof(ROSMENUINFO)]` — ROSMENUINFO
+being MENUINFO plus a dozen internal fields. The real payload is therefore a
+**caller-declared variable size**, and a generated thunk hands the kernel a
+40-byte stack bounce and then lets it read `cbSize` bytes out of it: a guest
+declaring a ROSMENUINFO reads ~36 bytes past the end of wow64.dll's own buffer.
+The flat thunk it was replacing at least passed a real, correctly-sized guest
+pointer. So: marshal exactly the MENUINFO size class, pass everything else
+through untouched. **A prototype is a claim about the declared type, not about
+what the callee reads** — check what the kernel does with the pointer before
+believing a WIDENING verdict on it. The other four were checked the same way
+and are clean: `TrackMouseEvent`, `GetCursorInfo` and `GetGUIThreadInfo` all
+read and write a fixed `sizeof`, and `GetComboBoxInfo` writes fields
+individually within its 64 bytes.
+
+*Deliberately NOT fixed: `NtUserGetMouseMovePointsEx`.* It is in the same class
+(`cbSize` as an argument, `MOUSEMOVEPOINT` 16→24) but the kernel side is a
+stub — the `GMMP_USE_DISPLAY_POINTS` branch probes the output buffer and
+returns `nBufPoints` without ever filling it. Marshalling it would convert an
+honest `ERROR_INVALID_PARAMETER` into a success handing the app an
+uninitialized buffer. It stays in the audit baseline, and the kernel-side stub
+is filed separately.
+
+*Rung design.* `marshal32`'s new check asserts three things per struct, and
+they fail in different directions. The call must **succeed** (the size reached
+the kernel host-sized) — that is the one that fires on unmarshalled media. The
+size must come back **guest-sized** (the copy-out undid the rewrite). And a
+canary parked immediately after the struct must **survive** — which is what
+separates "fixed the size check" from "fixed the size check and let the kernel
+write 72 bytes onto the guest's 48-byte stack slot". A naive rewrite with no
+bounce buffer passes the first and fails the third.
