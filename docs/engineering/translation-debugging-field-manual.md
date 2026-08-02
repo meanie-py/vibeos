@@ -1250,6 +1250,27 @@ neither call looks wrong on its own, so test the pair, not the function.
 - **Check the sibling arch before calling it drift** — amd64's `KeFlushCurrentTb` C really is
   CR3-only, so only i386 had a branch to lose.
 
+**Mechanised as `tools/scan_mask_drift.py`** (in `vibeos-cli check`, baseline-gated). Its first
+full sweep found the registry's whole `HIVE_*` family open-coded and four of eight copies wrong:
+`CmLoadKey` set `0x4` and `CmUnloadKey` `0x40` for `HIVE_IS_UNLOADING` (**0x20**), while
+`CmpParseKey` tested `0x4` and `CmpCreateKeyControlBlock` tested `0x200`. Only the load-side set
+and one of the two guards agreed *by accident*, so the C's "refuse to resolve a key in a hive
+that is unloading" protection could not fire on the unload path it exists for. Separately
+`CmpLoadHiveThread` cleared `0x80` instead of `HIVE_NOLAZYFLUSH` (**0x2**), leaving lazy flush
+disabled for that hive forever.
+- **A wrong flag is invisible in proportion to how consistently it is wrong.** Nothing here was
+  a compile error, and the writers and readers each looked locally fine. `verify_constants`
+  needs a *name* and these were bare literals; `scan_const_contradictions` needs *two* copies to
+  disagree and the one named copy was unique. The relationship to the C is the only oracle left.
+- **Fix the whole family, not the finding.** These are now one `pub mod hiveflags` that everyone
+  imports; the pre-existing `HIVE_NOLAZYFLUSH = 0x8` sitting in the const-contradiction baseline
+  was the same bug, already caught and parked. **A baseline is a work queue** — read it when the
+  scanner points you at that neighbourhood.
+- **The counting rule is a trap.** "C masks it N times, live masks it fewer" reads a fix's own
+  explanatory comment (which quotes the C) as another C occurrence, and a C block repeats a
+  statement per call site. The scanner compares *values* and reports a target the live code
+  never masks at all; it does not count.
+
 ### Flavor-variant constants are their own drop-class `[§9.97]`
 `SYNCH_LEVEL` differs between UP and MP builds, and the translation froze the UP value in
 **five independent sites** → `-smp 2` `KeIrql` kmtest failures. Single source of truth per

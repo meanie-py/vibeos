@@ -424,9 +424,8 @@ pub const HINIT_MEMORY_INPLACE: u32 = 3;
 pub const HINIT_FLAT: u32 = 4;
 pub const HINIT_MAPFILE: u32 = 5;
 
-// HIVE_* (cmlib/hivedata.h)
-pub const HIVE_VOLATILE: u32 = 1;
-pub const HIVE_NOLAZYFLUSH: u32 = 2;
+// HIVE_* (cmlib/hivedata.h) — one definition, in crate::hiveflags.
+pub use crate::hiveflags::{HIVE_NOLAZYFLUSH, HIVE_VOLATILE};
 
 // HBOOT_TYPE_*
 pub const HBOOT_TYPE_REGULAR: u32 = 0;
@@ -1920,7 +1919,10 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
             (*CmHive).FileHandles[HFILE_TYPE_ALTERNATE as usize] = AlternateHandle;
             (*CmHive).FileHandles[HFILE_TYPE_PRIMARY as usize] = PrimaryHandle;
 
-            (*CmHive).Hive.HiveFlags &= !0x00000080;
+            // C cmsysini.c: `CmHive->Hive.HiveFlags &= ~HIVE_NOLAZYFLUSH;` (0x2).
+            // Clearing 0x80 — not a HiveFlags bit — left NOLAZYFLUSH set, so
+            // cmlazy (which reads the right bit) skipped this hive forever.
+            (*CmHive).Hive.HiveFlags &= !HIVE_NOLAZYFLUSH;
 
             Length = (*CmHive).Hive.Storage[0].Length + 0x1000;
 

@@ -479,6 +479,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 The committed home for open bugs (was: agent MEMORY.md, which other agents never see).
 Field-manual § pointers hold the full writeups. **Update on state change.**
 
+- **FIXED (2026-08-01): the registry's `HIVE_*` flag family was open-coded and half wrong.**
+  `scan_mask_drift`'s first sweep found eight bare literals across five config-rust files, four
+  of them with the wrong value. `CmLoadKey` set `0x4` and `CmUnloadKey` set `0x40` for
+  `HIVE_IS_UNLOADING` (**0x20**); the two guards that consume it tested `0x4` (cmparse) and
+  `0x200` (cmkcbncb). Only the load-side set and the cmparse test agreed, *by coincidence*, so
+  the C's "don't resolve a key in a hive that is unloading" protection was inert on the unload
+  path — `CmpParseKey` and `CmpCreateKeyControlBlock` would happily open keys and build KCBs in
+  a hive mid-unload. `CmpLoadHiveThread` cleared `0x80` instead of `HIVE_NOLAZYFLUSH` (**0x2**),
+  so that hive stayed excluded from the lazy flusher permanently, and `cmdata`'s SAM entry was
+  tagged `0x8` (`HIVE_HAS_BEEN_FREED`) for the same flag. All eight now import one
+  `config_rust::hiveflags`. Field manual: "A hand-typed bit-flag literal that names the wrong
+  member".
 - **FIXED (E21, 2026-08-01): `NtOpenKey` denied every `KEY_WOW64_32KEY` open.** The Rust port
   masked a bare `0x0100` where the C masks `KEY_WOW64_RES` (0x0300), so the 32KEY bit reached
   `ObCheckObjectAccess` and came back `STATUS_ACCESS_DENIED` — while the identical
