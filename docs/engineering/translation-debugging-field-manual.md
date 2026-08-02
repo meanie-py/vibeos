@@ -2681,6 +2681,35 @@ test cannot see a lost *tolerance*** `[§9.64]` — a pure refactor dropped NULL
 and no generator that produces real NUL-terminated buffers could ever notice. Fix by making the
 tolerance a first-class assertion (`assert_null_tolerant()`).
 
+### A conformance score is not a defect count, and neither direction is self-explaining
+Two independent traps, both of which have produced wrong conclusions in this tree.
+
+**1. The denominator moves.** A kmtest that fails an early assertion often *bails* — skips a
+setup step, returns early, never reaches the rest of the file. Fix the early branch and the
+test suddenly runs hundreds of assertions it never reached before, so **total assertions is a
+variable, not a constant**, and a rising *fail* count can mean "we got further in", not "we
+broke something". The arm64 2026-08-01 re-seed is the worked example: of nine rows that moved,
+eight had an unchanged total (a pure fail→pass move) and **`CmSecurity` went 389 → 910
+assertions**, +521 of new ground, because it had been bailing early. Its failures dropped 89 → 4
+in the same step — but had those 521 new assertions gone the other way, the row would have read
+as a catastrophic regression while being an unambiguous improvement.
+**So: always split total-assertion change from fail↔pass movement before calling a row.**
+`(pass+fail)` unchanged = redistribution; `(pass+fail)` up = new coverage, and its failures are
+newly *visible*, not newly *created*. The mirror image is already known — a falling count can
+also be an improvement (amd64's `ExInterlocked` 662/40 → 180/0 when clang stopped deleting
+`__except` blocks), which is why the re-seed guard *announces* count changes instead of
+refusing them.
+
+**2. Zero is the wrong reference point.** Many kmtests only pass cleanly on *real Windows*.
+Stock ReactOS fails plenty of them too, so an absolute failure count is not a defect count, and
+"N failures remain" says nothing about whether we are behind or ahead of upstream — **we may
+well be exceeding it.** The ratchet's actual claim is narrow and worth stating precisely: *this
+row got worse than it was on this tree*. It is a change detector against our own history, not a
+distance-from-correct. Do not write "still N failures" as if it were technical debt, and do not
+budget work against driving a row to zero, without an upstream reference measurement to say
+zero is reachable. Cross-*arch* comparison is still fair game (it is the same codebase), which
+is why "arm64 fails 9 where i386 fails 4" is a real signal while "arm64 fails 9" is not.
+
 ### No ratio can catch a cost the harness stubs away — count, don't measure `[§9.76]`
 Every instrument was green and the OS booted **3× slower**: the Rust folded each character
 through `_towlower_l(c, NULL)`, and a NULL locale means **three Win32 calls per character**, in
@@ -3080,6 +3109,25 @@ language rules) over loosening what it reports.
   it checks.** Give the two halves separate macros (here `KI_VALIDATE_SPINLOCK_OWNER` vs
   `KI_TRACK_SPINLOCK_OWNER`) so the next person can tell which one they are turning off, and
   so a partial disable cannot silently desynchronise two funnels that must agree.
+  **Sequel (2026-08-01): restoring the stamp exposed a MISSING COMBINATION in the test.**
+  `IoInterrupt`'s `CheckSpinLock` branches `if (KmtIsMultiProcessorBuild) … else if
+  (KmtIsCheckedBuild) …`, so the MP branch — which demands `*Lock == 1` **exactly** — is
+  reached first and the checked branch is unreachable on an MP kernel. But
+  `KI_TRACK_SPINLOCK_OWNER` is gated on plain `#if DBG`, independent of `CONFIG_SMP`, so a
+  checked MP kernel stamps `thread|1` and cannot pass. Upstream ReactOS's own DBG+SMP build
+  fails it identically. **Symptom shape worth recognising: a test whose expectation is selected
+  by build flavour can be missing a COMBINATION of flavours, and then a kernel that behaves
+  identically under both flavours "regresses" purely by crossing the branch boundary.** Before
+  filing an MP regression, check whether the UP and MP kernels actually wrote different values
+  — here they wrote the same one.
+- **A baseline seeded before a behavioural fix invents a cross-arch pattern that does not
+  exist.** Same incident: today's post-stamp arm64 numbers compared against x86 baselines
+  seeded four days *before* the stamp landed (`cfdff72b41d`) read as "x86 MP passes, arm64 MP
+  fails" — an arch difference, and a tempting one, since arm64 is where MP is least mature. It
+  was purely the seed dates; the per-arch behaviour is identical. **A baseline is a measurement
+  with a timestamp, not a constant.** When a delta looks arch-specific, diff the baselines'
+  commit dates against the fix's date before theorising, and re-seed every arch that predates
+  it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
