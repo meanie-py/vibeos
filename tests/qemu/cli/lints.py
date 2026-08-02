@@ -617,6 +617,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
+    # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
+    # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,
+    # which is the merge-queue gate. Wave 18c bounced that way (errno.rs declared kernel32's
+    # WINAPI SetErrorMode `extern "C"`, so the linker wanted `_SetErrorMode` and the import
+    # lib had `_SetErrorMode@4`), and the tree carries three older instances that were papered
+    # over with hand-written stdcall trampolines instead. Baseline holds 4 generated-island
+    # findings where the C HEADER and the .spec genuinely disagree upstream.
+    sic = repo / "tools" / "scan_import_cc.py"
+    specs.append(
+        (
+            "scan_import_cc",
+            [py, str(sic)] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
     # link into the kernel PE are masked by --allow-multiple-definition (which is
     # load-bearing — the multi-staticlib runtime dups are irreducible). We can't

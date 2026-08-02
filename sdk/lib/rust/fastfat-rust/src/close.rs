@@ -23,9 +23,22 @@ extern "system" {
     fn FatReleaseCloseMutex();
     static mut FatData: FAT_DATA;
 }
-extern "system" {
+// Ex{Acquire,Release}FastMutexUnsafe are FASTCALL exports on i386 (`@Name@4`, per
+// ntoskrnl.spec and the bindgen island); everywhere else FASTCALL is the ordinary
+// convention. Declared "system" they asked the linker for `_Name@4`, and
+// rust_cohab_fat.c papered over the undefined symbol with stdcall trampolines
+// aliased in asm. The declaration was the thing that was wrong.
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
     fn ExAcquireFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
     fn ExReleaseFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn ExAcquireFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
+    fn ExReleaseFastMutexUnsafe(FastMutex: *mut FAST_MUTEX);
+}
+extern "system" {
     fn KeAreApcsDisabled() -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatBugCheck(type_of_open: TYPE_OF_OPEN, arg1: u32, arg2: u32) -> !;

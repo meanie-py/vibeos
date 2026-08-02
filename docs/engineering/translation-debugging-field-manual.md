@@ -107,8 +107,11 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
 
-**Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def), `verify_abi.py` (extern
-blocks vs `ntoskrnl.spec` + bindgen), `verify_ffi.py` (workspace-wide),
+**Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
+`tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
+scoped by `add_importlibs` — the usermode half, and the only one that sees a wrong `extern
+"system"`), `verify_abi.py` (extern blocks vs `ntoskrnl.spec` + bindgen, `extern "C"` only),
+`verify_ffi.py` (workspace-wide),
 `tools/scan_ir_mismatch.py` (catches the fold *before* it folds, from `.ll`). Refined
 fold-truth model `[§9.102]`: **CC mismatch folds against both defs and declarations**;
 **signature mismatch (arity / int width / void-vs-value) folds only against a definition**;
@@ -151,9 +154,47 @@ argument expression widened too, or you have only moved the truncation.
 the same declaration links green. errno.rs declared `SetErrorMode`/`lstrcpyW`/`lstrcatW`
 `extern "C"` and got exactly that: three undefined symbols, i386 only. **`cargo check` cannot
 see this class at all** — it type-checks, it does not link a DLL — so a lane whose gates are
-`check` + `check-tooling` + `difftest` will hand a green tree to the merge queue and be
-bounced LINK_FAIL. When a wave adds any `extern` block, run `vibeos-cli build --arch i386`
-before `land`; i386 is the arch that decorates, so it is the one that finds it.
+`check` + `check-tooling` + `difftest` hands a green tree to the merge queue and is bounced
+LINK_FAIL.
+
+**`tools/scan_import_cc.py` now closes that hole in `check` itself**, so this is a lint
+failure rather than a build you have to remember to run. The oracle is the `.spec` of the DLL
+that exports the name — spec2def turns that file into the import library, so it *is* the
+link-time truth — scoped per crate to the DLLs its module names in `add_importlibs()`.
+Scoping is the design and not a refinement: run unscoped, four of its first 22 findings were
+pure name collisions between unrelated modules (user32's stdcall `UserRealizePalette` vs
+win32k's FASTCALL one; ntoskrnl's exported `RtlAcquireSRWLockExclusive` vs its private
+same-named cdecl inline shim, both real symbols in one binary).
+
+**The reason it was worth building: the tree already held 14 more of these, in two shapes.**
+
+*Papered over at the link layer.* fastfat's `rust_cohab_fat.c` carried three asm-aliased
+stdcall trampolines (`_ExReleaseResourceLite@4`, `_ExAcquireFastMutexUnsafe@4`,
+`_ExReleaseFastMutexUnsafe@4`) tailing into the real FASTCALL exports, and its comment stated
+the diagnosis exactly right — "the Rust translation references them stdcall (`_Name@4`)" —
+then fixed everything except the two declarations. That is not a lapse: with no gate able to
+see a wrong-ABI import, a shim was the only tool that reached the symptom. The declarations
+are fixed and the trampolines are gone. **A wrong-ABI import wants the declaration fixed,
+never a trampoline.**
+
+*Latent — declared wrong, never called.* An unused extern emits no relocation, so it links
+green and detonates on first use. mscms had `memcpy` inside an `extern "fastcall"` block
+(with `RtlUlongByteSwap`, which really is fastcall) and every call site still commented out;
+shell32 had kernel32's `lstrlenA` in a block of CRT cdecl imports. wldap32-rust, translated
+but not yet flipped, had **nine** — `HeapAlloc`, `GetProcessHeap`, `MultiByteToWideChar` and
+friends, the whole Win32 section spelled `extern "C"`. Those nine were the clearest argument
+for the lint: they are unreachable by any build gate that exists, because nothing compiles
+that crate yet, and they would all have landed at once on flip day.
+
+Two things about the lint that will bite whoever extends it. Its findings are keyed on the
+`.spec` **flag order** — spec2def reads the convention token first and options *after* it
+(`spec2def.c:1026`), so a pattern written flags-first silently drops every flagged export
+(`@ stdcall -norelay GetProcessHeap()`, every `-arch=`, every `-private`) and the oracle
+quietly under-reports rather than failing. And a finding in a generated bindgen island is
+tagged `IMPORT_CC_ISLAND` because there the island transcribes the C header, so a clash with
+the spec is the *header* against the *spec* — an upstream inconsistency to judge, not a decl
+to rewrite. Four are baselined: ntdll exports `NtCurrentTeb` `@ stdcall -arch=win32` while
+`psfuncs.h` declares it with no `NTAPI`, and `KeInitializeSpinLock` is the same shape.
 
 ### Wrong-direction fix: aligning the DEF to a lying header `[§9.107]`
 Resolving a `scan_ir_mismatch` "def X vs decl system" by changing the **definition** to cdecl

@@ -95,10 +95,17 @@ DECL_FN_RE = re.compile(
     r"(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
     r"\bfn\s+(?P<name>\w+)\s*\("
 )
+# `pub` is OPTIONAL. #[no_mangle] alone makes the symbol global to the LINKER regardless of
+# Rust visibility, and crates deliberately leave it off: usbhub-rust/src/glue.rs defines
+# InterlockedIncrement/Decrement as bare `#[no_mangle] unsafe extern "system" fn` — its own
+# comment says PRIVATE (no `pub`) so they don't enter the glob and clash (E0659). Requiring
+# `pub` here made both this scanner and scan_import_cc.py treat those as UNDEFINED, i.e. as
+# imports of ntoskrnl's fastcall exports, and report a link failure against a symbol the
+# crate defines itself two files over.
 DEF_RE = re.compile(
     r"(?P<cfg>(?:#\[cfg[^\]]*\]\s*)*)"
     r'(?:#\[no_mangle\]|#\[export_name\s*=\s*"(?P<export>[^"]+)"\])\s*'
-    r'pub\s+unsafe\s+extern\s+"(?P<cc>\w+)"\s+fn\s+(?P<name>\w+)'
+    r'(?:pub(?:\([^)]*\))?\s+)?unsafe\s+extern\s+"(?P<cc>\w+)"\s+fn\s+(?P<name>\w+)'
 )
 NOLINT_RE = re.compile(r"nolint:\s*cc-mismatch")
 
@@ -140,11 +147,18 @@ def cfg_excludes_i386(cfg: str) -> bool:
 # KeRegisterInterruptHandler `extern "C"` inside an x86_64-only module, and treating those as
 # the i386 authority made this tool's --fix rewrite ntoskrnl's *correct* `extern "system"`
 # decls to match a definition that does not exist on i386. A cfg'd-out def is not evidence.
-RE_CFG_MOD = re.compile(r"#\[cfg\(([^\]]*)\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+#
+# The same reasoning covers a cfg'd BLOCK EXPRESSION — `#[cfg(target_arch = "aarch64")] { ...
+# extern "C" { fn KfRaiseIrql(..); } .. }` — which is how a per-arch body inside one function
+# is written (ntkrnl-sys/src/guards.rs picks fastcall on x86 and cdecl on aarch64 exactly like
+# this, and is right on both). The attribute sits on the block, not on the extern inside it, so
+# without this the aarch64 arm reads as an i386 declaration and its correct cdecl spelling
+# reports as a link failure against hal.spec's FASTCALL KfRaiseIrql.
+RE_CFG_MOD = re.compile(r"#\[cfg\(([^\]]*)\)\]\s*(?:(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*)?\{")
 
 
 def excluded_spans(src: str) -> list[tuple[int, int]]:
-    """Byte ranges of `#[cfg(...)] mod` blocks that are NOT compiled on i386."""
+    """Byte ranges of `#[cfg(...)] mod`/`#[cfg(...)] { .. }` that are NOT compiled on i386."""
     spans = []
     for m in RE_CFG_MOD.finditer(src):
         if not cfg_excludes_i386(f"#[cfg({m.group(1)})]"):
