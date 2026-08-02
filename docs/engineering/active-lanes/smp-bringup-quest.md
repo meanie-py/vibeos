@@ -1705,3 +1705,131 @@ Also settled here: the wedge is **not** a regression of the §9.89 SamSs handsha
 elapses and the box keeps running. Ours prints no `result=` at all and every subsystem stops
 within a few lines of each other — the 30 s `PipeTimeout` never expiring is what indicts the
 clock rather than the service.
+
+## arm64 media asymmetry CLOSED — the MP pair is now a boot pick, not a build (2026-08-02)
+
+The last place where "which kernel runs" was a property of *how the media was built* rather
+than *which entry freeldr selects*. x86 has shipped both pairs in every `livecd.iso` since the
+halmp twin landed, with `vm.smp_selected_iso` repointing `DefaultOS=` in a copy of the image.
+arm64 did it the other way round: `mkramdisk.sh --smp` staged `ntkrnlmp.exe` + `halmp.dll`
+**only then**, and rewrote the single `[ReactOS_Arm64]` entry's `Options=` in place. So a
+`--smp N` run on media built without `--smp-kernel` silently booted UP — identical-looking
+media, no error, one CPU — which is precisely the false-green `_smp_check` exists to catch,
+and it is why `smoke.py` carried an `arch.startswith("arm64")` branch telling you to go
+rebuild. That branch is gone.
+
+Now: `mkramdisk.sh` stages the MP pair unconditionally (and mkramdisk *requires* the two
+outputs, so a build that could not produce them fails there instead of shipping media whose
+MP entry names files that are not on it), and `qemu/freeldr.ini` ships
+`[ReactOS_Arm64_UP]` + `[ReactOS_Arm64_MP]`. `DefaultOS=` stays on UP.
+
+**The names are the same length on purpose.** `DefaultOS=ReactOS_Arm64_UP` and
+`..._MP` are both 26 bytes, so selecting the MP pair is a one-byte `U`→`M` poke into a copy of
+`boot.img` — no padding, no mtools at boot time, and the *same* `smp_selected_iso` all three
+arches already used. Measured: 0.68 s for a 294 MB image, exactly 1 byte different, idempotent.
+Keep them equal-length; `test_mp_entry_names_are_equal_length_to_the_defaults_they_replace`
+guards it so renaming one half fails in pytest rather than at boot.
+
+Proven on ONE build of ONE media, built with **no** `--smp`:
+
+| run | freeldr loaded |
+|---|---|
+| `smoke --arch arm64`            | `ntoskrnl.exe` + `hal.dll` |
+| `smoke --arch arm64 --smp 1`    | `ntkrnlmp.exe` + `halmp.dll` |
+
+**A bug the unit tests could not have caught, and the guard did.** The first real `boot.img`
+built from the two-entry ini refused to patch: `expected exactly one DefaultOS=, found 2`. The
+second hit was the new ini's own *comment* explaining the equal-length rule, which says
+`DefaultOS=` in prose. The search is now anchored to a line start — which is where freeldr
+reads the key anyway — and the fixture carries that comment plus uefildr's bare `DefaultOS`
+token so the distinction stays tested. Worth remembering as a shape: a synthetic fixture
+agreed with the code, and only the real artifact disagreed. The same pass replaced a
+per-offset `startswith` comprehension that walked all 294 MB in Python with `bytes.find`.
+
+Not changed, deliberately: `DefaultOS=` still selects UP on every arch. The flip waits on the
+remaining MP defects (the rare `--smp 1` wedge and the `0xE3`), not on media plumbing.
+
+### The tail of it: `conformance` was still paying for the old asymmetry (2026-08-02)
+
+`conformance.py` kept its own copy of the retired rule — `needs_smp_media_build = smp and base
+== "arm64"`, justified by a comment saying arm64's `boot.img` "does not carry halmp.dll /
+ntkrnlmp.exe at all". True when written, false since mkramdisk started staging both pairs. The
+cost was not just a redundant media re-roll to change one byte: it meant the `--smp 1` and
+`--smp 2` sweeps **of the same commit** needed two different builds, because one wanted MP-
+default media and the other did not. Removed — one build now serves both, which is what makes
+taking a collapse measurement and an MP baseline in the same session affordable.
+
+Generalizable: when a capability stops being special, grep for callers still branching on the
+special case. The branch does not fail — it just quietly keeps charging the old price.
+
+## The UP floor moved under the collapse criterion (2026-08-02)
+
+Merging `origin/master` brought in the ratchet lane's `bfda94a3ce1`, which removed **765
+baselined failures** from the UP `kmtest.txt` floor on all three arches — `CmSecurity`
+900/2 → 1048/1 everywhere, i386 `IoInterrupt` 1839/306 → 2145/0, `KeGuardedMutex` 1566/87 →
+1653/0, `FsRtlLegal` 2496/32 → 2528/0.
+
+**That is the oracle the UP:=smp1 collapse is measured against.** `--smp 1` ratchets the MP
+kernel on one CPU against `kmtest.txt`, and a ratchet only asserts *no worse than baseline*, so
+every collapse result this lane has banked — including "holds 19/19" — was graded against a
+floor carrying that slack. Any residual MP-at-1-CPU divergence sitting inside those 765 rows
+was invisible by construction.
+
+The collapse is a `DefaultOS`-flip gate, so it is being re-taken against the tightened floor.
+If the MP kernel at one CPU really is UP, it reproduces the tightened numbers and the collapse
+still holds; this is a sharper test, not a redo. Worth stating as a rule: **when a baseline is
+re-seeded, every criterion defined as "ratchets against that baseline" needs re-taking, even
+though nothing in the criterion's own code changed.**
+
+The two MP baselines are stale for the same reason and are being re-seeded alongside:
+`i386/kmtest-smp2.txt` and `amd64/kmtest-smp2.txt` are both from 07-26 and predate
+`cfdff72b41d` (07-30, spinlock owner STAMP restored). They also *lack* `IoFilesystem` and
+`NpfsFileInfo` entirely (91 rows against UP's 93), and bank `CmSecurity` at pass=300 fail=89
+where the sweep now launches 1049 assertions — the smp2 sample was taken when the sweep died
+early. arm64's smp2 baseline was already re-seeded on 08-01 and is fine.
+
+### Result: the collapse holds on amd64 + arm64, and i386 has ONE real defect
+
+Re-measured on all three arches, `--repeat 2`, every row below identical across both rounds.
+
+| arch | rows the tightened UP floor flags at `--smp 1` |
+|---|---|
+| i386  | `IoInterrupt` 2145/0 → 1839/306 · `KeEvent` −132 pass · **`KeSpinLock` 710/75 → 706/79** · `IoDeviceObject` 185/4 → 184/5 |
+| amd64 | `IoInterrupt` 1095/0 → 939/156 · `KeEvent` −132 pass |
+| arm64 | `IoInterrupt` 1093/2 → 937/158 · `KeEvent` −132 pass |
+
+**Two of these are MP-conditional by construction and can never go to zero.**
+`IoInterrupt`'s `CheckSpinLock` branches on `KmtIsMultiProcessorBuild`; the MP kernel
+truthfully reports MP, takes the strict arm, and fails on the upstream owner stamp (see the
+baseline files for the full reasoning). `KeEvent` launches exactly 132 fewer assertions on
+every arch, with zero new failures — the MP-fatal sections the test skips on an MP build. The
+ratchet flags a dropped pass count even when nothing failed, which is correct conservatism.
+
+So **the criterion itself needed restating**: "UP:=smp1" cannot mean *zero ratchet regressions
+against the UP baseline* while kmtest branches on the build flavour. It means **zero
+UNEXPLAINED deltas**, against an enumerated list of MP-conditional rows.
+
+**The old "holds 19/19" was true against a floor that agreed with MP for the wrong reason.**
+Pre-stamp, a held lock read 0 on *both* kernels, so UP's `ok_eq_bool(*Lock != 0, TRUE)` failed
+306 and MP's `ok_eq_ulongptr(*Lock, 1)` failed the same 306 — identical counts, different
+causes. The UP floor banked `1839/306`, the MP run produced `1839/306`, and the comparison
+reported no delta. Restoring the stamp fixed UP only, and the re-seed made the floor honest,
+which is what let the coincidence show itself. Generalize: **a ratchet compares numbers, not
+reasons, so two rows can agree while measuring different things** — and a criterion built on
+"no delta" inherits that blindness.
+
+**The one genuine find is i386 `KeSpinLock` +4**, isolated against a UP control run on the same
+media (histograms sum exactly: UP 75, MP 79). The delta is `+5 "TryAcquire returned FALSE,
+expected TRUE"` and `−1 "Ret = TRUE, expected FALSE"`. `KeSpinLock.c:280-289` releases a lock,
+asserts it reads 0, then try-acquires expecting TRUE. The `expected 0` assertion fails 5× on
+*both* kernels — the lock is left DIRTY after release either way, and that half is already
+banked on UP. Only MP acts on it: its try-acquire is a real `InterlockedBitTestAndSet`, sees
+bit 0 still set, and returns FALSE, where UP's has no `CONFIG_SMP` body and returns TRUE
+unconditionally. A lock word that survives release is not cosmetic on MP — a genuine acquire on
+it spins forever at IRQL ≥ DISPATCH_LEVEL. Tracked as its own task; `cfdff72b41d` already named
+this hazard (`KeTryToAcquireSpinLockAtDpcLevel` stamping under plain `#if DBG`) and believed it
+closed, so some path still leaks.
+
+**Flip status: unchanged, `DefaultOS=` still selects UP.** amd64 and arm64 collapse cleanly
+modulo the two enumerated rows; i386 does not until the leaked lock word is understood, and it
+is the same shape as the two open MP blockers (#39's silent stall, #43's `0xE3`).

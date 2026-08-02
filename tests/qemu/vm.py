@@ -97,15 +97,34 @@ HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"
 _INI_DEFAULT_OS = b"DefaultOS="
 _INI_SMP_ENTRY = b"LiveCD_SMP"
 
+# The shipped default entry -> the MP twin that boots ntkrnlmp.exe + halmp.dll,
+# per media flavor. arm64's boot.img is a FAT image rather than ISO9660, but it
+# stores freeldr.ini's bytes literally and contiguously just the same, and
+# `DefaultOS=` (with the `=`) occurs exactly once in it — the bare `DefaultOS`
+# token also appears inside uefildr.efi, which is why the needle keeps the `=`.
+# So one poke serves all three arches and arm64 needs no mtools at boot time.
+_MP_ENTRY_FOR = {
+    b"LiveCD_Debug": _INI_SMP_ENTRY,            # i386/amd64 livecd.iso
+    b"ReactOS_Arm64_UP": b"ReactOS_Arm64_MP",   # arm64 qemu/boot.img
+}
+
 
 def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
-    """An ISO whose freeldr default entry is the MP pair, WITHOUT rebuilding media.
+    """Boot media whose freeldr default entry is the MP pair, WITHOUT rebuilding it.
 
     ISO9660 stores each file's bytes once, contiguously, with no per-file checksum,
     and freeldr.ini is plain text — so flipping the default is an equal-length
     in-place write of one line into a copy of the image. The alternative was a cmake
     reconfigure + mkisofs repack (8m30s measured on amd64) or shipping a second
     221 MB media; this is a 0.15s copy and a 22-byte poke.
+
+    Works on arm64's qemu/boot.img too, which is FAT rather than ISO9660 but stores
+    the ini's bytes just as literally; its entries are named ReactOS_Arm64_UP/_MP at
+    equal length precisely so this poke needs no padding there. Before that, arm64
+    got its MP pair from a DIFFERENT BUILD (`mkramdisk.sh --smp` rewrote Options=
+    and staged the binaries only then), so forgetting `--smp-kernel` produced
+    identical-looking media that silently booted UP — the one false-green this
+    whole mechanism exists to remove.
 
     Padding: `DefaultOS=LiveCD_SMP` is 20 bytes and the shipped
     `DefaultOS=LiveCD_Debug` is 22, so the remainder becomes `\\r\\n` (a blank line
@@ -117,26 +136,42 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     false-green `_smp_check` exists to catch, and a silent fallback here would
     manufacture exactly that."""
     data = bytearray(iso.read_bytes())
-    hits = [i for i in range(len(data)) if data.startswith(_INI_DEFAULT_OS, i)]
+    # Anchored to a line start, because freeldr only reads the key there and a
+    # COMMENT is free to mention it: qemu/freeldr.ini's own note about keeping the
+    # two entry names equal-length says "DefaultOS=" in prose, and an unanchored
+    # scan counted that as a second selector and refused to patch anything.
+    # str.find in a loop, not a per-offset startswith comprehension — this runs
+    # over a 293 MB boot.img and the comprehension walked every byte in Python.
+    hits = []
+    i = data.find(_INI_DEFAULT_OS)
+    while i != -1:
+        if i == 0 or data[i - 1] == 0x0A:
+            hits.append(i)
+        i = data.find(_INI_DEFAULT_OS, i + 1)
     if len(hits) != 1:
         raise RuntimeError(
-            f"{iso}: expected exactly one {_INI_DEFAULT_OS.decode()} in the image, found "
-            f"{len(hits)} — freeldr.ini is not where this expects it; rebuild with "
-            "`build --smp-kernel` instead of patching"
+            f"{iso}: expected exactly one line-initial {_INI_DEFAULT_OS.decode()} in the "
+            f"image, found {len(hits)} — freeldr.ini is not where this expects it; rebuild "
+            "with `build --smp-kernel` instead of patching"
         )
     start = hits[0]
     end = start
     while end < len(data) and data[end] not in (0x0D, 0x0A):
         end += 1
     old = bytes(data[start:end])
-    if old == _INI_DEFAULT_OS + _INI_SMP_ENTRY:
+    old_entry = old[len(_INI_DEFAULT_OS) :]
+    if old_entry in _MP_ENTRY_FOR.values():
         return iso  # media already defaults to the MP entry (built --smp-kernel)
-    if b"[" + _INI_SMP_ENTRY + b"]" not in data:
+    # Unknown default -> assume x86-shaped media, so unfamiliar livecd.ini spellings
+    # still get the LiveCD_SMP treatment (and still RAISE below if it isn't there)
+    # rather than being handed back unpatched.
+    mp_entry = _MP_ENTRY_FOR.get(old_entry, _INI_SMP_ENTRY)
+    if b"[" + mp_entry + b"]" not in data:
         raise RuntimeError(
-            f"{iso}: no [{_INI_SMP_ENTRY.decode()}] section — this media predates the "
+            f"{iso}: no [{mp_entry.decode()}] section — this media predates the "
             "halmp.dll twin and cannot boot the MP pair; rebuild it"
         )
-    new = _INI_DEFAULT_OS + _INI_SMP_ENTRY
+    new = _INI_DEFAULT_OS + mp_entry
     pad = len(old) - len(new)
     if pad < 0:
         raise RuntimeError(f"{iso}: {old!r} is shorter than {new!r}; cannot patch in place")
@@ -404,7 +439,10 @@ class Arm64Config(ArchConfig):
     )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        boot_img = QEMU_DIR / "boot.img"
+        # Same boot-entry selection x86 gets: the ramdisk always carries both
+        # kernel/HAL pairs and both freeldr entries, so an --smp run repoints
+        # DefaultOS= in a COPY of boot.img instead of needing --smp-kernel media.
+        boot_img = _maybe_smp_iso(QEMU_DIR / "boot.img", work_dir)
         uefi_fw = QEMU_DIR / "QEMU_EFI.fd"
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"

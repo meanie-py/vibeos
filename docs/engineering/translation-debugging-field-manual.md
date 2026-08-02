@@ -2651,6 +2651,33 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A tri-state preflight that only refuses on `False` waves through the case that actually bites
+
+**Symptom.** A preflight written to prevent exactly one failure lets it happen anyway, on a
+fresh worktree. `conformance` refused when `_rostests_enabled()` returned `False` (a build dir
+configured *without* the kmtest corpus) and printed the one-time cmake line. But the reader
+returned a third value — `None`, "no CMakeCache yet" — and the caller tested only `is False`.
+A worktree with no `build-<arch>` at all therefore sailed straight through, the fresh configure
+defaulted **both** gating options OFF, and a full media built and booted before reporting
+`[KMTEST-SWEEP] launch FAILED` minutes later and a layer away from the cause.
+
+**Cause.** `None` was read as "nothing to complain about" when it actually means "not
+provisioned yet" — which is *more* certain to be wrong than the `False` the check did catch.
+A tri-state whose unknown arm is the common arm is a two-state check with a hole in it.
+
+**Fix.** Prefer *making it true* over *reporting that it is false*: the requirement moved into
+the build as a sticky opt-in (`build --kmtests`, `sticky_on` in `_maybe_canonize`), which is
+named on the fresh configure too — a dir that does not exist carries nothing forward, so a
+caller's request is otherwise dropped on precisely the one run that cannot detect it. The
+reader and its unit test were deleted with the branch they served. Generalize two ways:
+- **Audit any preflight returning `bool | None` for a caller that tests one arm.** Either
+  handle all three or collapse the type.
+- **A "sticky" cache opt-in is the opposite discipline from an instrumentation flag.** Sticky
+  is one-directional (ON, then left alone) because rebuilding the state is expensive and
+  keeping it is harmless; `--lockdep`/`--cswitchdep` are reconciled *every* build precisely so
+  a gate can never inherit an instrumented kernel. Putting a flag in the wrong bucket is a real
+  bug in both directions.
+
 ### An arch-gated no-op trace fn discards the diagnostics on the arch that needs them
 `iomgr.rs` defined `io_trace` twice: a real one for x86, and
 `#[cfg(target_arch = "aarch64")] #[inline(always)] unsafe fn io_trace(_s: &[u8]) {}`. All 40 of

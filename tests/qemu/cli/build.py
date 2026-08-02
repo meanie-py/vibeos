@@ -345,7 +345,12 @@ def _flag_in_cache(build_dir: Path, flag: str) -> bool:
 
 
 def _maybe_canonize(
-    run, repo: Path, build_dir: Path, arch: str, instr_flags: dict[str, bool]
+    run,
+    repo: Path,
+    build_dir: Path,
+    arch: str,
+    instr_flags: dict[str, bool],
+    sticky_on: tuple[str, ...] = (),
 ) -> bool | None:
     """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
     caches share across worktrees. Returns True → wrap build cmds in canon-run,
@@ -353,7 +358,13 @@ def _maybe_canonize(
 
     A legacy (real-path) build dir is nuked + fresh-configured canonically — a
     LOUD one-time full rebuild that repopulates the shared cache; every later
-    build (any worktree) hits it."""
+    build (any worktree) hits it.
+
+    `sticky_on` names cmake options to turn ON and then LEAVE ON, the opposite
+    discipline from instr_flags: they are one-directional, so a later plain build
+    never flips one back OFF. Cache state a caller opted into (the kmtest corpus)
+    is expensive to rebuild and harmless to keep, unlike instrumentation, which a
+    gate must never silently inherit."""
     if canon.is_canonical(build_dir):
         # Instrumentation flags (lockdep §4 / cswitchdep) are per-BUILD state,
         # not sticky cache state — reconcile every build so a plain (no-flag)
@@ -362,6 +373,14 @@ def _maybe_canonize(
         stale = {
             flag: on for flag, on in instr_flags.items() if on != _flag_in_cache(build_dir, flag)
         }
+        # Sticky opt-ins ride the same reconfigure, but only ever ON -> they are
+        # absent from `stale` when already set, so a no-op costs nothing.
+        # Deliberately an exact per-flag check, not the OR that modules/CMakeLists.txt
+        # applies (kmtests build under `ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS`):
+        # a dir with only the parent ON therefore takes one redundant reconfigure,
+        # which is cached and harmless, and that is worth more than teaching this
+        # generic mechanism which cmake options imply which others.
+        stale.update({f: True for f in sticky_on if not _flag_in_cache(build_dir, f)})
         if stale:
             defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
             cp = run.run(
@@ -410,6 +429,10 @@ def _maybe_canonize(
         return None
     carried = canon.carried_options(build_dir)
     carried = [*carried, *(f"-D{flag}=ON" for flag, on in instr_flags.items() if on)]
+    # A dir that does not exist yet carries nothing, so a sticky opt-in has to be
+    # named on the FRESH configure too — otherwise the caller's request is silently
+    # dropped exactly once, on the one run that cannot detect it.
+    carried = [*carried, *(f"-D{flag}=ON" for flag in sticky_on if f"-D{flag}=ON" not in carried)]
     fresh = not (build_dir / "CMakeCache.txt").is_file()
     if build_dir.exists():
         shutil.rmtree(build_dir)  # legacy caches bake real paths into every generated file
@@ -685,6 +708,13 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
         },
+        # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
+        # sweeps, and both cmake options gating it default OFF, so a build dir
+        # this worktree just created has no tests in it. Turning it on here is
+        # the whole fix for a fresh worktree building a full media and only
+        # finding out at `[KMTEST-SWEEP] launch FAILED`, minutes later and a
+        # layer away from the cause.
+        sticky_on=("ENABLE_ROSTESTS_KMTESTS",) if getattr(args, "kmtests", False) else (),
     )
     if wrapped is None:
         return run.finalize(repo)
@@ -940,11 +970,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ramdisk = repo / "qemu" / "ramdisk.img"
         flag = "--refresh" if ramdisk.is_file() else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
-        # SMP media (smp-bringup-quest.md M5): stage the MP PAIR (ntkrnlmp.exe +
-        # halmp.dll) and boot-select it via /KERNEL= /HAL=. Opt-in with
-        # --smp-kernel; a plain build omits --smp so the ramdisk boots the UP
-        # pair (default stays UP). arm64 stages a curated set rather than rolling
-        # a full CD, so the HAL twin has to be named here as well as built.
+        # The MP PAIR (ntkrnlmp.exe + halmp.dll) is staged unconditionally now, and
+        # freeldr.ini ships both a UP and an MP entry, so --smp here only moves
+        # `DefaultOS=` to the MP one at BUILD time. That is rarely what you want:
+        # vm.smp_selected_iso makes the same one-byte edit in a copy of the media at
+        # BOOT time, which lets one build serve both a UP and an MP run. Keep
+        # --smp-kernel for media that must default to MP with no harness in the loop.
         if getattr(args, "smp_kernel", False):
             cmd.append("--smp")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
