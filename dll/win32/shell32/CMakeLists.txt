@@ -89,7 +89,7 @@ list(APPEND SOURCE
     droptargets/CFSDropTarget.cpp
     droptargets/CRecyclerDropTarget.cpp
     # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
-    shlexec.cpp
+    # shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
     # shlfileop.cpp — replaced by Rust (shell32-rust/src/shell32/shlfileop.rs); cohab via libshell32_rust.a
     # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
     CFileSysBindData.cpp
@@ -139,6 +139,12 @@ list(APPEND PCH_SKIP_SOURCE
     # env line below, no nightly feature gate in the crate root.
     # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
     rust_varargs_shim.c
+    #
+    # rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
+    # __inline`, so it is a PHANTOM SYMBOL with nothing for Rust to bind to. One forwarding
+    # trampoline into the header's own StringCchVPrintfW. Its own TU because rust_varargs_shim.c
+    # deliberately includes no Windows headers. Also plain C, so also PCH_SKIP_SOURCE.
+    rust_strsafe_shim.c
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)
 
 file(GLOB_RECURSE shell32_rc_deps res/*.*)

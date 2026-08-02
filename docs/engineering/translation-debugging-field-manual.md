@@ -375,6 +375,25 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+### A file-local fn-pointer TYPEDEF given a convention the C never had
+The transmute entry above is about erasing a convention; this is about *inventing* one, and it
+is easier to miss because there is no bindgen slot to disagree with — the typedef and both its
+users are all in the file being translated, so the crate is self-consistent and compiles.
+`shlexec.cpp` declares
+
+```c
+typedef UINT_PTR (*SHELL_ExecuteW32)(const WCHAR *lpCmd, WCHAR *env, BOOL shWait, ...);
+static UINT_PTR SHELL_ExecuteW(const WCHAR *lpCmd, ...);   /* no WINAPI on either */
+```
+
+and the translation spelled the typedef `unsafe extern "system" fn(..)`, i.e. **stdcall on
+i386**, while the function it is assigned from is `extern "C"`. Both are plain `__cdecl` in the
+C: no `WINAPI`, no `STDMETHODCALLTYPE`. On i386 that is caller-and-callee disagreeing about who
+pops the arguments, once per `ShellExecuteEx`. The rule is mechanical — **a fn-pointer typedef
+inherits its convention from the C declaration's macro, and the absence of one means cdecl.**
+`extern "system"` is not a safe default; it is a decision. Check every `pub type X = Option<...>`
+in translated output against the `typedef` in the C tail.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and
@@ -1664,6 +1683,32 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **`SUCCEEDED(hr)` → `(hr as u32) >= 0`** — unconditionally true, so the FAILURE branch is
+  unreachable. `SUCCEEDED` is `hr >= 0` on the SIGNED HRESULT; cast to unsigned first and every
+  error becomes a success. Sibling of the `!`-on-an-integer bug below and just as silent: it
+  feeds a condition, so there is no type error to catch it. `shlexec`'s verb probe took the
+  `runas` path whenever `AssocQueryStringW` *failed*. Grep any HRESULT compared `>= 0` or `< 0`
+  for an intervening `as u32` / `as DWORD`.
+- **`goto L` lowered to a block that jumps to ITSELF** — `'L: { break 'L; }` placed at the goto
+  SITE rather than spanning what the goto skips. It compiles, it is a no-op, and execution falls
+  straight through into the code the `goto` existed to bypass. In `SHELL_ExecuteW` the
+  runas-cancelled path set `retval = 33` and then fell into the `else` arm that overwrites
+  `retval` with `GetLastError()`. The tell is an `unused label` warning on the REAL label at the
+  function tail — the jump never reaches it. Related but distinct from the replication shape in
+  "A C lexer was masking Rust output" above: replication is faithful (each copy returns), a
+  self-referential block is not.
+- **An out-parameter passed by ADDRESS instead of BY VALUE.** A C++ `T*& out` or `T** out`
+  parameter has already lowered to `*mut *mut T` in Rust, so `addr_of_mut!(out)` adds a level of
+  indirection: the callee writes into THIS frame's parameter slot and the caller's pointer is
+  never filled. `shellex_get_contextmenu` passed `addr_of_mut!(cm)` where the C wrote
+  `IID_NULL_PPV_ARG(IContextMenu, &cm)` on a `CComPtr<IContextMenu>&`. Whenever the C takes `&x`
+  on a REFERENCE parameter, the Rust wants the parameter itself.
+- **An A/W pair whose twins disagree on TYPES.** Only one of the two gets read carefully, and
+  the other keeps whatever the translation guessed. `RealShellExecuteA`/`ExA` (SHELL32.265/266)
+  had `HWND`, `PHANDLE` and the `HINSTANCE` return flattened to `isize` while the W twins were
+  spelled correctly. i386 hides it — `isize` and a pointer are both 4 bytes — so nothing fails
+  until an arch or a caller disagrees. Diff the two signatures against each other, not just each
+  against the C.
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
   **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
@@ -1811,6 +1856,17 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
   temporary trap.
+- **The `sizeof` OPERATOR itself vanishing** — the sibling of the entry below, and it survives
+  a green C build because the C compiled fine and only the Rust ever sees the loss. Three shapes,
+  all from shell32: `HeapAlloc(h, 0, len * sizeof(WCHAR))` became `len * 0` (a ZERO-byte
+  allocation that `MultiByteToWideChar` then wrote `len` wide chars into, on every ANSI entry
+  point of `shlfileop`); `startup.cb = sizeof(STARTUPINFOW)` became
+  `size_of_val(&STARTUPINFOW)`, passing the TYPE where a value belongs; and both
+  `if (sei->cbSize != sizeof(SHELLEXECUTEINFO{A,W}))` gates in `shlexec` lost the `sizeof`
+  outright, leaving a bare type name — that comparison is the version check every caller of a
+  public `ShellExecuteEx` is validated by. The first two compile to something wrong; the third
+  does not compile, which is the only reason it was found. **Grep the translation for
+  `size_of_val(&` on a bare type name, and diff every `sizeof` in the C tail against the Rust.**
 - **A literal size where a `sizeof` belonged** — cdrom's media-change SRB used `32` for an
   18-byte sense buffer → deterministic i386 `BAD_POOL_HEADER 0x19 (0x5)` at driver init,
   TCG-only timing `[§9.100]`. Useful trick: **the 0x19 parameters encode `line!()` as param3**,

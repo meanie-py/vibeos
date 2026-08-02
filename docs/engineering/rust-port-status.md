@@ -568,9 +568,11 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   activation/failure-cleanup path.
   This does **not** mean the DLL is wholly Rust: the audited live CMake lists still compile 70
   `.cpp` files (60,258 physical lines), including retained companions/bridges, private dynamic
-  objects, shared shellmenu/shelldesktop objects, procedural helpers, and monoliths such as
-  `CDefView.cpp`, `shlexec.cpp`, and `shlfileop.cpp`. The exhaustive zero-C++ plan and ledger are
-  in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
+  objects, shared shellmenu/shelldesktop objects, procedural helpers, and the remaining
+  monoliths — `CDefView.cpp`, `dialogs.cpp`, `filetypes.cpp`, `utils.cpp`, `shell32.cpp`.
+  (`shlexec.cpp` and `shlfileop.cpp` left that list on 2026-08-01; the tail is now 46 `.cpp` /
+  41,584 lines, tracked by `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
+  ledger are in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
   `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
   arches: they are the first shell32 TUs to take their substrate from the **bindgen island**
@@ -629,11 +631,18 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   needed `EXTERN_C` on `SHELL_GetIDListTarget` (declared in `precomp.h`, `__cdecl` — so the Rust
   side is `extern "C"`, not `extern "system"`) and `_RustBridge` shims for `SHGetAttributes` and
   `GetDfmCmd`, matching the ones `utils.cpp` already had.
-  Still parked: `sdk/lib/rust/shell32-rust/src/shell32/{shlexec,shlfileop}.rs`,
-  each carrying an `//! ORPHAN-BY-DESIGN:` banner. Post-substrate error counts
-  and what each still needs are in that directory's `mod.rs`; the short version is that
-  shlfileop/shlexec want a `CStringW` whose `Format` is printf-variadic and so
-  needs a `rust_varargs_shim.c` trampoline. Paid artifacts — do not delete to tidy up.
+  **Nothing is parked any more — all six free-function TUs are flipped** (2026-08-01).
+  `shlfileop.cpp` (2,868 lines of Rust) and then `shlexec.cpp` (3,900) closed the set; the
+  `CStringW`-needs-a-variadic-`Format` blocker that had deferred both turned out to be wrong
+  for shlexec (zero `Format` calls) and solvable for shlfileop (the 7 sites are CONCRETE
+  arities — `_scwprintf` to size, `swprintf` to print — not one variadic macro). What each
+  file was hiding is in that directory's `mod.rs`, beside its `pub mod`; the pattern across
+  all six is that the defects cluster wherever C's type system declines to have an opinion —
+  a `sizeof` folded away, `!` on an int, `SUCCEEDED` on an unsigned cast, a `goto` that jumps
+  to itself, a `BOOL` narrowed to a byte, a `#define` that renames its callee, an fn-pointer
+  typedef given a calling convention the C never had. Every one compiled clean in C and
+  shipped. Field manual: "Semantic rewrites that flip meaning", "Element count vs byte count",
+  "A file-local fn-pointer TYPEDEF given a convention the C never had", "Phantom symbols".
 - **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
 
 ## Open items / flagged regressions

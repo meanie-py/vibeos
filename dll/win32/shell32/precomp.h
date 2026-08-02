@@ -291,9 +291,12 @@ SHGetAttributes(_In_ IShellFolder *psf, _In_ LPCITEMIDLIST pidl, _In_ DWORD dwAt
 /* EXTERN_C: called from Rust (shell32-rust/src/shell32/brfolder.rs). Plain __cdecl — no
    WINAPI — so the Rust side must declare it `extern "C"`, not `extern "system"`. */
 EXTERN_C HRESULT SHELL_GetIDListTarget(_In_ LPCITEMIDLIST pidl, _Out_ PIDLIST_ABSOLUTE *ppidl);
-HRESULT SHCoInitializeAnyApartment(VOID);
+/* EXTERN_C: both are called from Rust (shell32-rust/src/shell32/shlexec.rs). Plain __cdecl —
+   no WINAPI — so the Rust side declares them `extern "C"`, not `extern "system"`; i386 is the
+   only arch whose decoration catches that difference. */
+EXTERN_C HRESULT SHCoInitializeAnyApartment(VOID);
 
-HRESULT
+EXTERN_C HRESULT
 SHGetNameAndFlagsW(
     _In_ LPCITEMIDLIST pidl,
     _In_ DWORD dwFlags,
