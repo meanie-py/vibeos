@@ -1832,6 +1832,75 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A "stuck sampler" is almost always a harness bug wearing the model's clothes
+
+**Symptom.** A TU will not assemble. One or two functions in it fail the deterministic audit
+with the *same finding every time*, across independent samplings, while every other function
+in the file passes. The natural read — "sampling noise on the biggest bodies, needs a
+different approach" — is what parked netcfgx at 6 of 11 TUs for a week. Four separate causes
+hid behind that one symptom, and three were ours.
+
+**Cause 1: the audit ran twice.** `_audit_paid_body` unsealed the plain-C reply and then
+unsealed the *unsealed* text again. The second pass sees no tokens, so every token reads as
+missing; it passed at all only because `unseal_calls`'s by-name recovery re-sealed them from
+the names the first pass had just restored. Any body where that round trip is not exact — a
+`switch` fallthrough tail spelled twice for one C occurrence, a `goto` tail written by name —
+was ACCEPTED by the first pass and REJECTED by the second. Cache hits ran it too, over banked
+text that is unsealed by construction, so a false reject there sent already-paid work back to
+be bought again.
+
+**Cause 2: a SHIFTED envelope passes every count-based check.** A function-like macro gets no
+call token, by design — there is no 1:1 Rust call to carry one. A model that assumes every call
+it writes needs a token spends CALL_0000 on the macro, and every later token slides one call to
+the left. The token count is still right, each appears exactly once, none is invented; only the
+last one runs out, and the by-name recovery rescues even that. Unsealing then restores the
+WRONG NAME at every slid site — netcfgx's `ApplyOrCancelChanges` came back calling
+`CoTaskMemFree` with `swprintf`'s three arguments. Fix: compare the ARGUMENT COUNT at each
+token's C site and its Rust site. A permutation cannot preserve arity except by coincidence,
+and the check found 0 disagreements across 164 already-accepted bodies. Skip the sites where
+the counts are not comparable — a C argument mentioning a macro (`IID_PPV_ARG` is one C
+argument and two Rust ones), a turbofish, and rustfmt's trailing comma, which reads a
+six-argument call spread over seven lines as seven.
+
+**Cause 3: the retry re-sent the identical prompt.** That is a re-roll, not a repair, and the
+rejects that survive to a second attempt are systematic rather than noisy: the model is
+IMPROVING on the C. `ScanForInfFile` refused three samplings to reproduce a `continue` that
+skips its own `FindNextFileW`; `CreateInstanceKey` hoisted the `goto done` tail per path and
+lost the `if (ret == FALSE)` guard with it. Feed the audit finding into the retry, and say that
+the C is authoritative *even where it is wrong* — if it loops forever or leaks, reproduce it.
+That converted one of the two immediately.
+
+**Cause 4 (not a seal bug at all): the scanner refused the file.** See the `STDAPI` entry below.
+
+**The rule.** When one function fails the same way twice, stop sampling and read the finding.
+Replay the stored `__rejected__` reply through the audit by hand; if it passes now, the harness
+moved and the body was never wrong. `translate` does this automatically — a reject is paid
+artifact, and it is re-audited before that function is bought again.
+
+### A convention macro that also carries the RETURN TYPE deletes the function
+
+**Symptom.** `rustconv translate` refuses a TU: *"N SPEC-EXPORTED function(s) are in the
+unextractable set — this is a scanner parse failure, not a macro artifact."* Or, worse, no
+complaint at all and the function is simply absent from the plan.
+
+**Cause.** The scanner normalizes every calling-convention alias tree-sitter cannot parse to
+the raw `__stdcall` keyword. That is right for `WSAAPI`, and wrong for the family that expands
+to more than a convention: `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE`, so normalizing it
+leaves `__stdcall DllRegisterServer(void)` — a definition with no type, which is not a
+function_definition. netcfgx.c lost `DllGetClassObject`, `DllRegisterServer` and
+`DllUnregisterServer`, all three `.spec`-exported. Same class as the `TYPE * CDECL fn()` drop
+(`0b2d3521e0a`) that cost msvcrt 15 exports: a convention keyword taken for the whole
+decoration.
+
+**Fix.** `conventions.KW_EXPANSION` holds the eleven aliases that are really
+`[linkage] <TYPE> <conv>`, valued with the header's own expansion verbatim and resolved by
+fixpoint (`WINOLEAPI` → `STDAPI` → `EXTERN_C HRESULT STDAPICALLTYPE`), so the existing
+`EXTERN_C` and alias passes finish the job. Adding one is cache-safe *only* while the function
+it rescues was being dropped: a body that already extracts is already banked under its current
+text, and rewriting its signature re-bills it. `STDAPI_(t)` / `STDMETHODIMP_(t)` are still
+open for that reason — they extract today with an EMPTY return type, and all 51 uses are C++
+COM methods whose signatures come from the interface anyway.
+
 ### A deferral note outlives the premise that justified it
 `ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
 *"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
