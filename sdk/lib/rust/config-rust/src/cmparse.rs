@@ -35,6 +35,7 @@ const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFFu32;
 const TAG_CM: u32 = u32::from_le_bytes(*b"CM  "); // C: '  MC'  (multi-char literal is big-endian)
 const UNICODE_NULL: u16 = 0;
 const STATUS_RETRY: i32 = 0xC000022Du32 as i32;
+const STATUS_OBJECT_NAME_NOT_FOUND_MOD: i32 = 0xC0000034u32 as i32;
 const CMP_SUBKEY_LEVELS_DEPTH_LIMIT: usize = 32;
 const CM_KCB_SYM_LINK_FOUND: u32 = 0x00000008;
 // Module scope, not function scope: CmpDoOpen tests this too, and a copy
@@ -718,6 +719,7 @@ unsafe fn CmpDoOpen(
             if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) != 0 {
                 Kcb = (**CachedKcb).ValueCache.__bindgen_anon_1.RealKcb;
                 if (*Kcb).__bindgen_anon_1.Delete() != 0 {
+                    crate::dbg_print!(b"The real KCB is deleted, attempt a reparse\n\0");
                     CmpUnLockKcbArray(KcbsLocked);
                     CmpAcquireKcbLockExclusiveByIndex(GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey));
                     CmpCleanUpKcbValueCache(*CachedKcb);
@@ -863,6 +865,7 @@ pub unsafe extern "system" fn CmpCreateLinkNode(
     let mut Kcb: PCM_KEY_CONTROL_BLOCK = ParentKcb;
 
     if Hive != core::ptr::addr_of_mut!((*CmiVolatileHive).Hive) {
+        crate::dbg_print!(b"Invalid link node attempt\n\0");
         return STATUS_ACCESS_DENIED;
     }
 
@@ -1289,6 +1292,10 @@ unsafe fn CmpLookInCache(
     let mut LockedKcbs: *mut u32 = core::ptr::null_mut();
 
     if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+        crate::dbg_print!(
+            b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+            Kcb
+        );
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -1332,6 +1339,9 @@ unsafe fn CmpLookInCache(
                             if LockKcbsExclusive == 0 {
                                 CmpUnLockKcbArray(LockedKcbs);
                                 CmpDereferenceKeyControlBlock(*Kcb);
+                                crate::dbg_print!(
+                                    b"The current KCB or its parent is deleted, retrying looking in the cache\n\0"
+                                );
                                 return STATUS_RETRY;
                             }
 
@@ -1339,6 +1349,10 @@ unsafe fn CmpLookInCache(
                                 CmpRemoveKeyControlBlock(CurrentKcb);
                                 CmpUnLockKcbArray(LockedKcbs);
                                 CmpDereferenceKeyControlBlock(*Kcb);
+                                crate::dbg_print!(
+                                    b"The current KCB is deleted (KCB 0x%p)\n\0",
+                                    CurrentKcb
+                                );
                                 return STATUS_OBJECT_NAME_NOT_FOUND;
                             }
 
@@ -1378,6 +1392,10 @@ unsafe fn CmpLookInCache(
         *Kcb = CurrentKcb;
 
         if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+            crate::dbg_print!(
+                b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+                Kcb
+            );
             CmpUnLockKcbArray(LockedKcbs);
             return STATUS_UNSUCCESSFUL;
         }
@@ -1432,6 +1450,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
     );
 
     if SubkeysInTotal > CMP_SUBKEY_LEVELS_DEPTH_LIMIT as ULONG {
+        crate::dbg_print!(
+            b"The key path has too many subkeys - %lu\n\0",
+            SubkeysInTotal
+        );
         *LockedKcbs = core::ptr::null_mut();
         return 0xC0000106u32 as i32;
     }
@@ -1441,6 +1463,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
 
     if RemainingSubkeysInTotal == 0 && SubkeysInTotal == 0 {
         if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+            crate::dbg_print!(
+                b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
+                Kcb
+            );
             return 0xC0000001u32 as i32;
         }
 
@@ -1469,6 +1495,7 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
     );
     if !NT_SUCCESS(Status) {
         if Status != 0xC000022Du32 as i32 {
+            crate::dbg_print!(b"CmpLookInCache() failed (Status 0x%lx)\n\0", Status);
             *LockedKcbs = core::ptr::null_mut();
             return Status;
         }
@@ -1485,6 +1512,10 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
             core::ptr::addr_of_mut!(MatchRemainingSubkeys),
         );
         if !NT_SUCCESS(Status) {
+            crate::dbg_print!(
+                b"CmpLookInCache() failed after retry (Status 0x%lx)\n\0",
+                Status
+            );
             *LockedKcbs = core::ptr::null_mut();
             return Status;
         }
@@ -3379,6 +3410,63 @@ pub unsafe extern "system" fn CmpParseKey(
     CompleteName: PUNICODE_STRING,
     RemainingName: PUNICODE_STRING,
     Context: PVOID,
+    SecurityQos: PVOID,
+    Object: *mut PVOID,
+) -> NTSTATUS {
+    // WoW64 registry redirection. Every key open in the system reaches this
+    // parse procedure, so the whole feature lives in this wrapper: pick the
+    // view, splice WOW6432NODE into the name if it applies, and fall back to
+    // the 64-bit key when the 32-bit one does not exist. See cmwow64.rs.
+    //
+    // The flag consume ALSO runs for native processes, and must: it is what
+    // clears KEY_WOW64_* before ObCheckObjectAccess sees them (E21/#79). It is
+    // done here rather than in NtOpenKey/NtCreateKey so the bits survive long
+    // enough to choose a view.
+    let View32 = crate::cmwow64::CmpWow64ConsumeViewFlags(AccessState);
+
+    let mut Redirected = if View32 {
+        crate::cmwow64::CmpWow64BuildRedirectedName(ParseObject, RemainingName)
+    } else {
+        None
+    };
+
+    let Some(ref mut Redir) = Redirected else {
+        return CmpParseKeyInner(
+            ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+            CompleteName, RemainingName, Context, SecurityQos, Object,
+        );
+    };
+
+    // A create must land in the 32-bit view or it isn't isolation; only reads
+    // fall back. CM_PARSE_CONTEXT.CreateOperation is the same discriminator
+    // CmpParseKeyInner uses to decide it is a create at all.
+    let IsCreate = !Context.is_null() && (*(Context as PCM_PARSE_CONTEXT)).CreateOperation != 0;
+
+    let mut Status = CmpParseKeyInner(
+        ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+        CompleteName, core::ptr::addr_of_mut!(Redir.Name), Context, SecurityQos, Object,
+    );
+
+    if Status == STATUS_OBJECT_NAME_NOT_FOUND_MOD && !IsCreate {
+        Status = CmpParseKeyInner(
+            ParseObject, ObjectType, AccessState, AccessMode, Attributes,
+            CompleteName, RemainingName, Context, SecurityQos, Object,
+        );
+    }
+
+    Redir.free();
+    Status
+}
+
+unsafe fn CmpParseKeyInner(
+    ParseObject: PVOID,
+    ObjectType: PVOID,
+    AccessState: PACCESS_STATE,
+    AccessMode: KPROCESSOR_MODE,
+    Attributes: u32,
+    CompleteName: PUNICODE_STRING,
+    RemainingName: PUNICODE_STRING,
+    Context: PVOID,
     _SecurityQos: PVOID,
     Object: *mut PVOID,
 ) -> NTSTATUS {
@@ -3466,6 +3554,10 @@ pub unsafe extern "system" fn CmpParseKey(
     );
     // CMP_ASSERT_REGISTRY_LOCK();
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"Failed to look in cache, stop parsing (Status 0x%lx)\n\0",
+            Status
+        );
         ParentKcb = core::ptr::null_mut();
         // Goto Quickie.
         if !LockedKcbs.is_null() {

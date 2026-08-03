@@ -57,6 +57,7 @@ pub mod cmse;
 pub mod cmsecach;
 pub mod cmsysini;
 pub mod cmvalche;
+pub mod cmwow64;
 pub mod cmwraprs;
 pub mod ntapi;
 

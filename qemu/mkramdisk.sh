@@ -79,6 +79,15 @@ echo "[*] Checking build artifacts..."
 REQUIRED_FILES=(
     "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"
     "$BUILD_DIR/hal/halarm64/hal.dll"
+    # The MP pair is REQUIRED, not optional, because the ramdisk now stages it on
+    # every build and the shipped freeldr.ini offers a [ReactOS_Arm64_MP] entry
+    # that would otherwise name files that aren't there. Same contract as the x86
+    # livecd, which has always staged all four binaries. `ntkrnlmp` and `halmp` are
+    # best-effort NINJA targets (archcfg.ninja_targets_optional) — so if either one
+    # failed to build, say so here instead of quietly shipping media whose MP entry
+    # cannot boot.
+    "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+    "$BUILD_DIR/hal/halarm64/halmp.dll"
     "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"
     "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"
     "$BUILD_DIR/dll/ntdll/ntdll.dll"
@@ -280,17 +289,23 @@ PROFILES
 echo "[*] Populating ramdisk..."
 RMC "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"                        ::/reactos/system32/ntoskrnl.exe
 # SMP PAIR (M5): ntkrnlmp.exe (lives in the ntkrnlmp/ subdir) + halmp.dll, the
-# hal-rust `smp` twin. Only staged with --smp; the freeldr.ini boot-select below
-# points /KERNEL and /HAL at them.
+# hal-rust `smp` twin. Staged UNCONDITIONALLY, exactly like the x86 livecd stages
+# all four binaries on every build: the freeldr.ini shipped below carries both a
+# [ReactOS_Arm64_UP] and a [ReactOS_Arm64_MP] entry, so which kernel boots is a
+# DefaultOS= pick against fixed media rather than a property of how the media was
+# built. That is what lets `smoke/conformance --smp N` boot-select the MP pair by
+# poking a copy of boot.img (vm.smp_selected_iso) instead of demanding a rebuild.
+#
+# Conditional staging was its own hazard: forgetting --smp produced media that
+# looked identical and silently booted UP, which is the exact false-green
+# _smp_check exists to catch.
 #
 # Staging BOTH is mandatory on arm64, not a nicety: arm64 has no MISMATCHED_HAL
 # handshake, so ntkrnlmp.exe on the UP hal.dll boots to a full desktop and
 # silently runs on one cpu (HalStartNextProcessor is the FALSE stub). That trap
 # cost a debug round already — see smp-bringup-quest.md M5c.
-if [ -n "$SMP" ]; then
-    RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"           ::/reactos/system32/ntkrnlmp.exe
-    RMC "$BUILD_DIR/hal/halarm64/halmp.dll"                   ::/reactos/system32/halmp.dll
-fi
+RMC "$BUILD_DIR/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"               ::/reactos/system32/ntkrnlmp.exe
+RMC "$BUILD_DIR/hal/halarm64/halmp.dll"                       ::/reactos/system32/halmp.dll
 RMC "$BUILD_DIR/hal/halarm64/hal.dll"                          ::/reactos/system32/hal.dll
 RMC "$BUILD_DIR/drivers/base/kdrosdbg/kdcom.dll"               ::/reactos/system32/kdcom.dll
 RMC "$BUILD_DIR/drivers/base/bootvid/bootvid.dll"              ::/reactos/system32/bootvid.dll
@@ -780,14 +795,23 @@ mmd -i "$BOOT_IMG" ::/EFI/BOOT
 # Copy bootloader
 mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 
-# Copy freeldr.ini — with --smp, boot-select the SMP PAIR by injecting
-# /KERNEL=ntkrnlmp.exe /HAL=halmp.dll into the [ReactOS_Arm64] Options (mirrors
-# the x86 livecd.ini [LiveCD_SMP] entry). Default (no --smp) ships the file
-# verbatim so it boots the UP pair (ntoskrnl.exe + hal.dll).
+# Copy freeldr.ini. BOTH boot entries always ship (see the file itself); --smp
+# only moves DefaultOS= from the UP entry to the MP one, which is the same thing
+# -DVIBEOS_SMP_DEFAULT_BOOT=ON does to the x86 livecd.ini. The Options= lines are
+# never rewritten here any more — the MP entry carries its own
+# /KERNEL=ntkrnlmp.exe /HAL=halmp.dll, so the media is identical either way apart
+# from that one selector.
 if [ -n "$SMP" ]; then
     SMP_INI="$(mktemp)"
-    sed 's#^\(Options=\)#\1/KERNEL=ntkrnlmp.exe /HAL=halmp.dll #' "$FREELDR_INI" > "$SMP_INI"
-    echo "[*] SMP: freeldr.ini -> /KERNEL=ntkrnlmp.exe /HAL=halmp.dll"
+    sed 's#^DefaultOS=ReactOS_Arm64_UP$#DefaultOS=ReactOS_Arm64_MP#' "$FREELDR_INI" > "$SMP_INI"
+    # Fail loud rather than shipping UP-defaulted media from an --smp build: that
+    # is a false-green (the boot looks fine and runs the wrong kernel).
+    if ! grep -q '^DefaultOS=ReactOS_Arm64_MP$' "$SMP_INI"; then
+        echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_UP' line to flip — entry names drifted"
+        rm -f "$SMP_INI"
+        exit 1
+    fi
+    echo "[*] SMP: freeldr.ini DefaultOS -> ReactOS_Arm64_MP (ntkrnlmp.exe + halmp.dll)"
     mcopy -o -i "$BOOT_IMG" "$SMP_INI" ::/freeldr.ini
     rm -f "$SMP_INI"
 else

@@ -3,6 +3,7 @@ sdk/lib/rust/config-rust/src/cmkcbncb.rs: ExtFlags &= ~CM_KCB_NO_SUBKEY [DROPPED
 sdk/lib/rust/config-rust/src/cmkcbncb.rs: ExtFlags &= ~CM_KCB_SUBKEY_HINT [DROPPED]
 sdk/lib/rust/config-rust/src/cmkcbncb.rs: ExtFlags &= ~CM_KCB_SUBKEY_ONE [DROPPED]
 sdk/lib/rust/config-rust/src/cmkcbncb.rs: ExtFlags &= ~CM_KCB_SYM_LINK_FOUND [DROPPED]
+sdk/lib/rust/config-rust/src/ntapi.rs: DesiredAccess &= ~KEY_WOW64_RES [DROPPED]
 sdk/lib/rust/fastfat-rust/src/create.rs: DirentByteOffset &= ~PAGE_SIZE [DROPPED]
 sdk/lib/rust/fastfat-rust/src/create.rs: FileAttributes &= ~FILE_ATTRIBUTE_NORMAL [DROPPED]
 sdk/lib/rust/fastfat-rust/src/deviosup.rs: MdlFlags &= ~MDL_SOURCE_IS_NONPAGED_POOL [DROPPED]

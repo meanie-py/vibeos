@@ -1938,6 +1938,58 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
 
+### The failure path survived; the sentence explaining it did not
+
+**Symptom.** Something does not happen and NOTHING says why. The key is not there, the handle is
+not created, the API returns a clean error code — and the serial log is empty, so the hunt starts
+from zero. `CmpLinkKeyToHive` has three failure returns and upstream prints on each; all three
+were dropped, so when `\REGISTRY\USER\S-1-5-18` did not appear there was no signal anywhere.
+Restoring the prints, then getting SILENCE back from them, is what proved the create half was
+fine and moved the hunt to the reparse — two build+boot cycles for a fact one grep would have
+given free.
+
+**Cause.** Translation keeps the code and drops the diagnostics. Measured across `sdk/lib/rust`:
+**2891 commented-out `DPRINT1` sites against 304 live prints** — roughly 90% of upstream's
+always-on kernel diagnostics are gone. No existing lint saw it, because `scan_silent_failures`
+matches SHAPES (`loop {}`, `.unwrap()`, `Err(_) => {}`) and a branch that returns a correct error
+code without printing is not a shape, it is an ABSENCE. Absence needs an oracle, and the oracle
+was already in the file: rustconv keeps the original C as trailing comments.
+
+**Fix.** `tools/scan_dropped_prints.py` pairs each commented-C function against the live Rust
+function of the same name and reports one that prints in the C and never in the Rust. Baselined
+(`tools/lint-baseline/scan_dropped_prints.txt`, 1425 rows) and gated by `vibeos-cli check`; burn
+down by subsystem. Restoring a print is cheap, mechanical, and strictly increases what the OS can
+tell you.
+
+Four things that cost precision, all of them found by being wrong first:
+
+- **Only count what upstream ACTUALLY emits.** DPRINT1, DbgPrint*, and wine ERR/FIXME are on by
+  default; DPRINT (3579 sites), TRACE (3442) and WARN (247) are compiled out or off, so dropping
+  them loses nothing. Scoring those would have tripled a harvest with nothing behind it.
+- **Pair through the wrapper/`_impl` split.** 910 `_body` + 580 `_impl` functions tree-wide, plus
+  a CamelCase `Impl`. The prints live in the body, so exact-name pairing calls every wrapper
+  silent and is wrong every time.
+- **Formatting into a buffer is not printing.** `rtl_string_cb_printf_w!` matched a "contains
+  print" heuristic and scored as live, hiding three genuinely dropped diagnostics in
+  `CmpCreateControlSet`.
+- **A print-shaped thing that prints nothing is worse than none**, because it reads as covered.
+  `cmlib-rust/cmheal.rs` defined `unsafe fn DPRINT1(_format) {}` reasoning that it matched "the C
+  NDEBUG build" — but NDEBUG silences DPRINT, never DPRINT1. `rtl-strings`' `path_wave` module
+  defined a no-op `DbgPrint` that SHADOWED the real one for the whole module, so four
+  "RtlGetFullPathName_Ustr() returned 0" reports on the path that answers
+  STATUS_OBJECT_NAME_INVALID went nowhere. Same shape in win32k (`ERR`, `FIXME`) and user32
+  (`ERR`). All are the thing AGENTS.md forbids outright — see `[§9.65]`: an out-of-line no-op is
+  also an optimization barrier that uncloaks latent ABI mismatches into a `ud2`. The scanner
+  reports them as `NOOP` and treats their callers as silent. Note the C-side equivalent is
+  invisible from a Rust scanner and must be grepped separately —
+  `dll/win32/{cabinet,mlang}/rust_cohab_stub.c` define no-op `ERR`/`FIXME`.
+
+**And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
+`_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash
+since the name is coming from user-mode"). Do not close such a finding by adding a bare print —
+that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
+looks like a missing diagnostic is a missing handler.
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
@@ -2621,6 +2673,33 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A tri-state preflight that only refuses on `False` waves through the case that actually bites
+
+**Symptom.** A preflight written to prevent exactly one failure lets it happen anyway, on a
+fresh worktree. `conformance` refused when `_rostests_enabled()` returned `False` (a build dir
+configured *without* the kmtest corpus) and printed the one-time cmake line. But the reader
+returned a third value — `None`, "no CMakeCache yet" — and the caller tested only `is False`.
+A worktree with no `build-<arch>` at all therefore sailed straight through, the fresh configure
+defaulted **both** gating options OFF, and a full media built and booted before reporting
+`[KMTEST-SWEEP] launch FAILED` minutes later and a layer away from the cause.
+
+**Cause.** `None` was read as "nothing to complain about" when it actually means "not
+provisioned yet" — which is *more* certain to be wrong than the `False` the check did catch.
+A tri-state whose unknown arm is the common arm is a two-state check with a hole in it.
+
+**Fix.** Prefer *making it true* over *reporting that it is false*: the requirement moved into
+the build as a sticky opt-in (`build --kmtests`, `sticky_on` in `_maybe_canonize`), which is
+named on the fresh configure too — a dir that does not exist carries nothing forward, so a
+caller's request is otherwise dropped on precisely the one run that cannot detect it. The
+reader and its unit test were deleted with the branch they served. Generalize two ways:
+- **Audit any preflight returning `bool | None` for a caller that tests one arm.** Either
+  handle all three or collapse the type.
+- **A "sticky" cache opt-in is the opposite discipline from an instrumentation flag.** Sticky
+  is one-directional (ON, then left alone) because rebuilding the state is expensive and
+  keeping it is harmless; `--lockdep`/`--cswitchdep` are reconciled *every* build precisely so
+  a gate can never inherit an instrumented kernel. Putting a flag in the wrong bucket is a real
+  bug in both directions.
 
 ### An arch-gated no-op trace fn discards the diagnostics on the arch that needs them
 `iomgr.rs` defined `io_trace` twice: a real one for x86, and
@@ -4154,6 +4233,71 @@ assert separately that a **succeeding** call leaves the guest's own last-error a
 found by a control run whose test excused a failure unless `GetLastError()` was
 `ERROR_INVALID_PARAMETER` — a discriminator that could never fire. If a guest test branches on
 a code the kernel sets, prove the code arrives before trusting the branch.
+
+### Registry redirection: the interception point is the PARSE, and the exemptions cannot be symlinks
+**Symptom.** A 32-bit process shares the 64-bit `HKLM\Software`, so per-app registration has no
+isolation and a COM `InprocServer32` read by a 32-bit app names a DLL it cannot load. Nothing
+fails loudly; it is a fidelity gap that only bites once two component sets exist.
+**Cause / where it goes.** Registry opens are overwhelmingly RELATIVE — advapi32 caches a
+handle to `\REGISTRY\MACHINE` and passes `RootDirectory` + `"Software\Foo"` — so a path rewrite
+in `wow64.dll` (where FILESYSTEM redirection lives) would have to resolve the root handle to a
+path on every single open, which is both a syscall per open and stateful. Do it in CM's parse
+procedure instead: `NtOpenKey`/`NtCreateKey` both funnel into `ObOpenObjectByName` →
+`CmpParseKey`, and Ob's only parse-procedure bypass is for *directory* objects, which a key
+never is. One wrapper there is a complete interception point and needs nothing above CM to
+cooperate.
+**Ob hands the parse procedure a remaining name in TWO shapes, and both occur on every boot.**
+An open by ABSOLUTE path arrives with a LEADING separator (parent `\REGISTRY`, remaining
+`\Machine\Software\...`); an open RELATIVE to a key handle arrives without one (parent
+`\REGISTRY\MACHINE`, remaining `SYSTEM\...`). Code that assumes exactly one separator sits
+*between* the parent path and the remaining name works for the relative form and silently does
+nothing for the absolute one — the first cut of E24 compared `\Machine\Softwar` against
+`MACHINE\SOFTWARE` on every absolute open and declined to redirect. Skip leading separators
+before comparing, and carry that offset into wherever you splice. This failure mode is
+**inert, not broken**: nothing crashes, no status is wrong, the feature simply never happens.
+**Beware a hand-built test suite that shares the code's blind spot.** The same E24 splice was
+checked offline against 16 hand-written cases and passed 16/16 — because every case had been
+invented in the relative shape, the same shape the author had reasoned about. A test written
+from the implementer's mental model inherits that model's gaps by construction. What found the
+bug was a kernel trace printing the REAL arguments; the harness only became trustworthy once
+its cases were transcribed from that trace. If a pure-logic harness is worth writing at all,
+seed it from observed inputs rather than imagined ones.
+**And make the assertion name what it FOUND, not just what it wanted.** The guest rung failed
+with "default view is not in Wow6432Node" and did not print the name it had just been handed —
+so answering "then what IS it?" cost a full 30-minute build plus a boot, for a string the
+assertion was already holding.
+
+**Two traps worth knowing before you design it.**
+- **Shared-key exemptions cannot be registry symlinks.** It is tempting — CM already resolves
+  them, and Windows really does keep `Software\Wow6432Node\Classes` as a link. But a link
+  target is an ABSOLUTE path that Ob re-parses, and the re-parse redirects it *again*: a link
+  from `Software\Wow6432Node\Policies` to `Software\Policies` bounces straight back into
+  `Software\Wow6432Node\Policies`. Exemptions have to be a table the redirect itself consults,
+  which is what Windows' redirection table is.
+- **The view has to be sticky per handle, and it comes free.** Redirect only when the SOFTWARE
+  boundary is crossed INSIDE the remaining name. If the caller's root handle is already at or
+  below SOFTWARE, that handle was resolved under some view already and relative opens must stay
+  in it — so "do nothing" is the correct answer, and a 32-bit app that opened SOFTWARE with
+  `KEY_WOW64_64KEY` keeps the 64-bit view beneath it without any per-handle state.
+**Redirection without population is a regression, and a miss-fallback is the cheap way out.**
+Nothing populates `Wow6432Node` on a system that ships one component set, so redirecting reads
+into it hides every OS key a 32-bit app needs. Either mirror the 64-bit subtree (Windows'
+answer, via the installer) or retry the unredirected name when the redirected open returns
+`OBJECT_NAME_NOT_FOUND` (Wine's answer). The fallback must be READS ONLY — a create that falls
+back has no isolation, which was the point. And the node itself still has to exist in the hive:
+`NtCreateKey` creates only the LAST component, so a create redirected into a missing
+`Wow6432Node` fails on the intermediate.
+**`KEY_WOW64_32KEY`/`64KEY` stop being strippable the moment views differ.** They are view
+selectors, not access bits — no key's ACL grants either, so one left set denies the open (that
+was E21). Stripping them early is correct only while the two views are identical; after that,
+`KEY_WOW64_64KEY` is a WoW64 process's only route back to the 64-bit view. Move the strip down
+to the parse so the bits survive long enough to pick a view and still never reach the access
+check.
+**Test that the two views DISAGREE, not that a write succeeded.** With no redirection at all a
+create still succeeds and a read still finds it. Assert the default-view handle's own
+`NtQueryKey(KeyNameInformation)` says `Wow6432Node`, AND that the identical path under
+`KEY_WOW64_64KEY` cannot see the value just written — two independent encodings, so faking one
+still fails the other.
 
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.

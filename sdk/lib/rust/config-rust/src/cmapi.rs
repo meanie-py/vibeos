@@ -1107,6 +1107,7 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
         Parent = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell) as PCM_KEY_NODE;
 
         if (*Kcb).ValueCache.Count != (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count {
+            crate::dbg_print!(b"HACK: Overriding value cache count\n\0");
             (*Kcb).ValueCache.Count = (*Parent).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count;
         }
 
@@ -1239,6 +1240,7 @@ unsafe fn CmpQueryKeyDataFromCache(
     (*KeyCachedInfo).MaxValueDataLen = (*Kcb).KcbMaxValueDataLen;
 
     if ((*Kcb).__bindgen_anon_1.ExtFlags() & CM_KCB_INVALID_CACHED_INFO) != 0 {
+        crate::dbg_print!(b"Kcb cache incoherency detected, kcb = %p\n\0", Kcb);
         let Node: PCM_KEY_NODE = HvGetCell(KeyHive, KeyCell) as PCM_KEY_NODE;
         if Node == core::ptr::null_mut() {
             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1430,6 +1432,7 @@ pub unsafe extern "system" fn CmQueryKey(
             ResultLength,
         )
     } else {
+        crate::dbg_print!(b"Unsupported class: %d!\n\0", KeyInformationClass);
         STATUS_INVALID_INFO_CLASS
     };
 
@@ -1662,7 +1665,7 @@ pub unsafe extern "system" fn CmLoadKey(
         &mut ClientSecurityContext,
     );
     if !NT_SUCCESS(Status) {
-        // DPRINT removed
+        crate::dbg_print!(b"Security context failed\n\0");
         return Status;
     }
 
@@ -1743,7 +1746,7 @@ pub unsafe extern "system" fn CmLoadKey(
         (*CmHive).Hive.HiveFlags &= !HIVE_IS_UNLOADING;
         (*CmHive).CreatorOwner = core::ptr::null_mut();
     } else {
-        // DPRINT removed
+        crate::dbg_print!(b"CmpLinkHiveToMaster failed, Status %lx\n\0", Status);
 
         (*CmHive).HiveIsLoading = 1u8;
 
@@ -1791,6 +1794,7 @@ unsafe fn CmpUnlinkHiveFromMaster(
     );
     CmpUnlockHiveFlusher(CmiVolatileHive);
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(b"CmpFreeKeyByCell() failed (Status 0x%08lx)\n\0", Status);
         return 0u8;
     }
 
@@ -1824,10 +1828,12 @@ pub unsafe extern "system" fn CmUnloadKey(
     CmHive = Hive as PCMHIVE;
 
     if Cell != (*(*Hive).BaseBlock).RootCell {
+        crate::dbg_print!(b"Key is not a hive root key!\n\0");
         return STATUS_INVALID_PARAMETER;
     }
 
     if CmHive == CmiVolatileHive {
+        crate::dbg_print!(b"Do not try to unload the master hive!\n\0");
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1965,6 +1971,10 @@ pub unsafe extern "system" fn CmpEnumerateOpenSubKeys(
         }
 
         i += 1;
+    }
+
+    if SubKeys > 0 {
+        crate::dbg_print!(b"Open sub keys: %u\n\0", SubKeys);
     }
 
     SubKeys

@@ -544,6 +544,25 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same oracle, opposite question: not "did the Rust contradict its C" but
+    # "did it stay silent where its C spoke". Upstream prints on nearly every
+    # kernel failure path and ~90% of those were dropped in translation, so a
+    # failure reports NOTHING on serial — `CmpLinkKeyToHive` losing all three of
+    # its DPRINT1s cost the \\REGISTRY casing hunt two build+boot cycles. Only
+    # the macros upstream ACTUALLY emits on a default build count (DPRINT1,
+    # DbgPrint*, wine ERR/FIXME); DPRINT/TRACE/WARN are excluded on purpose. The
+    # baseline holds the backlog and is burned down subsystem by subsystem; a NEW
+    # row means a translation landed a failure path the OS cannot report. NOOP is
+    # the sharp one — a debug macro lowered to an out-of-line empty `fn`, which
+    # AGENTS.md forbids outright because it is also an ABI-mismatch uncloaker.
+    sdp = repo / "tools" / "scan_dropped_prints.py"
+    specs.append(
+        (
+            "scan_dropped_prints",
+            [py, str(sdp), "--lint"] if sdp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     stac = repo / "tools" / "scan_type_alias_contradictions.py"
     specs.append(
         (

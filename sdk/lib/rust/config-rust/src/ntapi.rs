@@ -74,7 +74,8 @@ const KEY_ENUMERATE_SUB_KEYS: ACCESS_MASK = 0x0008;
 const KEY_NOTIFY: ACCESS_MASK = 0x0010;
 const KEY_READ: ACCESS_MASK = 0x00020019;
 const KEY_WRITE: ACCESS_MASK = 0x00020006;
-const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
+// KEY_WOW64_RES (0x00000300) now lives in cmwow64.rs, which is where the flags
+// are consumed — see the notes in NtCreateKey/NtOpenKey.
 // ndk/obtypes.h: OBJ_VALID_ATTRIBUTES | OBJ_KERNEL_EXCLUSIVE.
 const OBJ_VALID_KERNEL_ATTRIBUTES: ULONG = 0x000007F2 | 0x00010000;
 const DELETE: ACCESS_MASK = 0x00010000;
@@ -377,9 +378,11 @@ pub unsafe extern "system" fn NtCreateKey(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
     let mut ParseContext: CM_PARSE_CONTEXT = core::mem::zeroed();
     let mut Handle: HANDLE = core::ptr::null_mut();
-    let mut DesiredAccess = DesiredAccess;
-
-    DesiredAccess &= !KEY_WOW64_RES;
+    // KEY_WOW64_RES is NOT stripped here any more: the bits are view selectors
+    // and CmpParseKey needs them to decide 32- vs 64-bit (cmwow64.rs). It
+    // consumes and clears them there, before any access check, which is the
+    // same invariant E21/#79 established — just enforced at the one choke point
+    // every key open funnels through instead of at each Nt* entry.
 
     if PreviousMode != 0i8 {
         if !Class.is_null() {
@@ -445,13 +448,13 @@ pub unsafe extern "system" fn NtOpenKey(
     let mut Status: NTSTATUS;
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
-    // The C masks KEY_WOW64_RES — BOTH wow64 flags. Translated as a bare
-    // 0x0100 literal, this stripped only KEY_WOW64_64KEY and let
-    // KEY_WOW64_32KEY (0x0200) reach CmpDoOpen's ObCheckObjectAccess, where no
-    // key grants it: every RegOpenKeyEx(.., KEY_WOW64_32KEY) failed
-    // ACCESS_DENIED while the identical RegCreateKeyEx (which masks correctly,
-    // 60 lines up) succeeded. Use the named constant, as NtCreateKey does.
-    let mut DesiredAccess = DesiredAccess & !KEY_WOW64_RES;
+    // KEY_WOW64_RES used to be masked here. Both flags must be off before
+    // CmpDoOpen's ObCheckObjectAccess — no key's ACL grants either, so one left
+    // set denies the open (E21/#79: this masked a bare 0x0100, letting
+    // KEY_WOW64_32KEY through, and every RegOpenKeyEx(.., KEY_WOW64_32KEY)
+    // failed ACCESS_DENIED). The strip now happens in CmpParseKey, which is
+    // reached by every key open and is late enough that the bits can first
+    // select the WoW64 registry view (cmwow64.rs).
 
     if PreviousMode != 0 {
         // C order is ProbeForWriteHandle THEN the NULL store, both inside SEH.
@@ -1205,6 +1208,7 @@ pub unsafe extern "system" fn NtLoadKeyEx(
     }
 
     if SeSinglePrivilegeCheck(*core::ptr::addr_of!(SeRestorePrivilege), PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 
@@ -1793,6 +1797,7 @@ pub unsafe extern "system" fn NtUnloadKey2(
     let mut Handle: HANDLE = core::ptr::null_mut();
 
     if SeSinglePrivilegeCheck(SeRestorePrivilege, PreviousMode) == 0 {
+        crate::dbg_print!(b"Restore Privilege missing!\n\0");
         return STATUS_PRIVILEGE_NOT_HELD;
     }
 

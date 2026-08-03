@@ -1715,6 +1715,14 @@ HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Time Zones\Tonga Standard Tim
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,\
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
 
+; WoW64: the 32-bit process view of HKLM\Software. The kernel redirects a
+; 32-bit process's opens in here (CmpParseKey -> sdk/lib/rust/config-rust/
+; src/cmwow64.rs), and a miss falls back to the 64-bit key, so this node is
+; deliberately EMPTY rather than a mirror of the 1199 keys above it. It still
+; has to exist: NtCreateKey creates only the LAST component of a path, so a
+; 32-bit create of Software\Foo would fail on the missing intermediate.
+HKLM,"SOFTWARE\Wow6432Node",,0x00000010
+
 ; Available file systems
 HKLM,"SOFTWARE\ReactOS\ReactOS\CurrentVersion\IFS","FAT",0x00000000,"ufat.dll"
 HKLM,"SOFTWARE\ReactOS\ReactOS\CurrentVersion\IFS","FAT32",0x00000000,"ufat.dll"

@@ -175,6 +175,7 @@ pub unsafe extern "system" fn CmpFileSetSize(
     let mut Status: NTSTATUS;
 
     if HiveHandle == core::ptr::null_mut() {
+        crate::dbg_print!(b"No hive handle associated with the given hive\n\0");
         return 1u8;
     }
 
@@ -189,6 +190,10 @@ pub unsafe extern "system" fn CmpFileSetSize(
         FileEndOfFileInformation,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"ZwSetInformationFile failed to set new size of end of file (Status 0x%lx)\n\0",
+            Status
+        );
         IoSetThreadHardErrorMode(HardErrors);
         return 0u8;
     }
@@ -202,6 +207,10 @@ pub unsafe extern "system" fn CmpFileSetSize(
         FileAllocationInformation,
     );
     if !NT_SUCCESS(Status) {
+        crate::dbg_print!(
+            b"ZwSetInformationFile failed to set new of allocation file (Status 0x%lx)\n\0",
+            Status
+        );
         IoSetThreadHardErrorMode(HardErrors);
         return 0u8;
     }

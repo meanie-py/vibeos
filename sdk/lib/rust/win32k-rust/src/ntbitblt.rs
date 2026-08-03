@@ -72,8 +72,12 @@ extern "system" {
 #[inline(always)] unsafe fn BRUSH_ShareLockBrush(h: HGDIOBJ) -> PBRUSH { GDIOBJ_ShareLockObj(h, GDI_OBJECT_TYPE_BRUSH as DWORD) as PBRUSH }
 #[inline(always)] unsafe fn BRUSH_ShareUnlockBrush(p: PBRUSH) { GDIOBJ_vDereferenceObject(p as POBJ); }
 
-// FIXME debug print = no-op under NDEBUG; FIXUP_ROP2 macro; PlgBlt pool tag.
-#[inline(always)] unsafe fn FIXME(_msg: *const i8) {}
+// FIXME debug print — NOT a no-op under NDEBUG; that is DPRINT/TRACE. Both call
+// sites are NtGdiPlgBlt announcing it is unimplemented, which is precisely the
+// kind of thing a caller staring at a blank blit needs to see. FIXUP_ROP2
+// macro; PlgBlt pool tag.
+extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+#[inline(always)] unsafe fn FIXME(msg: *const i8) { DbgPrint(msg); }
 #[inline(always)] unsafe fn FIXUP_ROP2(rop2: DWORD) -> DWORD { (rop2.wrapping_sub(1) & 0xF) + 1 }
 const GDITAG_PLGBLT_DATA: u32 = u32::from_be_bytes(*b"bgpG");
 // drop_gdiobj_macro_externs: dropped 2 bogus extern decl(s) for GDI-object macro(s): SURFACE_ShareLockSurface, SURFACE_ShareUnlockSurface — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
