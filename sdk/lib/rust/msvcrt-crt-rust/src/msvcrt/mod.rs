@@ -30,3 +30,14 @@ pub mod file;
 // partial: `msvcrt_set_errno` and the `_errno`/`__doserrno` storage are one contract.
 pub mod errno;
 pub mod mbcs;
+// time.c: 52 of 52 exports at `_MSVCR_VER=0`. Whole-file, like errno.c and for the same
+// reason: `_tzset`'s four exported globals (`MSVCRT___timezone`, `___daylight`, `__dstbias`,
+// `__tzname`) and the file-static `tzi` it fills are ONE contract, read by `is_dst`,
+// `mktime_helper` and `_ftime64` alike. A partial flip would leave some readers on the C's
+// copy of that state and some on Rust's, which is not a subset of either behaviour.
+//
+// Seven names that LOOK like exports of this file are not compiled at this `_MSVCR_VER`:
+// `_get_dstbias`/`_get_timezone`/`_get_daylight` are `#if >= 80`, `_Wcsftime` is `>= 110`,
+// and `_timespec32_get`/`_timespec64_get`/`_strftime_l` are `>= 140`. The object is the
+// authority on that, not the source's apparent shape.
+pub mod time;

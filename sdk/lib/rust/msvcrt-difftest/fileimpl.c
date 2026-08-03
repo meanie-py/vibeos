@@ -1085,7 +1085,10 @@ int CDECL _get_fmode(int *mode)
  * which is what msvcrt reports for a file on C:. */
 int CDECL _getdrive(void) { return 3; }
 
-__time64_t CDECL _time64(__time64_t *t)
+/* `ref__time64`, not `_time64`: msvcrt exports `_time64` and time.rs defines it, so the
+ * plain name in this file would be a duplicate symbol the moment the module was wired in.
+ * One copy, both sides — the wall-clock is environment, not per-side state. */
+__time64_t CDECL ref__time64(__time64_t *t)
 {
     __time64_t now = (__time64_t)time(NULL);
 

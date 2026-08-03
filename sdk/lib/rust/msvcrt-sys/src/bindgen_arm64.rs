@@ -3559,6 +3559,10 @@ pub const FILE_TYPE_REMOTE: u32 = 32768;
 pub const STD_INPUT_HANDLE: u32 = 4294967286;
 pub const STD_OUTPUT_HANDLE: u32 = 4294967285;
 pub const STD_ERROR_HANDLE: u32 = 4294967284;
+pub const TIME_ZONE_ID_UNKNOWN: u32 = 0;
+pub const TIME_ZONE_ID_STANDARD: u32 = 1;
+pub const TIME_ZONE_ID_DAYLIGHT: u32 = 2;
+pub const TIME_ZONE_ID_INVALID: u32 = 4294967295;
 pub const MOVEFILE_REPLACE_EXISTING: u32 = 1;
 pub const MOVEFILE_COPY_ALLOWED: u32 = 2;
 pub const MOVEFILE_DELAY_UNTIL_REBOOT: u32 = 4;
@@ -3720,6 +3724,7 @@ pub const LOCALE_IDIGITSUBSTITUTION: u32 = 4116;
 pub const LOCALE_IPAPERSIZE: u32 = 4106;
 pub const LOCALE_FREE: u32 = 1;
 pub const LOCALE_THREAD: u32 = 2;
+pub const _MAX__TIME64_T: u64 = 32535244799;
 pub const _O_RDONLY: u32 = 0;
 pub const _O_WRONLY: u32 = 1;
 pub const _O_RDWR: u32 = 2;
@@ -3749,7 +3754,9 @@ pub const _LK_LOCK: u32 = 1;
 pub const _LK_NBLCK: u32 = 2;
 pub const _LK_RLCK: u32 = 3;
 pub const _LK_NBRLCK: u32 = 4;
+pub const CLOCKS_PER_SEC: u32 = 1000;
 pub const DUPLICATE_SAME_ATTRIBUTES: u32 = 4;
+pub const _TIME_LOCK: u32 = 11;
 pub const _MB_CP_LOCK: u32 = 25;
 pub const _STREAM_LOCKS: u32 = 28;
 pub const _IOB_ENTRIES: u32 = 20;
@@ -3988,6 +3995,7 @@ pub type mbstate_t = ::core::ffi::c_int;
 // pin_fixed_width().
 pub type ULONG = u32;
 pub type BOOL = ::core::ffi::c_int;
+pub type LPBOOL = *mut BOOL;
 pub type BYTE = ::core::ffi::c_uchar;
 pub type WORD = ::core::ffi::c_ushort;
 // PINNED by generate_bindings.py: Win32 DWORD is 32-bit (LLP64).
@@ -4200,6 +4208,7 @@ pub struct _FILETIME {
     pub dwHighDateTime: DWORD,
 }
 pub type FILETIME = _FILETIME;
+pub type LPFILETIME = *mut _FILETIME;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _OVERLAPPED {
@@ -4224,6 +4233,20 @@ pub type LPOVERLAPPED = *mut _OVERLAPPED;
 pub type CRITICAL_SECTION = RTL_CRITICAL_SECTION;
 pub type PCRITICAL_SECTION = PRTL_CRITICAL_SECTION;
 pub type LPCRITICAL_SECTION = PRTL_CRITICAL_SECTION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _SYSTEMTIME {
+    pub wYear: WORD,
+    pub wMonth: WORD,
+    pub wDayOfWeek: WORD,
+    pub wDay: WORD,
+    pub wHour: WORD,
+    pub wMinute: WORD,
+    pub wSecond: WORD,
+    pub wMilliseconds: WORD,
+}
+pub type SYSTEMTIME = _SYSTEMTIME;
+pub type LPSYSTEMTIME = *mut _SYSTEMTIME;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExInfoStandard: _GET_FILEEX_INFO_LEVELS = 0;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExMaxInfoLevel: _GET_FILEEX_INFO_LEVELS = 1;
 pub type _GET_FILEEX_INFO_LEVELS = ::core::ffi::c_uint;
@@ -4252,6 +4275,9 @@ pub struct _STARTUPINFOA {
 }
 pub type STARTUPINFOA = _STARTUPINFOA;
 pub type LPSTARTUPINFOA = *mut _STARTUPINFOA;
+unsafe extern "C" {
+    pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _WIN32_FILE_ATTRIBUTE_DATA {
@@ -4263,6 +4289,19 @@ pub struct _WIN32_FILE_ATTRIBUTE_DATA {
     pub nFileSizeLow: DWORD,
 }
 pub type WIN32_FILE_ATTRIBUTE_DATA = _WIN32_FILE_ATTRIBUTE_DATA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _TIME_ZONE_INFORMATION {
+    pub Bias: LONG,
+    pub StandardName: [WCHAR; 32usize],
+    pub StandardDate: SYSTEMTIME,
+    pub StandardBias: LONG,
+    pub DaylightName: [WCHAR; 32usize],
+    pub DaylightDate: SYSTEMTIME,
+    pub DaylightBias: LONG,
+}
+pub type TIME_ZONE_INFORMATION = _TIME_ZONE_INFORMATION;
+pub type LPTIME_ZONE_INFORMATION = *mut _TIME_ZONE_INFORMATION;
 unsafe extern "C" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
@@ -4306,6 +4345,9 @@ unsafe extern "C" {
     pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION);
 }
 unsafe extern "C" {
+    pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
+}
+unsafe extern "C" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "C" {
@@ -4337,13 +4379,22 @@ unsafe extern "C" {
     pub fn GetLastError() -> DWORD;
 }
 unsafe extern "C" {
+    pub fn GetLocalTime(arg1: LPSYSTEMTIME);
+}
+unsafe extern "C" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
 unsafe extern "C" {
     pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
 }
 unsafe extern "C" {
+    pub fn GetSystemTimeAsFileTime(arg1: LPFILETIME);
+}
+unsafe extern "C" {
     pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
 unsafe extern "C" {
     pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
@@ -4353,6 +4404,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn lstrcpynA(arg1: LPSTR, arg2: LPCSTR, arg3: ::core::ffi::c_int) -> LPSTR;
 }
 unsafe extern "C" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
@@ -4398,6 +4452,16 @@ unsafe extern "C" {
     pub fn Sleep(arg1: DWORD);
 }
 unsafe extern "C" {
+    pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SystemTimeToTzSpecificLocalTime(
+        arg1: *const TIME_ZONE_INFORMATION,
+        arg2: *const SYSTEMTIME,
+        arg3: LPSYSTEMTIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
 }
 unsafe extern "C" {
@@ -4427,6 +4491,38 @@ pub struct _cpinfo {
     pub LeadByte: [BYTE; 12usize],
 }
 pub type CPINFO = _cpinfo;
+unsafe extern "C" {
+    pub fn GetDateFormatW(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTimeFormatW(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn WideCharToMultiByte(
+        arg1: UINT,
+        arg2: DWORD,
+        arg3: LPCWSTR,
+        arg4: ::core::ffi::c_int,
+        arg5: LPSTR,
+        arg6: ::core::ffi::c_int,
+        arg7: LPCSTR,
+        arg8: LPBOOL,
+    ) -> ::core::ffi::c_int;
+}
 pub type terminate_function = ::core::option::Option<unsafe extern "C" fn()>;
 pub type unexpected_function = ::core::option::Option<unsafe extern "C" fn()>;
 pub type _se_translator_function = ::core::option::Option<
@@ -4580,8 +4676,37 @@ pub struct __utimbuf64 {
 unsafe extern "C" {
     pub fn _getdrive() -> ::core::ffi::c_int;
 }
+pub type clock_t = __msvcrt_long;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _timespec32 {
+    pub tv_sec: __time32_t,
+    pub tv_nsec: __msvcrt_long,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _timespec64 {
+    pub tv_sec: __time64_t,
+    pub tv_nsec: __msvcrt_long,
+}
 unsafe extern "C" {
     pub fn _time64(arg1: *mut __time64_t) -> __time64_t;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __timeb32 {
+    pub time: __time32_t,
+    pub millitm: ::core::ffi::c_ushort,
+    pub timezone: ::core::ffi::c_short,
+    pub dstflag: ::core::ffi::c_short,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __timeb64 {
+    pub time: __time64_t,
+    pub millitm: ::core::ffi::c_ushort,
+    pub timezone: ::core::ffi::c_short,
+    pub dstflag: ::core::ffi::c_short,
 }
 unsafe extern "C" {
     pub fn WriteConsoleW(
@@ -4720,6 +4845,9 @@ unsafe extern "C" {
         arg4: ULONG,
         arg5: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn NtQuerySystemTime(arg1: PLARGE_INTEGER) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn RtlTimeToSecondsSince1970(arg1: *const LARGE_INTEGER, arg2: LPDWORD) -> BOOLEAN;

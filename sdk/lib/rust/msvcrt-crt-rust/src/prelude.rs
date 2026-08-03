@@ -170,6 +170,10 @@ extern "C" {
     // under `#![no_builtins]`; here we merely import the symbol.
     pub fn memset(dst: *mut c_void, c: c_int, n: size_t) -> *mut c_void;
     pub fn memcpy(dst: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
+    pub fn memcmp(a: *const c_void, b: *const c_void, n: size_t) -> c_int;
+
+    // include/stdlib.h:191 — time.c's `_tzset` reads the TZ variable through it.
+    pub fn getenv(name: *const c_char) -> *mut c_char;
 
     // include/string.h
     pub fn strlen(s: *const c_char) -> size_t;
@@ -195,6 +199,7 @@ extern "C" {
     // include/stdio.h — declaring and CALLING a C-variadic is stable Rust; only *defining*
     // one needs nightly.
     pub fn sprintf(buf: *mut c_char, format: *const c_char, ...) -> c_int;
+    pub fn _snprintf(buf: *mut c_char, count: size_t, format: *const c_char, ...) -> c_int;
 
     // include/ctype.h:33/:35/:44, include/corecrt_wctype.h
     pub fn _tolower_l(c: c_int, l: _locale_t) -> c_int;

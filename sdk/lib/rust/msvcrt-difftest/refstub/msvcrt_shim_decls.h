@@ -114,7 +114,11 @@ LPWSTR   WINAPI lstrcpyW(LPWSTR dst, LPCWSTR src);
  * difference between the reference and the thing it grades. */
 int          CDECL _get_fmode(int *mode);
 int          CDECL _getdrive(void);
-__time64_t   CDECL _time64(__time64_t *t);
+/* `ref_`-prefixed, unlike its neighbours, and the reason is the code under test:
+ * msvcrt EXPORTS `_time64`, so once time.rs is in the link the plain name belongs to
+ * the SUBJECT and a second strong definition here is a duplicate-symbol failure. The
+ * file.c preludes map `_time64` onto this name (stage 4.5); fileimpl.c defines it. */
+__time64_t   CDECL ref__time64(__time64_t *t);
 wchar_t *    CDECL _wgetenv(const wchar_t *name);
 wchar_t *          msvcrt_wstrdupa(const char *str);
 

@@ -75,3 +75,38 @@ def test_model_hresult_predicate_can_be_canonicalized_before_fact_recovery():
     model = "unsafe fn f() -> bool { SUCCEEDED(hr) }"
     restored = unseal_facts(canonicalize_hresult_predicates(model), sealed)
     assert "((hr) >= 0)" in restored
+
+
+def test_wholesale_envelope_omission_is_rejected_not_rescued():
+    """A body that preserved NO tokens has unverified constants, whatever its multiset.
+
+    This is msvcrt `_tzset`, minimised. The model wrote real spellings from memory
+    instead of the tokens, and PERMUTED them: `_lock(0)` where the C says
+    `_lock(_TIME_LOCK)`, `*tz == 3600` where it says `*tz == '-'`. Every value the C
+    owns is present, so the closed-set check passes and the multiset is exactly right —
+    the ORDER is what is wrong, and no check on the response alone can see that. The
+    recovery path then re-tokenized the guesses in source order and restoration became
+    an identity, so the seal reported success over the model's memory of the function.
+    """
+    sealed = seal_facts("f(_TIME_LOCK); g(3, 10, 3600); h(60);")
+    permuted = "unsafe fn body() { f(60); g(3600, 3, 10); h(_TIME_LOCK); }"
+    with pytest.raises(FactSealError, match="ignored deterministic fact envelope"):
+        unseal_facts(permuted, sealed)
+
+    # …and on the LAST attempt it is accepted, but never silently: the caller gets the
+    # note so it can reach the run's audit report.
+    notes: list[str] = []
+    restored = unseal_facts(permuted, sealed, ignored_envelope=notes, strict=False)
+    assert notes and "none preserved" in notes[0]
+    assert "f(60)" in restored
+
+
+def test_few_distinct_spellings_still_recover():
+    """The floor counts DISTINCT spellings, so the benign guess recovery exists for stays.
+
+    Two spellings across three occurrences has a permutation space recovery can handle;
+    rejecting it would cost a paid retry for a translation that is already correct.
+    """
+    sealed = seal_facts("return 0 + 0 + S_OK;")
+    restored = unseal_facts("unsafe fn body() -> HRESULT { return 0 + 0 + S_OK; }", sealed)
+    assert "return 0 + 0 + S_OK" in restored

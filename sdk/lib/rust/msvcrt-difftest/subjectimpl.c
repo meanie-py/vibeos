@@ -27,8 +27,10 @@
  * declares.
  */
 
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* ------------------------------------------------------------------ *
  * errno — the SUBJECT's, independent of the reference's.
@@ -456,3 +458,43 @@ unsigned int _get_output_format(void)
  *
  * Keeping this would have been a duplicate-symbol link error the moment the Rust mbcs
  * objects entered the link, which is how it was found. */
+
+/* ── `_snprintf`, for the SUBJECT ────────────────────────────────────────────
+ *
+ * time.rs's `asctime_buf` calls `_snprintf`. In the shipping DLL that name is a
+ * `va_start` trampoline in dll/win32/msvcrt/rust_varargs_shim.c, compiled into the
+ * msvcrt MODULE and forwarding a `va_list` into the Rust engine. That TU cannot come
+ * into this harness: the Rust `_vsnprintf` walks a `*mut u8` over 8-byte slots — the
+ * Windows va_list — and the host's `va_start` produces a SysV register-save-area
+ * struct. Feeding one to the other is the exact wall printf_probe hit, and it is why
+ * the reference TUs get refstub_printf's flat <stdarg.h>.
+ *
+ * So the harness answers instead, over the host's vsnprintf. Be precise about what
+ * that costs: `asctime`/`_wasctime`/`ctime` rows grade the ASSEMBLY of the string —
+ * the field order, the range checks, the `'1' + (year+900)/1000` century arithmetic —
+ * and NOT msvcrt's formatting of it. That is a real limit, and a narrow one: the only
+ * format asctime uses is `%s %s %02d %02d:%02d:%02d %c%03d`, on which glibc and msvcrt
+ * agree exactly. msvcrt's printf engine itself is graded by printf_port.rs against
+ * `ref_pf_printf_a`, which is the genuine C — the coverage lives there, not here.
+ *
+ * The TRUNCATION semantics are msvcrt's, not C99's, because those genuinely differ:
+ * msvcrt writes no terminator and returns -1 when the result does not fit, where C99
+ * NUL-terminates and returns the length it wanted. Modelling C99 here would make a
+ * short-buffer row pass on the reference and fail in the DLL.
+ */
+int _snprintf(char *str, size_t count, const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = vsnprintf(str, count + 1, format, ap);   /* +1: ask glibc for the NUL slot */
+    va_end(ap);
+
+    if (n < 0) return -1;
+    if ((size_t)n > count) {
+        /* Did not fit. msvcrt leaves the buffer unterminated and reports -1. */
+        return -1;
+    }
+    return n;
+}

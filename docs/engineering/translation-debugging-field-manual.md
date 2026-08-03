@@ -1725,6 +1725,27 @@ of them were **ours**, not the model's:
   is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
   read where the handler landed, not just whether it is gone.
 
+  **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
+  msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
+  `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,
+  `tzi.Bias * CP_ACP` for `tzi.Bias * 60`. Nothing invented, nothing missing, the multiset
+  exactly right: a **permutation**, which the closed-set check cannot see. The mechanism is in
+  `unseal_facts`'s recovery path, written for a cheap model that swaps ONE token for a correctly
+  guessed spelling: it re-tokenizes matching spellings **in source order**, so when the model
+  wrote real values from memory instead of tokens, recovery re-tokenized the guesses and
+  restoration became an identity. The seal reported success over the model's own memory of the
+  function. Symptom to watch for: the values in the output are all values the C really contains,
+  and several are obviously in the wrong argument (`'-'` compared against `3600`).
+  **Fix (landed): `unseal_facts` refuses a body that preserved NO tokens when ≥4 distinct
+  spellings were sealed** — distinct spellings, not occurrences, because that is the size of the
+  permutation space, and `return 0 + 0 + S_OK` (two spellings) is the benign case recovery exists
+  for. The last retry accepts and reports it as an `UNVERIFIED CONSTANTS` audit finding rather
+  than blocking the file. Rate is not a tail case: it fired on `_ecvt_s` (31 tokens), `_fcvt`
+  (21), `_setfp` (129), `msvcrt_valisttos`, `_wsystem` and `MSVCRT_asin` within one math.c +
+  process.c pair, all of which would have shipped unverified. **Corollary for reviewers: a green
+  `--seal-facts` run is evidence about the value SET, never about placement — read the
+  constant-dense functions.**
+
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
 `--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is
