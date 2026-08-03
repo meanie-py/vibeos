@@ -1140,6 +1140,20 @@ problem** — `extern "C"` changes linkage and mangling, not the type system, so
 `EXTERN_C HRESULT F(REFIID riid)` is legal and yields an unmangled symbol. Believing otherwise
 deferred this flip once; a 5-line compile test settles it in a minute.
 
+**A C++ static MEMBER has no `EXTERN_C` spelling either — forward it in the header instead.**
+Symptom: the same flip-links-but-mangled failure as above, except the undefined names are
+`__ZN9CFSFolder10FormatSizeEyPwj` and friends — class-qualified. Cause: `extern "C"` is not
+applicable to a member function; the name lives in class scope, so there is no unmangled
+spelling for a Rust `#[no_mangle]` to satisfy. Fix: turn the declaration into an **inline
+forwarder to the C entry point the TU already published**, right there in the class body, and
+change nothing at the call sites — `static HRESULT FormatSize(UINT64 s, LPWSTR b, UINT c)
+{ return CFSFolder_FormatSize_RustBridge(s, b, c); }`. Five of `CFSFolder.cpp`'s seven mangled
+symbols went that way; `CFSFolder.h` already had one static of exactly this shape
+(`CompareUiStrings`), which is the hint that the pattern is idiomatic here rather than a hack.
+It also adds no bridge — the forwarders reuse the ones the TU was already exporting, so the
+ledger count still only goes down. The other two of the seven were free functions and took the
+ordinary `EXTERN_C`-in-the-header route.
+
 **Count the RUST callers of a C++ overload too, not just the C++ ones.** Symptom: an overload
 rename passes `grep` over `*.cpp` and still breaks. Cause: already-translated siblings call the
 overload through a generated `Shell32Rust*` trampoline (rustconv emits one precisely because
@@ -2008,6 +2022,18 @@ Four things that cost precision, all of them found by being wrong first:
   macros, not out-of-line fns) but the diagnostics are still dark, and the scanner cannot see a
   cross-file no-op macro the way it sees a file-local no-op `fn`. Giving that crate a real wine
   debug sink is owed.
+- **A WHOLE-TU flip is invisible to this scanner, so audit those by hand.** It pairs a
+  *commented-out C function* against the live Rust of the same name — which is the per-function
+  cohab shape. Remove a `.cpp` from a CMake source list instead and the C source stays on disk
+  uncommented, so nothing pairs and the finding count does not move. `folders/CFSFolder.cpp` had
+  **18 always-on `ERR`/`FIXME` sites and its three Rust modules had 3**; the scanner reported
+  nothing. The cheap manual check when you flip a TU is
+  `grep -cE '\b(ERR|FIXME)\(' <tu>.cpp` against `grep -cE '\b(ERR|FIXME)!\(' <modules>.rs`,
+  remembering to discount any site inside `#if 0`. The tell that a diagnostic was the *whole*
+  body of a branch is an **empty `if`**: CFSFolder's `_AddFindResult` translated
+  `if (SUCCEEDED(hr)) { ERR("Got CLSID override for '%S'\n", Tmp); }` into `if hr >= 0 { }` — a
+  branch that computes a condition and does nothing, which is what a lost print looks like from
+  the outside.
 
 **And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
 `_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash
@@ -4181,6 +4207,15 @@ callee writes back (inert only because both pointers are re-read from the array 
 and iomgr dropped `MiResolveImageReferences`' `LoadedImports`. `grep -rn "&mut ([A-Za-z_][A-Za-z0-9_.]* as "`
 found all four across the workspace and is worth re-running — the shape is rare enough to
 eyeball and dangerous enough to be worth a scanner.
+**Same lost write, one layer out: a C++ `&` out-parameter DEREFERENCED at a C ABI shim.** The
+bridge generated for `CFSFolder::GetFSColumnDetails(UINT, SHELLDETAILS &)` was
+`f(iColumn, *sd)` — take the caller's pointer, dereference it, pass the value. That type-checks
+(`SHELLDETAILS` is `Copy`), and it throws away everything the callee fills in, so
+`CDesktopFolder` read an uninitialised column. `GetDefaultFSColumnState(UINT, SHCOLSTATEF &)`
+had it too. Fix: reborrow, `f(iColumn, &mut *sd)`. **Any `&` parameter crossing a hand-written
+or generated C shim is this hazard**, and it is invisible from the Rust side — the callee is
+correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
+an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
