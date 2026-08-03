@@ -140,6 +140,26 @@ ULONG b( void ) { ULONG ret = 1;
     assert vs["b"].feature == "have_ldap_h"
 
 
+def test_our_own_varargs_shim_is_not_treated_as_upstream_c(tmp_path):
+    """rust_varargs_shim.c re-declares the module's C-variadic entry points because stable
+    Rust cannot define one. It carries no `#ifdef`, so it classified UNGATED and collided
+    with ber.c's COMPLEX verdict for the same name -- aborting the whole wldap32 run on a
+    name conflict that is not one."""
+    from rustconv.cfg_gate import run
+
+    (tmp_path / "ber.c").write_text(
+        "int WLDAP32_ber_printf( void *b, char *fmt, ... )\n"
+        "{\n#ifdef HAVE_LDAP\n    return 1;\n#else\n    return -1;\n#endif\n}\n"
+    )
+    (tmp_path / "rust_varargs_shim.c").write_text(
+        "int WLDAP32_ber_printf(void *b, char *f, ...) { return WLDAP32_ber_printf_v(b, f, 0); }"
+    )
+    rust = tmp_path / "rs"
+    rust.mkdir()
+    verdicts, _ = run(tmp_path, rust, GUARDS, apply=False)
+    assert [v.source for v in verdicts] == ["ber.c"]
+
+
 def test_a_name_classified_two_ways_is_an_error_not_a_coin_flip(tmp_path):
     from rustconv.cfg_gate import run
 
