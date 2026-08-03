@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 
 from .dead_regions import dead_region_spans, in_dead_region
-from .lex_mask import comment_spans, mask_code
+from .lex_mask import comment_spans, directive_spans, mask_code
 
 
 class CallSealError(RuntimeError):
@@ -123,10 +123,15 @@ def seal_calls(
         return SealedCalls(text, ())
     masked = _code_mask(text)
     body_start = masked.find("{")
+    # A `#define NAME(x)` in the body is a DEFINITION, not a call occurrence, and its name is
+    # not a runtime callee at all. See lex_mask.directive_spans.
+    directive = directive_spans(text)
     spans = []
     for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked):
         name = match.group(1)
         if match.start(1) <= body_start or name not in required:
+            continue
+        if directive[match.start(1)]:
             continue
         # C++ direct initialization looks call-like to a lexical scanner:
         # ``CComHeapPtr<ITEMIDLIST> pidl(factory())``. The declarator name is

@@ -89,6 +89,46 @@ def mask_code(text: str) -> str:
     return "".join(out)
 
 
+def directive_spans(text: str) -> list[bool]:
+    """Per-character "is inside a preprocessor directive" flags.
+
+    Nothing inside a directive can be sealed. A `#define`/`#undef` NAME is not a value and
+    not a callee, and the halves of a `##` paste are not identifiers at all — sealing any of
+    them produces an envelope no correct translation can satisfy, because the token has no
+    place to go in the Rust output. shell32's `changenotify.cpp` hit all three at once: its
+    `DumpEvent` defines `DUMPEV(x)` in the function body, pastes `SHCNE_##x`, and `#undef`s it
+    at the end, which sealed as `#define __RUSTCONV_CALL_0000__(x)`, `__RUSTCONV_FACT_0001__##x`
+    and `#undef __RUSTCONV_FACT_0003__`. Four paid retries, all rejected, none satisfiable.
+
+    A directive runs to end of line and a trailing backslash continues it onto the next, which
+    is what keeps a multi-line `#define` body covered. The `#` is located in MASKED text so a
+    `#` inside a string or comment never starts one.
+    """
+    masked = mask_code(text)
+    inside = [False] * len(text)
+    length = len(text)
+    pos = 0
+    while pos < length:
+        end = masked.find("\n", pos)
+        end = length if end < 0 else end
+        if masked[pos:end].lstrip(" \t").startswith("#"):
+            while True:
+                for i in range(pos, end):
+                    inside[i] = True
+                line = masked[pos:end]
+                if end >= length:
+                    pos = length
+                    break
+                pos = end + 1
+                if not line.rstrip().endswith("\\"):
+                    break
+                end = masked.find("\n", pos)
+                end = length if end < 0 else end
+        else:
+            pos = end + 1
+    return inside
+
+
 def comment_spans(text: str) -> list[bool]:
     """Per-character "is inside a comment" flags, with the same literal rules."""
     inside = [False] * len(text)

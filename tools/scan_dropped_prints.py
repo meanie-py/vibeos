@@ -120,12 +120,20 @@ NOLINT_IDS = {"", "all", "dropped-print", "dropped_print", "scan_dropped_prints"
 # Live Rust macro invocations that actually reach the serial port. A name is a
 # print if it is listed here or simply contains "print" — crates spell their own
 # (`dbg_print!`, `debug_print!`) — but never if it contains "noop".
+#
+# `err` earns its place the same way `fixme` does: both are ALWAYS_ON channels on
+# the C side, and a usermode translation spells them either as a bare `ERR(...)`
+# call (LIVE_PRINT_FN_RE) or as an `ERR!(...)` macro. FIXME was covered in both
+# forms and ERR only in the first, so restoring a dropped ERR *as a macro* — the
+# form every wine-derived crate actually uses — could never clear its own finding.
+# A lint you cannot satisfy by doing the right thing reports noise, not silence.
 LIVE_PRINT_NAMES = {
     "dbg_print",
     "dbg_print_ex",
     "debug_print",
     "dbgprint",
     "dprintf",
+    "err",
     "trace",
     "error",
     "errors",
@@ -701,6 +709,23 @@ pub unsafe fn Foo(a: u32) -> u8 {
 // BOOL Foo(ULONG a)
 // {
 //     if (!a) { FIXME("stub\\n"); return FALSE; }
+//     return TRUE;
+// }
+""",
+        [],
+    ),
+    (
+        "wine ERR!/FIXME! in MACRO form are the same two channels as the bare calls",
+        """
+pub unsafe fn Foo(a: u32) -> u8 {
+    if a == 0 { ERR!("bad\\n"); return 0u8; }
+    if a == 1 { FIXME!("stub\\n"); return 0u8; }
+    1u8
+}
+// BOOL Foo(ULONG a)
+// {
+//     if (!a) { ERR("bad\\n"); return FALSE; }
+//     if (a == 1) { FIXME("stub\\n"); return FALSE; }
 //     return TRUE;
 // }
 """,

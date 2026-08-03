@@ -33,7 +33,6 @@
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
     ],
     "leaf": [
-      "dll/win32/shell32/changenotify.cpp",
       "dll/win32/shell32/CDefViewUtil.cpp"
     ],
     "monolith": [
@@ -64,6 +63,7 @@
     ],
     "free_function_tu": [
       "dll/win32/shell32/brfolder.cpp",
+      "dll/win32/shell32/changenotify.cpp",
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/drive.cpp",
       "dll/win32/shell32/dialogs/folder_options.cpp",
@@ -101,7 +101,8 @@
       "dll/win32/shell32/rust_strsafe_shim.c"
     ],
     "atl_window_class": [
-      "dll/win32/shell32/rust_folder_options_stub.cpp"
+      "dll/win32/shell32/rust_folder_options_stub.cpp",
+      "dll/win32/shell32/rust_changenotify_broker_stub.cpp"
     ]
   },
   "version": 1

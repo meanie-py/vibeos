@@ -128,6 +128,32 @@ because many activated class bodies are now dead, but the TU does not count as r
 the remaining live closure is Rust. `CShellLink.cpp` is intentionally deferred to the
 monolith wave: its retained helper surface is still 3.3K lines.
 
+**Measure the retained closure before scoping any hybrid — it is a link fact, not a guess.**
+Intersect the TU's defined symbols with what the REST of the link leaves undefined, and count
+`libshell32_rust.a` as one of the consumers or you will miss every `*_RustBridge` (the first
+pass on `CFSFolder.cpp` scanned only `shell32.dir/*.obj` and reported 7 symbols instead of 21):
+
+```bash
+nm --defined-only build-i386/.../folders/CFSFolder.cpp.obj | awk '$2~/^[TtDdBbRr]$/{print $3}' | sort -u > def
+find build-i386/dll/win32/shell32 -name '*.obj' ! -path '*CFSFolder*' -print0 | xargs -0 nm --undefined-only \
+  | awk '$1=="U"{print $2}' | sort -u > undef
+nm --undefined-only build-i386/dll/win32/shell32/libshell32_rust.a | awk '$1=="U"{print $2}' | sort -u >> undef
+comm -12 def <(sort -u undef)
+```
+
+For `CFSFolder.cpp` (2,283 lines) that is **21 symbols**: 14 `*_RustBridge` shims the Rust side
+calls, plus 7 C++-mangled ones wanted by `CRecycleBin.cpp`, `CDesktopFolder.cpp` and
+`CDefView.cpp`. The other ~300 it defines are already dead, because `cfs_folder.rs` owns the
+activated class. So the buy is ~500 lines of real C++, not 2,283 — it cost **$0.41** for 53
+functions (32 free, 15 `CFileSysEnum` with `--cpp-com --internal`, 6 statics), parked in
+`~/vibeos-rust-staging/cfsfolder/` and banked in `.responses/`.
+
+Two things to know before integrating it. `--cpp-com` assembles the **whole class scaffold**
+(194 vtable slots for `CFSFolder`) even under `--fn`, so the 6 statics cannot be taken that way
+without standing up a second implementation beside `cfs_folder.rs` — they want a different
+route. And each `translate` run **overwrites** its output file, so give every catalog its own
+`-o` or the last run silently replaces the previous one's module.
+
 First batch (2026-07-18): `CActiveDesktop.cpp` and
 `droptargets/CexeDropHandler.cpp` had no retained closure beyond their already-Rust-owned
 classes and left CMake after a full body audit. The executable drop handler audit caught and
@@ -232,6 +258,15 @@ fails every cargo-linked binary (§9.132).
 | blocked on `--local-raii CDataObjectHIDA` | 3 | `shldataobject`, `dialogs/item_prop`, `shlfolder` |
 | also need `--cpp-com --class` for 13 methods | 3 | `changenotify`, `dialogs/item_prop`, `CDefViewUtil` |
 
+**That last row was wrong about two of its three TUs, and the error is instructive.** "Has class
+methods" was read as "needs `--cpp-com`", but that mode wants a real activatable COM class
+(`BEGIN_COM_MAP` + `DECLARE_NOT_AGGREGATABLE` + `OBJECT_ENTRY`) and refuses anything else on its
+deterministic preflight. `item_prop`'s `ShellPropSheetDialog` turned out to be a `struct` used as
+a NAMESPACE (hand-written as free functions) and `changenotify`'s `CChangeNotifyBroker` an ATL
+WINDOW class (left in C++). Neither was bought as a COM class; both flipped anyway. Only
+`CDefViewUtil` actually carries a `BEGIN_COM_MAP` — check with `grep -c BEGIN_COM_MAP`, which is
+the discriminator this table lacked.
+
 The RAII blocker is a *deliberate* pre-payment refusal (§9.131), not a defect. Writing the
 lowering is tractable and self-consistent: `CDataObjectHIDA`'s create/destroy already exist in
 `shell_item_array.rs` as externs onto the `_RustBridge` pair that `shldataobject.cpp` defines —
@@ -330,7 +365,7 @@ and rshell both gate green.
 ## Wave 4 — procedural leaf/support TUs (15 files, 6,187 lines)
 
 ```text
-changenotify.cpp                        ~~debughlp.cpp~~ FLIPPED
+~~changenotify.cpp~~ FLIPPED            ~~debughlp.cpp~~ FLIPPED
 ~~dialogs/drive.cpp~~ FLIPPED           ~~dialogs/folder_options.cpp~~ FLIPPED
 ~~dialogs/item_prop.cpp~~ FLIPPED       ~~dialogs/general.cpp~~ FLIPPED
 ~~dialogs/recycler_prop.cpp~~ FLIPPED   ~~dialogs/view.cpp~~ FLIPPED
@@ -354,7 +389,36 @@ refuses it on the deterministic preflight and `--free-functions` skips its four 
 Worth knowing before scoping any remaining TU: a `struct` in the source does NOT imply the COM
 path, and `--free-functions` will silently leave its methods out of the buy.
 
-Remaining in this wave: `changenotify`, `CDefViewUtil`.
+`changenotify.cpp` (FLIPPED 2026-08-02) is the wave's second split-path TU, and a different
+split from `item_prop`: its `CChangeNotifyBroker` is an ATL **window** class (`CWindowImpl<>` +
+`BEGIN_MSG_MAP` + `DECLARE_WND_CLASS_EX`), not a COM one, so neither C++ mode applies and there
+is nothing to buy — the per-instance thunk and message map are C++ templates with no Rust
+spelling. It stays in C++ in `rust_changenotify_broker_stub.cpp`, the second entry in the tail
+JSON's `sanctioned.atl_window_class`, and `CreateNotificationBroker` goes with it because it
+`new`s the object, subclasses the window, and leaves it owned by ATL. The discriminator to reach
+for is `grep -c BEGIN_COM_MAP`, not the `class`/`struct` keyword.
+
+It is also the first TU here to need **no `EXTERN_C` lockstep at all**: all 15 of its declared
+names already sat inside an `extern "C"` block (`wine/shell32_main.h` wraps lines 26–324,
+shlobj.h 35–2528) and its other 8 exports have no header declaration to mangle. Audit before
+assuming otherwise — it is a full-tree grep, not a guess.
+
+Two of its 24 functions are hand-written because the SEAL envelope was unsatisfiable, not
+because the model failed: see the field manual bullet "A DIRECTIVE is not code, and an array
+PARAMETER's bound is not a value". Both sealer defects are fixed; the diagnosis rule is to read
+the free `--dry-run --prompt` after the second rejection rather than paying for a third.
+
+Remaining in this wave: `CDefViewUtil` — **blocked on a substrate gap, diagnosed, not started.**
+Its `CShellFolderViewCBWrapper` is a genuine COM class (1 `BEGIN_COM_MAP`), so `--cpp-com` is the
+right mode, and it hit two preflight refusals in a row. The first is fixed: an override whose base
+defines the same method (`SetSite` over `CObjectWithSiteBase::SetSite`) was a hard refusal and is
+now flattened to a `<Base>_base_<Name>` worker, mirroring the existing `_base_dtor` handling, so
+the shared six-line refcount swap is translated once instead of the model re-deriving it. The
+second is real and open: `FOLDERVIEWMODE m_FVM` is not provable as a C scalar by cpp_com's
+state-field checker, which accepts a fixed allow-list of type names. `FOLDERVIEWMODE` is a WIDL
+enum the island carries as `__WIDL_shobjidl_generated_name_00000025`, so the fix is island-backed
+enum proof — an enum typedef IS a C int — rather than another hardcoded name. That mechanism does
+not exist yet and is the smallest thing standing between this wave and zero.
 
 Translate by subsystem, preserving static tables/callback identity and export decoration.
 Prefer ordinary Rust modules in `shell32-rust`; create a new crate only for a real shared-link

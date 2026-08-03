@@ -98,3 +98,11 @@ pub mod brfolder;
 /// `UrlIsW(x, URLIS_FILEURL)`, so no export of that name exists to link against.
 pub mod shlexec;
 pub mod shlfileop;
+/// changenotify.cpp — the CLIENT half of shell change notification (the server half is the
+/// separate `shelldesktop/CChangeNotifyServer.cpp`, still C++). Its one ATL `CWindowImpl<>`
+/// stays behind in `rust_changenotify_broker_stub.cpp`; the module header says why.
+///
+/// The first TU in this wave to need NO `EXTERN_C` lockstep at all — every one of its 15
+/// declared names was already inside an `extern "C"` block, and its other 8 exports have no
+/// header declaration to mangle.
+pub mod changenotify;

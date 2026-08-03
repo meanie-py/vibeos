@@ -40,7 +40,7 @@ from pathlib import Path
 # the entry. Rewriting the prefix to THIS worktree is what keeps the reads local.
 CANONICAL_BUILD_ROOT = "/tmp/vibeos"
 
-_DEFINE_FN_LIKE = re.compile(r"^#define\s+([A-Za-z_]\w*)\(", re.M)
+_DEFINE_FN_LIKE = re.compile(r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)\(", re.M)
 _ARCHES = ("i386", "amd64", "arm64")
 
 
@@ -151,6 +151,16 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
             continue
         names |= set(_DEFINE_FN_LIKE.findall(_preprocess_defines(argv)))
         found.append(arch)
+    # `-dM` dumps only macros STILL DEFINED when preprocessing ends, so one that the TU
+    # `#undef`s again is invisible to it — and a function-like macro missing from this set
+    # gets its invocations sealed as runtime calls, which no translation can satisfy.
+    # shell32's `DumpEvent` is exactly that shape: `#define DUMPEV(x)`, 22 invocations,
+    # `#undef DUMPEV`. It cost four rejected paid attempts. Scanning the TU's own text is
+    # cheap and catches the define/undef pair the preprocessor dump erases.
+    try:
+        names |= set(_DEFINE_FN_LIKE.findall(source.read_text(errors="replace")))
+    except OSError:
+        pass
     if not found:
         via = " and no compiled TU in its own directory #includes it" if is_header else ""
         raise MacroAuthorityError(
