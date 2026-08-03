@@ -40,8 +40,37 @@
 
 use crate::prelude::*;
 use msvcrt_sys::*;
+// Both globs above export these, so every bare use is ambiguous. Take the
+// bindgen island's copies: they are BOOL (an i32), derived from windef.h.
+use msvcrt_sys::{FALSE, TRUE};
 use core::ffi::c_void;
 
+// The libm routines math.c calls out to. This list is the object file's own UNDEFINED
+// symbol table (`llvm-nm --undefined-only math.c.obj`), not a guess: getting it from the
+// binary is what caught that `asm_sqrt`/`asm_sqrtf`/`x87_asin` are never called at all here.
+extern "C" {
+    pub fn acos(x: f64) -> f64;
+    pub fn asin(x: f64) -> f64;
+    pub fn atan(x: f64) -> f64;
+    pub fn atan2(y: f64, x: f64) -> f64;
+    pub fn atanf(x: f32) -> f32;
+    pub fn cos(x: f64) -> f64;
+    pub fn cosh(x: f64) -> f64;
+    pub fn exp(x: f64) -> f64;
+    pub fn fmod(x: f64, y: f64) -> f64;
+    pub fn log(x: f64) -> f64;
+    pub fn log10(x: f64) -> f64;
+    pub fn pow(x: f64, y: f64) -> f64;
+    pub fn sin(x: f64) -> f64;
+    pub fn sinh(x: f64) -> f64;
+    pub fn sqrt(x: f64) -> f64;
+    pub fn sqrtf(x: f32) -> f32;
+    pub fn tan(x: f64) -> f64;
+    pub fn tanh(x: f64) -> f64;
+    pub fn tanhf(x: f32) -> f32;
+}
+
+#[cfg(target_arch = "arm64ec")]
 extern "system" {
     static __os_arm64x_get_x64_information: Option<unsafe extern "system" fn(ULONG, *mut core::ffi::c_void, *mut core::ffi::c_void) -> NTSTATUS>;
     static __os_arm64x_set_x64_information: Option<unsafe extern "system" fn(ULONG, ULONG_PTR, *mut core::ffi::c_void) -> NTSTATUS>;
@@ -52,6 +81,55 @@ extern "system" {
 /// mismatches into `ud2`. Same shape as file.rs's.
 macro_rules! TRACE {
     ($($arg:tt)*) => {{}};
+}
+
+/// wine/debug.h's `ERR`, the loud sibling of `TRACE`. Same rule: a `macro_rules!` and never
+/// an out-of-line `fn`.
+macro_rules! ERR {
+    ($($arg:tt)*) => {{}};
+}
+
+// `dll/win32/msvcrt/include/math.h:310-312` defines these as MACROS over the CRT's own
+// classification entry points, so they expand at each use site and never appear as calls in
+// the object. Reproduced as inline fns rather than macros because they are expressions with
+// one argument and no token-pasting — the §9.65 rule that forbids an out-of-line no-op `fn`
+// for a DEBUG macro does not apply: these have real bodies, so there is no ABI-mismatch
+// barrier to uncloak.
+//
+// `signbit` is the one place this diverges in FORM: the header routes it through `_dsign`,
+// which appears in no arch's undefined-symbol list, so the C is already reaching an inline.
+// A sign-bit test is exact for every input including -0.0 and NaN, which is what `_dsign`
+// documents.
+#[inline]
+unsafe fn isnan(x: f64) -> i32 {
+    (_dclass(x) as i32 == FP_NAN as i32) as i32
+}
+#[inline]
+unsafe fn isnanf(x: f32) -> i32 {
+    (_fdclass(x) as i32 == FP_NAN as i32) as i32
+}
+#[inline]
+fn signbit(x: f64) -> i32 {
+    (x.to_bits() >> 63) as i32
+}
+#[inline]
+fn signbitf(x: f32) -> i32 {
+    (x.to_bits() >> 31) as i32
+}
+
+/// `NAN` from math.h. `core::f64::NAN` is the same quiet NaN the C constant expands to.
+const NAN: f64 = f64::NAN;
+
+// Two more CRT siblings math.c calls that have no Rust definition yet, plus the
+// classification entry points the macros above are built on. `sscanf` and `_scprintf` are
+// C-variadic: DECLARING one is stable Rust, only DEFINING one needs nightly.
+extern "C" {
+    pub fn _dclass(x: f64) -> i16;
+    pub fn _fdclass(x: f32) -> i16;
+    pub fn ldexp(num: f64, exp: i32) -> f64;
+    pub fn sscanf(src: *const i8, fmt: *const i8, ...) -> i32;
+    pub fn _scprintf(fmt: *const i8, ...) -> i32;
+    pub fn memmove(dest: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -100,7 +178,7 @@ const KSHARED_PROCESSOR_FEATURES: *const [u8; 64] = 0x7FFE0274 as *const [u8; 64
 pub unsafe extern "C" fn msvcrt_init_math(module: *mut core::ffi::c_void) {
     sse2_supported =
         ((*KSHARED_PROCESSOR_FEATURES)[PF_XMMI64_INSTRUCTIONS_AVAILABLE as usize] != 0) as BOOL;
-    sse2_enabled = FALSE != 0;
+    sse2_enabled = FALSE as BOOL;
 }
 unsafe extern "C" fn ret_nan(update_sw: u8) -> f64 {
     let x = 1.0;
@@ -114,7 +192,11 @@ unsafe extern "C" fn ret_nan(update_sw: u8) -> f64 {
 pub unsafe extern "C" fn _matherr(e: *mut _exception) -> i32 {
     0
 }
-#[no_mangle]
+// CMakeLists.txt does `-Dmath_error=_invoke_matherr`, so the symbol this file must
+// define is `_invoke_matherr` — `math_error` appears in no arch's math.c.obj. Exporting
+// the spelled name instead would leave the C copy of `_invoke_matherr` unsatisfied, which
+// drags math.c.obj back into the link and duplicates every other symbol here.
+#[export_name = "_invoke_matherr"]
 pub unsafe extern "C" fn math_error(
     r#type: i32,
     name: *const i8,
@@ -130,7 +212,9 @@ pub unsafe extern "C" fn math_error(
         retval,
     };
 
-    if !MSVCRT_default_matherr_func.is_null() && MSVCRT_default_matherr_func(core::ptr::addr_of_mut!(exception)) != 0 {
+    if MSVCRT_default_matherr_func
+        .is_some_and(|f| f(core::ptr::addr_of_mut!(exception)) != 0)
+    {
         return exception.retval;
     }
 
@@ -138,10 +222,10 @@ pub unsafe extern "C" fn math_error(
         0 => {
         }
         _DOMAIN => {
-            *_errno() = EDOM;
+            *_errno() = EDOM as i32;
         }
         _SING | _OVERFLOW => {
-            *_errno() = ERANGE;
+            *_errno() = ERANGE as i32;
         }
         _UNDERFLOW => {
         }
@@ -160,7 +244,7 @@ pub unsafe extern "C" fn __setusermatherr(func: MSVCRT_matherr_func) {
 
 #[no_mangle]
 pub unsafe extern "C" fn _set_SSE2_enable(flag: i32) -> i32 {
-    sse2_enabled = (flag != 0) && sse2_supported;
+    sse2_enabled = ((flag != 0) && sse2_supported != 0) as BOOL;
     sse2_enabled as i32
 }
 // NOT FLIPPED, and not because it is broken: `cnt-rust`'s `cabi/math.rs` already
@@ -176,6 +260,7 @@ pub unsafe extern "C" fn _chgsignf(num: f32) -> f32 {
     core::mem::transmute::<u32, f32>(u)
 }
 
+#[cfg(not(target_arch = "x86"))] // `#ifndef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _fpclassf(num: f32) -> i32 {
     let u = core::mem::transmute::<f32, u32>(num);
@@ -185,24 +270,24 @@ pub unsafe extern "C" fn _fpclassf(num: f32) -> i32 {
     match e {
         0 => {
             if u << 1 != 0 {
-                if s != 0 { _FPCLASS_ND } else { _FPCLASS_PD }
+                if s != 0 { _FPCLASS_ND as i32 } else { _FPCLASS_PD as i32 }
             } else {
-                if s != 0 { _FPCLASS_NZ } else { _FPCLASS_PZ }
+                if s != 0 { _FPCLASS_NZ as i32 } else { _FPCLASS_PZ as i32 }
             }
         }
         0xff => {
             if u << 9 != 0 {
                 if ((u >> 22) & 1) != 0 {
-                    _FPCLASS_QNAN
+                    _FPCLASS_QNAN as i32
                 } else {
-                    _FPCLASS_SNAN
+                    _FPCLASS_SNAN as i32
                 }
             } else {
-                if s != 0 { _FPCLASS_NINF } else { _FPCLASS_PINF }
+                if s != 0 { _FPCLASS_NINF as i32 } else { _FPCLASS_PINF as i32 }
             }
         }
         _ => {
-            if s != 0 { _FPCLASS_NN } else { _FPCLASS_PN }
+            if s != 0 { _FPCLASS_NN as i32 } else { _FPCLASS_PN as i32 }
         }
     }
 }
@@ -234,37 +319,43 @@ pub unsafe extern "C" fn _isnanf(num: f32) -> i32 {
     }
 }
 
+#[cfg(not(target_arch = "x86"))] // `#ifndef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_atanf(x: f32) -> f32 {
     if isnan(x as f64) != 0 {
-        return math_error(_DOMAIN, b"atanf\0".as_ptr() as *const i8, x as f64, 0, x as f64) as f32;
+        return math_error(_DOMAIN, b"atanf\0".as_ptr() as *const i8, x as f64, 0.0, x as f64) as f32;
     }
     return atanf(x);
 }
+#[cfg(not(target_arch = "x86"))] // `#ifndef __i386__` in math.c
 unsafe extern "C" fn sqrtf_validate(x: *mut f32) -> u8 {
     let c: i16 = _fdclass(*x);
 
-    if c == FP_ZERO {
-        return FALSE;
+    if c == FP_ZERO as i16 {
+        return FALSE as u8;
     }
-    if c == FP_NAN {
-        return FALSE;
+    if c == FP_NAN as i16 {
+        return FALSE as u8;
     }
-    if signbit(*x as f64) != 0 {
+    if signbitf(*x) != 0 {
         *x = math_error(
             _DOMAIN,
             b"sqrtf\0".as_ptr() as *const i8,
             *x as f64,
-            0,
-            ret_nan(TRUE),
+            0.0,
+            ret_nan(TRUE as u8),
         ) as f32;
-        return FALSE;
+        return FALSE as u8;
     }
-    if c == FP_INFINITE {
-        return FALSE;
+    if c == FP_INFINITE as i16 {
+        return FALSE as u8;
     }
-    TRUE
+    TRUE as u8
 }
+#[cfg(any())] // dll/win32/msvcrt/CMakeLists.txt does `-Dasm_sqrtf=sqrtf`, which rewrites every
+              // CALL SITE to the libm routine and leaves this hand-written stub defined
+              // but unreachable. Nothing references it, so nothing pulls math.c.obj for
+              // it either — see the extern block at the top of this file.
 unsafe extern "C" fn asm_sqrtf(x: f32) -> f32 {
     let result: f32;
     core::arch::asm!(
@@ -275,6 +366,7 @@ unsafe extern "C" fn asm_sqrtf(x: f32) -> f32 {
     result
 }
 
+#[cfg(not(target_arch = "x86"))] // `#ifndef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_sqrtf(mut x: f32) -> f32 {
     #[cfg(not(target_arch = "x86"))]
@@ -282,7 +374,7 @@ pub unsafe extern "C" fn MSVCRT_sqrtf(mut x: f32) -> f32 {
         if sqrtf_validate(core::ptr::addr_of_mut!(x)) == 0 {
             return x;
         }
-        return asm_sqrtf(x);
+        return sqrtf(x); // C: `asm_sqrtf(x)`; CMake -Dasm_sqrtf=sqrtf
     }
     #[cfg(target_arch = "x86")]
     {
@@ -290,11 +382,12 @@ pub unsafe extern "C" fn MSVCRT_sqrtf(mut x: f32) -> f32 {
     }
 }
 
+#[cfg(not(target_arch = "x86"))] // `#ifndef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_tanhf(mut x: f32) -> f32 {
     if isnan(x as f64) != 0 {
         *(core::ptr::addr_of_mut!(x) as *mut u32) |= 0x400000;
-        return math_error(_DOMAIN, b"tanhf\0".as_ptr() as PCHAR, x as f64, 0, x as f64) as f32;
+        return math_error(_DOMAIN, b"tanhf\0".as_ptr() as PCHAR, x as f64, 0.0, x as f64) as f32;
     }
     return tanhf(x);
 }
@@ -309,7 +402,7 @@ pub unsafe extern "C" fn MSVCRT_asin(x: f64) -> f64 {
         let ix: u32 = hx & 0x7fffffff;
 
         if isnan(x) != 0 {
-            return math_error(_DOMAIN, b"asin\0".as_ptr() as *const i8, x, 0, x);
+            return math_error(_DOMAIN, b"asin\0".as_ptr() as *const i8, x, 0.0, x);
         }
 
         if ix < 0x3ff00000 {
@@ -317,7 +410,7 @@ pub unsafe extern "C" fn MSVCRT_asin(x: f64) -> f64 {
             if sse2_enabled == 0 || (x87_cw & _MCW_EM) != _MCW_EM
                 || (sse2_cw & (_MCW_EM | _MCW_RC)) != _MCW_EM
             {
-                return x87_asin(x);
+                return asin(x); // C: `x87_asin(x)`; CMake -Dx87_asin=asin
             }
         }
     }
@@ -333,19 +426,19 @@ pub unsafe extern "C" fn MSVCRT_asin(x: f64) -> f64 {
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_atan(x: f64) -> f64 {
     if isnan(x) != 0 {
-        return math_error(_DOMAIN, b"atan\0".as_ptr() as PCHAR, x, 0, x);
+        return math_error(_DOMAIN, b"atan\0".as_ptr() as PCHAR, x, 0.0, x);
     }
     return atan(x);
 }
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_exp(x: f64) -> f64 {
-    if isnan(x) {
+    if isnan(x) != 0 {
         return math_error(
-            0,
+            _DOMAIN,
             b"exp\0".as_ptr() as *const i8,
             x,
-            1,
-            0 + x,
+            0.0,
+            1.0 + x,
         );
     }
     return exp(x);
@@ -353,31 +446,35 @@ pub unsafe extern "C" fn MSVCRT_exp(x: f64) -> f64 {
 unsafe extern "C" fn sqrt_validate(x: *mut f64, update_sw: u8) -> u8 {
     let c: i16 = _dclass(*x);
 
-    if c == FP_ZERO {
-        return FALSE;
+    if c == FP_ZERO as i16 {
+        return FALSE as u8;
     }
-    if c == FP_NAN {
+    if c == FP_NAN as i16 {
         #[cfg(target_arch = "x86")]
         {
             if update_sw != 0 {
-                *x = math_error(_DOMAIN, b"sqrt\0".as_ptr() as *const i8, *x, 0, *x);
+                *x = math_error(_DOMAIN, b"sqrt\0".as_ptr() as *const i8, *x, 0.0, *x);
             }
         }
         #[cfg(not(target_arch = "x86"))]
         {
-            *(x as *mut u64) |= 0x8000000000000ULL;
+            *(x as *mut u64) |= 0x8000000000000u64;
         }
-        return FALSE;
+        return FALSE as u8;
     }
     if signbit(*x) != 0 {
-        *x = math_error(_DOMAIN, b"sqrt\0".as_ptr() as *const i8, *x, 0, ret_nan(update_sw));
-        return FALSE;
+        *x = math_error(_DOMAIN, b"sqrt\0".as_ptr() as *const i8, *x, 0.0, ret_nan(update_sw));
+        return FALSE as u8;
     }
-    if c == FP_INFINITE {
-        return FALSE;
+    if c == FP_INFINITE as i16 {
+        return FALSE as u8;
     }
-    return TRUE;
+    return TRUE as u8;
 }
+#[cfg(any())] // dll/win32/msvcrt/CMakeLists.txt does `-Dasm_sqrt=sqrt`, which rewrites every
+              // CALL SITE to the libm routine and leaves this hand-written stub defined
+              // but unreachable. Nothing references it, so nothing pulls math.c.obj for
+              // it either — see the extern block at the top of this file.
 unsafe extern "C" fn asm_sqrt(x: f64) -> f64 {
     let result: f64;
     core::arch::asm!(
@@ -390,23 +487,25 @@ unsafe extern "C" fn asm_sqrt(x: f64) -> f64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_sqrt(mut x: f64) -> f64 {
-    if sqrt_validate(core::ptr::addr_of_mut!(x), TRUE) == 0 {
+    if sqrt_validate(core::ptr::addr_of_mut!(x), TRUE as u8) == 0 {
         return x;
     }
 
-    return asm_sqrt(x);
+    return sqrt(x); // C: `asm_sqrt(x)`; CMake -Dasm_sqrt=sqrt
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT_tanh(x: f64) -> f64 {
     let mut x = x;
     if isnan(x) != 0 {
-        *(core::ptr::addr_of_mut!(x) as *mut u64) |= 0x0008000000000000ULL;
-        return math_error(_DOMAIN, b"tanh\0".as_ptr() as *const i8, x, 0, x);
+        *(core::ptr::addr_of_mut!(x) as *mut u64) |= 0x0008000000000000u64;
+        return math_error(_DOMAIN, b"tanh\0".as_ptr() as *const i8, x, 0.0, x);
     }
     return tanh(x);
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn _fpclass(num: f64) -> i32 {
     let u = core::mem::transmute::<f64, u64>(num);
@@ -416,24 +515,24 @@ pub unsafe extern "C" fn _fpclass(num: f64) -> i32 {
     match e {
         0 => {
             if (u << 1) != 0 {
-                if s != 0 { _FPCLASS_ND } else { _FPCLASS_PD }
+                if s != 0 { _FPCLASS_ND as i32 } else { _FPCLASS_PD as i32 }
             } else {
-                if s != 0 { _FPCLASS_NZ } else { _FPCLASS_PZ }
+                if s != 0 { _FPCLASS_NZ as i32 } else { _FPCLASS_PZ as i32 }
             }
         }
         0x7ff => {
             if (u << 12) != 0 {
                 if ((u >> 51) & 1) != 0 {
-                    _FPCLASS_QNAN
+                    _FPCLASS_QNAN as i32
                 } else {
-                    _FPCLASS_SNAN
+                    _FPCLASS_SNAN as i32
                 }
             } else {
-                if s != 0 { _FPCLASS_NINF } else { _FPCLASS_PINF }
+                if s != 0 { _FPCLASS_NINF as i32 } else { _FPCLASS_PINF as i32 }
             }
         }
         _ => {
-            if s != 0 { _FPCLASS_NN } else { _FPCLASS_PN }
+            if s != 0 { _FPCLASS_NN as i32 } else { _FPCLASS_PN as i32 }
         }
     }
 }
@@ -463,13 +562,13 @@ pub unsafe extern "C" fn MSVCRT__rotr(num: u32, shift: i32) -> u32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rotl64(num: u64, shift: i32) -> u64 {
+pub unsafe extern "C" fn MSVCRT__rotl64(num: u64, shift: i32) -> u64 {
     let shift = shift & 63;
     (num << shift) | (num >> (64 - shift))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _rotr64(num: u64, shift: i32) -> u64 {
+pub unsafe extern "C" fn MSVCRT__rotr64(num: u64, shift: i32) -> u64 {
     let shift = shift & 63;
     (num >> shift) | (num << (64 - shift))
 }
@@ -512,28 +611,50 @@ pub unsafe extern "C" fn _abs64(n: i64) -> i64 {
         -n
     }
 }
+// MXCSR only exists on x86 — the C wraps both of these in
+// `#if defined(__i386__) || defined(__x86_64__)`. The translation left them ungated and
+// spelled the arm64ec arm as `#[cfg(__arm64ec__)]`, a bare cfg FLAG that is never set, so
+// the selection happened to work for the wrong reason. `arm64ec` is a real `target_arch`;
+// use it, and keep the arm so the file still mirrors the C.
+//
+// `stmxcsr`/`ldmxcsr` take a MEMORY operand — there is no register form. The C says so
+// with GCC's `"=m"`/`"m"` constraints; the translation emitted `out(reg)`/`in(reg)`, which
+// either fails to assemble or, worse, assembles against the wrong operand. Rust's `asm!`
+// has no `m` constraint, so the shape is a register holding the ADDRESS, dereferenced in
+// the template. AT&T syntax here so the instruction text is the C's, character for
+// character.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm64ec"))]
 unsafe extern "C" fn get_mxcsr() -> u32 {
-    let mut ret: u32;
-    #[cfg(__arm64ec__)]
+    // The C leaves `ret` uninitialized; `stmxcsr` writes all four bytes, so seeding it is
+    // only for rustc's definite-initialization analysis, which cannot see through asm.
+    let mut ret: u32 = 0;
+    #[cfg(target_arch = "arm64ec")]
     {
         __os_arm64x_get_x64_information(0, core::ptr::addr_of_mut!(ret) as *mut core::ffi::c_void, core::ptr::null_mut());
     }
-    #[cfg(not(__arm64ec__))]
+    #[cfg(not(target_arch = "arm64ec"))]
     {
-        core::arch::asm!("stmxcsr {}", out(reg) ret, options(nostack));
+        core::arch::asm!(
+            "stmxcsr ({})",
+            in(reg) core::ptr::addr_of_mut!(ret),
+            options(att_syntax, nostack)
+        );
     }
     ret
 }
+#[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm64ec"))]
 unsafe extern "C" fn set_mxcsr(val: u32) {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(target_arch = "arm64ec")]
     {
-        if let Some(func) = __os_arm64x_set_x64_information {
-            __os_arm64x_set_x64_information(func, 0, val as ULONG_PTR, core::ptr::null_mut());
-        }
+        __os_arm64x_set_x64_information(0, val as ULONG_PTR, core::ptr::null_mut());
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(not(target_arch = "arm64ec"))]
     {
-        core::arch::asm!("ldmxcsr [{0}]", in(reg) &val, options(nostack));
+        core::arch::asm!(
+            "ldmxcsr ({})",
+            in(reg) core::ptr::addr_of!(val),
+            options(att_syntax, nostack)
+        );
     }
 }
 unsafe extern "C" fn _setfp_sse(
@@ -714,7 +835,7 @@ unsafe extern "C" fn _setfp(
     sw: *mut u32,
     mut sw_mask: u32,
 ) {
-    #[cfg(all(any(target_env = "gnu", target_env = "msvc"), target_arch = "x86"))]
+    #[cfg(target_arch = "x86")]
     {
         let mut oldcw: u32 = 0;
         let mut newcw: u32 = 0;
@@ -726,7 +847,14 @@ unsafe extern "C" fn _setfp(
         sw_mask &= _MCW_EM;
 
         if !sw.is_null() {
-            core::arch::asm!("fstsw {}", out(reg) newsw);
+            // `"fstsw %0" : "=m"(newsw)`. Memory form only, and it writes TWO bytes
+            // into a four-byte slot — `newsw` is pre-zeroed above exactly as the C
+            // declares it `= 0`, so the high half stays clear.
+            core::arch::asm!(
+                "fstsw ({})",
+                in(reg) core::ptr::addr_of_mut!(newsw),
+                options(att_syntax, nostack)
+            );
             oldsw = newsw;
 
             flags = 0;
@@ -751,7 +879,12 @@ unsafe extern "C" fn _setfp(
         }
 
         if !cw.is_null() {
-            core::arch::asm!("fstcw {}", out(reg) newcw);
+            // `"fstcw %0" : "=m"(newcw)` — memory form only, two bytes written.
+            core::arch::asm!(
+                "fstcw ({})",
+                in(reg) core::ptr::addr_of_mut!(newcw),
+                options(att_syntax, nostack)
+            );
             oldcw = newcw;
 
             flags = 0;
@@ -818,31 +951,43 @@ unsafe extern "C" fn _setfp(
             }
             let mut fenv: Fenv = core::mem::zeroed();
 
-            assert(!cw.is_null());
+            assert!(!cw.is_null());
 
-            core::arch::asm!("fnstenv {}", in(reg) &mut fenv);
+            // `"fnstenv %0" : "=m"(fenv)` — a 28-byte STORE. The translation had it as
+            // an `in(reg)` with a register operand: wrong direction and wrong form.
+            core::arch::asm!(
+                "fnstenv ({})",
+                in(reg) core::ptr::addr_of_mut!(fenv),
+                options(att_syntax, nostack)
+            );
             fenv.control_word = newcw as u16;
             fenv.status_word = newsw as u16;
+            // `"fldenv %0" : : "m"(fenv) : "st", "st(1)" ... "st(7)"` — a 28-byte LOAD that
+            // reloads the whole x87 environment, so the C names every stack register as a
+            // clobber. Rust's x86 `asm!` has no `st` register class and rejects those
+            // operands outright, so the clobber list cannot be transcribed. It is not
+            // needed here for the same reason it is harmless in the C: this function is
+            // integer-only, holds no float in a local, and the enclosing `_setfp` returns
+            // immediately after — there is no live x87 value for the reload to destroy.
+            // Do NOT copy this pattern into a function that computes with floats.
             core::arch::asm!(
-                "fldenv {}",
-                in(reg) &fenv,
-                out("st") _,
-                out("st(1)") _,
-                out("st(2)") _,
-                out("st(3)") _,
-                out("st(4)") _,
-                out("st(5)") _,
-                out("st(6)") _,
-                out("st(7)") _,
+                "fldenv ({})",
+                in(reg) core::ptr::addr_of!(fenv),
+                options(att_syntax, nostack)
             );
             return;
         }
 
         if oldsw != newsw {
-            core::arch::asm!("fnclex");
+            core::arch::asm!("fnclex", options(att_syntax, nostack));
         }
         if oldcw != newcw {
-            core::arch::asm!("fldcw {}", in(reg) &newcw);
+            // `"fldcw %0" : : "m"(newcw)` — memory form only.
+            core::arch::asm!(
+                "fldcw ({})",
+                in(reg) core::ptr::addr_of!(newcw),
+                options(att_syntax, nostack)
+            );
         }
     }
 
@@ -908,7 +1053,7 @@ unsafe extern "C" fn _setfp(
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
             TRACE!(b"aarch64 update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
-            fpcr &= !0xc09f00ul;
+            fpcr &= !0xc09f00;
             if *cw & _EM_INVALID == 0 { fpcr |= 0x100; }
             if *cw & _EM_ZERODIVIDE == 0 { fpcr |= 0x200; }
             if *cw & _EM_OVERFLOW == 0 { fpcr |= 0x400; }
@@ -923,7 +1068,19 @@ unsafe extern "C" fn _setfp(
             }
         }
 
-        if old_fpcr != fpcr && (!(old_fpcr >> 8) & fpsr & 0x9f != fpsr & 0x9f) {
+        // The C is `if (old_fpcr != fpcr && ~(old_fpcr >> 8) & fpsr & 0x9f != fpsr & 0x9f)`
+        // and it does NOT mean what it reads like. In C, `!=` binds TIGHTER than `&`, so the
+        // right operand parses as
+        //     ~(old_fpcr >> 8) & fpsr & (0x9f != fpsr) & 0x9f
+        // — a chain whose third term is the 0-or-1 result of a comparison, which masks the
+        // whole expression down to bit 0. Rust's `&` binds tighter than `!=`, so copying the
+        // text across gives the "obviously intended" masked comparison instead, and that
+        // silently changes which FP exceptions get masked on arm64. Parenthesised here to
+        // reproduce C's grammar exactly. (It looks like an upstream Wine bug; translating it
+        // faithfully is still the job — fixing it belongs in a patch that says so.)
+        if old_fpcr != fpcr
+            && (!(old_fpcr >> 8) & fpsr & ((0x9f != fpsr) as ULONG_PTR) & 0x9f) != 0
+        {
             let mask = fpcr & !0x9f00;
             core::arch::asm!("msr fpcr, {}", in(reg) mask);
         }
@@ -988,7 +1145,7 @@ unsafe extern "C" fn _setfp(
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
             TRACE!(b"arm update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
-            fpscr &= !0xc09f00ul;
+            fpscr &= !0xc09f00;
             if *cw & _EM_INVALID == 0 { fpscr |= 0x100; }
             if *cw & _EM_ZERODIVIDE == 0 { fpscr |= 0x200; }
             if *cw & _EM_OVERFLOW == 0 { fpscr |= 0x400; }
@@ -1009,7 +1166,7 @@ unsafe extern "C" fn _setfp(
     }
 
     #[cfg(not(any(
-        all(any(target_env = "gnu", target_env = "msvc"), target_arch = "x86"),
+        target_arch = "x86",
         target_arch = "x86_64",
         target_arch = "aarch64",
         target_arch = "arm"
@@ -1019,6 +1176,7 @@ unsafe extern "C" fn _setfp(
         if !sw.is_null() { *sw = 0; }
     }
 }
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _statusfp2(x86_sw: *mut u32, sse2_sw: *mut u32) {
     if !x86_sw.is_null() {
@@ -1109,9 +1267,10 @@ pub unsafe extern "C" fn _cabs(num: _complex) -> f64 {
 #[no_mangle]
 pub unsafe extern "C" fn _chgsign(num: f64) -> f64 {
     let mut u: UINT64 = core::mem::transmute(num);
-    u ^= 1ull << 63;
+    u ^= 1u64 << 63;
     core::mem::transmute(u)
 }
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn __control87_2(
     newval: u32,
@@ -1141,7 +1300,8 @@ pub unsafe extern "C" fn __control87_2(
 #[no_mangle]
 pub unsafe extern "C" fn _control87(newval: u32, mask: u32) -> u32 {
     let mut flags = 0;
-#[cfg(all(target_arch = "x86", any(all(_MSVCR_VER, _MSVCR_VER = 0), all(_MSVCR_VER, _MSVCR_VER >= 80))))]
+    // C: `#if defined(__i386__) && (_MSVCR_VER == 0 || _MSVCR_VER >= 80)` — TRUE at 0.
+    #[cfg(target_arch = "x86")]
     {
         let mut sse2_cw: u32 = 0;
 
@@ -1154,7 +1314,7 @@ pub unsafe extern "C" fn _control87(newval: u32, mask: u32) -> u32 {
             flags |= sse2_cw;
         }
     }
-#[cfg(not(all(target_arch = "x86", any(all(_MSVCR_VER, _MSVCR_VER = 0), all(_MSVCR_VER, _MSVCR_VER >= 80)))))]
+    #[cfg(not(target_arch = "x86"))]
     {
         flags = newval;
         _setfp(&mut flags, mask, core::ptr::null_mut(), 0);
@@ -1177,11 +1337,11 @@ pub unsafe extern "C" fn _controlfp_s(cur: *mut u32, newval: u32, mask: u32) -> 
     const all_flags: u32 = (_MCW_EM | _MCW_IC | _MCW_RC | _MCW_PC | _MCW_DN);
     let val: u32;
 
-    if MSVCRT_CHECK_PMT!(!(newval & mask & !all_flags)) == 0 {
+    if MSVCRT_CHECK_PMT!((newval & mask & !all_flags) == 0) == 0 {
         if !cur.is_null() {
             *cur = _controlfp(0, 0);
         }
-        return EINVAL;
+        return EINVAL as i32;
     }
     val = _controlfp(newval, mask);
     if !cur.is_null() {
@@ -1189,6 +1349,8 @@ pub unsafe extern "C" fn _controlfp_s(cur: *mut u32, newval: u32, mask: u32) -> 
     }
     return 0;
 }
+#[cfg(any())] // `#if _MSVCR_VER>=120/140` in math.c; msvcrt builds at _MSVCR_VER == 0,
+              // so neither variant is compiled. Kept for the ucrtbase share of this file.
 unsafe extern "C" fn fenv_encode(mut x: u32, mut y: u32) -> __msvcrt_ulong {
     let mut ret: __msvcrt_ulong = 0;
 
@@ -1225,6 +1387,8 @@ unsafe extern "C" fn fenv_encode(mut x: u32, mut y: u32) -> __msvcrt_ulong {
     }
     ret
 }
+#[cfg(any())] // `#if _MSVCR_VER>=120/140` in math.c; msvcrt builds at _MSVCR_VER == 0,
+              // so neither variant is compiled. Kept for the ucrtbase share of this file.
 unsafe extern "C" fn fenv_decode(enc: __msvcrt_ulong, x: *mut u32, y: *mut u32) -> u8 {
     *x = 0;
     *y = 0;
@@ -1266,18 +1430,21 @@ unsafe extern "C" fn fenv_decode(enc: __msvcrt_ulong, x: *mut u32, y: *mut u32) 
 #[no_mangle]
 pub unsafe extern "C" fn _finite(num: f64) -> i32 {
     let u: u64 = core::mem::transmute(num);
-    ((u & !0ull >> 1) < (0x7ffull << 52)) as i32
+    ((u & !0u64 >> 1) < (0x7ffu64 << 52)) as i32
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _fpreset() {
-#[cfg(all(any(target_env = "gnu", target_env = ""), target_arch = "x86"))]
+#[cfg(target_arch = "x86")]
 {
     let x86_cw: u32 = 0x27f;
+    // `"fninit; fldcw %0" : : "m"(x86_cw)` — the `({0})` dereference is AT&T syntax, so
+    // it needs `options(att_syntax)`; without it the default Intel parser reads the
+    // parentheses as something else entirely.
     core::arch::asm!(
         "fninit; fldcw ({0})",
-        in(reg) &x86_cw,
-        options(nostack)
+        in(reg) core::ptr::addr_of!(x86_cw),
+        options(att_syntax, nostack)
     );
     if sse2_supported != 0 {
         let mut cw: u32 = _MCW_EM;
@@ -1285,7 +1452,7 @@ pub unsafe extern "C" fn _fpreset() {
         _setfp_sse(&mut cw, !0, &mut sw, !0);
     }
 }
-#[cfg(not(all(any(target_env = "gnu", target_env = ""), target_arch = "x86")))]
+#[cfg(not(target_arch = "x86"))]
 {
     let mut cw: u32 = _MCW_EM;
     let mut sw: u32 = 0;
@@ -1302,7 +1469,7 @@ pub unsafe extern "C" fn _fpreset() {
 #[no_mangle]
 pub unsafe extern "C" fn _isnan(num: f64) -> i32 {
     let u = core::mem::transmute::<f64, u64>(num);
-    ((u & !0ull >> 1) > 0x7ffull << 52) as i32
+    ((u & !0u64 >> 1) > 0x7ffu64 << 52) as i32
 }
 
 #[no_mangle]
@@ -1319,7 +1486,7 @@ pub unsafe extern "C" fn _ecvt(
     let ndigits = min!(ndigits, 80 - 8);
 
     if (*data).efcvt_buffer.is_null() {
-        (*data).efcvt_buffer = malloc(80);
+        (*data).efcvt_buffer = malloc(80) as *mut i8;
     }
 
     prec = ndigits;
@@ -1336,8 +1503,8 @@ pub unsafe extern "C" fn _ecvt(
 
     if *(*data).efcvt_buffer.offset(0 as isize) == b'-' as i8 {
         memmove(
-            (*data).efcvt_buffer,
-            (*data).efcvt_buffer.offset(1 as isize),
+            (*data).efcvt_buffer as *mut c_void,
+            (*data).efcvt_buffer.offset(1 as isize) as *const c_void,
             len as usize,
         );
         len -= 1;
@@ -1348,8 +1515,8 @@ pub unsafe extern "C" fn _ecvt(
 
     if prec != 1 {
         memmove(
-            (*data).efcvt_buffer.offset(1 as isize),
-            (*data).efcvt_buffer.offset(2 as isize),
+            (*data).efcvt_buffer.offset(1 as isize) as *mut c_void,
+            (*data).efcvt_buffer.offset(2 as isize) as *const c_void,
             (len - 1) as usize,
         );
     }
@@ -1387,34 +1554,34 @@ pub unsafe extern "C" fn _ecvt_s(
     sign: *mut i32,
 ) -> i32 {
     let mut prec: i32;
-    let len: i32;
+    let mut len: i32;
     let result: *mut i8;
 
     if MSVCRT_CHECK_PMT!(!buffer.is_null()) == 0 {
-        return EINVAL;
+        return EINVAL as i32;
     }
     if MSVCRT_CHECK_PMT!(!decpt.is_null()) == 0 {
-        return EINVAL;
+        return EINVAL as i32;
     }
     if MSVCRT_CHECK_PMT!(!sign.is_null()) == 0 {
-        return EINVAL;
+        return EINVAL as i32;
     }
-    if MSVCRT_CHECK_PMT_ERR!(length > 2, ERANGE) == 0 {
-        return ERANGE;
+    if MSVCRT_CHECK_PMT_ERR!(length > 2, ERANGE as i32) == 0 {
+        return ERANGE as i32;
     }
     if MSVCRT_CHECK_PMT_ERR!(
         ndigits < (length as i32) - 1,
-        ERANGE,
+        ERANGE as i32,
     ) == 0
     {
-        return ERANGE;
+        return ERANGE as i32;
     }
 
     prec = ndigits;
     if prec < 1 {
         prec = 2;
     }
-    result = malloc(prec + 8);
+    result = malloc((prec + 8) as usize) as *mut i8;
 
     len = _snprintf(
         result,
@@ -1425,10 +1592,11 @@ pub unsafe extern "C" fn _ecvt_s(
     );
     if *result.offset(0 as isize) == b'-' as i8 {
         memmove(
-            result,
-            result.offset(1 as isize),
-            (len - 1) as usize,
+            result as *mut c_void,
+            result.offset(1 as isize) as *const c_void,
+            len as usize,
         );
+        len -= 1;
         *sign = 1;
     } else {
         *sign = 0;
@@ -1436,8 +1604,8 @@ pub unsafe extern "C" fn _ecvt_s(
 
     if prec != 1 {
         memmove(
-            result.offset(1 as isize),
-            result.offset(2 as isize),
+            result.offset(1 as isize) as *mut c_void,
+            result.offset(2 as isize) as *const c_void,
             (len - 1) as usize,
         );
     }
@@ -1458,11 +1626,11 @@ pub unsafe extern "C" fn _ecvt_s(
         *result.offset(0 as isize) = b'\0' as i8;
     }
     memcpy(
-        buffer,
-        result,
-        max(ndigits + 1, 1) as usize,
+        buffer as *mut c_void,
+        result as *const c_void,
+        core::cmp::max(ndigits + 1, 1) as usize,
     );
-    free(result);
+    free(result as *mut c_void);
     return 0;
 }
 
@@ -1475,7 +1643,7 @@ pub unsafe extern "C" fn _fcvt(
 ) -> *mut i8 {
     let data = msvcrt_get_thread_data();
     let mut stop: i32;
-    let dec1: i32;
+    let mut dec1: i32;
     let mut dec2: i32;
     let mut ptr1: *mut i8;
     let mut ptr2: *mut i8;
@@ -1508,7 +1676,7 @@ pub unsafe extern "C" fn _fcvt(
     }
 
     if number < 1.0 && number > 0.0 {
-        dec2 = log10(number + 1e-10);
+        dec2 = log10(number + 1e-10) as i32;
         if -dec2 <= ndigits {
             dec2 = 0;
         }
@@ -1589,9 +1757,13 @@ pub unsafe extern "C" fn _fcvt_s(
     let decimal_separator: i8 = (*(*get_locinfo()).lconv).decimal_point.offset(0).read();
 
     if outbuffer.is_null() || decpt.is_null() || sign.is_null() || size == 0 {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *_errno() = EINVAL as i32;
+        return EINVAL as i32;
     }
+    // ONE mutable copy of the by-value parameter. The translation re-shadowed `size` inside
+    // each `if size > 1` block, so every `size--` mutated a copy that died at the closing
+    // brace and the bound never moved.
+    let mut size = size;
 
     stop = _snprintf(
         buf.as_mut_ptr(),
@@ -1640,7 +1812,6 @@ pub unsafe extern "C" fn _fcvt_s(
                 *ptr2 = *ptr1;
                 ptr2 = ptr2.offset(1);
                 ptr1 = ptr1.offset(1);
-                let mut size = size;
                 size -= 1;
             }
         } else {
@@ -1656,7 +1827,6 @@ pub unsafe extern "C" fn _fcvt_s(
                 if number == 0.0 && size > 1 {
                     *ptr2 = b'0' as i8;
                     ptr2 = ptr2.offset(1);
-                    let mut size = size;
                     size -= 1;
                 }
                 ptr1 = ptr1.offset(1);
@@ -1671,7 +1841,6 @@ pub unsafe extern "C" fn _fcvt_s(
                 *ptr2 = *ptr1;
                 ptr2 = ptr2.offset(1);
                 ptr1 = ptr1.offset(1);
-                let mut size = size;
                 size -= 1;
             }
         }
@@ -1690,12 +1859,12 @@ pub unsafe extern "C" fn _fcvt_s(
 #[no_mangle]
 pub unsafe extern "C" fn _gcvt(number: f64, ndigit: i32, buff: PCHAR) -> PCHAR {
     if buff.is_null() {
-        *_errno() = EINVAL;
+        *_errno() = EINVAL as i32;
         return core::ptr::null_mut();
     }
 
     if ndigit < 0 {
-        *_errno() = ERANGE;
+        *_errno() = ERANGE as i32;
         return core::ptr::null_mut();
     }
 
@@ -1713,8 +1882,8 @@ pub unsafe extern "C" fn _gcvt_s(
     let len: i32;
 
     if buff.is_null() {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *_errno() = EINVAL as i32;
+        return EINVAL as i32;
     }
 
     if digits < 0 || digits >= size as i32 {
@@ -1722,8 +1891,8 @@ pub unsafe extern "C" fn _gcvt_s(
             *buff.add(0) = b'\0';
         }
 
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = ERANGE as i32;
+        return ERANGE as i32;
     }
 
     len = _scprintf(
@@ -1733,8 +1902,8 @@ pub unsafe extern "C" fn _gcvt_s(
     );
     if len > size as i32 {
         *buff.add(0) = b'\0';
-        *_errno() = ERANGE;
-        return ERANGE;
+        *_errno() = ERANGE as i32;
+        return ERANGE as i32;
     }
 
     sprintf(
@@ -1764,6 +1933,8 @@ pub unsafe extern "C" fn div(num: i32, denom: i32) -> u64 {
     ret.div.rem = num % denom;
     ret.uint64
 }
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn ldiv(num: __msvcrt_long, denom: __msvcrt_long) -> u64 {
     union Ret {
@@ -1776,89 +1947,132 @@ pub unsafe extern "C" fn ldiv(num: __msvcrt_long, denom: __msvcrt_long) -> u64 {
     ret.uint64
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdiv_m16i(arg: i16) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdiv_m16i@4"]
+pub unsafe extern "stdcall" fn _adj_fdiv_m16i(arg: i16) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdiv_m32(arg: u32) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdiv_m32@4"]
+pub unsafe extern "stdcall" fn _adj_fdiv_m32(arg: u32) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdiv_m32i(arg: i32) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdiv_m32i@4"]
+pub unsafe extern "stdcall" fn _adj_fdiv_m32i(arg: i32) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdiv_m64(arg: u64) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdiv_m64@8"]
+pub unsafe extern "stdcall" fn _adj_fdiv_m64(arg: u64) {
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _adj_fdiv_r() {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdivr_m16i(arg: i16) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdivr_m16i@4"]
+pub unsafe extern "stdcall" fn _adj_fdivr_m16i(arg: i16) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdivr_m32(arg: u32) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdivr_m32@4"]
+pub unsafe extern "stdcall" fn _adj_fdivr_m32(arg: u32) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdivr_m32i(arg: i32) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdivr_m32i@4"]
+pub unsafe extern "stdcall" fn _adj_fdivr_m32i(arg: i32) {
     // TRACE("(): stub\n");
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn _adj_fdivr_m64(arg: u64) {
+// A `__stdcall` export, so on i386 PE the symbol is `_name@<arg bytes>`. `#[no_mangle]`
+// emits the name verbatim and drops BOTH halves of that decoration, which lands on a
+// symbol nothing imports and leaves the C copy live — the flip would be a no-op.
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
+#[export_name = "__adj_fdivr_m64@8"]
+pub unsafe extern "stdcall" fn _adj_fdivr_m64(arg: u64) {
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _adj_fpatan() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _adj_fprem() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _adj_fprem1() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _adj_fptan() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _safe_fdiv() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _safe_fdivr() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _safe_fprem() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
 #[no_mangle]
 pub unsafe extern "C" fn _safe_fprem1() {
     // TRACE("(): stub\n");
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_acos() {
     let mut d: f64;
@@ -1867,6 +2081,8 @@ pub unsafe extern "C" fn __libm_sse2_acos() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_acosf() {
     let mut f: f32;
@@ -1875,6 +2091,8 @@ pub unsafe extern "C" fn __libm_sse2_acosf() {
     core::arch::asm!("movd {}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_asin() {
     let mut d: f64;
@@ -1883,6 +2101,8 @@ pub unsafe extern "C" fn __libm_sse2_asin() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_asinf() {
     let mut f: f32;
@@ -1891,6 +2111,8 @@ pub unsafe extern "C" fn __libm_sse2_asinf() {
     core::arch::asm!("movd {}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_atan() {
     let mut d: f64;
@@ -1899,6 +2121,8 @@ pub unsafe extern "C" fn __libm_sse2_atan() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_atan2() {
     let mut d1: f64;
@@ -1917,6 +2141,8 @@ pub unsafe extern "C" fn __libm_sse2_atan2() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_atanf() {
     let mut f: f32;
@@ -1925,6 +2151,8 @@ pub unsafe extern "C" fn __libm_sse2_atanf() {
     core::arch::asm!("movd {}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_cos() {
     let mut d: f64;
@@ -1933,6 +2161,8 @@ pub unsafe extern "C" fn __libm_sse2_cos() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_cosf() {
     let mut f: f32;
@@ -1949,6 +2179,8 @@ pub unsafe extern "C" fn __libm_sse2_cosf() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_exp() {
     let mut d: f64;
@@ -1957,6 +2189,8 @@ pub unsafe extern "C" fn __libm_sse2_exp() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_expf() {
     let mut f: f32;
@@ -1965,6 +2199,8 @@ pub unsafe extern "C" fn __libm_sse2_expf() {
     core::arch::asm!("movd {0}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_log() {
     let mut d: f64;
@@ -1973,6 +2209,8 @@ pub unsafe extern "C" fn __libm_sse2_log() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_log10() {
     let mut d: f64;
@@ -1981,6 +2219,8 @@ pub unsafe extern "C" fn __libm_sse2_log10() {
     core::arch::asm!("movq {0}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_log10f() {
     let mut f: f32;
@@ -1997,6 +2237,8 @@ pub unsafe extern "C" fn __libm_sse2_log10f() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_logf() {
     let mut f: f32;
@@ -2005,6 +2247,8 @@ pub unsafe extern "C" fn __libm_sse2_logf() {
     core::arch::asm!("movd {}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_pow() {
     let mut d1: f64;
@@ -2023,6 +2267,8 @@ pub unsafe extern "C" fn __libm_sse2_pow() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_powf() {
     let mut f1: f32;
@@ -2039,6 +2285,8 @@ pub unsafe extern "C" fn __libm_sse2_powf() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_sin() {
     let mut d: f64;
@@ -2047,6 +2295,8 @@ pub unsafe extern "C" fn __libm_sse2_sin() {
     core::arch::asm!("movq {}, %xmm0", in(reg) d, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_sinf() {
     let mut f: f32;
@@ -2055,6 +2305,8 @@ pub unsafe extern "C" fn __libm_sse2_sinf() {
     core::arch::asm!("movd {}, xmm0", in(reg) f, options(nostack));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_tan() {
     let mut d: f64;
@@ -2071,6 +2323,8 @@ pub unsafe extern "C" fn __libm_sse2_tan() {
     );
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_tanf() {
     let mut f: f32;
@@ -2079,6 +2333,8 @@ pub unsafe extern "C" fn __libm_sse2_tanf() {
     core::arch::asm!("movd {}, %xmm0", in(reg) f, options(att_syntax));
 }
 
+#[cfg(any())] // `#ifndef __REACTOS__` in math.c — never compiled here, and the object
+              // symbol table proves it: no arch's math.c.obj defines this.
 #[no_mangle]
 pub unsafe extern "C" fn __libm_sse2_sqrt_precise() {
     let mut cw: u32;
@@ -2100,13 +2356,15 @@ pub unsafe extern "C" fn __libm_sse2_sqrt_precise() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _scalb(num: double, power: __msvcrt_long) -> double {
+pub unsafe extern "C" fn _scalb(num: f64, power: __msvcrt_long) -> f64 {
     ldexp(num, power)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
-    ldexp(num, power)
+pub unsafe extern "C" fn _scalbf(num: f32, power: __msvcrt_long) -> f32 {
+    // C's `return ldexp(num, power);` from a `float` function: default argument promotion
+    // widens `num` to double and the return narrows back. Neither is implicit in Rust.
+    ldexp(num as f64, power) as f32
 }
 
 
@@ -2114,6 +2372,243 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // ORIGINAL C SOURCE
 // ============================================================================
 //
+
+
+// ============================================================================
+// i386 whole-function assembly stubs, transcribed from math.c's `__ASM_GLOBAL_FUNC`
+// ============================================================================
+//
+// These are msvcrt EXPORTS (dll/win32/msvcrt/msvcrt.spec), so something references them and
+// the linker WILL go looking. If this file left them undefined, lld would pull math.c.obj in
+// to satisfy them — and that object also defines every other symbol here, so the whole cohab
+// flip would collapse into duplicate definitions. Defining them is what keeps the C object
+// out of the link entirely.
+//
+// `global_asm!` and not a naked `fn`: naked functions are unstable and this crate is on
+// pinned stable. The instruction text is copied verbatim from the C, in AT&T syntax so the
+// two can be diffed character for character; `__ASM_GLOBAL_FUNC` was expanded by hand
+// (`.text` / `.align 4` / `.globl` / `.def` / label), and its `.cfi_*` directives were
+// dropped — they are DWARF unwind metadata the C emits only when the toolchain defines
+// `__GCC_HAVE_DWARF2_CFI_ASM`, and carry no semantics.
+//
+// The doubled leading underscore in `__CIacos` / `__ftol` is not a typo: the C name already
+// starts with `_`, and `__ASM_NAME` prepends the i386 PE underscore on top of it.
+
+// ============================================================================
+// 4. The sixteen _CI* functions — math.c:476-566, i386 only
+//    (#if (defined(__GNUC__) || defined(__clang__)) && defined(__i386__)).
+//    Two macros, CREATE_FPU_FUNC1(name, call) and CREATE_FPU_FUNC2(name, call),
+//    mirrored here as macro_rules! create_fpu_func1!/create_fpu_func2!, each
+//    invoked exactly as math.c:551-566 invokes the C macros.
+//
+//    ASMNAME = __ASM_NAME(#name): name already carries a leading "_" in every
+//    call site (e.g. _CIacos), so ASMNAME gets a SECOND leading "_" prepended
+//    -> "__CIacos" etc. The `call` operand is bare (e.g. acos) and also goes
+//    through __ASM_NAME -> "_acos" in the `call` instruction.
+// ============================================================================
+
+// macro_rules! mirror of CREATE_FPU_FUNC1(name, call) — math.c:477-511.
+// One double popped off the FPU stack in, one pushed back out.
+#[cfg(target_arch = "x86")]
+macro_rules! create_fpu_func1 {
+    ($name:ident, $call:ident) => {
+        core::arch::global_asm!(
+            ".text",
+            ".align 4",
+            concat!(".globl _", stringify!($name)),
+            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
+            concat!("_", stringify!($name), ":"),
+            "pushl   %ebp",
+            "movl    %esp, %ebp",
+            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
+            "fstpl   (%esp)",    // store function argument
+            "fwait",
+            "movl    $1, %ecx", // empty FPU stack
+            "1:",
+            "fxam",
+            "fstsw   %ax",
+            "and     $0x4500, %ax",
+            "cmp     $0x4100, %ax",
+            "je      2f",
+            "fstpl    (%esp,%ecx,8)",
+            "fwait",
+            "incl    %ecx",
+            "jmp     1b",
+            "2:",
+            "movl    %ecx, -4(%ebp)",
+            concat!("call    _", stringify!($call)),
+            "movl    -4(%ebp), %ecx",
+            "fstpl   (%esp)", // save result
+            "3:",             // restore FPU stack
+            "decl    %ecx",
+            "fldl    (%esp,%ecx,8)",
+            "cmpl    $0, %ecx",
+            "jne     3b",
+            "leave",
+            "ret",
+            options(att_syntax)
+        );
+    };
+}
+
+// macro_rules! mirror of CREATE_FPU_FUNC2(name, call) — math.c:513-549.
+// Two doubles popped off the FPU stack in (2nd arg deeper), one pushed back out.
+#[cfg(target_arch = "x86")]
+macro_rules! create_fpu_func2 {
+    ($name:ident, $call:ident) => {
+        core::arch::global_asm!(
+            ".text",
+            ".align 4",
+            concat!(".globl _", stringify!($name)),
+            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
+            concat!("_", stringify!($name), ":"),
+            "pushl   %ebp",
+            "movl    %esp, %ebp",
+            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
+            "fstpl   8(%esp)",   // store function argument
+            "fwait",
+            "fstpl   (%esp)",
+            "fwait",
+            "movl    $2, %ecx", // empty FPU stack
+            "1:",
+            "fxam",
+            "fstsw   %ax",
+            "and     $0x4500, %ax",
+            "cmp     $0x4100, %ax",
+            "je      2f",
+            "fstpl    (%esp,%ecx,8)",
+            "fwait",
+            "incl    %ecx",
+            "jmp     1b",
+            "2:",
+            "movl    %ecx, -4(%ebp)",
+            concat!("call    _", stringify!($call)),
+            "movl    -4(%ebp), %ecx",
+            "fstpl   8(%esp)", // save result
+            "3:",              // restore FPU stack
+            "decl    %ecx",
+            "fldl    (%esp,%ecx,8)",
+            "cmpl    $1, %ecx",
+            "jne     3b",
+            "leave",
+            "ret",
+            options(att_syntax)
+        );
+    };
+}
+
+// math.c:551-566 — the sixteen invocations, same order, same names.
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIacos, acos);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIasin, asin);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIatan, atan);
+#[cfg(target_arch = "x86")]
+create_fpu_func2!(_CIatan2, atan2);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIcos, cos);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIcosh, cosh);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIexp, exp);
+#[cfg(target_arch = "x86")]
+create_fpu_func2!(_CIfmod, fmod);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIlog, log);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIlog10, log10);
+#[cfg(target_arch = "x86")]
+create_fpu_func2!(_CIpow, pow);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIsin, sin);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIsinh, sinh);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CIsqrt, sqrt);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CItan, tan);
+#[cfg(target_arch = "x86")]
+create_fpu_func1!(_CItanh, tanh);
+
+// extern "C" declarations for the sixteen symbols (i386 "C" linkage adds the
+// matching leading underscore automatically, so `_CIacos` here resolves to
+// the `__CIacos` symbol emitted above — same trick the task's own x87_asin
+// example relies on). math.c itself declares none of these (they're pure
+// linker-visible ABI helpers, not called from C source in this file); the
+// no-arg cdecl signature is confirmed by dll/win32/msvcrt/msvcrt.spec:129-149
+// (`@ cdecl -arch=i386 _CIacos()` etc — args/return travel via the x87 stack,
+// not the normal ABI, hence no Rust-visible parameters).
+#[cfg(target_arch = "x86")]
+extern "C" {
+    pub fn _CIacos() -> f64;
+    pub fn _CIasin() -> f64;
+    pub fn _CIatan() -> f64;
+    pub fn _CIatan2() -> f64;
+    pub fn _CIcos() -> f64;
+    pub fn _CIcosh() -> f64;
+    pub fn _CIexp() -> f64;
+    pub fn _CIfmod() -> f64;
+    pub fn _CIlog() -> f64;
+    pub fn _CIlog10() -> f64;
+    pub fn _CIpow() -> f64;
+    pub fn _CIsin() -> f64;
+    pub fn _CIsinh() -> f64;
+    pub fn _CIsqrt() -> f64;
+    pub fn _CItan() -> f64;
+    pub fn _CItanh() -> f64;
+}
+
+// ============================================================================
+// 5. _ftol — math.c:568-587, i386 only.
+// ============================================================================
+
+// C: __ASM_GLOBAL_FUNC(_ftol,
+//        "pushl   %ebp\n\t"
+//        "movl    %esp, %ebp\n\t"
+//        "subl    $12, %esp\n\t"     /* sizeof(LONGLONG) + 2*sizeof(WORD) */
+//        "fnstcw  (%esp)\n\t"
+//        "mov     (%esp), %ax\n\t"
+//        "or      $0xc00, %ax\n\t"
+//        "mov     %ax, 2(%esp)\n\t"
+//        "fldcw   2(%esp)\n\t"
+//        "fistpq  4(%esp)\n\t"
+//        "fldcw   (%esp)\n\t"
+//        "movl    4(%esp), %eax\n\t"
+//        "movl    8(%esp), %edx\n\t"
+//        "leave\n\t"
+//        "ret")
+// ASMNAME = __ASM_NAME("_ftol") = "__ftol" (second leading underscore).
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".text",
+    ".align 4",
+    ".globl __ftol",
+    ".def __ftol; .scl 2; .type 32; .endef",
+    "__ftol:",
+    "pushl   %ebp",
+    "movl    %esp, %ebp",
+    "subl    $12, %esp", // sizeof(LONGLONG) + 2*sizeof(WORD)
+    "fnstcw  (%esp)",
+    "mov     (%esp), %ax",
+    "or      $0xc00, %ax",
+    "mov     %ax, 2(%esp)",
+    "fldcw   2(%esp)",
+    "fistpq  4(%esp)",
+    "fldcw   (%esp)",
+    "movl    4(%esp), %eax",
+    "movl    8(%esp), %edx",
+    "leave",
+    "ret",
+    options(att_syntax)
+);
+// msvcrt.spec:489 `@ cdecl -arch=i386 -ret64 _ftol()` confirms the no-arg,
+// 64-bit-integer-return (edx:eax) signature used here.
+#[cfg(target_arch = "x86")]
+extern "C" {
+    pub fn _ftol() -> i64;
+}
+
 // /*
 //  * msvcrt.dll math functions
 //  *
@@ -2190,7 +2685,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // void msvcrt_init_math( void *module )
 // {
 //     sse2_supported = ((volatile const BYTE *)(ULONG_PTR)0x7FFE0274)[PF_XMMI64_INSTRUCTIONS_AVAILABLE];
-//     sse2_enabled = FALSE;
+//     sse2_enabled = FALSE as BOOL;
 // }
 //
 // static inline double ret_nan( BOOL update_sw )
@@ -2249,11 +2744,11 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //         /* don't set errno */
 //         break;
 //     case _DOMAIN:
-//         *_errno() = EDOM;
+//         *_errno() = EDOM as i32;
 //         break;
 //     case _SING:
 //     case _OVERFLOW:
-//         *_errno() = ERANGE;
+//         *_errno() = ERANGE as i32;
 //         break;
 //     case _UNDERFLOW:
 //         /* don't set errno */
@@ -2348,7 +2843,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //  */
 // float CDECL MSVCRT_atanf( float x )
 // {
-//     if (isnan(x)) return math_error(_DOMAIN, "atanf", x, 0, x);
+//     if (isnan(x)) return math_error(_DOMAIN, "atanf", x, 0.0, x);
 //     return atanf( x );
 // }
 //
@@ -2359,14 +2854,14 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // {
 //     short c = _fdclass(*x);
 //
-//     if (c == FP_ZERO) return FALSE;
-//     if (c == FP_NAN) return FALSE;
+//     if (c == FP_ZERO as i16) return FALSE;
+//     if (c == FP_NAN as i16) return FALSE;
 //     if (signbit(*x))
 //     {
-//         *x = math_error(_DOMAIN, "sqrtf", *x, 0, ret_nan(TRUE));
+//         *x = math_error(_DOMAIN, "sqrtf", *x, 0.0, ret_nan(TRUE as u8));
 //         return FALSE;
 //     }
-//     if (c == FP_INFINITE) return FALSE;
+//     if (c == FP_INFINITE as i16) return FALSE;
 //     return TRUE;
 // }
 //
@@ -2410,7 +2905,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //     if (isnan( x ))
 //     {
 //         *(UINT32*)&x |= 0x400000;
-//         return math_error(_DOMAIN, "tanhf", x, 0, x);
+//         return math_error(_DOMAIN, "tanhf", x, 0.0, x);
 //     }
 //     return tanhf( x );
 // }
@@ -2444,7 +2939,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //     unsigned int hx = *(ULONGLONG*)&x >> 32;
 //     unsigned int ix = hx & 0x7fffffff;
 //
-//     if (isnan(x)) return math_error(_DOMAIN, "asin", x, 0, x);
+//     if (isnan(x)) return math_error(_DOMAIN, "asin", x, 0.0, x);
 //
 //     /* |x| < 1 */
 //     if (ix < 0x3ff00000)
@@ -2466,7 +2961,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //  */
 // double CDECL MSVCRT_atan( double x )
 // {
-//     if (isnan(x)) return math_error(_DOMAIN, "atan", x, 0, x);
+//     if (isnan(x)) return math_error(_DOMAIN, "atan", x, 0.0, x);
 //     return atan( x );
 // }
 //
@@ -2475,7 +2970,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //  */
 // double CDECL MSVCRT_exp( double x )
 // {
-//     if (isnan( x )) return math_error(_DOMAIN, "exp", x, 0, 1.0 + x);
+//     if (isnan( x )) return math_error(_DOMAIN, "exp", x, 0.0, 1.0 + x);
 //     return exp( x );
 // }
 //
@@ -2485,24 +2980,24 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // {
 //     short c = _dclass(*x);
 //
-//     if (c == FP_ZERO) return FALSE;
-//     if (c == FP_NAN)
+//     if (c == FP_ZERO as i16) return FALSE;
+//     if (c == FP_NAN as i16)
 //     {
 // #ifdef __i386__
 //         if (update_sw)
-//             *x = math_error(_DOMAIN, "sqrt", *x, 0, *x);
+//             *x = math_error(_DOMAIN, "sqrt", *x, 0.0, *x);
 // #else
 //         /* set signaling bit */
-//         *(ULONGLONG*)x |= 0x8000000000000ULL;
+//         *(ULONGLONG*)x |= 0x8000000000000u64;
 // #endif
 //         return FALSE;
 //     }
 //     if (signbit(*x))
 //     {
-//         *x = math_error(_DOMAIN, "sqrt", *x, 0, ret_nan(update_sw));
+//         *x = math_error(_DOMAIN, "sqrt", *x, 0.0, ret_nan(update_sw));
 //         return FALSE;
 //     }
-//     if (c == FP_INFINITE) return FALSE;
+//     if (c == FP_INFINITE as i16) return FALSE;
 //     return TRUE;
 // }
 //
@@ -2548,8 +3043,8 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // {
 //     if (isnan( x ))
 //     {
-//         *(UINT64*)&x |= 0x0008000000000000ULL;
-//         return math_error(_DOMAIN, "tanh", x, 0, x);
+//         *(UINT64*)&x |= 0x0008000000000000u64;
+//         return math_error(_DOMAIN, "tanh", x, 0.0, x);
 //     }
 //     return tanh( x );
 // }
@@ -3291,7 +3786,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // double CDECL _chgsign(double num)
 // {
 //     union { double f; UINT64 i; } u = { num };
-//     u.i ^= 1ull << 63;
+//     u.i ^= 1u64 << 63;
 //     return u.f;
 // }
 //
@@ -3374,7 +3869,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //     if (!MSVCRT_CHECK_PMT( !(newval & mask & ~all_flags) ))
 //     {
 //         if (cur) *cur = _controlfp( 0, 0 );  /* retrieve it anyway */
-//         return EINVAL;
+//         return EINVAL as i32;
 //     }
 //     val = _controlfp( newval, mask );
 //     if (cur) *cur = val;
@@ -3505,7 +4000,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // int CDECL _finite(double num)
 // {
 //     union { double f; UINT64 i; } u = { num };
-//     return (u.i & ~0ull >> 1) < 0x7ffull << 52;
+//     return (u.i & ~0ull >> 1) < 0x7ffu64 << 52;
 // }
 //
 // /*********************************************************************
@@ -3534,7 +4029,7 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // int CDECL _isnan(double num)
 // {
 //     union { double f; UINT64 i; } u = { num };
-//     return (u.i & ~0ull >> 1) > 0x7ffull << 52;
+//     return (u.i & ~0ull >> 1) > 0x7ffu64 << 52;
 // }
 //
 //
@@ -3591,11 +4086,11 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //     int prec, len;
 //     char *result;
 //
-//     if (!MSVCRT_CHECK_PMT(buffer != NULL)) return EINVAL;
-//     if (!MSVCRT_CHECK_PMT(decpt != NULL)) return EINVAL;
-//     if (!MSVCRT_CHECK_PMT(sign != NULL)) return EINVAL;
-//     if (!MSVCRT_CHECK_PMT_ERR( length > 2, ERANGE )) return ERANGE;
-//     if (!MSVCRT_CHECK_PMT_ERR(ndigits < (int)length - 1, ERANGE )) return ERANGE;
+//     if (!MSVCRT_CHECK_PMT(buffer != NULL)) return EINVAL as i32;
+//     if (!MSVCRT_CHECK_PMT(decpt != NULL)) return EINVAL as i32;
+//     if (!MSVCRT_CHECK_PMT(sign != NULL)) return EINVAL as i32;
+//     if (!MSVCRT_CHECK_PMT_ERR( length > 2, ERANGE )) return ERANGE as i32;
+//     if (!MSVCRT_CHECK_PMT_ERR(ndigits < (int)length - 1, ERANGE )) return ERANGE as i32;
 //
 //     /* handle cases with zero ndigits or less */
 //     prec = ndigits;
@@ -3723,8 +4218,8 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //
 //     if (!outbuffer || !decpt || !sign || size == 0)
 //     {
-//         *_errno() = EINVAL;
-//         return EINVAL;
+//         *_errno() = EINVAL as i32;
+//         return EINVAL as i32;
 //     }
 //
 //     stop = _snprintf(buf, 80, "%.*f", ndigits < 0 ? 0 : ndigits, number);
@@ -3804,12 +4299,12 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 // char *  _gcvt( double number, int ndigit, char *buff )
 // {
 //     if(!buff) {
-//         *_errno() = EINVAL;
+//         *_errno() = EINVAL as i32;
 //         return NULL;
 //     }
 //
 //     if(ndigit < 0) {
-//         *_errno() = ERANGE;
+//         *_errno() = ERANGE as i32;
 //         return NULL;
 //     }
 //
@@ -3825,23 +4320,23 @@ pub unsafe extern "C" fn _scalbf(num: float, power: __msvcrt_long) -> float {
 //     int len;
 //
 //     if(!buff) {
-//         *_errno() = EINVAL;
-//         return EINVAL;
+//         *_errno() = EINVAL as i32;
+//         return EINVAL as i32;
 //     }
 //
 //     if( digits<0 || digits>=size) {
 //         if(size)
 //             buff[0] = '\0';
 //
-//         *_errno() = ERANGE;
-//         return ERANGE;
+//         *_errno() = ERANGE as i32;
+//         return ERANGE as i32;
 //     }
 //
 //     len = _scprintf("%.*g", digits, number);
 //     if(len > size) {
 //         buff[0] = '\0';
-//         *_errno() = ERANGE;
-//         return ERANGE;
+//         *_errno() = ERANGE as i32;
+//         return ERANGE as i32;
 //     }
 //
 //     sprintf(buff, "%.*g", digits, number);

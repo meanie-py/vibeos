@@ -89,6 +89,15 @@ ARCHS = {
 
 # Types we need Rust-side. bindgen pulls transitive deps automatically.
 ALLOWLIST_TYPES = [
+    # math.c's two public struct types: `_exception` is what `__setusermatherr`'s callback
+    # is handed (five fields, one of them a `char *` the caller may print) and `_complex`
+    # is `_cabs`'s by-VALUE parameter, so its layout is the calling convention. Both are
+    # the shape a hand-written Rust struct gets right on one arch and wrong on another.
+    "_exception",
+    "_complex",
+    # winnt.h's fixed-width aliases math.c transmutes floats through.
+    "UINT64",
+    "INT64",
     "__thread_data",
     "threadlocaleinfostruct",
     "threadmbcinfostruct",
@@ -275,6 +284,16 @@ WRAPPER_SRC = """\
    3 in ucrt/stdio.h, so a transcribed constant is right only until someone reads the
    other header -- the same silent divergence `_IOMYBUF` is the worked example of. */
 #include "mtdll.h"
+/* math.c: float.h owns the whole _MCW_, _EM_, _RC_, _PC_ and _DN_ control-word
+   vocabulary, and math.h owns the _FPCLASS_ and FP_ classification results. These are
+   the worst case for an invented literal: _setfp maps hardware bits onto them in BOTH
+   directions, so one constant arriving as a number instead of a name silently changes
+   the floating-point environment of the whole OS. process.c: process.h owns the _P_
+   spawn modes, where a swapped _P_WAIT/_P_OVERLAY pair changes whether a spawned
+   process is waited for or replaces the caller. */
+#include <float.h>
+#include <math.h>
+#include <process.h>
 """
 
 
@@ -462,6 +481,12 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|GetTimeZoneInformation|SystemTimeToFileTime|FileTimeToSystemTime"
         "|SystemTimeToTzSpecificLocalTime|GetDateFormatW|GetTimeFormatW"
         "|WideCharToMultiByte|lstrcpynA"
+        # winbase.h: process.c's half of the Win32 surface. CreateProcessW takes ten
+        # arguments including two structs and three BOOLs — the single worst shape to
+        # hand-write an extern for, and the reason this island exists.
+        "|CreateProcessW|WaitForSingleObject|GetExitCodeProcess|TerminateProcess"
+        "|GetProcessHeap|HeapAlloc|HeapFree|HeapReAlloc"
+        "|LoadLibraryW|FreeLibrary|GetProcAddress|GetModuleFileNameW"
         # CRT siblings file.c calls that are still C. The ones already Rust in
         # msvcrt-crt-rust are IMPORTED there instead, so rustc checks them against their
         # definition; these have no Rust definition to check against, which is exactly
@@ -520,6 +545,25 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # setypes.h's DELETE is the access right file.c asks for when opening a file it
         # intends to unlink; windef.h's TRUE/FALSE are BOOL, not Rust bools.
         "|_STREAM_LOCKS|_TOTAL_LOCKS|_LAST_STREAM_LOCK|DELETE|TRUE|FALSE"
+        # ── math.c ──────────────────────────────────────────────────────────
+        # float.h's control/status-word vocabulary, whole families rather than the
+        # names one wave happens to touch: `_setfp` and `_setfp_sse` translate between
+        # these and the raw x87/MXCSR/FPCR bits in BOTH directions, so any one of them
+        # arriving as a literal is a mask landing in the wrong field, and no compiler
+        # or boot will say so. math.h's classification results come along for _fpclass
+        # and the sqrt validators.
+        "|_MCW_[A-Z]+|_EM_[A-Z]+|_SW_[A-Z]+|_RC_[A-Z]+|_PC_[0-9]+|_DN_[A-Z_]+|_IC_[A-Z]+"
+        "|_FPCLASS_[A-Z]+|FP_[A-Z]+|_CVTBUFSIZE|_FPE_[A-Z]+"
+        # winnt.h: the KUSER_SHARED_DATA feature slot `msvcrt_init_math` reads to decide
+        # whether SSE2 exists. An index, so a wrong value reads a different feature bit.
+        "|PF_[A-Z0-9_]+"
+        # ── process.c ───────────────────────────────────────────────────────
+        # process.h's spawn modes (_P_WAIT=0, _P_NOWAIT=1, _P_OVERLAY=2, _P_NOWAITO=3,
+        # _P_DETACH=4 — five small integers in one family, i.e. exactly the shape a
+        # permuted recall produces), mtdll.h's popen lock slot, and the winbase.h
+        # process-creation flags `msvcrt_spawn` passes to CreateProcessW.
+        "|_P_[A-Z]+|_POPEN_LOCK|STARTF_[A-Z_]+|DETACHED_PROCESS|INFINITE"
+        "|WAIT_[A-Z_]+|STILL_ACTIVE|NORMAL_PRIORITY_CLASS"
         # ── time.c ──────────────────────────────────────────────────────────
         # winbase.h's three time-zone verdicts, and they are the §9.112 shape
         # exactly: `_ftime64` compares GetTimeZoneInformation's return against

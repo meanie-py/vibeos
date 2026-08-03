@@ -147,25 +147,86 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
-**Wave 20 (2026-08-02) — math.c TRANSLATED AND BANKED, deliberately NOT flipped.**
-`msvcrt-crt-rust/src/msvcrt/math.rs`, 91 exports, $2.29. There is no `pub mod math;`: the
-file has never been in the build, so nothing is hidden from the smoke harness — this is the
-netcfgx disposition (paid output kept readable in the tree until it is ready), not the
-commented-out-module anti-pattern. The module header carries the owed list; the short version
-is that **the 64 inline-asm sites are wrong and must be rewritten by hand.** math.c reaches
-the x87 control word and MXCSR through GCC MEMORY operands
-(`__asm__ __volatile__("stmxcsr %0" : "=m"(ret))`) and the translation rendered them as
-REGISTER operands (`asm!("stmxcsr {}", out(reg) ret)`). `stmxcsr`/`fstsw`/`fstcw`/`fnstenv`/
-`fldcw` all require memory, so most will not assemble — the danger is the handful that would.
-This is the FP control state for the whole OS: a mask bit in the wrong field changes the
-result of every float operation, silently. It wants a careful pass with a smoke behind it.
+**Wave 21 (2026-08-03) — process.c FLIPPED. All 50 functions.**
+`msvcrt-crt-rust/src/msvcrt/process.rs`. The whole `_exec*`/`_spawn*`/`_popen` family, plus
+`_cwait`, `_loaddll`/`_unloaddll`/`_getdllprocaddr` and `_getpid`. 41 bodies replayed from the
+resume cache for $0, 7 lowered deterministically, and **2 hand-written**: `msvcrt_spawn` and
+`_wpopen` failed the deterministic CALL envelope on nine consecutive runs, which is a
+restructured-lowering rejection rather than a model error and does not improve with retries.
 
-Two smaller items are already handled: nine symbols (`_finite`, `_isnan`, `_chgsignf`,
-`abs`, `div`, `labs`, `ldexp`, …) are `#[cfg(any())]` because cnt-rust's difftest-pinned
-`cabi/math.rs` exports them into the same archive and two strong definitions in one archive
-resolve by member order; and fifteen bodies are flagged `UNVERIFIED CONSTANTS` by the new
-seal guard and need a hand diff before the flip (spot-checks of `MSVCRT_asin`,
-`sqrt_validate` and `_setfp`'s head came back faithful).
+That pair was blocking the other 48, so `rustconv translate` grew **`--skip-fn`**: it drops
+named bodies from the worklist, assembles the rest, and records each omission as an audit
+finding so the gap cannot go quiet. (`--exclude` filters FILE stems and could never do this.)
+The whole TU then reassembled for $0.10.
+
+**The sixteen `WINAPIV` entry points** (`_execl`, `_execle`, … `_wspawnlpe`) are `va_start`
+trampolines in `dll/win32/msvcrt/rust_process_varargs_shim.c` over `_v`-prefixed Rust twins,
+the same shape as file.c's twenty and for the same pinned-stable reason: receiving a `va_list`
+is fine, starting one is not. The four `_execle`-family twins need to walk the list TWICE (once
+to build the command line, once to skip past it and read `envp`), and they do it from one
+snapshot — sound only because `va_list` is a flat pointer on every Windows target here and
+`msvcrt_valisttos` takes it by value. That reasoning is written out at the twins rather than
+assumed.
+
+`system` and `_wsystem` are `#[cfg(any())]` — `#ifndef __REACTOS__`, confirmed against all
+three objects. `msvcrt_get_comspec` is NOT gated despite being absent from `nm`: it is inlined
+into its sole caller, which is the trap the object-table rule has to be read carefully to
+avoid. The module sits behind the `stdio` feature for the same reason file.c does — `_popen`/
+`_wpopen`/`_pclose` stand on file.c's fd table, and an ungated `pub mod` broke the scanf
+difftest, which turns `stdio` off to own the character-source names itself.
+
+**Two defects found by audit**, both the wide-literal class rather than a permuted constant:
+`msvcrt_search_executable`'s `L"PATH"` was one byte short of a UTF-16 NUL, so `_wgetenv` read
+the final code unit's high half out of bounds and PATH search silently matched nothing for
+every `use_path=1` spawn; and `_wsystem`'s `L" /c "` was plain ASCII cast to `*const wchar_t`.
+Both are now caught by `scan_wide_literals.py` — see the field manual.
+
+**Wave 20 (2026-08-03) — math.c FLIPPED, and the object symbol table is why it is correct.**
+`msvcrt-crt-rust/src/msvcrt/math.rs` is now `pub mod math;`. The banked translation from
+2026-08-02 (91 exports, $2.29) needed four kinds of work before it could go in, and only the
+first was the one the header predicted.
+
+**The inline asm.** Of the 64 asm sites, 48 turned out to be inside `#ifndef __REACTOS__` —
+the `__libm_sse2_*` wrappers, not compiled here at all. The 16 that remain are the real FP
+control state, and the aarch64/arm half (`mrs`/`msr` on FPSR/FPCR, `vmrs`/`vmsr` on FPSCR)
+was already correct, because those genuinely take register operands. Only the x86 half was
+wrong: `stmxcsr`, `ldmxcsr`, `fstsw`, `fstcw`, `fnstenv`, `fldenv`, `fldcw` have no register
+form. Rust's `asm!` has no `m` constraint, so the shape is a register holding the ADDRESS,
+dereferenced in the template, written in `options(att_syntax)` so the instruction text is the
+C's character for character. `fldenv`'s eight `st(n)` clobbers cannot be transcribed — Rust's
+x86 asm has no `st` register class — which is safe here only because the function is
+integer-only and returns immediately after; that reasoning is written at the site.
+
+**What the object said and the source did not.** Cross-referencing `llvm-nm --defined-only`
+on `math.c.obj` against the Rust caught three flip-breaking bugs the C reads past:
+`MSVCRT__rotl64`/`MSVCRT__rotr64` had been translated under a bare `_rotl64`/`_rotr64`
+(Rust defines a symbol nothing imports, the C body stays live, and the flip is a silent
+no-op); `math_error` must be *exported* as `_invoke_matherr`, because CMakeLists carries
+`-Dmath_error=_invoke_matherr`; and the same `-D` list retargets `asm_sqrt`/`asm_sqrtf`/
+`x87_asin` to libm, which rewrites the call sites but not the `__ASM_GLOBAL_FUNC` labels, so
+those three stubs are defined-but-dead and the Rust follows the call sites instead. The i386
+`_CI*` family, `_ftol` and the eight `__stdcall` FDIV stubs ARE referenced (they are
+`.spec` exports), so they are defined here — the `_CI*` and `_ftol` as `global_asm!`
+transcribed verbatim from the C, the FDIV stubs with `#[export_name = "__adj_fdiv_m16i@4"]`
+because `#[no_mangle]` cannot spell an i386 `__stdcall` decoration.
+
+**Twenty-two `__libm_sse2_*`, `_fpclass`, `ldiv`, `fenv_encode` and `fenv_decode`** are
+`#[cfg(any())]` for `#ifndef __REACTOS__` / `_MSVCR_VER` reasons, alongside the nine already
+gated because cnt-rust's difftest-pinned `cabi/math.rs` exports them into the same archive.
+The `#ifndef __i386__` and `#ifdef __i386__` families are now arch-gated rather than defined
+everywhere.
+
+**The audit found four real defects in sixteen flagged bodies**, plus one in a body that was
+never flagged. `_fcvt_s` was the worst: all three `size--` sites had been translated as
+`let mut size = size; size -= 1;` *inside* the enclosing `if size > 1` block, so every
+decrement mutated a shadow that died at the closing brace and the caller's buffer bound never
+moved — an out-of-bounds write in the one API whose entire job is to prevent one. `_ecvt_s`
+never decremented `len` after the sign strip, shortening both `memmove`s. `_setfp`'s aarch64
+arm copied `~(old_fpcr >> 8) & fpsr & 0x9f != fpsr & 0x9f` across verbatim, which is a
+different expression in Rust: C binds `!=` tighter than `&`. And `MSVCRT_exp` — *not* on the
+flagged list — had `_DOMAIN` demoted to `0`, silently turning a NaN domain error into no
+errno at all. Every other flagged body diffed clean, which is the calibration: the list is a
+review queue, not a defect list.
 
 **Wave 19 (2026-08-02) — time.c FLIPPED. 52 of 52 exports at `_MSVCR_VER=0`.**
 `msvcrt-crt-rust/src/msvcrt/time.rs`, the whole file: the calendar (`_mktime32/64`,
