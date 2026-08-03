@@ -1,13 +1,32 @@
 //! Spinlock support — exports the HAL flavor of the kernel spinlock /
 //! queued-spinlock / CMOS-hardware-lock primitives.
 //!
-//! Translated from `hal/halx86/generic/spinlock.c`.  We're a UP-only
-//! build (`HalpBuildType` always has `PRCB_BUILD_UNIPROCESSOR` set —
-//! see `buildtype.rs`) compiled with `_USE_DUMMY_PSEH`, so the
-//! `KxAcquireSpinLock` / `KxReleaseSpinLock` body from
-//! `ntoskrnl/include/internal/spinlock.h` collapses to a compiler
-//! barrier and nothing else.  The queued-spinlock variants degenerate
-//! to plain IRQL raise/lower with the lock-walk skipped.
+//! Translated from `hal/halx86/generic/spinlock.c`, whose first comment is
+//! "This file is compiled twice. Once for UP and once for MP" — and since the
+//! halmp.dll twin landed, so is this crate: `hal-cargo` builds hal.dll and
+//! `halmp-cargo` builds halmp.dll from these same sources, one `smp` feature
+//! apart.  So the `KxAcquireSpinLock` / `KxReleaseSpinLock` bodies below must
+//! track BOTH axes of `ntoskrnl/include/internal/spinlock.h`:
+//!
+//!   * `CONFIG_SMP` — the interlocked acquire loop, on for halmp only;
+//!   * `KI_TRACK_SPINLOCK_OWNER` (plain `#if DBG`) — the owner stamp, which
+//!     the C half writes on EVERY checked build, UP included, and which the
+//!     release then clears (`CONFIG_SMP || KI_TRACK_SPINLOCK_OWNER`).
+//!
+//! Hence: no private copy.  Both funnel straight into
+//! `ntkrnl_sys::inline::ke`, the same implementation ntoskrnl-rust uses, so
+//! the kernel and HAL halves cannot drift.  They already had: this file used
+//! to hard-code a bare compiler fence for both, under a docstring asserting
+//! "we're a UP-only build".  The kernel stamped locks that the HAL never
+//! cleared, and on halmp a real interlocked `KeTryToAcquireSpinLockAtDpcLevel`
+//! got paired with a release that did nothing — so the i386 PFN queued lock
+//! could be try-acquired exactly once per boot and failed forever after
+//! (kmtest KeSpinLock runs 22-26).  Worse than the test row: on i386 the whole
+//! `Ke*SpinLock*` surface is a HAL export, so halmp offered no mutual
+//! exclusion at all beyond the IRQL raise.
+//!
+//! The queued-spinlock variants still degenerate to plain IRQL raise/lower
+//! with the lock-walk skipped — that HACK is upstream's, and unchanged here.
 //!
 //! The two `Halp*CmosSpinLock` exports are compiled for both i386 and
 //! amd64 — they're the CMOS spinlock that `cmos.rs`, `spinlock.c`,
@@ -68,15 +87,37 @@ unsafe fn disable_interrupts() {
 }
 
 // ---------------------------------------------------------------------------
-// KxAcquireSpinLock / KxReleaseSpinLock — UP + DUMMY_PSEH collapse to just
-// a compiler memory barrier (per internal/spinlock.h).
+// KxAcquireSpinLock / KxReleaseSpinLock — delegate to the kernel's copy so
+// there is exactly one implementation of the funnel (see the module docs).
+// hal-rust's `smp` feature forwards to `ntkrnl-sys/smp`; `dbg` is on by
+// default there, mirroring the C tree's global -DDBG=1.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(feature = "minihal"))]
+#[inline(always)]
+unsafe fn kx_acquire_spinlock(lock: PKSPIN_LOCK) {
+    unsafe { ntkrnl_sys::inline::ke::KxAcquireSpinLock(lock as *mut _) }
+}
+
+#[cfg(not(feature = "minihal"))]
+#[inline(always)]
+unsafe fn kx_release_spinlock(lock: PKSPIN_LOCK) {
+    unsafe { ntkrnl_sys::inline::ke::KxReleaseSpinLock(lock as *mut _) }
+}
+
+// FreeLDR's loader-time mini-HAL keeps the bare fence. The owner stamp reads
+// KeGetCurrentThread(), and pre-kernel there is no KPCR to read it out of;
+// the C mini_hal's own KefAcquireSpinLockAtDpcLevel stub is the only place
+// upstream writes the stamp there, and this port already declined to mirror
+// it (see that fn below). Single-threaded by construction, so the acquire has
+// nothing to exclude either way.
+#[cfg(feature = "minihal")]
 #[inline(always)]
 unsafe fn kx_acquire_spinlock(_lock: PKSPIN_LOCK) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
+#[cfg(feature = "minihal")]
 #[inline(always)]
 unsafe fn kx_release_spinlock(_lock: PKSPIN_LOCK) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);

@@ -2006,6 +2006,42 @@ in FFI signatures (`heap_alloc(len: usize)`, not `SIZE_T`) — `crate-repair` wi
 to bake `as u32` on i386 and `as u64` on amd64/arm64 for the same expression, and rightly
 refuses.
 
+**Variant: the resolved-away arm was a BUILD FLAVOUR, and the flavour later changed.** Same
+class, but it compiles and boots, so nothing points at it for months. `hal/halx86/generic/
+spinlock.c` opens with `/* This file is compiled twice. Once for UP and once for MP */`; the
+Rust took the UP arm of `KxAcquireSpinLock`/`KxReleaseSpinLock` (a bare compiler fence) as
+unconditional, and wrote a module docstring saying so — *"We're a UP-only build"*. True when
+written. Then the halmp.dll twin landed and one crate started building both flavours, one
+cargo feature apart, with neither funnel looking at the feature. **A docstring recording an
+assumption is not a safeguard against the assumption changing — it is the bug's alibi.** Two
+tells worth grepping for: a C comment that the file is compiled more than once, and a
+translated file that names a build flavour in prose instead of in a `cfg`.
+
+The damage was doubled by resolving away a *second* axis in the same expression:
+`KxReleaseSpinLock` clears the lock under `CONFIG_SMP || KI_TRACK_SPINLOCK_OWNER`, and
+`KI_TRACK_SPINLOCK_OWNER` is plain `#if DBG` — so the C clears on every checked build, UP
+included. Dropping both arms left the *kernel* half stamping owners that the *HAL* half never
+cleared. On MP that paired a real interlocked `KeTryToAcquireSpinLockAtDpcLevel` with a
+release that did nothing: the i386 PFN queued lock could be try-acquired exactly once per
+boot and failed forever after. Beyond the test row, halmp.dll's whole i386 `Ke*SpinLock*`
+export surface — the HAL owns it there, per `hal.spec` `-arch=i386,arm,arm64` — offered no
+mutual exclusion at all beyond the IRQL raise.
+
+**Fix.** Delete the copy rather than repair it: both HAL funnels now call
+`ntkrnl_sys::inline::ke::Kx{Acquire,Release}SpinLock`, the same code ntoskrnl-rust uses, with
+`hal-rust/smp` forwarding to `ntkrnl-sys/smp`. `spinlock.h` had already written the rule down
+— *"the two MUST agree, or a lock stamped by one side is never cleared by the other"* — which
+a second implementation cannot enforce and a shared one cannot violate. i386 kmtest
+`KeSpinLock` went 710/75 → 753/32 on UP and 706/79 → 754/31 on MP.
+
+Two diagnostics that generalise. **Compare the same row across arches before theorising**: i386
+sat at 710/75 where amd64 and arm64 were 321/2, and amd64 is exactly the arch that gets these
+from `ntoskrnl.spec` instead of the HAL — the outlier named the layer. And **a ratchet compares
+numbers, not reasons**: the pre-fix UP and MP runs both banked 306 IoInterrupt failures, so the
+row looked stable, but UP was failing `ok_eq_bool(*Lock != 0, TRUE)` and MP was failing
+`ok_eq_ulongptr(*Lock, 1)` — identical counts, different causes. Diff the failure TEXT, not the
+tallies.
+
 ### A `#include`-built table has a different ROW SET under the wrong preprocessor config
 The C does `static const T tbl[] = { #include "Data.h" };` where the rows are `#if`-guarded on
 build macros. Preprocess with the wrong config and you get a different row set — compiling,

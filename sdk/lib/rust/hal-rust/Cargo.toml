@@ -28,7 +28,12 @@ minihal = []
 # hal-cargo build.rs (plumbed from cmake -DVIBEOS_SMP_DEFAULT_BOOT=ON, i.e.
 # `vibeos-cli build --smp-kernel`). An smp HAL pairs with ntkrnlmp.exe and
 # REFUSES the UP ntoskrnl.exe (exact-equality BuildType check) — by design.
-smp = []
+#
+# Forwards to `ntkrnl-sys/smp` because x86/spinlock.rs's Kx{Acquire,Release}
+# funnel IS ntkrnl-sys's (one implementation, so the kernel and HAL halves of
+# a lock cannot disagree). Without the forward, halmp.dll would raise IRQL and
+# call a UP no-op instead of taking the lock.
+smp = ["ntkrnl-sys/smp"]
 # APIC HAL flavor for i386 (i386-apic-hal lane). amd64 is ALWAYS the APIC
 # flavor (no feature needed — build.rs emits `hal_apic` unconditionally on
 # x86_64); on i386 the default is the 8259 PIC flavor and this feature swaps
