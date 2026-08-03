@@ -147,6 +147,26 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 20 (2026-08-02) — math.c TRANSLATED AND BANKED, deliberately NOT flipped.**
+`msvcrt-crt-rust/src/msvcrt/math.rs`, 91 exports, $2.29. There is no `pub mod math;`: the
+file has never been in the build, so nothing is hidden from the smoke harness — this is the
+netcfgx disposition (paid output kept readable in the tree until it is ready), not the
+commented-out-module anti-pattern. The module header carries the owed list; the short version
+is that **the 64 inline-asm sites are wrong and must be rewritten by hand.** math.c reaches
+the x87 control word and MXCSR through GCC MEMORY operands
+(`__asm__ __volatile__("stmxcsr %0" : "=m"(ret))`) and the translation rendered them as
+REGISTER operands (`asm!("stmxcsr {}", out(reg) ret)`). `stmxcsr`/`fstsw`/`fstcw`/`fnstenv`/
+`fldcw` all require memory, so most will not assemble — the danger is the handful that would.
+This is the FP control state for the whole OS: a mask bit in the wrong field changes the
+result of every float operation, silently. It wants a careful pass with a smoke behind it.
+
+Two smaller items are already handled: nine symbols (`_finite`, `_isnan`, `_chgsignf`,
+`abs`, `div`, `labs`, `ldexp`, …) are `#[cfg(any())]` because cnt-rust's difftest-pinned
+`cabi/math.rs` exports them into the same archive and two strong definitions in one archive
+resolve by member order; and fifteen bodies are flagged `UNVERIFIED CONSTANTS` by the new
+seal guard and need a hand diff before the flip (spot-checks of `MSVCRT_asin`,
+`sqrt_validate` and `_setfp`'s head came back faithful).
+
 **Wave 19 (2026-08-02) — time.c FLIPPED. 52 of 52 exports at `_MSVCR_VER=0`.**
 `msvcrt-crt-rust/src/msvcrt/time.rs`, the whole file: the calendar (`_mktime32/64`,
 `_mkgmtime32/64`, `_localtime32/64(_s)`, `_gmtime32/64(_s)`), the clock (`_time32/64`,

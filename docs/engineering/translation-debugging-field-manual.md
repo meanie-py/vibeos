@@ -1746,6 +1746,25 @@ of them were **ours**, not the model's:
   `--seal-facts` run is evidence about the value SET, never about placement — read the
   constant-dense functions.**
 
+  **Why it concentrates in msvcrt, and what to do about it: SEALING IS DEFEATED BY RECALL.**
+  The sealed body handed to the model has the tokens inline, so writing real values back means
+  the model did not translate the text in front of it — it recognised the function and wrote it
+  from memory. msvcrt is one of the most-reproduced C bodies in existence, which is exactly why
+  this shows up here and not in the driver waves, and it is also why RETRYING DOES NOT HELP:
+  recall is stable across samples. `_setfp_sse` and `sqrt_validate` each burned six identical
+  retries before being accepted-and-flagged. **Operationally: use `--retry-rejects 1` on a
+  famous module** — one honest re-roll, then take the `UNVERIFIED CONSTANTS` list from AUDIT.md
+  and diff those bodies against the C by hand. Retrying a recalled function is the same paid
+  call over and over.
+
+  **Calibration, so the list is read correctly: a recalled body is usually RIGHT.** Hand-diffing
+  math.c's flagged bodies against the C found `MSVCRT_asin` (`0x3ff00000`, `_MCW_EM|_MCW_RC`,
+  `_DOMAIN`) and `sqrt_validate` (`FP_ZERO`/`FP_NAN`/`FP_INFINITE`, the
+  `0x8000000000000ULL` signaling bit) faithful in every slot. `_tzset` is the exception, not
+  the rule. So `UNVERIFIED CONSTANTS` is a REVIEW QUEUE, not a defect list — treat a long one
+  as a reading assignment rather than evidence the wave is broken, and do not "fix" a flagged
+  body you have not first diffed.
+
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
 `--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is
