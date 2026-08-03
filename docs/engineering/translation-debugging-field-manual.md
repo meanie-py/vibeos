@@ -2863,6 +2863,20 @@ green by a suite that never looked at the field carrying the bug. **Compare the 
 out-parameter, or write down which field you dropped and why.** Pointer values legitimately
 differ between the two sides, but `is_null()` does not — grade the property, not the address.
 
+**The same rule governs RUNTIME tripwires, and there the blind spot is reachability: an
+instrument only observes the call paths that reach the function it lives in.** A per-arch
+reimplementation of a shared helper silently exempts its entire arch, and the clean rounds that
+follow read as evidence when they were never a test. The `SPIN_LOCK_ALREADY_OWNED` self-deadlock
+tripwire lives in `ntkrnl-sys` `KxAcquireSpinLock`; arm64's HAL had its own plain-store spinlock
+helpers and never called it, and `hal.spec` exports the whole `Ke*SpinLock*` surface
+`-arch=i386,arm,arm64` — so on arm64 every driver call site and every caller using the export
+rather than the inline was invisible to it. A 20-round soak was recorded as "a weak negative for
+the spinlock hypothesis"; it constrained almost nothing, because the detector was not installed
+on the surface under suspicion. **Before crediting a negative from an instrument, grep for every
+implementation of the function it lives in — per arch AND per build flavour — and confirm the
+suspect path actually reaches it.** A tripwire in a shared funnel is only as broad as the set of
+callers that genuinely funnel.
+
 And after fixing anything a harness caught, **re-break one site deliberately and confirm the
 suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
 tuple that can never disagree, and the result reads exactly like a stronger test.
