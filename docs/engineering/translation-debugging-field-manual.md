@@ -1722,6 +1722,19 @@ of them were **ours**, not the model's:
   Diagnosis rule that saves the money: **when a worker is rejected twice for the same token, read
   the sealed prompt (`--dry-run --prompt --fn NAME`, free) before paying for a third attempt.**
   Four retries is the tool telling you the envelope is impossible, not the model being weak.
+  **Two more members of the family, both from `folders/CFSFolder.cpp`.** A C++ **default argument**
+  sealed as a value: `BOOL AllowFolder = __RUSTCONV_FACT_0000__` (`ExtensionFromPidl`, 3 rejects).
+  Rust has no default arguments, so the token has nowhere to go — same helper as the array bound,
+  since both are values living only in declarator syntax; guard the comparison operators while you
+  are there, or `==`/`!=` opens a default-argument span and swallows the rest of the list. And a
+  macro the body ITSELF defines: `_AddFindResult` opens with
+  `#define SUPER_HIDDEN (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)`, and cpp_com's body audit
+  rejected the worker for `const`-defining it "instead of using substrate" — but no island can
+  carry a function-local macro, so defining it *is* the translation. Exempt what the body
+  `#define`s; the operands stay sealed and the dropped-constant check still demands the name.
+  Generalisation worth carrying: **every one of these four is the audit demanding something that
+  cannot exist.** If a rejection names a token whose only home is C declarator syntax or a
+  TU-local directive, suspect the envelope before the model.
 - **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
   walks raw C, so it also seals tokens in code the compiler emits but the build never enters, and
   then DEMANDS them of a translation that is right to omit them. Two flavours, one class:
@@ -1983,6 +1996,18 @@ Four things that cost precision, all of them found by being wrong first:
   reports them as `NOOP` and treats their callers as silent. Note the C-side equivalent is
   invisible from a Rust scanner and must be grepped separately —
   `dll/win32/{cabinet,mlang}/rust_cohab_stub.c` define no-op `ERR`/`FIXME`.
+- **Both spellings of a channel must score, or the lint cannot be satisfied.** `ERR` was in
+  `ALWAYS_ON` (so an `ERR(...)` in the C counted) but only the bare-call form was recognised on
+  the Rust side — never the `ERR!(...)` macro that every wine-derived crate actually uses. Its
+  sibling `FIXME` was covered in both forms. So a function whose only diagnostic is ERR stayed
+  flagged no matter how faithfully it was restored, which is noise, not silence. Fixed by adding
+  `err` to `LIVE_PRINT_NAMES` (+3/-75 on the baseline; the 3 are `[ALL]`→`[PARTIAL]`
+  reclassifications, not new debt). Corollary when reading a finding on a **usermode** crate:
+  shell32-rust's `TRACE!`/`ERR!`/`WARN!`/`FIXME!` are all no-op `macro_rules!` in `lib.rs`, so the
+  call sites score as live while emitting nothing. That is not the `[§9.65]` trap (they are
+  macros, not out-of-line fns) but the diagnostics are still dark, and the scanner cannot see a
+  cross-file no-op macro the way it sees a file-local no-op `fn`. Giving that crate a real wine
+  debug sink is owed.
 
 **And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
 `_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash

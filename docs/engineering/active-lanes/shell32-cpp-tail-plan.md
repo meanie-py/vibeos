@@ -128,6 +128,32 @@ because many activated class bodies are now dead, but the TU does not count as r
 the remaining live closure is Rust. `CShellLink.cpp` is intentionally deferred to the
 monolith wave: its retained helper surface is still 3.3K lines.
 
+**Measure the retained closure before scoping any hybrid — it is a link fact, not a guess.**
+Intersect the TU's defined symbols with what the REST of the link leaves undefined, and count
+`libshell32_rust.a` as one of the consumers or you will miss every `*_RustBridge` (the first
+pass on `CFSFolder.cpp` scanned only `shell32.dir/*.obj` and reported 7 symbols instead of 21):
+
+```bash
+nm --defined-only build-i386/.../folders/CFSFolder.cpp.obj | awk '$2~/^[TtDdBbRr]$/{print $3}' | sort -u > def
+find build-i386/dll/win32/shell32 -name '*.obj' ! -path '*CFSFolder*' -print0 | xargs -0 nm --undefined-only \
+  | awk '$1=="U"{print $2}' | sort -u > undef
+nm --undefined-only build-i386/dll/win32/shell32/libshell32_rust.a | awk '$1=="U"{print $2}' | sort -u >> undef
+comm -12 def <(sort -u undef)
+```
+
+For `CFSFolder.cpp` (2,283 lines) that is **21 symbols**: 14 `*_RustBridge` shims the Rust side
+calls, plus 7 C++-mangled ones wanted by `CRecycleBin.cpp`, `CDesktopFolder.cpp` and
+`CDefView.cpp`. The other ~300 it defines are already dead, because `cfs_folder.rs` owns the
+activated class. So the buy is ~500 lines of real C++, not 2,283 — it cost **$0.41** for 53
+functions (32 free, 15 `CFileSysEnum` with `--cpp-com --internal`, 6 statics), parked in
+`~/vibeos-rust-staging/cfsfolder/` and banked in `.responses/`.
+
+Two things to know before integrating it. `--cpp-com` assembles the **whole class scaffold**
+(194 vtable slots for `CFSFolder`) even under `--fn`, so the 6 statics cannot be taken that way
+without standing up a second implementation beside `cfs_folder.rs` — they want a different
+route. And each `translate` run **overwrites** its output file, so give every catalog its own
+`-o` or the last run silently replaces the previous one's module.
+
 First batch (2026-07-18): `CActiveDesktop.cpp` and
 `droptargets/CexeDropHandler.cpp` had no retained closure beyond their already-Rust-owned
 classes and left CMake after a full body audit. The executable drop handler audit caught and
@@ -382,7 +408,17 @@ because the model failed: see the field manual bullet "A DIRECTIVE is not code, 
 PARAMETER's bound is not a value". Both sealer defects are fixed; the diagnosis rule is to read
 the free `--dry-run --prompt` after the second rejection rather than paying for a third.
 
-Remaining in this wave: `CDefViewUtil`.
+Remaining in this wave: `CDefViewUtil` — **blocked on a substrate gap, diagnosed, not started.**
+Its `CShellFolderViewCBWrapper` is a genuine COM class (1 `BEGIN_COM_MAP`), so `--cpp-com` is the
+right mode, and it hit two preflight refusals in a row. The first is fixed: an override whose base
+defines the same method (`SetSite` over `CObjectWithSiteBase::SetSite`) was a hard refusal and is
+now flattened to a `<Base>_base_<Name>` worker, mirroring the existing `_base_dtor` handling, so
+the shared six-line refcount swap is translated once instead of the model re-deriving it. The
+second is real and open: `FOLDERVIEWMODE m_FVM` is not provable as a C scalar by cpp_com's
+state-field checker, which accepts a fixed allow-list of type names. `FOLDERVIEWMODE` is a WIDL
+enum the island carries as `__WIDL_shobjidl_generated_name_00000025`, so the fix is island-backed
+enum proof — an enum typedef IS a C int — rather than another hardcoded name. That mechanism does
+not exist yet and is the smallest thing standing between this wave and zero.
 
 Translate by subsystem, preserving static tables/callback identity and export decoration.
 Prefer ordinary Rust modules in `shell32-rust`; create a new crate only for a real shared-link
