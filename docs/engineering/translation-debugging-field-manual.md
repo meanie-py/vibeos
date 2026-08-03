@@ -910,6 +910,17 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   class, sat behind those two spellings. Also strip `//` comments first: several crates carry
   a comment quoting the bad form verbatim while *fixing* it, and matching inside one turns a
   fix into a finding.
+- **Reading each flagged site against its C is what finds the SECOND bug.** Burning the class
+  down by hand across 15 crates turned up three defects that were not encoding at all:
+  netcfgx built device names from `L"\\Device"` where the C has `L"\\Device\\"` (dropped
+  separator, both use sites); userenv encoded `"L%d"` because the C's `L"%d"` width marker was
+  read as content (the same L-drop class as the top of this section, in the other direction);
+  and netcfgx passed `LPBYTE as LPBYTE` as RegSetValueExW's data argument — a TYPE ALIAS where
+  a value belongs, so not an expression at all. That last one had never failed a build because
+  **netcfgx is not a workspace member yet**, which is the standing gap: an unbuilt crate is
+  covered by source lints and `verify_c_signatures` and by nothing else, so a lint that reads
+  it is worth more there than anywhere. A `sed` over the encoding would have preserved all
+  three.
 - **A new lint that shadows an existing module global disables the lint it was added to.** The
   byte-cast rule above arrived with its own `_ESCAPES` table, which shadowed the file's
   existing one and silently switched off *both halves of the array rule* — comparisons went

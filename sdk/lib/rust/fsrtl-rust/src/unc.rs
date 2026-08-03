@@ -77,14 +77,18 @@ unsafe fn FsRtlpIsDfsEnabled() -> BOOLEAN {
     let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut key_query_output: KeyQueryBuffer = core::mem::zeroed();
 
-    key_name.Buffer = b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0"
-        .as_ptr() as *mut u16;
-    key_name.Length = (core::mem::size_of_val(
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0",
-    ) - core::mem::size_of::<u16>()) as u16;
-    key_name.MaximumLength = core::mem::size_of_val(
-        b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\Mup\0",
-    ) as u16;
+    // L"\Registry\Machine\System\CurrentControlSet\Services\Mup"
+    static MUP_KEY_NAME_BUF: [u16; 56] = [
+        b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16, b'y' as u16, b'\\' as u16,
+        b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16, b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'y' as u16,
+        b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+        b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16,
+        b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16,
+        b's' as u16, b'\\' as u16, b'M' as u16, b'u' as u16, b'p' as u16, 0,
+    ];
+    key_name.Buffer = MUP_KEY_NAME_BUF.as_ptr() as *mut u16;
+    key_name.Length = 110;
+    key_name.MaximumLength = 112;
 
     InitializeObjectAttributes(
         &mut object_attributes,

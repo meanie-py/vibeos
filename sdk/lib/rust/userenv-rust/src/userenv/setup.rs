@@ -15,6 +15,27 @@ extern "system" {
     // the c2rust output emitted `hInstance()` calls; those now read the static (see the call site).
 }
 
+// L"\"
+static PATH_SEP_BACKSLASH: [u16; 2] = [b'\\' as u16, 0];
+// L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList"
+static PROFILE_LIST_KEY: [u16; 57] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16,
+    b'T' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+    b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16,
+    b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16,
+    b'i' as u16, b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16,
+    0,
+];
+// L"ProfilesDirectory"
+static REG_PROFILES_DIRECTORY: [u16; 18] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
+    b's' as u16, b'D' as u16, b'i' as u16, b'r' as u16, b'e' as u16, b'c' as u16, b't' as u16,
+    b'o' as u16, b'r' as u16, b'y' as u16, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut UserShellFolders: [FOLDERDATA; 19] = unsafe {
@@ -367,26 +388,126 @@ pub struct _PROFILEPARAMS {
 }
 pub type PPROFILEPARAMS = *mut _PROFILEPARAMS;
 
+// L"Default User"
+static DEFAULT_USER_NAME: [u16; 13] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
+    b' ' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, 0,
+];
+// L"DefaultUserProfile"
+static DEFAULT_USER_PROFILE_VALUE: [u16; 19] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
+    b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b'P' as u16, b'r' as u16, b'o' as u16,
+    b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, 0,
+];
+// L"USERPROFILE"
+static ENV_USERPROFILE2: [u16; 12] = [
+    b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'P' as u16, b'R' as u16, b'O' as u16,
+    b'F' as u16, b'I' as u16, b'L' as u16, b'E' as u16, 0,
+];
+// L"%USERPROFILE%"
+static ENV_USERPROFILE_PCT: [u16; 14] = [
+    b'%' as u16, b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'P' as u16, b'R' as u16,
+    b'O' as u16, b'F' as u16, b'I' as u16, b'L' as u16, b'E' as u16, b'%' as u16, 0,
+];
+// L".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"
+static DEFAULT_SHELL_FOLDERS_KEY: [u16; 74] = [
+    b'.' as u16, b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16,
+    b't' as u16, b'\\' as u16, b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16,
+    b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16,
+    b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16,
+    b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16,
+    b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16,
+    b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
+    b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16,
+    b'r' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16,
+    b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16,
+    b'e' as u16, b'r' as u16, b's' as u16, 0,
+];
+// L".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
+static DEFAULT_USER_SHELL_FOLDERS_KEY: [u16; 79] = [
+    b'.' as u16, b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16,
+    b't' as u16, b'\\' as u16, b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16,
+    b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16,
+    b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16,
+    b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16,
+    b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16,
+    b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
+    b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16,
+    b'r' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'U' as u16, b's' as u16, b'e' as u16,
+    b'r' as u16, b' ' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16,
+    b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16,
+    b's' as u16, 0,
+];
+// L"All Users"
+static ALL_USERS_NAME: [u16; 10] = [
+    b'A' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'U' as u16, b's' as u16, b'e' as u16,
+    b'r' as u16, b's' as u16, 0,
+];
+// L"AllUsersProfile"
+static ALL_USERS_PROFILE_VALUE: [u16; 16] = [
+    b'A' as u16, b'l' as u16, b'l' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16,
+    b's' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16,
+    b'e' as u16, 0,
+];
+// L"ALLUSERSPROFILE"
+static ENV_ALLUSERSPROFILE2: [u16; 16] = [
+    b'A' as u16, b'L' as u16, b'L' as u16, b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16,
+    b'S' as u16, b'P' as u16, b'R' as u16, b'O' as u16, b'F' as u16, b'I' as u16, b'L' as u16,
+    b'E' as u16, 0,
+];
+// L"%ALLUSERSPROFILE%"
+static ENV_ALLUSERSPROFILE_PCT: [u16; 18] = [
+    b'%' as u16, b'A' as u16, b'L' as u16, b'L' as u16, b'U' as u16, b'S' as u16, b'E' as u16,
+    b'R' as u16, b'S' as u16, b'P' as u16, b'R' as u16, b'O' as u16, b'F' as u16, b'I' as u16,
+    b'L' as u16, b'E' as u16, b'%' as u16, 0,
+];
+// L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"
+static SHELL_FOLDERS_KEY: [u16; 65] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
+    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
+    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16,
+    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
+    b'r' as u16, b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16,
+    b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16,
+    b's' as u16, 0,
+];
+// L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
+static USER_SHELL_FOLDERS_KEY2: [u16; 70] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
+    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
+    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16,
+    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
+    b'r' as u16, b'\\' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b' ' as u16,
+    b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16,
+    b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
+];
+
 pub static mut standardProfiles: [_PROFILEPARAMS; 2] = [
     _PROFILEPARAMS {
-        pszProfileName: unsafe { core::mem::transmute(b"Default User\0".as_ptr()) },
-        pszProfileRegValue: unsafe { core::mem::transmute(b"DefaultUserProfile\0".as_ptr()) },
-        pszEnvVar: unsafe { core::mem::transmute(b"USERPROFILE\0".as_ptr()) },
-        pszEnvVarProfilePath: unsafe { core::mem::transmute(b"%USERPROFILE%\0".as_ptr()) },
+        pszProfileName: DEFAULT_USER_NAME.as_ptr(),
+        pszProfileRegValue: DEFAULT_USER_PROFILE_VALUE.as_ptr(),
+        pszEnvVar: ENV_USERPROFILE2.as_ptr(),
+        pszEnvVarProfilePath: ENV_USERPROFILE_PCT.as_ptr(),
         pFolderList: unsafe { &UserShellFolders[0] as *const _ as *mut _ },
         hRootKey: unsafe { core::mem::transmute(-2147483646isize) },
-        pszShellFoldersKey: unsafe { core::mem::transmute(b".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders\0".as_ptr()) },
-        pszUserShellFoldersKey: unsafe { core::mem::transmute(b".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\0".as_ptr()) },
+        pszShellFoldersKey: DEFAULT_SHELL_FOLDERS_KEY.as_ptr(),
+        pszUserShellFoldersKey: DEFAULT_USER_SHELL_FOLDERS_KEY.as_ptr(),
     },
     _PROFILEPARAMS {
-        pszProfileName: unsafe { core::mem::transmute(b"All Users\0".as_ptr()) },
-        pszProfileRegValue: unsafe { core::mem::transmute(b"AllUsersProfile\0".as_ptr()) },
-        pszEnvVar: unsafe { core::mem::transmute(b"ALLUSERSPROFILE\0".as_ptr()) },
-        pszEnvVarProfilePath: unsafe { core::mem::transmute(b"%ALLUSERSPROFILE%\0".as_ptr()) },
+        pszProfileName: ALL_USERS_NAME.as_ptr(),
+        pszProfileRegValue: ALL_USERS_PROFILE_VALUE.as_ptr(),
+        pszEnvVar: ENV_ALLUSERSPROFILE2.as_ptr(),
+        pszEnvVarProfilePath: ENV_ALLUSERSPROFILE_PCT.as_ptr(),
         pFolderList: unsafe { &CommonShellFolders[0] as *const _ as *mut _ },
         hRootKey: unsafe { core::mem::transmute(-2147483648isize) },
-        pszShellFoldersKey: unsafe { core::mem::transmute(b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders\0".as_ptr()) },
-        pszUserShellFoldersKey: unsafe { core::mem::transmute(b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\0".as_ptr()) },
+        pszShellFoldersKey: SHELL_FOLDERS_KEY.as_ptr(),
+        pszUserShellFoldersKey: USER_SHELL_FOLDERS_KEY2.as_ptr(),
     },
 ];
 
@@ -417,7 +538,7 @@ unsafe extern "C" fn CreateStandardProfile(
     StringCbCatW(
         szProfilePath.as_mut_ptr(),
         core::mem::size_of_val(&szProfilePath),
-        b"\\0".as_ptr() as LPCWSTR,
+        PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
     );
     StringCbCatW(
         szProfilePath.as_mut_ptr(),
@@ -442,7 +563,7 @@ unsafe extern "C" fn CreateStandardProfile(
         StringCbCatW(
             szProfilePath.as_mut_ptr(),
             core::mem::size_of_val(&szProfilePath),
-            b"\\0".as_ptr() as LPCWSTR,
+            PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
         );
         StringCbCatW(
             szProfilePath.as_mut_ptr(),
@@ -483,7 +604,7 @@ unsafe extern "C" fn CreateStandardProfile(
         StringCbCatW(
             szBuffer.as_mut_ptr(),
             core::mem::size_of_val(&szBuffer),
-            b"\\0".as_ptr() as LPCWSTR,
+            PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
         );
 
         dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
@@ -537,7 +658,7 @@ unsafe extern "C" fn CreateStandardProfile(
             StringCbCatW(
                 szBuffer.as_mut_ptr(),
                 core::mem::size_of_val(&szBuffer),
-                b"\\0".as_ptr() as LPCWSTR,
+                PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
             );
 
             dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
@@ -599,7 +720,7 @@ unsafe extern "C" fn CreateStandardProfile(
             StringCbCatW(
                 szBuffer.as_mut_ptr(),
                 core::mem::size_of_val(&szBuffer),
-                b"\\0".as_ptr() as LPCWSTR,
+                PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
             );
 
             dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
@@ -661,7 +782,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
 
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY.as_ptr() as LPCWSTR,
         0,
         KEY_SET_VALUE,
         &mut hKey,
@@ -691,7 +812,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
     dwLength = ((wcslen(szBuffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
     Error = RegSetValueExW(
         hKey,
-        b"ProfilesDirectory\0".as_ptr() as LPCWSTR,
+        REG_PROFILES_DIRECTORY.as_ptr() as LPCWSTR,
         0,
         REG_EXPAND_SZ,
         szBuffer.as_mut_ptr() as *const BYTE,
@@ -738,9 +859,19 @@ pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
     let mut hFoldersKey: HKEY = core::ptr::null_mut();
     let mut Error: i32;
 
+    // L"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+    static SHELL_FOLDERS_KEY_BUF: [u16; 65] = [
+        b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16,
+        b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16,
+        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16,
+        b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
+        b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16, b'r' as u16,
+        b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16,
+        b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
+    ];
     Error = RegOpenKeyExW(
         hUserKey,
-        b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders\0".as_ptr() as *const u16 as LPCWSTR,
+        SHELL_FOLDERS_KEY_BUF.as_ptr() as *const u16 as LPCWSTR,
         0,
         KEY_SET_VALUE,
         &mut hFoldersKey,
@@ -758,10 +889,12 @@ pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
                 core::mem::size_of_val(&szBuffer),
                 lpUserProfilePath,
             );
+            // L"\"
+            static BACKSLASH_W: [u16; 2] = [b'\\' as u16, 0];
             StringCbCatW(
                 core::ptr::addr_of_mut!(szBuffer) as *mut u16,
                 core::mem::size_of_val(&szBuffer),
-                b"\\\0".as_ptr() as *const u16,
+                BACKSLASH_W.as_ptr() as *const u16,
             );
 
             dwLength = wcslen(core::ptr::addr_of_mut!(szBuffer) as *mut u16) as u32;

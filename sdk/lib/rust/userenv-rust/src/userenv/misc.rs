@@ -9,6 +9,11 @@ extern "C" {
     fn _vsnwprintf(buffer: *mut u16, count: usize, format: *const u16, argptr: va_list) -> i32;
 }
 
+// L"%d"
+static FMT_PERCENT_D: [u16; 3] = [
+    b'%' as u16, b'd' as u16, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 pub static mut LocalSystemAuthority: SID_IDENTIFIER_AUTHORITY = _SID_IDENTIFIER_AUTHORITY {
@@ -368,7 +373,7 @@ unsafe extern "stdcall" fn TimerDlgProc(
                 StringCchPrintfW(
                     szTimeout.as_mut_ptr(),
                     10,
-                    b"L\0%\0d\0\0".as_ptr() as PCWSTR,
+                    FMT_PERCENT_D.as_ptr() as PCWSTR,
                     (*Info).ulTimeout,
                 );
                 SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
@@ -439,7 +444,7 @@ unsafe extern "stdcall" fn TimerDlgProc(
                 StringCchPrintfW(
                     szTimeout.as_mut_ptr(),
                     10,
-                    b"L\0%\0d\0\0".as_ptr() as PCWSTR,
+                    FMT_PERCENT_D.as_ptr() as PCWSTR,
                     (*Info).ulTimeout,
                 );
                 SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
@@ -465,7 +470,7 @@ unsafe extern "C" fn TimerDlgProc(
                 StringCchPrintfW(
                     szTimeout.as_mut_ptr(),
                     10,
-                    b"L\0%\0d\0\0".as_ptr() as PCWSTR,
+                    FMT_PERCENT_D.as_ptr() as PCWSTR,
                     (*Info).ulTimeout,
                 );
                 SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
@@ -536,7 +541,7 @@ unsafe extern "C" fn TimerDlgProc(
                 StringCchPrintfW(
                     szTimeout.as_mut_ptr(),
                     10,
-                    b"L\0%\0d\0\0".as_ptr() as PCWSTR,
+                    FMT_PERCENT_D.as_ptr() as PCWSTR,
                     (*Info).ulTimeout,
                 );
                 SetDlgItemTextW(hDlg, IDC_TIMEOUT, szTimeout.as_ptr());
