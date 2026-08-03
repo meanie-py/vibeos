@@ -695,6 +695,39 @@ def _audit_paid_body(
     return result.rust_code
 
 
+def _adopt_rejected(
+    dep, cache, fact_seals, call_seals, cpp_com_mode: bool, func_idx, contract, sealed
+) -> str | None:
+    """A stored REJECTED reply for ``dep``, IF it passes today's audit. Else None.
+
+    A reject cost an API call, so it is paid artifact under the same rule as an accepted
+    one, and the reasons it stops being a reject are ordinary: a seal defect gets fixed
+    (this file's double-unseal alone rejected four netcfgx bodies that were never wrong),
+    or a human repairs by hand the one line the model would not — netcfgx's
+    `ScanForInfFile` refused three samplings to reproduce the C's `continue` past its own
+    `FindNextFileW`, and the rest of that body is correct. Paying twice for a body already
+    on disk is waste, not caution.
+
+    The audit is the whole gate and it is the SAME audit, so nothing is laundered: a reply
+    that still damages the envelope is still refused, silently, and the caller pays.
+    Skipped for cpp_com, whose acceptance also runs the worker-boundary normalizations.
+    """
+    if cpp_com_mode:
+        return None
+    rejected = cache.get_rejected(dep.name)
+    if rejected is None:
+        return None
+    try:
+        body = _unseal_worker(dep, rejected, fact_seals, call_seals)
+    except CppComError:
+        return None
+    # Banked under this run's contract and seal set, exactly as a paid acceptance is —
+    # otherwise the next run misses and buys the same body a third time.
+    cache.put(dep.name, dep.body_text, body, contract, sealed)
+    print(f"  [{func_idx}] {dep.name} ADOPTED a stored reject — passes the audit now ($0)")
+    return body
+
+
 def _reject_correction(error: "CppComError | None") -> str:
     """What to append to a worker prompt when its previous attempt was REJECTED.
 
@@ -2930,6 +2963,17 @@ def cmd_translate(args):
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
                 # No unseal on a cache hit — see the same site on the parallel path.
+                if hit is None:
+                    hit = _adopt_rejected(
+                        dep,
+                        cache,
+                        fact_seals,
+                        call_seals,
+                        cpp_com_mode,
+                        func_idx,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
