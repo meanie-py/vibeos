@@ -1022,7 +1022,7 @@ CONTROLS: list[Control] = [
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
     # Already have dedicated suites (the prototypes this harness generalizes).
-    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (12 tests)",
+    "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",

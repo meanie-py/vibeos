@@ -336,6 +336,14 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    Those bodies are now flagged rather than shipped silently — treat the list as a review
    queue and diff each against the C. Retrying does not help (recall is stable across
    samples), so pass `--retry-rejects 1` on a well-known module rather than a big number.
+   **The flagged list is not the whole risk**, because the guard only fires when NO token
+   survived: a body that keeps some and permutes the rest passes silently. msvcrt's
+   `MSVCRT_exp` shipped `math_error(0, …)` where the C says `math_error(_DOMAIN, …)` — the
+   "don't set errno" case — and was never flagged. Cheap generic defence: enumerate every
+   call to a shared error/dispatch helper on both sides and diff the argument lists as a
+   table. **A body the model cannot get past the envelope must not block the other 48** —
+   `--skip-fn <name>` drops it from the worklist, assembles the rest, and records the omission
+   as an audit finding so it can't go quiet; hand-write that one.
 3. **`rustconv crate-repair <crate>-rust --arches i386 amd64 arm64`** — bounded deterministic
    repair of the whole-crate `cargo check`, before paying anything to fix compile errors. **Pass
    all three arches**: a numeric cast inferred from one bakes that arch's pointer width, so

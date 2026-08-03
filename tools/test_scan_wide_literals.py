@@ -159,3 +159,68 @@ def test_coverage_is_reported(tmp_path: Path):
     src = "static K: [u16; 3] = [b'A' as u16, b'B' as u16, 0];\n"
     seen, compared = _coverage(tmp_path, src)
     assert seen == 1 and compared == 0
+
+
+# --- the byte-string-cast half ------------------------------------------------------------
+#
+# The array rule above needs an intent comment to check against. This one does not: a byte
+# string cast to a UTF-16 pointer is a self-contained claim about its own bytes, so all three
+# checks are decidable. Both shipped bugs below are real — msvcrt's `_wsystem` and
+# `msvcrt_search_executable`, the latter silently breaking PATH search for every spawn.
+
+
+def test_catches_ascii_bytes_cast_to_a_wide_pointer(tmp_path: Path):
+    """msvcrt process.c's `_wsystem`: `L" /c "` written as plain ASCII. `wcscat` reads
+    `' '`+`'/'` as ONE code unit 0x2F20 and then walks past the end of a 5-byte static."""
+    out = _scan(tmp_path, 'wcscat(cmd, b" /c \\0".as_ptr() as *const wchar_t);\n')
+    assert len(out) == 1, out
+    assert "ODD length" in out[0] or "8-bit text" in out[0], out
+
+
+def test_catches_single_byte_terminator(tmp_path: Path):
+    """msvcrt process.c's `msvcrt_search_executable`: `L"PATH"` interleaved correctly but with
+    ONE trailing zero byte, so the final code unit's high half comes from the next object."""
+    out = _scan(tmp_path, 'env = _wgetenv(b"P\\0A\\0T\\0H\\0\\0".as_ptr() as *const wchar_t);\n')
+    assert len(out) == 1, out
+    assert "ODD length" in out[0], out
+
+
+def test_catches_odd_length(tmp_path: Path):
+    out = _scan(tmp_path, 'f(b"M\\0M\\0\\0".as_ptr() as *const u16);\n')
+    assert len(out) == 1, out
+    assert "ODD length" in out[0]
+
+
+def test_correct_wide_byte_string_is_silent(tmp_path: Path):
+    assert (
+        _scan(tmp_path, 'wcscat(cmd, b" \\0/\\0c\\0 \\0\\0\\0".as_ptr() as *const wchar_t);\n')
+        == []
+    )
+
+
+def test_catches_the_alias_spelling(tmp_path: Path):
+    """`as LPCWSTR` is the same bug as `as *const u16`. The lint was blind to it for one pass,
+    reported clean, and 111 further sites were sitting behind the alias."""
+    out = _scan(tmp_path, 'g(b"\\\\Device\\\\CdRom\\0".as_ptr() as LPCWSTR);\n')
+    assert len(out) == 1, out
+
+
+def test_catches_the_transmute_spelling(tmp_path: Path):
+    """`transmute(b"...".as_ptr())` reaches the same wrong pointer with no `as` in sight."""
+    out = _scan(tmp_path, 'let p = core::mem::transmute(b"All Users\\0".as_ptr());\n')
+    assert len(out) == 1, out
+
+
+def test_a_comment_describing_the_bug_is_not_the_bug(tmp_path: Path):
+    """Several crates carry a comment quoting the bad form verbatim while FIXING it. Matching
+    inside those turns a fix into a finding — which is how this lint would get baselined."""
+    src = (
+        '// (replacing incorrect b"...".as_ptr() as *mut u16 casts)\n'
+        "static OBJECT_NAME_STR: [u16; 2] = [b'O' as u16, 0];\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_byte_string_not_cast_to_a_wide_pointer_is_silent(tmp_path: Path):
+    """An 8-bit string used as an 8-bit string is correct and extremely common."""
+    assert _scan(tmp_path, 'puts(b"hello\\0".as_ptr() as *const i8);\n') == []
