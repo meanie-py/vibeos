@@ -248,17 +248,22 @@ def _aggregate_zero_init_spans(masked: str) -> set[tuple[int, int]]:
 
 
 def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
-    """`[...]` ranges inside the function's OWN parameter list.
+    """Ranges inside the function's OWN parameter list that a Rust signature cannot hold.
 
-    A C array parameter decays to a pointer, so the bound in `LPITEMIDLIST apidls[2]` has no
-    counterpart anywhere in the Rust signature — sealing that `2` demands a token the
-    translation cannot place, and the audit then rejects every attempt. shell32's
-    `DoGetAliasPIDLs` burned four paid retries on exactly this before the prompt was read.
+    Two constructs, one rule: the value exists only in C/C++ declarator syntax, so there is
+    nowhere in the translated signature to put a token standing for it, and the audit then
+    rejects every attempt no matter how correct the body is.
+
+    * An ARRAY PARAMETER's bound. A C array parameter decays to a pointer, so the `2` in
+      `LPITEMIDLIST apidls[2]` has no counterpart in the Rust signature. shell32's
+      `DoGetAliasPIDLs` burned four paid retries on this before the prompt was read.
+    * A DEFAULT ARGUMENT's value. Rust has no default arguments at all, so the `FALSE` in
+      `BOOL AllowFolder = FALSE` cannot appear either — `ExtensionFromPidl` burned three.
 
     Scoped to the PARAMETER LIST specifically — the first balanced `(...)` of the signature —
     and not merely "before the first brace". `int a[2] = {0, 1};` has its first brace at the
     INITIALIZER, so the looser rule silently stopped sealing a real local array's bound.
-    A bound in the body is a genuine value and must stay sealed.
+    A bound, or an `=`, in the BODY is a genuine value and must stay sealed.
     """
     body = masked.find("{")
     opening = masked.find("(")
@@ -290,6 +295,31 @@ def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
             depth -= 1
             if depth == 0:
                 spans.append((start, index + 1))
+
+    # Default arguments: a top-level `=` runs to the next top-level `,` or the `)`.
+    depth = 0
+    default_start = -1
+    for index in range(opening + 1, closing):
+        char = masked[index]
+        if char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+        elif depth != 0:
+            continue
+        elif char == "=":
+            # Not a comparison/compound operator: `==`, `!=`, `<=`, `>=`.
+            following = masked[index + 1 : index + 2]
+            preceding = masked[index - 1 : index]
+            if following == "=" or preceding in ("=", "!", "<", ">"):
+                continue
+            if default_start < 0:
+                default_start = index
+        elif char == "," and default_start >= 0:
+            spans.append((default_start, index))
+            default_start = -1
+    if default_start >= 0:
+        spans.append((default_start, closing))
     return spans
 
 

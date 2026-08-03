@@ -591,24 +591,27 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
                     )
                 for item in trivial if survivors else trivial[1:]:
                     scan.functions.remove(item)
-        # Collision guard: a derived method body hiding a base body of the same
-        # (name, arity, kind) cannot be flattened into one class.
+        # A derived method body hiding a base body of the same (name, arity, kind)
+        # cannot keep that name once both are flattened into one class — but it is
+        # an ordinary C++ override, not a shape we have to refuse. Give the BASE
+        # body its own qualified worker, exactly as the dtor branch above does with
+        # `_base_dtor`, so the shared implementation is translated ONCE and the
+        # override can call it instead of the model re-deriving the base by hand.
+        # (Silently duplicating a shared concrete base into the derived translation
+        # is a known way to fork behaviour — CObjectWithSiteBase::SetSite is six
+        # lines of refcount swap that every site-aware class in the tail inherits.)
         derived_keys = {
             (item.name, len(item.params), item.is_ctor, item.is_dtor)
             for item in scan.functions
             if item.cpp_class == class_name
         }
-        clash = sorted(
-            item.name
-            for item in scan.functions
-            if item.cpp_class in local_bases
-            and not (item.is_ctor or item.is_dtor)
-            and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
-        )
-        if clash:
-            raise CppComError(
-                f"{class_name}: derived method body hides same-arity base body: " + ", ".join(clash)
-            )
+        for item in scan.functions:
+            if (
+                item.cpp_class in local_bases
+                and not (item.is_ctor or item.is_dtor)
+                and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
+            ):
+                item.name = f"{item.cpp_class}_base_{item.name}"
         for item in scan.functions:
             if item.cpp_class in local_bases:
                 item.cpp_class = class_name
