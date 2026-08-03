@@ -114,11 +114,13 @@ unsafe extern "C" fn GetNotificationServer(bCreate: BOOL) -> HWND {
 
     let hwndShell = GetShellWindow();
     if hwndShell.is_null() {
+        TRACE!("GetShellWindow() returned NULL\n");
         return core::ptr::null_mut();
     }
 
     let hwndServer = SendMessageW(hwndShell, WM_DESKTOP_GET_CNOTIFY_SERVER as UINT, bCreate as WPARAM, 0) as HWND;
     let hwndServer = if IsWindow(hwndServer) == 0 {
+        ERR!("Unable to get server window\n");
         core::ptr::null_mut()
     } else {
         hwndServer
@@ -223,11 +225,13 @@ unsafe extern "C" fn CreateNotificationParam(
     let cbSize = ibOffset2 + cbPidl2;
     let hTicket = SHAllocShared(core::ptr::null_mut(), cbSize, dwOwnerPID);
     if hTicket.is_null() {
+        ERR!("Out of memory\n");
         return core::ptr::null_mut();
     }
 
     let pTicket = SHLockSharedEx(hTicket, dwOwnerPID, TRUE) as LPDELITICKET;
     if pTicket.is_null() {
+        ERR!("SHLockSharedEx failed\n");
         SHFreeShared(hTicket, dwOwnerPID);
         return core::ptr::null_mut();
     }
@@ -250,12 +254,14 @@ unsafe extern "C" fn CreateNotificationParam(
 unsafe extern "C" fn DoGetHandbagFromTicket(hTicket: HANDLE, dwOwnerPID: DWORD) -> LPHANDBAG {
     let pTicket = SHLockSharedEx(hTicket, dwOwnerPID, FALSE) as LPDELITICKET;
     if pTicket.is_null() || (*pTicket).dwMagic != DELITICKET_MAGIC {
+        ERR!("pTicket is invalid\n");
         SHUnlockShared(pTicket.cast());
         return core::ptr::null_mut();
     }
 
     let pHandbag = LocalAlloc(LMEM_FIXED, core::mem::size_of::<HANDBAG>() as SIZE_T) as LPHANDBAG;
     if pHandbag.is_null() {
+        ERR!("Out of memory\n");
         SHUnlockShared(pTicket.cast());
         return core::ptr::null_mut();
     }
@@ -291,10 +297,12 @@ unsafe extern "C" fn CreateRegistrationParam(
 
     let hRegEntry = SHAllocShared(core::ptr::null_mut(), cbSize, dwOwnerPID);
     if hRegEntry == core::ptr::null_mut() {
+        ERR!("Out of memory\n");
         return core::ptr::null_mut();
     }
     let pRegEntry = SHLockSharedEx(hRegEntry, dwOwnerPID, TRUE) as LPREGENTRY;
     if pRegEntry == core::ptr::null_mut() {
+        ERR!("SHLockSharedEx failed\n");
         SHFreeShared(hRegEntry, dwOwnerPID);
         return core::ptr::null_mut();
     }
@@ -522,6 +530,8 @@ pub unsafe extern "system" fn SHChangeNotifyRegister(
     let mut dwOwnerPID: DWORD = 0;
     let mut pRegEntry: LPREGENTRY;
 
+    TRACE!("(%p,0x%08x,0x%08x,0x%08x,%d,%p)\n", hwnd, fSources, wEventMask, uMsg, cItems, lpItems);
+
     if wEventMask == 0
         || cItems <= 0
         || cItems > 0x7FFF
@@ -579,6 +589,8 @@ pub unsafe extern "system" fn SHChangeNotifyRegister(
         }
 
         if nRegID == INVALID_REG_ID {
+            ERR!("Delivery failed\n");
+
             if !hwndBroker.is_null() {
                 DestroyWindow(hwndBroker);
             }
@@ -657,7 +669,7 @@ pub unsafe extern "system" fn SHChangeNotifyUpdateEntryList(
     unknown3: DWORD,
     unknown4: DWORD,
 ) -> BOOL {
-    // FIXME("(0x%08x, 0x%08x, 0x%08x, 0x%08x)\n", unknown1, unknown2, unknown3, unknown4);
+    FIXME!("(0x%08x, 0x%08x, 0x%08x, 0x%08x)\n", unknown1, unknown2, unknown3, unknown4);
     TRUE
 }
 
@@ -666,7 +678,7 @@ pub unsafe extern "system" fn SHChangeRegistrationReceive(
     lpUnknown1: LPVOID,
     dwUnknown2: DWORD,
 ) -> BOOL {
-    // TRACE("\n");
+    TRACE!("\n");
     FALSE
 }
 
@@ -709,6 +721,8 @@ pub unsafe extern "system" fn SHChangeNotify(
     dwItem1: LPCVOID,
     dwItem2: LPCVOID,
 ) {
+    TRACE!("(0x%08x,0x%08x,%p,%p)\n", wEventId, uFlags, dwItem1, dwItem2);
+
     // C: `if (!GetNotificationServer(FALSE)) return;` — `!` on a POINTER. The paid body kept the
     // `!` verbatim, which in Rust is bitwise-NOT and does not even apply to a raw pointer.
     if GetNotificationServer(FALSE).is_null() {
@@ -857,6 +871,7 @@ pub unsafe extern "system" fn SHChangeNotify(
                 pidl1 = &mut dwidl as *mut _ as LPITEMIDLIST;
             }
             _ => {
+                FIXME!("Unknown type: 0x%X\n", dwType);
                 return;
             }
         }
@@ -864,6 +879,9 @@ pub unsafe extern "system" fn SHChangeNotify(
     }
 
     if !pidl1.is_null() || wEventId == 0 || (wEventId & SHCNE_ASSOCCHANGED as LONG) != 0 {
+        // DumpEvent() renders the event bitmask for this line; see its definition for why the
+        // call stays even though TRACE! currently discards its arguments.
+        TRACE!("notifying event %s(%x)\n", DumpEvent(wEventId), wEventId);
         SHChangeNotifyTransmit(wEventId, uFlags, pidl1, pidl2, dwTick);
     }
 
@@ -899,8 +917,11 @@ pub unsafe extern "system" fn SHChangeNotification_Lock(
     lppidls: *mut *mut LPITEMIDLIST,
     lpwEventId: *mut LONG,
 ) -> HANDLE {
+    TRACE!("%p %08x %p %p\n", hTicket, dwOwnerPID, lppidls, lpwEventId);
+
     let pHandbag = DoGetHandbagFromTicket(hTicket, dwOwnerPID);
     if pHandbag.is_null() || (*pHandbag).dwMagic != HANDBAG_MAGIC {
+        ERR!("pHandbag is invalid\n");
         return core::ptr::null_mut();
     }
 
@@ -917,8 +938,11 @@ pub unsafe extern "system" fn SHChangeNotification_Lock(
 
 #[no_mangle]
 pub unsafe extern "system" fn SHChangeNotification_Unlock(hLock: HANDLE) -> BOOL {
+    TRACE!("%p\n", hLock);
+
     let pHandbag = hLock as LPHANDBAG;
     if pHandbag.is_null() || (*pHandbag).dwMagic != HANDBAG_MAGIC {
+        ERR!("pHandbag is invalid\n");
         return FALSE;
     }
 
@@ -929,7 +953,7 @@ pub unsafe extern "system" fn SHChangeNotification_Unlock(hLock: HANDLE) -> BOOL
 
 #[no_mangle]
 pub unsafe extern "system" fn NTSHChangeNotifyDeregister(hNotify: ULONG) -> DWORD {
-    // FIXME("(0x%08x):semi stub.\n", hNotify);
+    FIXME!("(0x%08x):semi stub.\n", hNotify);
     // C widens the BOOL result to DWORD implicitly; this entry point returns DWORD, not BOOL.
     SHChangeNotifyDeregister(hNotify) as DWORD
 }
@@ -941,7 +965,7 @@ pub unsafe extern "system" fn SHChangeNotifySuspendResume(
     bRecursive: BOOL,
     dwReserved: DWORD,
 ) -> BOOL {
-    // FIXME("SHChangeNotifySuspendResume() stub\n");
+    FIXME!("SHChangeNotifySuspendResume() stub\n");
     FALSE
 }
 
