@@ -312,10 +312,15 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
             continue
 
         expected = _expected_abi(entry)
-        fn = fns.get(entry.name)
+        # `entry.symbol`, NOT `entry.name`: a bare trailing target renames the symbol the
+        # linker looks for (`ldap_first_entry` is implemented as `WLDAP32_ldap_first_entry`),
+        # and it is the RENAMED one that has to exist.
+        want = entry.symbol
+        label = want if want == entry.name else f"{want} (export {entry.name})"
+        fn = fns.get(want)
         if fn is None:
             findings.append(
-                Finding("MISSING", entry.name, expected, "nothing (no Rust fn by that name)", "")
+                Finding("MISSING", label, expected, "nothing (no Rust fn by that name)", "")
             )
             continue
 
@@ -327,7 +332,7 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
             findings.append(
                 Finding(
                     "NOT_EXPORTED",
-                    entry.name,
+                    label,
                     expected,
                     f"a private {shape} fn with NO #[no_mangle]",
                     where,
@@ -338,7 +343,7 @@ def audit_exports_detailed(spec_path: Path, rust_srcs: list[Path]) -> list[Findi
         ok = _OK_FOR.get(entry.convention, frozenset({"C"}))
         if (fn.abi or "Rust") not in ok:
             found = f'extern "{fn.abi}"' if fn.abi else "the Rust ABI (no extern)"
-            findings.append(Finding("ABI_MISMATCH", entry.name, expected, found, where))
+            findings.append(Finding("ABI_MISMATCH", label, expected, found, where))
 
     findings.sort(key=lambda f: (f.kind, f.name))
     return findings

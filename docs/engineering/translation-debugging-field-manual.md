@@ -1841,6 +1841,48 @@ The two fixes compose, and the order matters: expanding is what lets `--seal-fac
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
 
+### The export audit that was supposed to catch the shrunken plan was itself blind
+
+**Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
+is **missing 22 of its exports**. `export_audit.py` — the tool whose whole job is "does the Rust
+actually define what the `.spec` exports?" — reported 15 of them and called the other 7
+*forwarded, no implementation needed*. Nothing else can see it: the crate is not flipped, so no
+linker ever reads it, and a function that was never translated looks exactly like a function that
+was never there.
+
+**Cause — two independent holes, both in reading the `.spec`.**
+
+1. **A bare trailing target is a LOCAL RENAME, not a forward.** Only a dot makes it a forward, and
+   that is literally how spec2def decides (`fIsExternal = !!ScanToken(strTarget, '.')`,
+   spec2def.c:691). `kernel32.FileTimeNow` means another DLL supplies the symbol; a bare
+   `WLDAP32_ber_alloc_t` means *this* module must define it under that name. Treating both as
+   forwards skipped every Wine-style renamed export — and ntoskrnl's
+   `@ fastcall ExAcquireRundownProtection(ptr) ExfAcquireRundownProtection` rows are the same shape,
+   so the kernel's audit had the same blind spot.
+2. **`-version=` rows are not in the `.def` at all.** We spec2def at `DLL_EXPORT_VERSION 0x502`
+   (`sdk/cmake/config.cmake:87`) and spec2def emits an entry only if that falls inside the range
+   (spec2def.c:1155). Auditing them the other way invented 23 phantom MISSING exports on ws2_32
+   alone — the entire `Wah*` family — in a module that is fully flipped and links. **Phantom
+   findings are not harmless**: a tool that cries wolf on a shipping module is a tool you stop
+   believing, which is why 22 real wldap32 misses sat next to them unnoticed.
+
+Fixing both: 1388→1326 on ntdll, 72→2 on kernel32, 23→0 on ws2_32 — and the wldap32 gap became
+visible. `SpecEntry` now carries `impl_symbol` and `in_version`, and `symbol` is what the linker
+will actually look for.
+
+**Fix.** Run `python -m rustconv.export_audit <module>.spec <crate>/src` **before** the cohab
+flip, not after — pre-flip is the only window where nothing else can catch it. Once a module is
+flipped, the link is a perfect oracle and the audit is redundant; while it is unflipped, the audit
+is the *only* oracle. The general shape: **an audit's exclusion list is where its blindness
+lives.** Every "this one needs no implementation" branch is a place a real miss can hide, so each
+one has to be justified against what the build tool actually does, not against what the syntax
+looks like.
+
+**The upstream cause of the missing 22 was `TYPE * CDECL fn()`** — the scanner position
+tree-sitter cannot parse in any spelling, fixed in `0b2d3521e0a` after wldap32 was translated
+against the older scanner. Every one of the 22 returns a pointer; not one non-pointer function was
+lost. **When a drop set shares a signature feature, the parser is the suspect, not the model.**
+
 ### A C++ `struct` used as a NAMESPACE falls between both C++ modes, and one skips it silently
 **Symptom.** `rustconv translate --free-functions <tu>.cpp` reports its plan cheerfully and buys
 every free function, having printed one line you will scroll past:

@@ -143,7 +143,16 @@ unsafe extern "C" fn escape_filter_element(src: PCHAR, srclen: ULONG, dst: PCHAR
             *d = *src.offset(i as isize);
             d = d.offset(1);
         } else {
-            d = d.offset(sprintf(d, fmt.as_ptr() as LPCSTR, *src.offset(i as isize) as c_int) as isize);
+            // `as u8 as c_int`, NOT `as c_int`: the C is `(unsigned char)src[i]`, which
+            // zero-extends BEFORE the default int promotion. CHAR is i8 on all three Windows
+            // targets, so a bare `as c_int` sign-extends and "%02X" prints 0xE9 as FFFFFFE9 --
+            // 9 bytes where get_escape_size budgeted 3. rustc's E0617 fix-it suggests exactly
+            // that bare cast; it is only value-preserving when the source is already unsigned.
+            d = d.offset(sprintf(
+                d,
+                fmt.as_ptr() as LPCSTR,
+                *src.offset(i as isize) as u8 as c_int,
+            ) as isize);
         }
         i += 1;
     }
