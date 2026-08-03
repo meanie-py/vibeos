@@ -29,6 +29,12 @@ const VACB_MAPPING_GRANULARITY: i64 = 262144;
 const MAXLONGLONG: i64 = 0x7FFFFFFFFFFFFFFF;
 const FO_TEMPORARY_FILE: u32 = 0x8000;
 const IO_NO_INCREMENT: LONG = 0;
+// KSPIN_LOCK_QUEUE_NUMBER values. Spelled out because the translation shipped bare
+// integer literals here and they were the WRONG ones: 17 (LockQueueTimerTableLock)
+// for the master lock and 6 (LockQueueNonPagedPoolLock) for the work-queue lock,
+// so Cc took KiTimerTableLock[0] where the C takes CcMasterSpinLock. Never pass a
+// literal to Ke*QueuedSpinLock.
+const LockQueueMasterLock: i32 = 0x00000005;
 
 #[no_mangle]
 pub unsafe extern "system" fn CcGetDirtyPages(
@@ -88,7 +94,7 @@ pub unsafe extern "system" fn CcIsThereDirtyData(Vpb: PVPB) -> BOOLEAN {
     let Vpb = opaque_ptr(Vpb);
     let mut dirty = 0u8;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
 
     let mut entry = DirtyVacbListHead.Flink;
     while entry != core::ptr::addr_of_mut!(DirtyVacbListHead) as PLIST_ENTRY {
@@ -112,7 +118,7 @@ pub unsafe extern "system" fn CcIsThereDirtyData(Vpb: PVPB) -> BOOLEAN {
         entry = (*entry).Flink;
     }
 
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 
     dirty
 }
@@ -161,7 +167,7 @@ pub unsafe extern "system" fn CcPurgeCacheSection(
 
     let mut success = 1u8;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
     let mut list_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
@@ -201,7 +207,7 @@ pub unsafe extern "system" fn CcPurgeCacheSection(
     }
 
     KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 
     while !IsListEmpty(core::ptr::addr_of_mut!(free_list) as PLIST_ENTRY) {
         let vacb = (RemoveHeadList(core::ptr::addr_of_mut!(free_list) as PLIST_ENTRY) as *const u8)
