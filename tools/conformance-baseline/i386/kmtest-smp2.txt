@@ -14,6 +14,18 @@
 #   Re-seeded 2026-08-02; every row below agreed across THREE independent boots.
 #   IoDeviceObject (both arches) and ExHardError (amd64: 30/0 vs 24/6) are BISTABLE and
 #   were deliberately left at their banked pessimistic samples — do not re-roll them.
+#   (i386 IoDeviceObject bistability re-confirmed directly on 2026-08-02: two back-to-back
+#   --smp 2 rounds on IDENTICAL media gave 185/4 then 184/5, the extra one being
+#   IoDeviceObject_drv.c:300 STATUS_OBJECT_NAME_NOT_FOUND. Not an MP-conditional row.)
+# KeSpinLock re-seeded 2026-08-02, 706/79 -> 754/31 — a REAL FIX, not a re-roll.
+#   hal-rust's x86 Kx{Acquire,Release}SpinLock were hard-coded UP no-ops (they predate the
+#   halmp.dll twin and never learned the `smp` feature), so the kernel stamped owners the
+#   HAL never cleared. They now delegate to ntkrnl_sys::inline::ke, the same code ntoskrnl
+#   uses. Verified across THREE boots: --smp 1 and both --smp 2 rounds all read 754/31.
+#   The 31 residual are upstream's queued-spinlock HACK — no LQ_WAIT bit, and the lock word
+#   holds the owner stamp where a real queued lock holds the queue-handle pointer — plus one
+#   try-acquire that sets bit 0 without stamping the owner. All present on the UP kernel too
+#   (UP is 753/32), so none of them are MP-conditional.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
 ExCallback OK pass=13 fail=0 skip=1 exit=0
 ExDoubleList OK pass=130 fail=16 skip=0 exit=0
@@ -50,7 +62,7 @@ KeFloatPointState OK pass=6 fail=0 skip=0 exit=0
 KeGuardedMutex OK pass=1653 fail=0 skip=0 exit=0
 KeIrql OK pass=215 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
-KeSpinLock OK pass=706 fail=79 skip=0 exit=0
+KeSpinLock OK pass=754 fail=31 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
 MmMdl OK pass=594 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
