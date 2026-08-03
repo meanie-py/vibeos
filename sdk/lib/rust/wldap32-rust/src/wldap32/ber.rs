@@ -88,6 +88,13 @@ pub unsafe extern "C" fn WLDAP32_ber_printf_v(
 #[no_mangle]
 #[cfg(not(feature = "have_ldap"))]
 #[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
 pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {}
 
 #[cfg(feature = "have_ldap")]
@@ -104,6 +111,13 @@ pub unsafe extern "C" fn WLDAP32_ber_bvecfree(berval: *mut PBERVAL) {
     }
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_bvfree(berval: *mut BERVAL) {}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 #[cfg(not(feature = "have_ldap"))]
 #[cfg(not(feature = "have_ldap"))]
@@ -150,6 +164,13 @@ pub unsafe extern "C" fn WLDAP32_ber_flatten(berelement: *mut BerElement, berval
     }
 }
 
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn WLDAP32_ber_free(berelement: *mut BerElement, buf: INT) {}
+
+#[cfg(feature = "have_ldap")]
 #[no_mangle]
 #[cfg(not(feature = "have_ldap"))]
 #[cfg(not(feature = "have_ldap"))]
@@ -277,6 +298,42 @@ pub unsafe extern "C" fn WLDAP32_ber_scanf_v(berelement: *mut BerElement, fmt: P
     }
 }
 
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_alloc_t(options: INT) -> *mut BerElement {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_alloc_t(options);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_bvdup(berval: *mut BERVAL) -> *mut BERVAL {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_bvdup(berval);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn WLDAP32_ber_init(berval: *mut BERVAL) -> *mut BerElement {
+    #[cfg(feature = "have_ldap")]
+    {
+        return ber_init(berval);
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
 
 // ============================================================================
 // ORIGINAL C SOURCE

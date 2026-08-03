@@ -466,11 +466,20 @@ def apply_file(rust_path: Path, verdicts: dict[str, CVerdict], *, write: bool = 
     return res
 
 
+# OUR file, not upstream's: the varargs trampoline (varargs-rust/rust_varargs_shim.c.template)
+# re-declares the module's C-variadic entry points because stable Rust cannot define one. It is
+# a language shim, so it carries no `#ifdef` and classifies UNGATED — which then collides with
+# the real definition's verdict and aborts the whole run on a name conflict that is not one.
+_NOT_UPSTREAM_C = frozenset({"rust_varargs_shim.c"})
+
+
 def run(
     c_dir: Path, rust_dir: Path, guards: frozenset[str], *, apply: bool
 ) -> tuple[list[CVerdict], list[Applied]]:
     verdicts: list[CVerdict] = []
     for c in sorted(list(c_dir.glob("*.c")) + list(c_dir.glob("*.h"))):
+        if c.name in _NOT_UPSTREAM_C:
+            continue
         verdicts.extend(classify_c(c, guards))
 
     by_name: dict[str, CVerdict] = {}

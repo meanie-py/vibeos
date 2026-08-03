@@ -270,6 +270,384 @@ pub unsafe extern "C" fn ldap_stop_tls_s(ld: *mut WLDAP32_LDAP) -> BOOLEAN {
 }
 
 
+#[cfg(feature = "have_ldap")]
+unsafe fn split_hostnames(hostnames: *const i8) -> *mut *mut i8 {
+    let mut res: *mut *mut i8;
+    let mut str: *mut i8;
+    let mut p: *mut i8;
+    let mut q: *mut i8;
+    let mut i: u32 = 0;
+
+    str = strdupU(hostnames);
+    if str.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    p = str;
+    while isspace(*p as u8 as c_int) != 0 {
+        p = p.offset(1);
+    }
+    if *p != 0 {
+        i += 1;
+    }
+
+    while *p != 0 {
+        if isspace(*p as u8 as c_int) != 0 {
+            while isspace(*p as u8 as c_int) != 0 {
+                p = p.offset(1);
+            }
+            if *p != 0 {
+                i += 1;
+            }
+        }
+        p = p.offset(1);
+    }
+
+    res = heap_alloc(((i + 1) as usize) * core::mem::size_of::<*mut i8>()) as *mut *mut i8;
+    if res.is_null() {
+        heap_free(str as *mut c_void);
+        return core::ptr::null_mut();
+    }
+
+    p = str;
+    while isspace(*p as u8 as c_int) != 0 {
+        p = p.offset(1);
+    }
+
+    q = p;
+    i = 0;
+
+    'outer: loop {
+        if *p == 0 {
+            break;
+        }
+
+        if *p.offset(1) != b'\0' as i8 {
+            if isspace(*p as u8 as c_int) != 0 {
+                *p = b'\0' as i8;
+                p = p.offset(1);
+                *res.offset(i as isize) = strdupU(q);
+                if (*res.offset(i as isize)).is_null() {
+                    break 'outer;
+                }
+                i += 1;
+
+                while isspace(*p as u8 as c_int) != 0 {
+                    p = p.offset(1);
+                }
+                q = p;
+            }
+        } else {
+            *res.offset(i as isize) = strdupU(q);
+            if (*res.offset(i as isize)).is_null() {
+                break 'outer;
+            }
+            i += 1;
+        }
+        p = p.offset(1);
+    }
+
+    if *p == 0 {
+        *res.offset(i as isize) = core::ptr::null_mut();
+        heap_free(str as *mut c_void);
+        return res;
+    }
+
+    while i > 0 {
+        i -= 1;
+        strfreeU(*res.offset(i as isize));
+    }
+
+    heap_free(res as *mut c_void);
+    heap_free(str as *mut c_void);
+
+    core::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cldap_openW(hostname: *mut u16, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameU: *mut i8 = core::ptr::null_mut();
+        let mut url: *mut i8 = core::ptr::null_mut();
+
+        'exit: {
+            if !hostname.is_null() {
+                hostnameU = strWtoU(hostname);
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            } else {
+                hostnameU = strWtoU(defaulthost.as_ptr());
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            }
+
+            url = urlify_hostnames(b"cldap://\0".as_ptr() as *const i8, hostnameU, portnumber);
+            if url.is_null() {
+                break 'exit;
+            }
+
+            ld = create_context(url) as *mut WLDAP32_LDAP;
+        }
+
+        strfreeU(hostnameU);
+        strfreeU(url);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_initW(hostname: *const u16, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameU: *mut i8 = core::ptr::null_mut();
+        let mut url: *mut i8 = core::ptr::null_mut();
+
+        'exit: loop {
+            if !hostname.is_null() {
+                hostnameU = strWtoU(hostname);
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            } else {
+                hostnameU = strWtoU(defaulthost.as_ptr());
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            }
+
+            url = urlify_hostnames(b"ldap://\0".as_ptr() as *const i8, hostnameU, portnumber);
+            if url.is_null() {
+                break 'exit;
+            }
+
+            ld = create_context(url) as *mut WLDAP32_LDAP;
+            break 'exit;
+        }
+
+        strfreeU(hostnameU);
+        strfreeU(url);
+        ld
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_openW(hostname: *mut u16, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameU: *mut i8 = core::ptr::null_mut();
+        let mut url: *mut i8 = core::ptr::null_mut();
+
+        'exit: loop {
+            if !hostname.is_null() {
+                hostnameU = strWtoU(hostname);
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            } else {
+                hostnameU = strWtoU(defaulthost.as_ptr());
+                if hostnameU.is_null() {
+                    break 'exit;
+                }
+            }
+
+            url = urlify_hostnames(b"ldap://\0".as_ptr() as *const i8, hostnameU, portnumber);
+            if url.is_null() {
+                break 'exit;
+            }
+
+            ld = create_context(url) as *mut WLDAP32_LDAP;
+            break 'exit;
+        }
+
+        strfreeU(hostnameU);
+        strfreeU(url);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_sslinitW(
+    hostname: *mut u16,
+    portnumber: u32,
+    secure: i32,
+) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameU: *mut i8 = core::ptr::null_mut();
+        let mut url: *mut i8 = core::ptr::null_mut();
+
+        if !hostname.is_null() {
+            hostnameU = strWtoU(hostname);
+            if hostnameU.is_null() {
+                strfreeU(hostnameU);
+                strfreeU(url);
+                return ld;
+            }
+        } else {
+            hostnameU = strWtoU(defaulthost.as_ptr());
+            if hostnameU.is_null() {
+                strfreeU(hostnameU);
+                strfreeU(url);
+                return ld;
+            }
+        }
+
+        if secure != 0 {
+            url = urlify_hostnames(b"ldaps://\0".as_ptr() as *const i8, hostnameU, portnumber);
+        } else {
+            url = urlify_hostnames(b"ldap://\0".as_ptr() as *const i8, hostnameU, portnumber);
+        }
+
+        if url.is_null() {
+            strfreeU(hostnameU);
+            strfreeU(url);
+            return ld;
+        }
+
+        ldap_initialize(&mut ld, url);
+
+        strfreeU(hostnameU);
+        strfreeU(url);
+        ld
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cldap_openA(hostname: *mut i8, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameW: *mut u16 = core::ptr::null_mut();
+
+        'exit: {
+            if !hostname.is_null() {
+                hostnameW = strAtoW(hostname);
+                if hostnameW.is_null() {
+                    break 'exit;
+                }
+            }
+
+            ld = cldap_openW(hostnameW, portnumber);
+
+            break 'exit;
+        }
+
+        strfreeW(hostnameW);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_initA(hostname: *const i8, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameW: *mut u16 = core::ptr::null_mut();
+
+        'exit: {
+            if !hostname.is_null() {
+                hostnameW = strAtoW(hostname);
+                if hostnameW.is_null() {
+                    break 'exit;
+                }
+            }
+
+            ld = ldap_initW(hostnameW, portnumber);
+        }
+
+        strfreeW(hostnameW);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_openA(hostname: *mut i8, portnumber: u32) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP = core::ptr::null_mut();
+        let mut hostnameW: *mut u16 = core::ptr::null_mut();
+
+        'exit: loop {
+            if !hostname.is_null() {
+                hostnameW = strAtoW(hostname);
+                if hostnameW.is_null() {
+                    break 'exit;
+                }
+            }
+
+            ld = ldap_openW(hostnameW, portnumber);
+            break 'exit;
+        }
+
+        strfreeW(hostnameW);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        core::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_sslinitA(
+    hostname: PCHAR,
+    portnumber: ULONG,
+    secure: i32,
+) -> *mut WLDAP32_LDAP {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut ld: *mut WLDAP32_LDAP;
+        let mut hostnameW: *mut u16 = core::ptr::null_mut();
+
+        if !hostname.is_null() {
+            hostnameW = strAtoW(hostname);
+            if hostnameW.is_null() {
+                return core::ptr::null_mut();
+            }
+        }
+
+        ld = ldap_sslinitW(hostnameW, portnumber, secure);
+
+        strfreeW(hostnameW);
+        return ld;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

@@ -2,6 +2,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// `#[no_mangle]`: main.c's `HINSTANCE hwldap32;` is the DEFINITION, and the bindgen island
+// carries wldap32.h:26's `extern HINSTANCE hwldap32` — so error.rs reaches it through the
+// types glob and the linker has to find this symbol undecorated. Without it, i386 fails on
+// `_hwldap32: missing symbol / wrong ABI`, which is the whole flip.
+#[no_mangle]
 pub static mut hwldap32: HINSTANCE = core::ptr::null_mut();
 
 #[no_mangle]
