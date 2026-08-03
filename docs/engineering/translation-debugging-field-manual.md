@@ -1873,7 +1873,20 @@ will actually look for.
 **Fix.** Run `python -m rustconv.export_audit <module>.spec <crate>/src` **before** the cohab
 flip, not after — pre-flip is the only window where nothing else can catch it. Once a module is
 flipped, the link is a perfect oracle and the audit is redundant; while it is unflipped, the audit
-is the *only* oracle. The general shape: **an audit's exclusion list is where its blindness
+is the *only* oracle.
+
+**Corollary, and it bounded the blast radius to one module.** A FLIPPED crate is covered by two
+oracles working together: `cargo check` proves every *static* the surviving code calls, and the
+link proves every *export*. A dropped function is therefore only invisible in a crate that is
+translated and **not yet flipped**. Sweeping all 174 `*-rust` crates after this fix: 100 are
+flipped and thus already proven, and of the unflipped ones the only module this lane had
+translated was netcfgx — audited at **0 real misses** across its 6 translated TUs. wldap32 was
+exposed for exactly one reason: it was the single module sitting translated-but-unflipped while a
+scanner fix landed underneath it. **The gap between translating a module and flipping it is where
+silent drops live — so close it quickly, and audit before you do.** (Beware a crude sweep here:
+`modules/rostests/winetests/<mod>/` shares the module's directory name and will report hundreds of
+test-harness functions as missing, and an unparsed macro position surfaces as a "function" named
+`NTAPI`/`Contxt`/`if`. Both are noise, and both drown the real finding.) The general shape: **an audit's exclusion list is where its blindness
 lives.** Every "this one needs no implementation" branch is a place a real miss can hide, so each
 one has to be justified against what the build tool actually does, not against what the syntax
 looks like.
