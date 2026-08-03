@@ -73,6 +73,12 @@ const FirstTry: u8 = 0;
 const RetryAllowRemote: u8 = 253;
 const RetryForceCheckPerFile: u8 = 254;
 const RetryMasterLocked: u8 = 255;
+// KSPIN_LOCK_QUEUE_NUMBER values. Spelled out because the translation shipped bare
+// integer literals here and they were the WRONG ones: 17 (LockQueueTimerTableLock)
+// for the master lock and 6 (LockQueueNonPagedPoolLock) for the work-queue lock,
+// so Cc took KiTimerTableLock[0] where the C takes CcMasterSpinLock. Never pass a
+// literal to Ke*QueuedSpinLock.
+const LockQueueMasterLock: i32 = 0x00000005;
 
 #[no_mangle]
 pub static mut CcRosTraceLevel: ULONG = 0;
@@ -168,10 +174,10 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
     let shared_cache_map = (*(*file_object).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
     let mut locked = 0u8;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
     let private_cache_map = (*file_object).PrivateCacheMap as PPRIVATE_CACHE_MAP;
     let (current_offset, length) = if private_cache_map.is_null() {
-        KeReleaseQueuedSpinLock(17u32, old_irql);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
         ObDereferenceObject(file_object as PVOID);
         return;
     } else {
@@ -181,7 +187,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
         (offset, len)
     };
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 
     let mut current_offset = current_offset;
     let mut length = length;
@@ -249,7 +255,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         }
     }
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
     let private_cache_map = (*file_object).PrivateCacheMap as PPRIVATE_CACHE_MAP;
     if !private_cache_map.is_null() {
         KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
@@ -258,7 +264,7 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
         ).fetch_and(!PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE, core::sync::atomic::Ordering::SeqCst);
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*private_cache_map).ReadAheadSpinLock) as *mut _);
     }
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 
     if locked != 0 {
         ((*(*shared_cache_map).Callbacks).ReleaseFromReadAhead.unwrap())((*shared_cache_map).LazyWriteContext);
@@ -296,7 +302,7 @@ pub unsafe extern "system" fn CcCanIWrite(
     let fcb = (*file_object).FsContext as PFSRTL_COMMON_FCB_HEADER;
     if try_context >= RetryForceCheckPerFile || ((*fcb).Flags & FSRTL_FLAG_LIMIT_MODIFIED_PAGES) != 0 {
         let old_irql = if try_context != RetryMasterLocked {
-            KeAcquireQueuedSpinLock(17u32)
+            KeAcquireQueuedSpinLock(LockQueueMasterLock as _)
         } else {
             0
         };
@@ -312,7 +318,7 @@ pub unsafe extern "system" fn CcCanIWrite(
         }
 
         if try_context != RetryMasterLocked {
-            KeReleaseQueuedSpinLock(17u32, old_irql);
+            KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
         }
     }
 
@@ -340,9 +346,9 @@ pub unsafe extern "system" fn CcCanIWrite(
     }
 
     if IsListEmpty(core::ptr::addr_of_mut!(CcDeferredWrites)) {
-        let old_irql = KeAcquireQueuedSpinLock(17u32);
+        let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
         CcScheduleLazyWriteScan(1u8);
-        KeReleaseQueuedSpinLock(17u32, old_irql);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
     }
 
     let mut wait_event: _KEVENT = core::mem::zeroed();
@@ -590,11 +596,11 @@ pub unsafe extern "system" fn CcDeferWrite(
 
     CcPostDeferredWrites();
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
     if (*core::ptr::addr_of!(LazyWriter)).ScanActive == 0 {
         CcScheduleLazyWriteScan(0u8);
     }
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 }
 
 #[no_mangle]

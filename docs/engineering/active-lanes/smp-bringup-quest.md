@@ -1905,3 +1905,48 @@ three arches now, but #39 (arm64 `--smp 1` stall) and #43 (`0xE3`) are still ope
 arm64's HAL has the same no-exclusion hole i386 just had — self-consistent, so no kmtest row
 catches it, but halmp.dll on arm64 is in the state halmp.dll on i386 was in this morning. The
 default should not move onto a HAL whose locks are decorative.
+
+## The two surviving `--smp 1` rows are now PROVEN enumerated, not just asserted (2026-08-02)
+
+With i386's `KeSpinLock` fixed, all three arches reduce to the same residual, and it is the
+same two rows everywhere:
+
+| row | i386 | amd64 | arm64 |
+|---|---|---|---|
+| `IoInterrupt` fail | 0 → 306 | 0 → 156 | 2 → 158 |
+| `KeEvent` pass | −132 | −132 | −132 |
+
+(i386 additionally shows `IoDeviceObject`, which is the bistable row, not an MP delta.)
+
+Both had been *called* MP-conditional. Neither had been demonstrated. They are now.
+
+**`KeEvent` is the test declining to run, and the arithmetic closes exactly.** `KeEvent.c:83`
+guards a block behind `!KmtIsMultiProcessorBuild`, with upstream's own reason on the line above:
+`KeSetEvent(..., Wait=TRUE)` and `KePulseEvent(..., Wait=TRUE)` leave the dispatcher lock held,
+which is only legal to exercise on UP. The block is two `CheckEvent`s plus four scalar checks;
+`CheckEvent` with `ThreadCount=0` is 9 assertions, so 22 per call. `TestEventFunctional` is
+called twice per IRQL over `{PASSIVE, APC, DISPATCH}` = 6 calls. 6 × 22 = **132**, and the
+failure count does not move. This row can never be driven to zero — it is not our kernel being
+wrong, it is the suite refusing a UP-only experiment on any MP kernel, real Windows included.
+
+**`IoInterrupt` is upstream ReactOS diverging from Windows, not vibeos diverging from ReactOS.**
+`CheckSpinLock` asserts a held lock reads *exactly* 1 on an MP build and merely non-zero on a UP
+checked build. That is correct Windows semantics: on MP the word IS the lock. ReactOS stamps
+`KeGetCurrentThread() | 1` into it under a plain `#if DBG`
+(`ntoskrnl/include/internal/spinlock.h`, `KI_TRACK_SPINLOCK_OWNER`) with no `CONFIG_SMP` term,
+so an MP checked build fails this assertion upstream too. Benign for exclusion — bit 0 is set
+either way and release is an unconditional clear.
+
+Fixing `IoInterrupt` therefore means the owed item: keep the word at exactly 1 on MP and track
+the owner out of band. Scoping that turned up a hazard worth recording before anyone tries it.
+A per-CPU held-lock table is the obvious shape, and it is **wrong here**, because it is only
+sound if every acquire path releases through the same funnel. `KeTryToAcquireSpinLockAtDpcLevel`
+(#47) and the queued-lock HACK both set bit 0 without going through `KxAcquireSpinLock`, so the
+table leaks entries, and a leaked entry is a *false* `SPIN_LOCK_ALREADY_OWNED` bugcheck on three
+boot paths. The instrument the stamp currently feeds is better replaced by a **bounded spin** —
+it needs no bookkeeping, cannot desynchronise, and catches inter-CPU deadlock cycles that an
+owner check structurally cannot see. That is its own change with its own soak, deliberately not
+folded into the i386 fix.
+
+**Collapse status: the criterion is met on all three arches** — zero unexplained deltas, with
+both survivors now mechanically accounted for rather than taken on trust.
