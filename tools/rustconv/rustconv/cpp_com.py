@@ -4938,10 +4938,20 @@ def audit_worker_body(
     missing = sorted(word for word in symbolic if not re.search(rf"\b{re.escape(word)}\b", rust))
     if missing:
         findings.append("dropped symbolic C constant(s): " + ", ".join(missing))
+    # A macro the BODY ITSELF defines has no substrate to come from, so defining it in Rust is
+    # the correct translation, not a redefinition. CFSFolder's _AddFindResult opens with
+    # `#define SUPER_HIDDEN (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)` — demanding that
+    # come from an island is demanding something that cannot exist, and the worker is rejected
+    # however correct it is. The operands stay protected: they are sealed constants in their
+    # own right, and the `missing` check above still requires the name to survive.
+    locally_defined = {
+        match.group(1) for match in re.finditer(r"#[ \t]*define[ \t]+([A-Za-z_]\w*)", source_body)
+    }
     redefined = sorted(
         word
         for word in symbolic
-        if re.search(rf"(?<!\*)\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
+        if word not in locally_defined
+        and re.search(rf"(?<!\*)\b(?:pub\s+)?const\s+{re.escape(word)}\s*[:=]", rust)
     )
     if redefined:
         findings.append(
