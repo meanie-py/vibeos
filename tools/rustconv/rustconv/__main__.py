@@ -675,9 +675,7 @@ def _audit_paid_body(
         )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-        return _unseal_plain_c(
-            dep, result.rust_code, fact_seals, call_seals, strict=strict
-        )
+        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals, strict=strict)
     result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
@@ -769,9 +767,7 @@ def _unseal_plain_c(dep, rust: str, fact_seals, call_seals, *, strict: bool = Tr
             rust = unseal_calls(rust, calls)
         facts = fact_seals.get(dep.name)
         if facts is not None:
-            rust = unseal_facts(
-                rust, facts, ignored_envelope=ignored_envelope, strict=strict
-            )
+            rust = unseal_facts(rust, facts, ignored_envelope=ignored_envelope, strict=strict)
     except (CallSealError, FactSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
     for note in ignored_envelope:
@@ -3897,7 +3893,9 @@ def main():
     # msvcrt-crt-rust) raised TargetResolveError here with no flag to answer it —
     # the one command whose entire job is to price a run refused to price the
     # modules most in need of pricing.
-    p.add_argument("--target", help="Override target: a known target name or a dll/win32/<name> crate name")
+    p.add_argument(
+        "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
     p.add_argument(
         "--output-crate",
         help="Rust crate the translation is assembled into, when it is not the "

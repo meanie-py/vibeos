@@ -1492,7 +1492,9 @@ TARGETS = {
 }
 
 
-def detect_target(c_path: Path, output_crate: str | None = None, sys_crate: str | None = None) -> Target:
+def detect_target(
+    c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
+) -> Target:
     """Pick a target by sniffing the C path. Falls back to ntoskrnl.
 
     ``output_crate``/``sys_crate`` are the caller's explicit overrides, forwarded to
