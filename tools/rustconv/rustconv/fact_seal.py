@@ -460,19 +460,72 @@ def drop_token_use_items(rust: str) -> str:
 
 
 def unseal_facts(
-    rust: str, sealed: SealedSource, *, dead_omissions: list[str] | None = None
+    rust: str,
+    sealed: SealedSource,
+    *,
+    dead_omissions: list[str] | None = None,
+    ignored_envelope: list[str] | None = None,
+    strict: bool = True,
 ) -> str:
     """Verify the closed token set and restore exact original spellings.
 
     `dead_omissions`, when given, collects `TOKEN=SPELLING` for each sealed value the
     model omitted that lives only in non-executed code -- accepted, but reported, so a
     relaxed guarantee is never silent.
+
+    `strict` False is the LAST-ATTEMPT mode: a body that ignored the envelope wholesale
+    is accepted rather than rejected, and the fact is appended to `ignored_envelope` so
+    the run reports it. Same bargain as `dead_omissions` -- the guarantee relaxes, and
+    it never relaxes quietly. See the RESCUE_FLOOR block for what is being given up.
     """
     rust = drop_token_use_items(rust)
     expected = {fact.placeholder for fact in sealed.facts}
     present = _PLACEHOLDER_RE.findall(rust)
     unknown = sorted(set(present) - expected)
     missing_names = expected - set(present)
+
+    # ── the recovery path has a floor, and it is load-bearing ────────────────────
+    #
+    # Recovery exists for a model that replaced ONE opaque token with a correctly
+    # guessed spelling (usually zero). It re-tokenizes matching spellings in SOURCE
+    # ORDER, which is sound for equal-valued occurrences of one spelling.
+    #
+    # What it must never do is rescue a body that ignored the envelope WHOLESALE.
+    # msvcrt's `_tzset` is the worked example: 35 tokens, none preserved, the model
+    # wrote real spellings from memory instead — and it put them in the wrong slots.
+    # `_lock(0)` for `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`,
+    # `*tz == 3600` for `*tz == '-'`, `tzi.Bias * CP_ACP` for `tzi.Bias * 60`. Every
+    # value the C owns was PRESENT, so the closed-set check passed; the multiset was
+    # right and the PERMUTATION was wrong. Recovery then re-tokenized the guesses and
+    # restoration became an identity: the seal reported success while shipping the
+    # model's memory of the function verbatim.
+    #
+    # There is no way to verify placement from the response alone — that is exactly
+    # what preserving the tokens is FOR. So the honest answer is to refuse: a body
+    # that preserved nothing has an unverified constant set, whatever its multiset
+    # says, and a paid retry is cheaper than a silent wrong answer.
+    #
+    # The floor counts DISTINCT SPELLINGS, not occurrences, because that is the size of
+    # the permutation space: `return 0 + 0 + S_OK` has three tokens and two spellings,
+    # and there is no way to get it wrong that recovery would not catch. `_tzset` has
+    # thirty-five tokens and TEN spellings — {0, 1, 3, 10, 60, 3600, TRUE, FALSE,
+    # CP_ACP, TIME_ZONE_ID_INVALID} — and got nearly all of them into the wrong slots.
+    # Four is where "the model happened to write the same values" stops being a
+    # plausible account of a body that preserved no tokens at all.
+    RESCUE_FLOOR = 4
+    distinct_missing = {f.original for f in sealed.facts if f.placeholder in missing_names}
+    if missing_names and not unknown and not set(present) and len(distinct_missing) >= RESCUE_FLOOR:
+        note = (
+            f"model ignored deterministic fact envelope entirely "
+            f"({len(missing_names)} tokens over {len(distinct_missing)} distinct "
+            f"spellings, none preserved) — its constants are "
+            f"unverified even if every value appears, because the seal cannot check "
+            f"PLACEMENT without the tokens"
+        )
+        if strict:
+            raise FactSealError(note)
+        if ignored_envelope is not None:
+            ignored_envelope.append(note)
 
     # Cheap models sometimes replace an opaque token with a correctly guessed
     # spelling, especially zero. Recover only exact executable occurrences of

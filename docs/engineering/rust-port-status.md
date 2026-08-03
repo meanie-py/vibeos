@@ -147,6 +147,94 @@ sites read as `Effects.pmt`. At `_MSVCR_VER=0` the handler slot can never be wri
 (`_set_invalid_parameter_handler` is in the uncompiled `>= 80` block), so the Rust body and
 the harness's are identical in effect and nothing is hidden.
 
+**Wave 20 (2026-08-02) — math.c TRANSLATED AND BANKED, deliberately NOT flipped.**
+`msvcrt-crt-rust/src/msvcrt/math.rs`, 91 exports, $2.29. There is no `pub mod math;`: the
+file has never been in the build, so nothing is hidden from the smoke harness — this is the
+netcfgx disposition (paid output kept readable in the tree until it is ready), not the
+commented-out-module anti-pattern. The module header carries the owed list; the short version
+is that **the 64 inline-asm sites are wrong and must be rewritten by hand.** math.c reaches
+the x87 control word and MXCSR through GCC MEMORY operands
+(`__asm__ __volatile__("stmxcsr %0" : "=m"(ret))`) and the translation rendered them as
+REGISTER operands (`asm!("stmxcsr {}", out(reg) ret)`). `stmxcsr`/`fstsw`/`fstcw`/`fnstenv`/
+`fldcw` all require memory, so most will not assemble — the danger is the handful that would.
+This is the FP control state for the whole OS: a mask bit in the wrong field changes the
+result of every float operation, silently. It wants a careful pass with a smoke behind it.
+
+Two smaller items are already handled: nine symbols (`_finite`, `_isnan`, `_chgsignf`,
+`abs`, `div`, `labs`, `ldexp`, …) are `#[cfg(any())]` because cnt-rust's difftest-pinned
+`cabi/math.rs` exports them into the same archive and two strong definitions in one archive
+resolve by member order; and fifteen bodies are flagged `UNVERIFIED CONSTANTS` by the new
+seal guard and need a hand diff before the flip (spot-checks of `MSVCRT_asin`,
+`sqrt_validate` and `_setfp`'s head came back faithful).
+
+**Wave 19 (2026-08-02) — time.c FLIPPED. 52 of 52 exports at `_MSVCR_VER=0`.**
+`msvcrt-crt-rust/src/msvcrt/time.rs`, the whole file: the calendar (`_mktime32/64`,
+`_mkgmtime32/64`, `_localtime32/64(_s)`, `_gmtime32/64(_s)`), the clock (`_time32/64`,
+`_ftime32/64(_s)`, `clock`, `_difftime32/64`), the zone (`_tzset`, `_get_tzname`, the four
+`__p__*` accessors and the four exported globals), the string forms (`_strdate`, `_strtime`,
+`asctime`, `_wasctime`, `_ctime32/64`, `_wctime32/64` and their `_s` twins) and `strftime` /
+`wcsftime` / `_Strftime` / `_wcsftime_l`. Whole-file, like errno.c: `_tzset`'s four exported
+globals plus the file-static `tzi` are ONE contract that `is_dst`, `mktime_helper` and
+`_ftime64` all read, so a partial flip leaves some readers on the C's copy of that state.
+
+**Seven names that read like exports of this file are not compiled at `_MSVCR_VER=0`** and
+so have no Rust counterpart: `_get_dstbias`/`_get_timezone`/`_get_daylight` (`#if >= 80`),
+`_Wcsftime` (`>= 110`), `_timespec32_get`/`_timespec64_get`/`_strftime_l` (`>= 140`). The
+OBJECT is the authority on that, not the source's apparent shape — the same rule wave 18
+used for file.c.
+
+**PORTED, NOT YET GRADED**, and that is the honest status: `msvcrt-difftest` has no time.c
+rows, so what has been proved is three-arch `cargo check`, a green `difftest` (nothing
+regressed), and boot. Same standing file.c had after wave 17. What the grading needs is
+already in the tree — see the substrate below — so the rows are the next step, not a new
+foundation.
+
+**`timeimpl.c` — the Win32 clock and zone layer, built because the SUBJECT needed it.**
+Wiring time.rs into the harness revealed that nothing there answered `GetTimeZoneInformation`,
+`NtQuerySystemTime`, `SystemTimeToFileTime`, `FileTimeToSystemTime`,
+`SystemTimeToTzSpecificLocalTime`, `GetLocalTime`, `GetDateFormatW`, `GetTimeFormatW` or
+`lstrcpynA`. Two design points are the reusable part:
+
+* **The instant is a KNOB, not the host clock** (`ref_time_set_now`). Both sides run in one
+  process one after the other, so a real clock makes every `_time64`/`clock`/`asctime` row a
+  coin flip that *usually* agrees — green in CI, red at midnight. Freezing it also buys what
+  a real clock cannot: a row can sit on the epoch, on a leap day, or on `_MAX__TIME64_T`.
+* **The zone is a knob too** (`ref_time_set_zone`), with four presets chosen for the branches
+  they reach: UTC (no DST), US Pacific (post-2007 rules), India (a HALF-HOUR bias), and Sydney
+  (southern hemisphere, so the DST window WRAPS the year end — a rule engine that assumes
+  start &lt; end gets this backwards all year). A fifth setting makes `GetTimeZoneInformation`
+  FAIL, which is the only way `_tzset`'s early-out arm is reachable. A shim that always
+  succeeded with Bias 0 would make `is_dst` dead code and the harness would report green over
+  the half of time.c that has the arithmetic in it.
+
+**`_time64` had to leave the plain namespace.** fileimpl.c has answered file.c's one
+`_time64` call under that name since wave 18; msvcrt EXPORTS `_time64`, so the moment time.rs
+defines it that is a duplicate-symbol failure. The stub keeps its job and changes name to
+`ref__time64` (file prelude stage 4.5). This is the standing tax on wiring a new module into
+the harness, and it is also the seam where time.c becomes reference TU #8: that stage points
+at time.c's own body and the stub is deleted, exactly as errno.c's arrival deleted the
+hand-written `msvcrt_set_errno`.
+
+**Two limits stated rather than papered over.** `asctime`'s `_snprintf` is answered by the
+harness over the host's `vsnprintf` (subjectimpl.c) — the shipping name is a `va_start`
+trampoline in the msvcrt MODULE, and that TU cannot enter this harness because the Rust
+`_vsnprintf` walks a Windows va_list while the host's `va_start` builds a SysV one. So
+`asctime`/`ctime` rows would grade the ASSEMBLY of the string, not msvcrt's formatting of it;
+the formatting is graded by `printf_port.rs` against the genuine `ref_pf_printf_a`. And
+`GetDateFormatW`/`GetTimeFormatW` model the picture grammar `_wstrdate`/`_wstrtime` actually
+pass (repeated-letter fields plus quoted literals) and HARD FAIL on anything else, rather
+than emitting a best guess that would turn a future caller's wrong output into a passing row.
+
+**One real bug was found and fixed in the translation, and it is a NEW class** — see the
+field manual's sealing section. `_tzset` came back with all 35 sealed constants in the wrong
+slots (`_lock(0)` for `_lock(_TIME_LOCK)`, `*tz == 3600` for `*tz == '-'`,
+`tzi.Bias * CP_ACP` for `tzi.Bias * 60`) and `--seal-facts` passed it, because its invariant
+is a closed SET and a permutation satisfies that. `unseal_facts` now refuses a body that
+preserved no tokens at all. Two more were fixed by hand in the same pass: the
+`#if _MSVCR_VER == 0` arm of `MIN/MAX_GMTIME64_TIME` was taken from the `#else` (which widens
+`_gmtime64_s`'s accepted range at both ends), and `MSVCRT__tzname` was initialised to two
+NULLs instead of the two 64-byte buffers `_tzset` immediately writes through.
+
 **Wave 18c part 3 (2026-08-02) — file.c is GRADED END TO END. 104 rows, 22,180 cases, 0
 DIVERGE / 0 UNEXERCISED.** file.c's graded spec exports **116 → 146 of 146**. The last
 thirty were left for last because each of the three families needed substrate that did not

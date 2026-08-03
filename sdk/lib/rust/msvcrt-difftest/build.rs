@@ -1453,6 +1453,25 @@ fn main() {
         for sym in &file_wall {
             fp.push_str(&format!("#undef {sym}\n#define {sym} {prefix}{sym}\n"));
         }
+        fp.push_str(
+            "\n/* ═══ stage 4.5: `_time64`, out of the SUBJECT's way. ════════════════════\n\
+             * file.c calls `_time64` once (the `_wutime`/`_futime` path) and the harness\n\
+             * has always answered it from fileimpl.c under the plain name. That was safe\n\
+             * only while nothing else in the link defined it. time.rs does now — msvcrt\n\
+             * exports `_time64`, so the flip gives it a `#[no_mangle]` — and two strong\n\
+             * definitions of one symbol is a duplicate-symbol link failure, which is the\n\
+             * standing tax on wiring a new module into this harness.\n\
+             *\n\
+             * The stub keeps its job (it is the environment's clock, one copy for both\n\
+             * sides, exactly like GetStdHandle) and only changes NAME. Both file.c\n\
+             * instantiations map to the SAME `ref__time64` for that reason: there is\n\
+             * nothing per-side about what time it is.\n\
+             *\n\
+             * When time.c becomes reference TU #8 this stage is what changes: the map\n\
+             * points at time.c's own body and fileimpl.c's stub is deleted, the way\n\
+             * errno.c's arrival deleted the hand-written `msvcrt_set_errno`. */\n\
+             #define _time64 ref__time64\n",
+        );
         fp.push_str(&format!(
             "\n/* ═══ stage 5: a prototype for every function file.c defines. ════════════\n\
              * Placed AFTER the wall, so each is renamed alongside the definition it\n\
@@ -2271,6 +2290,32 @@ fn main() {
         .cargo_metadata(false)
         .file(manifest.join("fileimpl.c"));
 
+    // The Win32 clock and time-zone layer, on the same terms as fileimpl.c: its own TU,
+    // no rename prelude, plain Win32 names.
+    //
+    // It is in the link BEFORE time.c is a reference TU, because the SUBJECT needs it:
+    // time.rs calls `GetTimeZoneInformation`, `NtQuerySystemTime`, `SystemTimeToFileTime`
+    // and six more, and nothing in this harness answered any of them. That is the shape
+    // of every module flip here — wiring the Rust in is what reveals which parts of the
+    // OS the host does not have.
+    let mut timeimpl_build = cc::Build::new();
+    timeimpl_build
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        // -fshort-wchar: the zone presets carry `L"Pacific Standard Time"` and the
+        // format pictures are wide literals. Without it the host emits 4-byte elements
+        // and every WCHAR the subject reads is garbage — the same trap the reference
+        // TUs carry this flag for.
+        .flag("-fshort-wchar")
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(manifest.join("timeimpl.c"));
+
     // ── the SUBJECT's C-variadic entry points ───────────────────────────────────
     //
     // The one piece of the shipping msvcrt that is neither Rust nor reference C.
@@ -2433,6 +2478,7 @@ fn main() {
     objects.extend(fileflat_build.compile_intermediates());
     objects.extend(errno_build.compile_intermediates());
     objects.extend(fileimpl_build.compile_intermediates());
+    objects.extend(timeimpl_build.compile_intermediates());
     if subject_stdio {
         objects.extend(shim_build.compile_intermediates());
     }
@@ -2476,6 +2522,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", scanf_c.display());
     println!("cargo:rerun-if-changed={}", file_c.display());
     println!("cargo:rerun-if-changed={}", manifest.join("fileimpl.c").display());
+    println!("cargo:rerun-if-changed={}", manifest.join("timeimpl.c").display());
     // scanf.h is the TEMPLATE scanf.c instantiates 16 times — real logic, not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("scanf.h").display());
     println!("cargo:rerun-if-changed={}", refstub.display());

@@ -188,7 +188,11 @@ def resolve_target(args, path):
             output_crate=getattr(args, "output_crate", None),
             sys_crate=getattr(args, "sys_crate", None),
         )
-    return detect_target(path)
+    return detect_target(
+        path,
+        output_crate=getattr(args, "output_crate", None),
+        sys_crate=getattr(args, "sys_crate", None),
+    )
 
 
 # Model shortcuts for CLI convenience
@@ -640,6 +644,13 @@ def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_e
     return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
 
 
+# Bodies accepted on a LAST attempt despite ignoring the fact envelope. Drained into
+# the run's AUDIT report, so "unverified constants" is a finding a human sees rather
+# than a silent relaxation. Never a reason to skip review: `_tzset` is what one of
+# these looks like when it is wrong (fact_seal.unseal_facts).
+UNVERIFIED_CONSTANT_BODIES: list[str] = []
+
+
 def _audit_paid_body(
     dep,
     result,
@@ -649,6 +660,7 @@ def _audit_paid_body(
     fact_seals,
     call_seals,
     target_name: str,
+    strict: bool = True,
 ) -> str:
     """Unseal and audit one paid reply; raise `CppComError` if it fails.
 
@@ -661,10 +673,12 @@ def _audit_paid_body(
     """
     if not cpp_com_mode:
         # Sealing is language-neutral; unsealing must be too.
-        result.rust_code = _unseal_worker(dep, result.rust_code, fact_seals, call_seals)
+        result.rust_code = _unseal_worker(
+            dep, result.rust_code, fact_seals, call_seals, strict=strict
+        )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals)
+        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals, strict=strict)
     result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
@@ -675,7 +689,7 @@ def _audit_paid_body(
     return result.rust_code
 
 
-def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
+def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = True) -> str:
     """Undo fact/call sealing on a model response, verifying the closed envelope.
 
     Target- and language-neutral: sealing is a lexical transform, so ANY translation
@@ -692,6 +706,10 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
     dead_omissions: list[str] = []
+    # A body that ignored the fact envelope wholesale, accepted only because this was
+    # the LAST attempt. Reported the same way `dead_omissions` is, and for the same
+    # reason. See fact_seal.unseal_facts.
+    ignored_envelope: list[str] = []
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
@@ -699,11 +717,20 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals) -> str:
         facts = fact_seals.get(dep.name)
         if facts is not None:
             rust = canonicalize_hresult_predicates(rust)
-            rust = unseal_facts(rust, facts, dead_omissions=dead_omissions)
+            rust = unseal_facts(
+                rust,
+                facts,
+                dead_omissions=dead_omissions,
+                ignored_envelope=ignored_envelope,
+                strict=strict,
+            )
     except (CallSealError, FactSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
     if dead_omissions:
         print(f"    [{dep.name}] omitted in non-executed code: {', '.join(dead_omissions)}")
+    for note in ignored_envelope:
+        UNVERIFIED_CONSTANT_BODIES.append(f"{dep.name}: {note}")
+        print(f"    [{dep.name}] ACCEPTED UNVERIFIED: {note}", file=sys.stderr)
     return rust
 
 
@@ -716,7 +743,7 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     return normalize_worker_semantics(dep.body_text, rust)
 
 
-def _unseal_plain_c(dep, rust: str, fact_seals, call_seals) -> str:
+def _unseal_plain_c(dep, rust: str, fact_seals, call_seals, *, strict: bool = True) -> str:
     """Restore sealed constants and callees in a PLAIN-C model response.
 
     Sealing is only half a mechanism. It hides every constant and callee behind an opaque
@@ -736,15 +763,19 @@ def _unseal_plain_c(dep, rust: str, fact_seals, call_seals) -> str:
     wrong constant at worst.
     """
     rust = scrub_comment_token_echoes(rust)
+    ignored_envelope: list[str] = []
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
             rust = unseal_calls(rust, calls)
         facts = fact_seals.get(dep.name)
         if facts is not None:
-            rust = unseal_facts(rust, facts)
+            rust = unseal_facts(rust, facts, ignored_envelope=ignored_envelope, strict=strict)
     except (CallSealError, FactSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
+    for note in ignored_envelope:
+        UNVERIFIED_CONSTANT_BODIES.append(f"{dep.name}: {note}")
+        print(f"    [{dep.name}] ACCEPTED UNVERIFIED: {note}", file=sys.stderr)
     return rust
 
 
@@ -2984,6 +3015,7 @@ def cmd_translate(args):
                         fact_seals=fact_seals,
                         call_seals=call_seals,
                         target_name=rustconv_target.name,
+                        strict=attempt < attempts_allowed,
                     )
                     reject_error = None
                     break
@@ -3413,6 +3445,15 @@ def cmd_translate(args):
     # NOT announce themselves later: a dropped struct is a compile error, but a
     # lookup table with one wrong byte compiles, links, boots, and formats a date
     # wrong forever.
+    # A body accepted on its last attempt despite ignoring the fact envelope is an
+    # audit finding, not a log line: its constants are unverified, and unverified
+    # constants are precisely what scrolls away and ships. Folded in here so they
+    # reach AUDIT.md alongside the table-count and struct findings.
+    if UNVERIFIED_CONSTANT_BODIES:
+        audit_findings.setdefault("UNVERIFIED CONSTANTS (fact envelope ignored)", []).extend(
+            UNVERIFIED_CONSTANT_BODIES
+        )
+
     if audit_findings:
         total = sum(len(v) for v in audit_findings.values())
         print(f"\n{'=' * 60}", file=sys.stderr)
@@ -3850,6 +3891,24 @@ def main():
     # estimate
     p = sub.add_parser("estimate", help="Estimate token count and cost")
     p.add_argument("path", help="File or directory to estimate")
+    # Same three knobs as `translate`. estimate resolves the target exactly as
+    # translate does, so a module whose crate cannot be guessed (msvcrt ->
+    # msvcrt-crt-rust) raised TargetResolveError here with no flag to answer it —
+    # the one command whose entire job is to price a run refused to price the
+    # modules most in need of pricing.
+    p.add_argument(
+        "--target", help="Override target: a known target name or a dll/win32/<name> crate name"
+    )
+    p.add_argument(
+        "--output-crate",
+        help="Rust crate the translation is assembled into, when it is not the "
+        "conventional <target>-rust (e.g. msvcrt -> msvcrt-crt-rust).",
+    )
+    p.add_argument(
+        "--sys-crate",
+        help="FFI substrate crate to translate against (e.g. ntdll-sys, msvcrt-sys), "
+        "when the output crate declares none or several.",
+    )
 
     # seh-classify
     p = sub.add_parser("seh-classify", help="Classify SEH blocks in C files by pattern")

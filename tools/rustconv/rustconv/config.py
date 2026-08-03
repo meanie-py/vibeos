@@ -1492,8 +1492,16 @@ TARGETS = {
 }
 
 
-def detect_target(c_path: Path) -> Target:
-    """Pick a target by sniffing the C path. Falls back to ntoskrnl."""
+def detect_target(
+    c_path: Path, output_crate: str | None = None, sys_crate: str | None = None
+) -> Target:
+    """Pick a target by sniffing the C path. Falls back to ntoskrnl.
+
+    ``output_crate``/``sys_crate`` are the caller's explicit overrides, forwarded to
+    the auto-detected dll/<name> branch below. Without them, a module whose crate
+    cannot be guessed (msvcrt -> msvcrt-crt-rust) raised TargetResolveError on the
+    auto-detect path with no way to answer it — the flag existed but only the
+    explicit --target branch read it."""
     p = c_path.resolve()
     posix = p.as_posix()
     if "/drivers/base/kdrosdbg" in posix:
@@ -1649,7 +1657,7 @@ def detect_target(c_path: Path) -> Target:
     # e.g. dll/win32/mscms from silently landing in ntoskrnl-rust.
     dll = _dll_crate_from_path(posix)
     if dll:
-        return make_user_dll_target(*dll)
+        return make_user_dll_target(*dll, output_crate=output_crate, sys_crate=sys_crate)
     # No more silent ntoskrnl fallback: an unrecognized path is an ERROR — pass
     # --target <known> or place the file under a known root. (Misrouting paid
     # translations into the wrong crate is the bug this prevents.)

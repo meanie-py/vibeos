@@ -170,11 +170,44 @@ ALLOWLIST_TYPES = [
     "LARGE_INTEGER",
     "FILETIME",
     "PCHAR",
+    # Same story as `BYTE` above and worth repeating because it recurred: `ULONGLONG`
+    # rode into the amd64/arm64 islands transitively and was simply absent from
+    # bindgen_i386.rs, so time.c's `_gmtime64_s` compiled on two arches and not the
+    # third. Naming a type here is what makes all three islands carry one vocabulary.
+    "ULONGLONG",
+    "LONGLONG",
     "fpos_t",
     # msvcrt's own: the printf argument union and file.c's text/binary mode enum.
     "_printf_arg",
     "printf_arg",
     "textmode",
+    # ── time.c (the clock and calendar layer) ────────────────────────────
+    # `tm` and `FILETIME` already rode in transitively on file.c's closure; the rest
+    # did not, and every one of them is a struct the translation READS AND WRITES
+    # FIELD BY FIELD rather than passes through. `SYSTEMTIME` is the worked example:
+    # time.c converts through it in both directions on every gmtime/localtime/mktime
+    # call, and its sixteen bytes are eight `WORD`s in a fixed order — a hand-written
+    # `#[repr(C)]` that put wDayOfWeek where wDay goes would link, run, and give a
+    # calendar that is wrong by a variable number of days.
+    "tm",
+    "_SYSTEMTIME",
+    "SYSTEMTIME",
+    "_TIME_ZONE_INFORMATION",
+    "TIME_ZONE_INFORMATION",
+    # <sys/timeb.h>: what _ftime32/_ftime64 fill in. Two DISTINCT structs — the
+    # 32-bit one is not a narrowing view of the other, it has its own field order.
+    "__timeb32",
+    "__timeb64",
+    # <time.h>: _timespec32_get / _timespec64_get.
+    "_timespec32",
+    "_timespec64",
+    # The scalar time types. Named rather than left transitive because the exported
+    # signatures spell them, and __time32_t vs __time64_t is the whole point of half
+    # of time.c's export list — a translation that resolved both to the same width
+    # would compile and would silently make the 32-bit family alias the 64-bit one.
+    "__time32_t",
+    "__time64_t",
+    "clock_t",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -230,7 +263,8 @@ WRAPPER_SRC = """\
 #include <sys/stat.h>
 #include <sys/utime.h>
 #include <direct.h>  /* _getdrive */
-#include <time.h>    /* _time64  */
+#include <time.h>    /* _time64, struct tm, _timespec32/64 */
+#include <sys/timeb.h>  /* time.c's _ftime32/_ftime64 fill a struct __timeb32/64 */
 #include <wctype.h>  /* iswalpha */
 #include "wincon.h"
 #include "winbase.h"
@@ -417,8 +451,17 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|InitializeCriticalSection|InitializeCriticalSectionEx|DeleteCriticalSection"
         "|EnterCriticalSection|LeaveCriticalSection|TryEnterCriticalSection"
         "|InterlockedCompareExchange|InterlockedCompareExchangePointer"
-        # winternl.h / ntdll: the two NT calls file.c makes directly
-        "|NtQueryInformationFile|RtlTimeToSecondsSince1970"
+        # winternl.h / ntdll: the NT calls file.c and time.c make directly
+        "|NtQueryInformationFile|RtlTimeToSecondsSince1970|NtQuerySystemTime"
+        # winbase.h / timezoneapi.h / datetimeapi.h: time.c's clock and calendar
+        # substrate. `SystemTimeToTzSpecificLocalTime` takes three pointers and
+        # `GetTimeZoneInformation` returns a DWORD sentinel (TIME_ZONE_ID_INVALID is
+        # 0xFFFFFFFF, not -1) — both are the shape where a hand-written extern block
+        # is right on two arches and wrong on the third.
+        "|GetSystemTimeAsFileTime|GetSystemTimePreciseAsFileTime|GetLocalTime"
+        "|GetTimeZoneInformation|SystemTimeToFileTime|FileTimeToSystemTime"
+        "|SystemTimeToTzSpecificLocalTime|GetDateFormatW|GetTimeFormatW"
+        "|WideCharToMultiByte|lstrcpynA"
         # CRT siblings file.c calls that are still C. The ones already Rust in
         # msvcrt-crt-rust are IMPORTED there instead, so rustc checks them against their
         # definition; these have no Rust definition to check against, which is exactly
@@ -477,6 +520,15 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # setypes.h's DELETE is the access right file.c asks for when opening a file it
         # intends to unlink; windef.h's TRUE/FALSE are BOOL, not Rust bools.
         "|_STREAM_LOCKS|_TOTAL_LOCKS|_LAST_STREAM_LOCK|DELETE|TRUE|FALSE"
+        # ── time.c ──────────────────────────────────────────────────────────
+        # winbase.h's three time-zone verdicts, and they are the §9.112 shape
+        # exactly: `_ftime64` compares GetTimeZoneInformation's return against
+        # TIME_ZONE_ID_DAYLIGHT to fill `dstflag`, and TIME_ZONE_ID_INVALID is
+        # 0xFFFFFFFF — a `-1` written from host habit is a different value in a
+        # DWORD comparison and would make every failure look like TIME_ZONE_ID_UNKNOWN.
+        # `_TIME_LOCK` is mtdll.h's slot number for _tzset's critical section, in the
+        # same family as the _STREAM_LOCKS above and wrong by silence if guessed.
+        "|TIME_ZONE_ID_[A-Z]+|_TIME_LOCK|CLOCKS_PER_SEC|_MAX__TIME64_T"
         ")",
         "--",
         "-ferror-limit=0",

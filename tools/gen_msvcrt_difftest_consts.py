@@ -196,6 +196,9 @@ CONSTANTS: dict[str, list[str]] = {
         "ERROR_FILE_NOT_FOUND",
         "ERROR_INVALID_HANDLE",
         "ERROR_INVALID_PARAMETER",
+        # timeimpl.c's GetDateFormatW/GetTimeFormatW report a too-small
+        # output buffer with this, which is what the real ones do.
+        "ERROR_INSUFFICIENT_BUFFER",
     ],
     # Every case label in errno.c's msvcrt_set_errno, which refimpl.c
     # transcribes.  A missing one would not be a compile error in a `switch` —

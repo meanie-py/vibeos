@@ -1761,6 +1761,46 @@ of them were **ours**, not the model's:
   is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
   read where the handler landed, not just whether it is gone.
 
+  **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
+  msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
+  `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,
+  `tzi.Bias * CP_ACP` for `tzi.Bias * 60`. Nothing invented, nothing missing, the multiset
+  exactly right: a **permutation**, which the closed-set check cannot see. The mechanism is in
+  `unseal_facts`'s recovery path, written for a cheap model that swaps ONE token for a correctly
+  guessed spelling: it re-tokenizes matching spellings **in source order**, so when the model
+  wrote real values from memory instead of tokens, recovery re-tokenized the guesses and
+  restoration became an identity. The seal reported success over the model's own memory of the
+  function. Symptom to watch for: the values in the output are all values the C really contains,
+  and several are obviously in the wrong argument (`'-'` compared against `3600`).
+  **Fix (landed): `unseal_facts` refuses a body that preserved NO tokens when ≥4 distinct
+  spellings were sealed** — distinct spellings, not occurrences, because that is the size of the
+  permutation space, and `return 0 + 0 + S_OK` (two spellings) is the benign case recovery exists
+  for. The last retry accepts and reports it as an `UNVERIFIED CONSTANTS` audit finding rather
+  than blocking the file. Rate is not a tail case: it fired on `_ecvt_s` (31 tokens), `_fcvt`
+  (21), `_setfp` (129), `msvcrt_valisttos`, `_wsystem` and `MSVCRT_asin` within one math.c +
+  process.c pair, all of which would have shipped unverified. **Corollary for reviewers: a green
+  `--seal-facts` run is evidence about the value SET, never about placement — read the
+  constant-dense functions.**
+
+  **Why it concentrates in msvcrt, and what to do about it: SEALING IS DEFEATED BY RECALL.**
+  The sealed body handed to the model has the tokens inline, so writing real values back means
+  the model did not translate the text in front of it — it recognised the function and wrote it
+  from memory. msvcrt is one of the most-reproduced C bodies in existence, which is exactly why
+  this shows up here and not in the driver waves, and it is also why RETRYING DOES NOT HELP:
+  recall is stable across samples. `_setfp_sse` and `sqrt_validate` each burned six identical
+  retries before being accepted-and-flagged. **Operationally: use `--retry-rejects 1` on a
+  famous module** — one honest re-roll, then take the `UNVERIFIED CONSTANTS` list from AUDIT.md
+  and diff those bodies against the C by hand. Retrying a recalled function is the same paid
+  call over and over.
+
+  **Calibration, so the list is read correctly: a recalled body is usually RIGHT.** Hand-diffing
+  math.c's flagged bodies against the C found `MSVCRT_asin` (`0x3ff00000`, `_MCW_EM|_MCW_RC`,
+  `_DOMAIN`) and `sqrt_validate` (`FP_ZERO`/`FP_NAN`/`FP_INFINITE`, the
+  `0x8000000000000ULL` signaling bit) faithful in every slot. `_tzset` is the exception, not
+  the rule. So `UNVERIFIED CONSTANTS` is a REVIEW QUEUE, not a defect list — treat a long one
+  as a reading assignment rather than evidence the wave is broken, and do not "fix" a flagged
+  body you have not first diffed.
+
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
 `--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is

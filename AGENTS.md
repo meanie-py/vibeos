@@ -328,6 +328,14 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    `--sys-crate` it names (msvcrt: `--output-crate msvcrt-crt-rust`). Getting this wrong is not a
    build error: an unresolved substrate name makes the model invent a forward declaration that
    compiles, links, and is silently wrong.
+   **Then read the run's `UNVERIFIED CONSTANTS` audit findings — sealing is defeated by
+   RECALL.** On a famous body the model writes the function from memory instead of the
+   sealed text; msvcrt's `_tzset` came back with all 35 constants PERMUTED into the wrong
+   slots (`_lock(0)` for `_lock(_TIME_LOCK)`, `*tz == 3600` for `*tz == '-'`) and the seal
+   reported success, because its invariant is a closed SET and a permutation satisfies it.
+   Those bodies are now flagged rather than shipped silently — treat the list as a review
+   queue and diff each against the C. Retrying does not help (recall is stable across
+   samples), so pass `--retry-rejects 1` on a well-known module rather than a big number.
 3. **`rustconv crate-repair <crate>-rust --arches i386 amd64 arm64`** — bounded deterministic
    repair of the whole-crate `cargo check`, before paying anything to fix compile errors. **Pass
    all three arches**: a numeric cast inferred from one bakes that arch's pointer width, so

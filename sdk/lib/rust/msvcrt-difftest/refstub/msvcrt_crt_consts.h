@@ -115,13 +115,14 @@
 #define MB_PRECOMPOSED 1
 
 /* Win32 error codes */
-#define ERROR_SUCCESS           0
-#define NO_ERROR                0
-#define ERROR_ACCESS_DENIED     5
-#define ERROR_BROKEN_PIPE       0x0000006D
-#define ERROR_FILE_NOT_FOUND    2
-#define ERROR_INVALID_HANDLE    6
-#define ERROR_INVALID_PARAMETER 0x00000057
+#define ERROR_SUCCESS             0
+#define NO_ERROR                  0
+#define ERROR_ACCESS_DENIED       5
+#define ERROR_BROKEN_PIPE         0x0000006D
+#define ERROR_FILE_NOT_FOUND      2
+#define ERROR_INVALID_HANDLE      6
+#define ERROR_INVALID_PARAMETER   0x00000057
+#define ERROR_INSUFFICIENT_BUFFER 0x0000007A
 
 /* Win32 error codes — errno.c's msvcrt_set_errno case labels */
 #define ERROR_ALREADY_EXISTS        0x000000B7
