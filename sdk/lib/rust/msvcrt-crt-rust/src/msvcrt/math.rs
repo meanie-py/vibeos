@@ -1,4 +1,8 @@
 
+//! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip — the 64 inline-asm sites
+//! must be rewritten by hand first (see below). Nothing is hidden from the smoke harness:
+//! this file has never been in the build.
+//!
 //! `dll/win32/msvcrt/math.c`, translated whole — **BANKED, NOT FLIPPED.**
 //!
 //! There is no `pub mod math;` in `mod.rs` yet, and that is a deliberate state, not an
@@ -43,6 +47,13 @@ extern "system" {
     static __os_arm64x_set_x64_information: Option<unsafe extern "system" fn(ULONG, ULONG_PTR, *mut core::ffi::c_void) -> NTSTATUS>;
 }
 
+/// wine/debug.h's `TRACE`, which msvcrt compiles out. A `macro_rules!` and never an
+/// out-of-line `fn`: a no-op function is an optimization barrier that uncloaks latent ABI
+/// mismatches into `ud2`. Same shape as file.rs's.
+macro_rules! TRACE {
+    ($($arg:tt)*) => {{}};
+}
+
 // ---- file-scope preamble (translated) ----
 pub const _DOMAIN: i32 = 1;
 pub const _SING: i32 = 2;
@@ -78,9 +89,17 @@ pub const FENV_Y_FLUSH: u32 = 0x00000400;
 pub const FENV_Y_FLUSH_SAVE: u32 = 0x00000800;
 
 pub static mut MSVCRT__adjust_fdiv: i32 = 0;
+
+/// `KUSER_SHARED_DATA.ProcessorFeatures`, at the fixed user-mode address the C spells
+/// inline: `((volatile const BYTE *)(ULONG_PTR)0x7FFE0274)[...]`. Typed as the ARRAY it
+/// is rather than as `*const u8` plus an offset — a hand-computed byte offset is the one
+/// shape `scan_magic_offsets` exists to forbid, and it is no less wrong for having been
+/// copied faithfully from a C cast.
+const KSHARED_PROCESSOR_FEATURES: *const [u8; 64] = 0x7FFE0274 as *const [u8; 64];
 #[no_mangle]
 pub unsafe extern "C" fn msvcrt_init_math(module: *mut core::ffi::c_void) {
-    sse2_supported = (*((0x7FFE0274 as usize) as *const u8).offset(PF_XMMI64_INSTRUCTIONS_AVAILABLE)) != 0;
+    sse2_supported =
+        ((*KSHARED_PROCESSOR_FEATURES)[PF_XMMI64_INSTRUCTIONS_AVAILABLE as usize] != 0) as BOOL;
     sse2_enabled = FALSE != 0;
 }
 unsafe extern "C" fn ret_nan(update_sw: u8) -> f64 {
@@ -554,6 +573,7 @@ unsafe extern "C" fn _setfp_sse(
             }
 
             *sw = (flags & !sw_mask) | (*sw & sw_mask);
+            TRACE!(b"sse2 update sw %08x to %08x\n\0".as_ptr() as *const i8, flags, *sw);
 
             fpword &= !0x3f;
             if *sw & _SW_INVALID != 0 {
@@ -623,6 +643,7 @@ unsafe extern "C" fn _setfp_sse(
             }
 
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
+            TRACE!(b"sse2 update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
             fpword &= !0xffc0;
             if *cw & _EM_INVALID != 0 {
@@ -717,6 +738,7 @@ unsafe extern "C" fn _setfp(
             if newsw & 0x20 != 0 { flags |= _SW_INEXACT; }
 
             *sw = (flags & !sw_mask) | (*sw & sw_mask);
+            TRACE!(b"x86 update sw %08x to %08x\n\0".as_ptr() as *const i8, flags, *sw);
 
             newsw &= !0x3f;
             if *sw & _SW_INVALID != 0 { newsw |= 0x1; }
@@ -754,6 +776,7 @@ unsafe extern "C" fn _setfp(
             if newcw & 0x1000 != 0 { flags |= _IC_AFFINE; }
 
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
+            TRACE!(b"x86 update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
             newcw &= !0x1f3f;
             if *cw & _EM_INVALID != 0 { newcw |= 0x1; }
@@ -852,6 +875,7 @@ unsafe extern "C" fn _setfp(
             if fpsr & 0x80 != 0 { flags |= _SW_DENORMAL; }
 
             *sw = (flags & !sw_mask) | (*sw & sw_mask);
+            TRACE!(b"aarch64 update sw %08x to %08x\n\0".as_ptr() as *const i8, flags, *sw);
 
             fpsr &= !0x9f;
             if *sw & _SW_INVALID != 0 { fpsr |= 0x1; }
@@ -882,6 +906,7 @@ unsafe extern "C" fn _setfp(
             }
 
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
+            TRACE!(b"aarch64 update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
             fpcr &= !0xc09f00ul;
             if *cw & _EM_INVALID == 0 { fpcr |= 0x100; }
@@ -933,6 +958,7 @@ unsafe extern "C" fn _setfp(
             if fpscr & 0x80 != 0 { flags |= _SW_DENORMAL; }
 
             *sw = (flags & !sw_mask) | (*sw & sw_mask);
+            TRACE!(b"arm update sw %08x to %08x\n\0".as_ptr() as *const i8, flags, *sw);
 
             fpscr &= !0x9f;
             if *sw & _SW_INVALID != 0 { fpscr |= 0x1; }
@@ -960,6 +986,7 @@ unsafe extern "C" fn _setfp(
             }
 
             *cw = (flags & !cw_mask) | (*cw & cw_mask);
+            TRACE!(b"arm update cw %08x to %08x\n\0".as_ptr() as *const i8, flags, *cw);
 
             fpscr &= !0xc09f00ul;
             if *cw & _EM_INVALID == 0 { fpscr |= 0x100; }
