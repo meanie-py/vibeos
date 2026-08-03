@@ -441,6 +441,20 @@ Order them so shared substrate matures before the hardest control-flow files:
 9. `CDefView.cpp`
 10. `shell32.cpp` (DLL/module/object-map capstone)
 
+**`CDefView.cpp` scoped 2026-08-02 (free, no paid call): the blocker is a design decision, not
+translation volume.** 191 method bodies, of which the preflight can extract 190 — the one it
+cannot is `GetWndClassInfo()`, an `ATL::CWndClassInfo` aggregate initializer registering the
+`SHELLDLL_DefView` window class. That is the tell. `CDefView` is simultaneously an ATL **window**
+class (`CWindowImpl<CDefView, CWindow, CControlWinTraits>`, a 24-entry `BEGIN_MSG_MAP`,
+`StartWindowProc`/`WindowProc`/`OnFinalMessage`) and a COM class (`BEGIN_COM_MAP`, 10 interfaces
+across 11 entries). The `changenotify.cpp` precedent carves the ATL window class out to a C++ stub
+— but there it was a small companion, and here it is the centre of the object: the 24 message
+handlers and the COM methods manipulate the SAME `m_*` state, so the carve-out line has to be
+drawn through the object's own fields, which needs an agreed layout shared by both halves rather
+than a one-way bridge. Decide that boundary before spending anything; the money is not the
+constraint (191 bodies is a few dollars at this lane's measured rate), the state split is. This is
+why it sits 9th of 10 here, and nothing about the scoping changes that order.
+
 The two hardest control-flow files (7, 8) landed ahead of 2/4/5 because their substrate — ATL,
 shellutils, layout, the `lpVtbl` COM shape — was already built by the earlier flips, and the
 "needs a printf-variadic `CStringW::Format`" blocker that had deferred both turned out to be
