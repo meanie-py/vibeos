@@ -489,8 +489,11 @@ And the reason is visible in the source, which is worth knowing before buying an
 (dialogs.cpp:824/837). Rust has no such jump, so the model must restructure the whole
 allocate-or-default block — and restructuring is exactly what loses sealed call tokens. Note
 also that **one rejected worker assembles no file at all**, by design, so 24 accepted bodies
-cannot be stitched around 2 rejects: either repair them into the run, or hand-write them into
-the assembled module afterwards and say so in the module header.
+cannot be stitched around 2 rejects. `--exclude` does not help — it takes *file* stems, for
+batch mode. The way through is **`--fn` with the 24 accepted names as one comma-separated
+worker set**: verified `Resume cache: 24 banked ($0 replay), 0 to buy`, so it assembles the
+module for nothing, and the two hand-written bodies go into it afterwards with the module
+header saying which they are. Same ending as `changenotify`, reached without paying twice.
 
 **`CDefView.cpp` scoped 2026-08-02 (free, no paid call): the blocker is a design decision, not
 translation volume.** 191 method bodies, of which the preflight can extract 190 — the one it
