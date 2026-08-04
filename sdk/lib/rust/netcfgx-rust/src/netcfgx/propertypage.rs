@@ -1192,7 +1192,10 @@ unsafe extern "C" fn OnNotify(
         WriteParameterArray(hwnd, pParamArray);
     } else if (*(lParam as LPNMHDR)).code == UDN_DELTAPOS as u32 {
         let pUpDown = lParam as LPNMUPDOWN;
-        (*pUpDown).iDelta *= (*pParamArray).pCurrentParam.as_ref().unwrap().iStep;
+        // `pParamArray->pCurrentParam->iStep` — a plain C deref, so a plain Rust deref.
+        // `.as_ref().unwrap()` would PANIC where the C faults, which is not the same
+        // program: a WM_NOTIFY handler that panics unwinds through the Win32 dispatcher.
+        (*pUpDown).iDelta *= (*(*pParamArray).pCurrentParam).iStep;
     }
 }
 unsafe extern "C" fn OnDestroy(
@@ -1301,7 +1304,11 @@ pub unsafe extern "system" fn NetPropPageProvider(
             return FALSE;
         }
 
-        if lpfnAddPropSheetPageProc.unwrap()(hPropSheetPage, lParam) == 0 {
+        // bindgen renders a C function-pointer parameter as `Option<fn>`; the C calls it
+        // unconditionally, so `unwrap_unchecked` is the faithful lowering — `.unwrap()` and
+        // `.expect()` both ADD a panic to a live DLL where the C simply faults, which is
+        // the same objection crate-repair raises to rustc's `.try_into().unwrap()` fix-it.
+        if lpfnAddPropSheetPageProc.unwrap_unchecked()(hPropSheetPage, lParam) == 0 {
             DestroyPropertySheetPage(hPropSheetPage);
             return FALSE;
         }

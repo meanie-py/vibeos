@@ -843,7 +843,11 @@ pub unsafe extern "system" fn INetCfg_fnQueryNetCfgClass(
     iface: *mut INetCfg,
     pguidClass: *const GUID,
     riid: *const IID,
-    ppvObject: *mut *mut LPVOID,
+    // `void **`, i.e. `*mut LPVOID` — LPVOID is already `*mut c_void`, so the translated
+    // `*mut *mut LPVOID` was `void ***`. It would have linked and written the caller's
+    // pointer one level too shallow. Caught by verify_c_signatures, which is the only
+    // check that reads a crate no compiler has read.
+    ppvObject: *mut LPVOID,
 ) -> HRESULT {
     INetCfgClass_Constructor(iface as *mut IUnknown, riid, ppvObject, pguidClass, iface as *mut INetCfg)
 }
