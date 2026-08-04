@@ -1,6 +1,144 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s"
+static TCPIP_IFACE_FMT: [u16; 65] = [
+    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
+    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
+    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
+    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'P' as u16, b'a' as u16,
+    b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16,
+    b's' as u16, b'\\' as u16, b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16,
+    b'f' as u16, b'a' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'%' as u16,
+    b's' as u16, 0,
+];
+// L"RegisterAdapterName"
+static REG_REGISTER_ADAPTER_NAME: [u16; 20] = [
+    b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'e' as u16,
+    b'r' as u16, b'A' as u16, b'd' as u16, b'a' as u16, b'p' as u16, b't' as u16, b'e' as u16,
+    b'r' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0,
+];
+// L"RegistrationEnabled"
+static REG_REGISTRATION_ENABLED: [u16; 20] = [
+    b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
+    b'a' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'E' as u16, b'n' as u16,
+    b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'd' as u16, 0,
+];
+// L"Domain"
+static REG_DOMAIN2: [u16; 7] = [
+    b'D' as u16, b'o' as u16, b'm' as u16, b'a' as u16, b'i' as u16, b'n' as u16, 0,
+];
+// L"InterfaceMetric"
+static REG_INTERFACE_METRIC: [u16; 16] = [
+    b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'f' as u16, b'a' as u16,
+    b'c' as u16, b'e' as u16, b'M' as u16, b'e' as u16, b't' as u16, b'r' as u16, b'i' as u16,
+    b'c' as u16, 0,
+];
+// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
+static TCPIP_PARAMETERS_KEY: [u16; 51] = [
+    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
+    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
+    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
+    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'P' as u16, b'a' as u16,
+    b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16,
+    b's' as u16, 0,
+];
+// L"UseDomainNameDevolution"
+static REG_USE_DOMAIN_NAME_DEVOLUTION: [u16; 24] = [
+    b'U' as u16, b's' as u16, b'e' as u16, b'D' as u16, b'o' as u16, b'm' as u16, b'a' as u16,
+    b'i' as u16, b'n' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'D' as u16,
+    b'e' as u16, b'v' as u16, b'o' as u16, b'l' as u16, b'u' as u16, b't' as u16, b'i' as u16,
+    b'o' as u16, b'n' as u16, 0,
+];
+// L"SearchList"
+static REG_SEARCH_LIST: [u16; 11] = [
+    b'S' as u16, b'e' as u16, b'a' as u16, b'r' as u16, b'c' as u16, b'h' as u16, b'L' as u16,
+    b'i' as u16, b's' as u16, b't' as u16, 0,
+];
+// L"EnableSecurityFilters"
+static REG_ENABLE_SECURITY_FILTERS: [u16; 22] = [
+    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'S' as u16,
+    b'e' as u16, b'c' as u16, b'u' as u16, b'r' as u16, b'i' as u16, b't' as u16, b'y' as u16,
+    b'F' as u16, b'i' as u16, b'l' as u16, b't' as u16, b'e' as u16, b'r' as u16, b's' as u16,
+    0,
+];
+// L"TCPAllowedPorts"
+static REG_TCP_ALLOWED_PORTS: [u16; 16] = [
+    b'T' as u16, b'C' as u16, b'P' as u16, b'A' as u16, b'l' as u16, b'l' as u16, b'o' as u16,
+    b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'o' as u16, b'r' as u16, b't' as u16,
+    b's' as u16, 0,
+];
+// L"UDPAllowedPorts"
+static REG_UDP_ALLOWED_PORTS: [u16; 16] = [
+    b'U' as u16, b'D' as u16, b'P' as u16, b'A' as u16, b'l' as u16, b'l' as u16, b'o' as u16,
+    b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'o' as u16, b'r' as u16, b't' as u16,
+    b's' as u16, 0,
+];
+// L"RawIPAllowedProtocols"
+static REG_RAW_IP_ALLOWED_PROTOCOLS: [u16; 22] = [
+    b'R' as u16, b'a' as u16, b'w' as u16, b'I' as u16, b'P' as u16, b'A' as u16, b'l' as u16,
+    b'l' as u16, b'o' as u16, b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'r' as u16,
+    b'o' as u16, b't' as u16, b'o' as u16, b'c' as u16, b'o' as u16, b'l' as u16, b's' as u16,
+    0,
+];
+// L"INetCfgComponentPropertyUi_fnValidateProperties"
+static MSG_VALIDATE_PROPERTIES: [u16; 48] = [
+    b'I' as u16, b'N' as u16, b'e' as u16, b't' as u16, b'C' as u16, b'f' as u16, b'g' as u16,
+    b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'o' as u16, b'n' as u16, b'e' as u16,
+    b'n' as u16, b't' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'p' as u16, b'e' as u16,
+    b'r' as u16, b't' as u16, b'y' as u16, b'U' as u16, b'i' as u16, b'_' as u16, b'f' as u16,
+    b'n' as u16, b'V' as u16, b'a' as u16, b'l' as u16, b'i' as u16, b'd' as u16, b'a' as u16,
+    b't' as u16, b'e' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'p' as u16, b'e' as u16,
+    b'r' as u16, b't' as u16, b'i' as u16, b'e' as u16, b's' as u16, 0,
+];
+// L"EnableDHCP"
+static REG_ENABLE_DHCP3: [u16; 11] = [
+    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'D' as u16,
+    b'H' as u16, b'C' as u16, b'P' as u16, 0,
+];
+// L"IPAddress"
+static REG_IP_ADDRESS2: [u16; 10] = [
+    b'I' as u16, b'P' as u16, b'A' as u16, b'd' as u16, b'd' as u16, b'r' as u16, b'e' as u16,
+    b's' as u16, b's' as u16, 0,
+];
+// L"SubnetMask"
+static REG_SUBNET_MASK2: [u16; 11] = [
+    b'S' as u16, b'u' as u16, b'b' as u16, b'n' as u16, b'e' as u16, b't' as u16, b'M' as u16,
+    b'a' as u16, b's' as u16, b'k' as u16, 0,
+];
+// L"DefaultGateway"
+static REG_DEFAULT_GATEWAY2: [u16; 15] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
+    b'G' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'w' as u16, b'a' as u16, b'y' as u16,
+    0,
+];
+// L"DefaultGatewayMetric"
+static REG_DEFAULT_GATEWAY_METRIC: [u16; 21] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
+    b'G' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'w' as u16, b'a' as u16, b'y' as u16,
+    b'M' as u16, b'e' as u16, b't' as u16, b'r' as u16, b'i' as u16, b'c' as u16, 0,
+];
+// L"NameServer"
+static REG_NAME_SERVER: [u16; 11] = [
+    b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
+    b'v' as u16, b'e' as u16, b'r' as u16, 0,
+];
+// L"0.0.0.0" — REG_MULTI_SZ (LPBYTE)L"0.0.0.0\0" in the C: 7 chars + explicit \0 + the
+// auto NUL = 9 wide chars, double-NUL terminated as REG_MULTI_SZ requires.
+static ZERO_IP_MULTISZ: [u16; 9] = [
+    b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16,
+    0, 0,
+];
+// (LPBYTE)L"" in the C: an empty REG_MULTI_SZ value is a single wide NUL, 1 * sizeof(WCHAR).
+static EMPTY_MULTISZ: [u16; 1] = [0];
+// (LPBYTE)L"\0" in the C: an explicit NUL char plus the auto NUL = 2 wide NULs,
+// sizeof(WCHAR) * 2.
+static DOUBLE_NULL_MULTISZ: [u16; 2] = [0, 0];
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct TcpFilterSettings {
@@ -46,6 +184,14 @@ pub type PIP_ADDR = *mut IP_ADDR;
 pub const METRIC: u32 = 1;
 pub const SUBMASK: u32 = 2;
 pub const IPADDR: u32 = 3;
+
+// L"%lu.%lu.%lu.%lu" — swprintf format string, used verbatim from dll/win32/netcfgx/tcpipconf_notify.c
+static FMT_DOTTED_QUAD: [u16; 16] = [
+    b'%' as u16, b'l' as u16, b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16, b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16,
+    b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16, b'u' as u16, 0,
+];
+// L"%u" — swprintf format string, used verbatim from dll/win32/netcfgx/tcpipconf_notify.c
+static FMT_UINT: [u16; 3] = [b'%' as u16, b'u' as u16, 0];
 
 pub type COPY_TYPE = u32;
 
@@ -643,7 +789,7 @@ pub unsafe extern "C" fn InsertIpAddressToListView(
         dwIpAddr = (*pAddr).IpAddress;
         swprintf(
             szBuffer.as_mut_ptr(),
-            b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+            FMT_DOTTED_QUAD.as_ptr() as *const u16,
             FIRST_IPADDRESS(dwIpAddr),
             SECOND_IPADDRESS(dwIpAddr),
             THIRD_IPADDRESS(dwIpAddr),
@@ -662,7 +808,7 @@ pub unsafe extern "C" fn InsertIpAddressToListView(
                 dwIpAddr = (*pAddr).u.Subnetmask;
                 swprintf(
                     szBuffer.as_mut_ptr(),
-                    b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                    FMT_DOTTED_QUAD.as_ptr() as *const u16,
                     FIRST_IPADDRESS(dwIpAddr),
                     SECOND_IPADDRESS(dwIpAddr),
                     THIRD_IPADDRESS(dwIpAddr),
@@ -672,7 +818,7 @@ pub unsafe extern "C" fn InsertIpAddressToListView(
                 if (*pAddr).u.Metric != 0 {
                     swprintf(
                         szBuffer.as_mut_ptr(),
-                        b"%u\0".as_ptr() as *const u16,
+                        FMT_UINT.as_ptr() as *const u16,
                         (*pAddr).u.Metric,
                     );
                 } else {
@@ -800,7 +946,7 @@ pub unsafe extern "system" fn TcpipAdvGwDlg(
                 if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_CHECKED {
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), FALSE);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), FALSE);
-                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, b"\0".as_ptr() as LPARAM);
+                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, b"\0\0".as_ptr() as LPARAM);
                 } else {
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), TRUE);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), TRUE);
@@ -1387,7 +1533,7 @@ pub unsafe extern "system" fn TcpipAdvancedIpDlg(
                     li.iItem = SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
                     if li.iItem >= 0 {
                         if Gw.Metric != 0 {
-                            swprintf(szBuffer.as_mut_ptr(), b"L\"%u\"\0".as_ptr() as *const _, Gw.Metric);
+                            swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
                             li.iSubItem = 1;
                             li.pszText = szBuffer.as_mut_ptr();
                             SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
@@ -1417,7 +1563,7 @@ pub unsafe extern "system" fn TcpipAdvancedIpDlg(
                             li.pszText = Gw.szIP.as_mut_ptr();
                             SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
                             if Gw.Metric != 0 {
-                                swprintf(szBuffer.as_mut_ptr(), b"L\"%u\"\0".as_ptr() as *const _, Gw.Metric);
+                                swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
                                 li.iSubItem = 1;
                                 li.pszText = szBuffer.as_mut_ptr();
                                 SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
@@ -1521,7 +1667,7 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
     while !pAddr.is_null() {
         dwIpAddr = (*pAddr).IpAddress;
         swprintf(szBuffer.as_mut_ptr(),
-                 b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                 FMT_DOTTED_QUAD.as_ptr() as *const u16,
                  FIRST_IPADDRESS(dwIpAddr), SECOND_IPADDRESS(dwIpAddr), THIRD_IPADDRESS(dwIpAddr), FOURTH_IPADDRESS(dwIpAddr));
 
         SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_ADDSTRING, 0, szBuffer.as_ptr() as LPARAM);
@@ -2773,35 +2919,35 @@ pub unsafe extern "C" fn LoadDNSSettings(
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s\0".as_ptr() as LPCWSTR, pStr);
+    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
     CoTaskMemFree(pStr as LPVOID);
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == ERROR_SUCCESS {
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, b"RegisterAdapterName\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, REG_REGISTER_ADAPTER_NAME.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, b"RegistrationEnabled\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, REG_REGISTRATION_ENABLED.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of_val(&(*(*(*This).pCurrentConfig).pDNS).szDomain) as DWORD;
-        RegQueryValueExW(hKey, b"Domain\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, REG_DOMAIN2.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        if RegQueryValueExW(hKey, b"InterfaceMetric\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
             (*(*This).pCurrentConfig).Metric = 0;
         }
 
         RegCloseKey(hKey);
     }
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\0".as_ptr() as LPCWSTR, 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == ERROR_SUCCESS {
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, b"UseDomainNameDevolution\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, REG_USE_DOMAIN_NAME_DEVOLUTION.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = 0;
-        if RegQueryValueExW(hKey, b"SearchList\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSize)) == ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSize)) == ERROR_SUCCESS {
             (*(*(*This).pCurrentConfig).pDNS).szSearchList = CoTaskMemAlloc(dwSize as usize) as LPWSTR;
             if !(*(*(*This).pCurrentConfig).pDNS).szSearchList.is_null() {
-                if RegQueryValueExW(hKey, b"SearchList\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szSearchList as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
+                if RegQueryValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szSearchList as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
                     CoTaskMemFree((*(*(*This).pCurrentConfig).pDNS).szSearchList as LPVOID);
                     (*(*(*This).pCurrentConfig).pDNS).szSearchList = core::ptr::null_mut();
                 }
@@ -2851,9 +2997,9 @@ pub unsafe extern "C" fn LoadFilterSettings(
     ZeroMemory(pFilter as LPVOID, core::mem::size_of::<TcpFilterSettings>());
     (*(*(*This).pCurrentConfig).pFilter) = pFilter;
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\0".as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
         dwSize = core::mem::size_of::<u32>() as u32;
-        if RegQueryValueExW(hKey, b"EnableSecurityFilters\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwVal as *mut u32 as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, REG_ENABLE_SECURITY_FILTERS.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwVal as *mut u32 as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
             (*pFilter).EnableSecurityFilters = dwVal;
         }
         RegCloseKey(hKey);
@@ -2865,14 +3011,14 @@ pub unsafe extern "C" fn LoadFilterSettings(
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s\0".as_ptr() as LPCWSTR, pStr);
+    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
     CoTaskMemFree(pStr);
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
         return S_OK;
     }
-    (*pFilter).szTCPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, b"TCPAllowedPorts\0".as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).TCPSize));
-    (*pFilter).szUDPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, b"UDPAllowedPorts\0".as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).UDPSize));
-    (*pFilter).szRawIPAllowedProtocols = LoadTcpFilterSettingsFromRegistry(hKey, b"RawIPAllowedProtocols\0".as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).IPSize));
+    (*pFilter).szTCPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, REG_TCP_ALLOWED_PORTS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).TCPSize));
+    (*pFilter).szUDPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, REG_UDP_ALLOWED_PORTS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).UDPSize));
+    (*pFilter).szRawIPAllowedProtocols = LoadTcpFilterSettingsFromRegistry(hKey, REG_RAW_IP_ALLOWED_PROTOCOLS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).IPSize));
     RegCloseKey(hKey);
     return S_OK;
 }
@@ -3106,7 +3252,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnValidateProperties(
 ) -> HRESULT {
     MessageBoxW(
         core::ptr::null_mut(),
-        b"INetCfgComponentPropertyUi_fnValidateProperties\0".as_ptr() as LPCWSTR,
+        MSG_VALIDATE_PROPERTIES.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         MB_OK,
     );
@@ -3191,7 +3337,7 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).IpAddress;
             swprintf(
                 szBuffer.as_mut_ptr(),
-                b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                FMT_DOTTED_QUAD.as_ptr() as *const u16,
                 FIRST_IPADDRESS(dwIpAddr),
                 SECOND_IPADDRESS(dwIpAddr),
                 THIRD_IPADDRESS(dwIpAddr),
@@ -3201,7 +3347,7 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).u.Subnetmask;
             swprintf(
                 szBuffer.as_mut_ptr(),
-                b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                FMT_DOTTED_QUAD.as_ptr() as *const u16,
                 FIRST_IPADDRESS(dwIpAddr),
                 SECOND_IPADDRESS(dwIpAddr),
                 THIRD_IPADDRESS(dwIpAddr),
@@ -3210,7 +3356,7 @@ unsafe extern "C" fn CreateMultiSzString(
         } else if Type == METRIC {
             swprintf(
                 szBuffer.as_mut_ptr(),
-                b"%u\0".as_ptr() as *const u16,
+                FMT_UINT.as_ptr() as *const u16,
                 (*pTemp).u.Metric,
             );
         }
@@ -3235,7 +3381,7 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).IpAddress;
             swprintf(
                 pStr,
-                b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                FMT_DOTTED_QUAD.as_ptr() as *const u16,
                 FIRST_IPADDRESS(dwIpAddr),
                 SECOND_IPADDRESS(dwIpAddr),
                 THIRD_IPADDRESS(dwIpAddr),
@@ -3245,7 +3391,7 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).u.Subnetmask;
             swprintf(
                 pStr,
-                b"%lu.%lu.%lu.%lu\0".as_ptr() as *const u16,
+                FMT_DOTTED_QUAD.as_ptr() as *const u16,
                 FIRST_IPADDRESS(dwIpAddr),
                 SECOND_IPADDRESS(dwIpAddr),
                 THIRD_IPADDRESS(dwIpAddr),
@@ -3254,7 +3400,7 @@ unsafe extern "C" fn CreateMultiSzString(
         } else if Type == METRIC {
             swprintf(
                 pStr,
-                b"%u\0".as_ptr() as *const u16,
+                FMT_UINT.as_ptr() as *const u16,
                 (*pTemp).u.Metric,
             );
         }
@@ -3299,14 +3445,14 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
     pOldConfig = (*This).pCurrentConfig;
     (*This).pCurrentConfig = pCurrentConfig;
 
-    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\0".as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == ERROR_SUCCESS {
+    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == ERROR_SUCCESS {
         if !(*pCurrentConfig).pDNS.is_null() {
-            RegSetValueExW(hKey, b"UseDomainNameDevolution\0".as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, b"SearchList\0".as_ptr() as LPCWSTR, 0, REG_SZ, (*(*pCurrentConfig).pDNS).szSearchList as LPBYTE,
+            RegSetValueExW(hKey, REG_USE_DOMAIN_NAME_DEVOLUTION.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, 0, REG_SZ, (*(*pCurrentConfig).pDNS).szSearchList as LPBYTE,
                        (wcslen((*(*pCurrentConfig).pDNS).szSearchList)+1) * core::mem::size_of::<u16>() as u32);
         }
         if !(*pCurrentConfig).pFilter.is_null() {
-            RegSetValueExW(hKey, b"EnableSecurityFilters\0".as_ptr() as LPCWSTR, 0, REG_DWORD,
+            RegSetValueExW(hKey, REG_ENABLE_SECURITY_FILTERS.as_ptr() as LPCWSTR, 0, REG_DWORD,
                       core::ptr::addr_of_mut!((*(*pCurrentConfig).pFilter).EnableSecurityFilters) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         }
         RegCloseKey(hKey);
@@ -3316,26 +3462,26 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s\0".as_ptr() as LPCWSTR, pStr);
+    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
     CoTaskMemFree(pStr);
 
     if RegCreateKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == ERROR_SUCCESS {
         if (*pCurrentConfig).Metric != 0 {
-            RegSetValueExW(hKey, b"InterfaceMetric\0".as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         } else {
-            RegDeleteValueW(hKey, b"InterfaceMetric\0".as_ptr() as LPCWSTR);
+            RegDeleteValueW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR);
         }
 
         if !(*pCurrentConfig).pDNS.is_null() {
-            RegSetValueExW(hKey, b"RegisterAdapterName\0".as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, b"RegistrationEnabled\0".as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, b"Domain\0".as_ptr() as LPCWSTR, 0, REG_SZ, (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE,
+            RegSetValueExW(hKey, REG_REGISTER_ADAPTER_NAME.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, REG_REGISTRATION_ENABLED.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, REG_DOMAIN2.as_ptr() as LPCWSTR, 0, REG_SZ, (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE,
                        (wcslen((*(*(*This).pCurrentConfig).pDNS).szDomain.as_ptr())+1) * core::mem::size_of::<u16>() as u32);
         }
-        RegSetValueExW(hKey, b"EnableDHCP\0".as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*pCurrentConfig).DhcpEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+        RegSetValueExW(hKey, REG_ENABLE_DHCP3.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*pCurrentConfig).DhcpEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         if (*pCurrentConfig).DhcpEnabled != 0 {
-            RegSetValueExW(hKey, b"IPAddress\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, LPBYTE as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
-            RegSetValueExW(hKey, b"SubnetMask\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, LPBYTE as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, REG_IP_ADDRESS2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, ZERO_IP_MULTISZ.as_ptr() as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, REG_SUBNET_MASK2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, ZERO_IP_MULTISZ.as_ptr() as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
             if (*pOldConfig).DhcpEnabled == 0 {
                 DeleteIPAddress((*(*pOldConfig).Ip).NTEContext);
 
@@ -3377,13 +3523,13 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
 
             pStr = CreateMultiSzString((*pCurrentConfig).Ip, IPADDR, &mut dwSize, FALSE);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, b"IPAddress\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, REG_IP_ADDRESS2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
 
             pStr = CreateMultiSzString((*pCurrentConfig).Ip, SUBMASK, &mut dwSize, FALSE);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, b"SubnetMask\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, REG_SUBNET_MASK2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
 
@@ -3418,27 +3564,27 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
             if CreateIpForwardEntry(core::ptr::addr_of_mut!(RouterMib)) == NO_ERROR {
                 pStr = CreateMultiSzString((*pCurrentConfig).Gw, IPADDR, &mut dwSize, FALSE);
                 if !pStr.is_null() {
-                    RegSetValueExW(hKey, b"DefaultGateway\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                    RegSetValueExW(hKey, REG_DEFAULT_GATEWAY2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
                     CoTaskMemFree(pStr as LPVOID);
                 }
 
                 pStr = CreateMultiSzString((*pCurrentConfig).Gw, METRIC, &mut dwSize, FALSE);
                 if !pStr.is_null() {
-                    RegSetValueExW(hKey, b"DefaultGatewayMetric\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                    RegSetValueExW(hKey, REG_DEFAULT_GATEWAY_METRIC.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
                     CoTaskMemFree(pStr as LPVOID);
                 }
             }
         } else {
-            RegSetValueExW(hKey, b"DefaultGateway\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, LPBYTE as LPBYTE, 1 * core::mem::size_of::<u16>() as u32);
-            RegSetValueExW(hKey, b"DefaultGatewayMetric\0".as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, LPBYTE as LPBYTE, core::mem::size_of::<u16>() as u32 * 2);
+            RegSetValueExW(hKey, REG_DEFAULT_GATEWAY2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, EMPTY_MULTISZ.as_ptr() as LPBYTE, 1 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, REG_DEFAULT_GATEWAY_METRIC.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, DOUBLE_NULL_MULTISZ.as_ptr() as LPBYTE, core::mem::size_of::<u16>() as u32 * 2);
         }
 
         if (*pCurrentConfig).Ns.is_null() || (*pCurrentConfig).AutoconfigActive != 0 {
-            RegDeleteValueW(hKey, b"NameServer\0".as_ptr() as LPCWSTR);
+            RegDeleteValueW(hKey, REG_NAME_SERVER.as_ptr() as LPCWSTR);
         } else {
             pStr = CreateMultiSzString((*pCurrentConfig).Ns, IPADDR, &mut dwSize, TRUE);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, b"NameServer\0".as_ptr() as LPCWSTR, 0, REG_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, REG_NAME_SERVER.as_ptr() as LPCWSTR, 0, REG_SZ, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
         }

@@ -1595,10 +1595,15 @@ unsafe fn GetOwnerModuleFromTagEntry(
         return GetLastError();
     }
 
+    // L"\advapi32.dll"
+    static ADVAPI32_DLL_BUF: [u16; 14] = [
+        b'\\' as u16, b'a' as u16, b'd' as u16, b'v' as u16, b'a' as u16, b'p' as u16, b'i' as u16, b'3' as u16, b'2' as u16, b'.' as u16,
+        b'd' as u16, b'l' as u16, b'l' as u16, 0,
+    ];
     Res = StringCchCatW(
         SysDir.as_mut_ptr().offset(Size as isize),
         (MAX_PATH as u32 - Size) as usize,
-        b"\\advapi32.dll\0".as_ptr() as *const u16,
+        ADVAPI32_DLL_BUF.as_ptr() as *const u16,
     );
     if FAILED(Res) {
         return Res as DWORD;

@@ -16,6 +16,15 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
 
+// L"\*.*"
+static WILDCARD_ALL_W: [u16; 5] = [b'\\' as u16, b'*' as u16, b'.' as u16, b'*' as u16, 0];
+// L"."
+static DOT_W: [u16; 2] = [b'.' as u16, 0];
+// L".."
+static DOT_DOT_W: [u16; 3] = [b'.' as u16, b'.' as u16, 0];
+// L"\"
+static BACKSLASH_W: [u16; 2] = [b'\\' as u16, 0];
+
 #[no_mangle]
 pub unsafe extern "system" fn CopyProfileDirectoryA(
     lpSourcePath: LPCSTR,
@@ -72,7 +81,7 @@ pub unsafe extern "C" fn CopyDirectory(lpDestinationPath: LPCWSTR, lpSourcePath:
     let mut hFind: *mut core::ffi::c_void;
 
     wcscpy(szFileName.as_mut_ptr(), lpSourcePath);
-    wcscat(szFileName.as_mut_ptr(), b"\\\0*\0.\0*\0\0".as_ptr() as *const u16);
+    wcscat(szFileName.as_mut_ptr(), WILDCARD_ALL_W.as_ptr() as *const u16);
 
     hFind = FindFirstFileW(szFileName.as_ptr(), &mut FindFileData);
     if hFind == INVALID_HANDLE_VALUE {
@@ -86,8 +95,8 @@ pub unsafe extern "C" fn CopyDirectory(lpDestinationPath: LPCWSTR, lpSourcePath:
     lpDstPtr = AppendBackslash(szFullDstName.as_mut_ptr());
 
     loop {
-        if wcscmp(FindFileData.cFileName.as_ptr(), b".\0".as_ptr() as *const u16) != 0 &&
-           wcscmp(FindFileData.cFileName.as_ptr(), b".\0.\0\0".as_ptr() as *const u16) != 0
+        if wcscmp(FindFileData.cFileName.as_ptr(), DOT_W.as_ptr() as *const u16) != 0 &&
+           wcscmp(FindFileData.cFileName.as_ptr(), DOT_DOT_W.as_ptr() as *const u16) != 0
         {
             wcscpy(lpSrcPtr, FindFileData.cFileName.as_ptr());
             wcscpy(lpDstPtr, FindFileData.cFileName.as_ptr());
@@ -188,7 +197,7 @@ unsafe extern "C" fn RecursiveRemoveDir(lpPath: LPCWSTR) -> i32 {
     let mut bResult: i32;
 
     wcscpy(szPath.as_mut_ptr(), lpPath);
-    wcscat(szPath.as_mut_ptr(), b"\\\0*\0.\0*\0\0".as_ptr() as *const u16);
+    wcscat(szPath.as_mut_ptr(), WILDCARD_ALL_W.as_ptr() as *const u16);
 
     hFind = FindFirstFileW(szPath.as_ptr() as LPCWSTR, &mut FindData);
     if hFind == INVALID_HANDLE_VALUE {
@@ -197,11 +206,11 @@ unsafe extern "C" fn RecursiveRemoveDir(lpPath: LPCWSTR) -> i32 {
 
     bResult = 1;
     loop {
-        if wcscmp(FindData.cFileName.as_ptr(), b".\0\0".as_ptr() as *const u16) != 0
-            && wcscmp(FindData.cFileName.as_ptr(), b".\0.\0\0".as_ptr() as *const u16) != 0
+        if wcscmp(FindData.cFileName.as_ptr(), DOT_W.as_ptr() as *const u16) != 0
+            && wcscmp(FindData.cFileName.as_ptr(), DOT_DOT_W.as_ptr() as *const u16) != 0
         {
             wcscpy(szPath.as_mut_ptr(), lpPath);
-            wcscat(szPath.as_mut_ptr(), b"\\\0\0".as_ptr() as *const u16);
+            wcscat(szPath.as_mut_ptr(), BACKSLASH_W.as_ptr() as *const u16);
             wcscat(szPath.as_mut_ptr(), FindData.cFileName.as_ptr());
 
             if FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {

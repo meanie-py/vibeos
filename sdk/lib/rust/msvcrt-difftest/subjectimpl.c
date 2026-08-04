@@ -498,3 +498,62 @@ int _snprintf(char *str, size_t count, const char *format, ...)
     }
     return n;
 }
+
+/* ------------------------------------------------------------------------
+ * math.c's classification entry points, for the host harness.
+ *
+ * `math.rs` reaches these through the header's `fpclassify` macro, so they are
+ * external calls in the object even though the C source never spells one. On the
+ * host they must be MAPPED, not forwarded: ReactOS's msvcrt spells the results
+ *
+ *     FP_ZERO 0   FP_INFINITE 1   FP_NAN 2   FP_NORMAL -1   FP_SUBNORMAL -2
+ *
+ * (dll/win32/msvcrt/include/math.h:277-281), and glibc uses a completely
+ * different, all-positive set. Returning the host's numbers would make every
+ * classification comparison in `_fpclass`, `sqrt_validate` and `isnan` silently
+ * wrong in a way that still typechecks — the exact class this harness exists to
+ * catch, so the mapping is spelled out rather than assumed.
+ * ------------------------------------------------------------------------ */
+#include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+
+#define MSVCRT_FP_INFINITE 1
+#define MSVCRT_FP_NAN 2
+#define MSVCRT_FP_NORMAL (-1)
+#define MSVCRT_FP_SUBNORMAL (-2)
+#define MSVCRT_FP_ZERO 0
+
+static short msvcrt_classify(int host_class)
+{
+    switch (host_class)
+    {
+    case FP_NAN:       return MSVCRT_FP_NAN;
+    case FP_INFINITE:  return MSVCRT_FP_INFINITE;
+    case FP_ZERO:      return MSVCRT_FP_ZERO;
+    case FP_SUBNORMAL: return MSVCRT_FP_SUBNORMAL;
+    default:           return MSVCRT_FP_NORMAL;
+    }
+}
+
+short _dclass(double x)
+{
+    return msvcrt_classify(fpclassify(x));
+}
+
+short _fdclass(float x)
+{
+    return msvcrt_classify(fpclassify(x));
+}
+
+/* `_scprintf` is "how long would this printf be" — vsnprintf into nothing. */
+int _scprintf(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = vsnprintf(NULL, 0, format, ap);
+    va_end(ap);
+    return n;
+}

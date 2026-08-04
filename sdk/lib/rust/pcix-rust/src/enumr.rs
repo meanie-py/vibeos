@@ -24,6 +24,10 @@ extern "C" {
     // ULONG in ntoskrnl/ex/init.c — BOOLEAN under-read was LE-benign but wrong
     static InitSafeBootMode: ULONG;
 }
+// L"(NULL)"
+static NULL_DESCRIPTION: [u16; 7] = [
+    b'(' as u16, b'N' as u16, b'U' as u16, b'L' as u16, b'L' as u16, b')' as u16, 0,
+];
 const PCIBus: INTERFACE_TYPE = 5;
 const PowerDeviceUnspecified: ntkrnl_sys::ddk::DEVICE_POWER_STATE = 0;
 const PowerDeviceD0: ntkrnl_sys::ddk::DEVICE_POWER_STATE = 1;
@@ -1453,7 +1457,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
             description_text = PciGetDeviceDescriptionMessage((*pci_data).BaseClass,
                                                               (*pci_data).SubClass);
             DbgPrint((b"Device Description \"%S\".\n\0".as_ptr() as *const i8).cast(),
-                     if !description_text.is_null() { description_text } else { b"(NULL)\0".as_ptr() as PWCHAR });
+                     if !description_text.is_null() { description_text } else { NULL_DESCRIPTION.as_ptr() as PWCHAR });
             if !description_text.is_null() {
                 ExFreePoolWithTag((description_text).cast(), 0);
             }

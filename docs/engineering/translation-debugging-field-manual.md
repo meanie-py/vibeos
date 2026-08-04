@@ -894,6 +894,58 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   the builder so it cannot recur: `const fn wlit<const N>(b:&[u8]) -> [u16;N] { assert!(N >
   b.len(), "room for NUL"); … }` turns every too-tight call into a build error. uniata had 6
   of 52 sites undersized.
+- **A `b"..."` cast to a wide pointer is wrong three different ways, and none of them is a
+  compile error.** Rust's byte string is 8-bit and is *not* NUL-terminated for you, so the
+  same construct produces: **(a)** plain ASCII reinterpreted as UTF-16 — msvcrt `_wsystem`'s
+  `L" /c "` written `b" /c \0"`, where `wcscat` reads `' '`+`'/'` as ONE code unit `0x2F20`
+  and then walks off the end hunting for a zero `u16`; **(b)** correctly interleaved but ONE
+  terminator byte — `b"P\0A\0T\0H\0\0"` in `msvcrt_search_executable`, so the final code
+  unit's high half is read from the next object in rodata and PATH search silently matched
+  nothing for every `use_path=1` spawn; **(c)** an odd total length, which cannot be whole
+  `u16` units at all. `scan_wide_literals.py` now decides all three from the literal's own
+  bytes — no intent comment needed, unlike the array rule above, because this is a
+  self-contained claim. **Widen the regex before you trust it**: the first version matched
+  only a bare `u16`/`WCHAR`/`wchar_t` cast, reported 54 findings, and was blind to `as
+  LPCWSTR` and to `transmute(b"…".as_ptr())` — 111 further sites, i.e. two thirds of the
+  class, sat behind those two spellings. Also strip `//` comments first: several crates carry
+  a comment quoting the bad form verbatim while *fixing* it, and matching inside one turns a
+  fix into a finding.
+  **(d) an INTERIOR `u16` NUL** — even length, proper terminator, correctly interleaved, and
+  still truncated at the first zero code unit. This is what a *repair* produces: re-encoding a
+  literal that was already UTF-16 but odd-length as if it were 8-bit interleaves it a second
+  time, so `b"I\0n\0f\0\\\0\0"` becomes `b"I\0\0\0n\0\0\0…"` and decodes to `"I"`. It is not
+  hypothetical in either direction — a fixup script wrote exactly that (with RAW NUL bytes,
+  which made git call the file binary), and three shipped instances were already sitting in
+  mswsock's stub `OutputDebugStringW` messages. **Do not exempt the REG_MULTI_SZ shape** even
+  though multi-sz genuinely holds interior NULs and ends with two `u16` NULs: the tree has
+  zero multi-sz byte-cast literals and three double-interleaved ones, two of which end in four
+  zero bytes, so that exemption hides every real instance to protect a case that never occurs.
+  Measure the corpus before writing an exemption.
+- **A byte literal can carry the C SOURCE SPELLING instead of the string.** netcfgx's
+  `swprintf(szBuffer, L"%u", Gw.Metric)` came back as `b"L\"%u\"\0"`, so the format string at
+  runtime is the six characters `L"%u"` — the `L` and both quotes are data, and the list column
+  renders `L"12"`. Every encoding rule is blind to it (the bytes are consistently 8-bit, just
+  8-bit of the wrong text) and so is a reviewer diffing against the C, because `L"%u"` is
+  exactly what the C says. `scan_wide_literals` checks it lexically — bytes starting `L"` and
+  ending `"` — with no type information, which is what lets it cover the `as *const _` sites
+  the cast-based rules cannot match at all.
+- **Reading each flagged site against its C is what finds the SECOND bug.** Burning the class
+  down by hand across 15 crates turned up three defects that were not encoding at all:
+  netcfgx built device names from `L"\\Device"` where the C has `L"\\Device\\"` (dropped
+  separator, both use sites); userenv encoded `"L%d"` because the C's `L"%d"` width marker was
+  read as content (the same L-drop class as the top of this section, in the other direction);
+  and netcfgx passed `LPBYTE as LPBYTE` as RegSetValueExW's data argument — a TYPE ALIAS where
+  a value belongs, so not an expression at all. That last one had never failed a build because
+  **netcfgx is not a workspace member yet**, which is the standing gap: an unbuilt crate is
+  covered by source lints and `verify_c_signatures` and by nothing else, so a lint that reads
+  it is worth more there than anywhere. A `sed` over the encoding would have preserved all
+  three.
+- **A new lint that shadows an existing module global disables the lint it was added to.** The
+  byte-cast rule above arrived with its own `_ESCAPES` table, which shadowed the file's
+  existing one and silently switched off *both halves of the array rule* — comparisons went
+  88 → 51 and the motivating regression test went green by finding nothing at all. Nothing in
+  the scanner's own output said so; the coverage ratio moved and the test suite caught it.
+  This is the argument for the ratio being printed and for the must-NOT-fire tests existing.
 - **`b"..."` has alignment 1**, so `b"C\0S\0…".as_ptr() as *mut u16` can land at an odd address
   → amd64-only 0x1E `STATUS_DATATYPE_MISALIGNMENT` when `ProbeForRead` enforces WCHAR
   alignment. Declare a real `static [u16; N]` (alignment 2 ⇒ always even).
@@ -1814,6 +1866,19 @@ of them were **ours**, not the model's:
   the rule. So `UNVERIFIED CONSTANTS` is a REVIEW QUEUE, not a defect list — treat a long one
   as a reading assignment rather than evidence the wave is broken, and do not "fix" a flagged
   body you have not first diffed.
+
+  **But the guard fires only on WHOLESALE omission, so the flagged list is not the whole
+  risk.** It triggers when *no* token survived; a body that preserves some tokens and permutes
+  the rest passes silently and never reaches the list. `MSVCRT_exp` is the worked example, and
+  it was never flagged: the C is `math_error(_DOMAIN, "exp", x, 0, 1.0 + x)` and the
+  translation wrote `math_error(0, "exp", x, 1, 0 + x)` — `_DOMAIN` demoted to `0`, which is
+  precisely the "don't set errno" case, so a NaN into `exp()` would have returned quietly
+  instead of setting `EDOM`. Two more constants moved with it. Nothing in the audit said a
+  word. The cheap generic defence, and the one that found it: **enumerate every call to a
+  shared error/dispatch helper on both sides and diff the argument lists as a table.** All 11
+  `math_error` call sites took under a minute that way, and the eleventh was the bug. The real
+  fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
+  permutation cannot satisfy the envelope at all — tracked, not yet built.
 
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
@@ -3904,6 +3969,56 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
 ### A partial cohab is un-cold-linkable, and the dup↔undefined pair is the oracle
 If the unit is partially flipped, CMakeLists alone cannot link it cold: you get duplicate
 symbols one way and undefined the other. That pair *is* the diagnostic.
+- **The OBJECT'S symbol table is the authority on what a TU exports — the source is not.**
+  Diff the C object against the Rust before you flip: `llvm-nm --defined-only <tu>.c.obj`,
+  keep only the GLOBAL (uppercase) entries, and require the Rust to define every one. Three
+  real bugs in one file (msvcrt math.c), none visible in the C:
+  **(1)** the translation named two exports `_rotl64`/`_rotr64` while the C spells them
+  `MSVCRT__rotl64`/`MSVCRT__rotr64` — Rust then defines symbols nothing imports, the C bodies
+  stay live, and the "flip" is a no-op that builds and boots clean;
+  **(2)** `CMakeLists.txt` carries `-Dmath_error=_invoke_matherr`, so the symbol the file must
+  define is one the source never spells — grep the module's CMakeLists for `-D<name>=` before
+  trusting any identifier;
+  **(3)** the same `-D` list renames `asm_sqrt`/`asm_sqrtf`/`x87_asin` to their libm
+  counterparts, which rewrites every CALL SITE but *not* the `__ASM_GLOBAL_FUNC` label —
+  `#name` stringifies before macro expansion — leaving those three defined-but-dead. Rust must
+  follow the call sites, not the stub. Symbols nothing references cannot drag the C object in,
+  so they need no Rust definition; check with `llvm-nm --undefined-only` across the module's
+  objects plus the `.spec` rather than assuming.
+- **`#[export_name]` STACKS with i386 stdcall decoration, it does not replace it.** Give the
+  UNDECORATED C name and declare the fn `extern "stdcall"`; rustc prepends the `_` and appends
+  the `@<arg bytes>` itself. Writing the decorated name is the intuitive move and produces
+  `___adj_fdiv_m16i@4@4` — an underscore and an `@4` too many, so the symbol binds to nothing
+  and the flip is a silent no-op, exactly the failure the attribute gets reached for to avoid.
+  (`#[no_mangle]` is not the escape either: on a *function* it emits the name verbatim and
+  drops both halves. On a *static* it is right — no stdcall to decorate, and the leading
+  underscore is still applied, which is what `MSVCRT__adjust_fdiv` needs to satisfy its
+  `.spec` export.) Note also that a `short` parameter still takes a full 4-byte slot.
+  **None of this is visible to `cargo check`, which never codegens** — an `#[export_name]`
+  never becomes a symbol and a `global_asm!` block is never assembled, so only a real
+  `cargo build` plus `llvm-nm` over the archive can tell you. That is what the `cohab:<arch>`
+  gate stage automates.
+- **Full coverage is the flip's PRECONDITION, not a nicety.** Leave one *referenced* symbol
+  undefined and lld pulls the C object to satisfy it — and that object also defines every other
+  symbol in the TU, so the flip collapses into duplicate definitions (or, with
+  `--allow-multiple-definition`, into member-order roulette). This is why whole-file is the unit
+  for msvcrt, and why the hand-written assembly stubs (`_CI*`, `_ftol`) had to be transcribed
+  into `global_asm!` rather than left to the C.
+  **`tools/verify_cohab_coverage.py`** does all of the above mechanically: for every `pub mod`
+  in a cohab family's `mod.rs` it diffs the C object's referenced global exports against
+  everything that links ahead of the static library — the Rust archive PLUS the module's own
+  non-static objects. Compare against *binaries*, not Rust source: a source-level version
+  reported 81 findings that were all false, because two provider categories are invisible from
+  the twin file (a sibling in the same archive, and a C shim TU in the module target). It
+  refuses a stale archive rather than judging one — run against archives three days old it
+  produced 669 findings claiming errno.c, file.c and time.c were barely flipped at all, and a
+  wrong verdict is indistinguishable from a right one at a glance. It therefore needs a build,
+  so it is a post-build stage and not a `vibeos-cli check` lint: `gate` launches `cohab:<arch>`
+  the moment that arch's build lands, classifies a gap `COHAB_FAIL`, and blocks the push stamp.
+  It runs only when both `--no-lint` and `--no-build` are unset — it can judge only artifacts
+  that run produced. Its own controls are `tools/test_verify_cohab_coverage.py`: it cannot join
+  `test_scanner_controls.py` (which drives source-only `check` lints from fixture dirs), and a
+  gate stage whose healthy output is `0 findings` needs an oracle like any other.
 - **Verify a flip with `llvm-nm libX.a`** — a stub-only archive has 0–1 `T` symbols (just the
   cohab stub). Audit **all** `static_libs` C archives on arm64 with `llvm-nm | grep -c ' T '`
   before trusting a flip.

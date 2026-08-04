@@ -176,10 +176,187 @@ def _intent_for(text: str, decl_start: int) -> list[str]:
     return out
 
 
+# `b"...".as_ptr() as *const u16` — the OTHER way a wide literal is hand-encoded, and the one
+# with no comment to check against. Accepts the pointer spellings that occur: u16 / wchar_t /
+# WCHAR / PWSTR-ish, const or mut.
+# Both spellings of the cast matter, and so do the ALIASES. Widened after a repo-wide sweep
+# fixed 52 sites and the remainder turned out to be the same bug hiding behind `LPCWSTR`
+# rather than a bare `u16`, or behind `transmute` rather than `as`. A lint that only sees the
+# primitive spelling reports clean while the class is still there.
+_WIDE_PTR = r"(?:u16|wchar_t|WCHAR|MSVCRT_wchar_t|[LP]{1,2}C?W(?:STR|CHAR))"
+_BYTECAST = re.compile(
+    rf"""b"((?:[^"\\]|\\.)*)"       # the byte-string literal
+        [ \t\r\n]*(?:\.as_ptr\(\)|\.as_mut_ptr\(\))
+        [ \t\r\n]*as[ \t\r\n]*
+        (?:\*[ \t\r\n]*(?:const|mut)[ \t\r\n]*{_WIDE_PTR}   # as *const u16
+          |{_WIDE_PTR})\b                                   # as LPCWSTR""",
+    re.X,
+)
+# `transmute(b"...".as_ptr())` reaches the same wrong pointer with no `as` in sight. The
+# target type is on the binding, not here, so this form is matched on shape alone; a byte
+# string transmuted to anything is worth a look, and in practice every hit is a wide string.
+_BYTETRANSMUTE = re.compile(
+    r"""transmute(?:::<[^>]*>)?\([ \t\r\n]*b"((?:[^"\\]|\\.)*)"
+        [ \t\r\n]*(?:\.as_ptr\(\)|\.as_mut_ptr\(\))""",
+    re.X,
+)
+
+_BYTE_ESCAPES = {"0": 0, "n": 10, "r": 13, "t": 9, "\\": 92, '"': 34, "'": 39}
+
+
+def _decode_byte_string(s: str) -> bytes | None:
+    """The bytes a Rust `b"..."` literal actually contains. None if we cannot decode it."""
+    out = bytearray()
+    i = 0
+    while i < len(s):
+        if s[i] != "\\":
+            out.append(ord(s[i]) & 0xFF)
+            i += 1
+            continue
+        nxt = s[i + 1 : i + 2]
+        if nxt in _BYTE_ESCAPES:
+            out.append(_BYTE_ESCAPES[nxt])
+            i += 2
+        elif nxt == "x":
+            try:
+                out.append(int(s[i + 2 : i + 4], 16))
+            except ValueError:
+                return None
+            i += 4
+        else:
+            return None  # \u{...} and friends — not a shape we decode, so not a verdict
+    return bytes(out)
+
+
+def scan_byte_casts(text: str, rel) -> list[str]:
+    """Reject a byte-string literal that CANNOT be the UTF-16 string it is cast to.
+
+    Rust's `b"..."` is 8-bit and is not NUL-terminated for you, so three distinct mistakes
+    all produce a pointer that compiles, links, and reads out of bounds at runtime:
+
+      * `b" /c \\0" as *const wchar_t` — plain ASCII reinterpreted as UTF-16. `wcscat` reads
+        `' '`+`'/'` as ONE code unit 0x2F20 and walks off the end looking for a zero u16.
+        (Shipped in msvcrt process.c's `_wsystem`.)
+      * `b"P\\0A\\0T\\0H\\0\\0"` — correctly interleaved but ONE terminator byte. A u16 NUL is
+        two bytes, so the final code unit's high half comes from the next object in rodata.
+        (Shipped in msvcrt process.c's `msvcrt_search_executable`; broke PATH search.)
+      * an odd total length — the literal cannot be whole u16 units at all.
+
+    Unlike the array rule above, this one needs no intent comment: it is a self-contained
+    claim about the literal's own bytes. All three checks are decidable, so there are no
+    judgement calls and no prose to trust.
+    """
+    findings = []
+    stripped = _strip_line_comments(text)
+    for m in list(_BYTECAST.finditer(stripped)) + list(_BYTETRANSMUTE.finditer(stripped)):
+        raw = _decode_byte_string(m.group(1))
+        if raw is None:
+            continue
+        line = text[: m.start()].count("\n") + 1
+        shown = m.group(0).split(".as_")[0]
+        if len(raw) % 2:
+            findings.append(
+                f"{rel}:{line}: {shown} is {len(raw)} bytes — an ODD length cannot be "
+                f"whole u16 code units"
+            )
+        elif not raw.endswith(b"\0\0"):
+            findings.append(
+                f"{rel}:{line}: {shown} has no u16 NUL terminator — a wide NUL is TWO zero "
+                f"bytes and Rust does not add them"
+            )
+        elif len(raw) > 4 and all(b != 0 for b in raw[1:-2:2]):
+            findings.append(
+                f"{rel}:{line}: {shown} is 8-bit text cast to a u16 pointer — every second "
+                f"byte must be 0 for ASCII UTF-16LE, none is"
+            )
+        elif any(raw[i] == 0 and raw[i + 1] == 0 for i in range(0, len(raw) - 2, 2)):
+            # An INTERIOR u16 NUL truncates the string there. The three checks above are each
+            # necessary and none is sufficient: this literal is even-length, properly
+            # terminated, and correctly interleaved — and still wrong. It is how a
+            # DOUBLE-interleaved literal reads (`I\0\0\0n\0\0\0…` decodes to just "I"), which
+            # is what a repair script produces when it treats an already-UTF-16 literal as
+            # 8-bit text and interleaves it again.
+            #
+            # A REG_MULTI_SZ legitimately holds interior NULs and ends with two u16 NULs, so
+            # an exemption for that shape looks obviously right. It is not: the tree has ZERO
+            # multi-sz byte-cast literals and THREE double-interleaved ones (mswsock's stub
+            # OutputDebugStringW messages, two of which end in four zero bytes and would have
+            # been exempted). Designing around the hypothetical would have hidden every real
+            # instance. If a genuine multi-sz ever appears it gets flagged and handled then.
+            findings.append(
+                f"{rel}:{line}: {shown} has an INTERIOR u16 NUL — the string ends there; a "
+                f"double-interleaved literal decodes to its first character"
+            )
+    return findings
+
+
+_ANY_BYTESTR = re.compile(r'b"((?:[^"\\]|\\.)*)"')
+
+
+def scan_source_text_leak(text: str, rel) -> list[str]:
+    """Reject a byte literal that swallowed the C source spelling `L"..."` instead of its value.
+
+    netcfgx's tcpipconf_notify.c has `swprintf(szBuffer, L"%u", Gw.Metric)`; the translation
+    came back as `b"L\\"%u\\"\\0"`, so the format string at runtime is the six characters
+    `L"%u"` — the `L` and both quotes are DATA. The list column then renders `L"12"` instead
+    of `12`, and no compiler anywhere objects.
+
+    Deliberately independent of the cast: those two sites are `as *const _`, which the
+    byte-cast rule above cannot match because `_` names no width. The check needs no type
+    information at all — a literal whose bytes start with `L"` and end with `"` is the source
+    text, not the string. That is the whole reason this is worth a rule: the encoding rules
+    are blind here (the bytes are *consistently* 8-bit, just 8-bit of the wrong text), and a
+    reviewer diffing against the C reads past `L"%u"` because it looks exactly like the C.
+    """
+    findings = []
+    for m in _ANY_BYTESTR.finditer(_strip_line_comments(text)):
+        raw = _decode_byte_string(m.group(1))
+        if raw is None:
+            continue
+        body = raw.rstrip(b"\0")
+        if len(body) >= 3 and body.startswith(b'L"') and body.endswith(b'"'):
+            line = text[: m.start()].count("\n") + 1
+            findings.append(
+                f'{rel}:{line}: {m.group(0)} carries the C SOURCE TEXT `L"..."`, not the '
+                f"string — the `L` and both quotes are data at runtime"
+            )
+    return findings
+
+
+def _strip_line_comments(text: str) -> str:
+    """Blank out `//` comments, preserving offsets so line numbers stay right.
+
+    Needed because several crates carry a comment explaining this very bug and quoting the
+    bad form verbatim ("replacing incorrect b\"...\".as_ptr() as *mut u16 casts"). Matching
+    inside those turns a fix into a finding.
+    """
+    out = list(text)
+    i, n = 0, len(text)
+    while i < n - 1:
+        if text[i] == '"':  # skip string literals so a `//` inside one is not a comment
+            i += 1
+            while i < n and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+            i += 1
+            continue
+        if text[i] == "/" and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                out[i] = " "
+                i += 1
+            continue
+        i += 1
+    return "".join(out)
+
+
 def scan_file(path: Path) -> tuple[list[str], int, int]:
     """(findings, literals_seen, literals_compared)"""
     text = path.read_text(errors="replace")
-    findings, seen, compared = [], 0, 0
+    try:
+        rel_path = path.relative_to(ROOT)
+    except ValueError:
+        rel_path = path
+    findings = scan_byte_casts(text, rel_path) + scan_source_text_leak(text, rel_path)
+    seen = compared = 0
     for m in _DECL.finditer(text):
         name, declared = m.group(1), int(m.group(2))
         body = _array_body(text, m.end() - 1)

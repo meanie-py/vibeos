@@ -18,6 +18,35 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
+
+// L"\"
+static BACKSLASH_W: [u16; 2] = [b'\\' as u16, 0];
+// L".lnk"
+static DOT_LNK_W: [u16; 5] = [b'.' as u16, b'l' as u16, b'n' as u16, b'k' as u16, 0];
+// L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
+static USER_SHELL_FOLDERS_KEY: [u16; 70] = [
+    b'S' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'w' as u16, b'a' as u16, b'r' as u16,
+    b'e' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
+    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
+    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16,
+    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
+    b'r' as u16, b'\\' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b' ' as u16,
+    b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16,
+    b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
+];
+// L"Common Desktop"
+static COMMON_DESKTOP_VALUE: [u16; 15] = [
+    b'C' as u16, b'o' as u16, b'm' as u16, b'm' as u16, b'o' as u16, b'n' as u16, b' ' as u16,
+    b'D' as u16, b'e' as u16, b's' as u16, b'k' as u16, b't' as u16, b'o' as u16, b'p' as u16,
+    0,
+];
+// L"Desktop"
+static DESKTOP_VALUE: [u16; 8] = [
+    b'D' as u16, b'e' as u16, b's' as u16, b'k' as u16, b't' as u16, b'o' as u16, b'p' as u16,
+    0,
+];
 unsafe extern "C" fn GetDesktopPath(mut bCommonPath: BOOL, mut lpDesktopPath: LPWSTR) -> BOOL {
     let mut szPath: [u16; 260] = [0; 260];
     let mut dwLength: u32 = 0;
@@ -27,8 +56,7 @@ unsafe extern "C" fn GetDesktopPath(mut bCommonPath: BOOL, mut lpDesktopPath: LP
 
     Error = RegOpenKeyExW(
         HKEY_CURRENT_USER,
-        b"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\0"
-            .as_ptr() as LPCWSTR,
+        USER_SHELL_FOLDERS_KEY.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
@@ -42,9 +70,9 @@ unsafe extern "C" fn GetDesktopPath(mut bCommonPath: BOOL, mut lpDesktopPath: LP
     Error = RegQueryValueExW(
         hKey,
         if bCommonPath != 0 {
-            b"Common Desktop\0".as_ptr() as LPCWSTR
+            COMMON_DESKTOP_VALUE.as_ptr() as LPCWSTR
         } else {
-            b"Desktop\0".as_ptr() as LPCWSTR
+            DESKTOP_VALUE.as_ptr() as LPCWSTR
         },
         core::ptr::null_mut(),
         &mut dwType,
@@ -248,9 +276,9 @@ pub unsafe extern "system" fn AddDesktopItemW(
         FindClose(hFind);
     }
 
-    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b"\\\0".as_ptr() as *const WCHAR);
+    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), BACKSLASH_W.as_ptr() as *const WCHAR);
     wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), lpItemName);
-    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b".lnk\0".as_ptr() as *const WCHAR);
+    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), DOT_LNK_W.as_ptr() as *const WCHAR);
 
     Ptr = wcschr(lpArguments, b' ' as WCHAR);
     if !Ptr.is_null() {
@@ -314,9 +342,9 @@ pub unsafe extern "system" fn DeleteDesktopItemW(bCommonItem: BOOL, lpItemName: 
         return 0;
     }
 
-    wcscat(szLinkPath.as_mut_ptr(), b"\\\0".as_ptr() as *const u16);
+    wcscat(szLinkPath.as_mut_ptr(), BACKSLASH_W.as_ptr() as *const u16);
     wcscat(szLinkPath.as_mut_ptr(), lpItemName);
-    wcscat(szLinkPath.as_mut_ptr(), b".\0l\0n\0k\0\0".as_ptr() as *const u16);
+    wcscat(szLinkPath.as_mut_ptr(), DOT_LNK_W.as_ptr() as *const u16);
 
     DeleteFileW(szLinkPath.as_ptr())
 }
@@ -398,7 +426,7 @@ pub unsafe extern "system" fn DeleteGroupW(mut lpGroupName: LPCWSTR, mut bCommon
 
     wcscat(
         &raw mut szGroupPath as *mut WCHAR,
-        b"\\\0".as_ptr() as *const WCHAR,
+        BACKSLASH_W.as_ptr() as *const WCHAR,
     );
     wcscat(
         &raw mut szGroupPath as *mut WCHAR,
@@ -579,7 +607,7 @@ pub unsafe extern "system" fn AddItemW(
     }
 
     if !lpGroupName.is_null() && *lpGroupName != 0 {
-        wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b"\\\0".as_ptr() as *const u16);
+        wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), BACKSLASH_W.as_ptr() as *const u16);
         wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), lpGroupName);
 
         hFind = FindFirstFileW(core::ptr::addr_of_mut!(szLinkPath[0]), core::ptr::addr_of_mut!(FindData));
@@ -592,7 +620,7 @@ pub unsafe extern "system" fn AddItemW(
         }
     }
 
-    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b"\\\0".as_ptr() as *const u16);
+    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), BACKSLASH_W.as_ptr() as *const u16);
     wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), lpItemName);
     wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b".\0l\0n\0k\0\0\0".as_ptr() as *const u16);
 
@@ -701,11 +729,11 @@ pub unsafe extern "system" fn DeleteItemW(
     }
 
     if !lpGroupName.is_null() && *lpGroupName != 0 {
-        wcscat(&mut szItemPath as LPWSTR, b"\\\0".as_ptr() as LPCWSTR);
+        wcscat(&mut szItemPath as LPWSTR, BACKSLASH_W.as_ptr() as LPCWSTR);
         wcscat(&mut szItemPath as LPWSTR, lpGroupName);
     }
 
-    wcscat(&mut szItemPath as LPWSTR, b"\\\0".as_ptr() as LPCWSTR);
+    wcscat(&mut szItemPath as LPWSTR, BACKSLASH_W.as_ptr() as LPCWSTR);
     wcscat(&mut szItemPath as LPWSTR, lpItemName);
     wcscat(&mut szItemPath as LPWSTR, b".\0l\0n\0k\0\0\0".as_ptr() as LPCWSTR);
 

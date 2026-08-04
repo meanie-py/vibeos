@@ -1934,6 +1934,20 @@ pub unsafe extern "system" fn USBAudioGetStringDescriptor(
     }
     STATUS_SUCCESS
 }
+// L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\"
+static MEDIA_CATEGORIES_KEY: [u16; 68] = [
+    b'\\' as u16, b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16,
+    b'r' as u16, b'y' as u16, b'\\' as u16, b'M' as u16, b'a' as u16, b'c' as u16, b'h' as u16,
+    b'i' as u16, b'n' as u16, b'e' as u16, b'\\' as u16, b'S' as u16, b'Y' as u16, b'S' as u16,
+    b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16,
+    b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16,
+    b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16,
+    b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16,
+    b'l' as u16, b'\\' as u16, b'M' as u16, b'e' as u16, b'd' as u16, b'i' as u16, b'a' as u16,
+    b'C' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'g' as u16, b'o' as u16, b'r' as u16,
+    b'i' as u16, b'e' as u16, b's' as u16, b'\\' as u16, 0,
+];
+
 #[no_mangle]
 pub unsafe extern "C" fn USBAudioRegCreateMediaCategoriesKey(
     Name: PUNICODE_STRING,
@@ -1945,8 +1959,7 @@ pub unsafe extern "C" fn USBAudioRegCreateMediaCategoriesKey(
 
     RtlInitUnicodeString(
         &mut destination_string,
-        b"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories\\\0"
-            .as_ptr() as PCWSTR,
+        MEDIA_CATEGORIES_KEY.as_ptr() as PCWSTR,
     );
 
     object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;

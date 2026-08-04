@@ -3,6 +3,11 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
+// L".Default"
+static DOT_DEFAULT_KEY: [u16; 9] = [
+    b'.' as u16, b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16,
+    b't' as u16, 0,
+];
 unsafe extern "C" fn CopyKey(mut hDstKey: HKEY, mut hSrcKey: HKEY) -> BOOL {
     let mut Error: LONG;
     Error = RegCopyTreeW(hSrcKey, core::ptr::null(), hDstKey) as LONG;
@@ -22,7 +27,7 @@ pub unsafe extern "C" fn CreateUserHive(mut lpKeyName: LPCWSTR, mut lpProfilePat
     'cleanup: {
     Error = RegOpenKeyExW(
         HKEY_USERS,
-        b".Default\0".as_ptr() as LPCWSTR,
+        DOT_DEFAULT_KEY.as_ptr() as LPCWSTR,
         0,
         KEY_READ,
         &mut hDefaultKey,
