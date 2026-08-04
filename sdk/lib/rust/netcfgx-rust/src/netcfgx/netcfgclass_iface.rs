@@ -13,7 +13,7 @@ pub struct INetCfgClassImpl {
 
 pub type LPINetCfgClassImpl = *mut INetCfgClassImpl;
 unsafe extern "C" fn impl_from_INetCfgClassSetup(iface: *mut INetCfgClassSetup) -> LPINetCfgClassImpl {
-    (iface as *mut u8).offset(-(FIELD_OFFSET(INetCfgClassImpl, lpVtblSetup) as isize)) as LPINetCfgClassImpl
+    (iface as *mut u8).offset(-(FIELD_OFFSET!(INetCfgClassImpl, lpVtblSetup) as isize)) as LPINetCfgClassImpl
 }
 
 #[no_mangle]
@@ -90,14 +90,14 @@ pub unsafe extern "system" fn INetCfgClass_fnQueryInterface(
     let This = iface as *mut INetCfgClassImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-        IsEqualIID(iid, &IID_INetCfgClass) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+        IsEqualIID!(iid, &IID_INetCfgClass)
     {
         *ppvObj = This as LPVOID;
         INetCfgClass_AddRef(iface);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgClassSetup) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgClassSetup)
     {
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblSetup) as LPVOID;
         INetCfgClass_AddRef(iface);
@@ -113,7 +113,7 @@ pub unsafe extern "system" fn INetCfgClass_fnAddRef(
     let This = iface as *mut INetCfgClassImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return (refCount) as u32;
 }
 
 #[no_mangle]
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn INetCfgClass_fnRelease(
     if refCount == 0 {
         CoTaskMemFree(This as LPVOID);
     }
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -138,28 +138,28 @@ pub unsafe extern "system" fn INetCfgClass_fnFindComponent(
     let This = iface as *mut INetCfgClassImpl;
     let pHead: *mut NetCfgComponentItem;
 
-    if IsEqualIID(
+    if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
         core::ptr::addr_of!(GUID_DEVCLASS_NET),
-    ) != 0
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pNet;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
         core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS),
-    ) != 0
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pProtocol;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
         core::ptr::addr_of!(GUID_DEVCLASS_NETSERVICE),
-    ) != 0
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pService;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
         core::ptr::addr_of!(GUID_DEVCLASS_NETCLIENT),
-    ) != 0
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pClient;
     } else {
@@ -168,7 +168,7 @@ pub unsafe extern "system" fn INetCfgClass_fnFindComponent(
 
     let mut pHead = pHead;
     while !pHead.is_null() {
-        if _wcsicmp((*pHead).szId.as_ptr(), pszwComponentId) == 0 {
+        if _wcsicmp((*pHead).szId, pszwComponentId) == 0 {
             return INetCfgComponent_Constructor(
                 core::ptr::null_mut(),
                 core::ptr::addr_of!(IID_INetCfgComponent),
@@ -191,28 +191,28 @@ pub unsafe extern "system" fn INetCfgClass_fnEnumComponents(
     let This = iface as *mut INetCfgClassImpl;
     let pHead: *mut NetCfgComponentItem;
 
-    if IsEqualIID(
+    if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
-        GUID_DEVCLASS_NET,
-    ) != 0
+        core::ptr::addr_of!(GUID_DEVCLASS_NET),
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pNet;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
-        GUID_DEVCLASS_NETTRANS,
-    ) != 0
+        core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS),
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pProtocol;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
-        GUID_DEVCLASS_NETSERVICE,
-    ) != 0
+        core::ptr::addr_of!(GUID_DEVCLASS_NETSERVICE),
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pService;
-    } else if IsEqualIID(
+    } else if IsEqualIID!(
         core::ptr::addr_of_mut!((*This).ClassGuid),
-        GUID_DEVCLASS_NETCLIENT,
-    ) != 0
+        core::ptr::addr_of!(GUID_DEVCLASS_NETCLIENT),
+    )
     {
         pHead = (*((*This).pNetCfg as *mut INetCfgImpl)).pClient;
     } else {
@@ -230,11 +230,11 @@ pub unsafe extern "system" fn INetCfgClass_fnEnumComponents(
 
 #[no_mangle]
 pub unsafe extern "system" fn INetCfgClass_Constructor(
-    pUnkOuter: *mut core::ffi::c_void,
-    riid: *const GUID,
+    pUnkOuter: *mut IUnknown,
+    riid: REFIID,
     ppv: *mut LPVOID,
     pguidClass: *const GUID,
-    pNetCfg: *mut core::ffi::c_void,
+    pNetCfg: *mut INetCfg,
 ) -> HRESULT {
     let This: *mut INetCfgClassImpl;
 
@@ -242,21 +242,21 @@ pub unsafe extern "system" fn INetCfgClass_Constructor(
         return E_POINTER;
     }
 
-    This = CoTaskMemAlloc(core::mem::size_of::<INetCfgClassImpl>()) as *mut INetCfgClassImpl;
+    This = CoTaskMemAlloc((core::mem::size_of::<INetCfgClassImpl>()) as SIZE_T) as *mut INetCfgClassImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
 
     (*This).ref_ = 1;
-    (*This).lpVtbl = &vt_NetCfgClass as *const INetCfgClassVtbl as *const core::ffi::c_void;
-    (*This).lpVtblSetup = &vt_NetCfgClassSetup as *const INetCfgClassSetupVtbl as *const core::ffi::c_void;
+    (*This).lpVtbl = (&vt_NetCfgClass as *const INetCfgClassVtbl as *const core::ffi::c_void).cast();
+    (*This).lpVtblSetup = (&vt_NetCfgClassSetup as *const INetCfgClassSetupVtbl as *const core::ffi::c_void).cast();
 
     memcpy(
         core::ptr::addr_of_mut!((*This).ClassGuid) as *mut core::ffi::c_void,
         pguidClass as *const core::ffi::c_void,
         core::mem::size_of::<GUID>(),
     );
-    (*This).pNetCfg = pNetCfg;
+    (*This).pNetCfg = (pNetCfg).cast();
 
     if !((INetCfgClass_QueryInterface(This as *mut core::ffi::c_void, riid, ppv)) >= 0) {
         INetCfgClass_Release(This as *mut core::ffi::c_void);

@@ -2,6 +2,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// precomp.h carries `extern HINSTANCE netcfgx_hInstance;`, so the island emits that
+// declaration and every other module binds to it through the prelude glob. This is the
+// one definition — it needs the C symbol name, exactly as netcfgx.c's did, or the
+// declaration resolves to nothing at link time.
+#[no_mangle]
 pub static mut netcfgx_hInstance: HINSTANCE = core::ptr::null_mut();
 
 pub const CLSID_TcpipConfigNotifyObject: GUID = GUID {
@@ -41,7 +46,7 @@ pub unsafe extern "system" fn DllMain(
         _ => {}
     }
 
-    TRUE
+    (TRUE) as i32
 }
 
 #[no_mangle]
@@ -54,7 +59,7 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut hSubKey: HKEY = core::ptr::null_mut();
     let mut pStr: *mut u16 = core::ptr::null_mut();
-    let mut szName: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     let clsid_str = [
         'C' as u16, 'L' as u16, 'S' as u16, 'I' as u16, 'D' as u16, '\\' as u16, 0
@@ -84,7 +89,7 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
         core::ptr::null_mut(),
         &mut hKey,
         core::ptr::null_mut()
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS) as i32
     {
         return SELFREG_E_CLASS;
     }
@@ -101,7 +106,7 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
         core::ptr::null_mut(),
         &mut hSubKey,
         core::ptr::null_mut()
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS) as i32
     {
         if GetModuleFileNameW(
             netcfgx_hInstance,
@@ -117,9 +122,9 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
         RegSetValueW(
             hSubKey,
             core::ptr::null_mut(),
-            REG_SZ,
+            (REG_SZ) as u32,
             szName.as_ptr(),
-            (wcslen(szName.as_ptr()) + 1) * core::mem::size_of::<u16>()
+            ((wcslen(szName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as u32
         );
         RegSetValueExW(
             hSubKey,
@@ -127,7 +132,7 @@ pub unsafe extern "system" fn DllRegisterServer() -> HRESULT {
              'i' as u16, 'n' as u16, 'g' as u16, 'M' as u16, 'o' as u16, 'd' as u16,
              'e' as u16, 'l' as u16, 0].as_ptr(),
             0,
-            REG_SZ,
+            (REG_SZ) as u32,
             ['B' as u16, 'o' as u16, 't' as u16, 'h' as u16, 0].as_ptr() as LPBYTE,
             10
         );
@@ -161,7 +166,7 @@ pub unsafe extern "system" fn DllGetClassObject(
 
     i = 0;
     while !(*InterfaceTable.as_ptr().add(i as usize)).riid.is_null() {
-        if IsEqualIID((*InterfaceTable.as_ptr().add(i as usize)).riid, rclsid) != 0 {
+        if IsEqualIID!((*InterfaceTable.as_ptr().add(i as usize)).riid, rclsid) {
             pcf = IClassFactory_fnConstructor((*InterfaceTable.as_ptr().add(i as usize)).lpfnCI, core::ptr::null_mut(), core::ptr::null_mut());
             break;
         }

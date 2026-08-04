@@ -21,57 +21,57 @@ unsafe extern "C" fn InstallInfSections(
     InfFile: LPCWSTR,
     InfSection: LPCWSTR,
 ) -> BOOL {
-    let mut Buffer: [u16; MAX_PATH] = core::mem::zeroed();
+    let mut Buffer: [u16; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut hInf = INVALID_HANDLE_VALUE;
     let mut BufferSize: u32;
     let mut Context: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = (FALSE) as i32;
 
     if InfSection.is_null() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
-    BufferSize = MAX_PATH - 5 - wcslen(InfFile);
+    BufferSize = MAX_PATH - 5 - (wcslen(InfFile)) as u32;
     if GetWindowsDirectoryW(Buffer.as_mut_ptr(), BufferSize) > BufferSize {
         SetLastError(ERROR_GEN_FAILURE);
-        ret = FALSE;
+        ret = (FALSE) as i32;
     } else {
         if Buffer[wcslen(Buffer.as_ptr()) as usize - 1] != '\\' as u16 {
-            wcscat(Buffer.as_mut_ptr(), b"\\\0".as_ptr() as *const u16);
+            wcscat(Buffer.as_mut_ptr(), w!("\\") as *const u16);
         }
-        wcscat(Buffer.as_mut_ptr(), b"I\0n\0f\0\\\0\0".as_ptr() as *const u16);
+        wcscat(Buffer.as_mut_ptr(), w!("Inf\\") as *const u16);
         wcscat(Buffer.as_mut_ptr(), InfFile);
 
-        hInf = SetupOpenInfFileW(Buffer.as_ptr(), core::ptr::null_mut(), INF_STYLE_WIN4, core::ptr::null_mut());
+        hInf = SetupOpenInfFileW(Buffer.as_ptr(), core::ptr::null_mut(), (INF_STYLE_WIN4) as u32, core::ptr::null_mut());
         if hInf == INVALID_HANDLE_VALUE {
-            ret = FALSE;
+            ret = (FALSE) as i32;
         } else {
             Context = SetupInitDefaultQueueCallback(hWnd);
             if Context.is_null() {
-                ret = FALSE;
+                ret = (FALSE) as i32;
             } else {
                 ret = SetupInstallFromInfSectionW(
                     hWnd,
                     hInf,
                     InfSection,
-                    SPINST_ALL,
+                    (SPINST_ALL) as u32,
                     hKey,
                     core::ptr::null_mut(),
-                    SP_COPY_NEWER,
+                    (SP_COPY_NEWER) as u32,
                     Some(SetupDefaultQueueCallbackW),
                     Context,
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                 );
-                if ret == FALSE {
-                    ret = FALSE;
+                if ret == (FALSE) as i32 {
+                    ret = (FALSE) as i32;
                 } else {
                     wcscpy(Buffer.as_mut_ptr(), InfSection);
-                    wcscat(Buffer.as_mut_ptr(), b".\0S\0e\0r\0v\0i\0c\0e\0s\0\0".as_ptr() as *const u16);
+                    wcscat(Buffer.as_mut_ptr(), w!(".Services") as *const u16);
 
                     ret = SetupInstallServicesFromInfSectionW(hInf, Buffer.as_ptr(), 0);
-                    if ret == FALSE {
-                        ret = FALSE;
+                    if ret == (FALSE) as i32 {
+                        ret = (FALSE) as i32;
                     }
                 }
             }
@@ -98,30 +98,30 @@ unsafe extern "C" fn CreateInstanceKey(
     let mut RpcStatus: u32;
     let mut hInstanceKey: HKEY = core::ptr::null_mut();
     let mut rc: u32;
-    let mut ret: i32 = FALSE;
+    let mut ret: i32 = (FALSE) as i32;
 
     *pInstanceKey = core::ptr::null_mut();
 
-    wcscpy(szKeyBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Control\\Network\\\0".as_ptr() as LPCWSTR);
+    wcscpy(szKeyBuffer.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Control\\Network\\") as LPCWSTR);
     wcscat(szKeyBuffer.as_mut_ptr(), (*pComponentInfo).pszClassGuid);
-    wcscat(szKeyBuffer.as_mut_ptr(), b"\\{\0".as_ptr() as LPCWSTR);
+    wcscat(szKeyBuffer.as_mut_ptr(), w!("\\{") as LPCWSTR);
 
-    RpcStatus = UuidCreate(&mut Uuid);
-    if RpcStatus != RPC_S_OK && RpcStatus != RPC_S_UUID_LOCAL_ONLY {
+    RpcStatus = (UuidCreate(&mut Uuid)) as u32;
+    if RpcStatus != (RPC_S_OK) as u32 && RpcStatus != RPC_S_UUID_LOCAL_ONLY {
         return ret;
     }
 
-    RpcStatus = UuidToStringW(&mut Uuid, &mut UuidString);
-    if RpcStatus != RPC_S_OK {
+    RpcStatus = (UuidToStringW(&mut Uuid, &mut UuidString)) as u32;
+    if RpcStatus != (RPC_S_OK) as u32 {
         return ret;
     }
 
     wcscat(szKeyBuffer.as_mut_ptr(), UuidString);
-    wcscat(szKeyBuffer.as_mut_ptr(), b"}\0".as_ptr() as LPCWSTR);
+    wcscat(szKeyBuffer.as_mut_ptr(), w!("}") as LPCWSTR);
 
     RpcStringFreeW(&mut UuidString);
 
-    rc = RegCreateKeyExW(
+    rc = (RegCreateKeyExW(
         HKEY_LOCAL_MACHINE,
         szKeyBuffer.as_ptr(),
         0,
@@ -131,80 +131,80 @@ unsafe extern "C" fn CreateInstanceKey(
         core::ptr::null_mut(),
         &mut hInstanceKey,
         core::ptr::null_mut(),
-    );
+    )) as u32;
     if rc != ERROR_SUCCESS {
         return ret;
     }
 
-    rc = RegSetValueExW(
+    rc = (RegSetValueExW(
         hInstanceKey,
-        b"Characteristics\0".as_ptr() as LPCWSTR,
+        w!("Characteristics") as LPCWSTR,
         0,
-        REG_DWORD,
+        (REG_DWORD) as u32,
         core::ptr::addr_of_mut!((*pComponentInfo).dwCharacteristics) as LPBYTE,
         core::mem::size_of::<u32>() as u32,
-    );
+    )) as u32;
     if rc != ERROR_SUCCESS {
         RegCloseKey(hInstanceKey);
         return ret;
     }
 
-    rc = RegSetValueExW(
+    rc = (RegSetValueExW(
         hInstanceKey,
-        b"ComponentId\0".as_ptr() as LPCWSTR,
+        w!("ComponentId") as LPCWSTR,
         0,
-        REG_SZ,
+        (REG_SZ) as u32,
         (*pComponentInfo).pszComponentId as LPBYTE,
-        (wcslen((*pComponentInfo).pszComponentId) + 1) * core::mem::size_of::<u16>() as u32,
-    );
+        ((wcslen((*pComponentInfo).pszComponentId) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
+    )) as u32;
     if rc != ERROR_SUCCESS {
         RegCloseKey(hInstanceKey);
         return ret;
     }
 
-    rc = RegSetValueExW(
+    rc = (RegSetValueExW(
         hInstanceKey,
-        b"Description\0".as_ptr() as LPCWSTR,
+        w!("Description") as LPCWSTR,
         0,
-        REG_SZ,
+        (REG_SZ) as u32,
         (*pComponentInfo).pszDescription as LPBYTE,
-        (wcslen((*pComponentInfo).pszDescription) + 1) * core::mem::size_of::<u16>() as u32,
-    );
+        ((wcslen((*pComponentInfo).pszDescription) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
+    )) as u32;
     if rc != ERROR_SUCCESS {
         RegCloseKey(hInstanceKey);
         return ret;
     }
 
-    rc = RegSetValueExW(
+    rc = (RegSetValueExW(
         hInstanceKey,
-        b"InfPath\0".as_ptr() as LPCWSTR,
+        w!("InfPath") as LPCWSTR,
         0,
-        REG_SZ,
+        (REG_SZ) as u32,
         (*pComponentInfo).pszInfPath as LPBYTE,
-        (wcslen((*pComponentInfo).pszInfPath) + 1) * core::mem::size_of::<u16>() as u32,
-    );
+        ((wcslen((*pComponentInfo).pszInfPath) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
+    )) as u32;
     if rc != ERROR_SUCCESS {
         RegCloseKey(hInstanceKey);
         return ret;
     }
 
-    rc = RegSetValueExW(
+    rc = (RegSetValueExW(
         hInstanceKey,
-        b"InfSection\0".as_ptr() as LPCWSTR,
+        w!("InfSection") as LPCWSTR,
         0,
-        REG_SZ,
+        (REG_SZ) as u32,
         (*pComponentInfo).pszInfSection as LPBYTE,
-        (wcslen((*pComponentInfo).pszInfSection) + 1) * core::mem::size_of::<u16>() as u32,
-    );
+        ((wcslen((*pComponentInfo).pszInfSection) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
+    )) as u32;
     if rc != ERROR_SUCCESS {
         RegCloseKey(hInstanceKey);
         return ret;
     }
 
     *pInstanceKey = hInstanceKey;
-    ret = TRUE;
+    ret = (TRUE) as i32;
 
-    if ret == FALSE {
+    if ret == (FALSE) as i32 {
         RegCloseKey(hInstanceKey);
     }
 
@@ -214,8 +214,8 @@ unsafe extern "C" fn CheckInfFile(
     pszFullInfName: PWSTR,
     pszComponentId: PCWSTR,
     pComponentInfo: *mut COMPONENT_INFO,
-) -> u32 {
-    let mut szLineBuffer: [u16; MAX_PATH] = [0; MAX_PATH];
+) -> BOOL {
+    let mut szLineBuffer: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut hInf = INVALID_HANDLE_VALUE;
     let mut MfgContext: INFCONTEXT = core::mem::zeroed();
     let mut DevContext: INFCONTEXT = core::mem::zeroed();
@@ -225,7 +225,7 @@ unsafe extern "C" fn CheckInfFile(
     hInf = SetupOpenInfFileW(
         pszFullInfName,
         core::ptr::null_mut(),
-        INF_STYLE_WIN4,
+        (INF_STYLE_WIN4) as u32,
         core::ptr::null_mut(),
     );
     if hInf == INVALID_HANDLE_VALUE {
@@ -234,7 +234,7 @@ unsafe extern "C" fn CheckInfFile(
 
     if SetupFindFirstLineW(
         hInf,
-        b"M\0a\0n\0u\0f\0a\0c\0t\0u\0r\0e\0r\0\0\0".as_ptr() as PCWSTR,
+        w!("Manufacturer") as PCWSTR,
         core::ptr::null_mut(),
         &mut MfgContext,
     ) == 0
@@ -293,7 +293,7 @@ unsafe extern "C" fn CheckInfFile(
                 (*pComponentInfo).pszInfSection = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    dwLength * core::mem::size_of::<u16>() as u32,
+                    (dwLength * core::mem::size_of::<u16>() as u32) as SIZE_T,
                 ) as PWSTR;
                 if !(*pComponentInfo).pszInfSection.is_null() {
                     SetupGetStringFieldW(
@@ -316,7 +316,7 @@ unsafe extern "C" fn CheckInfFile(
                 (*pComponentInfo).pszDescription = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    dwLength * core::mem::size_of::<u16>() as u32,
+                    (dwLength * core::mem::size_of::<u16>() as u32) as SIZE_T,
                 ) as PWSTR;
                 if !(*pComponentInfo).pszDescription.is_null() {
                     SetupGetStringFieldW(
@@ -330,8 +330,8 @@ unsafe extern "C" fn CheckInfFile(
 
                 if SetupFindFirstLineW(
                     hInf,
-                    b"V\0e\0r\0s\0i\0o\0n\0\0\0".as_ptr() as PCWSTR,
-                    b"C\0l\0a\0s\0s\0G\0u\0i\0d\0\0\0".as_ptr() as PCWSTR,
+                    w!("Version") as PCWSTR,
+                    w!("ClassGuid") as PCWSTR,
                     &mut MiscContext,
                 ) != 0
                 {
@@ -346,7 +346,7 @@ unsafe extern "C" fn CheckInfFile(
                     (*pComponentInfo).pszClassGuid = HeapAlloc(
                         GetProcessHeap(),
                         0,
-                        dwLength * core::mem::size_of::<u16>() as u32,
+                        (dwLength * core::mem::size_of::<u16>() as u32) as SIZE_T,
                     ) as PWSTR;
                     if !(*pComponentInfo).pszInfSection.is_null() {
                         SetupGetStringFieldW(
@@ -362,7 +362,7 @@ unsafe extern "C" fn CheckInfFile(
                 if SetupFindFirstLineW(
                     hInf,
                     (*pComponentInfo).pszInfSection,
-                    b"C\0h\0a\0r\0a\0c\0t\0e\0r\0i\0s\0t\0i\0c\0s\0\0\0".as_ptr() as PCWSTR,
+                    w!("Characteristics") as PCWSTR,
                     &mut MiscContext,
                 ) != 0
                 {
@@ -396,19 +396,19 @@ unsafe extern "C" fn CheckInfFile(
 unsafe extern "C" fn ScanForInfFile(
     pszComponentId: PCWSTR,
     pComponentInfo: *mut COMPONENT_INFO,
-) -> u32 {
-    let mut szInfPath: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szFullInfName: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szPathBuffer: [u16; MAX_PATH] = [0; MAX_PATH];
+) -> BOOL {
+    let mut szInfPath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szFullInfName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szPathBuffer: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut fdw: WIN32_FIND_DATAW = core::mem::zeroed();
     let mut hFindFile = INVALID_HANDLE_VALUE;
     let mut bFound = FALSE;
 
     GetWindowsDirectoryW(szInfPath.as_mut_ptr(), MAX_PATH);
-    wcscat(szInfPath.as_mut_ptr(), b"\\inf\0".as_ptr() as LPCWSTR);
+    wcscat(szInfPath.as_mut_ptr(), w!("\\inf") as LPCWSTR);
 
     wcscpy(szPathBuffer.as_mut_ptr(), szInfPath.as_ptr());
-    wcscat(szPathBuffer.as_mut_ptr(), b"\\*.inf\0".as_ptr() as LPCWSTR);
+    wcscat(szPathBuffer.as_mut_ptr(), w!("\\*.inf") as LPCWSTR);
 
     hFindFile = FindFirstFileW(szPathBuffer.as_ptr(), &mut fdw);
     if hFindFile == INVALID_HANDLE_VALUE {
@@ -422,20 +422,19 @@ unsafe extern "C" fn ScanForInfFile(
         // match `.` or `..` -- and repairing an upstream bug inside a translation is how
         // a divergence ships. Three paid samplings all "fixed" it by calling FindNextFileW
         // on this path; the call seal caught every one.
-        if wcscmp(fdw.cFileName.as_ptr(), b".\0".as_ptr() as LPCWSTR) == 0 ||
-           wcscmp(fdw.cFileName.as_ptr(), b"..\0".as_ptr() as LPCWSTR) == 0 {
+        if wcscmp(fdw.cFileName.as_ptr(), w!(".") as LPCWSTR) == 0 ||
+           wcscmp(fdw.cFileName.as_ptr(), w!("..") as LPCWSTR) == 0 {
             continue;
         }
 
         wcscpy(szFullInfName.as_mut_ptr(), szInfPath.as_ptr());
-        wcscat(szFullInfName.as_mut_ptr(), b"\\\0".as_ptr() as LPCWSTR);
+        wcscat(szFullInfName.as_mut_ptr(), w!("\\") as LPCWSTR);
         wcscat(szFullInfName.as_mut_ptr(), fdw.cFileName.as_ptr());
 
         if CheckInfFile(szFullInfName.as_mut_ptr(), pszComponentId, pComponentInfo) != 0 {
             (*pComponentInfo).pszFullInfPath = HeapAlloc(
                 GetProcessHeap(),
-                0,
-                (wcslen(szFullInfName.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+                0,((wcslen(szFullInfName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !(*pComponentInfo).pszFullInfPath.is_null() {
                 wcscpy((*pComponentInfo).pszFullInfPath, szFullInfName.as_ptr());
@@ -443,8 +442,7 @@ unsafe extern "C" fn ScanForInfFile(
 
             (*pComponentInfo).pszInfPath = HeapAlloc(
                 GetProcessHeap(),
-                0,
-                (wcslen(fdw.cFileName.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+                0,((wcslen(fdw.cFileName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !(*pComponentInfo).pszInfPath.is_null() {
                 wcscpy((*pComponentInfo).pszInfPath, fdw.cFileName.as_ptr());
@@ -452,8 +450,7 @@ unsafe extern "C" fn ScanForInfFile(
 
             (*pComponentInfo).pszComponentId = HeapAlloc(
                 GetProcessHeap(),
-                0,
-                (wcslen(pszComponentId) + 1) * core::mem::size_of::<u16>(),
+                0,((wcslen(pszComponentId) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !(*pComponentInfo).pszComponentId.is_null() {
                 wcscpy((*pComponentInfo).pszComponentId, pszComponentId);
@@ -488,7 +485,7 @@ unsafe extern "C" fn StartNetworkServices(
     hManager = OpenSCManagerW(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        SC_MANAGER_ALL_ACCESS,
+        (SC_MANAGER_ALL_ACCESS) as u32,
     );
     if hManager == core::ptr::null_mut() {
         'done: loop {
@@ -511,7 +508,7 @@ unsafe extern "C" fn StartNetworkServices(
     hInf = SetupOpenInfFileW(
         (*pComponentInfo).pszFullInfPath,
         core::ptr::null_mut(),
-        INF_STYLE_WIN4,
+        (INF_STYLE_WIN4) as u32,
         core::ptr::null_mut(),
     );
     if hInf == INVALID_HANDLE_VALUE {
@@ -534,8 +531,7 @@ unsafe extern "C" fn StartNetworkServices(
 
     pServiceSection = HeapAlloc(
         GetProcessHeap(),
-        0,
-        (wcslen((*pComponentInfo).pszInfSection) + wcslen(b".Service\0".as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>(),
+        0,((wcslen((*pComponentInfo).pszInfSection) + wcslen(w!(".Service") as LPCWSTR) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     if pServiceSection == core::ptr::null_mut() {
         'done: loop {
@@ -556,12 +552,12 @@ unsafe extern "C" fn StartNetworkServices(
     }
 
     wcscpy(pServiceSection, (*pComponentInfo).pszInfSection);
-    wcscat(pServiceSection, b".Service\0".as_ptr() as LPCWSTR);
+    wcscat(pServiceSection, w!(".Service") as LPCWSTR);
 
     if SetupFindFirstLineW(
         hInf,
         pServiceSection,
-        b"AddService\0".as_ptr() as LPCWSTR,
+        w!("AddService") as LPCWSTR,
         &mut Context,
     ) == 0
     {
@@ -594,7 +590,7 @@ unsafe extern "C" fn StartNetworkServices(
         hService = OpenServiceW(
             hManager,
             szServiceName.as_ptr(),
-            SERVICE_START,
+            (SERVICE_START) as u32,
         );
         if !hService.is_null() {
             if StartService(hService, 0, core::ptr::null_mut()) == 0 {
@@ -603,7 +599,7 @@ unsafe extern "C" fn StartNetworkServices(
             CloseServiceHandle(hService);
         }
 
-        if SetupFindNextLine(&Context, &mut Context) == 0 {
+        if SetupFindNextLine(&mut Context, &mut Context) == 0 {
             break;
         }
     }
@@ -629,11 +625,11 @@ pub unsafe extern "C" fn InstallNetworkComponent(
 ) -> BOOL {
     let mut ComponentInfo: COMPONENT_INFO = core::mem::zeroed();
     let mut hInstanceKey: HKEY = core::ptr::null_mut();
-    let mut bResult: BOOL = FALSE;
+    let mut bResult: BOOL = (FALSE) as i32;
 
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(ComponentInfo) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&COMPONENT_INFO) as usize
+        core::mem::size_of::<COMPONENT_INFO>() as usize
     );
 
     if ScanForInfFile(pszComponentId, core::ptr::addr_of_mut!(ComponentInfo)) == 0 {
@@ -746,7 +742,7 @@ pub unsafe extern "C" fn InstallNetworkComponent(
         };
     }
 
-    bResult = TRUE;
+    bResult = (TRUE) as i32;
 
     StartNetworkServices(core::ptr::addr_of_mut!(ComponentInfo));
 

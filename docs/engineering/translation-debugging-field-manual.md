@@ -461,6 +461,21 @@ island (`DLGPROC`, `LPTHREAD_START_ROUTINE` — both ntdll-sys) has NOT been thr
 re-declare that one API locally against an `extern "system"` fn-pointer, the way `prelude.rs`
 does for `DLGPROC`. The ABI is unchanged; only the spelling is.
 
+**A local re-declaration is not enough once a STRUCT FIELD carries the slot.** Re-declaring
+`DialogBoxParamW` against a local `extern "system"` DLGPROC fixes the free function, but
+`PROPSHEETPAGEW::pfnDlgProc` is typed `DLGPROC` *inside the island*, and a `pub type DLGPROC`
+in the prelude does not retype a field of a struct the island emitted. A dialog-heavy module
+hits both — netcfgx has twelve dialog procs plus two property-sheet page structs. The fix is
+one profile line, `UNBLOCK="DLGPROC"` in `gen_driver_types.sh`: the island then emits its own
+copy, `normalize_island_abi.py` spells it `extern "system"` on all three arches, and field and
+free function agree, so ONE definition of each dialog proc serves every target. Without it the
+crate needs a `#[cfg(target_arch)]` twin per proc — which is what netid-rust still carries, and
+the twins had already drifted apart in incidental casts by the time anyone compared them.
+Note the trap that makes this look optional: **Rust compares fn-pointer ABIs NOMINALLY**, so
+`extern "system"` unifies with neither `extern "stdcall"` (i386) nor `extern "C"` (amd64/arm64)
+even though it *is* each of them on that target. The mismatch is per-arch, so fixing i386 by
+hand flips the error to the other two.
+
 ### Aggregates, arrays and unions across the FFI boundary
 - **`i64` substituted for a by-value `_LARGE_INTEGER`** — i386 cdecl lowers an 8-byte
   aggregate differently from a scalar `i64`; amd64 hides it. Mirror the union type exactly and
@@ -903,6 +918,20 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   Fixed-size `T[N]` arrays keep the array shape.
 - **An ANSI byte string cast to a WIDE pointer** makes every lookup silently fall back to
   defaults. **Hand-encoded UTF-16 has three distinct mis-encodings** — swept workspace-wide.
+- **Two more shapes that `grep 'b"'` does not reach, and the oracle that catches all of them.**
+  netcfgx carried 157 of these in one module. Beyond the three above, the literal can be bound
+  to a LOCAL first (`let t = b"S\0Y\0S\0…"; copy_nonoverlapping(t.as_ptr() as *const u16, …)`
+  — the C was a `WCHAR buf[N] = L"…"` array initializer), and it can arrive with NO `b` prefix
+  at all (`"N\0e\0t\0…".as_ptr() as LPCWSTR`, where `.as_ptr()` on a `str` is `*const u8`).
+  Grep the ESCAPE, not the prefix: any string literal still containing `\0` is a hand-encoded
+  wide literal in a language that has `u16`.
+  **The verification that works on assembled output** — where `scan_wide_literals.py` has no
+  intent comment to diff against — is the C file itself: decode each literal back to text and
+  require it to appear verbatim as `L"<text>"` in the TU it was translated from. On netcfgx
+  that confirmed 107 of 108 distinct literals and the single failure was real: `L"\Device\"`
+  had come back as `\Device`, losing the trailing separator that `wcscat` appends the adapter
+  UUID after. It is ~20 lines, it needs no annotation in the Rust, and unlike a count it cannot
+  report a green over zero comparisons.
 
 ### Bitfields and unions
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
@@ -3681,6 +3710,33 @@ only ever saw attributes directly preceding a definition, so `#[cfg(target_arch 
 mod ke_amd64_exports { … }` made 8 amd64-only definitions look like i386 authority — and --fix
 used them to rewrite ntoskrnl's *correct* i386 decls. **A cfg'd-out definition is not evidence
 either**; the scanner now brace-matches per-arch modules.
+
+### An automated repair loop cannot converge on an error reported at a MACRO's definition
+
+**Symptom.** A bounded repair pass that inserts casts runs to its pass limit and leaves a
+`macro_rules!` body wearing a stack of them:
+
+```rust
+macro_rules! ListView_GetItemCount {
+    ($h:expr) => { (((((((((((( SendMessageW($h, LVM_GETITEMCOUNT, 0, 0) as c_int)
+        as u32) as i32) as u32) as i32) as u32) as i32) as u32) as i32) as u32) as i32) as u32) as i32 };
+}
+```
+
+**Cause.** rustc attributes a macro expansion's type error to the macro's DEFINITION span, not
+to the call site that caused it. A repair pass keyed on `file:line` therefore edits the body,
+the next pass sees the error again from a *different* call site, and appends another cast. It
+can never converge, because the macro has one body and the call sites want different types —
+and every added cast is a no-op on the width, so nothing else notices. `crate-repair` reached
+eleven nested casts on netcfgx before hitting its pass limit, and separately appended a
+`.cast()` inside the crate's `w!()` wide-literal macro, which left the pointee type
+unconstrained at every use.
+
+**Fix.** A cast belongs at the CALL SITE. Treat a `macro_rules!` body as off-limits to any
+automated span-keyed rewrite: when the reported span is inside one, the finding is about the
+expansion, and the tool has no way from that span to reach the code that has to change. Until
+`crate-repair` refuses those spans, diff the prelude after every run — the edits are silent
+and each one compiles.
 
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,

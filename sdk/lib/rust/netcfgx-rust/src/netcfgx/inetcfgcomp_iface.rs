@@ -113,7 +113,7 @@ pub unsafe extern "system" fn INetCfgComponentBindings_fnIsBoundTo(
 
     ptr = (*(*pComponent).pItem).pszBinding;
     while *ptr != UNICODE_NULL {
-        len = wcslen(ptr);
+        len = (wcslen(ptr)) as i32;
 
         if len > 8
             && _wcsicmp(ptr.offset(8), pszBindName)
@@ -144,7 +144,7 @@ pub unsafe extern "system" fn INetCfgComponentBindings_fnEnumBindingPaths(
 ) -> HRESULT {
     return IEnumNetCfgBindingPath_Constructor(
         core::ptr::null_mut(),
-        &IID_IEnumNetCfgBindingPath,
+        core::ptr::addr_of!(IID_IEnumNetCfgBindingPath),
         ppIEnum as *mut LPVOID,
         dwFlags,
     );
@@ -215,20 +215,20 @@ pub unsafe extern "system" fn INetCfgComponent_fnQueryInterface(
     let This = iface as *mut INetCfgComponentImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_INetCfgComponent) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_INetCfgComponent)
     {
         *ppvObj = This as LPVOID;
         INetCfg_AddRef(iface as *mut INetCfg);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgComponentBindings) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgComponentBindings)
     {
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblBindings) as LPVOID;
         INetCfgComponentBindings_AddRef(iface as *mut INetCfgComponentBindings);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgComponentPrivate) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgComponentPrivate)
     {
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblPrivate) as LPVOID;
         INetCfgComponentPrivate_AddRef(iface as *mut INetCfgComponentPrivate);
@@ -245,7 +245,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnAddRef(
     let This = iface as *mut INetCfgComponentImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return (refCount) as u32;
 }
 
 #[no_mangle]
@@ -258,7 +258,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnRelease(
     if refCount == 0 {
         CoTaskMemFree(This as LPVOID);
     }
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -275,12 +275,12 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetDisplayName(
     }
 
     if !(*This).pItem.is_null() && !(*(*This).pItem).szDisplayName.is_null() {
-        Length = wcslen((*(*This).pItem).szDisplayName) + 1;
+        Length = (wcslen((*(*This).pItem).szDisplayName) + 1) as u32;
     } else {
         Length = 1;
     }
 
-    szName = CoTaskMemAlloc((Length as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+    szName = CoTaskMemAlloc(((Length as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
     if szName.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -307,17 +307,16 @@ pub unsafe extern "system" fn INetCfgComponent_fnSetDisplayName(
         return E_POINTER;
     }
 
-    if IsEqualGUID(
+    if !IsEqualGUID!(
         core::ptr::addr_of_mut!((*(*This).pItem).ClassGUID),
         core::ptr::addr_of!(GUID_DEVCLASS_NET),
-    ) == 0
+    )
     {
         return E_NOTIMPL;
     }
 
-    let szName = CoTaskMemAlloc(
-        (wcslen(ppszwDisplayName) + 1)
-            * core::mem::size_of::<u16>(),
+    let szName = CoTaskMemAlloc(((wcslen(ppszwDisplayName) + 1)
+            * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     if szName.is_null() {
         return E_OUTOFMEMORY;
@@ -326,7 +325,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnSetDisplayName(
     wcscpy(szName, ppszwDisplayName);
     CoTaskMemFree((*(*This).pItem).szDisplayName as LPVOID);
     (*(*This).pItem).szDisplayName = szName;
-    (*(*This).pItem).bChanged = TRUE;
+    (*(*This).pItem).bChanged = (TRUE) as i32;
 
     S_OK
 }
@@ -345,12 +344,12 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetHelpText(
     }
 
     if !(*(*This).pItem).szHelpText.is_null() {
-        Length = wcslen((*(*This).pItem).szHelpText) + 1;
+        Length = (wcslen((*(*This).pItem).szHelpText) + 1) as u32;
     } else {
         Length = 1;
     }
 
-    szHelp = CoTaskMemAlloc((Length as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+    szHelp = CoTaskMemAlloc(((Length as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
     if szHelp.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -377,9 +376,8 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetId(
         return E_POINTER;
     }
 
-    let szId = CoTaskMemAlloc(
-        (wcslen((*(*This).pItem).szId) + 1)
-            * core::mem::size_of::<u16>(),
+    let szId = CoTaskMemAlloc(((wcslen((*(*This).pItem).szId) + 1)
+            * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     if szId.is_null() {
         return E_OUTOFMEMORY;
@@ -418,7 +416,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetInstanceGuid(
         return E_POINTER;
     }
 
-    CopyMemory(
+    CopyMemory!(
         pGuid as *mut core::ffi::c_void,
         core::ptr::addr_of_mut!((*(*This).pItem).InstanceId) as *const core::ffi::c_void,
         core::mem::size_of::<GUID>(),
@@ -437,23 +435,22 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetPnpDevNodeId(
         return E_POINTER;
     }
 
-    if IsEqualGUID(
+    if !IsEqualGUID!(
         &GUID_DEVCLASS_NET,
         &(*(*This).pItem).ClassGUID,
-    ) == 0
+    )
     {
         return E_NOTIMPL;
     }
 
-    let szNode = CoTaskMemAlloc(
-        (wcslen((*(*This).pItem).szNodeId.as_ptr()) + 1)
-            * core::mem::size_of::<u16>(),
+    let szNode = CoTaskMemAlloc(((wcslen((*(*This).pItem).szNodeId) + 1)
+            * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
     if szNode.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    wcscpy(szNode, (*(*This).pItem).szNodeId.as_ptr());
+    wcscpy(szNode, (*(*This).pItem).szNodeId);
     *ppszwDevNodeId = szNode;
     S_OK
 }
@@ -469,7 +466,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetClassGuid(
         return E_POINTER;
     }
 
-    CopyMemory(
+    CopyMemory!(
         pGuid as LPVOID,
         core::ptr::addr_of!((*(*This).pItem).ClassGUID) as LPVOID,
         core::mem::size_of::<GUID>(),
@@ -488,9 +485,8 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetBindName(
         return E_POINTER;
     }
 
-    let szBind = CoTaskMemAlloc(
-        (wcslen((*(*This).pItem).szBindName) + 1)
-            * core::mem::size_of::<u16>(),
+    let szBind = CoTaskMemAlloc(((wcslen((*(*This).pItem).szBindName) + 1)
+            * core::mem::size_of::<u16>()) as SIZE_T,
     ) as LPWSTR;
 
     if szBind.is_null() {
@@ -514,15 +510,15 @@ pub unsafe extern "system" fn INetCfgComponent_fnGetDeviceStatus(
         return E_POINTER;
     }
 
-    if IsEqualGUID(
+    if !IsEqualGUID!(
         &GUID_DEVCLASS_NET as *const GUID,
         &(*(*This).pItem).ClassGUID as *const GUID,
-    ) == 0
+    )
     {
         return E_UNEXPECTED;
     }
 
-    *pStatus = (*(*This).pItem).__bindgen_anon_1.Status;
+    *pStatus = (*(*This).pItem).Status;
 
     return S_OK;
 }
@@ -560,7 +556,7 @@ pub unsafe extern "system" fn INetCfgComponent_fnOpenParamKey(
         0,
         KEY_READ | KEY_WRITE,
         phkey,
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS) as i32
     {
         return S_OK;
     } else {
@@ -586,7 +582,7 @@ pub unsafe extern "C" fn CreateNotificationObject(
     let mut ClassGUID: CLSID = core::mem::zeroed();
     let mut InstanceGUID: CLSID = core::mem::zeroed();
 
-    wcscpy(szName.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Control\\Network\\\0".as_ptr() as LPCWSTR);
+    wcscpy(szName.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Control\\Network\\") as LPCWSTR);
 
     hr = INetCfgComponent_GetClassGuid(iface, &mut ClassGUID);
     if hr < 0 {
@@ -599,8 +595,8 @@ pub unsafe extern "C" fn CreateNotificationObject(
     }
 
     wcscat(szName.as_mut_ptr(), pStr);
-    CoTaskMemFree(pStr);
-    wcscat(szName.as_mut_ptr(), b"\\\0".as_ptr() as LPCWSTR);
+    CoTaskMemFree((pStr).cast());
+    wcscat(szName.as_mut_ptr(), w!("\\") as LPCWSTR);
 
     hr = INetCfgComponent_GetInstanceGuid(iface, &mut InstanceGUID);
     if hr < 0 {
@@ -613,19 +609,19 @@ pub unsafe extern "C" fn CreateNotificationObject(
     }
 
     wcscat(szName.as_mut_ptr(), pStr);
-    CoTaskMemFree(pStr);
+    CoTaskMemFree((pStr).cast());
 
-    wcscat(szName.as_mut_ptr(), b"\\NDI\0".as_ptr() as LPCWSTR);
+    wcscat(szName.as_mut_ptr(), w!("\\NDI") as LPCWSTR);
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szName.as_ptr(), 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szName.as_ptr(), 0, KEY_READ, &mut hKey) != (ERROR_SUCCESS) as i32 {
         return E_FAIL;
     }
 
     dwSize = core::mem::size_of_val(&szName) as u32;
-    lRet = RegQueryValueExW(hKey, b"ClsID\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szName.as_mut_ptr() as LPBYTE, &mut dwSize);
+    lRet = RegQueryValueExW(hKey, w!("ClsID") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szName.as_mut_ptr() as LPBYTE, &mut dwSize);
     RegCloseKey(hKey);
 
-    if lRet != ERROR_SUCCESS && dwType != REG_SZ {
+    if lRet != (ERROR_SUCCESS) as i32 && dwType != (REG_SZ) as u32 {
         return E_FAIL;
     }
 
@@ -651,7 +647,7 @@ pub unsafe extern "C" fn CreateNotificationObject(
         return hr;
     }
 
-    hr = INetCfgComponentControl_Initialize(pNCCC, iface, (*This).pNCfg, FALSE);
+    hr = INetCfgComponentControl_Initialize(pNCCC, iface, (*This).pNCfg, (FALSE) as i32);
     if hr < 0 {
         INetCfgComponentControl_Release(pNCCC);
         INetCfgComponentPropertyUi_Release(pNCCPU);
@@ -669,11 +665,11 @@ pub unsafe extern "C" fn CreateNotificationObject(
     S_OK
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
+unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            hIcon = LoadIconW(netcfgx_hInstance, MAKEINTRESOURCEW(IDI_INTERNET));
+            hIcon = LoadIconW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDI_INTERNET));
             SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
         }
         _ => {}
@@ -682,12 +678,12 @@ unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARA
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
+unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            hIcon = LoadIconW(netcfgx_hInstance, MAKEINTRESOURCEW(IDI_INTERNET));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
+            hIcon = LoadIconW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDI_INTERNET));
+            SendMessageW(hwndDlg, WM_SETICON, (ICON_BIG) as SIZE_T, hIcon as LPARAM);
         }
         _ => {}
     }
@@ -703,8 +699,10 @@ pub unsafe extern "system" fn INetCfgComponent_fnRaisePropertyUi(
     let mut hr: HRESULT;
     let mut dwDefPages: u32;
     let mut Pages: u32;
-    let mut pinfo: PROPSHEETHEADERW;
-    let mut hppages: *mut HPROPSHEETPAGE;
+    // C:682-683 leaves both uninitialised; pinfo is ZeroMemory'd and hppages is assigned
+    // from the MergePropPages out-parameter before either is read.
+    let mut pinfo: PROPSHEETHEADERW = core::mem::zeroed();
+    let mut hppages: *mut HPROPSHEETPAGE = core::ptr::null_mut();
     let iResult: INT_PTR;
     let This = iface as *mut INetCfgComponentImpl;
 
@@ -733,28 +731,28 @@ pub unsafe extern "system" fn INetCfgComponent_fnRaisePropertyUi(
     if hr < 0 || Pages == 0 {
         return hr;
     }
-    ZeroMemory(
+    ZeroMemory!(
         &mut pinfo as *mut PROPSHEETHEADERW as LPVOID,
-        PROPSHEETHEADERW,
+        core::mem::size_of::<PROPSHEETHEADERW>(),
     );
-    pinfo.dwSize = PROPSHEETHEADERW;
-    pinfo.dwFlags = PSH_NOCONTEXTHELP
+    pinfo.dwSize = core::mem::size_of::<PROPSHEETHEADERW>() as u32;
+    pinfo.dwFlags = (PSH_NOCONTEXTHELP
         | PSH_PROPTITLE
         | PSH_NOAPPLYNOW
         | PSH_USEICONID
-        | PSH_USECALLBACK;
+        | PSH_USECALLBACK) as u32;
     pinfo.u3.phpage = hppages;
     pinfo.hwndParent = hwndParent;
     pinfo.nPages = Pages;
     pinfo.hInstance = netcfgx_hInstance;
-    pinfo.pszCaption = (*(*This).pItem).szDisplayName.as_mut_ptr();
-    pinfo.u.pszIcon = MAKEINTRESOURCEW(IDI_INTERNET);
+    pinfo.pszCaption = (*(*This).pItem).szDisplayName;
+    *pinfo.u.pszIcon.as_mut() = MAKEINTRESOURCEW!(IDI_INTERNET) as *const u16;
     pinfo.pfnCallback = Some(PropSheetProc);
 
     iResult = PropertySheetW(&mut pinfo);
     CoTaskMemFree(hppages as LPVOID);
     if iResult > 0 {
-        (*(*This).pItem).bChanged = TRUE;
+        (*(*This).pItem).bChanged = (TRUE) as i32;
         return S_OK;
     }
     S_FALSE
@@ -762,8 +760,8 @@ pub unsafe extern "system" fn INetCfgComponent_fnRaisePropertyUi(
 
 #[no_mangle]
 pub unsafe extern "system" fn INetCfgComponent_Constructor(
-    pUnkOuter: *mut core::ffi::c_void,
-    riid: *const GUID,
+    pUnkOuter: *mut IUnknown,
+    riid: REFIID,
     ppv: *mut LPVOID,
     pItem: *mut NetCfgComponentItem,
     pNCfg: *mut INetCfg,
@@ -772,7 +770,7 @@ pub unsafe extern "system" fn INetCfgComponent_Constructor(
         return E_POINTER;
     }
 
-    let This = CoTaskMemAlloc(core::mem::size_of::<INetCfgComponentImpl>()) as *mut INetCfgComponentImpl;
+    let This = CoTaskMemAlloc((core::mem::size_of::<INetCfgComponentImpl>()) as SIZE_T) as *mut INetCfgComponentImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -802,8 +800,8 @@ pub unsafe extern "system" fn IEnumNetCfgComponent_fnQueryInterface(
     let This = iface as *mut IEnumNetCfgComponentImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_IEnumNetCfgComponent) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_IEnumNetCfgComponent)
     {
         *ppvObj = This as LPVOID;
         INetCfg_AddRef(iface as *mut INetCfg);
@@ -819,7 +817,7 @@ pub unsafe extern "system" fn IEnumNetCfgComponent_fnAddRef(
     let This = iface as *mut IEnumNetCfgComponentImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -913,8 +911,8 @@ pub unsafe extern "system" fn IEnumNetCfgComponent_fnClone(
 
 #[no_mangle]
 pub unsafe extern "system" fn IEnumNetCfgComponent_Constructor(
-    pUnkOuter: *mut core::ffi::c_void,
-    riid: *const GUID,
+    pUnkOuter: *mut IUnknown,
+    riid: REFIID,
     ppv: *mut LPVOID,
     pItem: *mut NetCfgComponentItem,
     pNCfg: *mut INetCfg,
@@ -923,7 +921,7 @@ pub unsafe extern "system" fn IEnumNetCfgComponent_Constructor(
         return E_POINTER;
     }
 
-    let This = CoTaskMemAlloc(core::mem::size_of::<IEnumNetCfgComponentImpl>()) as *mut IEnumNetCfgComponentImpl;
+    let This = CoTaskMemAlloc((core::mem::size_of::<IEnumNetCfgComponentImpl>()) as SIZE_T) as *mut IEnumNetCfgComponentImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
