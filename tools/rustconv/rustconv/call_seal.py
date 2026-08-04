@@ -25,6 +25,9 @@ class SealedCall:
     # trusted. The Rust site must agree -- see `_argument_count` for why that is the
     # oracle that catches a SHIFTED envelope, which token accounting alone cannot.
     argc: int | None = None
+    # Upper bound when the callee has C++ DEFAULT ARGUMENTS: the C site may omit them, a
+    # faithful Rust lowering cannot. None means "no defaults, exact match required".
+    argc_max: int | None = None
 
 
 @dataclass(frozen=True)
@@ -165,6 +168,7 @@ def seal_calls(
     text: str,
     required_calls: set[str],
     function_like_macros: frozenset[str] = frozenset(),
+    tu_source: str = "",
 ) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token.
 
@@ -178,6 +182,9 @@ def seal_calls(
     if not required:
         return SealedCalls(text, ())
     masked = _code_mask(text)
+    # C++ default arguments are declared at FILE scope, not inside the body being sealed,
+    # so the arity range has to be read from the whole TU when we have it.
+    decl_scope = _code_mask(tu_source) if tu_source else masked
     body_start = masked.find("{")
     # `sizeof` is a KEYWORD and the debug macros are stripped from the body before
     # sealing, so neither is a name the model can be confused by. Everything else that
@@ -234,7 +241,13 @@ def seal_calls(
             else counted[0]
         )
         calls.append(
-            SealedCall(placeholder, original, in_dead_region(dead_spans, start, end), argc)
+            SealedCall(
+                placeholder,
+                original,
+                in_dead_region(dead_spans, start, end),
+                argc,
+                _defaulted_param_count(decl_scope, original),
+            )
         )
         result = result[:start] + placeholder + result[end:]
     calls.reverse()
@@ -412,6 +425,48 @@ def _match_paren(text: str, open_idx: int) -> int:
     raise ValueError("unbalanced")
 
 
+def _defaulted_param_count(masked: str, callee: str) -> int | None:
+    """Total parameter count of `callee`, if its declaration gives any parameter a DEFAULT.
+
+    C++ default arguments are one more construct Rust cannot spell. `SHELL_GetAutoRunInfPath(
+    PCWSTR, PWSTR, BOOL ForInvoke = FALSE)` is called with two arguments in the C and MUST be
+    called with three in Rust, so the exact-arity check rejects a correct lowering -- it did,
+    on two different CDrivesFolder functions at once, which is the tell that the fault is in
+    the checker rather than the model.
+
+    Returns the full parameter count so the audit can accept anything from the C site's count
+    up to it; None when the callee has no defaults, which keeps exact matching everywhere else.
+    """
+    for m in re.finditer(rf"\b{re.escape(callee)}\s*\(", masked):
+        depth, i, n = 0, m.end() - 1, len(masked)
+        while i < n:
+            if masked[i] == "(":
+                depth += 1
+            elif masked[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        else:
+            continue
+        params = masked[m.end() : i]
+        # A `=` at the top level of a parameter list is a default; `==` is not, and nested
+        # parens/templates are skipped by the depth test.
+        top, d, has_default = [], 0, False
+        for j, ch in enumerate(params):
+            if ch in "(<":
+                d += 1
+            elif ch in ")>":
+                d -= 1
+            elif d == 0 and ch == "=" and params[j - 1 : j] != "=" and params[j + 1 : j + 2] != "=":
+                has_default = True
+            elif d == 0 and ch == ",":
+                top.append(j)
+        if has_default and params.strip():
+            return len(top) + 1
+    return None
+
+
 def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     """Tokens whose Rust call site takes a different number of arguments than the C one.
 
@@ -436,7 +491,8 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
             if (counted := _argument_count(exec_mask, match.end())) is not None
             and "::<" not in counted[1]
         ]
-        if not counts or any(count == call.argc for count, _ in counts):
+        hi = call.argc_max if call.argc_max is not None else call.argc
+        if not counts or any(call.argc <= count <= hi for count, _ in counts):
             continue
         got = "/".join(str(count) for count, _ in counts)
         findings.append(f"{call.placeholder}={call.original} wants {call.argc}, got {got}")

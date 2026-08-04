@@ -2191,6 +2191,7 @@ def cmd_translate(args):
                     model_sources[dep.name],
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
                     seal_macros,
+                    tu_source=scan.raw_source,
                 )
                 for dep in sorted_deps
             }
