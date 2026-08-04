@@ -1601,7 +1601,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             match wParam as u32 {
                 VK_SPACE => {
                     if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, L' ' as u16) == 0
+                        && QuickSearchFindHit(infoPtr, ' ' as u16) == 0
                     {
                         if !(*infoPtr).FocusedCheckItem.is_null()
                             && ((*infoPtr).QuickSearchHitItem.is_null()
@@ -1624,7 +1624,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
                 VK_RETURN => {
                     if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, L'\n' as u16) == 0
+                        && QuickSearchFindHit(infoPtr, '\n' as u16) == 0
                     {
                         if !(*infoPtr).FocusedCheckItem.is_null()
                             && (*infoPtr).QuickSearchHitItem.is_null()
@@ -1822,7 +1822,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             }
             if IsAppThemed() != 0 {
                 (*infoPtr).ThemeHandle =
-                    OpenThemeData((*infoPtr).hSelf, b"BUTTON\0".as_ptr() as *const u16);
+                    OpenThemeData((*infoPtr).hSelf, w!("BUTTON") as *const u16);
             }
         }
 
@@ -1994,7 +1994,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                 if IsAppThemed() != 0 {
                     (*infoPtr).ThemeHandle = OpenThemeData(
                         (*infoPtr).hSelf,
-                        b"BUTTON\0".as_ptr() as *const u16,
+                        w!("BUTTON") as *const u16,
                     );
                 } else {
                     (*infoPtr).ThemeHandle = core::ptr::null_mut();
@@ -2628,7 +2628,7 @@ unsafe extern "C" fn CheckListWndProc(
             match wParam as u32 {
                 VK_SPACE => {
                     if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, L' ' as u16) == 0
+                        && QuickSearchFindHit(infoPtr, ' ' as u16) == 0
                     {
                         if !(*infoPtr).FocusedCheckItem.is_null()
                             && ((*infoPtr).QuickSearchHitItem.is_null()
@@ -2651,7 +2651,7 @@ unsafe extern "C" fn CheckListWndProc(
 
                 VK_RETURN => {
                     if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, L'\n' as u16) == 0
+                        && QuickSearchFindHit(infoPtr, '\n' as u16) == 0
                     {
                         if !(*infoPtr).FocusedCheckItem.is_null()
                             && (*infoPtr).QuickSearchHitItem.is_null()
@@ -2849,7 +2849,7 @@ unsafe extern "C" fn CheckListWndProc(
             }
             if IsAppThemed() != 0 {
                 (*infoPtr).ThemeHandle =
-                    OpenThemeData((*infoPtr).hSelf, b"BUTTON\0".as_ptr() as *const u16);
+                    OpenThemeData((*infoPtr).hSelf, w!("BUTTON") as *const u16);
             }
         }
 
@@ -3021,7 +3021,7 @@ unsafe extern "C" fn CheckListWndProc(
                 if IsAppThemed() != 0 {
                     (*infoPtr).ThemeHandle = OpenThemeData(
                         (*infoPtr).hSelf,
-                        b"BUTTON\0".as_ptr() as *const u16,
+                        w!("BUTTON") as *const u16,
                     );
                 } else {
                     (*infoPtr).ThemeHandle = core::ptr::null_mut();
@@ -4375,7 +4375,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //             TextSize.cx = 0;
 //             TextSize.cy = 0;
 //
-//             if (infoPtr->QuickSearchText[0] == L'\0' ||
+//             if (infoPtr->QuickSearchText[0] == '\0' ||
 //                 GetTextExtentPoint32(hDC,
 //                                      infoPtr->QuickSearchHitItem->Name,
 //                                      wcslen(infoPtr->QuickSearchText),
@@ -4409,7 +4409,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //         PCHECKITEM OldHit = infoPtr->QuickSearchHitItem;
 //
 //         infoPtr->QuickSearchHitItem = NULL;
-//         infoPtr->QuickSearchText[0] = L'\0';
+//         infoPtr->QuickSearchText[0] = '\0';
 //
 //         /* scroll back to the focused item */
 //         if (infoPtr->FocusedCheckItem != NULL)
@@ -4510,7 +4510,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                     if (SearchLen > 0)
 //                     {
 //                         /* delete the last character */
-//                         infoPtr->QuickSearchText[--SearchLen] = L'\0';
+//                         infoPtr->QuickSearchText[--SearchLen] = '\0';
 //
 //                         if (SearchLen > 0)
 //                         {
@@ -4543,7 +4543,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                 if (SearchLen < (INT)(sizeof(infoPtr->QuickSearchText) / sizeof(infoPtr->QuickSearchText[0])) - 1)
 //                 {
 //                     infoPtr->QuickSearchText[SearchLen++] = c;
-//                     infoPtr->QuickSearchText[SearchLen] = L'\0';
+//                     infoPtr->QuickSearchText[SearchLen] = '\0';
 //
 //                     NewHit = FindCheckItem(infoPtr,
 //                                            infoPtr->QuickSearchText);
@@ -4558,7 +4558,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                     else
 //                     {
 //                         /* reset the input */
-//                         infoPtr->QuickSearchText[--SearchLen] = L'\0';
+//                         infoPtr->QuickSearchText[--SearchLen] = '\0';
 //                     }
 //                 }
 //                 break;
@@ -5232,7 +5232,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                 {
 //                     if (GetCapture() == NULL &&
 //                         !QuickSearchFindHit(infoPtr,
-//                                             L' '))
+//                                             ' '))
 //                     {
 //                         if (infoPtr->FocusedCheckItem != NULL &&
 //                             (infoPtr->QuickSearchHitItem == NULL ||
@@ -5259,7 +5259,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                 {
 //                     if (GetCapture() == NULL &&
 //                         !QuickSearchFindHit(infoPtr,
-//                                             L'\n'))
+//                                             '\n'))
 //                     {
 //                         if (infoPtr->FocusedCheckItem != NULL &&
 //                             infoPtr->QuickSearchHitItem == NULL)
@@ -5608,7 +5608,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                 infoPtr->CheckBoxLeft[1] = rcClient.right - 15;
 //
 //                 infoPtr->QuickSearchEnabled = FALSE;
-//                 infoPtr->QuickSearchText[0] = L'\0';
+//                 infoPtr->QuickSearchText[0] = '\0';
 //
 //                 infoPtr->QuickSearchSetFocusDelay = DEFAULT_QUICKSEARCH_SETFOCUS_DELAY;
 //                 infoPtr->QuickSearchResetDelay = DEFAULT_QUICKSEARCH_RESET_DELAY;

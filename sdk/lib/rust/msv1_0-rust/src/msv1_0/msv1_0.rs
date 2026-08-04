@@ -91,17 +91,17 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
                    (*UserInfo).All.ProfilePath.Length as ULONG + core::mem::size_of::<WCHAR>() as ULONG +
                    ((ComputerNameLength as ULONG + 3) * core::mem::size_of::<WCHAR>() as ULONG);
 
-    LocalBuffer = DispatchTable.AllocateLsaHeap.unwrap()(BufferLength) as PMSV1_0_INTERACTIVE_PROFILE;
+    LocalBuffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(BufferLength) as PMSV1_0_INTERACTIVE_PROFILE;
     if LocalBuffer == core::ptr::null_mut() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         return 'done: {
             if LocalBuffer != core::ptr::null_mut() {
-                DispatchTable.FreeLsaHeap.unwrap()(LocalBuffer as PVOID);
+                DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer as PVOID);
             }
 
             if !NT_SUCCESS(Status) {
                 if ClientBaseAddress != core::ptr::null_mut() {
-                    DispatchTable.FreeClientBuffer.unwrap()(ClientRequest, ClientBaseAddress);
+                    DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, ClientBaseAddress);
                 }
             }
 
@@ -109,7 +109,7 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
         };
     }
 
-    Status = DispatchTable.AllocateClientBuffer.unwrap()(
+    Status = DispatchTable.AllocateClientBuffer.unwrap_unchecked()(
         ClientRequest,
         BufferLength,
         core::ptr::addr_of_mut!(ClientBaseAddress),
@@ -117,12 +117,12 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
     if !NT_SUCCESS(Status) {
         return 'done: {
             if LocalBuffer != core::ptr::null_mut() {
-                DispatchTable.FreeLsaHeap.unwrap()(LocalBuffer as PVOID);
+                DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer as PVOID);
             }
 
             if !NT_SUCCESS(Status) {
                 if ClientBaseAddress != core::ptr::null_mut() {
-                    DispatchTable.FreeClientBuffer.unwrap()(ClientRequest, ClientBaseAddress);
+                    DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, ClientBaseAddress);
                 }
             }
 
@@ -212,12 +212,12 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
     (*LocalBuffer).LogonServer.Length = ((ComputerNameLength as ULONG + 2) * core::mem::size_of::<WCHAR>() as ULONG) as USHORT;
     (*LocalBuffer).LogonServer.MaximumLength = (*LocalBuffer).LogonServer.Length + core::mem::size_of::<WCHAR>() as USHORT;
     (*LocalBuffer).LogonServer.Buffer = (ClientBaseAddress as ULONG_PTR + Ptr as ULONG_PTR - LocalBuffer as ULONG_PTR) as LPWSTR;
-    wcscpy(Ptr, b"\\\0".as_ptr() as LPWSTR);
+    wcscpy(Ptr, w!("\\") as LPWSTR);
     wcscat(Ptr, ComputerName);
 
     (*LocalBuffer).UserFlags = 0;
 
-    Status = DispatchTable.CopyToClientBuffer.unwrap()(
+    Status = DispatchTable.CopyToClientBuffer.unwrap_unchecked()(
         ClientRequest,
         BufferLength,
         ClientBaseAddress,
@@ -226,12 +226,12 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
     if !NT_SUCCESS(Status) {
         return 'done: {
             if LocalBuffer != core::ptr::null_mut() {
-                DispatchTable.FreeLsaHeap.unwrap()(LocalBuffer as PVOID);
+                DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer as PVOID);
             }
 
             if !NT_SUCCESS(Status) {
                 if ClientBaseAddress != core::ptr::null_mut() {
-                    DispatchTable.FreeClientBuffer.unwrap()(ClientRequest, ClientBaseAddress);
+                    DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, ClientBaseAddress);
                 }
             }
 
@@ -243,12 +243,12 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
     *ProfileBufferLength = BufferLength;
 
     if LocalBuffer != core::ptr::null_mut() {
-        DispatchTable.FreeLsaHeap.unwrap()(LocalBuffer as PVOID);
+        DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer as PVOID);
     }
 
     if !NT_SUCCESS(Status) {
         if ClientBaseAddress != core::ptr::null_mut() {
-            DispatchTable.FreeClientBuffer.unwrap()(ClientRequest, ClientBaseAddress);
+            DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, ClientBaseAddress);
         }
     }
 
@@ -276,7 +276,7 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
             Status = STATUS_INSUFFICIENT_RESOURCES;
             break 'done;
         }
-        Status = RtlAppendUnicodeToString(&mut ComputerNameUCS, b"\\\\\0".as_ptr() as PWSTR);
+        Status = RtlAppendUnicodeToString(&mut ComputerNameUCS, w!("\\\\") as PWSTR);
         if NT_SUCCESS(Status) == 0 {
             break 'done;
         }
@@ -1149,12 +1149,12 @@ unsafe extern "C" fn MsvpGetUserInfo(
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
         if !LocalBuffer.is_null() {
-            (DispatchTable.FreeLsaHeap.unwrap())(LocalBuffer as PVOID);
+            (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
         }
 
         if !NT_SUCCESS(Status) {
             if !ClientBaseAddress.is_null() {
-                (DispatchTable.FreeClientBuffer.unwrap())(ClientRequest, ClientBaseAddress);
+                (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
             }
         }
 
@@ -1166,26 +1166,26 @@ unsafe extern "C" fn MsvpGetUserInfo(
                    (*LogonEntry).LogonDomainName.MaximumLength as ULONG +
                    (*LogonEntry).LogonServer.MaximumLength as ULONG;
 
-    LocalBuffer = (DispatchTable.AllocateLsaHeap.unwrap())(BufferLength) as PMSV1_0_GETUSERINFO_RESPONSE;
+    LocalBuffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(BufferLength) as PMSV1_0_GETUSERINFO_RESPONSE;
     if LocalBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         // goto done
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
         if !LocalBuffer.is_null() {
-            (DispatchTable.FreeLsaHeap.unwrap())(LocalBuffer as PVOID);
+            (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
         }
 
         if !NT_SUCCESS(Status) {
             if !ClientBaseAddress.is_null() {
-                (DispatchTable.FreeClientBuffer.unwrap())(ClientRequest, ClientBaseAddress);
+                (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
             }
         }
 
         return Status;
     }
 
-    Status = (DispatchTable.AllocateClientBuffer.unwrap())(
+    Status = (DispatchTable.AllocateClientBuffer.unwrap_unchecked())(
         ClientRequest,
         BufferLength,
         core::ptr::addr_of_mut!(ClientBaseAddress),
@@ -1195,12 +1195,12 @@ unsafe extern "C" fn MsvpGetUserInfo(
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
         if !LocalBuffer.is_null() {
-            (DispatchTable.FreeLsaHeap.unwrap())(LocalBuffer as PVOID);
+            (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
         }
 
         if !NT_SUCCESS(Status) {
             if !ClientBaseAddress.is_null() {
-                (DispatchTable.FreeClientBuffer.unwrap())(ClientRequest, ClientBaseAddress);
+                (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
             }
         }
 
@@ -1245,7 +1245,7 @@ unsafe extern "C" fn MsvpGetUserInfo(
 
     (*LocalBuffer).LogonType = (*LogonEntry).LogonType;
 
-    Status = (DispatchTable.CopyToClientBuffer.unwrap())(
+    Status = (DispatchTable.CopyToClientBuffer.unwrap_unchecked())(
         ClientRequest,
         BufferLength,
         ClientBaseAddress,
@@ -1256,12 +1256,12 @@ unsafe extern "C" fn MsvpGetUserInfo(
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
         if !LocalBuffer.is_null() {
-            (DispatchTable.FreeLsaHeap.unwrap())(LocalBuffer as PVOID);
+            (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
         }
 
         if !NT_SUCCESS(Status) {
             if !ClientBaseAddress.is_null() {
-                (DispatchTable.FreeClientBuffer.unwrap())(ClientRequest, ClientBaseAddress);
+                (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
             }
         }
 
@@ -1275,12 +1275,12 @@ unsafe extern "C" fn MsvpGetUserInfo(
     RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
     if !LocalBuffer.is_null() {
-        (DispatchTable.FreeLsaHeap.unwrap())(LocalBuffer as PVOID);
+        (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
     }
 
     if !NT_SUCCESS(Status) {
         if !ClientBaseAddress.is_null() {
-            (DispatchTable.FreeClientBuffer.unwrap())(ClientRequest, ClientBaseAddress);
+            (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
         }
     }
 
@@ -1454,14 +1454,14 @@ pub unsafe extern "system" fn LsaApInitializePackage(
     DispatchTable.CopyToClientBuffer = (*LsaDispatchTable).CopyToClientBuffer;
     DispatchTable.CopyFromClientBuffer = (*LsaDispatchTable).CopyFromClientBuffer;
 
-    NameString = (DispatchTable.AllocateLsaHeap.unwrap())(LSA_STRING) as PANSI_STRING;
+    NameString = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(LSA_STRING) as PANSI_STRING;
     if NameString.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    NameBuffer = (DispatchTable.AllocateLsaHeap.unwrap())(MSV1_0_PACKAGE_NAME) as PCHAR;
+    NameBuffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(MSV1_0_PACKAGE_NAME) as PCHAR;
     if NameBuffer.is_null() {
-        (DispatchTable.FreeLsaHeap.unwrap())(NameString as *mut core::ffi::c_void);
+        (DispatchTable.FreeLsaHeap.unwrap_unchecked())(NameString as *mut core::ffi::c_void);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 

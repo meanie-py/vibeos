@@ -589,7 +589,7 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
     let mut scm: PSIDCACHEMGR;
 
     let SystemName = if SystemName.is_null() {
-        b"\0\0".as_ptr() as LPCWSTR
+        w!("") as LPCWSTR
     } else {
         SystemName
     };
@@ -1138,7 +1138,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //     NTSTATUS Status;
 //     SIZE_T NameLength;
 //
-//     if (SystemName != NULL && SystemName[0] != L'\0')
+//     if (SystemName != NULL && SystemName[0] != '\0')
 //     {
 //         NameLength = wcslen(SystemName);
 //         if (NameLength > UNICODE_STRING_MAX_CHARS)
@@ -1262,8 +1262,8 @@ pub unsafe extern "C" fn LookupSidCache(
 //                            DomainName->Length);
 //             }
 //
-//             ReqRet->AccountName[AccountNameSize / sizeof(WCHAR)] = L'\0';
-//             ReqRet->DomainName[DomainNameSize / sizeof(WCHAR)] = L'\0';
+//             ReqRet->AccountName[AccountNameSize / sizeof(WCHAR)] = '\0';
+//             ReqRet->DomainName[DomainNameSize / sizeof(WCHAR)] = '\0';
 //
 //             ReqRet->SidNameUse = SidNameUse;
 //         }

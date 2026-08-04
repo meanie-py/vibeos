@@ -634,7 +634,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     pStart = WorkStations->Buffer;
 //     for (;;)
 //     {
-//         pEnd = wcschr(pStart, L',');
+//         pEnd = wcschr(pStart, ',');
 //         if (pEnd != NULL)
 //             *pEnd = UNICODE_NULL;
 //
@@ -643,14 +643,14 @@ pub unsafe extern "C" fn SamValidateUser(
 //         {
 //             bFound = true;
 //             if (pEnd != NULL)
-//                 *pEnd = L',';
+//                 *pEnd = ',';
 //             break;
 //         }
 //
 //         if (pEnd == NULL)
 //             break;
 //
-//         *pEnd = L',';
+//         *pEnd = ',';
 //         pStart = pEnd + 1;
 //     }
 //

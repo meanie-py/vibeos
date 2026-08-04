@@ -48,3 +48,44 @@ pub const CBS_CHECKEDNORMAL: CHECKBOXSTATES = CHECKBOXSTATES_CBS_CHECKEDNORMAL;
 pub const CBS_CHECKEDHOT: CHECKBOXSTATES = CHECKBOXSTATES_CBS_CHECKEDHOT;
 pub const CBS_CHECKEDPRESSED: CHECKBOXSTATES = CHECKBOXSTATES_CBS_CHECKEDPRESSED;
 pub const CBS_CHECKEDDISABLED: CHECKBOXSTATES = CHECKBOXSTATES_CBS_CHECKEDDISABLED;
+
+// ================= enum member aliases ========================================================
+// bindgen prefixes a C enum's members with the enum's tag, so the bare spelling the C uses is
+// absent from the island. Alias, never re-declare: a literal here could drift silently.
+//
+// 0 of these 1 are `case` labels, which makes island completeness a CORRECTNESS
+// property (§9.112): an unresolved name in a `match` arm is not an error, it is a fresh binding
+// that matches EVERYTHING and leaves the following arms dead. `verify_match_consts` names them.
+//
+// NB the scan for this MUST be multi-line — bindgen wraps the declaration when the name is long,
+// and a single-line regex reports a confident zero (that is how authz's seven got through).
+pub const PolicyAccountDomainInformation: _POLICY_INFORMATION_CLASS =
+    _POLICY_INFORMATION_CLASS_PolicyAccountDomainInformation;
+
+// A wide string literal, NUL-terminated, with one stable address for the program's life.
+// `static` and not `const`: a const is inlined at each use site, so `.as_ptr()` would hand the
+// callee the address of a temporary. ASCII-only by construction, so a non-ASCII literal fails
+// at COMPILE time instead of silently truncating.
+//
+// This replaces the byte-string-as-wide-pointer form, which is wrong twice over: `b"..."` has
+// ALIGNMENT 1 (an odd address is an amd64-only 0x1E STATUS_DATATYPE_MISALIGNMENT), and Rust
+// does not append the SECOND zero byte a UTF-16 terminator needs — `b"\\\0"` is one code unit
+// with no terminator at all, and an odd byte count cannot be whole u16 units.
+#[macro_export]
+macro_rules! w {
+    ($s:expr) => {{
+        const INPUT: &[u8] = $s.as_bytes();
+        static OUT: [u16; INPUT.len() + 1] = {
+            let mut out = [0u16; INPUT.len() + 1];
+            let mut i = 0;
+            while i < INPUT.len() {
+                assert!(INPUT[i] < 0x80, "w!() takes ASCII literals only");
+                out[i] = INPUT[i] as u16;
+                i += 1;
+            }
+            out // trailing element stays 0 => NUL-terminated
+        };
+        OUT.as_ptr()
+    }};
+}
+pub use crate::w;

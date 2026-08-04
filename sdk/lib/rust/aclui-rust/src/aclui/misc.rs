@@ -3,7 +3,7 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub static ObjectPickerAttributes: [PCWSTR; 1] = [
-    b"O\0b\0j\0e\0c\0t\0S\0i\0d\0\0\0".as_ptr() as PCWSTR,
+    w!("ObjectSid") as PCWSTR,
 ];
 unsafe extern "C" fn LengthOfStrResource(
     hInst: HINSTANCE,
@@ -188,13 +188,13 @@ pub unsafe extern "C" fn InitializeObjectPicker(
             i += 1;
         }
 
-        hRet = (**pDsObjectPicker).lpVtbl.as_ref().unwrap().Initialize.unwrap()(
+        hRet = (**pDsObjectPicker).lpVtbl.as_ref().unwrap_unchecked().Initialize.unwrap_unchecked()(
             *pDsObjectPicker,
             &mut InitInfo,
         );
 
         if ((hRet) < 0) {
-            (**pDsObjectPicker).lpVtbl.as_ref().unwrap().Release.unwrap()(*pDsObjectPicker);
+            (**pDsObjectPicker).lpVtbl.as_ref().unwrap_unchecked().Release.unwrap_unchecked()(*pDsObjectPicker);
         }
     }
 

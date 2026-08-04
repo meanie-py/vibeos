@@ -457,7 +457,7 @@ unsafe extern "C" fn ReloadPrincipalsList(sp: PSECURITY_PAGE) {
 
     FreePrincipalsList(sp, core::ptr::addr_of_mut!((*sp).PrincipalsListHead));
 
-    hRet = (*((*(*sp).psi).lpVtbl)).GetSecurity.unwrap()(
+    hRet = (*((*(*sp).psi).lpVtbl)).GetSecurity.unwrap_unchecked()(
         (*sp).psi,
         DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION,
         core::ptr::addr_of_mut!(SecurityDescriptor),
@@ -771,7 +771,7 @@ unsafe extern "C" fn LoadPermissionsList(
         0,
     );
 
-    hRet = (*(*(*sp).psi).lpVtbl).GetAccessRights.unwrap()(
+    hRet = (*(*(*sp).psi).lpVtbl).GetAccessRights.unwrap_unchecked()(
         (*sp).psi,
         GuidObjectType,
         dwFlags,
@@ -1325,12 +1325,12 @@ unsafe extern "stdcall" fn SecurityPageProc(
                                                             AddSelectedPrincipal,
                                                             sp as LPVOID);
                             if hRet < 0 {
-                                MessageBox(hwndDlg, b"InvokeObjectPickerDialog failed!\n\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), 0);
+                                MessageBox(hwndDlg, w!("InvokeObjectPickerDialog failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
                             }
 
                             FreeObjectPicker((*sp).pDsObjectPicker);
                         } else {
-                            MessageBox(hwndDlg, b"InitializeObjectPicker failed!\n\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), 0);
+                            MessageBox(hwndDlg, w!("InitializeObjectPicker failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
                         }
                     }
 
@@ -1519,12 +1519,12 @@ unsafe extern "C" fn SecurityPageProc(
                                                             AddSelectedPrincipal,
                                                             sp as LPVOID);
                             if hRet < 0 {
-                                MessageBox(hwndDlg, b"InvokeObjectPickerDialog failed!\n\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), 0);
+                                MessageBox(hwndDlg, w!("InvokeObjectPickerDialog failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
                             }
 
                             FreeObjectPicker((*sp).pDsObjectPicker);
                         } else {
-                            MessageBox(hwndDlg, b"InitializeObjectPicker failed!\n\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), 0);
+                            MessageBox(hwndDlg, w!("InitializeObjectPicker failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
                         }
                     }
 
@@ -1757,7 +1757,7 @@ pub unsafe extern "system" fn EditSecurity(
         return FALSE;
     }
 
-    hRet = ((*(*psi).lpVtbl).GetObjectInformation.unwrap())(
+    hRet = ((*(*psi).lpVtbl).GetObjectInformation.unwrap_unchecked())(
         psi,
         &mut ObjectInfo,
     );
@@ -3340,7 +3340,7 @@ pub unsafe extern "system" fn DllMain(
 //
 //     if ((ObjectInfo.dwFlags & SI_SERVER_IS_DC) &&
 //          ObjectInfo.pszServerName != NULL &&
-//          ObjectInfo.pszServerName[0] != L'\0')
+//          ObjectInfo.pszServerName[0] != '\0')
 //     {
 //         SystemName = ObjectInfo.pszServerName;
 //     }

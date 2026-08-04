@@ -20,9 +20,9 @@ pub unsafe extern "C" fn NtlmAllocate(
     match NtlmMode {
         NtlmLsaMode => {
             if UsePrivateLsaHeap {
-                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap())(Size);
+                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap_unchecked())(Size);
             } else {
-                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap())(Size);
+                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap_unchecked())(Size);
             }
 
             if !buffer.is_null() {
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn NtlmAllocateClientBuffer(
     if ClientRequest as HANDLE == INVALID_HANDLE_VALUE {
         (*Buffer).ClientBaseAddress = (*Buffer).LocalBuffer;
     } else {
-        Status = (DispatchTable.AllocateClientBuffer.unwrap())(
+        Status = (DispatchTable.AllocateClientBuffer.unwrap_unchecked())(
             ClientRequest,
             BufferLength,
             core::ptr::addr_of_mut!((*Buffer).ClientBaseAddress),
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn NtlmCopyToClientBuffer(
         if (*Buffer).ClientBaseAddress.is_null() || (*Buffer).LocalBuffer.is_null() {
             return STATUS_NO_MEMORY;
         }
-        Status = (DispatchTable.CopyToClientBuffer.unwrap())(
+        Status = (DispatchTable.CopyToClientBuffer.unwrap_unchecked())(
             ClientRequest,
             BufferLength,
             (*Buffer).ClientBaseAddress,
