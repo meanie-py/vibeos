@@ -166,6 +166,13 @@ pub const FENV_Y_DOWN: u32 = 0x40000100;
 pub const FENV_Y_FLUSH: u32 = 0x00000400;
 pub const FENV_Y_FLUSH_SAVE: u32 = 0x00000800;
 
+// msvcrt.spec:320 exports this as `_adjust_fdiv`, so the DLL export table names the
+// symbol and a Rust-mangled static does not satisfy it. `-arch=i386` there, and
+// `#ifdef __i386__` in the C, so it exists on exactly one arch.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub static mut MSVCRT__adjust_fdiv: i32 = 0;
+#[cfg(not(target_arch = "x86"))]
 pub static mut MSVCRT__adjust_fdiv: i32 = 0;
 
 /// `KUSER_SHARED_DATA.ProcessorFeatures`, at the fixed user-mode address the C spells
@@ -1951,7 +1958,7 @@ pub unsafe extern "C" fn ldiv(num: __msvcrt_long, denom: __msvcrt_long) -> u64 {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdiv_m16i@4"]
+#[export_name = "_adj_fdiv_m16i"]
 pub unsafe extern "stdcall" fn _adj_fdiv_m16i(arg: i16) {
     // TRACE("(): stub\n");
 }
@@ -1960,7 +1967,7 @@ pub unsafe extern "stdcall" fn _adj_fdiv_m16i(arg: i16) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdiv_m32@4"]
+#[export_name = "_adj_fdiv_m32"]
 pub unsafe extern "stdcall" fn _adj_fdiv_m32(arg: u32) {
     // TRACE("(): stub\n");
 }
@@ -1969,7 +1976,7 @@ pub unsafe extern "stdcall" fn _adj_fdiv_m32(arg: u32) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdiv_m32i@4"]
+#[export_name = "_adj_fdiv_m32i"]
 pub unsafe extern "stdcall" fn _adj_fdiv_m32i(arg: i32) {
     // TRACE("(): stub\n");
 }
@@ -1978,7 +1985,7 @@ pub unsafe extern "stdcall" fn _adj_fdiv_m32i(arg: i32) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdiv_m64@8"]
+#[export_name = "_adj_fdiv_m64"]
 pub unsafe extern "stdcall" fn _adj_fdiv_m64(arg: u64) {
 }
 
@@ -1992,7 +1999,7 @@ pub unsafe extern "C" fn _adj_fdiv_r() {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdivr_m16i@4"]
+#[export_name = "_adj_fdivr_m16i"]
 pub unsafe extern "stdcall" fn _adj_fdivr_m16i(arg: i16) {
     // TRACE("(): stub\n");
 }
@@ -2001,7 +2008,7 @@ pub unsafe extern "stdcall" fn _adj_fdivr_m16i(arg: i16) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdivr_m32@4"]
+#[export_name = "_adj_fdivr_m32"]
 pub unsafe extern "stdcall" fn _adj_fdivr_m32(arg: u32) {
     // TRACE("(): stub\n");
 }
@@ -2010,7 +2017,7 @@ pub unsafe extern "stdcall" fn _adj_fdivr_m32(arg: u32) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdivr_m32i@4"]
+#[export_name = "_adj_fdivr_m32i"]
 pub unsafe extern "stdcall" fn _adj_fdivr_m32i(arg: i32) {
     // TRACE("(): stub\n");
 }
@@ -2019,7 +2026,7 @@ pub unsafe extern "stdcall" fn _adj_fdivr_m32i(arg: i32) {
 // emits the name verbatim and drops BOTH halves of that decoration, which lands on a
 // symbol nothing imports and leaves the C copy live — the flip would be a no-op.
 #[cfg(target_arch = "x86")] // `#ifdef __i386__` in math.c
-#[export_name = "__adj_fdivr_m64@8"]
+#[export_name = "_adj_fdivr_m64"]
 pub unsafe extern "stdcall" fn _adj_fdivr_m64(arg: u64) {
 }
 
