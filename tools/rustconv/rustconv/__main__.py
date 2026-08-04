@@ -24,6 +24,7 @@ from . import (
     dup_census,
     file_splitter,
     gdi_lock_inventory,
+    hybrid_closure,
     seh_belt,
     seh_inventory,
     seh_llm_lower,
@@ -375,6 +376,19 @@ def cmd_dup_census(args):
         paths.append(path.resolve())
     report = dup_census.run_census(paths, REACTOS_ROOT, top=args.top)
     dup_census.print_census(report, as_json=args.json)
+
+
+def cmd_hybrid_closure(args):
+    """Measure which symbols of a still-compiled TU the rest of the link actually needs."""
+    build_dir, link_root, archive = hybrid_closure.resolve_paths(REACTOS_ROOT, args)
+    try:
+        report = hybrid_closure.measure(
+            REACTOS_ROOT, args.tu, build_dir, link_root, archive, args.arch
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    hybrid_closure.print_report(report, as_json=args.json)
 
 
 def cmd_shell32_tail_inventory(args):
@@ -3656,6 +3670,13 @@ def main():
     p.add_argument("--ledger", help="Override the shell32 tail TOML ledger")
     p.add_argument("--json", action="store_true", help="Machine-readable report")
 
+    hybrid_closure.build_arg_parser(
+        sub.add_parser(
+            "hybrid-closure",
+            help="Which symbols of a hybrid TU are still needed elsewhere, measured from the link",
+        )
+    )
+
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
         "candidate-check",
@@ -4273,6 +4294,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
+        "hybrid-closure": cmd_hybrid_closure,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
         "difftest-gen": cmd_difftest_gen,
