@@ -369,6 +369,49 @@ def call_contract(sealed: SealedCalls) -> str:
     )
 
 
+def _doubled_after_unseal(rust: str, sealed: SealedCalls) -> list[str]:
+    """Callees the model wrote by NAME *around* the sealed token, doubling the call.
+
+    The "exactly once" rule counts TOKENS, and this shape uses the token exactly once -- the
+    duplicate is the callee's NAME, hand-written by the model as a wrapper. Substitution then
+    turns `NAME(<token>(args))` into `NAME(NAME(args))`, which is a second call to the same
+    function with the first call's result as its only argument.
+
+    Seen once, in CCPLItemMenu::InvokeCommand: eight callees doubled in one accepted body,
+    including a zero-argument one (`_ILCreateControlPanel(_ILCreateControlPanel())`). It does
+    not compile, so it fails loudly rather than shipping -- but it is a PAID artifact that the
+    envelope passed, and the whole point of the envelope is that accepted output is trustworthy.
+
+    Only flagged when the inner call is the outer's ENTIRE argument list, which is the
+    corruption's signature; a genuine `f(f(x), y)` is left alone.
+    """
+    found: list[str] = []
+    for name in sorted({call.original for call in sealed.calls}):
+        for m in re.finditer(rf"\b{re.escape(name)}\s*\(", rust):
+            open_paren = m.end() - 1
+            try:
+                close = _match_paren(rust, open_paren)
+            except ValueError:
+                continue
+            inner = rust[open_paren + 1 : close].strip()
+            if re.fullmatch(rf"{re.escape(name)}\s*\(.*\)", inner, re.S):
+                found.append(name)
+                break
+    return found
+
+
+def _match_paren(text: str, open_idx: int) -> int:
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    raise ValueError("unbalanced")
+
+
 def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     """Tokens whose Rust call site takes a different number of arguments than the C one.
 
@@ -589,4 +632,10 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
         )
     for call in sealed.calls:
         rust = rust.replace(call.placeholder, call.original)
+    doubled = _doubled_after_unseal(rust, sealed)
+    if doubled:
+        raise CallSealError(
+            "model damaged deterministic call envelope (callee written BOTH by name and by "
+            "token, so unsealing produced NAME(NAME(..)): " + ", ".join(doubled) + ")"
+        )
     return rust

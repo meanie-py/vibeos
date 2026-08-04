@@ -36,7 +36,15 @@ list(APPEND SOURCE
     # from the paid bank at $0; FillList and RunDlgProc are hand-written because the call-seal
     # audit refused both, twice each, on different tokens — see the module for what it caught.
     # dialogs/drive.cpp — replaced by Rust (shell32-rust/src/dialogs/drive.rs); cohab via libshell32_rust.a
-    dialogs/drvdefext.cpp
+    # dialogs/drvdefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+    # CDrvDefExt class was already shell32-rust/src/dialogs/drvdefext.rs, and its retained
+    # closure was 3 symbols — ChkDskDlg_RustBridge and SH_FormatByteSize_RustBridge plus the
+    # C++-mangled IsDriveFloppyW. The free helpers are now
+    # shell32-rust/src/dialogs/drvdefext_tu.rs. Two C++ edits came with it: IsDriveFloppyW's
+    # local declaration in folders/CDrivesFolder.cpp is `extern "C"` now, and the
+    # SH_FormatByteSize forwarder MOVED to dialogs/filedefext.cpp — the TU that owns the
+    # function it forwards to — rather than being published from Rust, which would have made
+    # its body a call to itself.
     # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
     # the shared SH_FormatByteSize/SH_FormatFileSizeWithBytes helpers and source-local
     # C++ helper symbols used by the Rust module; its class bodies are never activated.
@@ -76,7 +84,14 @@ list(APPEND SOURCE
     # a _CreatorClass forwarding to the Rust factory; it is never instantiated, so
     # no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
     # CShellLink_CreateInstance, the Rust one.
-    folders/CDesktopFolder.cpp
+    # folders/CDesktopFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU
+    # flip: the activated class was already shell32-rust/src/desktop_folder.rs; its retained
+    # closure was 4 extern_c bridges. The free helpers are
+    # shell32-rust/src/folders/CDesktopFolder.rs and the enumerator is
+    # shell32-rust/src/folders/CDesktopFolderEnum.rs. CDesktopFolderViewCB — the
+    # IShellFolderViewCB/IFolderFilter callback the desktop view runs on — had no Rust form at
+    # all and was translated for this flip. CRegFolder_CreateInstance needed EXTERN_C in
+    # shfldr.h: it is C++-mangled otherwise and no Rust declaration can name it.
     # folders/CFSFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. The activated class
     # had already moved to shell32-rust/src/cfs_folder.rs; what kept the TU alive was its retained
     # closure, measured against the real link as 21 symbols — the 14 *_RustBridge C entry points
@@ -102,7 +117,13 @@ list(APPEND SOURCE
     # shell32-rust/src/folders/CNetFolder.rs, and the file-local CNetFolderEnum enumerator is
     # shell32-rust/src/folders/CNetFolderEnum.rs.
     # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
-    folders/CControlPanelFolder.cpp
+    # folders/CControlPanelFolder.cpp — replaced by Rust; cohab via libshell32_rust.a.
+    # Whole-TU flip: the activated class was already shell32-rust/src/control_panel_folder.rs;
+    # its retained closure was 4 extern_c bridges. This TU needed THREE slices, so its shared
+    # preamble (shvheader, ControlPanelSFHeader, ...) is owned by
+    # shell32-rust/src/folders/CControlPanelFolder.rs and imported by the other two —
+    # CControlPanelEnum.rs and CCPLItemMenu.rs — rather than re-declared, which would make one
+    # layout into three distinct nominal types.
     folders/CRecycleBin.cpp
     folders/CRecycleBinFolderViewCB.cpp
     folders/CRegFolder.cpp

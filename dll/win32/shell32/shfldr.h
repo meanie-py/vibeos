@@ -71,7 +71,11 @@ typedef struct _REGFOLDERINITDATA
     const REGFOLDERINFO *pInfo;
 } REGFOLDERINITDATA, *PREGFOLDERINITDATA;
 
-HRESULT CRegFolder_CreateInstance(PREGFOLDERINITDATA pInit, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv);
+/* EXTERN_C because folders/CDesktopFolder.cpp's Rust replacement calls this directly. Without
+   it the symbol is C++-mangled (__Z25CRegFolder_CreateInstance...) and no Rust declaration can
+   name it; the header is seen by both CRegFolder.cpp's definition and every caller, so the
+   linkage flips consistently. Same route the CFSFolder flip took for its two free helpers. */
+EXTERN_C HRESULT CRegFolder_CreateInstance(PREGFOLDERINITDATA pInit, LPCITEMIDLIST pidlRoot, REFIID riid, void **ppv);
 
 #define GET_SHGDN_FOR(dwFlags)         ((DWORD)dwFlags & (DWORD)0x0000FF00)
 #define GET_SHGDN_RELATION(dwFlags)    ((DWORD)dwFlags & (DWORD)0x000000FF)

@@ -561,6 +561,11 @@ Completed: 4 TUs / 1,233 lines (`CDropTargetHelper.cpp`, `CActiveDesktop.cpp`,
 `droptargets/CexeDropHandler.cpp`, and `CQueryAssociations.cpp`). The hybrid cohort now has
 15 live files / 15,145 lines.
 
+**Live inventory as of 2026-08-04 (`rustconv shell32-tail-inventory`): 40 cpp / 34,811 lines
+plus 4 c / 472 lines.** That morning's landing (`b54d02222157`) took three more TUs out:
+`dialogs/dialogs.cpp`, `CDefViewDual.cpp` and `folders/CNetFolder.cpp`. Read the tool, not this
+paragraph — it is generated from the live CMake source lists and this note will rot.
+
 Update this table from the generated live-CMake inventory at every cohort gate. A decreasing
 LOC count is informative; the authoritative metric is the live TU count plus executable
 three-architecture proof.
