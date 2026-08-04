@@ -2009,6 +2009,39 @@ text, and rewriting its signature re-bills it. `STDAPI_(t)` / `STDMETHODIMP_(t)`
 open for that reason — they extract today with an EMPTY return type, and all 51 uses are C++
 COM methods whose signatures come from the interface anyway.
 
+### A C `switch` that falls through makes a faithful translation REPEAT a call token
+
+**Symptom.** A paid body is rejected with `model damaged deterministic call envelope (not
+exactly once: …)` naming several — sometimes all — of its tokens, and the Rust is correct.
+One rejected worker assembles no file for the whole TU.
+
+**Cause.** Rust `match` has no fall-through. The only way to lower a C arm that runs on into
+the next one is to write the next arm's body into it as well, which emits every call token in
+that body twice. ntmarta's `AccpGetTrusteeSid` falls `TRUSTEE_IS_OBJECTS_AND_NAME` through
+into `TRUSTEE_IS_NAME` and duplicated all five of its tokens.
+
+This is the same phenomenon `goto` causes — Rust has no `goto` either, so every lowering
+duplicates code — reached by a different route, and the `goto` concession did not cover it.
+
+**Fix.** `_replicable_after_goto` is positional, not numeric, and now starts at the earlier of
+the first `goto`/label and the first `case` label whose arm falls through. Detection is
+deliberately conservative: an arm counts as falling through unless it visibly ends in
+`break`/`return`/`goto`/`continue`, and one ending in `}` is AMBIGUOUS — the jump may sit
+inside the block, which is exactly the ntmarta shape — so it counts as one. An empty region
+between two labels is a shared arm (`case A: case B:`), duplicates nothing, and concedes
+nothing. Only the DUPLICATE half of the envelope weakens; `missing` still catches a dropped
+call and `invented` still catches a hallucinated token.
+
+**And say so in the contract.** The `goto` branch already documents why: told "do not
+duplicate" when the C forces duplication, models MINT NEW TOKEN NUMBERS past the end of the
+list rather than repeat one. The fall-through branch now gets the same sentence.
+
+**The rejection that was real, from the same run.** Do not read this entry as "the audit
+over-rejects." `AccRewriteGetNamedRights` was rejected for duplicating `SetLastError`, and
+alongside it had written `let Ret = AccRewriteGetHandleRights(…)` INSIDE the `if` — shadowing
+the outer `Ret`, so the function would have returned the open result instead of the query's,
+silently, on the success path. `--retry-rejects` with the audit finding fed back fixed it.
+
 ### A deferral note outlives the premise that justified it
 `ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
 *"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
