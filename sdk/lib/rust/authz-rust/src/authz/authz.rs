@@ -227,7 +227,7 @@ pub unsafe extern "system" fn AuthzUnregisterSecurityEventSource(
 #[no_mangle]
 pub unsafe extern "system" fn DllMain(
     hinstDLL: HINSTANCE,
-    dwReason: PDWORD,
+    dwReason: DWORD,
     lpvReserved: LPVOID,
 ) -> i32 {
     match dwReason as u32 {
