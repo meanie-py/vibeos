@@ -275,6 +275,9 @@ ALLOWLIST_TYPES = [
     "_purecall_handler",
     # windef.h's plain `INT`, spelled by console.c's and exit.c's own signatures.
     "INT",
+    # winnt.h: data.c's `_get_osver`/`_get_winmajor`/`_get_winminor` fill one of these.
+    "_OSVERSIONINFOW",
+    "OSVERSIONINFOW",
     # ── locale.c ─────────────────────────────────────────────────────────
     # The typedef spellings locale.c uses in its own signatures. The underlying
     # `threadlocaleinfostruct` is already above; these are the names the code says.
@@ -601,6 +604,10 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # documented name. It is also `BOOLEAN` rather than `BOOL`, and stdcall on i386.
         "|ExitProcess|GetModuleHandleW|GetActiveWindow|MessageBoxIndirectW|DebugBreak"
         "|Beep|SystemFunction036|VirtualProtect"
+        # winbase.h: data.c's process-startup surface. `GetVersionExW` fills an
+        # OSVERSIONINFOW whose leading `dwOSVersionInfoSize` the callee validates, so the
+        # struct layout is part of the call contract rather than a detail.
+        "|GetCommandLineA|GetCommandLineW|GetModuleFileNameA|GetVersionExW"
         # winnls.h: locale.c's NLS surface. `EnumSystemLocalesEx` takes a CALLBACK
         # whose convention is stdcall on i386 — deriving it is what makes the Rust
         # callback's `extern "system"` checkable instead of a guess — and

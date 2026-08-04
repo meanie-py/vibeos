@@ -91,6 +91,10 @@ pub const _ENV_LOCK: c_int = 12;
 /// hand-written `extern "system" { fn GetEnvironmentStringsA(); }` would compile, link
 /// against nothing, and fail only at load.
 pub use msvcrt_sys::GetEnvironmentStrings as GetEnvironmentStringsA;
+/// `dll/win32/msvcrt/include/math.h:266` — `#define HUGE_VAL __builtin_huge_val()`. A macro
+/// over a compiler builtin, so there is nothing for bindgen to snapshot. data.c assigns it to
+/// the exported `MSVCRT__HUGE` once at startup.
+pub const HUGE_VAL: f64 = f64::INFINITY;
 /// `include/wctype.h`: `#define WEOF (wint_t)(0xFFFF)`.
 pub const WEOF: wint_t = 0xFFFF;
 
@@ -411,10 +415,17 @@ extern "C" {
     // msvcrt.h:229 — `extern _locale_t MSVCRT_locale;`
     pub static mut MSVCRT_locale: _locale_t;
 
-    // data.c:59/:61 — two scalars, still C. Declared here rather than derived because
-    // there is no layout question to get wrong: `MSVCRT_app_type` is the 0/1/2 console-vs-GUI
-    // discriminator that exit.c's three error paths branch on to decide message box vs
-    // stderr, and `MSVCRT__wpgmptr` is the program path DoMessageBoxW prints.
+    // data.c:59/:61. `MSVCRT_app_type` is the 0/1/2 console-vs-GUI discriminator that exit.c's
+    // three error paths branch on to decide message box vs stderr; `MSVCRT__wpgmptr` is the
+    // program path DoMessageBoxW prints.
+    //
+    // These stay `extern` even though `msvcrt/data.rs` now DEFINES both, which is the one
+    // place this file's "import, don't re-declare" rule does not apply: data.rs rides the
+    // `data` feature and its two consumers ride `conio-exit` and `locale`, so an import would
+    // couple three independent gates. They are `#[no_mangle]`, so the declaration binds to
+    // that definition at link exactly as it binds to the C when the feature is off — the same
+    // arrangement `scanf.rs` uses for `__iob_func`. There is no layout question to get wrong
+    // in either case: one is an `int`, the other a pointer.
     pub static mut MSVCRT_app_type: c_int;
     pub static mut MSVCRT__wpgmptr: *mut WCHAR;
 
@@ -438,6 +449,11 @@ extern "C" {
     // msvcrt.spec:1466 implements that export with `_swprintf`, the NON-conforming 2-argument
     // form, so a 3-argument call would land the format string in the count slot. Call sites
     // use `_snwprintf` — the variadic twin of the `_vsnwprintf` the inline actually calls.
+
+    // string.c:47 and heap.c:235 — both still C, and neither has a Rust definition here to
+    // import instead. data.c calls them from `msvcrt_init_args` and `__getmainargs`.
+    pub fn _strdup(str_: *const c_char) -> *mut c_char;
+    pub fn _set_new_mode(mode: c_int) -> c_int;
 
     // console.c's own `_cprintf`, which `_amsg_exit` calls. It is NOT in console.rs — it is
     // a WINAPIV `...` entry point and lives in rust_console_varargs_shim.c, so exit.rs

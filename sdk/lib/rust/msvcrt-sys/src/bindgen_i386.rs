@@ -4948,6 +4948,18 @@ pub struct _RTL_CRITICAL_SECTION {
 }
 pub type RTL_CRITICAL_SECTION = _RTL_CRITICAL_SECTION;
 pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _OSVERSIONINFOW {
+    pub dwOSVersionInfoSize: DWORD,
+    pub dwMajorVersion: DWORD,
+    pub dwMinorVersion: DWORD,
+    pub dwBuildNumber: DWORD,
+    pub dwPlatformId: DWORD,
+    pub szCSDVersion: [WCHAR; 128usize],
+}
+pub type OSVERSIONINFOW = _OSVERSIONINFOW;
+pub type LPOSVERSIONINFOW = *mut _OSVERSIONINFOW;
 pub type LPARAM = LONG_PTR;
 pub type FARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
 #[repr(C)]
@@ -5249,6 +5261,12 @@ unsafe extern "stdcall" {
     pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn GetCommandLineA() -> LPSTR;
+}
+unsafe extern "stdcall" {
+    pub fn GetCommandLineW() -> LPWSTR;
+}
+unsafe extern "stdcall" {
     pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
 unsafe extern "stdcall" {
@@ -5307,6 +5325,9 @@ unsafe extern "stdcall" {
     pub fn GetLocalTime(arg1: LPSYSTEMTIME);
 }
 unsafe extern "stdcall" {
+    pub fn GetModuleFileNameA(hModule: HINSTANCE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
 }
 unsafe extern "stdcall" {
@@ -5332,6 +5353,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;

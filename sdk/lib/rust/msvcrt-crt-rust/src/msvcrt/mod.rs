@@ -111,6 +111,16 @@ pub mod misc;
 #[cfg(feature = "locale")]
 pub mod locale;
 
+// data.c: the CRT's process-global state — `MSVCRT___argv`/`__argc`/`_pgmptr`/`_wpgmptr`,
+// `MSVCRT_app_type`, the `__p__*` accessor family, `__getmainargs`/`__wgetmainargs` and the
+// `_initterm` initializer walkers. Whole-file: those globals and the `initial_argv`/
+// `initial_wargv` snapshots `build_expanded_wargv` expands are one contract.
+//
+// `build_expanded_wargv` is HAND-WRITTEN — the paid translation damaged its sealed call
+// envelope and was refused, so `--skip-fn` dropped it and the other 39 replayed for $0.02.
+#[cfg(feature = "data")]
+pub mod data;
+
 // math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
 // `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
 // so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are

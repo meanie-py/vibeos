@@ -789,6 +789,37 @@ gradeable code in msvcrt, so the harness instead grew the four Win32 stubs it ac
 needed (`Beep`, `DebugBreak`, `RtlGenRandom`, `VirtualProtect`) and dropped its now-redundant
 `_get_output_format` stub in favour of the real body. Rows for misc.c are owed, not blocked.
 
+**Wave 24 (2026-08-04) — data.c FLIPPED (58 exports, $0.18).** The CRT's process-global
+state: `__argc`/`__argv`/`__wargv`/`_environ`/`_wenviron`/`_pgmptr`/`_wpgmptr`/`_acmdln`, the
+version words (`_osver`/`_winmajor`/`_winminor`/`_winver`/`_osplatform`), `MSVCRT_app_type`,
+the whole `__p__*` accessor family, `__getmainargs`/`__wgetmainargs`, and the `_initterm` /
+`_initterm_e` initializer walkers.
+
+`build_expanded_wargv` is HAND-WRITTEN: the paid translation damaged its sealed call envelope
+("not exactly once") and was refused, so `--skip-fn` dropped it, the other 39 replayed from
+cache for $0.02, and the body was transcribed from data.c:471. Two traps are recorded at the
+site — `path_len` walks BACKWARDS as the C's `int` (`wcslen(x) - 1` on an empty string is
+`-1` in C and an underflow panic in `usize`), and `len` is only assigned INSIDE the
+`do`/`while`, so an argument matching only `.`/`..` must fall through to the unexpanded
+fallback.
+
+**The private-static defect recurred for the third consecutive file, and that makes it
+systematic.** All 22 of data.c's exported globals arrived as private Rust statics — as
+`_aexit_rtn` did in exit.c and eight did in locale.c. It compiles, links, and silently leaves
+the C object as the only definition, dragging the whole TU back in. `llvm-nm --defined-only`
+on the object is the only thing that says so; the `static` keywords in the source do not.
+
+Also fixed: `_INITTERMFUN` and `_INITTERM_E_FN` are TU-LOCAL typedefs, so the translation
+carried them as bare (non-nullable) Rust fn pointers — but `_initterm` tests every table slot
+against NULL before calling it, which a bare fn pointer cannot express. `Option<fn>` is the
+right shape, and it is exactly what bindgen gives the sibling `_PVFV` for the identical C
+typedef.
+
+Behind a `data` feature that IMPLIES `dir-environ` — `msvcrt_init_args` calls environ.c's
+`env_init`, so the feature graph states the dependency rather than leaving it to a link error
+nobody sees until the DLL is built. Dropped by the host harness, which defines `_get_fmode`
+and `msvcrt_wstrdupa` itself.
+
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
