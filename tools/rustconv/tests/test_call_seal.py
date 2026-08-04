@@ -119,3 +119,137 @@ def test_unseal_allows_identical_switch_fallthrough_tail_in_else_if_arms():
         sealed,
     )
     assert restored.count("Tail(7)") == 2
+
+
+# ------------------------------------------------------- the shifted envelope (netcfgx)
+
+
+NETCFGX_SHIFT_C = """
+void ApplyOrCancelChanges(Item *pHead, const CLSID *lpClassGUID) {
+    if (IsEqualGUID(lpClassGUID, &GUID_DEVCLASS_NET)) {
+        if (StringFromCLSID(&pHead->InstanceId, &pszGuid) == NOERROR) {
+            swprintf(szName, L"Control\\\\Network\\\\%s", pszGuid);
+            CoTaskMemFree(pszGuid);
+        }
+    }
+}
+"""
+
+
+def _netcfgx_shift_sealed():
+    return seal_calls(
+        NETCFGX_SHIFT_C,
+        {"IsEqualGUID", "StringFromCLSID", "swprintf", "CoTaskMemFree"},
+        frozenset({"IsEqualGUID"}),
+    )
+
+
+def test_a_function_like_macro_is_named_in_the_envelope_not_just_disclaimed():
+    """SHIPPED BUG: the envelope said "a call inside a function-like macro has NO token"
+    and left the model to work out WHICH. With three windowsx.h macros interleaved among
+    the sealed calls, `ReadParameterValue` tokenized them too and invented three numbers;
+    `ApplyOrCancelChanges` renumbered from the macro and shifted the whole body by one."""
+    from rustconv.call_seal import call_contract
+
+    sealed = _netcfgx_shift_sealed()
+    assert sealed.macros == ("IsEqualGUID",)
+    contract = call_contract(sealed)
+    assert "function-like macros, not sealed callees: IsEqualGUID" in contract
+    # `sizeof` is a keyword and the debug macros are stripped, so neither is worth naming.
+    quiet = seal_calls("int f(void) { Log(1); return sizeof(int) + Call(x); }", {"Call", "sizeof"})
+    assert quiet.macros == ()
+
+
+def test_a_shifted_envelope_is_caught_by_the_argument_count():
+    """The shift passes every count-based check — right number of tokens, each exactly
+    once, none invented — because it is a permutation. Only the ARGUMENTS disagree: the
+    model consumed CALL_0000 for the macro, so `StringFromCLSID`'s two arguments landed
+    under `swprintf`'s three-argument token and `swprintf`'s three under `CoTaskMemFree`."""
+    sealed = _netcfgx_shift_sealed()
+    shifted = """unsafe fn f() {
+        if __RUSTCONV_CALL_0000__(lpClassGUID, &GUID_DEVCLASS_NET) != 0 {
+            if __RUSTCONV_CALL_0001__(&(*pHead).InstanceId, &mut pszGuid) == 0 {
+                __RUSTCONV_CALL_0002__(szName, w!("Control\\\\Network\\\\%s"), pszGuid);
+                __RUSTCONV_CALL_0003__(pszGuid);
+            }
+        }
+    }"""
+    with pytest.raises(CallSealError) as excinfo:
+        unseal_calls(shifted, sealed)
+    assert "argument count" in str(excinfo.value)
+    assert "__RUSTCONV_CALL_0000__=StringFromCLSID wants 2, got 2" not in str(excinfo.value)
+    assert "__RUSTCONV_CALL_0001__=swprintf wants 3, got 2" in str(excinfo.value)
+
+
+def test_the_faithful_translation_of_the_same_body_still_passes():
+    """The other half of the guard: the macro written as an ordinary named call, every
+    token on its own site. Nothing here may be a finding."""
+    sealed = _netcfgx_shift_sealed()
+    faithful = """unsafe fn f() {
+        if IsEqualGUID(lpClassGUID, &GUID_DEVCLASS_NET) != 0 {
+            if __RUSTCONV_CALL_0000__(&(*pHead).InstanceId, &mut pszGuid) == 0 {
+                __RUSTCONV_CALL_0001__(szName, w!("Control\\\\Network\\\\%s"), pszGuid);
+                __RUSTCONV_CALL_0002__(pszGuid);
+            }
+        }
+    }"""
+    restored = unseal_calls(faithful, sealed)
+    assert "StringFromCLSID(&(*pHead).InstanceId" in restored
+    assert "CoTaskMemFree(pszGuid)" in restored
+
+
+def test_a_macro_in_argument_position_is_never_counted():
+    """shell32's `IID_PPV_ARG(IProgressDialog, &ppv)` is ONE C argument and TWO Rust
+    ones, so counting that site would reject a correct translation."""
+    sealed = seal_calls(
+        "void f(void) { CoCreateInstance(clsid, NULL, ctx, IID_PPV_ARG(IFoo, &p)); }",
+        {"CoCreateInstance", "IID_PPV_ARG"},
+        frozenset({"IID_PPV_ARG"}),
+    )
+    assert [call.argc for call in sealed.calls] == [None]
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(clsid, null_mut(), ctx, &IID_IFoo, &mut p); }",
+        sealed,
+    )
+    assert "CoCreateInstance(clsid" in restored
+
+
+def test_a_turbofish_argument_is_not_a_second_argument():
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(core::mem::transmute::<A, B>(x)); }", sealed
+    )
+    assert "Take(core::mem::transmute::<A, B>(x))" in restored
+
+
+def test_one_agreeing_occurrence_is_enough_inside_the_goto_region():
+    """A `goto` lowering replicates the cleanup tail, and the copies are the same call."""
+    sealed = seal_calls(
+        "int f(void) { if (a) goto done; Work(1, 2); done: Close(h); return 0; }",
+        {"Work", "Close"},
+    )
+    restored = unseal_calls(
+        "unsafe fn f() -> i32 { if a { __RUSTCONV_CALL_0001__(h); return 0; } "
+        "__RUSTCONV_CALL_0000__(1, 2); __RUSTCONV_CALL_0001__(h); 0 }",
+        sealed,
+    )
+    assert restored.count("Close(h)") == 2
+
+
+def test_a_rustfmt_trailing_comma_is_not_an_argument():
+    """rustfmt puts a trailing comma on every multi-line call, and the first cut of the
+    arity check read a six-argument `RegQueryValueExW` spread over seven lines as seven
+    arguments — which would have flagged 68 already-accepted bodies."""
+    sealed = seal_calls("void f(void) { Reg(a, b, c); }", {"Reg"})
+    restored = unseal_calls(
+        "unsafe fn f() {\n    __RUSTCONV_CALL_0000__(\n        a,\n        b,\n        c,\n    );\n}",
+        sealed,
+    )
+    assert "Reg(" in restored
+
+
+def test_an_empty_argument_list_counts_as_zero_not_one():
+    sealed = seal_calls("void f(void) { Now(); }", {"Now"})
+    with pytest.raises(CallSealError, match="argument count"):
+        unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(x); }", sealed)
+    assert "Now()" in unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(); }", sealed)

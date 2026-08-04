@@ -15,7 +15,7 @@ import tree_sitter_c as tsc
 import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
-from .conventions import KW_TO_CONV
+from .conventions import KW_EXPANSION, KW_TO_CONV
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -221,6 +221,10 @@ RE_EMPTY_MEMMODEL = re.compile(r"\b(?:FAR|NEAR)\b")
 # list — a silent drop, the failure mode this scanner exists to prevent.
 RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
 
+# The convention aliases that are really `[linkage] <TYPE> <conv>` — see KW_EXPANSION for
+# why normalizing one to a bare `__stdcall` deletes the function.
+RE_COMPOSITE_CC = re.compile(r"\b(?:" + "|".join(map(re.escape, KW_EXPANSION)) + r")\b")
+
 # `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
 # know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
 # function produces ZERO function_definition nodes: it is silently dropped from the plan.
@@ -283,6 +287,26 @@ def _blank_memmodel(text: str) -> str:
     so tree-sitter can parse the declaration. All are no-op/aliased Win32 macros with no
     ABI meaning, and each one tree-sitter does not know costs a whole declaration."""
     return RE_UPPER_CONST.sub("const", RE_EMPTY_ATTR.sub("", RE_EMPTY_MEMMODEL.sub("", text)))
+
+
+def _expand_composite_conventions(text: str) -> str:
+    """Expand the aliases that carry a RETURN TYPE, not just a convention.
+
+    Must run BEFORE `_expand_extern_c` and `_normalize_callbacks`, because the expansion is
+    the header's verbatim text and hands each of them their own work: `STDAPI` becomes
+    `EXTERN_C HRESULT STDAPICALLTYPE`, whose `EXTERN_C` the former resolves and whose
+    `STDAPICALLTYPE` the latter maps to `__stdcall`. Encoding the finished form here
+    instead would duplicate both, and get the C/C++ linkage split wrong.
+
+    Fixpoint, because the headers chain them (`WINOLEAPI` -> `STDAPI` -> …). Bounded: the
+    chains are two deep and a cycle would be a header bug, so stop rather than spin.
+    """
+    for _ in range(4):
+        expanded = RE_COMPOSITE_CC.sub(lambda m: KW_EXPANSION[m.group(0)], text)
+        if expanded == text:
+            return text
+        text = expanded
+    return text
 
 
 def _expand_extern_c(text: str, is_cpp: bool) -> str:
@@ -1403,10 +1427,12 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     source_text = _normalize_callbacks(
         _blank_memmodel(
             _expand_extern_c(
-                _strip_sal(
-                    _expand_csr_api(
-                        _expand_case_macros(
-                            _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                _expand_composite_conventions(
+                    _strip_sal(
+                        _expand_csr_api(
+                            _expand_case_macros(
+                                _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+                            )
                         )
                     )
                 ),

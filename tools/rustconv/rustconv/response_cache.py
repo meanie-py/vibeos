@@ -266,6 +266,12 @@ class ResponseCache:
         `get` can never return one: a reply that failed the envelope must not become
         a $0 cache hit later. Overwritten each run; the newest reject is the useful
         one. Best-effort — a forensic write must never fail a translation run.
+
+        `get_rejected` reads it back, and that is not a hole in the rule above: what it
+        offers is re-AUDITED before use, through the same envelope the reply failed. A
+        reject is paid artifact — an API call bought it — and once a seal defect is fixed
+        (or a human repairs the one line the model would not), paying again for a body
+        already on disk is waste, not caution.
         """
         try:
             out = self.dir / "__rejected__"
@@ -276,6 +282,20 @@ class ResponseCache:
             )
         except OSError:
             pass
+
+    def get_rejected(self, name: str) -> str | None:
+        """The stored rejected reply for ``name``, forensic header stripped.
+
+        Never trusted on its own — see `put_rejected`. The caller must put it through the
+        full audit and bank it only if it passes.
+        """
+        path = self.dir / "__rejected__" / (_safe_filename(name) + ".rs")
+        try:
+            text = path.read_text()
+        except OSError:
+            return None
+        body = "\n".join(line for line in text.splitlines() if not line.startswith("// "))
+        return body if body.strip() else None
 
     def count(self) -> int:
         return len(self._manifest)
