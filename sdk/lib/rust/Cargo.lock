@@ -98,6 +98,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "authz-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "avltable"
 version = "0.1.0"
 
@@ -1436,6 +1444,14 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "ntmarta-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]

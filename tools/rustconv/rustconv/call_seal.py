@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import dataclass
 
@@ -269,6 +270,42 @@ def _name_satisfies(token: str, sealed: SealedCalls, replicable: set[str], exec_
     return re.search(rf"(?<!fn )\b{re.escape(original)}\s*\(", exec_text) is not None
 
 
+_CASE_RE = re.compile(r"(?m)^[ \t]*(?:case\b[^:;]*|default)[ \t]*:(?!:)")
+# A C arm that ends in one of these does NOT fall through to the next label.
+_TERMINATED_RE = re.compile(r"(?:\bbreak\b|\breturn\b[^;]*|\bgoto\b[^;]*|\bcontinue\b)\s*;\s*$")
+
+
+def _first_fallthrough_case(masked: str) -> int | None:
+    """Offset of the first `case`/`default` label whose arm FALLS THROUGH, or None.
+
+    Rust `match` has no fall-through, so the only faithful lowering of a C arm that
+    runs on into the next one is to DUPLICATE the next arm's body into it — which
+    writes every call token in that body twice. Same phenomenon as `goto`
+    (see `_replicable_after_goto`), reached by a different route, and it needs the
+    same positional concession: `ntmarta.c`'s `AccpGetTrusteeSid` falls
+    TRUSTEE_IS_OBJECTS_AND_NAME through into TRUSTEE_IS_NAME and duplicated all five
+    of its tokens, so the whole paid body was rejected.
+
+    Conservative on purpose. An arm is treated as falling through unless it visibly
+    ends in `break`/`return`/`goto`/`continue`; an arm ending in `}` is AMBIGUOUS (the
+    jump may sit inside the block, which is exactly the ntmarta shape) and counts as a
+    fall-through. Over-tolerating here weakens only the DUPLICATE half of the envelope
+    — `missing` still catches a dropped call and `invented` still catches a
+    hallucinated token — which is the same trade `_replicable_after_goto` documents.
+    An EMPTY region between two labels is a shared arm (`case A: case B:`), not a
+    fall-through: nothing is duplicated, so it does not concede anything.
+    """
+    labels = list(_CASE_RE.finditer(masked))
+    for prev, nxt in itertools.pairwise(labels):
+        region = masked[prev.end() : nxt.start()].strip()
+        if not region:
+            continue  # `case A:` immediately followed by `case B:` — a shared arm.
+        if _TERMINATED_RE.search(region):
+            continue
+        return prev.start()
+    return None
+
+
 def _replicable_after_goto(sealed: SealedCalls) -> set[str]:
     """Tokens a structured lowering of C `goto` may legitimately write more than once.
 
@@ -298,11 +335,20 @@ def _replicable_after_goto(sealed: SealedCalls) -> set[str]:
     """
     masked = _code_mask(sealed.text)
     gotos = _GOTO_RE.findall(masked)
+    fallthrough = _first_fallthrough_case(masked)
     if not gotos:
-        return set()
+        if fallthrough is None:
+            return set()
+        return {
+            call.placeholder
+            for call in sealed.calls
+            if sealed.text.find(call.placeholder) >= fallthrough
+        }
     first = _GOTO_RE.search(masked)
     assert first is not None
     start = first.start()
+    if fallthrough is not None:
+        start = min(start, fallthrough)
     targets = set(gotos)
     for match in _LABEL_RE.finditer(masked):
         # `case X:` / `default:` / a ternary are not jump targets.
@@ -324,10 +370,20 @@ def call_contract(sealed: SealedCalls) -> str:
     # to repeat a token, they MINTED NEW NUMBERS past the end of the list
     # (`dde_connect` invented three, `SIC_IconAppend` two). Saying what is actually
     # true costs nothing and removes the incentive.
-    if _GOTO_RE.search(_code_mask(sealed.text)):
+    # A `switch` arm that FALLS THROUGH is the same lie by another route: Rust `match`
+    # has no fall-through, so the next arm's body has to be written into this one as
+    # well. ntmarta's `AccpGetTrusteeSid` did exactly that and repeated all five of its
+    # tokens; the audit rejected the whole body, which assembles no file for the TU.
+    _masked = _code_mask(sealed.text)
+    _dup_reason = (
+        "`goto`, which Rust has no equivalent for"
+        if _GOTO_RE.search(_masked)
+        else "a `switch` arm that falls through, which Rust `match` has no equivalent for"
+    )
+    if _GOTO_RE.search(_masked) or _first_fallthrough_case(_masked) is not None:
         rule = (
             "Preserve EACH token as the called function/method identifier in executable "
-            "Rust. This body uses `goto`, which Rust has no equivalent for, so a faithful "
+            f"Rust. This body uses {_dup_reason}, so a faithful "
             "lowering may need the same call on more than one path: where that happens, "
             "REPEAT the identical token — repetition is expected here. Never invent a token "
             "number that is not listed below; the list is complete."

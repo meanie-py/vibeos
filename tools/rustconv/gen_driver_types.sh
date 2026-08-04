@@ -1440,6 +1440,107 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  # ---- Tier-3 batch D: the security/auth cluster (ntmarta, authz, msv1_0, aclui). ----
+  # All four are plain C with no COM substrate, so they take the ordinary
+  # profile_derive -> seal -> crate-repair loop unchanged.
+  ntmarta)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from dll/win32/ntmarta/CMakeLists.txt
+    # (1 compiled TU(s), 174 headers in the include closure, 30 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/ntmarta"
+    WRAPPER_INC=$'#include "ntmarta.h"\n#define NDEBUG\n#include <debug.h>'
+    # winsvc.h added by hand: ntmarta.c reaches the service database through
+    # OpenSCManager/QueryServiceObjectSecurity, so SC_HANDLE and SC_MANAGER_CONNECT are part
+    # of its real surface. The derive missed it because neither name is a `switch` label —
+    # SWITCH_CONST_HEADER_ADDED only pulls in a header that owns a case constant.
+    ALLOW_FILES=( --allowlist-file '.*[/\\]accctrl\.h' --allowlist-file '.*[/\\]aclapi\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  --allowlist-file '.*ntmarta[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/ntmarta" -I"${SRC}/build-i386/dll/win32/ntmarta" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
+  authz)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from dll/win32/authz/CMakeLists.txt
+    # (3 compiled TU(s), 67 headers in the include closure, 11 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/authz"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]authz\.h' --allowlist-file '.*authz[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/authz" -I"${SRC}/build-i386/dll/win32/authz" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
+  msv1_0)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from dll/win32/msv1_0/CMakeLists.txt
+    # (7 compiled TU(s), 193 headers in the include closure, 14 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/msv1_0"
+    # The derive unions the prologues of all 7 TUs, and the two under ntlm/ spell the SAME
+    # header relatively: `../precomp.h` from dll/win32/msv1_0/ntlm IS dll/win32/msv1_0/precomp.h.
+    # Kept once — a wrapper in /tmp cannot resolve the relative form, and both TU groups compile
+    # against one header, so one island is correct (§9.108 is about GENUINELY different surfaces).
+    WRAPPER_INC=$'#include "precomp.h"\n#include "wine/debug.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]intsafe\.h' --allowlist-file '.*[/\\]ntlsa\.h'
+                  --allowlist-file '.*[/\\]ntmsv1_0\.h'
+                  --allowlist-file '.*[/\\]ntsam\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]ntsecpkg\.h'
+                  --allowlist-file '.*[/\\]samsrv[/\\]samsrv\.h'
+                  --allowlist-file '.*[/\\]sspi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*msv1_0[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/msv1_0" -I"${SRC}/build-i386/dll/win32/msv1_0" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_NON_CONFORMING_SWPRINTFS -D_UNICODE -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
+  aclui)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from dll/win32/aclui/CMakeLists.txt
+    # (5 compiled TU(s), 179 headers in the include closure, 76 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/aclui"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <sddl.h>\n#define NDEBUG\n#include <debug.h>\n#include "resource.h"\n#include <uxtheme.h>\n#include <tmschema.h>\n#include <ntsecapi.h>\n#include <stdarg.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <aclui.h>\n#include <objsel.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]aclui\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]objsel\.h'
+                  --allowlist-file '.*[/\\]ole2\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]tmschema\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*aclui[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/aclui" -I"${SRC}/build-i386/dll/win32/aclui" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DSUPPORT_UXTHEME -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
   shell32)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
     # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted

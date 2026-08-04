@@ -8,6 +8,7 @@ git fingerprints (not mtime) so branch/worktree switches don't churn the verdict
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import re
@@ -186,16 +187,50 @@ def discover_rust_module_outputs(repo: Path, arch: str) -> list[Path]:
     return [build_dir / r for r in sorted(rels) if (build_dir / r).is_file()]
 
 
+@functools.cache
+def _workspace_members(repo_str: str) -> frozenset[str] | None:
+    """Crate dir names listed in sdk/lib/rust/Cargo.toml's `members`.
+
+    A crate that is NOT a member is built by nothing, so none of its .rs can be
+    inside any binary. That is exactly how a TRANSLATED-BUT-NOT-YET-FLIPPED module
+    is parked (netcfgx set the rule: a crate with a red `cargo check` stays out of
+    `members` so it cannot take the workspace check down for every other lane).
+
+    Returns None when the manifest is absent or carries no `members`: membership is a
+    REFINEMENT of the naming convention, not a replacement, so an unreadable manifest
+    falls back to convention rather than silently declaring nothing cohab — which would
+    disable the whole staleness net. The real tree always has it; fixtures may not.
+    """
+    try:
+        text = (Path(repo_str) / "sdk" / "lib" / "rust" / "Cargo.toml").read_text()
+    except OSError:
+        return None
+    block = re.search(r"members\s*=\s*\[(.*?)\]", text, re.S)
+    if block is None:
+        return None
+    return frozenset(re.findall(r'"([^"]+)"', block.group(1)))
+
+
 def _crate_for_stem(repo: Path, stem: str) -> Path | None:
     """Map a staged binary stem (e.g. 'advapi32', 'kernel32_vista') to its
     Rust-cohab crate dir under sdk/lib/rust/, or None if it isn't Rust-cohab.
     Binaries carry '_' in version suffixes (kernel32_vista.dll) while crates use
     '-' (kernel32-vista-rust), so try both separators. By convention a cohab
-    crate is `<stem>-rust` and produces a same-named `<stem>.{sys,dll,exe}`."""
+    crate is `<stem>-rust` and produces a same-named `<stem>.{sys,dll,exe}`.
+
+    The convention alone is not enough, and the gap halted the merge train on
+    2026-08-04: `msv1_0-rust` existed (translated, committed, PARKED out of
+    `members` pending its grind) while dll/win32/msv1_0 still built from C, so the
+    staleness net paired the fresh .rs against the C-built msv1_0.dll and reported
+    `cohab flip not rebuilt` for a flip that had not happened. No rebuild can clear
+    that. Requiring workspace membership is the discriminator: a parked crate is
+    not a member, so it is not cohab-linked and its DLL is legitimately the C one.
+    """
     rust = repo / "sdk" / "lib" / "rust"
+    members = _workspace_members(str(repo))
     for name in (f"{stem}-rust", f"{stem.replace('_', '-')}-rust"):
         c = rust / name
-        if (c / "Cargo.toml").is_file():
+        if (c / "Cargo.toml").is_file() and (members is None or name in members):
             return c
     return None
 

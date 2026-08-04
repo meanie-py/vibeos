@@ -253,3 +253,61 @@ def test_an_empty_argument_list_counts_as_zero_not_one():
     with pytest.raises(CallSealError, match="argument count"):
         unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(x); }", sealed)
     assert "Now()" in unseal_calls("unsafe fn f() { __RUSTCONV_CALL_0000__(); }", sealed)
+
+
+def test_a_switch_arm_that_falls_through_may_repeat_its_tokens():
+    """Rust `match` has no fall-through, so the only faithful lowering of a C arm that
+    runs on into the next one is to DUPLICATE the next arm's body — which writes every
+    token in it twice. ntmarta's `AccpGetTrusteeSid` did exactly that and had all five
+    of its tokens rejected, throwing away a whole paid TU."""
+    c = """
+    int f(int k) {
+        switch (k) {
+            case A:
+                if (bad) { break; }
+                /* fall through */
+            case B:
+                return Lookup(k);
+        }
+        return 0;
+    }
+    """
+    sealed = seal_calls(c, {"Lookup"})
+    # The duplication the C forces: `Lookup` written once per arm.
+    rust = (
+        "unsafe fn f(k: i32) -> i32 {\n"
+        "    match k {\n"
+        "        A => { if bad { } else { return __RUSTCONV_CALL_0000__(k); } }\n"
+        "        B => { return __RUSTCONV_CALL_0000__(k); }\n"
+        "        _ => {}\n"
+        "    }\n"
+        "    0\n}"
+    )
+    assert unseal_calls(rust, sealed).count("Lookup(k)") == 2
+
+
+def test_a_shared_case_label_is_not_a_fallthrough():
+    """`case A: case B:` duplicates nothing — the arms are already one block — so it must
+    not buy the body a licence to repeat tokens."""
+    c = """
+    int f(int k) {
+        switch (k) {
+            case A:
+            case B:
+                return Lookup(k);
+            default:
+                return 0;
+        }
+    }
+    """
+    sealed = seal_calls(c, {"Lookup"})
+    with pytest.raises(CallSealError):
+        unseal_calls(
+            "unsafe fn f(k: i32) -> i32 {\n"
+            "    match k {\n"
+            "        A => __RUSTCONV_CALL_0000__(k),\n"
+            "        B => __RUSTCONV_CALL_0000__(k),\n"
+            "        _ => 0,\n"
+            "    }\n}",
+            sealed,
+        )
