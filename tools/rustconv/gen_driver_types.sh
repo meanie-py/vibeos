@@ -1490,7 +1490,15 @@ case "$DRIVER" in
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
-    BLOCKLIST_FUNCS=1
+    # Emit the header function surface, minus the functions the crate defines itself. msv1_0 is
+    # a THIN module over other people's APIs: it calls the SAM/LSA server entrypoints
+    # (SamIConnect, SamrOpenUser, LsarClose, LsaIOpenPolicyTrusted, ...) through the samsrv and
+    # lsasrv DELAY imports, plus advapi32's SystemFunction006/007/012 and the wide CRT. With
+    # BLOCKLIST_FUNCS=1 those are ~60 names the prelude would have to declare BY HAND, and a
+    # hand-written declaration of an RPC-shaped SAM entrypoint that is wrong by one pointer
+    # level links fine and corrupts at run time. Let bindgen spell them from ntsam.h/ntlsa.h.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
     DRIVER_DIR="${SRC}/dll/win32/msv1_0"
     # The derive unions the prologues of all 7 TUs, and the two under ntlm/ spell the SAME
     # header relatively: `../precomp.h` from dll/win32/msv1_0/ntlm IS dll/win32/msv1_0/precomp.h.
@@ -1504,6 +1512,12 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]ntsecpkg\.h'
                   --allowlist-file '.*[/\\]samsrv[/\\]samsrv\.h'
                   --allowlist-file '.*[/\\]sspi\.h'
+                  # winbase.h for the four kernel32 calls the module makes directly
+                  # (GetProcessHeap/HeapAlloc/HeapFree/GetComputerNameW). Allowlisting the
+                  # header rather than transcribing four prototypes: GetComputerNameW's
+                  # second parameter is an in/out LPDWORD, and a hand-written LPDWORD-for-DWORD
+                  # is the exact bug authz shipped four times in one batch.
+                  --allowlist-file '.*[/\\]winbase\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
                   --allowlist-file '.*msv1_0[/\\].*\.h' )
     EXTRA_INC=( -I"${SRC}/dll/win32/msv1_0" -I"${SRC}/build-i386/dll/win32/msv1_0" )
@@ -1519,10 +1533,27 @@ case "$DRIVER" in
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
-    BLOCKLIST_FUNCS=1
+    # Emit the header function surface, minus what the crate defines. aclui is a DIALOG module:
+    # nearly every line calls user32/comctl32/advapi32 (GetDlgItem, DeferWindowPos, SendMessage,
+    # EqualSid, ...), which with BLOCKLIST_FUNCS=1 is ~200 prototypes to hand-write.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MACRO_SIGNED: same reason as netcfgx. Every control id (IDC_*/IDD_*), window message
+    # (WM_*/LVM_*/SB_*) and LSTATUS the module touches is an `int` in the C, so bindgen's u32
+    # default turns each use into an E0308.
+    MACRO_SIGNED=1
     DRIVER_DIR="${SRC}/dll/win32/aclui"
     WRAPPER_INC=$'#include "precomp.h"\n#include <sddl.h>\n#define NDEBUG\n#include <debug.h>\n#include "resource.h"\n#include <uxtheme.h>\n#include <tmschema.h>\n#include <ntsecapi.h>\n#include <stdarg.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <aclui.h>\n#include <objsel.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]aclui\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  # accctrl.h owns the SI_* page/access flags aclui.h's own structs are built
+                  # from; wtypes.h and objidl.h (WIDL-GENERATED, so they live under build-<arch>)
+                  # own the CLSCTX_/DVASPECT_/TYMED_/VT_ enumerators the object-picker data
+                  # transfer uses. Every one of these is an ordinary use rather than a `case`
+                  # label, which is why the derive left them out.
+                  --allowlist-file '.*[/\\]accctrl\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]oaidl\.h'
                   --allowlist-file '.*[/\\]initguid\.h'
                   --allowlist-file '.*[/\\]ntsecapi\.h'
                   --allowlist-file '.*[/\\]objbase\.h'
@@ -1532,6 +1563,13 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]sddl\.h'
                   --allowlist-file '.*[/\\]tmschema\.h'
                   --allowlist-file '.*[/\\]uxtheme\.h'
+                  # The three headers that own the module's actual API surface. The derive does
+                  # not add them because SWITCH_CONST_HEADER_ADDED only pulls in a header that
+                  # owns a `case` label, and aclui reaches user32/kernel32/advapi32 through
+                  # ordinary calls.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*aclui[/\\].*\.h' )
     EXTRA_INC=( -I"${SRC}/dll/win32/aclui" -I"${SRC}/build-i386/dll/win32/aclui" )

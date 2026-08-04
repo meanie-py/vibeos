@@ -7,6 +7,14 @@ name = "access"
 version = "0.1.0"
 
 [[package]]
+name = "aclui-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "acpi-rust"
 version = "0.1.0"
 dependencies = [
@@ -1277,6 +1285,14 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winlogon-sys",
+]
+
+[[package]]
+name = "msv1_0-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]

@@ -21,24 +21,14 @@ pub static mut LogonListHead: LIST_ENTRY = LIST_ENTRY {
     Flink: core::ptr::null_mut(),
     Blink: core::ptr::null_mut(),
 };
-pub static mut LogonListResource: RTL_RESOURCE = RTL_RESOURCE {
-    CriticalSection: ntdll_sys::nt::RTL_CRITICAL_SECTION {
-        DebugInfo: core::ptr::null_mut(),
-        LockCount: 0,
-        RecursionCount: 0,
-        OwningThread: core::ptr::null_mut(),
-        LockSemaphore: core::ptr::null_mut(),
-        SpinCount: 0,
-    },
-    SharedSemaphore: core::ptr::null_mut(),
-    NumberOfWaitingShared: 0,
-    ExclusiveSemaphore: core::ptr::null_mut(),
-    NumberOfWaitingExclusive: 0,
-    NumberOfActive: 0,
-    ExclusiveOwnerThread: core::ptr::null_mut(),
-    Flags: 0,
-    DebugInfo: core::ptr::null_mut(),
-};
+// The C is a bare `RTL_RESOURCE LogonListResource;` — a tentative definition, so zeroed, and
+// RtlInitializeResource fills it at PackageInitialize. The translation had instead expanded a
+// field-by-field initializer with SIX field names RTL_RESOURCE does not have
+// (CriticalSection/NumberOfWaitingShared/NumberOfWaitingExclusive/NumberOfActive/
+// ExclusiveOwnerThread/Flags, vs the real Lock/SharedWaiters/ExclusiveWaiters/NumberActive/
+// OwningThread/TimeoutBoost) — recalled, not read. Zeroed is both faithful and immune to the
+// layout drift that made those names plausible.
+pub static mut LogonListResource: RTL_RESOURCE = unsafe { core::mem::zeroed() };
 pub static mut EnumCounter: ULONG = 0;
 unsafe extern "C" fn GetLogonByLogonId(
     LogonId: PLUID,
@@ -52,8 +42,8 @@ unsafe extern "C" fn GetLogonByLogonId(
             .offset(-(core::mem::offset_of!(LOGON_LIST_ENTRY, ListEntry) as isize))
             as *mut LOGON_LIST_ENTRY;
 
-        if ((*LogonEntry).LogonId.__bindgen_anon_1.HighPart == (*LogonId).__bindgen_anon_1.HighPart) &&
-           ((*LogonEntry).LogonId.__bindgen_anon_1.LowPart == (*LogonId).__bindgen_anon_1.LowPart) {
+        if ((*LogonEntry).LogonId.HighPart == (*LogonId).HighPart) &&
+           ((*LogonEntry).LogonId.LowPart == (*LogonId).LowPart) {
             return LogonEntry;
         }
 
@@ -73,13 +63,13 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
     let mut ClientBaseAddress: PVOID = core::ptr::null_mut();
     let mut Ptr: LPWSTR;
     let mut BufferLength: ULONG;
-    let mut ComputerNameLength: USHORT;
+    let mut ComputerNameLength: USHORT = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     *ProfileBuffer = core::ptr::null_mut();
     *ProfileBufferLength = 0;
 
-    if UIntPtrToUShort(wcslen(ComputerName), core::ptr::addr_of_mut!(ComputerNameLength)) != S_OK {
+    if UIntPtrToUShort(wcslen(ComputerName) as UINT_PTR, core::ptr::addr_of_mut!(ComputerNameLength)) != S_OK {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -130,29 +120,30 @@ unsafe extern "C" fn BuildInteractiveProfileBuffer(
         };
     }
 
-    Ptr = (LocalBuffer as ULONG_PTR + core::mem::size_of::<MSV1_0_INTERACTIVE_PROFILE>()) as LPWSTR;
+    Ptr = (LocalBuffer as ULONG_PTR
+        + core::mem::size_of::<MSV1_0_INTERACTIVE_PROFILE>() as ULONG_PTR) as LPWSTR;
 
     (*LocalBuffer).MessageType = MsV1_0InteractiveProfile;
     (*LocalBuffer).LogonCount = (*UserInfo).All.LogonCount;
     (*LocalBuffer).BadPasswordCount = (*UserInfo).All.BadPasswordCount;
 
-    (*LocalBuffer).LogonTime.__bindgen_anon_1.LowPart = (*UserInfo).All.LastLogon.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).LogonTime.__bindgen_anon_1.HighPart = (*UserInfo).All.LastLogon.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).LogonTime.__bindgen_anon_1.LowPart = (*UserInfo).All.LastLogon.LowPart;
+    (*LocalBuffer).LogonTime.__bindgen_anon_1.HighPart = (*UserInfo).All.LastLogon.HighPart;
 
-    (*LocalBuffer).LogoffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).LogoffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).LogoffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.LowPart;
+    (*LocalBuffer).LogoffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.HighPart;
 
-    (*LocalBuffer).KickOffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).KickOffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).KickOffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.LowPart;
+    (*LocalBuffer).KickOffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.HighPart;
 
-    (*LocalBuffer).PasswordLastSet.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordLastSet.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).PasswordLastSet.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordLastSet.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).PasswordLastSet.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordLastSet.LowPart;
+    (*LocalBuffer).PasswordLastSet.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordLastSet.HighPart;
 
-    (*LocalBuffer).PasswordCanChange.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordCanChange.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).PasswordCanChange.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordCanChange.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).PasswordCanChange.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordCanChange.LowPart;
+    (*LocalBuffer).PasswordCanChange.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordCanChange.HighPart;
 
-    (*LocalBuffer).PasswordMustChange.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordMustChange.__bindgen_anon_1.LowPart;
-    (*LocalBuffer).PasswordMustChange.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordMustChange.__bindgen_anon_1.HighPart;
+    (*LocalBuffer).PasswordMustChange.__bindgen_anon_1.LowPart = (*UserInfo).All.PasswordMustChange.LowPart;
+    (*LocalBuffer).PasswordMustChange.__bindgen_anon_1.HighPart = (*UserInfo).All.PasswordMustChange.HighPart;
 
     (*LocalBuffer).LogonScript.Length = (*UserInfo).All.ScriptPath.Length;
     (*LocalBuffer).LogonScript.MaximumLength = (*UserInfo).All.ScriptPath.Length + core::mem::size_of::<WCHAR>() as USHORT;
@@ -272,23 +263,23 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
     *ProfileBufferLength = 0;
 
     'done: loop {
-        if NtlmUStrAlloc(&mut ComputerNameUCS, (*(*LogonPwdData).ComputerName).Length + core::mem::size_of::<WCHAR>() as u16 * 3, 0) == 0 {
+        if !NtlmUStrAlloc(&mut ComputerNameUCS, (*(*LogonPwdData).ComputerName).Length + core::mem::size_of::<WCHAR>() as u16 * 3, 0) {
             Status = STATUS_INSUFFICIENT_RESOURCES;
             break 'done;
         }
         Status = RtlAppendUnicodeToString(&mut ComputerNameUCS, w!("\\\\") as PWSTR);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             break 'done;
         }
         Status = RtlAppendUnicodeStringToString(&mut ComputerNameUCS, (*LogonPwdData).ComputerName);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             break 'done;
         }
 
         BufferLength = core::mem::size_of::<MSV1_0_LM20_LOGON_PROFILE>() as u32 + ComputerNameUCS.Length as u32 + core::mem::size_of::<WCHAR>() as u32;
 
         Status = NtlmAllocateClientBuffer(ClientRequest, BufferLength, &mut Buffer);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             break 'done;
         }
 
@@ -296,15 +287,15 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
         PtrOffset = (LocalBuffer as usize + 1) as PBYTE;
 
         (*LocalBuffer).MessageType = MsV1_0Lm20LogonProfile;
-        (*LocalBuffer).KickOffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.LowPart;
-        (*LocalBuffer).KickOffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.HighPart;
-        (*LocalBuffer).LogoffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.LowPart;
-        (*LocalBuffer).LogoffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.HighPart;
+        (*LocalBuffer).KickOffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.LowPart;
+        (*LocalBuffer).KickOffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.HighPart;
+        (*LocalBuffer).LogoffTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.LowPart;
+        (*LocalBuffer).LogoffTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.HighPart;
 
         memcpy(
-            (*LocalBuffer).UserSessionKey.as_mut_ptr(),
+            ((*LocalBuffer).UserSessionKey.as_mut_ptr()).cast(),
             &(*LogonPwdData).UserSessionKey as *const _ as *const _,
-            MSV1_0_USER_SESSION_KEY_LENGTH,
+            (MSV1_0_USER_SESSION_KEY_LENGTH) as usize,
         );
 
         RtlInitUnicodeString(
@@ -313,9 +304,9 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
         );
 
         memcpy(
-            (*LocalBuffer).LanmanSessionKey.as_mut_ptr(),
+            ((*LocalBuffer).LanmanSessionKey.as_mut_ptr()).cast(),
             &(*LogonPwdData).LanmanSessionKey as *const _ as *const _,
-            MSV1_0_LANMAN_SESSION_KEY_LENGTH,
+            (MSV1_0_LANMAN_SESSION_KEY_LENGTH) as usize,
         );
 
         if NtlmUStrWriteToStruct(
@@ -324,9 +315,9 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
             &mut (*LocalBuffer).LogonServer,
             &mut ComputerNameUCS,
             &mut PtrOffset,
-            TRUE,
-        ) == 0 {
-            Status = ERROR_INTERNAL_ERROR;
+            true,
+        ) {
+            Status = (ERROR_INTERNAL_ERROR) as i32;
             break 'done;
         }
 
@@ -338,7 +329,7 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
         }
 
         Status = NtlmCopyToClientBuffer(ClientRequest, BufferLength, &mut Buffer);
-        if NT_SUCCESS(Status) == 0 {
+        if !NT_SUCCESS(Status) {
             break 'done;
         }
 
@@ -347,7 +338,7 @@ unsafe extern "C" fn BuildLm20LogonProfileBuffer(
         break 'done;
     }
 
-    NtlmFreeClientBuffer(ClientRequest, if NT_SUCCESS(Status) != 0 { 0 } else { 1 }, &mut Buffer);
+    NtlmFreeClientBuffer(ClientRequest, !NT_SUCCESS(Status), &mut Buffer);
     NtlmUStrFree(&mut ComputerNameUCS);
     Status
 }
@@ -363,7 +354,7 @@ unsafe extern "C" fn AppendRidToSid(
         return core::ptr::null_mut();
     }
 
-    DstSid = DispatchTable.AllocateLsaHeap(RtlLengthRequiredSid(RidCount + 1));
+    DstSid = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(RtlLengthRequiredSid((RidCount + 1) as u32));
     if DstSid == core::ptr::null_mut() {
         return core::ptr::null_mut();
     }
@@ -371,11 +362,11 @@ unsafe extern "C" fn AppendRidToSid(
     core::ptr::copy_nonoverlapping(
         SrcSid as *const u8,
         DstSid as *mut u8,
-        RtlLengthRequiredSid(RidCount) as usize,
+        RtlLengthRequiredSid((RidCount) as u32) as usize,
     );
 
     *RtlSubAuthorityCountSid(DstSid) = RidCount + 1;
-    *RtlSubAuthoritySid(DstSid, RidCount) = Rid;
+    *RtlSubAuthoritySid(DstSid, (RidCount) as u32) = Rid;
 
     return DstSid;
 }
@@ -417,7 +408,11 @@ unsafe extern "C" fn BuildTokenGroups(
     let mut SystemAuthority: SID_IDENTIFIER_AUTHORITY = SID_IDENTIFIER_AUTHORITY {
         Value: SECURITY_NT_AUTHORITY,
     };
-    let TokenGroups: PTOKEN_GROUPS;
+    // Renamed from the C's `TokenGroups`: ntdll-sys exports a unit const of that exact
+    // name (TOKEN_INFORMATION_CLASS::TokenGroups), so through the prelude glob a `let
+    // TokenGroups` is a constant PATTERN, not a new binding — the later assignment then
+    // fails with "cannot assign to this expression". Local only, so no ABI consequence.
+    let TokenGroupsBuf: PTOKEN_GROUPS;
     let mut GroupCount: u32 = 0;
     let mut MaxGroups: u32 = 2;
     let Sid: PSID;
@@ -427,12 +422,12 @@ unsafe extern "C" fn BuildTokenGroups(
         MaxGroups += 1;
     }
 
-    TokenGroups = DispatchTable.AllocateLsaHeap(
-        core::mem::size_of::<TOKEN_GROUPS>() +
-        MaxGroups as usize * core::mem::size_of::<SID_AND_ATTRIBUTES>()
+    TokenGroupsBuf = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(
+        (core::mem::size_of::<TOKEN_GROUPS>()
+            + MaxGroups as usize * core::mem::size_of::<SID_AND_ATTRIBUTES>()) as ULONG,
     ) as PTOKEN_GROUPS;
 
-    if TokenGroups.is_null() {
+    if TokenGroupsBuf.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -442,8 +437,8 @@ unsafe extern "C" fn BuildTokenGroups(
 
         }
 
-        (*TokenGroups).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroups).Groups[GroupCount as usize].Attributes =
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
 
@@ -461,8 +456,8 @@ unsafe extern "C" fn BuildTokenGroups(
             SECURITY_NULL_RID,
             &mut Sid,
         );
-        (*TokenGroups).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroups).Groups[GroupCount as usize].Attributes =
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
     } else {
@@ -471,8 +466,8 @@ unsafe extern "C" fn BuildTokenGroups(
 
         }
 
-        (*TokenGroups).Groups[GroupCount as usize].Sid = Sid;
-        (*TokenGroups).Groups[GroupCount as usize].Attributes =
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
+        (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
         GroupCount += 1;
     }
@@ -491,14 +486,14 @@ unsafe extern "C" fn BuildTokenGroups(
         SECURITY_NULL_RID,
         &mut Sid,
     );
-    (*TokenGroups).Groups[GroupCount as usize].Sid = Sid;
-    (*TokenGroups).Groups[GroupCount as usize].Attributes =
+    (*TokenGroupsBuf).Groups[GroupCount as usize].Sid = Sid;
+    (*TokenGroupsBuf).Groups[GroupCount as usize].Attributes =
         SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
     GroupCount += 1;
 
-    (*TokenGroups).GroupCount = GroupCount;
+    (*TokenGroupsBuf).GroupCount = GroupCount;
 
-    *Groups = TokenGroups;
+    *Groups = TokenGroupsBuf;
 
     Status
 }
@@ -512,37 +507,39 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
     let mut i: u32;
     let mut Status: i32 = STATUS_SUCCESS;
 
-    Buffer = ((*DispatchTable).AllocateLsaHeap)(core::mem::size_of::<LSA_TOKEN_INFORMATION_V1>()) as PLSA_TOKEN_INFORMATION_V1;
+    Buffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(
+        core::mem::size_of::<LSA_TOKEN_INFORMATION_V1>() as ULONG,
+    ) as PLSA_TOKEN_INFORMATION_V1;
     if Buffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         'done: loop {
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).User.User.Sid as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).User.User.Sid as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
                             if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                ((*DispatchTable).FreeLsaHeap)((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
 
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).Groups as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).Groups as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).PrimaryGroup.PrimaryGroup.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).DefaultDacl.DefaultDacl.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
                     }
 
-                    ((*DispatchTable).FreeLsaHeap)(Buffer as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())(Buffer as *mut core::ffi::c_void);
                 }
             }
 
@@ -550,8 +547,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
         }
     }
 
-    (*Buffer).ExpirationTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.LowPart;
-    (*Buffer).ExpirationTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.__bindgen_anon_1.HighPart;
+    (*Buffer).ExpirationTime.__bindgen_anon_1.LowPart = (*UserInfo).All.AccountExpires.LowPart;
+    (*Buffer).ExpirationTime.__bindgen_anon_1.HighPart = (*UserInfo).All.AccountExpires.HighPart;
 
     Status = BuildTokenUser(
         core::ptr::addr_of_mut!((*Buffer).User),
@@ -563,30 +560,30 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).User.User.Sid as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).User.User.Sid as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
                             if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                ((*DispatchTable).FreeLsaHeap)((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
 
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).Groups as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).Groups as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).PrimaryGroup.PrimaryGroup.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).DefaultDacl.DefaultDacl.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
                     }
 
-                    ((*DispatchTable).FreeLsaHeap)(Buffer as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())(Buffer as *mut core::ffi::c_void);
                 }
             }
 
@@ -604,30 +601,30 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).User.User.Sid as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).User.User.Sid as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
                             if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                ((*DispatchTable).FreeLsaHeap)((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
 
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).Groups as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).Groups as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).PrimaryGroup.PrimaryGroup.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).DefaultDacl.DefaultDacl.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
                     }
 
-                    ((*DispatchTable).FreeLsaHeap)(Buffer as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())(Buffer as *mut core::ffi::c_void);
                 }
             }
 
@@ -646,30 +643,30 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).User.User.Sid as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).User.User.Sid as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
                             if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                ((*DispatchTable).FreeLsaHeap)((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
 
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).Groups as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).Groups as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).PrimaryGroup.PrimaryGroup.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
                     }
 
                     if !(*Buffer).DefaultDacl.DefaultDacl.is_null() {
-                        ((*DispatchTable).FreeLsaHeap)((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
+                        (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
                     }
 
-                    ((*DispatchTable).FreeLsaHeap)(Buffer as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())(Buffer as *mut core::ffi::c_void);
                 }
             }
 
@@ -683,30 +680,30 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
         if !NT_SUCCESS(Status) {
             if !Buffer.is_null() {
                 if !(*Buffer).User.User.Sid.is_null() {
-                    ((*DispatchTable).FreeLsaHeap)((*Buffer).User.User.Sid as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).User.User.Sid as *mut core::ffi::c_void);
                 }
 
                 if !(*Buffer).Groups.is_null() {
                     i = 0;
                     while i < (*(*Buffer).Groups).GroupCount {
                         if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                            ((*DispatchTable).FreeLsaHeap)((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                            (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
                         }
                         i = i.wrapping_add(1);
                     }
 
-                    ((*DispatchTable).FreeLsaHeap)((*Buffer).Groups as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).Groups as *mut core::ffi::c_void);
                 }
 
                 if !(*Buffer).PrimaryGroup.PrimaryGroup.is_null() {
-                    ((*DispatchTable).FreeLsaHeap)((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).PrimaryGroup.PrimaryGroup as *mut core::ffi::c_void);
                 }
 
                 if !(*Buffer).DefaultDacl.DefaultDacl.is_null() {
-                    ((*DispatchTable).FreeLsaHeap)((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
+                    (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*Buffer).DefaultDacl.DefaultDacl as *mut core::ffi::c_void);
                 }
 
-                ((*DispatchTable).FreeLsaHeap)(Buffer as *mut core::ffi::c_void);
+                (DispatchTable.FreeLsaHeap.unwrap_unchecked())(Buffer as *mut core::ffi::c_void);
             }
         }
 
@@ -746,8 +743,8 @@ unsafe extern "C" fn MsvpChangePassword(
     let mut NewLmPassword: ENCRYPTED_LM_OWF_PASSWORD = core::mem::zeroed();
     let mut LmPwdString: OEM_STRING = core::mem::zeroed();
     let mut LmPwdBuffer: [i8; 15] = [0; 15];
-    let mut OldLmPasswordPresent: BOOLEAN = FALSE;
-    let mut NewLmPasswordPresent: BOOLEAN = FALSE;
+    let mut OldLmPasswordPresent: BOOLEAN = (FALSE) as u8;
+    let mut NewLmPasswordPresent: BOOLEAN = (FALSE) as u8;
 
     let mut OldLmEncryptedWithNewLm: ENCRYPTED_LM_OWF_PASSWORD = core::mem::zeroed();
     let mut NewLmEncryptedWithOldLm: ENCRYPTED_LM_OWF_PASSWORD = core::mem::zeroed();
@@ -769,35 +766,35 @@ unsafe extern "C" fn MsvpChangePassword(
         if !NT_SUCCESS(Status) {
             return STATUS_INVALID_PARAMETER;
         }
-        (*RequestBuffer).DomainName.Buffer = FIXUP_POINTER((*RequestBuffer).DomainName.Buffer, PtrOffset);
+        (*RequestBuffer).DomainName.Buffer = FIXUP_POINTER!((*RequestBuffer).DomainName.Buffer, PtrOffset);
         (*RequestBuffer).DomainName.MaximumLength = (*RequestBuffer).DomainName.Length;
 
         Status = RtlValidateUnicodeString(0, core::ptr::addr_of_mut!((*RequestBuffer).AccountName));
         if !NT_SUCCESS(Status) {
             return STATUS_INVALID_PARAMETER;
         }
-        (*RequestBuffer).AccountName.Buffer = FIXUP_POINTER((*RequestBuffer).AccountName.Buffer, PtrOffset);
+        (*RequestBuffer).AccountName.Buffer = FIXUP_POINTER!((*RequestBuffer).AccountName.Buffer, PtrOffset);
         (*RequestBuffer).AccountName.MaximumLength = (*RequestBuffer).AccountName.Length;
 
         Status = RtlValidateUnicodeString(0, core::ptr::addr_of_mut!((*RequestBuffer).OldPassword));
         if !NT_SUCCESS(Status) {
             return STATUS_INVALID_PARAMETER;
         }
-        (*RequestBuffer).OldPassword.Buffer = FIXUP_POINTER((*RequestBuffer).OldPassword.Buffer, PtrOffset);
+        (*RequestBuffer).OldPassword.Buffer = FIXUP_POINTER!((*RequestBuffer).OldPassword.Buffer, PtrOffset);
         (*RequestBuffer).OldPassword.MaximumLength = (*RequestBuffer).OldPassword.Length;
 
         Status = RtlValidateUnicodeString(0, core::ptr::addr_of_mut!((*RequestBuffer).NewPassword));
         if !NT_SUCCESS(Status) {
             return STATUS_INVALID_PARAMETER;
         }
-        (*RequestBuffer).NewPassword.Buffer = FIXUP_POINTER((*RequestBuffer).NewPassword.Buffer, PtrOffset);
+        (*RequestBuffer).NewPassword.Buffer = FIXUP_POINTER!((*RequestBuffer).NewPassword.Buffer, PtrOffset);
         (*RequestBuffer).NewPassword.MaximumLength = (*RequestBuffer).NewPassword.Length;
 
         Status = SamIConnect(
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(ServerHandle),
             SAM_SERVER_CONNECT | SAM_SERVER_LOOKUP_DOMAIN,
-            TRUE,
+            (TRUE) as u8,
         );
         if !NT_SUCCESS(Status) {
             break 'done;
@@ -872,12 +869,12 @@ unsafe extern "C" fn MsvpChangePassword(
         LmPwdString.Length = 15;
         LmPwdString.MaximumLength = 15;
         LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-        ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength as usize);
+        ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength as usize);
 
         Status = RtlUpcaseUnicodeStringToOemString(
             core::ptr::addr_of_mut!(LmPwdString),
             core::ptr::addr_of_mut!((*RequestBuffer).OldPassword),
-            FALSE,
+            (FALSE) as u8,
         );
         if NT_SUCCESS(Status) {
             Status = SystemFunction006(
@@ -885,19 +882,19 @@ unsafe extern "C" fn MsvpChangePassword(
                 core::ptr::addr_of_mut!(OldLmPassword) as LPSTR,
             );
             if NT_SUCCESS(Status) {
-                OldLmPasswordPresent = TRUE;
+                OldLmPasswordPresent = (TRUE) as u8;
             }
         }
 
         LmPwdString.Length = 15;
         LmPwdString.MaximumLength = 15;
         LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-        ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength as usize);
+        ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength as usize);
 
         Status = RtlUpcaseUnicodeStringToOemString(
             core::ptr::addr_of_mut!(LmPwdString),
             core::ptr::addr_of_mut!((*RequestBuffer).NewPassword),
-            FALSE,
+            (FALSE) as u8,
         );
         if NT_SUCCESS(Status) {
             Status = SystemFunction006(
@@ -905,7 +902,7 @@ unsafe extern "C" fn MsvpChangePassword(
                 core::ptr::addr_of_mut!(NewLmPassword) as LPSTR,
             );
             if NT_SUCCESS(Status) {
-                NewLmPasswordPresent = TRUE;
+                NewLmPasswordPresent = (TRUE) as u8;
             }
         }
 
@@ -955,12 +952,12 @@ unsafe extern "C" fn MsvpChangePassword(
             (OldLmPasswordPresent != 0 && NewLmPasswordPresent != 0) as BOOLEAN,
             pOldLmEncryptedWithNewLm,
             pNewLmEncryptedWithOldLm,
-            TRUE,
+            (TRUE) as u8,
             core::ptr::addr_of_mut!(OldNtEncryptedWithNewNt),
             core::ptr::addr_of_mut!(NewNtEncryptedWithOldNt),
-            FALSE,
+            (FALSE) as u8,
             core::ptr::null_mut(),
-            FALSE,
+            (FALSE) as u8,
             core::ptr::null_mut(),
         );
         if !NT_SUCCESS(Status) {
@@ -980,7 +977,7 @@ unsafe extern "C" fn MsvpChangePassword(
     }
 
     if !DomainSid.is_null() {
-        SamIFreeVoid(DomainSid);
+        SamIFreeVoid((DomainSid).cast());
     }
 
     if !ServerHandle.is_null() {
@@ -1014,7 +1011,7 @@ unsafe extern "C" fn MsvpEnumerateUsers(
 
     RtlAcquireResourceShared(
         core::ptr::addr_of_mut!(LogonListResource),
-        TRUE,
+        (TRUE) as u8,
     );
 
     CurrentEntry = LogonListHead.Flink;
@@ -1032,14 +1029,15 @@ unsafe extern "C" fn MsvpEnumerateUsers(
         + (LogonCount * core::mem::size_of::<LUID>() as ULONG)
         + (LogonCount * core::mem::size_of::<ULONG>() as ULONG);
 
-    LocalBuffer = (DispatchTable.AllocateLsaHeap)(BufferLength);
+    LocalBuffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(BufferLength)
+        as PMSV1_0_ENUMUSERS_RESPONSE;
     if LocalBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         'done: {
             break 'done;
         }
     } else {
-        Status = (DispatchTable.AllocateClientBuffer)(
+        Status = (DispatchTable.AllocateClientBuffer.unwrap_unchecked())(
             ClientRequest,
             BufferLength,
             core::ptr::addr_of_mut!(ClientBaseAddress),
@@ -1072,7 +1070,7 @@ unsafe extern "C" fn MsvpEnumerateUsers(
                     - core::mem::offset_of!(LOGON_LIST_ENTRY, ListEntry))
                     as PLOGON_LIST_ENTRY;
 
-                RtlCopyMemory(
+                RtlCopyMemory!(
                     LuidPtr as PVOID,
                     core::ptr::addr_of!((*LogonEntry).LogonId) as PVOID,
                     core::mem::size_of::<LUID>(),
@@ -1085,7 +1083,7 @@ unsafe extern "C" fn MsvpEnumerateUsers(
                 CurrentEntry = (*CurrentEntry).Flink;
             }
 
-            Status = (DispatchTable.CopyToClientBuffer)(
+            Status = (DispatchTable.CopyToClientBuffer.unwrap_unchecked())(
                 ClientRequest,
                 BufferLength,
                 ClientBaseAddress,
@@ -1106,12 +1104,12 @@ unsafe extern "C" fn MsvpEnumerateUsers(
     RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
     if !LocalBuffer.is_null() {
-        (DispatchTable.FreeLsaHeap)(LocalBuffer as PVOID);
+        (DispatchTable.FreeLsaHeap.unwrap_unchecked())(LocalBuffer as PVOID);
     }
 
     if !NT_SUCCESS(Status) {
         if !ClientBaseAddress.is_null() {
-            (DispatchTable.FreeClientBuffer)(ClientRequest, ClientBaseAddress);
+            (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, ClientBaseAddress);
         }
     }
 
@@ -1140,7 +1138,7 @@ unsafe extern "C" fn MsvpGetUserInfo(
 
     RequestBuffer = ProtocolSubmitBuffer as PMSV1_0_GETUSERINFO_REQUEST;
 
-    RtlAcquireResourceShared(core::ptr::addr_of_mut!(LogonListResource), TRUE);
+    RtlAcquireResourceShared(core::ptr::addr_of_mut!(LogonListResource), (TRUE) as u8);
 
     LogonEntry = GetLogonByLogonId(core::ptr::addr_of_mut!((*RequestBuffer).LogonId));
     if LogonEntry.is_null() {
@@ -1209,13 +1207,14 @@ unsafe extern "C" fn MsvpGetUserInfo(
 
     (*LocalBuffer).MessageType = MsV1_0GetUserInfo;
 
-    BufferPtr = (LocalBuffer as ULONG_PTR + core::mem::size_of::<MSV1_0_GETUSERINFO_RESPONSE>()) as PWSTR;
+    BufferPtr = (LocalBuffer as ULONG_PTR
+        + core::mem::size_of::<MSV1_0_GETUSERINFO_RESPONSE>() as ULONG_PTR) as PWSTR;
 
     (*LocalBuffer).UserName.Length = (*LogonEntry).UserName.Length;
     (*LocalBuffer).UserName.MaximumLength = (*LogonEntry).UserName.MaximumLength;
     (*LocalBuffer).UserName.Buffer = (ClientBaseAddress as ULONG_PTR + BufferPtr as ULONG_PTR - LocalBuffer as ULONG_PTR) as PWSTR;
 
-    RtlCopyMemory(
+    RtlCopyMemory!(
         BufferPtr as PVOID,
         (*LogonEntry).UserName.Buffer as PVOID,
         (*LogonEntry).UserName.MaximumLength as usize,
@@ -1226,7 +1225,7 @@ unsafe extern "C" fn MsvpGetUserInfo(
     (*LocalBuffer).LogonDomainName.MaximumLength = (*LogonEntry).LogonDomainName.MaximumLength;
     (*LocalBuffer).LogonDomainName.Buffer = (ClientBaseAddress as ULONG_PTR + BufferPtr as ULONG_PTR - LocalBuffer as ULONG_PTR) as PWSTR;
 
-    RtlCopyMemory(
+    RtlCopyMemory!(
         BufferPtr as PVOID,
         (*LogonEntry).LogonDomainName.Buffer as PVOID,
         (*LogonEntry).LogonDomainName.MaximumLength as usize,
@@ -1237,7 +1236,7 @@ unsafe extern "C" fn MsvpGetUserInfo(
     (*LocalBuffer).LogonServer.MaximumLength = (*LogonEntry).LogonServer.MaximumLength;
     (*LocalBuffer).LogonServer.Buffer = (ClientBaseAddress as ULONG_PTR + BufferPtr as ULONG_PTR - LocalBuffer as ULONG_PTR) as PWSTR;
 
-    RtlCopyMemory(
+    RtlCopyMemory!(
         BufferPtr as PVOID,
         (*LogonEntry).LogonServer.Buffer as PVOID,
         (*LogonEntry).LogonServer.MaximumLength as usize,
@@ -1398,7 +1397,7 @@ pub unsafe extern "system" fn LsaApCallPackageUntrusted(
     let MessageType: ULONG;
     let Status: NTSTATUS;
 
-    if SubmitBufferLength < MSV1_0_PROTOCOL_MESSAGE_TYPE {
+    if (SubmitBufferLength as usize) < core::mem::size_of::<MSV1_0_PROTOCOL_MESSAGE_TYPE>() {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -1439,7 +1438,7 @@ pub unsafe extern "system" fn LsaApInitializePackage(
         InitializeListHead(&mut LogonListHead);
         RtlInitializeResource(&mut LogonListResource);
         EnumCounter = 0;
-        PackageInitialized = TRUE;
+        PackageInitialized = (TRUE) as i32;
     }
 
     DispatchTable.CreateLogonSession = (*LsaDispatchTable).CreateLogonSession;
@@ -1454,18 +1453,21 @@ pub unsafe extern "system" fn LsaApInitializePackage(
     DispatchTable.CopyToClientBuffer = (*LsaDispatchTable).CopyToClientBuffer;
     DispatchTable.CopyFromClientBuffer = (*LsaDispatchTable).CopyFromClientBuffer;
 
-    NameString = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(LSA_STRING) as PANSI_STRING;
+    NameString = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(
+        core::mem::size_of::<LSA_STRING>() as ULONG,
+    ) as PANSI_STRING;
     if NameString.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    NameBuffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(MSV1_0_PACKAGE_NAME) as PCHAR;
+    NameBuffer = (DispatchTable.AllocateLsaHeap.unwrap_unchecked())(MSV1_0_PACKAGE_NAME.len() as ULONG)
+        as PCHAR;
     if NameBuffer.is_null() {
         (DispatchTable.FreeLsaHeap.unwrap_unchecked())(NameString as *mut core::ffi::c_void);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    strcpy(NameBuffer, MSV1_0_PACKAGE_NAME);
+    strcpy(NameBuffer, MSV1_0_PACKAGE_NAME.as_ptr() as *const c_char);
 
     RtlInitAnsiString(NameString, NameBuffer);
 
@@ -1482,23 +1484,23 @@ pub unsafe extern "system" fn LsaApLogonTerminated(
 
     LogonEntry = GetLogonByLogonId(LogonId);
     if LogonEntry != core::ptr::null_mut() {
-        RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(LogonListResource), TRUE);
+        RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(LogonListResource), (TRUE) as u8);
         RemoveEntryList(core::ptr::addr_of_mut!((*LogonEntry).ListEntry));
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
 
         if (*LogonEntry).UserName.Buffer != core::ptr::null_mut() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, (*LogonEntry).UserName.Buffer as *mut core::ffi::c_void);
+            RtlFreeHeap(RtlGetProcessHeap!(), 0, (*LogonEntry).UserName.Buffer as *mut core::ffi::c_void);
         }
 
         if (*LogonEntry).LogonDomainName.Buffer != core::ptr::null_mut() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, (*LogonEntry).LogonDomainName.Buffer as *mut core::ffi::c_void);
+            RtlFreeHeap(RtlGetProcessHeap!(), 0, (*LogonEntry).LogonDomainName.Buffer as *mut core::ffi::c_void);
         }
 
         if (*LogonEntry).LogonServer.Buffer != core::ptr::null_mut() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, (*LogonEntry).LogonServer.Buffer as *mut core::ffi::c_void);
+            RtlFreeHeap(RtlGetProcessHeap!(), 0, (*LogonEntry).LogonServer.Buffer as *mut core::ffi::c_void);
         }
 
-        RtlFreeHeap(RtlGetProcessHeap(), 0, LogonEntry as *mut core::ffi::c_void);
+        RtlFreeHeap(RtlGetProcessHeap!(), 0, LogonEntry as *mut core::ffi::c_void);
     }
 }
 unsafe extern "C" fn LsaApLogonUserEx2_Network(
@@ -1526,7 +1528,7 @@ unsafe extern "C" fn LsaApLogonUserEx2_Network(
     *LogonProfileSize = 0;
     *UserInfoPtr = core::ptr::null_mut();
     *AccountDomainSidPtr = core::ptr::null_mut();
-    *SpecialAccount = FALSE;
+    *SpecialAccount = (FALSE) as i32;
     LogonInfo = ProtocolSubmitBuffer as PMSV1_0_LM20_LOGON;
 
     if SubmitBufferSize < core::mem::size_of::<MSV1_0_LM20_LOGON>() as ULONG {
@@ -1535,27 +1537,25 @@ unsafe extern "C" fn LsaApLogonUserEx2_Network(
 
     PtrOffset = (ProtocolSubmitBuffer as ULONG_PTR).wrapping_sub(ClientBufferBase as ULONG_PTR);
 
-    if (NtlmFixupAndValidateUStr(
+    if (!NtlmFixupAndValidateUStr(
         core::ptr::addr_of_mut!((*LogonInfo).LogonDomainName),
-        PtrOffset,
-    ) == 0)
-        || (NtlmFixupAndValidateUStr(core::ptr::addr_of_mut!((*LogonInfo).UserName), PtrOffset)
-            == 0)
-        || (NtlmFixupAndValidateUStr(core::ptr::addr_of_mut!((*LogonInfo).Workstation), PtrOffset)
-            == 0)
-        || (NtlmFixupAStr(
+        (PtrOffset) as usize,
+    ))
+        || (!NtlmFixupAndValidateUStr(core::ptr::addr_of_mut!((*LogonInfo).UserName), (PtrOffset) as usize))
+        || (!NtlmFixupAndValidateUStr(core::ptr::addr_of_mut!((*LogonInfo).Workstation), (PtrOffset) as usize))
+        || (!NtlmFixupAStr(
             core::ptr::addr_of_mut!((*LogonInfo).CaseSensitiveChallengeResponse),
-            PtrOffset,
-        ) == 0)
-        || (NtlmFixupAStr(
+            (PtrOffset) as usize,
+        ))
+        || (!NtlmFixupAStr(
             core::ptr::addr_of_mut!((*LogonInfo).CaseInsensitiveChallengeResponse),
-            PtrOffset,
-        ) == 0)
+            (PtrOffset) as usize,
+        ))
     {
         return STATUS_INVALID_PARAMETER;
     }
 
-    (*LogonPwdData).IsNetwork = TRUE;
+    (*LogonPwdData).IsNetwork = (TRUE) as i32;
     (*LogonPwdData).LogonInfo = LogonInfo;
     (*LogonPwdData).ComputerName = ComputerName;
     Status = SamValidateUser(
@@ -1614,20 +1614,16 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut ComputerName: _UNICODE_STRING = core::mem::zeroed();
-    let mut ComputerNameData: [u16; MAX_COMPUTERNAME_LENGTH + 1] = core::mem::zeroed();
+    let mut ComputerNameData: [u16; (MAX_COMPUTERNAME_LENGTH + 1) as usize] = core::mem::zeroed();
     let mut LogonUserName: PUNICODE_STRING = core::ptr::null_mut();
-    let mut LogonPwdData: LSA_SAM_PWD_DATA = LSA_SAM_PWD_DATA {
-        IsNetwork: FALSE,
-        PlainPwd: core::ptr::null_mut(),
-        ComputerName: core::ptr::null_mut(),
-    };
+    let mut LogonPwdData: LSA_SAM_PWD_DATA = core::mem::zeroed();
     let mut LogonDomain: PUNICODE_STRING = core::ptr::null_mut();
     let mut UserHandle: SAMPR_HANDLE = core::ptr::null_mut();
     let mut AccountDomainSid: PRPC_SID = core::ptr::null_mut();
     let mut UserInfo: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
-    let mut SessionCreated: BOOLEAN = FALSE;
+    let mut SessionCreated: BOOLEAN = (FALSE) as u8;
     let mut ComputerNameSize: DWORD;
-    let mut SpecialAccount: BOOL = FALSE;
+    let mut SpecialAccount: BOOL = (FALSE) as i32;
     let mut LogonPassHash: UCHAR;
     let mut ErasePassword: PUNICODE_STRING = core::ptr::null_mut();
     let mut LogonEntry: PLOGON_LIST_ENTRY = core::ptr::null_mut();
@@ -1638,7 +1634,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
     *AccountName = core::ptr::null_mut();
     *AuthenticatingAuthority = core::ptr::null_mut();
 
-    ComputerNameSize = ARRAYSIZE(ComputerNameData);
+    ComputerNameSize = ARRAYSIZE!(ComputerNameData);
     if GetComputerNameW(ComputerNameData.as_mut_ptr(), core::ptr::addr_of_mut!(ComputerNameSize)) == 0 {
         return STATUS_INTERNAL_ERROR;
     }
@@ -1664,7 +1660,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         PtrOffset = ProtocolSubmitBuffer as ULONG_PTR - ClientBufferBase as ULONG_PTR;
 
         if (*LogonInfo).LogonDomainName.Length != 0 {
-            (*LogonInfo).LogonDomainName.Buffer = FIXUP_POINTER((*LogonInfo).LogonDomainName.Buffer, PtrOffset);
+            (*LogonInfo).LogonDomainName.Buffer = FIXUP_POINTER!((*LogonInfo).LogonDomainName.Buffer, PtrOffset);
             (*LogonInfo).LogonDomainName.MaximumLength = (*LogonInfo).LogonDomainName.Length;
         } else {
             (*LogonInfo).LogonDomainName.Buffer = core::ptr::null_mut();
@@ -1675,7 +1671,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
             return STATUS_INVALID_PARAMETER;
         }
 
-        (*LogonInfo).UserName.Buffer = FIXUP_POINTER((*LogonInfo).UserName.Buffer, PtrOffset);
+        (*LogonInfo).UserName.Buffer = FIXUP_POINTER!((*LogonInfo).UserName.Buffer, PtrOffset);
         (*LogonInfo).UserName.MaximumLength = (*LogonInfo).UserName.Length;
 
         Status = RtlValidateUnicodeString(0, core::ptr::addr_of_mut!((*LogonInfo).UserName));
@@ -1687,7 +1683,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         (*LogonInfo).Password.Length = (*LogonInfo).Password.Length & 0xFF;
 
         if (*LogonInfo).Password.Length != 0 {
-            (*LogonInfo).Password.Buffer = FIXUP_POINTER((*LogonInfo).Password.Buffer, PtrOffset);
+            (*LogonInfo).Password.Buffer = FIXUP_POINTER!((*LogonInfo).Password.Buffer, PtrOffset);
             (*LogonInfo).Password.MaximumLength = (*LogonInfo).Password.Length;
         } else {
             (*LogonInfo).Password.Buffer = core::ptr::null_mut();
@@ -1707,7 +1703,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
 
         LogonUserName = core::ptr::addr_of_mut!((*LogonInfo).UserName);
         LogonDomain = core::ptr::addr_of_mut!((*LogonInfo).LogonDomainName);
-        LogonPwdData.IsNetwork = FALSE;
+        LogonPwdData.IsNetwork = (FALSE) as i32;
         LogonPwdData.PlainPwd = core::ptr::addr_of_mut!((*LogonInfo).Password);
         LogonPwdData.ComputerName = core::ptr::addr_of_mut!(ComputerName);
     } else if LogonType == Network {
@@ -1762,18 +1758,18 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         }
     }
 
-    Status = DispatchTable.CreateLogonSession(LogonId);
+    Status = DispatchTable.CreateLogonSession.unwrap_unchecked()(LogonId);
     if !NT_SUCCESS(Status) {
         'done: {
             break 'done;
         }
     }
 
-    SessionCreated = TRUE;
+    SessionCreated = (TRUE) as u8;
 
-    LogonEntry = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<LOGON_LIST_ENTRY>() as SIZE_T);
+    LogonEntry = (RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, core::mem::size_of::<LOGON_LIST_ENTRY>() as SIZE_T)).cast();
     if !LogonEntry.is_null() {
-        RtlCopyMemory(
+        RtlCopyMemory!(
             core::ptr::addr_of_mut!((*LogonEntry).LogonId) as PVOID,
             LogonId as PVOID,
             core::mem::size_of::<LUID>() as SIZE_T,
@@ -1781,19 +1777,19 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         (*LogonEntry).EnumHandle = EnumCounter;
         EnumCounter = EnumCounter.wrapping_add(1);
 
-        (*LogonEntry).UserName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*LogonUserName).MaximumLength as SIZE_T) as PWSTR;
+        (*LogonEntry).UserName.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, (*LogonUserName).MaximumLength as SIZE_T) as PWSTR;
         if !(*LogonEntry).UserName.Buffer.is_null() {
             (*LogonEntry).UserName.MaximumLength = (*LogonUserName).MaximumLength;
             RtlCopyUnicodeString(core::ptr::addr_of_mut!((*LogonEntry).UserName), LogonUserName);
         }
 
-        (*LogonEntry).LogonDomainName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, (*LogonDomain).MaximumLength as SIZE_T) as PWSTR;
+        (*LogonEntry).LogonDomainName.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, (*LogonDomain).MaximumLength as SIZE_T) as PWSTR;
         if !(*LogonEntry).LogonDomainName.Buffer.is_null() {
             (*LogonEntry).LogonDomainName.MaximumLength = (*LogonDomain).MaximumLength;
             RtlCopyUnicodeString(core::ptr::addr_of_mut!((*LogonEntry).LogonDomainName), LogonDomain);
         }
 
-        (*LogonEntry).LogonServer.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, ComputerName.MaximumLength as SIZE_T) as PWSTR;
+        (*LogonEntry).LogonServer.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, ComputerName.MaximumLength as SIZE_T) as PWSTR;
         if !(*LogonEntry).LogonServer.Buffer.is_null() {
             (*LogonEntry).LogonServer.MaximumLength = ComputerName.MaximumLength;
             RtlCopyUnicodeString(core::ptr::addr_of_mut!((*LogonEntry).LogonServer), core::ptr::addr_of_mut!(ComputerName));
@@ -1801,7 +1797,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
 
         (*LogonEntry).LogonType = LogonType;
 
-        RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(LogonListResource), TRUE);
+        RtlAcquireResourceExclusive(core::ptr::addr_of_mut!(LogonListResource), (TRUE) as u8);
         InsertTailList(core::ptr::addr_of_mut!(LogonListHead), core::ptr::addr_of_mut!((*LogonEntry).ListEntry));
         RtlReleaseResource(core::ptr::addr_of_mut!(LogonListResource));
     }
@@ -1844,46 +1840,52 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         if !UserHandle.is_null() && (Status == STATUS_SUCCESS || Status == STATUS_WRONG_PASSWORD) {
             let mut InternalInfo: SAMPR_USER_INFO_BUFFER = core::mem::zeroed();
 
-            RtlZeroMemory(
+            RtlZeroMemory!(
                 core::ptr::addr_of_mut!(InternalInfo) as PVOID,
                 core::mem::size_of::<SAMPR_USER_INFO_BUFFER>() as SIZE_T,
             );
 
             if Status == STATUS_SUCCESS {
-                (*InternalInfo.Internal2).Flags = USER_LOGON_SUCCESS;
+                InternalInfo.Internal2.Flags = USER_LOGON_SUCCESS;
             } else {
-                (*InternalInfo.Internal2).Flags = USER_LOGON_BAD_PASSWORD;
+                InternalInfo.Internal2.Flags = USER_LOGON_BAD_PASSWORD;
             }
 
             SamrSetInformationUser(UserHandle, UserInternal2Information, core::ptr::addr_of_mut!(InternalInfo));
         }
 
         if NT_SUCCESS(Status) {
-            *AccountName = DispatchTable.AllocateLsaHeap(core::mem::size_of::<_UNICODE_STRING>() as ULONG);
+            *AccountName = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(
+                core::mem::size_of::<_UNICODE_STRING>() as ULONG,
+            ) as PUNICODE_STRING;
             if !LogonUserName.is_null() && !(*AccountName).is_null() {
-                (**AccountName).Buffer = DispatchTable.AllocateLsaHeap((*LogonUserName).Length as ULONG + core::mem::size_of::<UNICODE_NULL>() as ULONG) as PWSTR;
+                (**AccountName).Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()((*LogonUserName).Length as ULONG + core::mem::size_of::<WCHAR>() as ULONG) as PWSTR;
                 if !(**AccountName).Buffer.is_null() {
-                    (**AccountName).MaximumLength = (*LogonUserName).Length + core::mem::size_of::<UNICODE_NULL>() as USHORT;
+                    (**AccountName).MaximumLength = (*LogonUserName).Length + core::mem::size_of::<WCHAR>() as USHORT;
                     RtlCopyUnicodeString(*AccountName, LogonUserName);
                 }
             }
 
-            *AuthenticatingAuthority = DispatchTable.AllocateLsaHeap(core::mem::size_of::<_UNICODE_STRING>() as ULONG);
+            *AuthenticatingAuthority = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(
+                core::mem::size_of::<_UNICODE_STRING>() as ULONG,
+            ) as PUNICODE_STRING;
             if !LogonDomain.is_null() && !(*AuthenticatingAuthority).is_null() {
-                (**AuthenticatingAuthority).Buffer = DispatchTable.AllocateLsaHeap((*LogonDomain).Length as ULONG + core::mem::size_of::<UNICODE_NULL>() as ULONG) as PWSTR;
+                (**AuthenticatingAuthority).Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()((*LogonDomain).Length as ULONG + core::mem::size_of::<WCHAR>() as ULONG) as PWSTR;
                 if !(**AuthenticatingAuthority).Buffer.is_null() {
-                    (**AuthenticatingAuthority).MaximumLength = (*LogonDomain).Length + core::mem::size_of::<UNICODE_NULL>() as USHORT;
+                    (**AuthenticatingAuthority).MaximumLength = (*LogonDomain).Length + core::mem::size_of::<WCHAR>() as USHORT;
                     RtlCopyUnicodeString(*AuthenticatingAuthority, LogonDomain);
                 }
             }
 
-            *MachineName = DispatchTable.AllocateLsaHeap(core::mem::size_of::<_UNICODE_STRING>() as ULONG);
+            *MachineName = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(
+                core::mem::size_of::<_UNICODE_STRING>() as ULONG,
+            ) as PUNICODE_STRING;
             if !(*MachineName).is_null() {
-                (**MachineName).Buffer = DispatchTable.AllocateLsaHeap(ComputerName.MaximumLength as ULONG) as PWSTR;
+                (**MachineName).Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(ComputerName.MaximumLength as ULONG) as PWSTR;
                 if !(**MachineName).Buffer.is_null() {
                     (**MachineName).MaximumLength = ComputerName.MaximumLength;
                     (**MachineName).Length = ComputerName.Length;
-                    RtlCopyMemory(
+                    RtlCopyMemory!(
                         (**MachineName).Buffer as PVOID,
                         ComputerName.Buffer as PVOID,
                         ComputerName.MaximumLength as SIZE_T,
@@ -1893,12 +1895,12 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         }
 
         if !NT_SUCCESS(Status) {
-            if SessionCreated != FALSE {
-                DispatchTable.DeleteLogonSession(LogonId);
+            if SessionCreated != (FALSE) as u8 {
+                DispatchTable.DeleteLogonSession.unwrap_unchecked()(LogonId);
             }
 
             if !(*ProfileBuffer).is_null() {
-                DispatchTable.FreeClientBuffer(ClientRequest, *ProfileBuffer);
+                DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, *ProfileBuffer);
                 *ProfileBuffer = core::ptr::null_mut();
             }
         }
@@ -1910,7 +1912,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         SamIFree_SAMPR_USER_INFO_BUFFER(UserInfo, UserAllInformation);
 
         if !AccountDomainSid.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, AccountDomainSid as PVOID);
+            RtlFreeHeap(RtlGetProcessHeap!(), 0, AccountDomainSid as PVOID);
         }
 
         if Status == STATUS_NO_SUCH_USER || Status == STATUS_WRONG_PASSWORD {
@@ -1935,7 +1937,7 @@ pub unsafe extern "system" fn SpLsaModeInitialize(
 
     *PackageVersion = SECPKG_INTERFACE_VERSION;
 
-    *ppTables = NtlmLsaFn;
+    *ppTables = NtlmLsaFn.as_mut_ptr();
     *pcTables = 1;
 
     return STATUS_SUCCESS;
@@ -1954,7 +1956,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 
     *PackageVersion = SECPKG_INTERFACE_VERSION;
 
-    *ppTables = core::ptr::addr_of_mut!(NtlmUsrFn);
+    *ppTables = NtlmUsrFn.as_mut_ptr();
     *pcTables = 1;
 
     return STATUS_SUCCESS;
@@ -2056,7 +2058,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //                    UserInfo->All.ProfilePath.Length + sizeof(WCHAR) +
 //                    ((ComputerNameLength + 3) * sizeof(WCHAR));
 //
-//     LocalBuffer = DispatchTable.AllocateLsaHeap(BufferLength);
+//     LocalBuffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(BufferLength);
 //     if (LocalBuffer == NULL)
 //     {
 //         TRACE("Failed to allocate the local buffer!\n");
@@ -2064,7 +2066,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         goto done;
 //     }
 //
-//     Status = DispatchTable.AllocateClientBuffer(ClientRequest,
+//     Status = DispatchTable.AllocateClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                                 BufferLength,
 //                                                 &ClientBaseAddress);
 //     if (!NT_SUCCESS(Status))
@@ -2153,7 +2155,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //
 //     LocalBuffer->UserFlags = 0;
 //
-//     Status = DispatchTable.CopyToClientBuffer(ClientRequest,
+//     Status = DispatchTable.CopyToClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                               BufferLength,
 //                                               ClientBaseAddress,
 //                                               LocalBuffer);
@@ -2168,12 +2170,12 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //
 // done:
 //     if (LocalBuffer != NULL)
-//         DispatchTable.FreeLsaHeap(LocalBuffer);
+//         DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer);
 //
 //     if (!NT_SUCCESS(Status))
 //     {
 //         if (ClientBaseAddress != NULL)
-//             DispatchTable.FreeClientBuffer(ClientRequest,
+//             DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                            ClientBaseAddress);
 //     }
 //
@@ -2298,11 +2300,11 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     if (RidCount >= 8)
 //         return NULL;
 //
-//     DstSid = DispatchTable.AllocateLsaHeap(RtlLengthRequiredSid(RidCount + 1));
+//     DstSid = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(RtlLengthRequiredSid(RidCount + 1));
 //     if (DstSid == NULL)
 //         return NULL;
 //
-//     RtlCopyMemory(DstSid,
+//     RtlCopyMemory!(DstSid,
 //                   SrcSid,
 //                   RtlLengthRequiredSid(RidCount));
 //
@@ -2368,7 +2370,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     if (SpecialAccount)
 //         MaxGroups++;
 //
-//     TokenGroups = DispatchTable.AllocateLsaHeap(sizeof(TOKEN_GROUPS) +
+//     TokenGroups = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(TOKEN_GROUPS) +
 //                                                 MaxGroups * sizeof(SID_AND_ATTRIBUTES));
 //     if (TokenGroups == NULL)
 //     {
@@ -2458,7 +2460,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     ULONG i;
 //     NTSTATUS Status = STATUS_SUCCESS;
 //
-//     Buffer = DispatchTable.AllocateLsaHeap(sizeof(LSA_TOKEN_INFORMATION_V1));
+//     Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(LSA_TOKEN_INFORMATION_V1));
 //     if (Buffer == NULL)
 //     {
 //         WARN("Failed to allocate the local buffer!\n");
@@ -2505,26 +2507,26 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         if (Buffer != NULL)
 //         {
 //             if (Buffer->User.User.Sid != NULL)
-//                 DispatchTable.FreeLsaHeap(Buffer->User.User.Sid);
+//                 DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer->User.User.Sid);
 //
 //             if (Buffer->Groups != NULL)
 //             {
 //                 for (i = 0; i < Buffer->Groups->GroupCount; i++)
 //                 {
 //                     if (Buffer->Groups->Groups[i].Sid != NULL)
-//                         DispatchTable.FreeLsaHeap(Buffer->Groups->Groups[i].Sid);
+//                         DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer->Groups->Groups[i].Sid);
 //                 }
 //
-//                 DispatchTable.FreeLsaHeap(Buffer->Groups);
+//                 DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer->Groups);
 //             }
 //
 //             if (Buffer->PrimaryGroup.PrimaryGroup != NULL)
-//                 DispatchTable.FreeLsaHeap(Buffer->PrimaryGroup.PrimaryGroup);
+//                 DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer->PrimaryGroup.PrimaryGroup);
 //
 //             if (Buffer->DefaultDacl.DefaultDacl != NULL)
-//                 DispatchTable.FreeLsaHeap(Buffer->DefaultDacl.DefaultDacl);
+//                 DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer->DefaultDacl.DefaultDacl);
 //
-//             DispatchTable.FreeLsaHeap(Buffer);
+//             DispatchTable.FreeLsaHeap.unwrap_unchecked()(Buffer);
 //         }
 //     }
 //
@@ -2589,28 +2591,28 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     if (!NT_SUCCESS(Status))
 //         return STATUS_INVALID_PARAMETER;
 //     // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//     RequestBuffer->DomainName.Buffer = FIXUP_POINTER(RequestBuffer->DomainName.Buffer, PtrOffset);
+//     RequestBuffer->DomainName.Buffer = FIXUP_POINTER!(RequestBuffer->DomainName.Buffer, PtrOffset);
 //     RequestBuffer->DomainName.MaximumLength = RequestBuffer->DomainName.Length;
 //
 //     Status = RtlValidateUnicodeString(0, &RequestBuffer->AccountName);
 //     if (!NT_SUCCESS(Status))
 //         return STATUS_INVALID_PARAMETER;
 //     // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//     RequestBuffer->AccountName.Buffer = FIXUP_POINTER(RequestBuffer->AccountName.Buffer, PtrOffset);
+//     RequestBuffer->AccountName.Buffer = FIXUP_POINTER!(RequestBuffer->AccountName.Buffer, PtrOffset);
 //     RequestBuffer->AccountName.MaximumLength = RequestBuffer->AccountName.Length;
 //
 //     Status = RtlValidateUnicodeString(0, &RequestBuffer->OldPassword);
 //     if (!NT_SUCCESS(Status))
 //         return STATUS_INVALID_PARAMETER;
 //     // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//     RequestBuffer->OldPassword.Buffer = FIXUP_POINTER(RequestBuffer->OldPassword.Buffer, PtrOffset);
+//     RequestBuffer->OldPassword.Buffer = FIXUP_POINTER!(RequestBuffer->OldPassword.Buffer, PtrOffset);
 //     RequestBuffer->OldPassword.MaximumLength = RequestBuffer->OldPassword.Length;
 //
 //     Status = RtlValidateUnicodeString(0, &RequestBuffer->NewPassword);
 //     if (!NT_SUCCESS(Status))
 //         return STATUS_INVALID_PARAMETER;
 //     // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//     RequestBuffer->NewPassword.Buffer = FIXUP_POINTER(RequestBuffer->NewPassword.Buffer, PtrOffset);
+//     RequestBuffer->NewPassword.Buffer = FIXUP_POINTER!(RequestBuffer->NewPassword.Buffer, PtrOffset);
 //     RequestBuffer->NewPassword.MaximumLength = RequestBuffer->NewPassword.Length;
 //
 //     TRACE("Domain: %S\n", RequestBuffer->DomainName.Buffer);
@@ -2709,7 +2711,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     LmPwdString.Length = 15;
 //     LmPwdString.MaximumLength = 15;
 //     LmPwdString.Buffer = LmPwdBuffer;
-//     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                &RequestBuffer->OldPassword,
@@ -2729,7 +2731,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     LmPwdString.Length = 15;
 //     LmPwdString.MaximumLength = 15;
 //     LmPwdString.Buffer = LmPwdBuffer;
-//     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                &RequestBuffer->NewPassword,
@@ -2881,7 +2883,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //                    (LogonCount * sizeof(LUID)) +
 //                    (LogonCount * sizeof(ULONG));
 //
-//     LocalBuffer = DispatchTable.AllocateLsaHeap(BufferLength);
+//     LocalBuffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(BufferLength);
 //     if (LocalBuffer == NULL)
 //     {
 //         ERR("Failed to allocate the local buffer!\n");
@@ -2889,7 +2891,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         goto done;
 //     }
 //
-//     Status = DispatchTable.AllocateClientBuffer(ClientRequest,
+//     Status = DispatchTable.AllocateClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                                 BufferLength,
 //                                                 &ClientBaseAddress);
 //     if (!NT_SUCCESS(Status))
@@ -2919,7 +2921,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //                                        ListEntry);
 //
 //         TRACE("Logon: 0x%08lx  %lu\n", LogonEntry->LogonId.LowPart, LogonEntry->EnumHandle);
-//         RtlCopyMemory(LuidPtr, &LogonEntry->LogonId, sizeof(LUID));
+//         RtlCopyMemory!(LuidPtr, &LogonEntry->LogonId, sizeof(LUID));
 //         LuidPtr++;
 //
 //         *EnumPtr = LogonEntry->EnumHandle;
@@ -2928,7 +2930,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         CurrentEntry = CurrentEntry->Flink;
 //     }
 //
-//     Status = DispatchTable.CopyToClientBuffer(ClientRequest,
+//     Status = DispatchTable.CopyToClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                               BufferLength,
 //                                               ClientBaseAddress,
 //                                               LocalBuffer);
@@ -2946,12 +2948,12 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     RtlReleaseResource(&LogonListResource);
 //
 //     if (LocalBuffer != NULL)
-//         DispatchTable.FreeLsaHeap(LocalBuffer);
+//         DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer);
 //
 //     if (!NT_SUCCESS(Status))
 //     {
 //         if (ClientBaseAddress != NULL)
-//             DispatchTable.FreeClientBuffer(ClientRequest,
+//             DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                            ClientBaseAddress);
 //     }
 //
@@ -3009,7 +3011,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //                    LogonEntry->LogonDomainName.MaximumLength +
 //                    LogonEntry->LogonServer.MaximumLength;
 //
-//     LocalBuffer = DispatchTable.AllocateLsaHeap(BufferLength);
+//     LocalBuffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(BufferLength);
 //     if (LocalBuffer == NULL)
 //     {
 //         ERR("Failed to allocate the local buffer!\n");
@@ -3017,7 +3019,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         goto done;
 //     }
 //
-//     Status = DispatchTable.AllocateClientBuffer(ClientRequest,
+//     Status = DispatchTable.AllocateClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                                 BufferLength,
 //                                                 &ClientBaseAddress);
 //     if (!NT_SUCCESS(Status))
@@ -3038,7 +3040,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     LocalBuffer->UserName.MaximumLength = LogonEntry->UserName.MaximumLength;
 //     LocalBuffer->UserName.Buffer = (PWSTR)((ULONG_PTR)ClientBaseAddress + (ULONG_PTR)BufferPtr - (ULONG_PTR)LocalBuffer);
 //
-//     RtlCopyMemory(BufferPtr, LogonEntry->UserName.Buffer, LogonEntry->UserName.MaximumLength);
+//     RtlCopyMemory!(BufferPtr, LogonEntry->UserName.Buffer, LogonEntry->UserName.MaximumLength);
 //     BufferPtr = (PWSTR)((ULONG_PTR)BufferPtr + (ULONG_PTR)LocalBuffer->UserName.MaximumLength);
 //
 //     /* LogonDomainName */
@@ -3046,7 +3048,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     LocalBuffer->LogonDomainName.MaximumLength = LogonEntry->LogonDomainName.MaximumLength;
 //     LocalBuffer->LogonDomainName.Buffer = (PWSTR)((ULONG_PTR)ClientBaseAddress + (ULONG_PTR)BufferPtr - (ULONG_PTR)LocalBuffer);
 //
-//     RtlCopyMemory(BufferPtr, LogonEntry->LogonDomainName.Buffer, LogonEntry->LogonDomainName.MaximumLength);
+//     RtlCopyMemory!(BufferPtr, LogonEntry->LogonDomainName.Buffer, LogonEntry->LogonDomainName.MaximumLength);
 //     BufferPtr = (PWSTR)((ULONG_PTR)BufferPtr + (ULONG_PTR)LocalBuffer->LogonDomainName.MaximumLength);
 //
 //     /* LogonServer */
@@ -3054,12 +3056,12 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     LocalBuffer->LogonServer.MaximumLength = LogonEntry->LogonServer.MaximumLength;
 //     LocalBuffer->LogonServer.Buffer = (PWSTR)((ULONG_PTR)ClientBaseAddress + (ULONG_PTR)BufferPtr - (ULONG_PTR)LocalBuffer);
 //
-//     RtlCopyMemory(BufferPtr, LogonEntry->LogonServer.Buffer, LogonEntry->LogonServer.MaximumLength);
+//     RtlCopyMemory!(BufferPtr, LogonEntry->LogonServer.Buffer, LogonEntry->LogonServer.MaximumLength);
 //
 //     /* Logon Type */
 //     LocalBuffer->LogonType = LogonEntry->LogonType;
 //
-//     Status = DispatchTable.CopyToClientBuffer(ClientRequest,
+//     Status = DispatchTable.CopyToClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                               BufferLength,
 //                                               ClientBaseAddress,
 //                                               LocalBuffer);
@@ -3077,12 +3079,12 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     RtlReleaseResource(&LogonListResource);
 //
 //     if (LocalBuffer != NULL)
-//         DispatchTable.FreeLsaHeap(LocalBuffer);
+//         DispatchTable.FreeLsaHeap.unwrap_unchecked()(LocalBuffer);
 //
 //     if (!NT_SUCCESS(Status))
 //     {
 //         if (ClientBaseAddress != NULL)
-//             DispatchTable.FreeClientBuffer(ClientRequest,
+//             DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                            ClientBaseAddress);
 //     }
 //
@@ -3273,14 +3275,14 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     DispatchTable.CopyFromClientBuffer = LsaDispatchTable->CopyFromClientBuffer;
 //
 //     /* Return the package name */
-//     NameString = DispatchTable.AllocateLsaHeap(sizeof(LSA_STRING));
+//     NameString = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(LSA_STRING));
 //     if (NameString == NULL)
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //
-//     NameBuffer = DispatchTable.AllocateLsaHeap(sizeof(MSV1_0_PACKAGE_NAME));
+//     NameBuffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(MSV1_0_PACKAGE_NAME));
 //     if (NameBuffer == NULL)
 //     {
-//         DispatchTable.FreeLsaHeap(NameString);
+//         DispatchTable.FreeLsaHeap.unwrap_unchecked()(NameString);
 //         return STATUS_INSUFFICIENT_RESOURCES;
 //     }
 //
@@ -3315,15 +3317,15 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         RtlReleaseResource(&LogonListResource);
 //
 //         if (LogonEntry->UserName.Buffer)
-//             RtlFreeHeap(RtlGetProcessHeap(), 0, LogonEntry->UserName.Buffer);
+//             RtlFreeHeap(RtlGetProcessHeap!(), 0, LogonEntry->UserName.Buffer);
 //
 //         if (LogonEntry->LogonDomainName.Buffer)
-//             RtlFreeHeap(RtlGetProcessHeap(), 0, LogonEntry->LogonDomainName.Buffer);
+//             RtlFreeHeap(RtlGetProcessHeap!(), 0, LogonEntry->LogonDomainName.Buffer);
 //
 //         if (LogonEntry->LogonServer.Buffer)
-//             RtlFreeHeap(RtlGetProcessHeap(), 0, LogonEntry->LogonServer.Buffer);
+//             RtlFreeHeap(RtlGetProcessHeap!(), 0, LogonEntry->LogonServer.Buffer);
 //
-//         RtlFreeHeap(RtlGetProcessHeap(), 0, LogonEntry);
+//         RtlFreeHeap(RtlGetProcessHeap!(), 0, LogonEntry);
 //     }
 // }
 //
@@ -3469,7 +3471,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     *AuthenticatingAuthority = NULL;
 //
 //     /* Get the computer name */
-//     ComputerNameSize = ARRAYSIZE(ComputerNameData);
+//     ComputerNameSize = ARRAYSIZE!(ComputerNameData);
 //     if (!GetComputerNameW(ComputerNameData, &ComputerNameSize))
 //     {
 //         ERR("Failed to get Computername.\n");
@@ -3508,7 +3510,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         if (LogonInfo->LogonDomainName.Length)
 //         {
 //             // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//             LogonInfo->LogonDomainName.Buffer = FIXUP_POINTER(LogonInfo->LogonDomainName.Buffer, PtrOffset);
+//             LogonInfo->LogonDomainName.Buffer = FIXUP_POINTER!(LogonInfo->LogonDomainName.Buffer, PtrOffset);
 //             LogonInfo->LogonDomainName.MaximumLength = LogonInfo->LogonDomainName.Length;
 //         }
 //         else
@@ -3522,7 +3524,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //
 //         /* UserName is mandatory and cannot be an empty string */
 //         // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//         LogonInfo->UserName.Buffer = FIXUP_POINTER(LogonInfo->UserName.Buffer, PtrOffset);
+//         LogonInfo->UserName.Buffer = FIXUP_POINTER!(LogonInfo->UserName.Buffer, PtrOffset);
 //         LogonInfo->UserName.MaximumLength = LogonInfo->UserName.Length;
 //
 //         Status = RtlValidateUnicodeString(0, &LogonInfo->UserName);
@@ -3544,7 +3546,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         if (LogonInfo->Password.Length)
 //         {
 //             // TODO: Check for Buffer limits wrt. ClientBufferBase and alignment.
-//             LogonInfo->Password.Buffer = FIXUP_POINTER(LogonInfo->Password.Buffer, PtrOffset);
+//             LogonInfo->Password.Buffer = FIXUP_POINTER!(LogonInfo->Password.Buffer, PtrOffset);
 //             LogonInfo->Password.MaximumLength = LogonInfo->Password.Length;
 //         }
 //         else
@@ -3629,7 +3631,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     }
 //
 //     /* Create the logon session */
-//     Status = DispatchTable.CreateLogonSession(LogonId);
+//     Status = DispatchTable.CreateLogonSession.unwrap_unchecked()(LogonId);
 //     if (!NT_SUCCESS(Status))
 //     {
 //         TRACE("CreateLogonSession failed (Status %08lx)\n", Status);
@@ -3638,29 +3640,29 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //
 //     SessionCreated = TRUE;
 //
-//     LogonEntry = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(LOGON_LIST_ENTRY));
+//     LogonEntry = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, sizeof(LOGON_LIST_ENTRY));
 //     if (LogonEntry)
 //     {
-//         RtlCopyMemory(&LogonEntry->LogonId, LogonId, sizeof(LUID));
+//         RtlCopyMemory!(&LogonEntry->LogonId, LogonId, sizeof(LUID));
 //         LogonEntry->EnumHandle = EnumCounter;
 //         EnumCounter++;
 //
 //         TRACE("Logon User: %wZ %wZ %lx\n", LogonUserName, LogonDomain, LogonId->LowPart);
-//         LogonEntry->UserName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, LogonUserName->MaximumLength);
+//         LogonEntry->UserName.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, LogonUserName->MaximumLength);
 //         if (LogonEntry->UserName.Buffer)
 //         {
 //             LogonEntry->UserName.MaximumLength = LogonUserName->MaximumLength;
 //             RtlCopyUnicodeString(&LogonEntry->UserName, LogonUserName);
 //         }
 //
-//         LogonEntry->LogonDomainName.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, LogonDomain->MaximumLength);
+//         LogonEntry->LogonDomainName.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, LogonDomain->MaximumLength);
 //         if (LogonEntry->LogonDomainName.Buffer)
 //         {
 //             LogonEntry->LogonDomainName.MaximumLength = LogonDomain->MaximumLength;
 //             RtlCopyUnicodeString(&LogonEntry->LogonDomainName, LogonDomain);
 //         }
 //
-//         LogonEntry->LogonServer.Buffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, ComputerName.MaximumLength);
+//         LogonEntry->LogonServer.Buffer = RtlAllocateHeap(RtlGetProcessHeap!(), HEAP_ZERO_MEMORY, ComputerName.MaximumLength);
 //         if (LogonEntry->LogonServer.Buffer)
 //         {
 //             LogonEntry->LogonServer.MaximumLength = ComputerName.MaximumLength;
@@ -3720,7 +3722,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     {
 //         SAMPR_USER_INFO_BUFFER InternalInfo;
 //
-//         RtlZeroMemory(&InternalInfo, sizeof(InternalInfo));
+//         RtlZeroMemory!(&InternalInfo, sizeof(InternalInfo));
 //
 //         if (Status == STATUS_SUCCESS)
 //             InternalInfo.Internal2.Flags = USER_LOGON_SUCCESS;
@@ -3735,11 +3737,11 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     if (NT_SUCCESS(Status))
 //     {
 //         /* Return the account name */
-//         *AccountName = DispatchTable.AllocateLsaHeap(sizeof(UNICODE_STRING));
+//         *AccountName = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(UNICODE_STRING));
 //         if ((LogonUserName != NULL) &&
 //             (*AccountName != NULL))
 //         {
-//             (*AccountName)->Buffer = DispatchTable.AllocateLsaHeap(LogonUserName->Length +
+//             (*AccountName)->Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(LogonUserName->Length +
 //                                                                    sizeof(UNICODE_NULL));
 //             if ((*AccountName)->Buffer != NULL)
 //             {
@@ -3750,11 +3752,11 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         }
 //
 //         /* Return the authenticating authority */
-//         *AuthenticatingAuthority = DispatchTable.AllocateLsaHeap(sizeof(UNICODE_STRING));
+//         *AuthenticatingAuthority = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(UNICODE_STRING));
 //         if ((LogonDomain != NULL) &&
 //             (*AuthenticatingAuthority != NULL))
 //         {
-//             (*AuthenticatingAuthority)->Buffer = DispatchTable.AllocateLsaHeap(LogonDomain->Length +
+//             (*AuthenticatingAuthority)->Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(LogonDomain->Length +
 //                                                                                sizeof(UNICODE_NULL));
 //             if ((*AuthenticatingAuthority)->Buffer != NULL)
 //             {
@@ -3765,15 +3767,15 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //         }
 //
 //         /* Return the machine name */
-//         *MachineName = DispatchTable.AllocateLsaHeap(sizeof(UNICODE_STRING));
+//         *MachineName = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(sizeof(UNICODE_STRING));
 //         if (*MachineName != NULL)
 //         {
-//             (*MachineName)->Buffer = DispatchTable.AllocateLsaHeap(ComputerName.MaximumLength);
+//             (*MachineName)->Buffer = DispatchTable.AllocateLsaHeap.unwrap_unchecked()(ComputerName.MaximumLength);
 //             if ((*MachineName)->Buffer != NULL)
 //             {
 //                 (*MachineName)->MaximumLength = ComputerName.MaximumLength;
 //                 (*MachineName)->Length = ComputerName.Length;
-//                 RtlCopyMemory((*MachineName)->Buffer,
+//                 RtlCopyMemory!((*MachineName)->Buffer,
 //                               ComputerName.Buffer,
 //                               ComputerName.MaximumLength);
 //             }
@@ -3783,11 +3785,11 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //     if (!NT_SUCCESS(Status))
 //     {
 //         if (SessionCreated != FALSE)
-//             DispatchTable.DeleteLogonSession(LogonId);
+//             DispatchTable.DeleteLogonSession.unwrap_unchecked()(LogonId);
 //
 //         if (*ProfileBuffer != NULL)
 //         {
-//             DispatchTable.FreeClientBuffer(ClientRequest,
+//             DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                            *ProfileBuffer);
 //             *ProfileBuffer = NULL;
 //         }
@@ -3800,7 +3802,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //                                     UserAllInformation);
 //
 //     if (AccountDomainSid != NULL)
-//         RtlFreeHeap(RtlGetProcessHeap(), 0, AccountDomainSid);
+//         RtlFreeHeap(RtlGetProcessHeap!(), 0, AccountDomainSid);
 //
 //     if (Status == STATUS_NO_SUCH_USER ||
 //         Status == STATUS_WRONG_PASSWORD)
@@ -3834,7 +3836,7 @@ pub unsafe extern "system" fn SpUserModeInitialize(
 //
 //     *PackageVersion = SECPKG_INTERFACE_VERSION;
 //
-//     *ppTables = NtlmLsaFn;
+//     *ppTables = NtlmLsaFn.as_mut_ptr();
 //     *pcTables = 1;
 //
 //     return STATUS_SUCCESS;
