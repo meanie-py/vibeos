@@ -73,7 +73,13 @@ list(APPEND SOURCE
     # no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
     # CShellLink_CreateInstance, the Rust one.
     folders/CDesktopFolder.cpp
-    folders/CFSFolder.cpp
+    # folders/CFSFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. The activated class
+    # had already moved to shell32-rust/src/cfs_folder.rs; what kept the TU alive was its retained
+    # closure, measured against the real link as 21 symbols — the 14 *_RustBridge C entry points
+    # (now shell32-rust/src/cfs_folder_tu.rs) plus 7 C++-mangled ones. The two free functions of
+    # those 7 became EXTERN_C in shfldr.h; the five CFSFolder:: statics became inline forwarders
+    # to the bridges in CFSFolder.h, because a static MEMBER has no EXTERN_C spelling. The
+    # file-local CFileSysEnum enumerator is shell32-rust/src/file_sys_enum.rs.
     # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
     # (shell32-rust/src/drives_folder.rs); this file retains CDrivesFolderEnum,
     # the drives context menu/eject/format cluster, CDrivesExtractIcon + icon

@@ -173,8 +173,11 @@ static __inline int SHELL32_GUIDToStringW (REFGUID guid, LPWSTR str)
             guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
 }
 
-void SHELL_FS_ProcessDisplayFilename(LPWSTR szPath, DWORD dwFlags);
-BOOL SHELL_FS_HideExtension(LPCWSTR pwszPath);
+/* EXTERN_C: both are now defined in Rust (shell32-rust/src/cfs_folder_tu.rs), which is where the
+ * rest of folders/CFSFolder.cpp went. Plain __cdecl — no WINAPI on either declaration. Without
+ * this the C++ callers (CDefView.cpp, CRecycleBin.cpp) emit a mangled name nothing defines. */
+EXTERN_C void SHELL_FS_ProcessDisplayFilename(LPWSTR szPath, DWORD dwFlags);
+EXTERN_C BOOL SHELL_FS_HideExtension(LPCWSTR pwszPath);
 
 static inline BOOL IsIllegalFsFileName(PCWSTR Name)
 {

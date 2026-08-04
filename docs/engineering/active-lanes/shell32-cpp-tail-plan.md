@@ -99,7 +99,14 @@ to full-module candidate-check green without guessed substrate.
   uninstantiated header templates are excluded rather than translated with an invented `T`.
 - `CEnumIDListBase.cpp` is candidate-check green on i386/amd64/arm64. It remains live because
   eight compiled C++ enumerators inherit the base; its accepted Rust output is durable
-  substrate for that derived-object batch, not a premature source-list flip.
+  substrate for that derived-object batch, not a premature source-list flip. **Recount
+  2026-08-03: six left** — `CPrintersEnum` and `CFileSysEnum` are Rust now. The other six all
+  sit inside still-live hybrid folder TUs (`CControlPanelFolder`, `CDrivesFolder`, `CNetFolder`,
+  `CDesktopFolder`, `CRecycleBin`, `CRegFolder`), so the base leaves CMake when the last of
+  those flips and not before. Its parked translation
+  (`~/vibeos-rust-staging/shell32-cpp-tail/CEnumIDListBase-full.rs`, 7 bodies, banked) is
+  therefore NOT a pending integration: flattening it into each derived enumerator, exactly as
+  `printers_enum.rs` and `file_sys_enum.rs` both do, is how it gets consumed.
 - `CDropTargetHelper.cpp` is candidate-check green on all three architectures and is the
   first TU removed. Its retained ordinal 751 wrapper is Rust-owned, including the exact
   `BOOL`-to-`HRESULT` quirk, scoped site detach, and final `IDropTarget::Release`.
@@ -153,6 +160,30 @@ Two things to know before integrating it. `--cpp-com` assembles the **whole clas
 without standing up a second implementation beside `cfs_folder.rs` — they want a different
 route. And each `translate` run **overwrites** its output file, so give every catalog its own
 `-o` or the last run silently replaces the previous one's module.
+
+**Integrated and flipped 2026-08-03** as `cfs_folder_tu.rs` (free closure + the 14 bridges) and
+`file_sys_enum.rs`. Four things the integration taught, all reusable for the remaining hybrids:
+
+- **The 6 statics did not need buying at all** — `cfs_folder.rs` already owned them as
+  `CFSFolder_*_body`, because the class half's own methods call them. Each bridge forwards there
+  with a null `this` (they are C++ *statics*; none reads an instance field). Check the class half
+  for a `_body` before routing a static anywhere: the "different route" above was a non-problem.
+- **Two of those bridges silently dropped their out-parameter.** `GetFSColumnDetails` and
+  `GetDefaultFSColumnState` take a C++ `&` out-param; the generated bridges wrote
+  `f(iColumn, *sd)` — dereference the caller's pointer and pass the value. That type-checks and
+  throws away every write, so `CDesktopFolder` would have read uninitialised `SHELLDETAILS`.
+  Reborrow (`&mut *sd`), never copy. Any `&`-parameter crossing a C ABI shim is this hazard.
+- **A C++ static MEMBER has no `EXTERN_C` spelling.** Five of the 7 mangled symbols were
+  `CFSFolder::` statics, so the `EXTERN_C`-the-declaration trick that closed `shlfolder` and
+  `shldataobject` does not apply. They became **inline forwarders to the existing bridges, in
+  `CFSFolder.h`** — the shape `CompareUiStrings` was already in that same header. Zero call-site
+  churn in `CRecycleBin.cpp`/`CDesktopFolder.cpp`, and no new bridge. The other 2 of the 7 are
+  free functions and did take `EXTERN_C` (in `shfldr.h`).
+- **Split a TU across modules and the substrate closure has to be visible.** `cfs_folder.rs`
+  carried the whole closure privately; the two new siblings glob it, so ~140 items became `pub`.
+  That alone took the error count 214 → 119 with no body edits. Where the two globs (`shellcom`
+  and `cfs_folder`) both render a COM interface, name the owner explicitly — an explicit import
+  beats a glob, which is how the `IUnknown`/`IShellFolder`/`IStream` ambiguities were closed.
 
 First batch (2026-07-18): `CActiveDesktop.cpp` and
 `droptargets/CexeDropHandler.cpp` had no retained closure beyond their already-Rust-owned
@@ -440,6 +471,26 @@ Order them so shared substrate matures before the hardest control-flow files:
 8. ~~`shlfileop.cpp`~~ — FLIPPED 2026-08-01
 9. `CDefView.cpp`
 10. `shell32.cpp` (DLL/module/object-map capstone)
+
+**`dialogs/dialogs.cpp` is 24/26 bought and NOT integrated** (found 2026-08-03 by diffing every
+`.responses` bank against the crate — worth re-running, it is how you find work already paid
+for). 22 bodies were banked on 2026-07-25 and replay for $0; the 4 stragglers cost $0.02, of
+which 2 landed. `FillList` and `RunDlgProc` were AUDIT REJECTED by **two different models on
+different tokens** — deepseek dropped three sealed calls from `FillList`'s `if (!cMatch &&
+pszLatest)` block, sonnet dropped three others and emitted three of `RunDlgProc`'s not-exactly-
+once. Two models failing the same two functions on different tokens says the difficulty is in the
+FUNCTIONS, not the model, so stop buying: both rejected bodies are preserved under
+`.responses/dialogs__dialogs__*/__rejected__/` at 297 and 239 lines, and repairing them by hand
+against the C++ (put back the calls the model dropped) is the cheap ending. This is the
+`changenotify` precedent — hand-write the residue, keep the 24 you paid for.
+
+And the reason is visible in the source, which is worth knowing before buying any long body:
+`FillList` contains a **`goto Continue` that jumps INTO the `else` branch** of an if/else
+(dialogs.cpp:824/837). Rust has no such jump, so the model must restructure the whole
+allocate-or-default block — and restructuring is exactly what loses sealed call tokens. Note
+also that **one rejected worker assembles no file at all**, by design, so 24 accepted bodies
+cannot be stitched around 2 rejects: either repair them into the run, or hand-write them into
+the assembled module afterwards and say so in the module header.
 
 **`CDefView.cpp` scoped 2026-08-02 (free, no paid call): the blocker is a design decision, not
 translation volume.** 191 method bodies, of which the preflight can extract 190 — the one it

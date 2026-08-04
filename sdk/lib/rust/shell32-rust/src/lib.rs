@@ -62,6 +62,11 @@ pub mod shellcom;
 pub mod active_desktop;
 pub mod admin_tools_folder;
 pub mod cfs_folder;
+// The rest of `folders/CFSFolder.cpp`: its free helper closure plus the bridges it published,
+// and its file-local enumerator. With these the whole TU leaves CMake — `cfs_folder` was only
+// ever the activated class half of it.
+pub mod cfs_folder_tu;
+pub mod file_sys_enum;
 pub mod control_panel_folder;
 pub mod copy_as_path_menu;
 pub mod copy_to_menu;
