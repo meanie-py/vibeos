@@ -1,6 +1,15 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// L"ncalrpc"
+static NCALRPC: [u16; 8] = [
+    b'n' as u16, b'c' as u16, b'a' as u16, b'l' as u16, b'r' as u16, b'p' as u16, b'c' as u16, 0,
+];
+// L"wlansvc"
+static WLANSVC: [u16; 8] = [
+    b'w' as u16, b'l' as u16, b'a' as u16, b'n' as u16, b's' as u16, b'v' as u16, b'c' as u16, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate from the preamble.
 // The C code only contains preprocessor directives and a debug channel macro,
@@ -26,9 +35,9 @@ pub unsafe extern "system" fn WLANSVC_HANDLE_bind(szMachineName: WLANSVC_HANDLE)
 
     Status = RpcStringBindingComposeW(
         core::ptr::null_mut(),
-        b"n\0c\0a\0l\0r\0p\0c\0\0".as_ptr() as LPWSTR,
+        NCALRPC.as_ptr() as LPWSTR,
         szMachineName,
-        b"w\0l\0a\0n\0s\0v\0c\0\0".as_ptr() as LPWSTR,
+        WLANSVC.as_ptr() as LPWSTR,
         core::ptr::null_mut(),
         &mut pszStringBinding,
     );

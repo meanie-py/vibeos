@@ -1,6 +1,30 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+// L"EnableDHCP"
+static REG_ENABLE_DHCP: [u16; 11] = [
+    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'D' as u16,
+    b'H' as u16, b'C' as u16, b'P' as u16, 0,
+];
+// L"DhcpDomain"
+static REG_DHCP_DOMAIN: [u16; 11] = [
+    b'D' as u16, b'h' as u16, b'c' as u16, b'p' as u16, b'D' as u16, b'o' as u16, b'm' as u16,
+    b'a' as u16, b'i' as u16, b'n' as u16, 0,
+];
+// L"Domain"
+static REG_DOMAIN: [u16; 7] = [
+    b'D' as u16, b'o' as u16, b'm' as u16, b'a' as u16, b'i' as u16, b'n' as u16, 0,
+];
+// L"DeviceDesc"
+static REG_DEVICE_DESC: [u16; 11] = [
+    b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b'D' as u16,
+    b'e' as u16, b's' as u16, b'c' as u16, 0,
+];
+// L"Name"
+static REG_NAME: [u16; 5] = [
+    b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
 pub unsafe extern "system" fn GetAdaptersAddresses(
@@ -159,7 +183,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                     value_size = core::mem::size_of::<u32>() as u32;
                     if RegQueryValueExW(
                         interface_key,
-                        b"EnableDHCP\0".as_ptr() as PCWSTR,
+                        REG_ENABLE_DHCP.as_ptr() as PCWSTR,
                         core::ptr::null_mut(),
                         &mut value_type,
                         &mut data as *mut u32 as LPBYTE,
@@ -171,7 +195,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                         value_size = core::mem::size_of::<u32>() as u32;
                         if RegQueryValueExW(
                             interface_key,
-                            b"DhcpDomain\0".as_ptr() as PCWSTR,
+                            REG_DHCP_DOMAIN.as_ptr() as PCWSTR,
                             core::ptr::null_mut(),
                             &mut value_type,
                             core::ptr::null_mut(),
@@ -186,7 +210,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                         value_size = core::mem::size_of::<u32>() as u32;
                         if RegQueryValueExW(
                             interface_key,
-                            b"Domain\0".as_ptr() as PCWSTR,
+                            REG_DOMAIN.as_ptr() as PCWSTR,
                             core::ptr::null_mut(),
                             &mut value_type,
                             core::ptr::null_mut(),
@@ -264,7 +288,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                         value_size = 0;
                         if RegQueryValueExW(
                             connection_key,
-                            b"DeviceDesc\0".as_ptr() as PCWSTR,
+                            REG_DEVICE_DESC.as_ptr() as PCWSTR,
                             core::ptr::null_mut(),
                             &mut value_type,
                             core::ptr::null_mut(),
@@ -314,7 +338,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
 
                         if RegQueryValueExW(
                             connection_key,
-                            b"Name\0".as_ptr() as PCWSTR,
+                            REG_NAME.as_ptr() as PCWSTR,
                             core::ptr::null_mut(),
                             &mut value_type,
                             core::ptr::null_mut(),
@@ -424,7 +448,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                             value_size = dhcp_domain_size + core::mem::size_of::<u16>() as u32;
                             if RegQueryValueExW(
                                 interface_key,
-                                b"DhcpDomain\0".as_ptr() as PCWSTR,
+                                REG_DHCP_DOMAIN.as_ptr() as PCWSTR,
                                 core::ptr::null_mut(),
                                 &mut value_type,
                                 (*current_aa).DnsSuffix as LPBYTE,
@@ -449,7 +473,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                             value_size = domain_size + core::mem::size_of::<u16>() as u32;
                             if RegQueryValueExW(
                                 interface_key,
-                                b"Domain\0".as_ptr() as PCWSTR,
+                                REG_DOMAIN.as_ptr() as PCWSTR,
                                 core::ptr::null_mut(),
                                 &mut value_type,
                                 (*current_aa).DnsSuffix as LPBYTE,
@@ -539,7 +563,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                 value_size = description_size + core::mem::size_of::<u16>() as u32;
                                 if RegQueryValueExW(
                                     connection_key,
-                                    b"DeviceDesc\0".as_ptr() as PCWSTR,
+                                    REG_DEVICE_DESC.as_ptr() as PCWSTR,
                                     core::ptr::null_mut(),
                                     &mut value_type,
                                     (*current_aa).Description as LPBYTE,
@@ -604,7 +628,7 @@ pub unsafe extern "system" fn GetAdaptersAddresses(
                                 let mut value_size = friendly_size + core::mem::size_of::<u16>() as u32;
                                 if RegQueryValueExW(
                                     connection_key,
-                                    b"Name\0".as_ptr() as PCWSTR,
+                                    REG_NAME.as_ptr() as PCWSTR,
                                     core::ptr::null_mut(),
                                     &mut value_type,
                                     (*current_aa).FriendlyName as LPBYTE,

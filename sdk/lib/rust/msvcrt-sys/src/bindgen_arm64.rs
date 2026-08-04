@@ -89,6 +89,11 @@ pub const BUFSIZ: u32 = 512;
 pub const SEEK_SET: u32 = 0;
 pub const SEEK_CUR: u32 = 1;
 pub const SEEK_END: u32 = 2;
+pub const _MAX_DRIVE: u32 = 3;
+pub const _MAX_FNAME: u32 = 256;
+pub const _MAX_DIR: u32 = 256;
+pub const _MAX_EXT: u32 = 256;
+pub const _MAX_PATH: u32 = 260;
 pub const _UPPER: u32 = 1;
 pub const _LOWER: u32 = 2;
 pub const _DIGIT: u32 = 4;
@@ -297,6 +302,7 @@ pub const ERROR_NO_WORK_DONE: u32 = 235;
 pub const ERROR_VC_DISCONNECTED: u32 = 240;
 pub const ERROR_INVALID_EA_NAME: u32 = 254;
 pub const ERROR_EA_LIST_INCONSISTENT: u32 = 255;
+pub const WAIT_TIMEOUT: u32 = 258;
 pub const ERROR_NO_MORE_ITEMS: u32 = 259;
 pub const ERROR_CANNOT_COPY: u32 = 266;
 pub const ERROR_DIRECTORY: u32 = 267;
@@ -3502,6 +3508,54 @@ pub const LOCALE_CUSTOM_UNSPECIFIED: u32 = 4096;
 pub const LOCALE_CUSTOM_UI_DEFAULT: u32 = 5120;
 pub const LOCALE_NEUTRAL: u32 = 0;
 pub const LOCALE_INVARIANT: u32 = 127;
+pub const PF_TEMPORAL_LEVEL_1: u32 = 0;
+pub const PF_TEMPORAL_LEVEL_2: u32 = 1;
+pub const PF_TEMPORAL_LEVEL_3: u32 = 2;
+pub const PF_NON_TEMPORAL_LEVEL_ALL: u32 = 3;
+pub const PF_FLOATING_POINT_PRECISION_ERRATA: u32 = 0;
+pub const PF_FLOATING_POINT_EMULATED: u32 = 1;
+pub const PF_COMPARE_EXCHANGE_DOUBLE: u32 = 2;
+pub const PF_MMX_INSTRUCTIONS_AVAILABLE: u32 = 3;
+pub const PF_PPC_MOVEMEM_64BIT_OK: u32 = 4;
+pub const PF_ALPHA_BYTE_INSTRUCTIONS: u32 = 5;
+pub const PF_XMMI_INSTRUCTIONS_AVAILABLE: u32 = 6;
+pub const PF_3DNOW_INSTRUCTIONS_AVAILABLE: u32 = 7;
+pub const PF_RDTSC_INSTRUCTION_AVAILABLE: u32 = 8;
+pub const PF_PAE_ENABLED: u32 = 9;
+pub const PF_XMMI64_INSTRUCTIONS_AVAILABLE: u32 = 10;
+pub const PF_SSE_DAZ_MODE_AVAILABLE: u32 = 11;
+pub const PF_NX_ENABLED: u32 = 12;
+pub const PF_SSE3_INSTRUCTIONS_AVAILABLE: u32 = 13;
+pub const PF_COMPARE_EXCHANGE128: u32 = 14;
+pub const PF_COMPARE64_EXCHANGE128: u32 = 15;
+pub const PF_CHANNELS_ENABLED: u32 = 16;
+pub const PF_XSAVE_ENABLED: u32 = 17;
+pub const PF_ARM_VFP_32_REGISTERS_AVAILABLE: u32 = 18;
+pub const PF_ARM_NEON_INSTRUCTIONS_AVAILABLE: u32 = 19;
+pub const PF_SECOND_LEVEL_ADDRESS_TRANSLATION: u32 = 20;
+pub const PF_VIRT_FIRMWARE_ENABLED: u32 = 21;
+pub const PF_RDWRFSGSBASE_AVAILABLE: u32 = 22;
+pub const PF_FASTFAIL_AVAILABLE: u32 = 23;
+pub const PF_ARM_DIVIDE_INSTRUCTION_AVAILABLE: u32 = 24;
+pub const PF_ARM_64BIT_LOADSTORE_ATOMIC: u32 = 25;
+pub const PF_ARM_EXTERNAL_CACHE_AVAILABLE: u32 = 26;
+pub const PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE: u32 = 27;
+pub const PF_RDRAND_INSTRUCTION_AVAILABLE: u32 = 28;
+pub const PF_ARM_V8_INSTRUCTIONS_AVAILABLE: u32 = 29;
+pub const PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE: u32 = 30;
+pub const PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE: u32 = 31;
+pub const PF_RDTSCP_INSTRUCTION_AVAILABLE: u32 = 32;
+pub const PF_RDPID_INSTRUCTION_AVAILABLE: u32 = 33;
+pub const PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE: u32 = 34;
+pub const PF_SSSE3_INSTRUCTIONS_AVAILABLE: u32 = 36;
+pub const PF_SSE4_1_INSTRUCTIONS_AVAILABLE: u32 = 37;
+pub const PF_SSE4_2_INSTRUCTIONS_AVAILABLE: u32 = 38;
+pub const PF_AVX_INSTRUCTIONS_AVAILABLE: u32 = 39;
+pub const PF_AVX2_INSTRUCTIONS_AVAILABLE: u32 = 40;
+pub const PF_AVX512F_INSTRUCTIONS_AVAILABLE: u32 = 41;
+pub const PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE: u32 = 43;
+pub const PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE: u32 = 44;
+pub const PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE: u32 = 45;
 pub const INVALID_FILE_ATTRIBUTES: u32 = 4294967295;
 pub const FILE_SHARE_READ: u32 = 1;
 pub const FILE_SHARE_WRITE: u32 = 2;
@@ -3529,11 +3583,14 @@ pub const RTL_CRITICAL_SECTION_FLAG_RESERVED: u32 = 3758096384;
 pub const DELETE: u32 = 65536;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
+pub const STILL_ACTIVE: u32 = 259;
 pub const FILE_BEGIN: u32 = 0;
 pub const FILE_CURRENT: u32 = 1;
 pub const FILE_END: u32 = 2;
 pub const INVALID_SET_FILE_POINTER: u32 = 4294967295;
 pub const CREATE_SUSPENDED: u32 = 4;
+pub const DETACHED_PROCESS: u32 = 8;
+pub const NORMAL_PRIORITY_CLASS: u32 = 32;
 pub const CREATE_FORCEDOS: u32 = 8192;
 pub const CREATE_NEW: u32 = 1;
 pub const CREATE_ALWAYS: u32 = 2;
@@ -3551,6 +3608,13 @@ pub const FILE_FLAG_POSIX_SEMANTICS: u32 = 16777216;
 pub const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 2097152;
 pub const FILE_FLAG_OPEN_NO_RECALL: u32 = 1048576;
 pub const FILE_FLAG_FIRST_PIPE_INSTANCE: u32 = 524288;
+pub const DRIVE_REMOVABLE: u32 = 2;
+pub const DRIVE_FIXED: u32 = 3;
+pub const DRIVE_REMOTE: u32 = 4;
+pub const DRIVE_CDROM: u32 = 5;
+pub const DRIVE_RAMDISK: u32 = 6;
+pub const DRIVE_UNKNOWN: u32 = 0;
+pub const DRIVE_NO_ROOT_DIR: u32 = 1;
 pub const FILE_TYPE_UNKNOWN: u32 = 0;
 pub const FILE_TYPE_DISK: u32 = 1;
 pub const FILE_TYPE_CHAR: u32 = 2;
@@ -3569,6 +3633,24 @@ pub const MOVEFILE_DELAY_UNTIL_REBOOT: u32 = 4;
 pub const MOVEFILE_WRITE_THROUGH: u32 = 8;
 pub const MOVEFILE_CREATE_HARDLINK: u32 = 16;
 pub const MOVEFILE_FAIL_IF_NOT_TRACKABLE: u32 = 32;
+pub const WAIT_IO_COMPLETION: u32 = 192;
+pub const WAIT_ABANDONED: u32 = 128;
+pub const WAIT_FAILED: u32 = 4294967295;
+pub const INFINITE: u32 = 4294967295;
+pub const STARTF_USESHOWWINDOW: u32 = 1;
+pub const STARTF_USESIZE: u32 = 2;
+pub const STARTF_USEPOSITION: u32 = 4;
+pub const STARTF_USECOUNTCHARS: u32 = 8;
+pub const STARTF_USEFILLATTRIBUTE: u32 = 16;
+pub const STARTF_RUNFULLSCREEN: u32 = 32;
+pub const STARTF_FORCEONFEEDBACK: u32 = 64;
+pub const STARTF_FORCEOFFFEEDBACK: u32 = 128;
+pub const STARTF_USESTDHANDLES: u32 = 256;
+pub const STARTF_USEHOTKEY: u32 = 512;
+pub const STARTF_TITLEISLINKNAME: u32 = 2048;
+pub const STARTF_TITLEISAPPID: u32 = 4096;
+pub const STARTF_PREVENTPINNING: u32 = 8192;
+pub const STARTF_UNTRUSTEDSOURCE: u32 = 32768;
 pub const LOCALE_ALL: u32 = 0;
 pub const LOCALE_NOUSEROVERRIDE: u32 = 2147483648;
 pub const LOCALE_USE_CP_ACP: u32 = 1073741824;
@@ -3757,11 +3839,81 @@ pub const _LK_NBRLCK: u32 = 4;
 pub const CLOCKS_PER_SEC: u32 = 1000;
 pub const DUPLICATE_SAME_ATTRIBUTES: u32 = 4;
 pub const _TIME_LOCK: u32 = 11;
+pub const _POPEN_LOCK: u32 = 16;
 pub const _MB_CP_LOCK: u32 = 25;
 pub const _STREAM_LOCKS: u32 = 28;
 pub const _IOB_ENTRIES: u32 = 20;
 pub const _LAST_STREAM_LOCK: u32 = 47;
 pub const _TOTAL_LOCKS: u32 = 48;
+pub const _MCW_EM: u32 = 524319;
+pub const _MCW_IC: u32 = 262144;
+pub const _MCW_RC: u32 = 768;
+pub const _MCW_PC: u32 = 196608;
+pub const _MCW_DN: u32 = 50331648;
+pub const _EM_INVALID: u32 = 16;
+pub const _EM_DENORMAL: u32 = 524288;
+pub const _EM_ZERODIVIDE: u32 = 8;
+pub const _EM_OVERFLOW: u32 = 4;
+pub const _EM_UNDERFLOW: u32 = 2;
+pub const _EM_INEXACT: u32 = 1;
+pub const _IC_AFFINE: u32 = 262144;
+pub const _IC_PROJECTIVE: u32 = 0;
+pub const _RC_CHOP: u32 = 768;
+pub const _RC_UP: u32 = 512;
+pub const _RC_DOWN: u32 = 256;
+pub const _RC_NEAR: u32 = 0;
+pub const _PC_24: u32 = 131072;
+pub const _PC_53: u32 = 65536;
+pub const _PC_64: u32 = 0;
+pub const _DN_SAVE: u32 = 0;
+pub const _DN_FLUSH: u32 = 16777216;
+pub const _DN_FLUSH_OPERANDS_SAVE_RESULTS: u32 = 33554432;
+pub const _DN_SAVE_OPERANDS_FLUSH_RESULTS: u32 = 50331648;
+pub const _EM_AMBIGUOUS: u32 = 2147483648;
+pub const _SW_INEXACT: u32 = 1;
+pub const _SW_UNDERFLOW: u32 = 2;
+pub const _SW_OVERFLOW: u32 = 4;
+pub const _SW_ZERODIVIDE: u32 = 8;
+pub const _SW_INVALID: u32 = 16;
+pub const _SW_UNEMULATED: u32 = 64;
+pub const _SW_SQRTNEG: u32 = 128;
+pub const _SW_STACKOVERFLOW: u32 = 512;
+pub const _SW_STACKUNDERFLOW: u32 = 1024;
+pub const _SW_DENORMAL: u32 = 524288;
+pub const _FPCLASS_SNAN: u32 = 1;
+pub const _FPCLASS_QNAN: u32 = 2;
+pub const _FPCLASS_NINF: u32 = 4;
+pub const _FPCLASS_NN: u32 = 8;
+pub const _FPCLASS_ND: u32 = 16;
+pub const _FPCLASS_NZ: u32 = 32;
+pub const _FPCLASS_PZ: u32 = 64;
+pub const _FPCLASS_PD: u32 = 128;
+pub const _FPCLASS_PN: u32 = 256;
+pub const _FPCLASS_PINF: u32 = 512;
+pub const _FPE_INVALID: u32 = 129;
+pub const _FPE_DENORMAL: u32 = 130;
+pub const _FPE_ZERODIVIDE: u32 = 131;
+pub const _FPE_OVERFLOW: u32 = 132;
+pub const _FPE_UNDERFLOW: u32 = 133;
+pub const _FPE_INEXACT: u32 = 134;
+pub const _FPE_UNEMULATED: u32 = 135;
+pub const _FPE_SQRTNEG: u32 = 136;
+pub const _FPE_STACKOVERFLOW: u32 = 138;
+pub const _FPE_STACKUNDERFLOW: u32 = 139;
+pub const _FPE_EXPLICITGEN: u32 = 140;
+pub const FP_INFINITE: u32 = 1;
+pub const FP_NAN: u32 = 2;
+pub const FP_NORMAL: i32 = -1;
+pub const FP_SUBNORMAL: i32 = -2;
+pub const FP_ZERO: u32 = 0;
+pub const FP_ILOGBNAN: u32 = 2147483647;
+pub const _P_WAIT: u32 = 0;
+pub const _P_NOWAIT: u32 = 1;
+pub const _P_OVERLAY: u32 = 2;
+pub const _P_NOWAITO: u32 = 3;
+pub const _P_DETACH: u32 = 4;
+pub const WAIT_CHILD: u32 = 0;
+pub const WAIT_GRANDCHILD: u32 = 1;
 // PINNED by generate_bindings.py: corecrt.h: the signed twin, same reasoning.
 // bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also
 // compiled for the linux host that builds msvcrt-difftest -- see
@@ -3878,6 +4030,47 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn iswalpha(arg1: wint_t) -> ::core::ffi::c_int;
+}
+pub type _fsize_t = __msvcrt_ulong;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: _fsize_t,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata32i64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata64i32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: _fsize_t,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [wchar_t; 260usize],
 }
 unsafe extern "C" {
     pub fn _wcsdup(arg1: *const wchar_t) -> *mut wchar_t;
@@ -4009,9 +4202,13 @@ pub type LPDWORD = *mut DWORD;
 pub type LPVOID = *mut ::core::ffi::c_void;
 pub type LPCVOID = *const ::core::ffi::c_void;
 pub type UINT = ::core::ffi::c_uint;
+pub type INT_PTR = ::core::ffi::c_longlong;
 pub type ULONG_PTR = ::core::ffi::c_ulonglong;
+pub type SIZE_T = ULONG_PTR;
 pub type DWORD_PTR = ULONG_PTR;
+pub type INT64 = ::core::ffi::c_longlong;
 pub type DWORD64 = ::core::ffi::c_ulonglong;
+pub type UINT64 = ::core::ffi::c_ulonglong;
 pub type PVOID = *mut ::core::ffi::c_void;
 pub type HANDLE = *mut ::core::ffi::c_void;
 pub type PHANDLE = *mut *mut ::core::ffi::c_void;
@@ -4201,6 +4398,14 @@ pub struct _RTL_CRITICAL_SECTION {
 }
 pub type RTL_CRITICAL_SECTION = _RTL_CRITICAL_SECTION;
 pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
+pub type FARPROC = ::core::option::Option<unsafe extern "C" fn() -> INT_PTR>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct HINSTANCE__ {
+    pub unused: ::core::ffi::c_int,
+}
+pub type HINSTANCE = *mut HINSTANCE__;
+pub type HMODULE = HINSTANCE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _FILETIME {
@@ -4247,6 +4452,38 @@ pub struct _SYSTEMTIME {
 }
 pub type SYSTEMTIME = _SYSTEMTIME;
 pub type LPSYSTEMTIME = *mut _SYSTEMTIME;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _WIN32_FIND_DATAA {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [CHAR; 260usize],
+    pub cAlternateFileName: [CHAR; 14usize],
+}
+pub type WIN32_FIND_DATAA = _WIN32_FIND_DATAA;
+pub type LPWIN32_FIND_DATAA = *mut _WIN32_FIND_DATAA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _WIN32_FIND_DATAW {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [WCHAR; 260usize],
+    pub cAlternateFileName: [WCHAR; 14usize],
+}
+pub type WIN32_FIND_DATAW = _WIN32_FIND_DATAW;
+pub type LPWIN32_FIND_DATAW = *mut _WIN32_FIND_DATAW;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExInfoStandard: _GET_FILEEX_INFO_LEVELS = 0;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExMaxInfoLevel: _GET_FILEEX_INFO_LEVELS = 1;
 pub type _GET_FILEEX_INFO_LEVELS = ::core::ffi::c_uint;
@@ -4275,6 +4512,38 @@ pub struct _STARTUPINFOA {
 }
 pub type STARTUPINFOA = _STARTUPINFOA;
 pub type LPSTARTUPINFOA = *mut _STARTUPINFOA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _STARTUPINFOW {
+    pub cb: DWORD,
+    pub lpReserved: LPWSTR,
+    pub lpDesktop: LPWSTR,
+    pub lpTitle: LPWSTR,
+    pub dwX: DWORD,
+    pub dwY: DWORD,
+    pub dwXSize: DWORD,
+    pub dwYSize: DWORD,
+    pub dwXCountChars: DWORD,
+    pub dwYCountChars: DWORD,
+    pub dwFillAttribute: DWORD,
+    pub dwFlags: DWORD,
+    pub wShowWindow: WORD,
+    pub cbReserved2: WORD,
+    pub lpReserved2: PBYTE,
+    pub hStdInput: HANDLE,
+    pub hStdOutput: HANDLE,
+    pub hStdError: HANDLE,
+}
+pub type LPSTARTUPINFOW = *mut _STARTUPINFOW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _PROCESS_INFORMATION {
+    pub hProcess: HANDLE,
+    pub hThread: HANDLE,
+    pub dwProcessId: DWORD,
+    pub dwThreadId: DWORD,
+}
+pub type LPPROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
 unsafe extern "C" {
     pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
 }
@@ -4306,6 +4575,12 @@ unsafe extern "C" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn CreateDirectoryW(
+        lpPathName: LPCWSTR,
+        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
+    ) -> BOOL;
+}
+unsafe extern "C" {
     pub fn CreateFileW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4322,6 +4597,20 @@ unsafe extern "C" {
         arg2: PHANDLE,
         arg3: LPSECURITY_ATTRIBUTES,
         arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessW(
+        arg1: LPCWSTR,
+        arg2: LPWSTR,
+        arg3: LPSECURITY_ATTRIBUTES,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: BOOL,
+        arg6: DWORD,
+        arg7: PVOID,
+        arg8: LPCWSTR,
+        arg9: LPSTARTUPINFOW,
+        arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
 unsafe extern "C" {
@@ -4348,13 +4637,61 @@ unsafe extern "C" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn FindClose(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
+}
+unsafe extern "C" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
 unsafe extern "C" {
     pub fn GetCurrentProcess() -> HANDLE;
 }
 unsafe extern "C" {
     pub fn GetCurrentProcessId() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceW(
+        arg1: LPCWSTR,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStrings() -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStringsW() -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
 unsafe extern "C" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
@@ -4376,10 +4713,22 @@ unsafe extern "C" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "C" {
+    pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
     pub fn GetLastError() -> DWORD;
 }
 unsafe extern "C" {
     pub fn GetLocalTime(arg1: LPSYSTEMTIME);
+}
+unsafe extern "C" {
+    pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProcAddress(arg1: HINSTANCE, arg2: LPCSTR) -> FARPROC;
+}
+unsafe extern "C" {
+    pub fn GetProcessHeap() -> HANDLE;
 }
 unsafe extern "C" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
@@ -4397,10 +4746,22 @@ unsafe extern "C" {
     pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
 unsafe extern "C" {
+    pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
+}
+unsafe extern "C" {
     pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
 }
 unsafe extern "C" {
     pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION);
+}
+unsafe extern "C" {
+    pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE;
 }
 unsafe extern "C" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
@@ -4421,7 +4782,16 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
     pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
 unsafe extern "C" {
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
@@ -4462,10 +4832,16 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
+}
+unsafe extern "C" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
 }
 unsafe extern "C" {
     pub fn UnlockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 }
 unsafe extern "C" {
     pub fn WriteFile(
@@ -4663,6 +5039,46 @@ pub union _printf_arg {
 pub type printf_arg = _printf_arg;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _finddata32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: _fsize_t,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata32i64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata64i32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: _fsize_t,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct __utimbuf32 {
     pub actime: __time32_t,
     pub modtime: __time32_t,
@@ -4672,6 +5088,14 @@ pub struct __utimbuf32 {
 pub struct __utimbuf64 {
     pub actime: __time64_t,
     pub modtime: __time64_t,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _diskfree_t {
+    pub total_clusters: ::core::ffi::c_uint,
+    pub avail_clusters: ::core::ffi::c_uint,
+    pub sectors_per_cluster: ::core::ffi::c_uint,
+    pub bytes_per_sector: ::core::ffi::c_uint,
 }
 unsafe extern "C" {
     pub fn _getdrive() -> ::core::ffi::c_int;
@@ -4854,4 +5278,19 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn VerifyConsoleIoHandle(arg1: HANDLE) -> BOOL;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _exception {
+    pub type_: ::core::ffi::c_int,
+    pub name: *mut ::core::ffi::c_char,
+    pub arg1: f64,
+    pub arg2: f64,
+    pub retval: f64,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _complex {
+    pub x: f64,
+    pub y: f64,
 }

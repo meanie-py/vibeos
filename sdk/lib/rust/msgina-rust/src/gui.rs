@@ -217,11 +217,20 @@ unsafe fn SetWelcomeText(hWnd: HWND) {
     let mut dwType: DWORD = 0;
     let mut dwWelcomeSize: DWORD = 0;
 
+    // L"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+    static WINLOGON_KEY_BUF: [u16; 54] = [
+        b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16,
+        b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16,
+        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16, b'T' as u16, b'\\' as u16,
+        b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16,
+        b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16, b'W' as u16, b'i' as u16, b'n' as u16, b'l' as u16, b'o' as u16,
+        b'g' as u16, b'o' as u16, b'n' as u16, 0,
+    ];
+
     /* Open the Winlogon key */
     let rc = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\0"
-            .as_ptr() as *const u16,
+        WINLOGON_KEY_BUF.as_ptr() as *const u16,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,

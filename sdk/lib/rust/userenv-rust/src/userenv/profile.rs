@@ -23,6 +23,119 @@ extern "C" {
     fn ReportError(dwFlags: DWORD, lpFormat: LPCWSTR, ...) -> core::ffi::c_void;
 }
 
+// L"%SystemRoot%"
+static ENV_SYSTEM_ROOT_PCT: [u16; 13] = [
+    b'%' as u16, b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16,
+    b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'%' as u16, 0,
+];
+// L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList"
+static PROFILE_LIST_KEY3: [u16; 57] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16,
+    b'T' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+    b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16,
+    b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16,
+    b'i' as u16, b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16,
+    0,
+];
+// L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\"
+static PROFILE_LIST_KEY_TRAILING_BS: [u16; 58] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16,
+    b'T' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
+    b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16,
+    b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16,
+    b'i' as u16, b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16,
+    b'\\' as u16, 0,
+];
+// L"RefCount"
+static REG_REF_COUNT: [u16; 9] = [
+    b'R' as u16, b'e' as u16, b'f' as u16, b'C' as u16, b'o' as u16, b'u' as u16, b'n' as u16,
+    b't' as u16, 0,
+];
+// L"ProfileLoadTimeLow"
+static REG_PROFILE_LOAD_TIME_LOW: [u16; 19] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
+    b'L' as u16, b'o' as u16, b'a' as u16, b'd' as u16, b'T' as u16, b'i' as u16, b'm' as u16,
+    b'e' as u16, b'L' as u16, b'o' as u16, b'w' as u16, 0,
+];
+// L"ProfileLoadTimeHigh"
+static REG_PROFILE_LOAD_TIME_HIGH: [u16; 20] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
+    b'L' as u16, b'o' as u16, b'a' as u16, b'd' as u16, b'T' as u16, b'i' as u16, b'm' as u16,
+    b'e' as u16, b'H' as u16, b'i' as u16, b'g' as u16, b'h' as u16, 0,
+];
+// L"Flags"
+static REG_FLAGS: [u16; 6] = [
+    b'F' as u16, b'l' as u16, b'a' as u16, b'g' as u16, b's' as u16, 0,
+];
+// L"State"
+static REG_STATE: [u16; 6] = [
+    b'S' as u16, b't' as u16, b'a' as u16, b't' as u16, b'e' as u16, 0,
+];
+// L"Sid"
+static REG_SID: [u16; 4] = [
+    b'S' as u16, b'i' as u16, b'd' as u16, 0,
+];
+// L"ProfileImagePath"
+static REG_PROFILE_IMAGE_PATH: [u16; 17] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
+    b'I' as u16, b'm' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'P' as u16, b'a' as u16,
+    b't' as u16, b'h' as u16, 0,
+];
+// L"ProfilesDirectory"
+static REG_PROFILES_DIRECTORY2: [u16; 18] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
+    b's' as u16, b'D' as u16, b'i' as u16, b'r' as u16, b'e' as u16, b'c' as u16, b't' as u16,
+    b'o' as u16, b'r' as u16, b'y' as u16, 0,
+];
+// L"DefaultUserProfile"
+static REG_DEFAULT_USER_PROFILE: [u16; 19] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
+    b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b'P' as u16, b'r' as u16, b'o' as u16,
+    b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, 0,
+];
+// L"\\"
+static PATH_SEP_BACKSLASH2: [u16; 2] = [
+    b'\\' as u16, 0,
+];
+// L"\\ntuser.dat"
+static NTUSER_DAT_SUFFIX: [u16; 12] = [
+    b'\\' as u16, b'n' as u16, b't' as u16, b'u' as u16, b's' as u16, b'e' as u16, b'r' as u16,
+    b'.' as u16, b'd' as u16, b'a' as u16, b't' as u16, 0,
+];
+// L"ReactOS could not load the locally stored user profile. Possible causes of this error include insufficient security rights or a corrupt local profile.\n\nError: %lu\n"
+static ERR_PROFILE_LOAD_FAILED: [u16; 164] = [
+    b'R' as u16, b'e' as u16, b'a' as u16, b'c' as u16, b't' as u16, b'O' as u16, b'S' as u16,
+    b' ' as u16, b'c' as u16, b'o' as u16, b'u' as u16, b'l' as u16, b'd' as u16, b' ' as u16,
+    b'n' as u16, b'o' as u16, b't' as u16, b' ' as u16, b'l' as u16, b'o' as u16, b'a' as u16,
+    b'd' as u16, b' ' as u16, b't' as u16, b'h' as u16, b'e' as u16, b' ' as u16, b'l' as u16,
+    b'o' as u16, b'c' as u16, b'a' as u16, b'l' as u16, b'l' as u16, b'y' as u16, b' ' as u16,
+    b's' as u16, b't' as u16, b'o' as u16, b'r' as u16, b'e' as u16, b'd' as u16, b' ' as u16,
+    b'u' as u16, b's' as u16, b'e' as u16, b'r' as u16, b' ' as u16, b'p' as u16, b'r' as u16,
+    b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, b'.' as u16, b' ' as u16,
+    b'P' as u16, b'o' as u16, b's' as u16, b's' as u16, b'i' as u16, b'b' as u16, b'l' as u16,
+    b'e' as u16, b' ' as u16, b'c' as u16, b'a' as u16, b'u' as u16, b's' as u16, b'e' as u16,
+    b's' as u16, b' ' as u16, b'o' as u16, b'f' as u16, b' ' as u16, b't' as u16, b'h' as u16,
+    b'i' as u16, b's' as u16, b' ' as u16, b'e' as u16, b'r' as u16, b'r' as u16, b'o' as u16,
+    b'r' as u16, b' ' as u16, b'i' as u16, b'n' as u16, b'c' as u16, b'l' as u16, b'u' as u16,
+    b'd' as u16, b'e' as u16, b' ' as u16, b'i' as u16, b'n' as u16, b's' as u16, b'u' as u16,
+    b'f' as u16, b'f' as u16, b'i' as u16, b'c' as u16, b'i' as u16, b'e' as u16, b'n' as u16,
+    b't' as u16, b' ' as u16, b's' as u16, b'e' as u16, b'c' as u16, b'u' as u16, b'r' as u16,
+    b'i' as u16, b't' as u16, b'y' as u16, b' ' as u16, b'r' as u16, b'i' as u16, b'g' as u16,
+    b'h' as u16, b't' as u16, b's' as u16, b' ' as u16, b'o' as u16, b'r' as u16, b' ' as u16,
+    b'a' as u16, b' ' as u16, b'c' as u16, b'o' as u16, b'r' as u16, b'r' as u16, b'u' as u16,
+    b'p' as u16, b't' as u16, b' ' as u16, b'l' as u16, b'o' as u16, b'c' as u16, b'a' as u16,
+    b'l' as u16, b' ' as u16, b'p' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16,
+    b'l' as u16, b'e' as u16, b'.' as u16, 10, 10, b'E' as u16, b'r' as u16, b'r' as u16,
+    b'o' as u16, b'r' as u16, b':' as u16, b' ' as u16, b'%' as u16, b'l' as u16, b'u' as u16,
+    10, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 1;
 
@@ -34,7 +147,7 @@ pub unsafe extern "C" fn AppendSystemPostfix(mut lpName: LPWSTR, mut dwMaxLength
     let mut lpszPtr: LPWSTR;
 
     if ExpandEnvironmentStringsW(
-        b"%SystemRoot%\0".as_ptr() as LPCWSTR,
+        ENV_SYSTEM_ROOT_PCT.as_ptr() as LPCWSTR,
         szSystemRoot.as_mut_ptr(),
         (szSystemRoot.len() as DWORD),
     ) == 0
@@ -151,7 +264,15 @@ unsafe extern "C" fn CreateProfileMutex(pszSidString: PWSTR) -> HANDLE {
     let mut pszMutexName: PWSTR = core::ptr::null_mut();
     let mut hMutex: HANDLE = core::ptr::null_mut();
 
-    let prefix = b"Global\\userenv:  User Profile Mutex for \0".as_ptr() as *const u16 as *const u16;
+    // L"Global\userenv:  User Profile Mutex for "
+    static PROFILE_MUTEX_PREFIX_W: [u16; 41] = [
+        b'G' as u16, b'l' as u16, b'o' as u16, b'b' as u16, b'a' as u16, b'l' as u16, b'\\' as u16, b'u' as u16, b's' as u16, b'e' as u16,
+        b'r' as u16, b'e' as u16, b'n' as u16, b'v' as u16, b':' as u16, b' ' as u16, b' ' as u16, b'U' as u16, b's' as u16, b'e' as u16,
+        b'r' as u16, b' ' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, b' ' as u16,
+        b'M' as u16, b'u' as u16, b't' as u16, b'e' as u16, b'x' as u16, b' ' as u16, b'f' as u16, b'o' as u16, b'r' as u16, b' ' as u16,
+        0,
+    ];
+    let prefix = PROFILE_MUTEX_PREFIX_W.as_ptr() as *const u16;
     let prefix_len = wcslen(prefix);
     let sid_len = wcslen(pszSidString);
     
@@ -205,7 +326,7 @@ unsafe extern "C" fn IncrementRefCount(
     'done: {
     dwError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hProfilesKey);
@@ -226,7 +347,7 @@ unsafe extern "C" fn IncrementRefCount(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     RegQueryValueExW(
         hProfileKey,
-        b"RefCount\0".as_ptr() as LPCWSTR,
+        REG_REF_COUNT.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         &mut dwRefCount as *mut DWORD as LPBYTE,
@@ -237,7 +358,7 @@ unsafe extern "C" fn IncrementRefCount(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"RefCount\0".as_ptr() as LPCWSTR,
+        REG_REF_COUNT.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         &dwRefCount as *const DWORD as PBYTE,
@@ -274,7 +395,7 @@ unsafe extern "C" fn DecrementRefCount(mut pszSidString: PWSTR, mut pdwRefCount:
     'done: {
     dwError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hProfilesKey,
@@ -297,7 +418,7 @@ unsafe extern "C" fn DecrementRefCount(mut pszSidString: PWSTR, mut pdwRefCount:
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegQueryValueExW(
         hProfileKey,
-        b"RefCount\0".as_ptr() as LPCWSTR,
+        REG_REF_COUNT.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         &mut dwRefCount as *mut DWORD as LPBYTE,
@@ -312,7 +433,7 @@ unsafe extern "C" fn DecrementRefCount(mut pszSidString: PWSTR, mut pdwRefCount:
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"RefCount\0".as_ptr() as LPCWSTR,
+        REG_REF_COUNT.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         &mut dwRefCount as *mut DWORD as PBYTE,
@@ -447,7 +568,7 @@ unsafe extern "C" fn SetProfileData(
     'done: {
     dwError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         core::ptr::addr_of_mut!(hProfilesKey),
@@ -472,7 +593,7 @@ unsafe extern "C" fn SetProfileData(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"ProfileLoadTimeLow\0".as_ptr() as LPCWSTR,
+        REG_PROFILE_LOAD_TIME_LOW.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         core::ptr::addr_of_mut!(LoadTime.dwLowDateTime) as PBYTE,
@@ -485,7 +606,7 @@ unsafe extern "C" fn SetProfileData(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"ProfileLoadTimeHigh\0".as_ptr() as LPCWSTR,
+        REG_PROFILE_LOAD_TIME_HIGH.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         core::ptr::addr_of_mut!(LoadTime.dwHighDateTime) as PBYTE,
@@ -498,7 +619,7 @@ unsafe extern "C" fn SetProfileData(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"Flags\0".as_ptr() as LPCWSTR,
+        REG_FLAGS.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         core::ptr::addr_of_mut!(dwFlags) as PBYTE,
@@ -516,7 +637,7 @@ unsafe extern "C" fn SetProfileData(
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
     dwError = RegSetValueExW(
         hProfileKey,
-        b"State\0".as_ptr() as LPCWSTR,
+        REG_STATE.as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         core::ptr::addr_of_mut!(dwState) as PBYTE,
@@ -579,7 +700,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
     StringCbCopyW(
         &mut szKeyName[0],
         core::mem::size_of_val(&szKeyName),
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY_TRAILING_BS.as_ptr() as LPCWSTR,
     );
     StringCbCatW(
         &mut szKeyName[0],
@@ -606,7 +727,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
 
     dwError = RegSetValueExW(
         hProfileKey,
-        b"Sid\0".as_ptr() as LPCWSTR,
+        REG_SID.as_ptr() as LPCWSTR,
         0,
         REG_BINARY,
         pUserSid as PBYTE,
@@ -616,14 +737,22 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
         break 'done;
     }
 
+    // L"%systemroot%\system32\config\systemprofile"
+    static SYSTEMPROFILE_PATH_W: [u16; 43] = [
+        b'%' as u16, b's' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'r' as u16, b'o' as u16, b'o' as u16,
+        b't' as u16, b'%' as u16, b'\\' as u16, b's' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'3' as u16,
+        b'2' as u16, b'\\' as u16, b'c' as u16, b'o' as u16, b'n' as u16, b'f' as u16, b'i' as u16, b'g' as u16, b'\\' as u16, b's' as u16,
+        b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'p' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16,
+        b'l' as u16, b'e' as u16, 0,
+    ];
     wcscpy(
         &mut szRawProfilePath[0],
-        b"%systemroot%\\system32\\config\\systemprofile\0".as_ptr() as *const u16,
+        SYSTEMPROFILE_PATH_W.as_ptr() as *const u16,
     );
 
     dwError = RegSetValueExW(
         hProfileKey,
-        b"ProfileImagePath\0".as_ptr() as LPCWSTR,
+        REG_PROFILE_IMAGE_PATH.as_ptr() as LPCWSTR,
         0,
         REG_EXPAND_SZ,
         &szRawProfilePath[0] as *const u16 as PBYTE,
@@ -842,7 +971,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
 
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
@@ -855,7 +984,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
     dwLength = core::mem::size_of::<[u16; 260]>() as DWORD;
     Error = RegQueryValueExW(
         hKey,
-        b"ProfilesDirectory\0".as_ptr() as LPCWSTR,
+        REG_PROFILES_DIRECTORY2.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         szRawProfilesPath.as_mut_ptr() as LPBYTE,
@@ -886,7 +1015,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
     dwLength = core::mem::size_of::<[u16; 260]>() as DWORD;
     Error = RegQueryValueExW(
         hKey,
-        b"DefaultUserProfile\0".as_ptr() as LPCWSTR,
+        REG_DEFAULT_USER_PROFILE.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         szBuffer.as_mut_ptr() as LPBYTE,
@@ -914,7 +1043,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
     StringCbCatW(
         szUserProfilePath.as_mut_ptr() as LPWSTR,
         core::mem::size_of::<[u16; 260]>(),
-        b"\\\0".as_ptr() as LPCWSTR,
+        PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
     );
     StringCbCatW(
         szUserProfilePath.as_mut_ptr() as LPWSTR,
@@ -929,9 +1058,13 @@ pub unsafe extern "system" fn CreateUserProfileExW(
 
         i = 0;
         while i < 1000 {
+            // L"%s.%03u"
+            static FMT_USER_PROFILE_SUFFIX: [u16; 8] = [
+                b'%' as u16, b's' as u16, b'.' as u16, b'%' as u16, b'0' as u16, b'3' as u16, b'u' as u16, 0,
+            ];
             swprintf(
                 szUserProfileName.as_mut_ptr(),
-                b"%s.%03u\0".as_ptr() as *const u16,
+                FMT_USER_PROFILE_SUFFIX.as_ptr() as *const u16,
                 lpUserName,
                 i,
             );
@@ -944,7 +1077,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
             StringCbCatW(
                 szUserProfilePath.as_mut_ptr() as LPWSTR,
                 core::mem::size_of::<[u16; 260]>(),
-                b"\\\0".as_ptr() as LPCWSTR,
+                PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
             );
             StringCbCatW(
                 szUserProfilePath.as_mut_ptr() as LPWSTR,
@@ -972,7 +1105,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
     StringCbCatW(
         szDefaultUserPath.as_mut_ptr() as LPWSTR,
         core::mem::size_of::<[u16; 260]>(),
-        b"\\\0".as_ptr() as LPCWSTR,
+        PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
     );
     StringCbCatW(
         szDefaultUserPath.as_mut_ptr() as LPWSTR,
@@ -995,7 +1128,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
     StringCbCopyW(
         szBuffer.as_mut_ptr() as LPWSTR,
         core::mem::size_of::<[u16; 260]>(),
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY_TRAILING_BS.as_ptr() as LPCWSTR,
     );
     StringCbCatW(
         szBuffer.as_mut_ptr() as LPWSTR,
@@ -1027,7 +1160,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
         StringCbCatW(
             szBuffer.as_mut_ptr() as LPWSTR,
             core::mem::size_of::<[u16; 260]>(),
-            b"\\\0".as_ptr() as LPCWSTR,
+            PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
         );
         StringCbCatW(
             szBuffer.as_mut_ptr() as LPWSTR,
@@ -1037,7 +1170,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
 
         Error = RegSetValueExW(
             hKey,
-            b"ProfileImagePath\0".as_ptr() as LPCWSTR,
+            REG_PROFILE_IMAGE_PATH.as_ptr() as LPCWSTR,
             0,
             REG_EXPAND_SZ,
             szBuffer.as_mut_ptr() as *const BYTE,
@@ -1050,7 +1183,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
         } else {
             Error = RegSetValueExW(
                 hKey,
-                b"Sid\0".as_ptr() as LPCWSTR,
+                REG_SID.as_ptr() as LPCWSTR,
                 0,
                 REG_BINARY,
                 pSid as *const BYTE,
@@ -1071,7 +1204,7 @@ pub unsafe extern "system" fn CreateUserProfileExW(
                 StringCbCatW(
                     szBuffer.as_mut_ptr() as LPWSTR,
                     core::mem::size_of::<[u16; 260]>(),
-                    b"\\ntuser.dat\0".as_ptr() as LPCWSTR,
+                    NTUSER_DAT_SUFFIX.as_ptr() as LPCWSTR,
                 );
 
                 if AcquireRemoveRestorePrivilege(1) == 0 {
@@ -1196,7 +1329,7 @@ pub unsafe extern "system" fn DeleteProfileW(
     if !lpProfilePath.is_null() {
         dwError = RegOpenKeyExW(
             core::ptr::null_mut(),
-            b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+            PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
             0,
             KEY_QUERY_VALUE,
             &mut hProfilesKey,
@@ -1221,7 +1354,7 @@ pub unsafe extern "system" fn DeleteProfileW(
         dwLength = core::mem::size_of::<[u16; 260]>() as DWORD;
         dwError = RegQueryValueExW(
             hProfileKey,
-            b"ProfileImagePath\0".as_ptr() as LPCWSTR,
+            REG_PROFILE_IMAGE_PATH.as_ptr() as LPCWSTR,
             core::ptr::null_mut(),
             &mut dwType,
             szRawProfilePath.as_mut_ptr() as LPBYTE,
@@ -1586,7 +1719,7 @@ pub unsafe extern "system" fn GetProfilesDirectoryW(
 
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as LPCWSTR,
+        PROFILE_LIST_KEY3.as_ptr() as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
@@ -1599,7 +1732,7 @@ pub unsafe extern "system" fn GetProfilesDirectoryW(
     dwLength = (core::mem::size_of_val(&szBuffer)) as DWORD;
     Error = RegQueryValueExW(
         hKey,
-        b"ProfilesDirectory\0".as_ptr() as LPCWSTR,
+        REG_PROFILES_DIRECTORY2.as_ptr() as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         szBuffer.as_mut_ptr() as LPBYTE,
@@ -1666,9 +1799,18 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
         break 'done;
     }
 
+    // L"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+    static PROFILE_LIST_KEY_BUF: [u16; 57] = [
+        b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16,
+        b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16,
+        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16, b'T' as u16, b'\\' as u16,
+        b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16,
+        b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16,
+        b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16, 0,
+    ];
     dwError = RegOpenKeyExW(
         core::ptr::null_mut(),
-        b"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as *const u16 as LPCWSTR,
+        PROFILE_LIST_KEY_BUF.as_ptr() as *const u16 as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hProfilesKey,
@@ -1691,9 +1833,11 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
     }
 
     dwLength = core::mem::size_of::<DWORD>() as DWORD;
+    // L"State"
+    static STATE_VALUE_BUF: [u16; 6] = [b'S' as u16, b't' as u16, b'a' as u16, b't' as u16, b'e' as u16, 0];
     dwError = RegQueryValueExW(
         hProfileKey,
-        b"State\0".as_ptr() as *const u16 as LPCWSTR,
+        STATE_VALUE_BUF.as_ptr() as *const u16 as LPCWSTR,
         core::ptr::null_mut(),
         &mut dwType,
         &mut dwState as *mut DWORD as LPBYTE,
@@ -2111,7 +2255,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
             StringCbCatW(
                 szUserHivePath.as_mut_ptr(),
                 core::mem::size_of::<[u16; 260]>(),
-                b"\\\0".as_ptr() as LPCWSTR,
+                PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
             );
             StringCbCatW(
                 szUserHivePath.as_mut_ptr(),
@@ -2123,7 +2267,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
         StringCbCatW(
             szUserHivePath.as_mut_ptr(),
             core::mem::size_of::<[u16; 260]>(),
-            b"\\ntuser.dat\0".as_ptr() as LPCWSTR,
+            NTUSER_DAT_SUFFIX.as_ptr() as LPCWSTR,
         );
 
         if GetFileAttributesW(szUserHivePath.as_mut_ptr() as LPCWSTR) == 0xFFFFFFFF {
@@ -2228,8 +2372,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
     if ret == 0 {
         ReportError(
             *(lpProfileInfo as *mut u32).add(6),
-            b"ReactOS could not load the locally stored user profile. Possible causes of this error include insufficient security rights or a corrupt local profile.\n\nError: %lu\n\0"
-                .as_ptr() as LPCWSTR,
+            ERR_PROFILE_LOAD_FAILED.as_ptr() as LPCWSTR,
             dwError,
         );
     }

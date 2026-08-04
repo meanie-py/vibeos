@@ -27,6 +27,104 @@ extern "system" {
     fn WideCharToMultiByte(CodePage: u32, dwFlags: u32, lpWideCharStr: *const u16, cchWideChar: i32, lpMultiByteStr: *mut i8, cbMultiByte: i32, lpDefaultChar: *const i8, lpUsedDefaultChar: *mut i32) -> i32;
 }
 
+// L";"
+static SEMICOLON_W: [u16; 2] = [
+    b';' as u16, 0,
+];
+// L"PATH"
+static ENV_PATH: [u16; 5] = [
+    b'P' as u16, b'A' as u16, b'T' as u16, b'H' as u16, 0,
+];
+// L"SystemRoot"
+static ENV_SYSTEM_ROOT: [u16; 11] = [
+    b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'R' as u16,
+    b'o' as u16, b'o' as u16, b't' as u16, 0,
+];
+// L"SystemDrive"
+static ENV_SYSTEM_DRIVE: [u16; 12] = [
+    b'S' as u16, b'y' as u16, b's' as u16, b't' as u16, b'e' as u16, b'm' as u16, b'D' as u16,
+    b'r' as u16, b'i' as u16, b'v' as u16, b'e' as u16, 0,
+];
+// L"COMPUTERNAME"
+static ENV_COMPUTERNAME: [u16; 13] = [
+    b'C' as u16, b'O' as u16, b'M' as u16, b'P' as u16, b'U' as u16, b'T' as u16, b'E' as u16,
+    b'R' as u16, b'N' as u16, b'A' as u16, b'M' as u16, b'E' as u16, 0,
+];
+// L"ALLUSERSPROFILE"
+static ENV_ALLUSERSPROFILE: [u16; 16] = [
+    b'A' as u16, b'L' as u16, b'L' as u16, b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16,
+    b'S' as u16, b'P' as u16, b'R' as u16, b'O' as u16, b'F' as u16, b'I' as u16, b'L' as u16,
+    b'E' as u16, 0,
+];
+// L"USERPROFILE"
+static ENV_USERPROFILE: [u16; 12] = [
+    b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'P' as u16, b'R' as u16, b'O' as u16,
+    b'F' as u16, b'I' as u16, b'L' as u16, b'E' as u16, 0,
+];
+// L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion"
+static CURRENT_VERSION_KEY: [u16; 42] = [
+    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
+    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
+    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
+    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
+    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
+    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+];
+// L"ProgramFilesDir"
+static REG_PROGRAM_FILES_DIR: [u16; 16] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'g' as u16, b'r' as u16, b'a' as u16, b'm' as u16,
+    b'F' as u16, b'i' as u16, b'l' as u16, b'e' as u16, b's' as u16, b'D' as u16, b'i' as u16,
+    b'r' as u16, 0,
+];
+// L"ProgramFiles"
+static ENV_PROGRAM_FILES: [u16; 13] = [
+    b'P' as u16, b'r' as u16, b'o' as u16, b'g' as u16, b'r' as u16, b'a' as u16, b'm' as u16,
+    b'F' as u16, b'i' as u16, b'l' as u16, b'e' as u16, b's' as u16, 0,
+];
+// L"CommonFilesDir"
+static REG_COMMON_FILES_DIR: [u16; 15] = [
+    b'C' as u16, b'o' as u16, b'm' as u16, b'm' as u16, b'o' as u16, b'n' as u16, b'F' as u16,
+    b'i' as u16, b'l' as u16, b'e' as u16, b's' as u16, b'D' as u16, b'i' as u16, b'r' as u16,
+    0,
+];
+// L"CommonProgramFiles"
+static ENV_COMMON_PROGRAM_FILES: [u16; 19] = [
+    b'C' as u16, b'o' as u16, b'm' as u16, b'm' as u16, b'o' as u16, b'n' as u16, b'P' as u16,
+    b'r' as u16, b'o' as u16, b'g' as u16, b'r' as u16, b'a' as u16, b'm' as u16, b'F' as u16,
+    b'i' as u16, b'l' as u16, b'e' as u16, b's' as u16, 0,
+];
+// L"HOMEDRIVE"
+static ENV_HOMEDRIVE: [u16; 10] = [
+    b'H' as u16, b'O' as u16, b'M' as u16, b'E' as u16, b'D' as u16, b'R' as u16, b'I' as u16,
+    b'V' as u16, b'E' as u16, 0,
+];
+// L"HOMEPATH"
+static ENV_HOMEPATH: [u16; 9] = [
+    b'H' as u16, b'O' as u16, b'M' as u16, b'E' as u16, b'P' as u16, b'A' as u16, b'T' as u16,
+    b'H' as u16, 0,
+];
+// L"USERNAME"
+static ENV_USERNAME: [u16; 9] = [
+    b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'N' as u16, b'A' as u16, b'M' as u16,
+    b'E' as u16, 0,
+];
+// L"USERDOMAIN"
+static ENV_USERDOMAIN: [u16; 11] = [
+    b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'D' as u16, b'O' as u16, b'M' as u16,
+    b'A' as u16, b'I' as u16, b'N' as u16, 0,
+];
+// L"Environment"
+static REG_ENVIRONMENT_KEY: [u16; 12] = [
+    b'E' as u16, b'n' as u16, b'v' as u16, b'i' as u16, b'r' as u16, b'o' as u16, b'n' as u16,
+    b'm' as u16, b'e' as u16, b'n' as u16, b't' as u16, 0,
+];
+// L"Volatile Environment"
+static REG_VOLATILE_ENVIRONMENT_KEY: [u16; 21] = [
+    b'V' as u16, b'o' as u16, b'l' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'l' as u16,
+    b'e' as u16, b' ' as u16, b'E' as u16, b'n' as u16, b'v' as u16, b'i' as u16, b'r' as u16,
+    b'o' as u16, b'n' as u16, b'm' as u16, b'e' as u16, b'n' as u16, b't' as u16, 0,
+];
+
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: u32 = 1;
 unsafe extern "C" fn SetUserEnvironmentVariable(
@@ -135,7 +233,7 @@ unsafe extern "C" fn AppendUserEnvironmentVariable(
     if NT_SUCCESS(Status) {
         RtlAppendUnicodeToString(
             core::ptr::addr_of_mut!(Value),
-            b";\0".as_ptr() as PCWSTR,
+            SEMICOLON_W.as_ptr() as PCWSTR,
         );
     }
 
@@ -345,7 +443,7 @@ unsafe extern "C" fn SetUserEnvironment(
             &mut dwValueDataLength,
         );
         if Error == ERROR_SUCCESS as LONG {
-            if _wcsicmp(lpValueName, b"PATH\0".as_ptr() as LPCWSTR) == 0 {
+            if _wcsicmp(lpValueName, ENV_PATH.as_ptr() as LPCWSTR) == 0 {
                 AppendUserEnvironmentVariable(Environment, lpValueName, lpValueData);
             } else {
                 SetUserEnvironmentVariable(
@@ -383,10 +481,19 @@ unsafe extern "C" fn SetSystemEnvironment(Environment: *mut PWSTR) -> BOOL {
     let mut lpValueName: LPWSTR;
     let mut lpValueData: LPWSTR;
 
+    // L"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+    static SYSTEM_ENV_KEY_BUF: [u16; 61] = [
+        b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16,
+        b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16,
+        b'l' as u16, b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16,
+        b'o' as u16, b'l' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b's' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16,
+        b' ' as u16, b'M' as u16, b'a' as u16, b'n' as u16, b'a' as u16, b'g' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'E' as u16,
+        b'n' as u16, b'v' as u16, b'i' as u16, b'r' as u16, b'o' as u16, b'n' as u16, b'm' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+        0,
+    ];
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0"
-            .as_ptr() as *const u16 as LPCWSTR,
+        SYSTEM_ENV_KEY_BUF.as_ptr() as *const u16 as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hEnvKey,
@@ -498,12 +605,12 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
     }
 
     Length = 260;
-    if GetEnvironmentVariableW(b"SystemRoot\0".as_ptr() as LPCWSTR, Buffer.as_mut_ptr(), Length) != 0 {
-        SetUserEnvironmentVariable(Environment, b"SystemRoot\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+    if GetEnvironmentVariableW(ENV_SYSTEM_ROOT.as_ptr() as LPCWSTR, Buffer.as_mut_ptr(), Length) != 0 {
+        SetUserEnvironmentVariable(Environment, ENV_SYSTEM_ROOT.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
     }
 
-    if GetEnvironmentVariableW(b"SystemDrive\0".as_ptr() as LPCWSTR, Buffer.as_mut_ptr(), Length) != 0 {
-        SetUserEnvironmentVariable(Environment, b"SystemDrive\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+    if GetEnvironmentVariableW(ENV_SYSTEM_DRIVE.as_ptr() as LPCWSTR, Buffer.as_mut_ptr(), Length) != 0 {
+        SetUserEnvironmentVariable(Environment, ENV_SYSTEM_DRIVE.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
     }
 
     if SetSystemEnvironment(Environment) == 0 {
@@ -513,31 +620,31 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
 
     Length = 260;
     if GetComputerNameW(Buffer.as_mut_ptr(), &mut Length) != 0 {
-        SetUserEnvironmentVariable(Environment, b"COMPUTERNAME\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+        SetUserEnvironmentVariable(Environment, ENV_COMPUTERNAME.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
     }
 
     Length = 260;
     if GetAllUsersProfileDirectoryW(Buffer.as_mut_ptr(), &mut Length) != 0 {
-        SetUserEnvironmentVariable(Environment, b"ALLUSERSPROFILE\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+        SetUserEnvironmentVariable(Environment, ENV_ALLUSERSPROFILE.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
     }
 
     Length = 260;
     if GetDefaultUserProfileDirectoryW(Buffer.as_mut_ptr(), &mut Length) != 0 {
-        SetUserEnvironmentVariable(Environment, b"USERPROFILE\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 1);
+        SetUserEnvironmentVariable(Environment, ENV_USERPROFILE.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 1);
     }
 
-    lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\0".as_ptr() as LPCWSTR, 0, KEY_READ as REGSAM, &mut hKey);
+    lError = RegOpenKeyExW(HKEY_LOCAL_MACHINE, CURRENT_VERSION_KEY.as_ptr() as LPCWSTR, 0, KEY_READ as REGSAM, &mut hKey);
     if lError == ERROR_SUCCESS as LONG {
         Length = core::mem::size_of::<[WCHAR; 1024]>() as DWORD;
-        lError = RegQueryValueExW(hKey, b"ProgramFilesDir\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut Length);
+        lError = RegQueryValueExW(hKey, REG_PROGRAM_FILES_DIR.as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut Length);
         if lError == ERROR_SUCCESS as LONG {
-            SetUserEnvironmentVariable(Environment, b"ProgramFiles\0".as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
+            SetUserEnvironmentVariable(Environment, ENV_PROGRAM_FILES.as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
         }
 
         Length = core::mem::size_of::<[WCHAR; 1024]>() as DWORD;
-        lError = RegQueryValueExW(hKey, b"CommonFilesDir\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut Length);
+        lError = RegQueryValueExW(hKey, REG_COMMON_FILES_DIR.as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut Length);
         if lError == ERROR_SUCCESS as LONG {
-            SetUserEnvironmentVariable(Environment, b"CommonProgramFiles\0".as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
+            SetUserEnvironmentVariable(Environment, ENV_COMMON_PROGRAM_FILES.as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
         }
 
         RegCloseKey(hKey);
@@ -557,20 +664,20 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
     if GetUserProfileDirectoryW(hToken, Buffer.as_mut_ptr(), &mut Length) != 0 {
         let MinLen: DWORD = 2;
 
-        SetUserEnvironmentVariable(Environment, b"USERPROFILE\0".as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+        SetUserEnvironmentVariable(Environment, ENV_USERPROFILE.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
 
         if Length > MinLen {
             StringCchCopyNW(szValue.as_mut_ptr(), 260, Buffer.as_mut_ptr(), MinLen as usize);
-            SetUserEnvironmentVariable(Environment, b"HOMEDRIVE\0".as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
+            SetUserEnvironmentVariable(Environment, ENV_HOMEDRIVE.as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
 
             StringCchCopyNW(szValue.as_mut_ptr(), 260, Buffer.as_mut_ptr().offset(MinLen as isize), (Length - MinLen) as usize);
-            SetUserEnvironmentVariable(Environment, b"HOMEPATH\0".as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
+            SetUserEnvironmentVariable(Environment, ENV_HOMEPATH.as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
         }
     }
 
     if GetUserAndDomainName(hToken, &mut lpUserName, &mut lpDomainName) != 0 {
-        SetUserEnvironmentVariable(Environment, b"USERNAME\0".as_ptr() as LPWSTR, lpUserName, 0);
-        SetUserEnvironmentVariable(Environment, b"USERDOMAIN\0".as_ptr() as LPWSTR, lpDomainName, 0);
+        SetUserEnvironmentVariable(Environment, ENV_USERNAME.as_ptr() as LPWSTR, lpUserName, 0);
+        SetUserEnvironmentVariable(Environment, ENV_USERDOMAIN.as_ptr() as LPWSTR, lpDomainName, 0);
 
         if !lpUserName.is_null() {
             LocalFree(lpUserName as HLOCAL);
@@ -581,8 +688,8 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
         }
     }
 
-    SetUserEnvironment(Environment, hKeyUser, b"Environment\0".as_ptr() as LPWSTR);
-    SetUserEnvironment(Environment, hKeyUser, b"Volatile Environment\0".as_ptr() as LPWSTR);
+    SetUserEnvironment(Environment, hKeyUser, REG_ENVIRONMENT_KEY.as_ptr() as LPWSTR);
+    SetUserEnvironment(Environment, hKeyUser, REG_VOLATILE_ENVIRONMENT_KEY.as_ptr() as LPWSTR);
 
     RegCloseKey(hKeyUser);
 

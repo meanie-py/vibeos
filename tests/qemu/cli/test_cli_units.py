@@ -2896,6 +2896,78 @@ def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
     assert fake.calls, "smokes still run so the matrix stays informative"
 
 
+def _cohab_once_stub(ok: bool):
+    """Stand-in for gate._cohab_once (which shells tools/verify_cohab_coverage.py)."""
+
+    def stub(repo, arch, root):
+        return {
+            "arch": arch,
+            "ok": ok,
+            "seconds": 0.01,
+            "salient": "" if ok else "math.rs: [i386] nothing defines `__adj_fdiv_m16i@4`",
+            "exit": 0 if ok else 1,
+        }
+
+    return stub
+
+
+def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
+    """A cohab coverage gap fails the gate and blocks the push stamp.
+
+    This is the stage that exists because every OTHER stage is structurally blind to it:
+    `cargo check` never codegens, so `global_asm!` is never assembled and `#[export_name]`
+    never becomes a symbol; the build links; the smoke boots a green desktop. Eight msvcrt
+    stdcall stubs shipped as `___adj_fdiv_m16i@4@4` and the flip was a no-op that nothing
+    in the pipeline could see. A green boot is not evidence that the Rust is the thing
+    running.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"i386": ["OK"], "amd64": ["OK"], "arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    monkeypatch.setattr(
+        gate_mod,
+        "_build_once",
+        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=False))
+    stamped: list = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
+    rc = gate_mod.gate(_gate_args(no_lint=False, no_build=False), tmp_path)
+    assert rc == 1, "a cohab coverage gap must fail the gate"
+    assert not stamped, "no push stamp when a flipped module is not actually flipped"
+    assert fake.calls, "smokes still run so the matrix stays informative"
+
+
+def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch):
+    """The stage judges artifacts THIS run produced, so it runs only when both opt-ins hold.
+
+    Under --no-build it would read a stale carry-over archive as a red (the verifier refuses
+    anything older than the tree) — a false rejection on the merge train is more expensive
+    than the check is worth, and `gate --no-build` exists precisely to re-smoke without
+    rebuilding.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(
+        gate_mod,
+        "_build_once",
+        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+    )
+    ran: list = []
+    monkeypatch.setattr(gate_mod, "_cohab_once", lambda *a, **k: ran.append(1))
+    for kw in ({"no_lint": False, "no_build": True}, {"no_lint": True, "no_build": False}):
+        assert gate_mod.gate(_gate_args(**kw), tmp_path) == 0
+        assert not ran, f"cohab must not run with {kw}"
+
+
 def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     """--no-lint bypasses the strict lint gate entirely (escape hatch)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
@@ -5148,6 +5220,41 @@ def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
         assert "ruff: 3 errors" in kept and "AssertionError: boom" in kept
         # no marker in stdout -> the salient falls back to the child's last words
         assert "exit 1" in r["salient"] and "AssertionError: boom" in r["salient"]
+
+
+def test_cohab_stage_reports_a_finding_and_a_refusal_differently(tmp_path, monkeypatch):
+    """The cohab stage has TWO distinct reds and they need different first lines.
+
+    A FINDING is on stdout and names the .rs whose flip is a no-op — that is the one worth
+    quoting verbatim. A REFUSAL (stale archive, build layout moved) is on stderr and means
+    the tool declined to judge at all; scraping stdout for it yields nothing, and a stage
+    that can turn the merge train red must never report a bare 'exit 1'.
+    """
+    finding = (
+        "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: [i386] nothing that links ahead "
+        "of msvcrt_static.dir defines `__adj_fdiv_m16i@4`"
+    )
+
+    class _Finding:
+        returncode = 1
+        stdout = finding + "\n"
+        stderr = "verify_cohab_coverage: 1 finding(s); 1 family/arch pair(s)\n"
+
+    class _Refusal:
+        returncode = 1
+        stdout = ""
+        stderr = "verify_cohab_coverage: libmsvcrt_crt_cargo.a for i386 is OLDER than math.rs\n"
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Finding())
+    r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-i386")
+    assert r["ok"] is False and r["arch"] == "i386"
+    assert r["salient"] == finding
+    assert finding in (tmp_path / "cohab-i386" / "cohab-console.log").read_text()
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Refusal())
+    r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-refuse")
+    assert r["ok"] is False
+    assert "exit 1" in r["salient"] and "is OLDER than" in r["salient"]
 
 
 def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):

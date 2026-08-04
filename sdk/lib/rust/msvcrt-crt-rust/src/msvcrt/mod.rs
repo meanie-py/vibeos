@@ -41,3 +41,70 @@ pub mod mbcs;
 // and `_timespec32_get`/`_timespec64_get`/`_strftime_l` are `>= 140`. The object is the
 // authority on that, not the source's apparent shape.
 pub mod time;
+
+// environ.c (11 of 11 exports) and dir.c (48 of 48), both whole-file.
+//
+// environ.c is whole-file for the same reason errno.c and time.c are: the four environment
+// blocks (`MSVCRT__environ`/`__winitenv`/`_wenviron`/`__initenv`) are ONE contract, built by
+// `env_init` and rewritten in place by every `_putenv`/`_wputenv`, so a partial flip would
+// leave some readers on the C's copy of that state. Its eight file-static helpers
+// (`env_get_index`, `env_set`, `putenv_helper`, …) stay private exactly as in the C, so the
+// object's 11 GLOBAL symbols are the whole cohab obligation and all 11 are defined.
+//
+// dir.c is the directory/path surface — `_findfirst*`/`_findnext*` (all four time-width
+// variants), `_chdir`/`_getcwd`/`_getdcwd`, `_mkdir`/`_rmdir`, the
+// `_makepath`/`_splitpath`/`_fullpath` path algebra, and `_searchenv*`.
+//
+// Both carry the `dir-environ` gate, and NOT because either compiles against file.c's fd
+// table — neither does. It is a DEFAULT feature that both host harnesses drop (they take this
+// crate with `default-features = false`), because the harness defines two of these exports
+// itself: `fileimpl.c` provides `_getdrive` as a constant 3, so file.c's `_fstat` yields a
+// deterministic `st_dev`, and `_wgetenv` as a host-controlled fake. dir.c exports the real
+// `_getdrive` and environ.c the real `_wgetenv`, so linking them into the harness is two
+// duplicate symbols — which is how this was found, because `cargo check` never links there
+// and cannot see it. It cannot ride on `stdio`, which msvcrt-difftest turns ON deliberately
+// so that it can grade file.c.
+//
+// Neither real body could serve the harness anyway: `_getdrive` reads `GetCurrentDirectoryW`,
+// which does not exist on the Linux host. The cost is that the difftest cannot grade these two
+// files — the same limitation file.c and process.c already carry, recorded rather than worked
+// around; this crate's Cargo.toml states what is owed to lift it.
+#[cfg(feature = "dir-environ")]
+pub mod environ;
+#[cfg(feature = "dir-environ")]
+pub mod dir;
+
+// math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
+// `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
+// so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are
+// rewritten to libm) and `math_error` ships under a name it is never spelled by. The object's
+// symbol table is the authority on what this file exports, not the source's apparent shape —
+// reading it that way is what caught `MSVCRT__rotl64`/`MSVCRT__rotr64` translated under a bare
+// `_rotl64` that would have left the C copies live.
+//
+// Nine symbols here are owned by cnt-rust's difftest-pinned `cabi/math.rs`, which lands in the
+// SAME archive, and two strong definitions in one archive resolve by member order. Those are
+// `#[cfg(any())]` with the reason at each site, as are the `#ifndef __REACTOS__` blocks (the
+// 22 `__libm_sse2_*` wrappers, `_fpclass`, `ldiv`) and the `_MSVCR_VER`-gated `fenv_encode` /
+// `fenv_decode`. The i386 `_CI*`/`_ftol`/`_adj_*` stubs ARE exports, so they are defined here
+// in `global_asm!` — leaving them out would drag math.c.obj back in and duplicate everything.
+pub mod math;
+// process.c: all 50 functions. `msvcrt_spawn` and `_wpopen` are the two the paid translation
+// could not get past the deterministic call-envelope audit across nine runs; they are
+// hand-written. `system`/`_wsystem` live inside `#ifndef __REACTOS__` upstream and are
+// `#[cfg(any())]` here for that reason — but NOT `msvcrt_get_comspec`, which is only absent
+// from the object because the compiler inlined it into its sole caller.
+//
+// The sixteen `_exec*`/`_spawn*` WINAPIV entry points are `va_start` trampolines in
+// dll/win32/msvcrt/rust_process_varargs_shim.c over `_v`-prefixed Rust twins here, for the
+// same pinned-stable reason as file.c's twenty: receiving a `va_list` is fine, starting one
+// is not. The four `_execle`-family twins walk that one snapshot TWICE, which is sound only
+// because `va_list` is a flat pointer on every Windows target we build and
+// `msvcrt_valisttos` takes it by value — the reasoning is written out at the twins.
+//
+// Behind the `stdio` feature for the same reason file.c is: `_popen`/`_wpopen`/`_pclose`
+// stand on file.c's fd table and FILE ring, so this module cannot compile without it. The
+// scanf difftest turns `stdio` off to own the character-source names itself, and an
+// ungated `pub mod process;` broke that harness with an unresolved `crate::msvcrt::file`.
+#[cfg(feature = "stdio")]
+pub mod process;

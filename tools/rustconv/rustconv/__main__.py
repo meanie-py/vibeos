@@ -2247,6 +2247,34 @@ def cmd_translate(args):
                 print(f"  Available: {', '.join(func_names)}", file=sys.stderr)
                 continue
 
+        # `--skip-fn`: drop a named body from the worklist so the REST of the TU can
+        # assemble. Without it, one function the model cannot get past the call/fact
+        # envelope throws away every other function in the file — `--exclude` filters
+        # FILE stems, not function names, so it is no help here (process.c's
+        # `msvcrt_spawn` and `_wpopen` blocked 48 accepted bodies across nine runs).
+        # The skip is never silent: each name becomes an audit finding, so the assembled
+        # file always says out loud which bodies a human still owes.
+        skipped_by_request: list[str] = []
+        if getattr(args, "skip_fn", None):
+            requested = {name.strip() for name in args.skip_fn if name.strip()}
+            present = {d.name for d in sorted_deps}
+            unknown = requested - present
+            if unknown:
+                print(
+                    f"  Error: --skip-fn name(s) not in {c_file.name}: "
+                    f"{', '.join(sorted(unknown))}",
+                    file=sys.stderr,
+                )
+                print(f"  Available: {', '.join(d.name for d in deps)}", file=sys.stderr)
+                continue
+            skipped_by_request = sorted(requested)
+            sorted_deps = [d for d in sorted_deps if d.name not in requested]
+            print(
+                f"  --skip-fn: {len(skipped_by_request)} body/bodies left to hand-writing: "
+                f"{', '.join(skipped_by_request)}",
+                file=sys.stderr,
+            )
+
         print(f"  Functions: {len(sorted_deps)} (topo-sorted)", file=sys.stderr)
 
         # c2rust behavior anchors: a compiler-exact transpilation per function, handed
@@ -3430,6 +3458,11 @@ def cmd_translate(args):
         # is wrong. A dropped struct is a compile error and finds itself; a table
         # with one wrong byte does not.
         file_findings: list[str] = []
+        for name in skipped_by_request:
+            file_findings.append(
+                f"--skip-fn: '{name}' was NOT translated and is absent from the output — "
+                f"hand-write it before this file is flipped"
+            )
         if rustconv_target.name != "shell32":
             for name in audit_preamble(c_file, preamble_rust, rust_full=code):
                 file_findings.append(f"preamble: {name}")
@@ -4248,6 +4281,20 @@ def main():
         "--fn",
         dest="fn",
         help="Translate only this function, or a comma-separated bounded worker set",
+    )
+    p.add_argument(
+        "--skip-fn",
+        dest="skip_fn",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help=(
+            "FUNCTION names to leave out of the worklist so the rest of the TU still "
+            "assembles (--exclude filters FILE stems and cannot do this). For a body the "
+            "model cannot get past the call/fact envelope: skip it, ship the other "
+            "functions, hand-write this one. Never silent — each name becomes an audit "
+            "finding, and an unknown name is an error rather than a no-op."
+        ),
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(
