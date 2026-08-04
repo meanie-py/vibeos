@@ -89,6 +89,11 @@ pub const BUFSIZ: u32 = 512;
 pub const SEEK_SET: u32 = 0;
 pub const SEEK_CUR: u32 = 1;
 pub const SEEK_END: u32 = 2;
+pub const _MAX_DRIVE: u32 = 3;
+pub const _MAX_FNAME: u32 = 256;
+pub const _MAX_DIR: u32 = 256;
+pub const _MAX_EXT: u32 = 256;
+pub const _MAX_PATH: u32 = 260;
 pub const _UPPER: u32 = 1;
 pub const _LOWER: u32 = 2;
 pub const _DIGIT: u32 = 4;
@@ -3603,6 +3608,13 @@ pub const FILE_FLAG_POSIX_SEMANTICS: u32 = 16777216;
 pub const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 2097152;
 pub const FILE_FLAG_OPEN_NO_RECALL: u32 = 1048576;
 pub const FILE_FLAG_FIRST_PIPE_INSTANCE: u32 = 524288;
+pub const DRIVE_REMOVABLE: u32 = 2;
+pub const DRIVE_FIXED: u32 = 3;
+pub const DRIVE_REMOTE: u32 = 4;
+pub const DRIVE_CDROM: u32 = 5;
+pub const DRIVE_RAMDISK: u32 = 6;
+pub const DRIVE_UNKNOWN: u32 = 0;
+pub const DRIVE_NO_ROOT_DIR: u32 = 1;
 pub const FILE_TYPE_UNKNOWN: u32 = 0;
 pub const FILE_TYPE_DISK: u32 = 1;
 pub const FILE_TYPE_CHAR: u32 = 2;
@@ -4019,6 +4031,47 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn iswalpha(arg1: wint_t) -> ::core::ffi::c_int;
 }
+pub type _fsize_t = __msvcrt_ulong;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: _fsize_t,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata32i64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata64i32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: _fsize_t,
+    pub name: [wchar_t; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _wfinddata64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [wchar_t; 260usize],
+}
 unsafe extern "C" {
     pub fn _wcsdup(arg1: *const wchar_t) -> *mut wchar_t;
 }
@@ -4399,6 +4452,38 @@ pub struct _SYSTEMTIME {
 }
 pub type SYSTEMTIME = _SYSTEMTIME;
 pub type LPSYSTEMTIME = *mut _SYSTEMTIME;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _WIN32_FIND_DATAA {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [CHAR; 260usize],
+    pub cAlternateFileName: [CHAR; 14usize],
+}
+pub type WIN32_FIND_DATAA = _WIN32_FIND_DATAA;
+pub type LPWIN32_FIND_DATAA = *mut _WIN32_FIND_DATAA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _WIN32_FIND_DATAW {
+    pub dwFileAttributes: DWORD,
+    pub ftCreationTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHigh: DWORD,
+    pub nFileSizeLow: DWORD,
+    pub dwReserved0: DWORD,
+    pub dwReserved1: DWORD,
+    pub cFileName: [WCHAR; 260usize],
+    pub cAlternateFileName: [WCHAR; 14usize],
+}
+pub type WIN32_FIND_DATAW = _WIN32_FIND_DATAW;
+pub type LPWIN32_FIND_DATAW = *mut _WIN32_FIND_DATAW;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExInfoStandard: _GET_FILEEX_INFO_LEVELS = 0;
 pub const _GET_FILEEX_INFO_LEVELS_GetFileExMaxInfoLevel: _GET_FILEEX_INFO_LEVELS = 1;
 pub type _GET_FILEEX_INFO_LEVELS = ::core::ffi::c_uint;
@@ -4490,6 +4575,12 @@ unsafe extern "C" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn CreateDirectoryW(
+        lpPathName: LPCWSTR,
+        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
+    ) -> BOOL;
+}
+unsafe extern "C" {
     pub fn CreateFileW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -4546,16 +4637,58 @@ unsafe extern "C" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn FindClose(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
+}
+unsafe extern "C" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
     pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
 unsafe extern "C" {
     pub fn GetCurrentProcess() -> HANDLE;
 }
 unsafe extern "C" {
     pub fn GetCurrentProcessId() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceW(
+        arg1: LPCWSTR,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStrings() -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStringsW() -> LPWSTR;
 }
 unsafe extern "C" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
@@ -4578,6 +4711,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
 }
 unsafe extern "C" {
     pub fn GetLastError() -> DWORD;
@@ -4646,7 +4782,16 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
     pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
 unsafe extern "C" {
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
@@ -4894,6 +5039,46 @@ pub union _printf_arg {
 pub type printf_arg = _printf_arg;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct _finddata32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: _fsize_t,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata32i64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time32_t,
+    pub time_access: __time32_t,
+    pub time_write: __time32_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata64i32_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: _fsize_t,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _finddata64_t {
+    pub attrib: ::core::ffi::c_uint,
+    pub time_create: __time64_t,
+    pub time_access: __time64_t,
+    pub time_write: __time64_t,
+    pub size: ::core::ffi::c_longlong,
+    pub name: [::core::ffi::c_char; 260usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct __utimbuf32 {
     pub actime: __time32_t,
     pub modtime: __time32_t,
@@ -4903,6 +5088,14 @@ pub struct __utimbuf32 {
 pub struct __utimbuf64 {
     pub actime: __time64_t,
     pub modtime: __time64_t,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _diskfree_t {
+    pub total_clusters: ::core::ffi::c_uint,
+    pub avail_clusters: ::core::ffi::c_uint,
+    pub sectors_per_cluster: ::core::ffi::c_uint,
+    pub bytes_per_sector: ::core::ffi::c_uint,
 }
 unsafe extern "C" {
     pub fn _getdrive() -> ::core::ffi::c_int;

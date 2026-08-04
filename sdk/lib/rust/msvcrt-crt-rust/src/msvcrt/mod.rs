@@ -42,6 +42,38 @@ pub mod mbcs;
 // authority on that, not the source's apparent shape.
 pub mod time;
 
+// environ.c (11 of 11 exports) and dir.c (48 of 48), both whole-file.
+//
+// environ.c is whole-file for the same reason errno.c and time.c are: the four environment
+// blocks (`MSVCRT__environ`/`__winitenv`/`_wenviron`/`__initenv`) are ONE contract, built by
+// `env_init` and rewritten in place by every `_putenv`/`_wputenv`, so a partial flip would
+// leave some readers on the C's copy of that state. Its eight file-static helpers
+// (`env_get_index`, `env_set`, `putenv_helper`, …) stay private exactly as in the C, so the
+// object's 11 GLOBAL symbols are the whole cohab obligation and all 11 are defined.
+//
+// dir.c is the directory/path surface — `_findfirst*`/`_findnext*` (all four time-width
+// variants), `_chdir`/`_getcwd`/`_getdcwd`, `_mkdir`/`_rmdir`, the
+// `_makepath`/`_splitpath`/`_fullpath` path algebra, and `_searchenv*`.
+//
+// Both carry the `dir-environ` gate, and NOT because either compiles against file.c's fd
+// table — neither does. It is a DEFAULT feature that both host harnesses drop (they take this
+// crate with `default-features = false`), because the harness defines two of these exports
+// itself: `fileimpl.c` provides `_getdrive` as a constant 3, so file.c's `_fstat` yields a
+// deterministic `st_dev`, and `_wgetenv` as a host-controlled fake. dir.c exports the real
+// `_getdrive` and environ.c the real `_wgetenv`, so linking them into the harness is two
+// duplicate symbols — which is how this was found, because `cargo check` never links there
+// and cannot see it. It cannot ride on `stdio`, which msvcrt-difftest turns ON deliberately
+// so that it can grade file.c.
+//
+// Neither real body could serve the harness anyway: `_getdrive` reads `GetCurrentDirectoryW`,
+// which does not exist on the Linux host. The cost is that the difftest cannot grade these two
+// files — the same limitation file.c and process.c already carry, recorded rather than worked
+// around; this crate's Cargo.toml states what is owed to lift it.
+#[cfg(feature = "dir-environ")]
+pub mod environ;
+#[cfg(feature = "dir-environ")]
+pub mod dir;
+
 // math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
 // `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
 // so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are

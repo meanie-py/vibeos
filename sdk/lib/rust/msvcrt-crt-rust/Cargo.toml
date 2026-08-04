@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter"]
+default = ["stdio", "invalid-parameter", "dir-environ"]
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
@@ -85,6 +85,28 @@ invalid-parameter = []
 # FILE-backed stdio, then turn this back on for the harness. Tracked with the file.c
 # grading work in docs/engineering/rust-port-status.md (wave 17).
 stdio = []
+
+# dir.c (`src/msvcrt/dir.rs`) and environ.c (`src/msvcrt/environ.rs`). ON for every build
+# that produces msvcrt.dll, and OFF for exactly one consumer for the same reason
+# `invalid-parameter` above is: the host harness DEFINES two of their exports itself.
+#
+# `msvcrt-difftest/fileimpl.c` provides `_getdrive` (line 1086) as a constant 3, so that
+# file.c's `_fstat` yields a deterministic `st_dev`, and `_wgetenv` (line 1104) as a
+# host-controlled fake. dir.c exports the real `_getdrive` and environ.c the real
+# `_wgetenv`, so linking these two modules into the harness is two duplicate symbols.
+#
+# This CANNOT ride on `stdio`: msvcrt-difftest deliberately turns `stdio` ON so that it can
+# grade file.c. Both harnesses take this crate with `default-features = false`, which is
+# what makes a new DEFAULT feature the whole mechanism — no harness edit is needed.
+#
+# It costs no coverage today: neither file has grading rows. Note also that neither real
+# body could serve the harness even if the symbols were free — `_getdrive` reads
+# `GetCurrentDirectoryW`, which does not exist on the Linux host.
+#
+# OWED: grading these needs the harness to stop owning the two names — shim
+# GetCurrentDirectoryW alongside the other Win32 stubs and let the real bodies run, the
+# same move `invalid-parameter` owes for its call counter.
+dir-environ = []
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }

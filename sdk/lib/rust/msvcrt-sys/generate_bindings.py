@@ -123,6 +123,33 @@ ALLOWLIST_TYPES = [
     # `_MSVCR_VER >= 140` block orders those fields DIFFERENTLY from the header the
     # build reaches. Deriving it is the only safe option; the difftest's own
     # layout guardian caught a hand-transcription of exactly this.
+    # ── dir.c (the directory / path surface) ────────────────────────────
+    # The eight `_finddata*` shapes are the whole reason `_findfirst` has eight entry
+    # points: they differ ONLY in the width of `time_t` (32/64) and `_fsize_t` (32/64),
+    # and dir.c memcpy's Win32's FILETIME results into whichever one the caller passed.
+    # A hand-written struct would be right on one arch and one width and silently wrong
+    # on the other seven — and the failure is a garbage file size or a 2038 timestamp,
+    # not a compile error. `_wfinddata*` are the same eight with a `wchar_t` name field.
+    # These are the tags in msvcrt's OWN dll/win32/msvcrt/include/corecrt_io.h and
+    # corecrt_wio.h, not the SDK's — the module's CMakeLists drops sdk/include/crt and
+    # substitutes its own dir, and the two spell the 64-bit tag differently (`_finddata64_t`
+    # here, `__finddata64_t` in the SDK's io.h). Allowlisting the SDK spelling emits nothing.
+    "_finddata32_t",
+    "_finddata32i64_t",
+    "_finddata64i32_t",
+    "_finddata64_t",
+    "_wfinddata32_t",
+    "_wfinddata32i64_t",
+    "_wfinddata64i32_t",
+    "_wfinddata64_t",
+    # direct.h: `_getdiskfree`'s out-parameter.
+    "_diskfree_t",
+    # winbase.h. dir.c passes these straight to FindFirstFileW/FindNextFileW and reads
+    # ftCreationTime/ftLastAccessTime/ftLastWriteTime/nFileSizeLow/cFileName out of them.
+    "_WIN32_FIND_DATAA",
+    "_WIN32_FIND_DATAW",
+    "WIN32_FIND_DATAA",
+    "WIN32_FIND_DATAW",
     "_iobuf",
     "FILE",  # the typedef NAME; allowlisting only the `_iobuf` tag emits the struct
     # but not the alias, and every signature in file.c spells it `FILE`.
@@ -487,6 +514,19 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|CreateProcessW|WaitForSingleObject|GetExitCodeProcess|TerminateProcess"
         "|GetProcessHeap|HeapAlloc|HeapFree|HeapReAlloc"
         "|LoadLibraryW|FreeLibrary|GetProcAddress|GetModuleFileNameW"
+        # winbase.h: dir.c's Win32 surface. FindFirstFileA/W hand back a WIN32_FIND_DATA
+        # whose five FILETIME/size fields dir.c copies straight into a `_finddata*_t` — the
+        # struct pair whose per-arch layout is the entire reason this island exists rather
+        # than a hand-written extern block.
+        "|FindFirstFileA|FindFirstFileW|FindNextFileA|FindNextFileW|FindClose"
+        "|CreateDirectoryW|RemoveDirectoryW|SetCurrentDirectoryW|GetCurrentDirectoryW"
+        "|GetFullPathNameW|GetDiskFreeSpaceW|GetDriveTypeW"
+        # winbase.h: environ.c's. GetEnvironmentStringsA is a genuine trap — the ANSI
+        # entry point's real exported name is `GetEnvironmentStrings` with no suffix
+        # (environ.c.obj imports `_GetEnvironmentStrings@0`), so bindgen must supply the
+        # alias rather than a hand-written extern inventing a symbol that does not exist.
+        "|GetEnvironmentStrings|GetEnvironmentStringsA|GetEnvironmentStringsW"
+        "|FreeEnvironmentStringsA|FreeEnvironmentStringsW|SetEnvironmentVariableW"
         # CRT siblings file.c calls that are still C. The ones already Rust in
         # msvcrt-crt-rust are IMPORTED there instead, so rustc checks them against their
         # definition; these have no Rust definition to check against, which is exactly
@@ -539,6 +579,14 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|FILE_SHARE_[A-Z]+|FILE_ATTRIBUTE_[A-Z]+|FILE_FLAG_[A-Z_]+|FILE_TYPE_[A-Z]+"
         "|FILE_BEGIN|FILE_CURRENT|FILE_END|FILE_[A-Z_]*INFORMATION"
         "|STD_[A-Z]+_HANDLE|MAX_PATH|MOVEFILE_[A-Z_]+|DUPLICATE_[A-Z_]+"
+        # ── dir.c ───────────────────────────────────────────────────────────
+        # stdlib.h's path-component maxima, which size every buffer `_splitpath`,
+        # `_makepath` and `_wsplitpath` write into. Deriving matters: _MAX_DIR is 256
+        # and _MAX_PATH 260, so a transcription that reuses one for the other overflows
+        # by exactly four bytes and only on the longest paths.
+        "|_MAX_DRIVE|_MAX_DIR|_MAX_FNAME|_MAX_EXT|_MAX_PATH"
+        # winbase.h's GetDriveTypeW results — `_getdrives`/`_chdrive` dispatch on them.
+        "|DRIVE_[A-Z_]+"
         "|ERROR_[A-Z0-9_]+|NO_ERROR"
         "|RTL_CRITICAL_SECTION_FLAG_[A-Z_]+"
         # mtdll.h's lock numbering (`_IOB_ENTRIES` is above, with the errno block).
