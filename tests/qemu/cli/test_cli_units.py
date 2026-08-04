@@ -557,6 +557,11 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     (crate / "src").mkdir(parents=True)
     (crate / "Cargo.toml").write_text("[package]\nname = 'foo-rust'\n")
     (crate / "src" / "lib.rs").write_text("// rust cohab\n")
+    # A cohab crate is one the workspace actually BUILDS; `parked-rust` is the
+    # translated-but-not-yet-flipped shape and is deliberately absent from members.
+    (r / "sdk" / "lib" / "rust" / "Cargo.toml").write_text(
+        '[workspace]\nmembers = [\n    "foo-rust",\n    "k32-vista-rust",\n]\n'
+    )
     (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
     (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
     (r / "qemu").mkdir()
@@ -587,6 +592,24 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     (arm64_cohab_repo / "sdk" / "lib" / "rust" / "k32-vista-rust" / "Cargo.toml").write_text("x")
     assert provenance._crate_for_stem(arm64_cohab_repo, "k32_vista") is not None
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
+
+
+def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path):
+    """A translated-but-NOT-YET-FLIPPED crate is not cohab, and treating it as one
+    halted the merge train on 2026-08-04: msv1_0-rust was committed and parked out
+    of `members` pending its grind, dll/win32/msv1_0 still built from C, and the
+    staleness net compared the fresh .rs against the C-built msv1_0.dll and reported
+    `cohab flip not rebuilt` for a flip that had not happened. No rebuild clears
+    that, so the gate could render no verdict at all."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "parked-rust").mkdir()
+    (rust / "parked-rust" / "Cargo.toml").write_text("[package]\nname = 'parked-rust'\n")
+    provenance._workspace_members.cache_clear()
+    assert provenance._crate_for_stem(arm64_cohab_repo, "parked") is None
+    # …and it stays out of the boot-set mapping the staleness net walks.
+    assert not any(
+        "parked" in rel for rel in provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    )
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):
