@@ -49,1280 +49,4138 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
     }
 }
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
-pub const SYSPAL_ERROR: u32 = 0;
-pub const SYSPAL_STATIC: u32 = 1;
-pub const SYSPAL_NOSTATIC: u32 = 2;
-pub const SYSPAL_NOSTATIC256: u32 = 3;
-pub const NTM_NONNEGATIVE_AC: u32 = 65536;
-pub const NTM_PS_OPENTYPE: u32 = 131072;
-pub const NTM_TT_OPENTYPE: u32 = 262144;
-pub const NTM_MULTIPLEMASTER: u32 = 524288;
-pub const NTM_TYPE1: u32 = 1048576;
-pub const NTM_DSIG: u32 = 2097152;
-pub const AC_SRC_OVER: u32 = 0;
-pub const AC_SRC_ALPHA: u32 = 1;
-pub const BI_RGB: u32 = 0;
-pub const BI_RLE8: u32 = 1;
-pub const BI_RLE4: u32 = 2;
-pub const BI_BITFIELDS: u32 = 3;
-pub const BI_JPEG: u32 = 4;
-pub const BI_PNG: u32 = 5;
-pub const LF_FACESIZE: u32 = 32;
-pub const LF_FULLFACESIZE: u32 = 64;
-pub const CA_NEGATIVE: u32 = 1;
-pub const CA_LOG_FILTER: u32 = 2;
-pub const ILLUMINANT_DEVICE_DEFAULT: u32 = 0;
-pub const ILLUMINANT_A: u32 = 1;
-pub const ILLUMINANT_B: u32 = 2;
-pub const ILLUMINANT_C: u32 = 3;
-pub const ILLUMINANT_D50: u32 = 4;
-pub const ILLUMINANT_D55: u32 = 5;
-pub const ILLUMINANT_D65: u32 = 6;
-pub const ILLUMINANT_D75: u32 = 7;
-pub const ILLUMINANT_F2: u32 = 8;
-pub const ILLUMINANT_MAX_INDEX: u32 = 8;
-pub const ILLUMINANT_TUNGSTEN: u32 = 1;
-pub const ILLUMINANT_DAYLIGHT: u32 = 3;
-pub const ILLUMINANT_FLUORESCENT: u32 = 8;
-pub const ILLUMINANT_NTSC: u32 = 3;
-pub const RGB_GAMMA_MIN: u32 = 2500;
-pub const RGB_GAMMA_MAX: u32 = 65000;
-pub const REFERENCE_WHITE_MIN: u32 = 6000;
-pub const REFERENCE_WHITE_MAX: u32 = 10000;
-pub const REFERENCE_BLACK_MIN: u32 = 0;
-pub const REFERENCE_BLACK_MAX: u32 = 4000;
+pub const PROCESS_NAME_NATIVE: i32 = 1;
+pub const FILE_ENCRYPTABLE: i32 = 0;
+pub const FILE_IS_ENCRYPTED: i32 = 1;
+pub const FILE_SYSTEM_ATTR: i32 = 2;
+pub const FILE_ROOT_DIR: i32 = 3;
+pub const FILE_SYSTEM_DIR: i32 = 4;
+pub const FILE_UNKNOWN: i32 = 5;
+pub const FILE_SYSTEM_NOT_SUPPORT: i32 = 6;
+pub const FILE_USER_DISALLOWED: i32 = 7;
+pub const FILE_READ_ONLY: i32 = 8;
+pub const FILE_DIR_DISALLOWED: i32 = 9;
+pub const COMMPROP_INITIALIZED: i64 = 3879531822;
+pub const SP_SERIALCOMM: i32 = 1;
+pub const PST_UNSPECIFIED: i32 = 0;
+pub const PST_RS232: i32 = 1;
+pub const PST_PARALLELPORT: i32 = 2;
+pub const PST_RS422: i32 = 3;
+pub const PST_RS423: i32 = 4;
+pub const PST_RS449: i32 = 5;
+pub const PST_MODEM: i32 = 6;
+pub const PST_FAX: i32 = 33;
+pub const PST_SCANNER: i32 = 34;
+pub const PST_NETWORK_BRIDGE: i32 = 256;
+pub const PST_LAT: i32 = 257;
+pub const PST_TCPIP_TELNET: i32 = 258;
+pub const PST_X25: i32 = 259;
+pub const BAUD_075: i32 = 1;
+pub const BAUD_110: i32 = 2;
+pub const BAUD_134_5: i32 = 4;
+pub const BAUD_150: i32 = 8;
+pub const BAUD_300: i32 = 16;
+pub const BAUD_600: i32 = 32;
+pub const BAUD_1200: i32 = 64;
+pub const BAUD_1800: i32 = 128;
+pub const BAUD_2400: i32 = 256;
+pub const BAUD_4800: i32 = 512;
+pub const BAUD_7200: i32 = 1024;
+pub const BAUD_9600: i32 = 2048;
+pub const BAUD_14400: i32 = 4096;
+pub const BAUD_19200: i32 = 8192;
+pub const BAUD_38400: i32 = 16384;
+pub const BAUD_56K: i32 = 32768;
+pub const BAUD_128K: i32 = 65536;
+pub const BAUD_115200: i32 = 131072;
+pub const BAUD_57600: i32 = 262144;
+pub const BAUD_USER: i32 = 268435456;
+pub const PCF_DTRDSR: i32 = 1;
+pub const PCF_RTSCTS: i32 = 2;
+pub const PCF_RLSD: i32 = 4;
+pub const PCF_PARITY_CHECK: i32 = 8;
+pub const PCF_XONXOFF: i32 = 16;
+pub const PCF_SETXCHAR: i32 = 32;
+pub const PCF_TOTALTIMEOUTS: i32 = 64;
+pub const PCF_INTTIMEOUTS: i32 = 128;
+pub const PCF_SPECIALCHARS: i32 = 256;
+pub const PCF_16BITMODE: i32 = 512;
+pub const SP_PARITY: i32 = 1;
+pub const SP_BAUD: i32 = 2;
+pub const SP_DATABITS: i32 = 4;
+pub const SP_STOPBITS: i32 = 8;
+pub const SP_HANDSHAKING: i32 = 16;
+pub const SP_PARITY_CHECK: i32 = 32;
+pub const SP_RLSD: i32 = 64;
+pub const DATABITS_5: i32 = 1;
+pub const DATABITS_6: i32 = 2;
+pub const DATABITS_7: i32 = 4;
+pub const DATABITS_8: i32 = 8;
+pub const DATABITS_16: i32 = 16;
+pub const DATABITS_16X: i32 = 32;
+pub const STOPBITS_10: i32 = 1;
+pub const STOPBITS_15: i32 = 2;
+pub const STOPBITS_20: i32 = 4;
+pub const PARITY_NONE: i32 = 256;
+pub const PARITY_ODD: i32 = 512;
+pub const PARITY_EVEN: i32 = 1024;
+pub const PARITY_MARK: i32 = 2048;
+pub const PARITY_SPACE: i32 = 4096;
+pub const FILE_BEGIN: i32 = 0;
+pub const FILE_CURRENT: i32 = 1;
+pub const FILE_END: i32 = 2;
+pub const OF_READ: i32 = 0;
+pub const OF_READWRITE: i32 = 2;
+pub const OF_WRITE: i32 = 1;
+pub const OF_SHARE_COMPAT: i32 = 0;
+pub const OF_SHARE_DENY_NONE: i32 = 64;
+pub const OF_SHARE_DENY_READ: i32 = 48;
+pub const OF_SHARE_DENY_WRITE: i32 = 32;
+pub const OF_SHARE_EXCLUSIVE: i32 = 16;
+pub const OF_CANCEL: i32 = 2048;
+pub const OF_CREATE: i32 = 4096;
+pub const OF_DELETE: i32 = 512;
+pub const OF_EXIST: i32 = 16384;
+pub const OF_PARSE: i32 = 256;
+pub const OF_PROMPT: i32 = 8192;
+pub const OF_REOPEN: i32 = 32768;
+pub const OF_VERIFY: i32 = 1024;
+pub const NMPWAIT_NOWAIT: i32 = 1;
+pub const NMPWAIT_USE_DEFAULT_WAIT: i32 = 0;
+pub const CE_BREAK: i32 = 16;
+pub const CE_DNS: i32 = 2048;
+pub const CE_FRAME: i32 = 8;
+pub const CE_IOE: i32 = 1024;
+pub const CE_MODE: i32 = 32768;
+pub const CE_OOP: i32 = 4096;
+pub const CE_OVERRUN: i32 = 2;
+pub const CE_PTO: i32 = 512;
+pub const CE_RXOVER: i32 = 1;
+pub const CE_RXPARITY: i32 = 4;
+pub const CE_TXFULL: i32 = 256;
+pub const PROGRESS_CONTINUE: i32 = 0;
+pub const PROGRESS_CANCEL: i32 = 1;
+pub const PROGRESS_STOP: i32 = 2;
+pub const PROGRESS_QUIET: i32 = 3;
+pub const CALLBACK_CHUNK_FINISHED: i32 = 0;
+pub const CALLBACK_STREAM_SWITCH: i32 = 1;
+pub const OFS_MAXPATHNAME: i32 = 128;
+pub const FILE_MAP_COPY: i32 = 1;
+pub const FILE_MAP_WRITE: i32 = 2;
+pub const FILE_MAP_READ: i32 = 4;
+pub const FILE_MAP_ALL_ACCESS: i32 = 983071;
+pub const FILE_MAP_EXECUTE: i32 = 32;
+pub const MUTEX_ALL_ACCESS: i32 = 2031617;
+pub const MUTEX_MODIFY_STATE: i32 = 1;
+pub const SEMAPHORE_ALL_ACCESS: i32 = 2031619;
+pub const SEMAPHORE_MODIFY_STATE: i32 = 2;
+pub const EVENT_ALL_ACCESS: i32 = 2031619;
+pub const EVENT_MODIFY_STATE: i32 = 2;
+pub const PIPE_ACCESS_DUPLEX: i32 = 3;
+pub const PIPE_ACCESS_INBOUND: i32 = 1;
+pub const PIPE_ACCESS_OUTBOUND: i32 = 2;
+pub const PIPE_TYPE_BYTE: i32 = 0;
+pub const PIPE_TYPE_MESSAGE: i32 = 4;
+pub const PIPE_READMODE_BYTE: i32 = 0;
+pub const PIPE_READMODE_MESSAGE: i32 = 2;
+pub const PIPE_WAIT: i32 = 0;
+pub const PIPE_NOWAIT: i32 = 1;
+pub const PIPE_CLIENT_END: i32 = 0;
+pub const PIPE_SERVER_END: i32 = 1;
+pub const PIPE_UNLIMITED_INSTANCES: i32 = 255;
+pub const DEBUG_PROCESS: i32 = 1;
+pub const DEBUG_ONLY_THIS_PROCESS: i32 = 2;
+pub const CREATE_SUSPENDED: i32 = 4;
+pub const DETACHED_PROCESS: i32 = 8;
+pub const CREATE_NEW_CONSOLE: i32 = 16;
+pub const NORMAL_PRIORITY_CLASS: i32 = 32;
+pub const IDLE_PRIORITY_CLASS: i32 = 64;
+pub const HIGH_PRIORITY_CLASS: i32 = 128;
+pub const REALTIME_PRIORITY_CLASS: i32 = 256;
+pub const CREATE_NEW_PROCESS_GROUP: i32 = 512;
+pub const CREATE_UNICODE_ENVIRONMENT: i32 = 1024;
+pub const CREATE_SEPARATE_WOW_VDM: i32 = 2048;
+pub const CREATE_SHARED_WOW_VDM: i32 = 4096;
+pub const CREATE_FORCEDOS: i32 = 8192;
+pub const BELOW_NORMAL_PRIORITY_CLASS: i32 = 16384;
+pub const ABOVE_NORMAL_PRIORITY_CLASS: i32 = 32768;
+pub const CREATE_BREAKAWAY_FROM_JOB: i32 = 16777216;
+pub const CREATE_PRESERVE_CODE_AUTHZ_LEVEL: i32 = 33554432;
+pub const CREATE_DEFAULT_ERROR_MODE: i32 = 67108864;
+pub const CREATE_NO_WINDOW: i32 = 134217728;
+pub const PROFILE_USER: i32 = 268435456;
+pub const PROFILE_KERNEL: i32 = 536870912;
+pub const PROFILE_SERVER: i32 = 1073741824;
+pub const CREATE_IGNORE_SYSTEM_DEFAULT: i64 = 2147483648;
+pub const STACK_SIZE_PARAM_IS_A_RESERVATION: i32 = 65536;
+pub const CREATE_NEW: i32 = 1;
+pub const CREATE_ALWAYS: i32 = 2;
+pub const OPEN_EXISTING: i32 = 3;
+pub const OPEN_ALWAYS: i32 = 4;
+pub const TRUNCATE_EXISTING: i32 = 5;
+pub const COPY_FILE_FAIL_IF_EXISTS: i32 = 1;
+pub const COPY_FILE_RESTARTABLE: i32 = 2;
+pub const COPY_FILE_OPEN_SOURCE_FOR_WRITE: i32 = 4;
+pub const COPY_FILE_ALLOW_DECRYPTED_DESTINATION: i32 = 8;
+pub const FILE_FLAG_WRITE_THROUGH: i64 = 2147483648;
+pub const FILE_FLAG_OVERLAPPED: i32 = 1073741824;
+pub const FILE_FLAG_NO_BUFFERING: i32 = 536870912;
+pub const FILE_FLAG_RANDOM_ACCESS: i32 = 268435456;
+pub const FILE_FLAG_SEQUENTIAL_SCAN: i32 = 134217728;
+pub const FILE_FLAG_DELETE_ON_CLOSE: i32 = 67108864;
+pub const FILE_FLAG_BACKUP_SEMANTICS: i32 = 33554432;
+pub const FILE_FLAG_POSIX_SEMANTICS: i32 = 16777216;
+pub const FILE_FLAG_OPEN_REPARSE_POINT: i32 = 2097152;
+pub const FILE_FLAG_OPEN_NO_RECALL: i32 = 1048576;
+pub const FILE_FLAG_FIRST_PIPE_INSTANCE: i32 = 524288;
+pub const CLRDTR: i32 = 6;
+pub const CLRRTS: i32 = 4;
+pub const SETDTR: i32 = 5;
+pub const SETRTS: i32 = 3;
+pub const SETXOFF: i32 = 1;
+pub const SETXON: i32 = 2;
+pub const RESETDEV: i32 = 7;
+pub const SETBREAK: i32 = 8;
+pub const CLRBREAK: i32 = 9;
+pub const SCS_32BIT_BINARY: i32 = 0;
+pub const SCS_64BIT_BINARY: i32 = 6;
+pub const SCS_DOS_BINARY: i32 = 1;
+pub const SCS_OS216_BINARY: i32 = 5;
+pub const SCS_PIF_BINARY: i32 = 3;
+pub const SCS_POSIX_BINARY: i32 = 4;
+pub const SCS_WOW_BINARY: i32 = 2;
+pub const MAX_COMPUTERNAME_LENGTH: i32 = 15;
+pub const HW_PROFILE_GUIDLEN: i32 = 39;
+pub const MAX_PROFILE_LEN: i32 = 80;
+pub const DOCKINFO_UNDOCKED: i32 = 1;
+pub const DOCKINFO_DOCKED: i32 = 2;
+pub const DOCKINFO_USER_SUPPLIED: i32 = 4;
+pub const DOCKINFO_USER_UNDOCKED: i32 = 5;
+pub const DOCKINFO_USER_DOCKED: i32 = 6;
+pub const DRIVE_REMOVABLE: i32 = 2;
+pub const DRIVE_FIXED: i32 = 3;
+pub const DRIVE_REMOTE: i32 = 4;
+pub const DRIVE_CDROM: i32 = 5;
+pub const DRIVE_RAMDISK: i32 = 6;
+pub const DRIVE_UNKNOWN: i32 = 0;
+pub const DRIVE_NO_ROOT_DIR: i32 = 1;
+pub const FILE_TYPE_UNKNOWN: i32 = 0;
+pub const FILE_TYPE_DISK: i32 = 1;
+pub const FILE_TYPE_CHAR: i32 = 2;
+pub const FILE_TYPE_PIPE: i32 = 3;
+pub const FILE_TYPE_REMOTE: i32 = 32768;
+pub const HANDLE_FLAG_INHERIT: i32 = 1;
+pub const HANDLE_FLAG_PROTECT_FROM_CLOSE: i32 = 2;
+pub const GET_TAPE_MEDIA_INFORMATION: i32 = 0;
+pub const GET_TAPE_DRIVE_INFORMATION: i32 = 1;
+pub const SET_TAPE_MEDIA_INFORMATION: i32 = 0;
+pub const SET_TAPE_DRIVE_INFORMATION: i32 = 1;
+pub const THREAD_PRIORITY_ABOVE_NORMAL: i32 = 1;
+pub const THREAD_PRIORITY_BELOW_NORMAL: i32 = -1;
+pub const THREAD_PRIORITY_HIGHEST: i32 = 2;
+pub const THREAD_PRIORITY_IDLE: i32 = -15;
+pub const THREAD_PRIORITY_LOWEST: i32 = -2;
+pub const THREAD_PRIORITY_NORMAL: i32 = 0;
+pub const THREAD_PRIORITY_TIME_CRITICAL: i32 = 15;
+pub const THREAD_PRIORITY_ERROR_RETURN: i32 = 2147483647;
+pub const TIME_ZONE_ID_UNKNOWN: i32 = 0;
+pub const TIME_ZONE_ID_STANDARD: i32 = 1;
+pub const TIME_ZONE_ID_DAYLIGHT: i32 = 2;
+pub const TIME_ZONE_ID_INVALID: i64 = 4294967295;
+pub const FS_CASE_IS_PRESERVED: i32 = 2;
+pub const FS_CASE_SENSITIVE: i32 = 1;
+pub const FS_UNICODE_STORED_ON_DISK: i32 = 4;
+pub const FS_PERSISTENT_ACLS: i32 = 8;
+pub const FS_FILE_COMPRESSION: i32 = 16;
+pub const FS_VOL_IS_COMPRESSED: i32 = 32768;
+pub const GMEM_FIXED: i32 = 0;
+pub const GMEM_MOVEABLE: i32 = 2;
+pub const GMEM_MODIFY: i32 = 128;
+pub const GPTR: i32 = 64;
+pub const GHND: i32 = 66;
+pub const GMEM_DDESHARE: i32 = 8192;
+pub const GMEM_DISCARDABLE: i32 = 256;
+pub const GMEM_LOWER: i32 = 4096;
+pub const GMEM_NOCOMPACT: i32 = 16;
+pub const GMEM_NODISCARD: i32 = 32;
+pub const GMEM_NOT_BANKED: i32 = 4096;
+pub const GMEM_NOTIFY: i32 = 16384;
+pub const GMEM_SHARE: i32 = 8192;
+pub const GMEM_ZEROINIT: i32 = 64;
+pub const GMEM_DISCARDED: i32 = 16384;
+pub const GMEM_INVALID_HANDLE: i32 = 32768;
+pub const GMEM_LOCKCOUNT: i32 = 255;
+pub const GMEM_VALID_FLAGS: i32 = 32626;
+pub const DONT_RESOLVE_DLL_REFERENCES: i32 = 1;
+pub const LOAD_LIBRARY_AS_DATAFILE: i32 = 2;
+pub const LOAD_WITH_ALTERED_SEARCH_PATH: i32 = 8;
+pub const LOAD_IGNORE_CODE_AUTHZ_LEVEL: i32 = 16;
+pub const LOGON32_PROVIDER_DEFAULT: i32 = 0;
+pub const LOGON32_PROVIDER_WINNT35: i32 = 1;
+pub const LOGON32_PROVIDER_WINNT40: i32 = 2;
+pub const LOGON32_PROVIDER_WINNT50: i32 = 3;
+pub const LOGON32_LOGON_INTERACTIVE: i32 = 2;
+pub const LOGON32_LOGON_NETWORK: i32 = 3;
+pub const LOGON32_LOGON_BATCH: i32 = 4;
+pub const LOGON32_LOGON_SERVICE: i32 = 5;
+pub const LOGON32_LOGON_UNLOCK: i32 = 7;
+pub const LOGON32_LOGON_NETWORK_CLEARTEXT: i32 = 8;
+pub const LOGON32_LOGON_NEW_CREDENTIALS: i32 = 9;
+pub const MOVEFILE_REPLACE_EXISTING: i32 = 1;
+pub const MOVEFILE_COPY_ALLOWED: i32 = 2;
+pub const MOVEFILE_DELAY_UNTIL_REBOOT: i32 = 4;
+pub const MOVEFILE_WRITE_THROUGH: i32 = 8;
+pub const MOVEFILE_CREATE_HARDLINK: i32 = 16;
+pub const MOVEFILE_FAIL_IF_NOT_TRACKABLE: i32 = 32;
+pub const MAXIMUM_WAIT_OBJECTS: i32 = 64;
+pub const MAXIMUM_SUSPEND_COUNT: i32 = 127;
+pub const WAIT_OBJECT_0: i32 = 0;
+pub const WAIT_ABANDONED_0: i32 = 128;
+pub const WAIT_IO_COMPLETION: i32 = 192;
+pub const WAIT_ABANDONED: i32 = 128;
+pub const PURGE_TXABORT: i32 = 1;
+pub const PURGE_RXABORT: i32 = 2;
+pub const PURGE_TXCLEAR: i32 = 4;
+pub const PURGE_RXCLEAR: i32 = 8;
+pub const FORMAT_MESSAGE_ALLOCATE_BUFFER: i32 = 256;
+pub const FORMAT_MESSAGE_IGNORE_INSERTS: i32 = 512;
+pub const FORMAT_MESSAGE_FROM_STRING: i32 = 1024;
+pub const FORMAT_MESSAGE_FROM_HMODULE: i32 = 2048;
+pub const FORMAT_MESSAGE_FROM_SYSTEM: i32 = 4096;
+pub const FORMAT_MESSAGE_ARGUMENT_ARRAY: i32 = 8192;
+pub const FORMAT_MESSAGE_MAX_WIDTH_MASK: i32 = 255;
+pub const EV_BREAK: i32 = 64;
+pub const EV_CTS: i32 = 8;
+pub const EV_DSR: i32 = 16;
+pub const EV_ERR: i32 = 128;
+pub const EV_EVENT1: i32 = 2048;
+pub const EV_EVENT2: i32 = 4096;
+pub const EV_PERR: i32 = 512;
+pub const EV_RING: i32 = 256;
+pub const EV_RLSD: i32 = 32;
+pub const EV_RX80FULL: i32 = 1024;
+pub const EV_RXCHAR: i32 = 1;
+pub const EV_RXFLAG: i32 = 2;
+pub const EV_TXEMPTY: i32 = 4;
+pub const SEM_FAILCRITICALERRORS: i32 = 1;
+pub const SEM_NOGPFAULTERRORBOX: i32 = 2;
+pub const SEM_NOALIGNMENTFAULTEXCEPT: i32 = 4;
+pub const SEM_NOOPENFILEERRORBOX: i32 = 32768;
+pub const SLE_ERROR: i32 = 1;
+pub const SLE_MINORERROR: i32 = 2;
+pub const SLE_WARNING: i32 = 3;
+pub const SHUTDOWN_NORETRY: i32 = 1;
+pub const MAXINTATOM: i32 = 49152;
+pub const IGNORE: i32 = 0;
+pub const INFINITE: i64 = 4294967295;
+pub const NOPARITY: i32 = 0;
+pub const ODDPARITY: i32 = 1;
+pub const EVENPARITY: i32 = 2;
+pub const MARKPARITY: i32 = 3;
+pub const SPACEPARITY: i32 = 4;
+pub const ONESTOPBIT: i32 = 0;
+pub const ONE5STOPBITS: i32 = 1;
+pub const TWOSTOPBITS: i32 = 2;
+pub const CBR_110: i32 = 110;
+pub const CBR_300: i32 = 300;
+pub const CBR_600: i32 = 600;
+pub const CBR_1200: i32 = 1200;
+pub const CBR_2400: i32 = 2400;
+pub const CBR_4800: i32 = 4800;
+pub const CBR_9600: i32 = 9600;
+pub const CBR_14400: i32 = 14400;
+pub const CBR_19200: i32 = 19200;
+pub const CBR_38400: i32 = 38400;
+pub const CBR_56000: i32 = 56000;
+pub const CBR_57600: i32 = 57600;
+pub const CBR_115200: i32 = 115200;
+pub const CBR_128000: i32 = 128000;
+pub const CBR_256000: i32 = 256000;
+pub const BACKUP_INVALID: i32 = 0;
+pub const BACKUP_DATA: i32 = 1;
+pub const BACKUP_EA_DATA: i32 = 2;
+pub const BACKUP_SECURITY_DATA: i32 = 3;
+pub const BACKUP_ALTERNATE_DATA: i32 = 4;
+pub const BACKUP_LINK: i32 = 5;
+pub const BACKUP_PROPERTY_DATA: i32 = 6;
+pub const BACKUP_OBJECT_ID: i32 = 7;
+pub const BACKUP_REPARSE_DATA: i32 = 8;
+pub const BACKUP_SPARSE_BLOCK: i32 = 9;
+pub const STREAM_NORMAL_ATTRIBUTE: i32 = 0;
+pub const STREAM_MODIFIED_WHEN_READ: i32 = 1;
+pub const STREAM_CONTAINS_SECURITY: i32 = 2;
+pub const STREAM_CONTAINS_PROPERTIES: i32 = 4;
+pub const STARTF_USESHOWWINDOW: i32 = 1;
+pub const STARTF_USESIZE: i32 = 2;
+pub const STARTF_USEPOSITION: i32 = 4;
+pub const STARTF_USECOUNTCHARS: i32 = 8;
+pub const STARTF_USEFILLATTRIBUTE: i32 = 16;
+pub const STARTF_RUNFULLSCREEN: i32 = 32;
+pub const STARTF_FORCEONFEEDBACK: i32 = 64;
+pub const STARTF_FORCEOFFFEEDBACK: i32 = 128;
+pub const STARTF_USESTDHANDLES: i32 = 256;
+pub const STARTF_USEHOTKEY: i32 = 512;
+pub const STARTF_TITLEISLINKNAME: i32 = 2048;
+pub const STARTF_TITLEISAPPID: i32 = 4096;
+pub const STARTF_PREVENTPINNING: i32 = 8192;
+pub const TC_NORMAL: i32 = 0;
+pub const TC_HARDERR: i32 = 1;
+pub const TC_GP_TRAP: i32 = 2;
+pub const TC_SIGNAL: i32 = 3;
+pub const AC_LINE_OFFLINE: i32 = 0;
+pub const AC_LINE_ONLINE: i32 = 1;
+pub const AC_LINE_BACKUP_POWER: i32 = 2;
+pub const AC_LINE_UNKNOWN: i32 = 255;
+pub const BATTERY_FLAG_HIGH: i32 = 1;
+pub const BATTERY_FLAG_LOW: i32 = 2;
+pub const BATTERY_FLAG_CRITICAL: i32 = 4;
+pub const BATTERY_FLAG_CHARGING: i32 = 8;
+pub const BATTERY_FLAG_NO_BATTERY: i32 = 128;
+pub const BATTERY_FLAG_UNKNOWN: i32 = 255;
+pub const BATTERY_PERCENTAGE_UNKNOWN: i32 = 255;
+pub const BATTERY_LIFE_UNKNOWN: i64 = 4294967295;
+pub const DDD_RAW_TARGET_PATH: i32 = 1;
+pub const DDD_REMOVE_DEFINITION: i32 = 2;
+pub const DDD_EXACT_MATCH_ON_REMOVE: i32 = 4;
+pub const DDD_NO_BROADCAST_SYSTEM: i32 = 8;
+pub const DDD_LUID_BROADCAST_DRIVE: i32 = 16;
+pub const HINSTANCE_ERROR: i32 = 32;
+pub const MS_CTS_ON: i32 = 16;
+pub const MS_DSR_ON: i32 = 32;
+pub const MS_RING_ON: i32 = 64;
+pub const MS_RLSD_ON: i32 = 128;
+pub const DTR_CONTROL_DISABLE: i32 = 0;
+pub const DTR_CONTROL_ENABLE: i32 = 1;
+pub const DTR_CONTROL_HANDSHAKE: i32 = 2;
+pub const RTS_CONTROL_DISABLE: i32 = 0;
+pub const RTS_CONTROL_ENABLE: i32 = 1;
+pub const RTS_CONTROL_HANDSHAKE: i32 = 2;
+pub const RTS_CONTROL_TOGGLE: i32 = 3;
+pub const SECURITY_CONTEXT_TRACKING: i32 = 262144;
+pub const SECURITY_EFFECTIVE_ONLY: i32 = 524288;
+pub const SECURITY_SQOS_PRESENT: i32 = 1048576;
+pub const SECURITY_VALID_SQOS_FLAGS: i32 = 2031616;
+pub const INVALID_FILE_SIZE: i64 = 4294967295;
+pub const ACTCTX_FLAG_PROCESSOR_ARCHITECTURE_VALID: i32 = 1;
+pub const ACTCTX_FLAG_LANGID_VALID: i32 = 2;
+pub const ACTCTX_FLAG_ASSEMBLY_DIRECTORY_VALID: i32 = 4;
+pub const ACTCTX_FLAG_RESOURCE_NAME_VALID: i32 = 8;
+pub const ACTCTX_FLAG_SET_PROCESS_DEFAULT: i32 = 16;
+pub const ACTCTX_FLAG_APPLICATION_NAME_VALID: i32 = 32;
+pub const ACTCTX_FLAG_SOURCE_IS_ASSEMBLYREF: i32 = 64;
+pub const ACTCTX_FLAG_HMODULE_VALID: i32 = 128;
+pub const DEACTIVATE_ACTCTX_FLAG_FORCE_EARLY_DEACTIVATION: i32 = 1;
+pub const FIND_ACTCTX_SECTION_KEY_RETURN_HACTCTX: i32 = 1;
+pub const QUERY_ACTCTX_FLAG_USE_ACTIVE_ACTCTX: i32 = 4;
+pub const QUERY_ACTCTX_FLAG_ACTCTX_IS_HMODULE: i32 = 8;
+pub const QUERY_ACTCTX_FLAG_ACTCTX_IS_ADDRESS: i32 = 16;
+pub const QUERY_ACTCTX_FLAG_NO_ADDREF: i64 = 2147483648;
+pub const REPLACEFILE_WRITE_THROUGH: i32 = 1;
+pub const REPLACEFILE_IGNORE_MERGE_ERRORS: i32 = 2;
+pub const FIBER_FLAG_FLOAT_SWITCH: i32 = 1;
+pub const FLS_OUT_OF_INDEXES: i64 = 4294967295;
+pub const GET_MODULE_HANDLE_EX_FLAG_PIN: i32 = 1;
+pub const GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT: i32 = 2;
+pub const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: i32 = 4;
+pub const BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE: i32 = 1;
+pub const BASE_SEARCH_PATH_DISABLE_SAFE_SEARCHMODE: i32 = 65536;
+pub const BASE_SEARCH_PATH_PERMANENT: i32 = 32768;
+pub const BASE_SEARCH_PATH_INVALID_FLAGS: i32 = -98306;
+pub const LOGON_WITH_PROFILE: i32 = 1;
+pub const LOGON_NETCREDENTIALS_ONLY: i32 = 2;
+pub const EVENTLOG_FULL_INFO: i32 = 0;
+pub const PROC_THREAD_ATTRIBUTE_NUMBER: i32 = 65535;
+pub const PROC_THREAD_ATTRIBUTE_THREAD: i32 = 65536;
+pub const PROC_THREAD_ATTRIBUTE_INPUT: i32 = 131072;
+pub const PROC_THREAD_ATTRIBUTE_ADDITIVE: i32 = 262144;
+pub const INIT_ONCE_CHECK_ONLY: i32 = 1;
+pub const INIT_ONCE_ASYNC: i32 = 2;
+pub const INIT_ONCE_INIT_FAILED: i32 = 4;
+pub const INIT_ONCE_CTX_RESERVED_BITS: i32 = 2;
+pub const SYSPAL_ERROR: i32 = 0;
+pub const SYSPAL_STATIC: i32 = 1;
+pub const SYSPAL_NOSTATIC: i32 = 2;
+pub const SYSPAL_NOSTATIC256: i32 = 3;
+pub const NTM_NONNEGATIVE_AC: i32 = 65536;
+pub const NTM_PS_OPENTYPE: i32 = 131072;
+pub const NTM_TT_OPENTYPE: i32 = 262144;
+pub const NTM_MULTIPLEMASTER: i32 = 524288;
+pub const NTM_TYPE1: i32 = 1048576;
+pub const NTM_DSIG: i32 = 2097152;
+pub const AC_SRC_OVER: i32 = 0;
+pub const AC_SRC_ALPHA: i32 = 1;
+pub const BI_RGB: i32 = 0;
+pub const BI_RLE8: i32 = 1;
+pub const BI_RLE4: i32 = 2;
+pub const BI_BITFIELDS: i32 = 3;
+pub const BI_JPEG: i32 = 4;
+pub const BI_PNG: i32 = 5;
+pub const LF_FACESIZE: i32 = 32;
+pub const LF_FULLFACESIZE: i32 = 64;
+pub const CA_NEGATIVE: i32 = 1;
+pub const CA_LOG_FILTER: i32 = 2;
+pub const ILLUMINANT_DEVICE_DEFAULT: i32 = 0;
+pub const ILLUMINANT_A: i32 = 1;
+pub const ILLUMINANT_B: i32 = 2;
+pub const ILLUMINANT_C: i32 = 3;
+pub const ILLUMINANT_D50: i32 = 4;
+pub const ILLUMINANT_D55: i32 = 5;
+pub const ILLUMINANT_D65: i32 = 6;
+pub const ILLUMINANT_D75: i32 = 7;
+pub const ILLUMINANT_F2: i32 = 8;
+pub const ILLUMINANT_MAX_INDEX: i32 = 8;
+pub const ILLUMINANT_TUNGSTEN: i32 = 1;
+pub const ILLUMINANT_DAYLIGHT: i32 = 3;
+pub const ILLUMINANT_FLUORESCENT: i32 = 8;
+pub const ILLUMINANT_NTSC: i32 = 3;
+pub const RGB_GAMMA_MIN: i32 = 2500;
+pub const RGB_GAMMA_MAX: i32 = 65000;
+pub const REFERENCE_WHITE_MIN: i32 = 6000;
+pub const REFERENCE_WHITE_MAX: i32 = 10000;
+pub const REFERENCE_BLACK_MIN: i32 = 0;
+pub const REFERENCE_BLACK_MAX: i32 = 4000;
 pub const COLOR_ADJ_MIN: i32 = -100;
-pub const COLOR_ADJ_MAX: u32 = 100;
-pub const CCHDEVICENAME: u32 = 32;
-pub const CCHFORMNAME: u32 = 32;
-pub const DI_COMPAT: u32 = 4;
-pub const DI_DEFAULTSIZE: u32 = 8;
-pub const DI_IMAGE: u32 = 2;
-pub const DI_MASK: u32 = 1;
-pub const DI_NORMAL: u32 = 3;
-pub const DI_APPBANDING: u32 = 1;
-pub const DI_NOMIRROR: u32 = 16;
-pub const EMR_HEADER: u32 = 1;
-pub const EMR_POLYBEZIER: u32 = 2;
-pub const EMR_POLYGON: u32 = 3;
-pub const EMR_POLYLINE: u32 = 4;
-pub const EMR_POLYBEZIERTO: u32 = 5;
-pub const EMR_POLYLINETO: u32 = 6;
-pub const EMR_POLYPOLYLINE: u32 = 7;
-pub const EMR_POLYPOLYGON: u32 = 8;
-pub const EMR_SETWINDOWEXTEX: u32 = 9;
-pub const EMR_SETWINDOWORGEX: u32 = 10;
-pub const EMR_SETVIEWPORTEXTEX: u32 = 11;
-pub const EMR_SETVIEWPORTORGEX: u32 = 12;
-pub const EMR_SETBRUSHORGEX: u32 = 13;
-pub const EMR_EOF: u32 = 14;
-pub const EMR_SETPIXELV: u32 = 15;
-pub const EMR_SETMAPPERFLAGS: u32 = 16;
-pub const EMR_SETMAPMODE: u32 = 17;
-pub const EMR_SETBKMODE: u32 = 18;
-pub const EMR_SETPOLYFILLMODE: u32 = 19;
-pub const EMR_SETROP2: u32 = 20;
-pub const EMR_SETSTRETCHBLTMODE: u32 = 21;
-pub const EMR_SETTEXTALIGN: u32 = 22;
-pub const EMR_SETCOLORADJUSTMENT: u32 = 23;
-pub const EMR_SETTEXTCOLOR: u32 = 24;
-pub const EMR_SETBKCOLOR: u32 = 25;
-pub const EMR_OFFSETCLIPRGN: u32 = 26;
-pub const EMR_MOVETOEX: u32 = 27;
-pub const EMR_SETMETARGN: u32 = 28;
-pub const EMR_EXCLUDECLIPRECT: u32 = 29;
-pub const EMR_INTERSECTCLIPRECT: u32 = 30;
-pub const EMR_SCALEVIEWPORTEXTEX: u32 = 31;
-pub const EMR_SCALEWINDOWEXTEX: u32 = 32;
-pub const EMR_SAVEDC: u32 = 33;
-pub const EMR_RESTOREDC: u32 = 34;
-pub const EMR_SETWORLDTRANSFORM: u32 = 35;
-pub const EMR_MODIFYWORLDTRANSFORM: u32 = 36;
-pub const EMR_SELECTOBJECT: u32 = 37;
-pub const EMR_CREATEPEN: u32 = 38;
-pub const EMR_CREATEBRUSHINDIRECT: u32 = 39;
-pub const EMR_DELETEOBJECT: u32 = 40;
-pub const EMR_ANGLEARC: u32 = 41;
-pub const EMR_ELLIPSE: u32 = 42;
-pub const EMR_RECTANGLE: u32 = 43;
-pub const EMR_ROUNDRECT: u32 = 44;
-pub const EMR_ARC: u32 = 45;
-pub const EMR_CHORD: u32 = 46;
-pub const EMR_PIE: u32 = 47;
-pub const EMR_SELECTPALETTE: u32 = 48;
-pub const EMR_CREATEPALETTE: u32 = 49;
-pub const EMR_SETPALETTEENTRIES: u32 = 50;
-pub const EMR_RESIZEPALETTE: u32 = 51;
-pub const EMR_REALIZEPALETTE: u32 = 52;
-pub const EMR_EXTFLOODFILL: u32 = 53;
-pub const EMR_LINETO: u32 = 54;
-pub const EMR_ARCTO: u32 = 55;
-pub const EMR_POLYDRAW: u32 = 56;
-pub const EMR_SETARCDIRECTION: u32 = 57;
-pub const EMR_SETMITERLIMIT: u32 = 58;
-pub const EMR_BEGINPATH: u32 = 59;
-pub const EMR_ENDPATH: u32 = 60;
-pub const EMR_CLOSEFIGURE: u32 = 61;
-pub const EMR_FILLPATH: u32 = 62;
-pub const EMR_STROKEANDFILLPATH: u32 = 63;
-pub const EMR_STROKEPATH: u32 = 64;
-pub const EMR_FLATTENPATH: u32 = 65;
-pub const EMR_WIDENPATH: u32 = 66;
-pub const EMR_SELECTCLIPPATH: u32 = 67;
-pub const EMR_ABORTPATH: u32 = 68;
-pub const EMR_GDICOMMENT: u32 = 70;
-pub const EMR_FILLRGN: u32 = 71;
-pub const EMR_FRAMERGN: u32 = 72;
-pub const EMR_INVERTRGN: u32 = 73;
-pub const EMR_PAINTRGN: u32 = 74;
-pub const EMR_EXTSELECTCLIPRGN: u32 = 75;
-pub const EMR_BITBLT: u32 = 76;
-pub const EMR_STRETCHBLT: u32 = 77;
-pub const EMR_MASKBLT: u32 = 78;
-pub const EMR_PLGBLT: u32 = 79;
-pub const EMR_SETDIBITSTODEVICE: u32 = 80;
-pub const EMR_STRETCHDIBITS: u32 = 81;
-pub const EMR_EXTCREATEFONTINDIRECTW: u32 = 82;
-pub const EMR_EXTTEXTOUTA: u32 = 83;
-pub const EMR_EXTTEXTOUTW: u32 = 84;
-pub const EMR_POLYBEZIER16: u32 = 85;
-pub const EMR_POLYGON16: u32 = 86;
-pub const EMR_POLYLINE16: u32 = 87;
-pub const EMR_POLYBEZIERTO16: u32 = 88;
-pub const EMR_POLYLINETO16: u32 = 89;
-pub const EMR_POLYPOLYLINE16: u32 = 90;
-pub const EMR_POLYPOLYGON16: u32 = 91;
-pub const EMR_POLYDRAW16: u32 = 92;
-pub const EMR_CREATEMONOBRUSH: u32 = 93;
-pub const EMR_CREATEDIBPATTERNBRUSHPT: u32 = 94;
-pub const EMR_EXTCREATEPEN: u32 = 95;
-pub const EMR_POLYTEXTOUTA: u32 = 96;
-pub const EMR_POLYTEXTOUTW: u32 = 97;
-pub const EMR_SETICMMODE: u32 = 98;
-pub const EMR_CREATECOLORSPACE: u32 = 99;
-pub const EMR_SETCOLORSPACE: u32 = 100;
-pub const EMR_DELETECOLORSPACE: u32 = 101;
-pub const EMR_GLSRECORD: u32 = 102;
-pub const EMR_GLSBOUNDEDRECORD: u32 = 103;
-pub const EMR_PIXELFORMAT: u32 = 104;
-pub const EMR_DRAWESCAPE: u32 = 105;
-pub const EMR_EXTESCAPE: u32 = 106;
-pub const EMR_STARTDOC: u32 = 107;
-pub const EMR_SMALLTEXTOUT: u32 = 108;
-pub const EMR_FORCEUFIMAPPING: u32 = 109;
-pub const EMR_NAMEDESCAPE: u32 = 110;
-pub const EMR_COLORCORRECTPALETTE: u32 = 111;
-pub const EMR_SETICMPROFILEA: u32 = 112;
-pub const EMR_SETICMPROFILEW: u32 = 113;
-pub const EMR_ALPHABLEND: u32 = 114;
-pub const EMR_ALPHADIBBLEND: u32 = 115;
-pub const EMR_SETLAYOUT: u32 = 115;
-pub const EMR_TRANSPARENTBLT: u32 = 116;
-pub const EMR_TRANSPARENTDIB: u32 = 117;
-pub const EMR_RESERVED_117: u32 = 117;
-pub const EMR_GRADIENTFILL: u32 = 118;
-pub const EMR_SETLINKEDUFIS: u32 = 119;
-pub const EMR_SETTEXTJUSTIFICATION: u32 = 120;
-pub const EMR_COLORMATCHTOTARGETW: u32 = 121;
-pub const EMR_CREATECOLORSPACEW: u32 = 122;
-pub const EMR_MIN: u32 = 1;
-pub const EMR_MAX: u32 = 122;
-pub const ENHMETA_SIGNATURE: u32 = 1179469088;
-pub const EPS_SIGNATURE: u32 = 1179865157;
-pub const FR_PRIVATE: u32 = 16;
-pub const FR_NOT_ENUM: u32 = 32;
-pub const META_SETBKCOLOR: u32 = 513;
-pub const META_SETBKMODE: u32 = 258;
-pub const META_SETMAPMODE: u32 = 259;
-pub const META_SETROP2: u32 = 260;
-pub const META_SETRELABS: u32 = 261;
-pub const META_SETPOLYFILLMODE: u32 = 262;
-pub const META_SETSTRETCHBLTMODE: u32 = 263;
-pub const META_SETTEXTCHAREXTRA: u32 = 264;
-pub const META_SETLAYOUT: u32 = 329;
-pub const META_SETTEXTCOLOR: u32 = 521;
-pub const META_SETTEXTJUSTIFICATION: u32 = 522;
-pub const META_SETWINDOWORG: u32 = 523;
-pub const META_SETWINDOWEXT: u32 = 524;
-pub const META_SETVIEWPORTORG: u32 = 525;
-pub const META_SETVIEWPORTEXT: u32 = 526;
-pub const META_OFFSETWINDOWORG: u32 = 527;
-pub const META_SCALEWINDOWEXT: u32 = 1040;
-pub const META_OFFSETVIEWPORTORG: u32 = 529;
-pub const META_SCALEVIEWPORTEXT: u32 = 1042;
-pub const META_LINETO: u32 = 531;
-pub const META_MOVETO: u32 = 532;
-pub const META_EXCLUDECLIPRECT: u32 = 1045;
-pub const META_INTERSECTCLIPRECT: u32 = 1046;
-pub const META_ARC: u32 = 2071;
-pub const META_ELLIPSE: u32 = 1048;
-pub const META_FLOODFILL: u32 = 1049;
-pub const META_PIE: u32 = 2074;
-pub const META_RECTANGLE: u32 = 1051;
-pub const META_ROUNDRECT: u32 = 1564;
-pub const META_PATBLT: u32 = 1565;
-pub const META_SAVEDC: u32 = 30;
-pub const META_SETPIXEL: u32 = 1055;
-pub const META_OFFSETCLIPRGN: u32 = 544;
-pub const META_TEXTOUT: u32 = 1313;
-pub const META_BITBLT: u32 = 2338;
-pub const META_STRETCHBLT: u32 = 2851;
-pub const META_POLYGON: u32 = 804;
-pub const META_POLYLINE: u32 = 805;
-pub const META_ESCAPE: u32 = 1574;
-pub const META_RESTOREDC: u32 = 295;
-pub const META_FILLREGION: u32 = 552;
-pub const META_FRAMEREGION: u32 = 1065;
-pub const META_INVERTREGION: u32 = 298;
-pub const META_PAINTREGION: u32 = 299;
-pub const META_SELECTCLIPREGION: u32 = 300;
-pub const META_SELECTOBJECT: u32 = 301;
-pub const META_SETTEXTALIGN: u32 = 302;
-pub const META_CHORD: u32 = 2096;
-pub const META_SETMAPPERFLAGS: u32 = 561;
-pub const META_EXTTEXTOUT: u32 = 2610;
-pub const META_SETDIBTODEV: u32 = 3379;
-pub const META_SELECTPALETTE: u32 = 564;
-pub const META_REALIZEPALETTE: u32 = 53;
-pub const META_ANIMATEPALETTE: u32 = 1078;
-pub const META_SETPALENTRIES: u32 = 55;
-pub const META_POLYPOLYGON: u32 = 1336;
-pub const META_RESIZEPALETTE: u32 = 313;
-pub const META_DIBBITBLT: u32 = 2368;
-pub const META_DIBSTRETCHBLT: u32 = 2881;
-pub const META_DIBCREATEPATTERNBRUSH: u32 = 322;
-pub const META_STRETCHDIB: u32 = 3907;
-pub const META_EXTFLOODFILL: u32 = 1352;
-pub const META_DELETEOBJECT: u32 = 496;
-pub const META_CREATEPALETTE: u32 = 247;
-pub const META_CREATEPATTERNBRUSH: u32 = 505;
-pub const META_CREATEPENINDIRECT: u32 = 762;
-pub const META_CREATEFONTINDIRECT: u32 = 763;
-pub const META_CREATEBRUSHINDIRECT: u32 = 764;
-pub const META_CREATEREGION: u32 = 1791;
-pub const META_DRAWTEXT: u32 = 1583;
-pub const META_RESETDC: u32 = 332;
-pub const META_STARTDOC: u32 = 333;
-pub const META_STARTPAGE: u32 = 79;
-pub const META_ENDPAGE: u32 = 80;
-pub const META_ABORTDOC: u32 = 82;
-pub const META_ENDDOC: u32 = 94;
-pub const META_CREATEBRUSH: u32 = 248;
-pub const META_CREATEBITMAPINDIRECT: u32 = 765;
-pub const META_CREATEBITMAP: u32 = 1790;
-pub const PT_MOVETO: u32 = 6;
-pub const PT_LINETO: u32 = 2;
-pub const PT_BEZIERTO: u32 = 4;
-pub const PT_CLOSEFIGURE: u32 = 1;
-pub const ELF_VENDOR_SIZE: u32 = 4;
-pub const ELF_VERSION: u32 = 0;
-pub const ELF_CULTURE_LATIN: u32 = 0;
-pub const PFD_TYPE_RGBA: u32 = 0;
-pub const PFD_TYPE_COLORINDEX: u32 = 1;
-pub const PFD_MAIN_PLANE: u32 = 0;
-pub const PFD_OVERLAY_PLANE: u32 = 1;
+pub const COLOR_ADJ_MAX: i32 = 100;
+pub const CCHDEVICENAME: i32 = 32;
+pub const CCHFORMNAME: i32 = 32;
+pub const DI_COMPAT: i32 = 4;
+pub const DI_DEFAULTSIZE: i32 = 8;
+pub const DI_IMAGE: i32 = 2;
+pub const DI_MASK: i32 = 1;
+pub const DI_NORMAL: i32 = 3;
+pub const DI_APPBANDING: i32 = 1;
+pub const DI_NOMIRROR: i32 = 16;
+pub const EMR_HEADER: i32 = 1;
+pub const EMR_POLYBEZIER: i32 = 2;
+pub const EMR_POLYGON: i32 = 3;
+pub const EMR_POLYLINE: i32 = 4;
+pub const EMR_POLYBEZIERTO: i32 = 5;
+pub const EMR_POLYLINETO: i32 = 6;
+pub const EMR_POLYPOLYLINE: i32 = 7;
+pub const EMR_POLYPOLYGON: i32 = 8;
+pub const EMR_SETWINDOWEXTEX: i32 = 9;
+pub const EMR_SETWINDOWORGEX: i32 = 10;
+pub const EMR_SETVIEWPORTEXTEX: i32 = 11;
+pub const EMR_SETVIEWPORTORGEX: i32 = 12;
+pub const EMR_SETBRUSHORGEX: i32 = 13;
+pub const EMR_EOF: i32 = 14;
+pub const EMR_SETPIXELV: i32 = 15;
+pub const EMR_SETMAPPERFLAGS: i32 = 16;
+pub const EMR_SETMAPMODE: i32 = 17;
+pub const EMR_SETBKMODE: i32 = 18;
+pub const EMR_SETPOLYFILLMODE: i32 = 19;
+pub const EMR_SETROP2: i32 = 20;
+pub const EMR_SETSTRETCHBLTMODE: i32 = 21;
+pub const EMR_SETTEXTALIGN: i32 = 22;
+pub const EMR_SETCOLORADJUSTMENT: i32 = 23;
+pub const EMR_SETTEXTCOLOR: i32 = 24;
+pub const EMR_SETBKCOLOR: i32 = 25;
+pub const EMR_OFFSETCLIPRGN: i32 = 26;
+pub const EMR_MOVETOEX: i32 = 27;
+pub const EMR_SETMETARGN: i32 = 28;
+pub const EMR_EXCLUDECLIPRECT: i32 = 29;
+pub const EMR_INTERSECTCLIPRECT: i32 = 30;
+pub const EMR_SCALEVIEWPORTEXTEX: i32 = 31;
+pub const EMR_SCALEWINDOWEXTEX: i32 = 32;
+pub const EMR_SAVEDC: i32 = 33;
+pub const EMR_RESTOREDC: i32 = 34;
+pub const EMR_SETWORLDTRANSFORM: i32 = 35;
+pub const EMR_MODIFYWORLDTRANSFORM: i32 = 36;
+pub const EMR_SELECTOBJECT: i32 = 37;
+pub const EMR_CREATEPEN: i32 = 38;
+pub const EMR_CREATEBRUSHINDIRECT: i32 = 39;
+pub const EMR_DELETEOBJECT: i32 = 40;
+pub const EMR_ANGLEARC: i32 = 41;
+pub const EMR_ELLIPSE: i32 = 42;
+pub const EMR_RECTANGLE: i32 = 43;
+pub const EMR_ROUNDRECT: i32 = 44;
+pub const EMR_ARC: i32 = 45;
+pub const EMR_CHORD: i32 = 46;
+pub const EMR_PIE: i32 = 47;
+pub const EMR_SELECTPALETTE: i32 = 48;
+pub const EMR_CREATEPALETTE: i32 = 49;
+pub const EMR_SETPALETTEENTRIES: i32 = 50;
+pub const EMR_RESIZEPALETTE: i32 = 51;
+pub const EMR_REALIZEPALETTE: i32 = 52;
+pub const EMR_EXTFLOODFILL: i32 = 53;
+pub const EMR_LINETO: i32 = 54;
+pub const EMR_ARCTO: i32 = 55;
+pub const EMR_POLYDRAW: i32 = 56;
+pub const EMR_SETARCDIRECTION: i32 = 57;
+pub const EMR_SETMITERLIMIT: i32 = 58;
+pub const EMR_BEGINPATH: i32 = 59;
+pub const EMR_ENDPATH: i32 = 60;
+pub const EMR_CLOSEFIGURE: i32 = 61;
+pub const EMR_FILLPATH: i32 = 62;
+pub const EMR_STROKEANDFILLPATH: i32 = 63;
+pub const EMR_STROKEPATH: i32 = 64;
+pub const EMR_FLATTENPATH: i32 = 65;
+pub const EMR_WIDENPATH: i32 = 66;
+pub const EMR_SELECTCLIPPATH: i32 = 67;
+pub const EMR_ABORTPATH: i32 = 68;
+pub const EMR_GDICOMMENT: i32 = 70;
+pub const EMR_FILLRGN: i32 = 71;
+pub const EMR_FRAMERGN: i32 = 72;
+pub const EMR_INVERTRGN: i32 = 73;
+pub const EMR_PAINTRGN: i32 = 74;
+pub const EMR_EXTSELECTCLIPRGN: i32 = 75;
+pub const EMR_BITBLT: i32 = 76;
+pub const EMR_STRETCHBLT: i32 = 77;
+pub const EMR_MASKBLT: i32 = 78;
+pub const EMR_PLGBLT: i32 = 79;
+pub const EMR_SETDIBITSTODEVICE: i32 = 80;
+pub const EMR_STRETCHDIBITS: i32 = 81;
+pub const EMR_EXTCREATEFONTINDIRECTW: i32 = 82;
+pub const EMR_EXTTEXTOUTA: i32 = 83;
+pub const EMR_EXTTEXTOUTW: i32 = 84;
+pub const EMR_POLYBEZIER16: i32 = 85;
+pub const EMR_POLYGON16: i32 = 86;
+pub const EMR_POLYLINE16: i32 = 87;
+pub const EMR_POLYBEZIERTO16: i32 = 88;
+pub const EMR_POLYLINETO16: i32 = 89;
+pub const EMR_POLYPOLYLINE16: i32 = 90;
+pub const EMR_POLYPOLYGON16: i32 = 91;
+pub const EMR_POLYDRAW16: i32 = 92;
+pub const EMR_CREATEMONOBRUSH: i32 = 93;
+pub const EMR_CREATEDIBPATTERNBRUSHPT: i32 = 94;
+pub const EMR_EXTCREATEPEN: i32 = 95;
+pub const EMR_POLYTEXTOUTA: i32 = 96;
+pub const EMR_POLYTEXTOUTW: i32 = 97;
+pub const EMR_SETICMMODE: i32 = 98;
+pub const EMR_CREATECOLORSPACE: i32 = 99;
+pub const EMR_SETCOLORSPACE: i32 = 100;
+pub const EMR_DELETECOLORSPACE: i32 = 101;
+pub const EMR_GLSRECORD: i32 = 102;
+pub const EMR_GLSBOUNDEDRECORD: i32 = 103;
+pub const EMR_PIXELFORMAT: i32 = 104;
+pub const EMR_DRAWESCAPE: i32 = 105;
+pub const EMR_EXTESCAPE: i32 = 106;
+pub const EMR_STARTDOC: i32 = 107;
+pub const EMR_SMALLTEXTOUT: i32 = 108;
+pub const EMR_FORCEUFIMAPPING: i32 = 109;
+pub const EMR_NAMEDESCAPE: i32 = 110;
+pub const EMR_COLORCORRECTPALETTE: i32 = 111;
+pub const EMR_SETICMPROFILEA: i32 = 112;
+pub const EMR_SETICMPROFILEW: i32 = 113;
+pub const EMR_ALPHABLEND: i32 = 114;
+pub const EMR_ALPHADIBBLEND: i32 = 115;
+pub const EMR_SETLAYOUT: i32 = 115;
+pub const EMR_TRANSPARENTBLT: i32 = 116;
+pub const EMR_TRANSPARENTDIB: i32 = 117;
+pub const EMR_RESERVED_117: i32 = 117;
+pub const EMR_GRADIENTFILL: i32 = 118;
+pub const EMR_SETLINKEDUFIS: i32 = 119;
+pub const EMR_SETTEXTJUSTIFICATION: i32 = 120;
+pub const EMR_COLORMATCHTOTARGETW: i32 = 121;
+pub const EMR_CREATECOLORSPACEW: i32 = 122;
+pub const EMR_MIN: i32 = 1;
+pub const EMR_MAX: i32 = 122;
+pub const ENHMETA_SIGNATURE: i32 = 1179469088;
+pub const EPS_SIGNATURE: i32 = 1179865157;
+pub const FR_PRIVATE: i32 = 16;
+pub const FR_NOT_ENUM: i32 = 32;
+pub const META_SETBKCOLOR: i32 = 513;
+pub const META_SETBKMODE: i32 = 258;
+pub const META_SETMAPMODE: i32 = 259;
+pub const META_SETROP2: i32 = 260;
+pub const META_SETRELABS: i32 = 261;
+pub const META_SETPOLYFILLMODE: i32 = 262;
+pub const META_SETSTRETCHBLTMODE: i32 = 263;
+pub const META_SETTEXTCHAREXTRA: i32 = 264;
+pub const META_SETLAYOUT: i32 = 329;
+pub const META_SETTEXTCOLOR: i32 = 521;
+pub const META_SETTEXTJUSTIFICATION: i32 = 522;
+pub const META_SETWINDOWORG: i32 = 523;
+pub const META_SETWINDOWEXT: i32 = 524;
+pub const META_SETVIEWPORTORG: i32 = 525;
+pub const META_SETVIEWPORTEXT: i32 = 526;
+pub const META_OFFSETWINDOWORG: i32 = 527;
+pub const META_SCALEWINDOWEXT: i32 = 1040;
+pub const META_OFFSETVIEWPORTORG: i32 = 529;
+pub const META_SCALEVIEWPORTEXT: i32 = 1042;
+pub const META_LINETO: i32 = 531;
+pub const META_MOVETO: i32 = 532;
+pub const META_EXCLUDECLIPRECT: i32 = 1045;
+pub const META_INTERSECTCLIPRECT: i32 = 1046;
+pub const META_ARC: i32 = 2071;
+pub const META_ELLIPSE: i32 = 1048;
+pub const META_FLOODFILL: i32 = 1049;
+pub const META_PIE: i32 = 2074;
+pub const META_RECTANGLE: i32 = 1051;
+pub const META_ROUNDRECT: i32 = 1564;
+pub const META_PATBLT: i32 = 1565;
+pub const META_SAVEDC: i32 = 30;
+pub const META_SETPIXEL: i32 = 1055;
+pub const META_OFFSETCLIPRGN: i32 = 544;
+pub const META_TEXTOUT: i32 = 1313;
+pub const META_BITBLT: i32 = 2338;
+pub const META_STRETCHBLT: i32 = 2851;
+pub const META_POLYGON: i32 = 804;
+pub const META_POLYLINE: i32 = 805;
+pub const META_ESCAPE: i32 = 1574;
+pub const META_RESTOREDC: i32 = 295;
+pub const META_FILLREGION: i32 = 552;
+pub const META_FRAMEREGION: i32 = 1065;
+pub const META_INVERTREGION: i32 = 298;
+pub const META_PAINTREGION: i32 = 299;
+pub const META_SELECTCLIPREGION: i32 = 300;
+pub const META_SELECTOBJECT: i32 = 301;
+pub const META_SETTEXTALIGN: i32 = 302;
+pub const META_CHORD: i32 = 2096;
+pub const META_SETMAPPERFLAGS: i32 = 561;
+pub const META_EXTTEXTOUT: i32 = 2610;
+pub const META_SETDIBTODEV: i32 = 3379;
+pub const META_SELECTPALETTE: i32 = 564;
+pub const META_REALIZEPALETTE: i32 = 53;
+pub const META_ANIMATEPALETTE: i32 = 1078;
+pub const META_SETPALENTRIES: i32 = 55;
+pub const META_POLYPOLYGON: i32 = 1336;
+pub const META_RESIZEPALETTE: i32 = 313;
+pub const META_DIBBITBLT: i32 = 2368;
+pub const META_DIBSTRETCHBLT: i32 = 2881;
+pub const META_DIBCREATEPATTERNBRUSH: i32 = 322;
+pub const META_STRETCHDIB: i32 = 3907;
+pub const META_EXTFLOODFILL: i32 = 1352;
+pub const META_DELETEOBJECT: i32 = 496;
+pub const META_CREATEPALETTE: i32 = 247;
+pub const META_CREATEPATTERNBRUSH: i32 = 505;
+pub const META_CREATEPENINDIRECT: i32 = 762;
+pub const META_CREATEFONTINDIRECT: i32 = 763;
+pub const META_CREATEBRUSHINDIRECT: i32 = 764;
+pub const META_CREATEREGION: i32 = 1791;
+pub const META_DRAWTEXT: i32 = 1583;
+pub const META_RESETDC: i32 = 332;
+pub const META_STARTDOC: i32 = 333;
+pub const META_STARTPAGE: i32 = 79;
+pub const META_ENDPAGE: i32 = 80;
+pub const META_ABORTDOC: i32 = 82;
+pub const META_ENDDOC: i32 = 94;
+pub const META_CREATEBRUSH: i32 = 248;
+pub const META_CREATEBITMAPINDIRECT: i32 = 765;
+pub const META_CREATEBITMAP: i32 = 1790;
+pub const PT_MOVETO: i32 = 6;
+pub const PT_LINETO: i32 = 2;
+pub const PT_BEZIERTO: i32 = 4;
+pub const PT_CLOSEFIGURE: i32 = 1;
+pub const ELF_VENDOR_SIZE: i32 = 4;
+pub const ELF_VERSION: i32 = 0;
+pub const ELF_CULTURE_LATIN: i32 = 0;
+pub const PFD_TYPE_RGBA: i32 = 0;
+pub const PFD_TYPE_COLORINDEX: i32 = 1;
+pub const PFD_MAIN_PLANE: i32 = 0;
+pub const PFD_OVERLAY_PLANE: i32 = 1;
 pub const PFD_UNDERLAY_PLANE: i32 = -1;
-pub const PFD_DOUBLEBUFFER: u32 = 1;
-pub const PFD_STEREO: u32 = 2;
-pub const PFD_DRAW_TO_WINDOW: u32 = 4;
-pub const PFD_DRAW_TO_BITMAP: u32 = 8;
-pub const PFD_SUPPORT_GDI: u32 = 16;
-pub const PFD_SUPPORT_OPENGL: u32 = 32;
-pub const PFD_GENERIC_FORMAT: u32 = 64;
-pub const PFD_NEED_PALETTE: u32 = 128;
-pub const PFD_NEED_SYSTEM_PALETTE: u32 = 256;
-pub const PFD_SWAP_EXCHANGE: u32 = 512;
-pub const PFD_SWAP_COPY: u32 = 1024;
-pub const PFD_SWAP_LAYER_BUFFERS: u32 = 2048;
-pub const PFD_GENERIC_ACCELERATED: u32 = 4096;
-pub const PFD_SUPPORT_COMPOSITION: u32 = 32768;
-pub const PFD_DEPTH_DONTCARE: u32 = 536870912;
-pub const PFD_DOUBLEBUFFER_DONTCARE: u32 = 1073741824;
-pub const PFD_STEREO_DONTCARE: u32 = 2147483648;
+pub const PFD_DOUBLEBUFFER: i32 = 1;
+pub const PFD_STEREO: i32 = 2;
+pub const PFD_DRAW_TO_WINDOW: i32 = 4;
+pub const PFD_DRAW_TO_BITMAP: i32 = 8;
+pub const PFD_SUPPORT_GDI: i32 = 16;
+pub const PFD_SUPPORT_OPENGL: i32 = 32;
+pub const PFD_GENERIC_FORMAT: i32 = 64;
+pub const PFD_NEED_PALETTE: i32 = 128;
+pub const PFD_NEED_SYSTEM_PALETTE: i32 = 256;
+pub const PFD_SWAP_EXCHANGE: i32 = 512;
+pub const PFD_SWAP_COPY: i32 = 1024;
+pub const PFD_SWAP_LAYER_BUFFERS: i32 = 2048;
+pub const PFD_GENERIC_ACCELERATED: i32 = 4096;
+pub const PFD_SUPPORT_COMPOSITION: i32 = 32768;
+pub const PFD_DEPTH_DONTCARE: i32 = 536870912;
+pub const PFD_DOUBLEBUFFER_DONTCARE: i32 = 1073741824;
+pub const PFD_STEREO_DONTCARE: i64 = 2147483648;
 pub const SP_ERROR: i32 = -1;
 pub const SP_OUTOFDISK: i32 = -4;
 pub const SP_OUTOFMEMORY: i32 = -5;
 pub const SP_USERABORT: i32 = -3;
 pub const SP_APPABORT: i32 = -2;
-pub const BLACKNESS: u32 = 66;
-pub const NOTSRCERASE: u32 = 1114278;
-pub const NOTSRCCOPY: u32 = 3342344;
-pub const SRCERASE: u32 = 4457256;
-pub const DSTINVERT: u32 = 5570569;
-pub const PATINVERT: u32 = 5898313;
-pub const SRCINVERT: u32 = 6684742;
-pub const SRCAND: u32 = 8913094;
-pub const MERGEPAINT: u32 = 12255782;
-pub const MERGECOPY: u32 = 12583114;
-pub const SRCCOPY: u32 = 13369376;
-pub const SRCPAINT: u32 = 15597702;
-pub const PATCOPY: u32 = 15728673;
-pub const PATPAINT: u32 = 16452105;
-pub const WHITENESS: u32 = 16711778;
-pub const R2_BLACK: u32 = 1;
-pub const R2_COPYPEN: u32 = 13;
-pub const R2_MASKNOTPEN: u32 = 3;
-pub const R2_MASKPEN: u32 = 9;
-pub const R2_MASKPENNOT: u32 = 5;
-pub const R2_MERGENOTPEN: u32 = 12;
-pub const R2_MERGEPEN: u32 = 15;
-pub const R2_MERGEPENNOT: u32 = 14;
-pub const R2_NOP: u32 = 11;
-pub const R2_NOT: u32 = 6;
-pub const R2_NOTCOPYPEN: u32 = 4;
-pub const R2_NOTMASKPEN: u32 = 8;
-pub const R2_NOTMERGEPEN: u32 = 2;
-pub const R2_NOTXORPEN: u32 = 10;
-pub const R2_WHITE: u32 = 16;
-pub const R2_XORPEN: u32 = 7;
-pub const CM_OUT_OF_GAMUT: u32 = 255;
-pub const CM_IN_GAMUT: u32 = 0;
-pub const RGN_AND: u32 = 1;
-pub const RGN_COPY: u32 = 5;
-pub const RGN_DIFF: u32 = 4;
-pub const RGN_OR: u32 = 2;
-pub const RGN_XOR: u32 = 3;
-pub const NULLREGION: u32 = 1;
-pub const SIMPLEREGION: u32 = 2;
-pub const COMPLEXREGION: u32 = 3;
-pub const ERROR: u32 = 0;
-pub const CBM_INIT: u32 = 4;
-pub const DIB_PAL_COLORS: u32 = 1;
-pub const DIB_RGB_COLORS: u32 = 0;
-pub const FW_DONTCARE: u32 = 0;
-pub const FW_THIN: u32 = 100;
-pub const FW_EXTRALIGHT: u32 = 200;
-pub const FW_ULTRALIGHT: u32 = 200;
-pub const FW_LIGHT: u32 = 300;
-pub const FW_NORMAL: u32 = 400;
-pub const FW_REGULAR: u32 = 400;
-pub const FW_MEDIUM: u32 = 500;
-pub const FW_SEMIBOLD: u32 = 600;
-pub const FW_DEMIBOLD: u32 = 600;
-pub const FW_BOLD: u32 = 700;
-pub const FW_EXTRABOLD: u32 = 800;
-pub const FW_ULTRABOLD: u32 = 800;
-pub const FW_HEAVY: u32 = 900;
-pub const FW_BLACK: u32 = 900;
-pub const ANSI_CHARSET: u32 = 0;
-pub const DEFAULT_CHARSET: u32 = 1;
-pub const SYMBOL_CHARSET: u32 = 2;
-pub const SHIFTJIS_CHARSET: u32 = 128;
-pub const HANGEUL_CHARSET: u32 = 129;
-pub const HANGUL_CHARSET: u32 = 129;
-pub const GB2312_CHARSET: u32 = 134;
-pub const CHINESEBIG5_CHARSET: u32 = 136;
-pub const GREEK_CHARSET: u32 = 161;
-pub const TURKISH_CHARSET: u32 = 162;
-pub const HEBREW_CHARSET: u32 = 177;
-pub const ARABIC_CHARSET: u32 = 178;
-pub const BALTIC_CHARSET: u32 = 186;
-pub const RUSSIAN_CHARSET: u32 = 204;
-pub const THAI_CHARSET: u32 = 222;
-pub const EE_CHARSET: u32 = 238;
-pub const EASTEUROPE_CHARSET: u32 = 238;
-pub const OEM_CHARSET: u32 = 255;
-pub const JOHAB_CHARSET: u32 = 130;
-pub const VIETNAMESE_CHARSET: u32 = 163;
-pub const MAC_CHARSET: u32 = 77;
-pub const OUT_DEFAULT_PRECIS: u32 = 0;
-pub const OUT_STRING_PRECIS: u32 = 1;
-pub const OUT_CHARACTER_PRECIS: u32 = 2;
-pub const OUT_STROKE_PRECIS: u32 = 3;
-pub const OUT_TT_PRECIS: u32 = 4;
-pub const OUT_DEVICE_PRECIS: u32 = 5;
-pub const OUT_RASTER_PRECIS: u32 = 6;
-pub const OUT_TT_ONLY_PRECIS: u32 = 7;
-pub const OUT_OUTLINE_PRECIS: u32 = 8;
-pub const OUT_SCREEN_OUTLINE_PRECIS: u32 = 9;
-pub const OUT_PS_ONLY_PRECIS: u32 = 10;
-pub const CLIP_DEFAULT_PRECIS: u32 = 0;
-pub const CLIP_CHARACTER_PRECIS: u32 = 1;
-pub const CLIP_STROKE_PRECIS: u32 = 2;
-pub const CLIP_MASK: u32 = 15;
-pub const CLIP_LH_ANGLES: u32 = 16;
-pub const CLIP_TT_ALWAYS: u32 = 32;
-pub const CLIP_EMBEDDED: u32 = 128;
-pub const DEFAULT_QUALITY: u32 = 0;
-pub const DRAFT_QUALITY: u32 = 1;
-pub const PROOF_QUALITY: u32 = 2;
-pub const NONANTIALIASED_QUALITY: u32 = 3;
-pub const ANTIALIASED_QUALITY: u32 = 4;
-pub const CLEARTYPE_QUALITY: u32 = 5;
-pub const CLEARTYPE_NATURAL_QUALITY: u32 = 6;
-pub const DEFAULT_PITCH: u32 = 0;
-pub const FIXED_PITCH: u32 = 1;
-pub const VARIABLE_PITCH: u32 = 2;
-pub const MONO_FONT: u32 = 8;
-pub const FF_DECORATIVE: u32 = 80;
-pub const FF_DONTCARE: u32 = 0;
-pub const FF_MODERN: u32 = 48;
-pub const FF_ROMAN: u32 = 16;
-pub const FF_SCRIPT: u32 = 64;
-pub const FF_SWISS: u32 = 32;
-pub const PANOSE_COUNT: u32 = 10;
-pub const PAN_FAMILYTYPE_INDEX: u32 = 0;
-pub const PAN_SERIFSTYLE_INDEX: u32 = 1;
-pub const PAN_WEIGHT_INDEX: u32 = 2;
-pub const PAN_PROPORTION_INDEX: u32 = 3;
-pub const PAN_CONTRAST_INDEX: u32 = 4;
-pub const PAN_STROKEVARIATION_INDEX: u32 = 5;
-pub const PAN_ARMSTYLE_INDEX: u32 = 6;
-pub const PAN_LETTERFORM_INDEX: u32 = 7;
-pub const PAN_MIDLINE_INDEX: u32 = 8;
-pub const PAN_XHEIGHT_INDEX: u32 = 9;
-pub const PAN_CULTURE_LATIN: u32 = 0;
-pub const PAN_ANY: u32 = 0;
-pub const PAN_NO_FIT: u32 = 1;
-pub const PAN_FAMILY_TEXT_DISPLAY: u32 = 2;
-pub const PAN_FAMILY_SCRIPT: u32 = 3;
-pub const PAN_FAMILY_DECORATIVE: u32 = 4;
-pub const PAN_FAMILY_PICTORIAL: u32 = 5;
-pub const PAN_SERIF_COVE: u32 = 2;
-pub const PAN_SERIF_OBTUSE_COVE: u32 = 3;
-pub const PAN_SERIF_SQUARE_COVE: u32 = 4;
-pub const PAN_SERIF_OBTUSE_SQUARE_COVE: u32 = 5;
-pub const PAN_SERIF_SQUARE: u32 = 6;
-pub const PAN_SERIF_THIN: u32 = 7;
-pub const PAN_SERIF_BONE: u32 = 8;
-pub const PAN_SERIF_EXAGGERATED: u32 = 9;
-pub const PAN_SERIF_TRIANGLE: u32 = 10;
-pub const PAN_SERIF_NORMAL_SANS: u32 = 11;
-pub const PAN_SERIF_OBTUSE_SANS: u32 = 12;
-pub const PAN_SERIF_PERP_SANS: u32 = 13;
-pub const PAN_SERIF_FLARED: u32 = 14;
-pub const PAN_SERIF_ROUNDED: u32 = 15;
-pub const PAN_WEIGHT_VERY_LIGHT: u32 = 2;
-pub const PAN_WEIGHT_LIGHT: u32 = 3;
-pub const PAN_WEIGHT_THIN: u32 = 4;
-pub const PAN_WEIGHT_BOOK: u32 = 5;
-pub const PAN_WEIGHT_MEDIUM: u32 = 6;
-pub const PAN_WEIGHT_DEMI: u32 = 7;
-pub const PAN_WEIGHT_BOLD: u32 = 8;
-pub const PAN_WEIGHT_HEAVY: u32 = 9;
-pub const PAN_WEIGHT_BLACK: u32 = 10;
-pub const PAN_WEIGHT_NORD: u32 = 11;
-pub const PAN_PROP_OLD_STYLE: u32 = 2;
-pub const PAN_PROP_MODERN: u32 = 3;
-pub const PAN_PROP_EVEN_WIDTH: u32 = 4;
-pub const PAN_PROP_EXPANDED: u32 = 5;
-pub const PAN_PROP_CONDENSED: u32 = 6;
-pub const PAN_PROP_VERY_EXPANDED: u32 = 7;
-pub const PAN_PROP_VERY_CONDENSED: u32 = 8;
-pub const PAN_PROP_MONOSPACED: u32 = 9;
-pub const PAN_CONTRAST_NONE: u32 = 2;
-pub const PAN_CONTRAST_VERY_LOW: u32 = 3;
-pub const PAN_CONTRAST_LOW: u32 = 4;
-pub const PAN_CONTRAST_MEDIUM_LOW: u32 = 5;
-pub const PAN_CONTRAST_MEDIUM: u32 = 6;
-pub const PAN_CONTRAST_MEDIUM_HIGH: u32 = 7;
-pub const PAN_CONTRAST_HIGH: u32 = 8;
-pub const PAN_CONTRAST_VERY_HIGH: u32 = 9;
-pub const PAN_STROKE_GRADUAL_DIAG: u32 = 2;
-pub const PAN_STROKE_GRADUAL_TRAN: u32 = 3;
-pub const PAN_STROKE_GRADUAL_VERT: u32 = 4;
-pub const PAN_STROKE_GRADUAL_HORZ: u32 = 5;
-pub const PAN_STROKE_RAPID_VERT: u32 = 6;
-pub const PAN_STROKE_RAPID_HORZ: u32 = 7;
-pub const PAN_STROKE_INSTANT_VERT: u32 = 8;
-pub const PAN_STRAIGHT_ARMS_HORZ: u32 = 2;
-pub const PAN_STRAIGHT_ARMS_WEDGE: u32 = 3;
-pub const PAN_STRAIGHT_ARMS_VERT: u32 = 4;
-pub const PAN_STRAIGHT_ARMS_SINGLE_SERIF: u32 = 5;
-pub const PAN_STRAIGHT_ARMS_DOUBLE_SERIF: u32 = 6;
-pub const PAN_BENT_ARMS_HORZ: u32 = 7;
-pub const PAN_BENT_ARMS_WEDGE: u32 = 8;
-pub const PAN_BENT_ARMS_VERT: u32 = 9;
-pub const PAN_BENT_ARMS_SINGLE_SERIF: u32 = 10;
-pub const PAN_BENT_ARMS_DOUBLE_SERIF: u32 = 11;
-pub const PAN_LETT_NORMAL_CONTACT: u32 = 2;
-pub const PAN_LETT_NORMAL_WEIGHTED: u32 = 3;
-pub const PAN_LETT_NORMAL_BOXED: u32 = 4;
-pub const PAN_LETT_NORMAL_FLATTENED: u32 = 5;
-pub const PAN_LETT_NORMAL_ROUNDED: u32 = 6;
-pub const PAN_LETT_NORMAL_OFF_CENTER: u32 = 7;
-pub const PAN_LETT_NORMAL_SQUARE: u32 = 8;
-pub const PAN_LETT_OBLIQUE_CONTACT: u32 = 9;
-pub const PAN_LETT_OBLIQUE_WEIGHTED: u32 = 10;
-pub const PAN_LETT_OBLIQUE_BOXED: u32 = 11;
-pub const PAN_LETT_OBLIQUE_FLATTENED: u32 = 12;
-pub const PAN_LETT_OBLIQUE_ROUNDED: u32 = 13;
-pub const PAN_LETT_OBLIQUE_OFF_CENTER: u32 = 14;
-pub const PAN_LETT_OBLIQUE_SQUARE: u32 = 15;
-pub const PAN_MIDLINE_STANDARD_TRIMMED: u32 = 2;
-pub const PAN_MIDLINE_STANDARD_POINTED: u32 = 3;
-pub const PAN_MIDLINE_STANDARD_SERIFED: u32 = 4;
-pub const PAN_MIDLINE_HIGH_TRIMMED: u32 = 5;
-pub const PAN_MIDLINE_HIGH_POINTED: u32 = 6;
-pub const PAN_MIDLINE_HIGH_SERIFED: u32 = 7;
-pub const PAN_MIDLINE_CONSTANT_TRIMMED: u32 = 8;
-pub const PAN_MIDLINE_CONSTANT_POINTED: u32 = 9;
-pub const PAN_MIDLINE_CONSTANT_SERIFED: u32 = 10;
-pub const PAN_MIDLINE_LOW_TRIMMED: u32 = 11;
-pub const PAN_MIDLINE_LOW_POINTED: u32 = 12;
-pub const PAN_MIDLINE_LOW_SERIFED: u32 = 13;
-pub const PAN_XHEIGHT_CONSTANT_SMALL: u32 = 2;
-pub const PAN_XHEIGHT_CONSTANT_STD: u32 = 3;
-pub const PAN_XHEIGHT_CONSTANT_LARGE: u32 = 4;
-pub const PAN_XHEIGHT_DUCKING_SMALL: u32 = 5;
-pub const PAN_XHEIGHT_DUCKING_STD: u32 = 6;
-pub const PAN_XHEIGHT_DUCKING_LARGE: u32 = 7;
-pub const FS_LATIN1: u32 = 1;
-pub const FS_LATIN2: u32 = 2;
-pub const FS_CYRILLIC: u32 = 4;
-pub const FS_GREEK: u32 = 8;
-pub const FS_TURKISH: u32 = 16;
-pub const FS_HEBREW: u32 = 32;
-pub const FS_ARABIC: u32 = 64;
-pub const FS_BALTIC: u32 = 128;
-pub const FS_VIETNAMESE: u32 = 256;
-pub const FS_THAI: u32 = 65536;
-pub const FS_JISJAPAN: u32 = 131072;
-pub const FS_CHINESESIMP: u32 = 262144;
-pub const FS_WANSUNG: u32 = 524288;
-pub const FS_CHINESETRAD: u32 = 1048576;
-pub const FS_JOHAB: u32 = 2097152;
-pub const FS_SYMBOL: u32 = 2147483648;
-pub const HS_BDIAGONAL: u32 = 3;
-pub const HS_CROSS: u32 = 4;
-pub const HS_DIAGCROSS: u32 = 5;
-pub const HS_FDIAGONAL: u32 = 2;
-pub const HS_HORIZONTAL: u32 = 0;
-pub const HS_VERTICAL: u32 = 1;
-pub const HS_API_MAX: u32 = 12;
-pub const PS_GEOMETRIC: u32 = 65536;
-pub const PS_COSMETIC: u32 = 0;
-pub const PS_ALTERNATE: u32 = 8;
-pub const PS_SOLID: u32 = 0;
-pub const PS_DASH: u32 = 1;
-pub const PS_DOT: u32 = 2;
-pub const PS_DASHDOT: u32 = 3;
-pub const PS_DASHDOTDOT: u32 = 4;
-pub const PS_NULL: u32 = 5;
-pub const PS_USERSTYLE: u32 = 7;
-pub const PS_INSIDEFRAME: u32 = 6;
-pub const PS_ENDCAP_ROUND: u32 = 0;
-pub const PS_ENDCAP_SQUARE: u32 = 256;
-pub const PS_ENDCAP_FLAT: u32 = 512;
-pub const PS_JOIN_BEVEL: u32 = 4096;
-pub const PS_JOIN_MITER: u32 = 8192;
-pub const PS_JOIN_ROUND: u32 = 0;
-pub const PS_JOIN_MASK: u32 = 61440;
-pub const PS_STYLE_MASK: u32 = 15;
-pub const PS_ENDCAP_MASK: u32 = 3840;
-pub const PS_TYPE_MASK: u32 = 983040;
-pub const ALTERNATE: u32 = 1;
-pub const WINDING: u32 = 2;
-pub const POLYFILL_LAST: u32 = 2;
-pub const DC_DATATYPE_PRODUCED: u32 = 21;
-pub const DC_EMF_COMPLIANT: u32 = 20;
-pub const DCTT_BITMAP: u32 = 1;
-pub const DCTT_DOWNLOAD: u32 = 2;
-pub const DCTT_SUBDEV: u32 = 4;
-pub const DCTT_DOWNLOAD_OUTLINE: u32 = 8;
-pub const DC_BINADJUST: u32 = 19;
-pub const DC_MANUFACTURER: u32 = 23;
-pub const DC_MODEL: u32 = 24;
-pub const DCBA_FACEUPNONE: u32 = 0;
-pub const DCBA_FACEUPCENTER: u32 = 1;
-pub const DCBA_FACEUPLEFT: u32 = 2;
-pub const DCBA_FACEUPRIGHT: u32 = 3;
-pub const DCBA_FACEDOWNNONE: u32 = 256;
-pub const DCBA_FACEDOWNCENTER: u32 = 257;
-pub const DCBA_FACEDOWNLEFT: u32 = 258;
-pub const DCBA_FACEDOWNRIGHT: u32 = 259;
-pub const FLOODFILLBORDER: u32 = 0;
-pub const FLOODFILLSURFACE: u32 = 1;
-pub const ETO_GRAYED: u32 = 1;
-pub const ETO_OPAQUE: u32 = 2;
-pub const ETO_CLIPPED: u32 = 4;
-pub const ETO_GLYPH_INDEX: u32 = 16;
-pub const ETO_RTLREADING: u32 = 128;
-pub const ETO_NUMERICSLOCAL: u32 = 1024;
-pub const ETO_NUMERICSLATIN: u32 = 2048;
-pub const ETO_IGNORELANGUAGE: u32 = 4096;
-pub const ETO_PDY: u32 = 8192;
+pub const BLACKNESS: i32 = 66;
+pub const NOTSRCERASE: i32 = 1114278;
+pub const NOTSRCCOPY: i32 = 3342344;
+pub const SRCERASE: i32 = 4457256;
+pub const DSTINVERT: i32 = 5570569;
+pub const PATINVERT: i32 = 5898313;
+pub const SRCINVERT: i32 = 6684742;
+pub const SRCAND: i32 = 8913094;
+pub const MERGEPAINT: i32 = 12255782;
+pub const MERGECOPY: i32 = 12583114;
+pub const SRCCOPY: i32 = 13369376;
+pub const SRCPAINT: i32 = 15597702;
+pub const PATCOPY: i32 = 15728673;
+pub const PATPAINT: i32 = 16452105;
+pub const WHITENESS: i32 = 16711778;
+pub const R2_BLACK: i32 = 1;
+pub const R2_COPYPEN: i32 = 13;
+pub const R2_MASKNOTPEN: i32 = 3;
+pub const R2_MASKPEN: i32 = 9;
+pub const R2_MASKPENNOT: i32 = 5;
+pub const R2_MERGENOTPEN: i32 = 12;
+pub const R2_MERGEPEN: i32 = 15;
+pub const R2_MERGEPENNOT: i32 = 14;
+pub const R2_NOP: i32 = 11;
+pub const R2_NOT: i32 = 6;
+pub const R2_NOTCOPYPEN: i32 = 4;
+pub const R2_NOTMASKPEN: i32 = 8;
+pub const R2_NOTMERGEPEN: i32 = 2;
+pub const R2_NOTXORPEN: i32 = 10;
+pub const R2_WHITE: i32 = 16;
+pub const R2_XORPEN: i32 = 7;
+pub const CM_OUT_OF_GAMUT: i32 = 255;
+pub const CM_IN_GAMUT: i32 = 0;
+pub const RGN_AND: i32 = 1;
+pub const RGN_COPY: i32 = 5;
+pub const RGN_DIFF: i32 = 4;
+pub const RGN_OR: i32 = 2;
+pub const RGN_XOR: i32 = 3;
+pub const NULLREGION: i32 = 1;
+pub const SIMPLEREGION: i32 = 2;
+pub const COMPLEXREGION: i32 = 3;
+pub const ERROR: i32 = 0;
+pub const CBM_INIT: i32 = 4;
+pub const DIB_PAL_COLORS: i32 = 1;
+pub const DIB_RGB_COLORS: i32 = 0;
+pub const FW_DONTCARE: i32 = 0;
+pub const FW_THIN: i32 = 100;
+pub const FW_EXTRALIGHT: i32 = 200;
+pub const FW_ULTRALIGHT: i32 = 200;
+pub const FW_LIGHT: i32 = 300;
+pub const FW_NORMAL: i32 = 400;
+pub const FW_REGULAR: i32 = 400;
+pub const FW_MEDIUM: i32 = 500;
+pub const FW_SEMIBOLD: i32 = 600;
+pub const FW_DEMIBOLD: i32 = 600;
+pub const FW_BOLD: i32 = 700;
+pub const FW_EXTRABOLD: i32 = 800;
+pub const FW_ULTRABOLD: i32 = 800;
+pub const FW_HEAVY: i32 = 900;
+pub const FW_BLACK: i32 = 900;
+pub const ANSI_CHARSET: i32 = 0;
+pub const DEFAULT_CHARSET: i32 = 1;
+pub const SYMBOL_CHARSET: i32 = 2;
+pub const SHIFTJIS_CHARSET: i32 = 128;
+pub const HANGEUL_CHARSET: i32 = 129;
+pub const HANGUL_CHARSET: i32 = 129;
+pub const GB2312_CHARSET: i32 = 134;
+pub const CHINESEBIG5_CHARSET: i32 = 136;
+pub const GREEK_CHARSET: i32 = 161;
+pub const TURKISH_CHARSET: i32 = 162;
+pub const HEBREW_CHARSET: i32 = 177;
+pub const ARABIC_CHARSET: i32 = 178;
+pub const BALTIC_CHARSET: i32 = 186;
+pub const RUSSIAN_CHARSET: i32 = 204;
+pub const THAI_CHARSET: i32 = 222;
+pub const EE_CHARSET: i32 = 238;
+pub const EASTEUROPE_CHARSET: i32 = 238;
+pub const OEM_CHARSET: i32 = 255;
+pub const JOHAB_CHARSET: i32 = 130;
+pub const VIETNAMESE_CHARSET: i32 = 163;
+pub const MAC_CHARSET: i32 = 77;
+pub const OUT_DEFAULT_PRECIS: i32 = 0;
+pub const OUT_STRING_PRECIS: i32 = 1;
+pub const OUT_CHARACTER_PRECIS: i32 = 2;
+pub const OUT_STROKE_PRECIS: i32 = 3;
+pub const OUT_TT_PRECIS: i32 = 4;
+pub const OUT_DEVICE_PRECIS: i32 = 5;
+pub const OUT_RASTER_PRECIS: i32 = 6;
+pub const OUT_TT_ONLY_PRECIS: i32 = 7;
+pub const OUT_OUTLINE_PRECIS: i32 = 8;
+pub const OUT_SCREEN_OUTLINE_PRECIS: i32 = 9;
+pub const OUT_PS_ONLY_PRECIS: i32 = 10;
+pub const CLIP_DEFAULT_PRECIS: i32 = 0;
+pub const CLIP_CHARACTER_PRECIS: i32 = 1;
+pub const CLIP_STROKE_PRECIS: i32 = 2;
+pub const CLIP_MASK: i32 = 15;
+pub const CLIP_LH_ANGLES: i32 = 16;
+pub const CLIP_TT_ALWAYS: i32 = 32;
+pub const CLIP_EMBEDDED: i32 = 128;
+pub const DEFAULT_QUALITY: i32 = 0;
+pub const DRAFT_QUALITY: i32 = 1;
+pub const PROOF_QUALITY: i32 = 2;
+pub const NONANTIALIASED_QUALITY: i32 = 3;
+pub const ANTIALIASED_QUALITY: i32 = 4;
+pub const CLEARTYPE_QUALITY: i32 = 5;
+pub const CLEARTYPE_NATURAL_QUALITY: i32 = 6;
+pub const DEFAULT_PITCH: i32 = 0;
+pub const FIXED_PITCH: i32 = 1;
+pub const VARIABLE_PITCH: i32 = 2;
+pub const MONO_FONT: i32 = 8;
+pub const FF_DECORATIVE: i32 = 80;
+pub const FF_DONTCARE: i32 = 0;
+pub const FF_MODERN: i32 = 48;
+pub const FF_ROMAN: i32 = 16;
+pub const FF_SCRIPT: i32 = 64;
+pub const FF_SWISS: i32 = 32;
+pub const PANOSE_COUNT: i32 = 10;
+pub const PAN_FAMILYTYPE_INDEX: i32 = 0;
+pub const PAN_SERIFSTYLE_INDEX: i32 = 1;
+pub const PAN_WEIGHT_INDEX: i32 = 2;
+pub const PAN_PROPORTION_INDEX: i32 = 3;
+pub const PAN_CONTRAST_INDEX: i32 = 4;
+pub const PAN_STROKEVARIATION_INDEX: i32 = 5;
+pub const PAN_ARMSTYLE_INDEX: i32 = 6;
+pub const PAN_LETTERFORM_INDEX: i32 = 7;
+pub const PAN_MIDLINE_INDEX: i32 = 8;
+pub const PAN_XHEIGHT_INDEX: i32 = 9;
+pub const PAN_CULTURE_LATIN: i32 = 0;
+pub const PAN_ANY: i32 = 0;
+pub const PAN_NO_FIT: i32 = 1;
+pub const PAN_FAMILY_TEXT_DISPLAY: i32 = 2;
+pub const PAN_FAMILY_SCRIPT: i32 = 3;
+pub const PAN_FAMILY_DECORATIVE: i32 = 4;
+pub const PAN_FAMILY_PICTORIAL: i32 = 5;
+pub const PAN_SERIF_COVE: i32 = 2;
+pub const PAN_SERIF_OBTUSE_COVE: i32 = 3;
+pub const PAN_SERIF_SQUARE_COVE: i32 = 4;
+pub const PAN_SERIF_OBTUSE_SQUARE_COVE: i32 = 5;
+pub const PAN_SERIF_SQUARE: i32 = 6;
+pub const PAN_SERIF_THIN: i32 = 7;
+pub const PAN_SERIF_BONE: i32 = 8;
+pub const PAN_SERIF_EXAGGERATED: i32 = 9;
+pub const PAN_SERIF_TRIANGLE: i32 = 10;
+pub const PAN_SERIF_NORMAL_SANS: i32 = 11;
+pub const PAN_SERIF_OBTUSE_SANS: i32 = 12;
+pub const PAN_SERIF_PERP_SANS: i32 = 13;
+pub const PAN_SERIF_FLARED: i32 = 14;
+pub const PAN_SERIF_ROUNDED: i32 = 15;
+pub const PAN_WEIGHT_VERY_LIGHT: i32 = 2;
+pub const PAN_WEIGHT_LIGHT: i32 = 3;
+pub const PAN_WEIGHT_THIN: i32 = 4;
+pub const PAN_WEIGHT_BOOK: i32 = 5;
+pub const PAN_WEIGHT_MEDIUM: i32 = 6;
+pub const PAN_WEIGHT_DEMI: i32 = 7;
+pub const PAN_WEIGHT_BOLD: i32 = 8;
+pub const PAN_WEIGHT_HEAVY: i32 = 9;
+pub const PAN_WEIGHT_BLACK: i32 = 10;
+pub const PAN_WEIGHT_NORD: i32 = 11;
+pub const PAN_PROP_OLD_STYLE: i32 = 2;
+pub const PAN_PROP_MODERN: i32 = 3;
+pub const PAN_PROP_EVEN_WIDTH: i32 = 4;
+pub const PAN_PROP_EXPANDED: i32 = 5;
+pub const PAN_PROP_CONDENSED: i32 = 6;
+pub const PAN_PROP_VERY_EXPANDED: i32 = 7;
+pub const PAN_PROP_VERY_CONDENSED: i32 = 8;
+pub const PAN_PROP_MONOSPACED: i32 = 9;
+pub const PAN_CONTRAST_NONE: i32 = 2;
+pub const PAN_CONTRAST_VERY_LOW: i32 = 3;
+pub const PAN_CONTRAST_LOW: i32 = 4;
+pub const PAN_CONTRAST_MEDIUM_LOW: i32 = 5;
+pub const PAN_CONTRAST_MEDIUM: i32 = 6;
+pub const PAN_CONTRAST_MEDIUM_HIGH: i32 = 7;
+pub const PAN_CONTRAST_HIGH: i32 = 8;
+pub const PAN_CONTRAST_VERY_HIGH: i32 = 9;
+pub const PAN_STROKE_GRADUAL_DIAG: i32 = 2;
+pub const PAN_STROKE_GRADUAL_TRAN: i32 = 3;
+pub const PAN_STROKE_GRADUAL_VERT: i32 = 4;
+pub const PAN_STROKE_GRADUAL_HORZ: i32 = 5;
+pub const PAN_STROKE_RAPID_VERT: i32 = 6;
+pub const PAN_STROKE_RAPID_HORZ: i32 = 7;
+pub const PAN_STROKE_INSTANT_VERT: i32 = 8;
+pub const PAN_STRAIGHT_ARMS_HORZ: i32 = 2;
+pub const PAN_STRAIGHT_ARMS_WEDGE: i32 = 3;
+pub const PAN_STRAIGHT_ARMS_VERT: i32 = 4;
+pub const PAN_STRAIGHT_ARMS_SINGLE_SERIF: i32 = 5;
+pub const PAN_STRAIGHT_ARMS_DOUBLE_SERIF: i32 = 6;
+pub const PAN_BENT_ARMS_HORZ: i32 = 7;
+pub const PAN_BENT_ARMS_WEDGE: i32 = 8;
+pub const PAN_BENT_ARMS_VERT: i32 = 9;
+pub const PAN_BENT_ARMS_SINGLE_SERIF: i32 = 10;
+pub const PAN_BENT_ARMS_DOUBLE_SERIF: i32 = 11;
+pub const PAN_LETT_NORMAL_CONTACT: i32 = 2;
+pub const PAN_LETT_NORMAL_WEIGHTED: i32 = 3;
+pub const PAN_LETT_NORMAL_BOXED: i32 = 4;
+pub const PAN_LETT_NORMAL_FLATTENED: i32 = 5;
+pub const PAN_LETT_NORMAL_ROUNDED: i32 = 6;
+pub const PAN_LETT_NORMAL_OFF_CENTER: i32 = 7;
+pub const PAN_LETT_NORMAL_SQUARE: i32 = 8;
+pub const PAN_LETT_OBLIQUE_CONTACT: i32 = 9;
+pub const PAN_LETT_OBLIQUE_WEIGHTED: i32 = 10;
+pub const PAN_LETT_OBLIQUE_BOXED: i32 = 11;
+pub const PAN_LETT_OBLIQUE_FLATTENED: i32 = 12;
+pub const PAN_LETT_OBLIQUE_ROUNDED: i32 = 13;
+pub const PAN_LETT_OBLIQUE_OFF_CENTER: i32 = 14;
+pub const PAN_LETT_OBLIQUE_SQUARE: i32 = 15;
+pub const PAN_MIDLINE_STANDARD_TRIMMED: i32 = 2;
+pub const PAN_MIDLINE_STANDARD_POINTED: i32 = 3;
+pub const PAN_MIDLINE_STANDARD_SERIFED: i32 = 4;
+pub const PAN_MIDLINE_HIGH_TRIMMED: i32 = 5;
+pub const PAN_MIDLINE_HIGH_POINTED: i32 = 6;
+pub const PAN_MIDLINE_HIGH_SERIFED: i32 = 7;
+pub const PAN_MIDLINE_CONSTANT_TRIMMED: i32 = 8;
+pub const PAN_MIDLINE_CONSTANT_POINTED: i32 = 9;
+pub const PAN_MIDLINE_CONSTANT_SERIFED: i32 = 10;
+pub const PAN_MIDLINE_LOW_TRIMMED: i32 = 11;
+pub const PAN_MIDLINE_LOW_POINTED: i32 = 12;
+pub const PAN_MIDLINE_LOW_SERIFED: i32 = 13;
+pub const PAN_XHEIGHT_CONSTANT_SMALL: i32 = 2;
+pub const PAN_XHEIGHT_CONSTANT_STD: i32 = 3;
+pub const PAN_XHEIGHT_CONSTANT_LARGE: i32 = 4;
+pub const PAN_XHEIGHT_DUCKING_SMALL: i32 = 5;
+pub const PAN_XHEIGHT_DUCKING_STD: i32 = 6;
+pub const PAN_XHEIGHT_DUCKING_LARGE: i32 = 7;
+pub const FS_LATIN1: i32 = 1;
+pub const FS_LATIN2: i32 = 2;
+pub const FS_CYRILLIC: i32 = 4;
+pub const FS_GREEK: i32 = 8;
+pub const FS_TURKISH: i32 = 16;
+pub const FS_HEBREW: i32 = 32;
+pub const FS_ARABIC: i32 = 64;
+pub const FS_BALTIC: i32 = 128;
+pub const FS_VIETNAMESE: i32 = 256;
+pub const FS_THAI: i32 = 65536;
+pub const FS_JISJAPAN: i32 = 131072;
+pub const FS_CHINESESIMP: i32 = 262144;
+pub const FS_WANSUNG: i32 = 524288;
+pub const FS_CHINESETRAD: i32 = 1048576;
+pub const FS_JOHAB: i32 = 2097152;
+pub const FS_SYMBOL: i64 = 2147483648;
+pub const HS_BDIAGONAL: i32 = 3;
+pub const HS_CROSS: i32 = 4;
+pub const HS_DIAGCROSS: i32 = 5;
+pub const HS_FDIAGONAL: i32 = 2;
+pub const HS_HORIZONTAL: i32 = 0;
+pub const HS_VERTICAL: i32 = 1;
+pub const HS_API_MAX: i32 = 12;
+pub const PS_GEOMETRIC: i32 = 65536;
+pub const PS_COSMETIC: i32 = 0;
+pub const PS_ALTERNATE: i32 = 8;
+pub const PS_SOLID: i32 = 0;
+pub const PS_DASH: i32 = 1;
+pub const PS_DOT: i32 = 2;
+pub const PS_DASHDOT: i32 = 3;
+pub const PS_DASHDOTDOT: i32 = 4;
+pub const PS_NULL: i32 = 5;
+pub const PS_USERSTYLE: i32 = 7;
+pub const PS_INSIDEFRAME: i32 = 6;
+pub const PS_ENDCAP_ROUND: i32 = 0;
+pub const PS_ENDCAP_SQUARE: i32 = 256;
+pub const PS_ENDCAP_FLAT: i32 = 512;
+pub const PS_JOIN_BEVEL: i32 = 4096;
+pub const PS_JOIN_MITER: i32 = 8192;
+pub const PS_JOIN_ROUND: i32 = 0;
+pub const PS_JOIN_MASK: i32 = 61440;
+pub const PS_STYLE_MASK: i32 = 15;
+pub const PS_ENDCAP_MASK: i32 = 3840;
+pub const PS_TYPE_MASK: i32 = 983040;
+pub const ALTERNATE: i32 = 1;
+pub const WINDING: i32 = 2;
+pub const POLYFILL_LAST: i32 = 2;
+pub const DC_DATATYPE_PRODUCED: i32 = 21;
+pub const DC_EMF_COMPLIANT: i32 = 20;
+pub const DCTT_BITMAP: i32 = 1;
+pub const DCTT_DOWNLOAD: i32 = 2;
+pub const DCTT_SUBDEV: i32 = 4;
+pub const DCTT_DOWNLOAD_OUTLINE: i32 = 8;
+pub const DC_BINADJUST: i32 = 19;
+pub const DC_MANUFACTURER: i32 = 23;
+pub const DC_MODEL: i32 = 24;
+pub const DCBA_FACEUPNONE: i32 = 0;
+pub const DCBA_FACEUPCENTER: i32 = 1;
+pub const DCBA_FACEUPLEFT: i32 = 2;
+pub const DCBA_FACEUPRIGHT: i32 = 3;
+pub const DCBA_FACEDOWNNONE: i32 = 256;
+pub const DCBA_FACEDOWNCENTER: i32 = 257;
+pub const DCBA_FACEDOWNLEFT: i32 = 258;
+pub const DCBA_FACEDOWNRIGHT: i32 = 259;
+pub const FLOODFILLBORDER: i32 = 0;
+pub const FLOODFILLSURFACE: i32 = 1;
+pub const ETO_GRAYED: i32 = 1;
+pub const ETO_OPAQUE: i32 = 2;
+pub const ETO_CLIPPED: i32 = 4;
+pub const ETO_GLYPH_INDEX: i32 = 16;
+pub const ETO_RTLREADING: i32 = 128;
+pub const ETO_NUMERICSLOCAL: i32 = 1024;
+pub const ETO_NUMERICSLATIN: i32 = 2048;
+pub const ETO_IGNORELANGUAGE: i32 = 4096;
+pub const ETO_PDY: i32 = 8192;
 pub const GDICOMMENT_WINDOWS_METAFILE: i32 = -2147483647;
-pub const GDICOMMENT_BEGINGROUP: u32 = 2;
-pub const GDICOMMENT_ENDGROUP: u32 = 3;
-pub const GDICOMMENT_MULTIFORMATS: u32 = 1073741828;
-pub const GDICOMMENT_IDENTIFIER: u32 = 1128875079;
-pub const AD_COUNTERCLOCKWISE: u32 = 1;
-pub const AD_CLOCKWISE: u32 = 2;
-pub const RDH_RECTANGLES: u32 = 1;
-pub const GCPCLASS_LATIN: u32 = 1;
-pub const GCPCLASS_HEBREW: u32 = 2;
-pub const GCPCLASS_ARABIC: u32 = 2;
-pub const GCPCLASS_NEUTRAL: u32 = 3;
-pub const GCPCLASS_LOCALNUMBER: u32 = 4;
-pub const GCPCLASS_LATINNUMBER: u32 = 5;
-pub const GCPCLASS_LATINNUMERICTERMINATOR: u32 = 6;
-pub const GCPCLASS_LATINNUMERICSEPARATOR: u32 = 7;
-pub const GCPCLASS_NUMERICSEPARATOR: u32 = 8;
-pub const GCPCLASS_PREBOUNDLTR: u32 = 128;
-pub const GCPCLASS_PREBOUNDRTL: u32 = 64;
-pub const GCPCLASS_POSTBOUNDLTR: u32 = 32;
-pub const GCPCLASS_POSTBOUNDRTL: u32 = 16;
-pub const GCPGLYPH_LINKBEFORE: u32 = 32768;
-pub const GCPGLYPH_LINKAFTER: u32 = 16384;
-pub const DCB_DISABLE: u32 = 8;
-pub const DCB_ENABLE: u32 = 4;
-pub const DCB_RESET: u32 = 1;
-pub const DCB_SET: u32 = 3;
-pub const DCB_ACCUMULATE: u32 = 2;
-pub const DCB_DIRTY: u32 = 2;
-pub const OBJ_BRUSH: u32 = 2;
-pub const OBJ_PEN: u32 = 1;
-pub const OBJ_PAL: u32 = 5;
-pub const OBJ_FONT: u32 = 6;
-pub const OBJ_BITMAP: u32 = 7;
-pub const OBJ_EXTPEN: u32 = 11;
-pub const OBJ_REGION: u32 = 8;
-pub const OBJ_DC: u32 = 3;
-pub const OBJ_MEMDC: u32 = 10;
-pub const OBJ_METAFILE: u32 = 9;
-pub const OBJ_METADC: u32 = 4;
-pub const OBJ_ENHMETAFILE: u32 = 13;
-pub const OBJ_ENHMETADC: u32 = 12;
-pub const OBJ_COLORSPACE: u32 = 14;
-pub const DRIVERVERSION: u32 = 0;
-pub const TECHNOLOGY: u32 = 2;
-pub const DT_PLOTTER: u32 = 0;
-pub const DT_RASDISPLAY: u32 = 1;
-pub const DT_RASPRINTER: u32 = 2;
-pub const DT_RASCAMERA: u32 = 3;
-pub const DT_CHARSTREAM: u32 = 4;
-pub const DT_METAFILE: u32 = 5;
-pub const DT_DISPFILE: u32 = 6;
-pub const HORZSIZE: u32 = 4;
-pub const VERTSIZE: u32 = 6;
-pub const HORZRES: u32 = 8;
-pub const VERTRES: u32 = 10;
-pub const LOGPIXELSX: u32 = 88;
-pub const LOGPIXELSY: u32 = 90;
-pub const BITSPIXEL: u32 = 12;
-pub const PLANES: u32 = 14;
-pub const NUMBRUSHES: u32 = 16;
-pub const NUMPENS: u32 = 18;
-pub const NUMFONTS: u32 = 22;
-pub const NUMCOLORS: u32 = 24;
-pub const NUMMARKERS: u32 = 20;
-pub const ASPECTX: u32 = 40;
-pub const ASPECTY: u32 = 42;
-pub const ASPECTXY: u32 = 44;
-pub const PDEVICESIZE: u32 = 26;
-pub const CLIPCAPS: u32 = 36;
-pub const SIZEPALETTE: u32 = 104;
-pub const NUMRESERVED: u32 = 106;
-pub const COLORRES: u32 = 108;
-pub const PHYSICALWIDTH: u32 = 110;
-pub const PHYSICALHEIGHT: u32 = 111;
-pub const PHYSICALOFFSETX: u32 = 112;
-pub const PHYSICALOFFSETY: u32 = 113;
-pub const SCALINGFACTORX: u32 = 114;
-pub const SCALINGFACTORY: u32 = 115;
-pub const VREFRESH: u32 = 116;
-pub const DESKTOPHORZRES: u32 = 118;
-pub const DESKTOPVERTRES: u32 = 117;
-pub const BLTALIGNMENT: u32 = 119;
-pub const RASTERCAPS: u32 = 38;
-pub const RC_BANDING: u32 = 2;
-pub const RC_BITBLT: u32 = 1;
-pub const RC_BITMAP64: u32 = 8;
-pub const RC_DI_BITMAP: u32 = 128;
-pub const RC_DIBTODEV: u32 = 512;
-pub const RC_FLOODFILL: u32 = 4096;
-pub const RC_GDI20_OUTPUT: u32 = 16;
-pub const RC_PALETTE: u32 = 256;
-pub const RC_SCALING: u32 = 4;
-pub const RC_STRETCHBLT: u32 = 2048;
-pub const RC_STRETCHDIB: u32 = 8192;
-pub const RC_DEVBITS: u32 = 32768;
-pub const RC_OP_DX_OUTPUT: u32 = 16384;
-pub const CURVECAPS: u32 = 28;
-pub const CC_NONE: u32 = 0;
-pub const CC_CIRCLES: u32 = 1;
-pub const CC_PIE: u32 = 2;
-pub const CC_CHORD: u32 = 4;
-pub const CC_ELLIPSES: u32 = 8;
-pub const CC_WIDE: u32 = 16;
-pub const CC_STYLED: u32 = 32;
-pub const CC_WIDESTYLED: u32 = 64;
-pub const CC_INTERIORS: u32 = 128;
-pub const CC_ROUNDRECT: u32 = 256;
-pub const LINECAPS: u32 = 30;
-pub const LC_NONE: u32 = 0;
-pub const LC_POLYLINE: u32 = 2;
-pub const LC_MARKER: u32 = 4;
-pub const LC_POLYMARKER: u32 = 8;
-pub const LC_WIDE: u32 = 16;
-pub const LC_STYLED: u32 = 32;
-pub const LC_WIDESTYLED: u32 = 64;
-pub const LC_INTERIORS: u32 = 128;
-pub const POLYGONALCAPS: u32 = 32;
-pub const RC_BIGFONT: u32 = 1024;
-pub const RC_GDI20_STATE: u32 = 32;
-pub const RC_NONE: u32 = 0;
-pub const RC_SAVEBITMAP: u32 = 64;
-pub const PC_NONE: u32 = 0;
-pub const PC_POLYGON: u32 = 1;
-pub const PC_POLYPOLYGON: u32 = 256;
-pub const PC_PATHS: u32 = 512;
-pub const PC_RECTANGLE: u32 = 2;
-pub const PC_WINDPOLYGON: u32 = 4;
-pub const PC_SCANLINE: u32 = 8;
-pub const PC_TRAPEZOID: u32 = 4;
-pub const PC_WIDE: u32 = 16;
-pub const PC_STYLED: u32 = 32;
-pub const PC_WIDESTYLED: u32 = 64;
-pub const PC_INTERIORS: u32 = 128;
-pub const TEXTCAPS: u32 = 34;
-pub const TC_OP_CHARACTER: u32 = 1;
-pub const TC_OP_STROKE: u32 = 2;
-pub const TC_CP_STROKE: u32 = 4;
-pub const TC_CR_90: u32 = 8;
-pub const TC_CR_ANY: u32 = 16;
-pub const TC_SF_X_YINDEP: u32 = 32;
-pub const TC_SA_DOUBLE: u32 = 64;
-pub const TC_SA_INTEGER: u32 = 128;
-pub const TC_SA_CONTIN: u32 = 256;
-pub const TC_EA_DOUBLE: u32 = 512;
-pub const TC_IA_ABLE: u32 = 1024;
-pub const TC_UA_ABLE: u32 = 2048;
-pub const TC_SO_ABLE: u32 = 4096;
-pub const TC_RA_ABLE: u32 = 8192;
-pub const TC_VA_ABLE: u32 = 16384;
-pub const TC_RESERVED: u32 = 32768;
-pub const TC_SCROLLBLT: u32 = 65536;
-pub const CP_NONE: u32 = 0;
-pub const CP_RECTANGLE: u32 = 1;
-pub const CP_REGION: u32 = 2;
-pub const GCP_DBCS: u32 = 1;
-pub const GCP_ERROR: u32 = 32768;
-pub const GCP_CLASSIN: u32 = 524288;
-pub const GCP_DIACRITIC: u32 = 256;
-pub const GCP_DISPLAYZWG: u32 = 4194304;
-pub const GCP_GLYPHSHAPE: u32 = 16;
-pub const GCP_JUSTIFY: u32 = 65536;
-pub const GCP_JUSTIFYIN: u32 = 2097152;
-pub const GCP_KASHIDA: u32 = 1024;
-pub const GCP_LIGATE: u32 = 32;
-pub const GCP_MAXEXTENT: u32 = 1048576;
-pub const GCP_NEUTRALOVERRIDE: u32 = 33554432;
-pub const GCP_NUMERICOVERRIDE: u32 = 16777216;
-pub const GCP_NUMERICSLATIN: u32 = 67108864;
-pub const GCP_NUMERICSLOCAL: u32 = 134217728;
-pub const GCP_REORDER: u32 = 2;
-pub const GCP_SYMSWAPOFF: u32 = 8388608;
-pub const GCP_USEKERNING: u32 = 8;
-pub const FLI_GLYPHS: u32 = 262144;
-pub const FLI_MASK: u32 = 4155;
-pub const GGO_METRICS: u32 = 0;
-pub const GGO_BITMAP: u32 = 1;
-pub const GGO_NATIVE: u32 = 2;
-pub const GGO_BEZIER: u32 = 3;
-pub const GGO_GRAY2_BITMAP: u32 = 4;
-pub const GGO_GRAY4_BITMAP: u32 = 5;
-pub const GGO_GRAY8_BITMAP: u32 = 6;
-pub const GGO_GLYPH_INDEX: u32 = 128;
-pub const GGO_UNHINTED: u32 = 256;
-pub const GM_COMPATIBLE: u32 = 1;
-pub const GM_ADVANCED: u32 = 2;
-pub const GM_LAST: u32 = 2;
-pub const MM_ANISOTROPIC: u32 = 8;
-pub const MM_HIENGLISH: u32 = 5;
-pub const MM_HIMETRIC: u32 = 3;
-pub const MM_ISOTROPIC: u32 = 7;
-pub const MM_LOENGLISH: u32 = 4;
-pub const MM_LOMETRIC: u32 = 2;
-pub const MM_TEXT: u32 = 1;
-pub const MM_TWIPS: u32 = 6;
-pub const MM_MAX_FIXEDSCALE: u32 = 6;
-pub const MM_MIN: u32 = 1;
-pub const MM_MAX: u32 = 8;
-pub const ABSOLUTE: u32 = 1;
-pub const RELATIVE: u32 = 2;
-pub const PC_EXPLICIT: u32 = 2;
-pub const PC_NOCOLLAPSE: u32 = 4;
-pub const PC_RESERVED: u32 = 1;
-pub const CLR_INVALID: u32 = 4294967295;
-pub const TT_AVAILABLE: u32 = 1;
-pub const TT_ENABLED: u32 = 2;
-pub const BLACK_BRUSH: u32 = 4;
-pub const DKGRAY_BRUSH: u32 = 3;
-pub const GRAY_BRUSH: u32 = 2;
-pub const HOLLOW_BRUSH: u32 = 5;
-pub const LTGRAY_BRUSH: u32 = 1;
-pub const NULL_BRUSH: u32 = 5;
-pub const WHITE_BRUSH: u32 = 0;
-pub const BLACK_PEN: u32 = 7;
-pub const NULL_PEN: u32 = 8;
-pub const WHITE_PEN: u32 = 6;
-pub const ANSI_FIXED_FONT: u32 = 11;
-pub const ANSI_VAR_FONT: u32 = 12;
-pub const DEVICE_DEFAULT_FONT: u32 = 14;
-pub const DEFAULT_GUI_FONT: u32 = 17;
-pub const OEM_FIXED_FONT: u32 = 10;
-pub const SYSTEM_FONT: u32 = 13;
-pub const SYSTEM_FIXED_FONT: u32 = 16;
-pub const DEFAULT_PALETTE: u32 = 15;
-pub const DC_BRUSH: u32 = 18;
-pub const DC_PEN: u32 = 19;
-pub const STOCK_LAST: u32 = 19;
-pub const TA_BASELINE: u32 = 24;
-pub const TA_BOTTOM: u32 = 8;
-pub const TA_TOP: u32 = 0;
-pub const TA_CENTER: u32 = 6;
-pub const TA_LEFT: u32 = 0;
-pub const TA_RIGHT: u32 = 2;
-pub const TA_RTLREADING: u32 = 256;
-pub const TA_NOUPDATECP: u32 = 0;
-pub const TA_UPDATECP: u32 = 1;
-pub const TA_MASK: u32 = 287;
-pub const VTA_BASELINE: u32 = 24;
-pub const VTA_CENTER: u32 = 6;
-pub const VTA_LEFT: u32 = 8;
-pub const VTA_RIGHT: u32 = 0;
-pub const VTA_BOTTOM: u32 = 2;
-pub const VTA_TOP: u32 = 0;
-pub const MWT_IDENTITY: u32 = 1;
-pub const MWT_LEFTMULTIPLY: u32 = 2;
-pub const MWT_RIGHTMULTIPLY: u32 = 3;
-pub const MWT_MIN: u32 = 1;
-pub const MWT_MAX: u32 = 3;
-pub const OPAQUE: u32 = 2;
-pub const TRANSPARENT: u32 = 1;
-pub const BKMODE_LAST: u32 = 2;
-pub const BLACKONWHITE: u32 = 1;
-pub const WHITEONBLACK: u32 = 2;
-pub const COLORONCOLOR: u32 = 3;
-pub const HALFTONE: u32 = 4;
-pub const MAXSTRETCHBLTMODE: u32 = 4;
-pub const STRETCH_ANDSCANS: u32 = 1;
-pub const STRETCH_DELETESCANS: u32 = 3;
-pub const STRETCH_HALFTONE: u32 = 4;
-pub const STRETCH_ORSCANS: u32 = 2;
-pub const TCI_SRCCHARSET: u32 = 1;
-pub const TCI_SRCCODEPAGE: u32 = 2;
-pub const TCI_SRCFONTSIG: u32 = 3;
-pub const TCI_SRCLOCALE: u32 = 4096;
-pub const SHADEBLENDCAPS: u32 = 120;
-pub const COLORMGMTCAPS: u32 = 121;
-pub const SB_NONE: u32 = 0;
-pub const SB_CONST_ALPHA: u32 = 1;
-pub const SB_PIXEL_ALPHA: u32 = 2;
-pub const SB_PREMULT_ALPHA: u32 = 4;
-pub const SB_GRAD_RECT: u32 = 16;
-pub const SB_GRAD_TRI: u32 = 32;
-pub const CM_NONE: u32 = 0;
-pub const CM_DEVICE_ICM: u32 = 1;
-pub const CM_GAMMA_RAMP: u32 = 2;
-pub const CM_CMYK_COLOR: u32 = 4;
-pub const ICM_ON: u32 = 2;
-pub const ICM_OFF: u32 = 1;
-pub const ICM_QUERY: u32 = 3;
-pub const NEWFRAME: u32 = 1;
-pub const ABORTDOC: u32 = 2;
-pub const NEXTBAND: u32 = 3;
-pub const SETCOLORTABLE: u32 = 4;
-pub const GETCOLORTABLE: u32 = 5;
-pub const FLUSHOUTPUT: u32 = 6;
-pub const DRAFTMODE: u32 = 7;
-pub const QUERYESCSUPPORT: u32 = 8;
-pub const SETABORTPROC: u32 = 9;
-pub const STARTDOC: u32 = 10;
-pub const ENDDOC: u32 = 11;
-pub const GETPHYSPAGESIZE: u32 = 12;
-pub const GETPRINTINGOFFSET: u32 = 13;
-pub const GETSCALINGFACTOR: u32 = 14;
-pub const MFCOMMENT: u32 = 15;
-pub const GETPENWIDTH: u32 = 16;
-pub const SETCOPYCOUNT: u32 = 17;
-pub const SELECTPAPERSOURCE: u32 = 18;
-pub const DEVICEDATA: u32 = 19;
-pub const PASSTHROUGH: u32 = 19;
-pub const GETTECHNOLGY: u32 = 20;
-pub const GETTECHNOLOGY: u32 = 20;
-pub const SETLINECAP: u32 = 21;
-pub const SETLINEJOIN: u32 = 22;
-pub const SETMITERLIMIT: u32 = 23;
-pub const BANDINFO: u32 = 24;
-pub const DRAWPATTERNRECT: u32 = 25;
-pub const GETVECTORPENSIZE: u32 = 26;
-pub const GETVECTORBRUSHSIZE: u32 = 27;
-pub const ENABLEDUPLEX: u32 = 28;
-pub const GETSETPAPERBINS: u32 = 29;
-pub const GETSETPRINTORIENT: u32 = 30;
-pub const ENUMPAPERBINS: u32 = 31;
-pub const SETDIBSCALING: u32 = 32;
-pub const EPSPRINTING: u32 = 33;
-pub const ENUMPAPERMETRICS: u32 = 34;
-pub const GETSETPAPERMETRICS: u32 = 35;
-pub const POSTSCRIPT_DATA: u32 = 37;
-pub const POSTSCRIPT_IGNORE: u32 = 38;
-pub const MOUSETRAILS: u32 = 39;
-pub const GETDEVICEUNITS: u32 = 42;
-pub const GETEXTENDEDTEXTMETRICS: u32 = 256;
-pub const GETEXTENTTABLE: u32 = 257;
-pub const GETPAIRKERNTABLE: u32 = 258;
-pub const GETTRACKKERNTABLE: u32 = 259;
-pub const EXTTEXTOUT: u32 = 512;
-pub const GETFACENAME: u32 = 513;
-pub const DOWNLOADFACE: u32 = 514;
-pub const ENABLERELATIVEWIDTHS: u32 = 768;
-pub const ENABLEPAIRKERNING: u32 = 769;
-pub const SETKERNTRACK: u32 = 770;
-pub const SETALLJUSTVALUES: u32 = 771;
-pub const SETCHARSET: u32 = 772;
-pub const STRETCHBLT: u32 = 2048;
-pub const METAFILE_DRIVER: u32 = 2049;
-pub const GETSETSCREENPARAMS: u32 = 3072;
-pub const QUERYDIBSUPPORT: u32 = 3073;
-pub const BEGIN_PATH: u32 = 4096;
-pub const CLIP_TO_PATH: u32 = 4097;
-pub const END_PATH: u32 = 4098;
-pub const EXT_DEVICE_CAPS: u32 = 4099;
-pub const RESTORE_CTM: u32 = 4100;
-pub const SAVE_CTM: u32 = 4101;
-pub const SET_ARC_DIRECTION: u32 = 4102;
-pub const SET_BACKGROUND_COLOR: u32 = 4103;
-pub const SET_POLY_MODE: u32 = 4104;
-pub const SET_SCREEN_ANGLE: u32 = 4105;
-pub const SET_SPREAD: u32 = 4106;
-pub const TRANSFORM_CTM: u32 = 4107;
-pub const SET_CLIP_BOX: u32 = 4108;
-pub const SET_BOUNDS: u32 = 4109;
-pub const SET_MIRROR_MODE: u32 = 4110;
-pub const OPENCHANNEL: u32 = 4110;
-pub const DOWNLOADHEADER: u32 = 4111;
-pub const CLOSECHANNEL: u32 = 4112;
-pub const POSTSCRIPT_PASSTHROUGH: u32 = 4115;
-pub const ENCAPSULATED_POSTSCRIPT: u32 = 4116;
-pub const POSTSCRIPT_IDENTIFY: u32 = 4117;
-pub const POSTSCRIPT_INJECTION: u32 = 4118;
-pub const CHECKJPEGFORMAT: u32 = 4119;
-pub const CHECKPNGFORMAT: u32 = 4120;
-pub const GET_PS_FEATURESETTING: u32 = 4121;
-pub const SPCLPASSTHROUGH2: u32 = 4568;
-pub const QDI_SETDIBITS: u32 = 1;
-pub const QDI_GETDIBITS: u32 = 2;
-pub const QDI_DIBTOSCREEN: u32 = 4;
-pub const QDI_STRETCHDIB: u32 = 8;
-pub const SP_NOTREPORTED: u32 = 16384;
-pub const PR_JOBSTATUS: u32 = 0;
-pub const ASPECT_FILTERING: u32 = 1;
-pub const GS_8BIT_INDICES: u32 = 1;
-pub const GGI_MARK_NONEXISTING_GLYPHS: u32 = 1;
-pub const BS_SOLID: u32 = 0;
-pub const BS_NULL: u32 = 1;
-pub const BS_HOLLOW: u32 = 1;
-pub const BS_HATCHED: u32 = 2;
-pub const BS_PATTERN: u32 = 3;
-pub const BS_INDEXED: u32 = 4;
-pub const BS_DIBPATTERN: u32 = 5;
-pub const BS_DIBPATTERNPT: u32 = 6;
-pub const BS_PATTERN8X8: u32 = 7;
-pub const BS_DIBPATTERN8X8: u32 = 8;
-pub const BS_MONOPATTERN: u32 = 9;
-pub const LCS_CALIBRATED_RGB: u32 = 0;
-pub const LCS_DEVICE_RGB: u32 = 1;
-pub const LCS_DEVICE_CMYK: u32 = 2;
-pub const LCS_GM_BUSINESS: u32 = 1;
-pub const LCS_GM_GRAPHICS: u32 = 2;
-pub const LCS_GM_IMAGES: u32 = 4;
-pub const LCS_GM_ABS_COLORIMETRIC: u32 = 8;
-pub const LCS_SIGNATURE: u32 = 1347637059;
-pub const RASTER_FONTTYPE: u32 = 1;
-pub const DEVICE_FONTTYPE: u32 = 2;
-pub const TRUETYPE_FONTTYPE: u32 = 4;
-pub const DMORIENT_PORTRAIT: u32 = 1;
-pub const DMORIENT_LANDSCAPE: u32 = 2;
-pub const DMPAPER_FIRST: u32 = 1;
-pub const DMPAPER_LETTER: u32 = 1;
-pub const DMPAPER_LETTERSMALL: u32 = 2;
-pub const DMPAPER_TABLOID: u32 = 3;
-pub const DMPAPER_LEDGER: u32 = 4;
-pub const DMPAPER_LEGAL: u32 = 5;
-pub const DMPAPER_STATEMENT: u32 = 6;
-pub const DMPAPER_EXECUTIVE: u32 = 7;
-pub const DMPAPER_A3: u32 = 8;
-pub const DMPAPER_A4: u32 = 9;
-pub const DMPAPER_A4SMALL: u32 = 10;
-pub const DMPAPER_A5: u32 = 11;
-pub const DMPAPER_B4: u32 = 12;
-pub const DMPAPER_B5: u32 = 13;
-pub const DMPAPER_FOLIO: u32 = 14;
-pub const DMPAPER_QUARTO: u32 = 15;
-pub const DMPAPER_10X14: u32 = 16;
-pub const DMPAPER_11X17: u32 = 17;
-pub const DMPAPER_NOTE: u32 = 18;
-pub const DMPAPER_ENV_9: u32 = 19;
-pub const DMPAPER_ENV_10: u32 = 20;
-pub const DMPAPER_ENV_11: u32 = 21;
-pub const DMPAPER_ENV_12: u32 = 22;
-pub const DMPAPER_ENV_14: u32 = 23;
-pub const DMPAPER_CSHEET: u32 = 24;
-pub const DMPAPER_DSHEET: u32 = 25;
-pub const DMPAPER_ESHEET: u32 = 26;
-pub const DMPAPER_ENV_DL: u32 = 27;
-pub const DMPAPER_ENV_C5: u32 = 28;
-pub const DMPAPER_ENV_C3: u32 = 29;
-pub const DMPAPER_ENV_C4: u32 = 30;
-pub const DMPAPER_ENV_C6: u32 = 31;
-pub const DMPAPER_ENV_C65: u32 = 32;
-pub const DMPAPER_ENV_B4: u32 = 33;
-pub const DMPAPER_ENV_B5: u32 = 34;
-pub const DMPAPER_ENV_B6: u32 = 35;
-pub const DMPAPER_ENV_ITALY: u32 = 36;
-pub const DMPAPER_ENV_MONARCH: u32 = 37;
-pub const DMPAPER_ENV_PERSONAL: u32 = 38;
-pub const DMPAPER_FANFOLD_US: u32 = 39;
-pub const DMPAPER_FANFOLD_STD_GERMAN: u32 = 40;
-pub const DMPAPER_FANFOLD_LGL_GERMAN: u32 = 41;
-pub const DMPAPER_ISO_B4: u32 = 42;
-pub const DMPAPER_JAPANESE_POSTCARD: u32 = 43;
-pub const DMPAPER_9X11: u32 = 44;
-pub const DMPAPER_10X11: u32 = 45;
-pub const DMPAPER_15X11: u32 = 46;
-pub const DMPAPER_ENV_INVITE: u32 = 47;
-pub const DMPAPER_RESERVED_48: u32 = 48;
-pub const DMPAPER_RESERVED_49: u32 = 49;
-pub const DMPAPER_LETTER_EXTRA: u32 = 50;
-pub const DMPAPER_LEGAL_EXTRA: u32 = 51;
-pub const DMPAPER_TABLOID_EXTRA: u32 = 52;
-pub const DMPAPER_A4_EXTRA: u32 = 53;
-pub const DMPAPER_LETTER_TRANSVERSE: u32 = 54;
-pub const DMPAPER_A4_TRANSVERSE: u32 = 55;
-pub const DMPAPER_LETTER_EXTRA_TRANSVERSE: u32 = 56;
-pub const DMPAPER_A_PLUS: u32 = 57;
-pub const DMPAPER_B_PLUS: u32 = 58;
-pub const DMPAPER_LETTER_PLUS: u32 = 59;
-pub const DMPAPER_A4_PLUS: u32 = 60;
-pub const DMPAPER_A5_TRANSVERSE: u32 = 61;
-pub const DMPAPER_B5_TRANSVERSE: u32 = 62;
-pub const DMPAPER_A3_EXTRA: u32 = 63;
-pub const DMPAPER_A5_EXTRA: u32 = 64;
-pub const DMPAPER_B5_EXTRA: u32 = 65;
-pub const DMPAPER_A2: u32 = 66;
-pub const DMPAPER_A3_TRANSVERSE: u32 = 67;
-pub const DMPAPER_A3_EXTRA_TRANSVERSE: u32 = 68;
-pub const DMPAPER_LAST: u32 = 68;
-pub const DMPAPER_USER: u32 = 256;
-pub const DMBIN_FIRST: u32 = 1;
-pub const DMBIN_UPPER: u32 = 1;
-pub const DMBIN_ONLYONE: u32 = 1;
-pub const DMBIN_LOWER: u32 = 2;
-pub const DMBIN_MIDDLE: u32 = 3;
-pub const DMBIN_MANUAL: u32 = 4;
-pub const DMBIN_ENVELOPE: u32 = 5;
-pub const DMBIN_ENVMANUAL: u32 = 6;
-pub const DMBIN_AUTO: u32 = 7;
-pub const DMBIN_TRACTOR: u32 = 8;
-pub const DMBIN_SMALLFMT: u32 = 9;
-pub const DMBIN_LARGEFMT: u32 = 10;
-pub const DMBIN_LARGECAPACITY: u32 = 11;
-pub const DMBIN_CASSETTE: u32 = 14;
-pub const DMBIN_FORMSOURCE: u32 = 15;
-pub const DMBIN_LAST: u32 = 15;
-pub const DMBIN_USER: u32 = 256;
+pub const GDICOMMENT_BEGINGROUP: i32 = 2;
+pub const GDICOMMENT_ENDGROUP: i32 = 3;
+pub const GDICOMMENT_MULTIFORMATS: i32 = 1073741828;
+pub const GDICOMMENT_IDENTIFIER: i32 = 1128875079;
+pub const AD_COUNTERCLOCKWISE: i32 = 1;
+pub const AD_CLOCKWISE: i32 = 2;
+pub const RDH_RECTANGLES: i32 = 1;
+pub const GCPCLASS_LATIN: i32 = 1;
+pub const GCPCLASS_HEBREW: i32 = 2;
+pub const GCPCLASS_ARABIC: i32 = 2;
+pub const GCPCLASS_NEUTRAL: i32 = 3;
+pub const GCPCLASS_LOCALNUMBER: i32 = 4;
+pub const GCPCLASS_LATINNUMBER: i32 = 5;
+pub const GCPCLASS_LATINNUMERICTERMINATOR: i32 = 6;
+pub const GCPCLASS_LATINNUMERICSEPARATOR: i32 = 7;
+pub const GCPCLASS_NUMERICSEPARATOR: i32 = 8;
+pub const GCPCLASS_PREBOUNDLTR: i32 = 128;
+pub const GCPCLASS_PREBOUNDRTL: i32 = 64;
+pub const GCPCLASS_POSTBOUNDLTR: i32 = 32;
+pub const GCPCLASS_POSTBOUNDRTL: i32 = 16;
+pub const GCPGLYPH_LINKBEFORE: i32 = 32768;
+pub const GCPGLYPH_LINKAFTER: i32 = 16384;
+pub const DCB_DISABLE: i32 = 8;
+pub const DCB_ENABLE: i32 = 4;
+pub const DCB_RESET: i32 = 1;
+pub const DCB_SET: i32 = 3;
+pub const DCB_ACCUMULATE: i32 = 2;
+pub const DCB_DIRTY: i32 = 2;
+pub const OBJ_BRUSH: i32 = 2;
+pub const OBJ_PEN: i32 = 1;
+pub const OBJ_PAL: i32 = 5;
+pub const OBJ_FONT: i32 = 6;
+pub const OBJ_BITMAP: i32 = 7;
+pub const OBJ_EXTPEN: i32 = 11;
+pub const OBJ_REGION: i32 = 8;
+pub const OBJ_DC: i32 = 3;
+pub const OBJ_MEMDC: i32 = 10;
+pub const OBJ_METAFILE: i32 = 9;
+pub const OBJ_METADC: i32 = 4;
+pub const OBJ_ENHMETAFILE: i32 = 13;
+pub const OBJ_ENHMETADC: i32 = 12;
+pub const OBJ_COLORSPACE: i32 = 14;
+pub const DRIVERVERSION: i32 = 0;
+pub const TECHNOLOGY: i32 = 2;
+pub const DT_PLOTTER: i32 = 0;
+pub const DT_RASDISPLAY: i32 = 1;
+pub const DT_RASPRINTER: i32 = 2;
+pub const DT_RASCAMERA: i32 = 3;
+pub const DT_CHARSTREAM: i32 = 4;
+pub const DT_METAFILE: i32 = 5;
+pub const DT_DISPFILE: i32 = 6;
+pub const HORZSIZE: i32 = 4;
+pub const VERTSIZE: i32 = 6;
+pub const HORZRES: i32 = 8;
+pub const VERTRES: i32 = 10;
+pub const LOGPIXELSX: i32 = 88;
+pub const LOGPIXELSY: i32 = 90;
+pub const BITSPIXEL: i32 = 12;
+pub const PLANES: i32 = 14;
+pub const NUMBRUSHES: i32 = 16;
+pub const NUMPENS: i32 = 18;
+pub const NUMFONTS: i32 = 22;
+pub const NUMCOLORS: i32 = 24;
+pub const NUMMARKERS: i32 = 20;
+pub const ASPECTX: i32 = 40;
+pub const ASPECTY: i32 = 42;
+pub const ASPECTXY: i32 = 44;
+pub const PDEVICESIZE: i32 = 26;
+pub const CLIPCAPS: i32 = 36;
+pub const SIZEPALETTE: i32 = 104;
+pub const NUMRESERVED: i32 = 106;
+pub const COLORRES: i32 = 108;
+pub const PHYSICALWIDTH: i32 = 110;
+pub const PHYSICALHEIGHT: i32 = 111;
+pub const PHYSICALOFFSETX: i32 = 112;
+pub const PHYSICALOFFSETY: i32 = 113;
+pub const SCALINGFACTORX: i32 = 114;
+pub const SCALINGFACTORY: i32 = 115;
+pub const VREFRESH: i32 = 116;
+pub const DESKTOPHORZRES: i32 = 118;
+pub const DESKTOPVERTRES: i32 = 117;
+pub const BLTALIGNMENT: i32 = 119;
+pub const RASTERCAPS: i32 = 38;
+pub const RC_BANDING: i32 = 2;
+pub const RC_BITBLT: i32 = 1;
+pub const RC_BITMAP64: i32 = 8;
+pub const RC_DI_BITMAP: i32 = 128;
+pub const RC_DIBTODEV: i32 = 512;
+pub const RC_FLOODFILL: i32 = 4096;
+pub const RC_GDI20_OUTPUT: i32 = 16;
+pub const RC_PALETTE: i32 = 256;
+pub const RC_SCALING: i32 = 4;
+pub const RC_STRETCHBLT: i32 = 2048;
+pub const RC_STRETCHDIB: i32 = 8192;
+pub const RC_DEVBITS: i32 = 32768;
+pub const RC_OP_DX_OUTPUT: i32 = 16384;
+pub const CURVECAPS: i32 = 28;
+pub const CC_NONE: i32 = 0;
+pub const CC_CIRCLES: i32 = 1;
+pub const CC_PIE: i32 = 2;
+pub const CC_CHORD: i32 = 4;
+pub const CC_ELLIPSES: i32 = 8;
+pub const CC_WIDE: i32 = 16;
+pub const CC_STYLED: i32 = 32;
+pub const CC_WIDESTYLED: i32 = 64;
+pub const CC_INTERIORS: i32 = 128;
+pub const CC_ROUNDRECT: i32 = 256;
+pub const LINECAPS: i32 = 30;
+pub const LC_NONE: i32 = 0;
+pub const LC_POLYLINE: i32 = 2;
+pub const LC_MARKER: i32 = 4;
+pub const LC_POLYMARKER: i32 = 8;
+pub const LC_WIDE: i32 = 16;
+pub const LC_STYLED: i32 = 32;
+pub const LC_WIDESTYLED: i32 = 64;
+pub const LC_INTERIORS: i32 = 128;
+pub const POLYGONALCAPS: i32 = 32;
+pub const RC_BIGFONT: i32 = 1024;
+pub const RC_GDI20_STATE: i32 = 32;
+pub const RC_NONE: i32 = 0;
+pub const RC_SAVEBITMAP: i32 = 64;
+pub const PC_NONE: i32 = 0;
+pub const PC_POLYGON: i32 = 1;
+pub const PC_POLYPOLYGON: i32 = 256;
+pub const PC_PATHS: i32 = 512;
+pub const PC_RECTANGLE: i32 = 2;
+pub const PC_WINDPOLYGON: i32 = 4;
+pub const PC_SCANLINE: i32 = 8;
+pub const PC_TRAPEZOID: i32 = 4;
+pub const PC_WIDE: i32 = 16;
+pub const PC_STYLED: i32 = 32;
+pub const PC_WIDESTYLED: i32 = 64;
+pub const PC_INTERIORS: i32 = 128;
+pub const TEXTCAPS: i32 = 34;
+pub const TC_OP_CHARACTER: i32 = 1;
+pub const TC_OP_STROKE: i32 = 2;
+pub const TC_CP_STROKE: i32 = 4;
+pub const TC_CR_90: i32 = 8;
+pub const TC_CR_ANY: i32 = 16;
+pub const TC_SF_X_YINDEP: i32 = 32;
+pub const TC_SA_DOUBLE: i32 = 64;
+pub const TC_SA_INTEGER: i32 = 128;
+pub const TC_SA_CONTIN: i32 = 256;
+pub const TC_EA_DOUBLE: i32 = 512;
+pub const TC_IA_ABLE: i32 = 1024;
+pub const TC_UA_ABLE: i32 = 2048;
+pub const TC_SO_ABLE: i32 = 4096;
+pub const TC_RA_ABLE: i32 = 8192;
+pub const TC_VA_ABLE: i32 = 16384;
+pub const TC_RESERVED: i32 = 32768;
+pub const TC_SCROLLBLT: i32 = 65536;
+pub const CP_NONE: i32 = 0;
+pub const CP_RECTANGLE: i32 = 1;
+pub const CP_REGION: i32 = 2;
+pub const GCP_DBCS: i32 = 1;
+pub const GCP_ERROR: i32 = 32768;
+pub const GCP_CLASSIN: i32 = 524288;
+pub const GCP_DIACRITIC: i32 = 256;
+pub const GCP_DISPLAYZWG: i32 = 4194304;
+pub const GCP_GLYPHSHAPE: i32 = 16;
+pub const GCP_JUSTIFY: i32 = 65536;
+pub const GCP_JUSTIFYIN: i32 = 2097152;
+pub const GCP_KASHIDA: i32 = 1024;
+pub const GCP_LIGATE: i32 = 32;
+pub const GCP_MAXEXTENT: i32 = 1048576;
+pub const GCP_NEUTRALOVERRIDE: i32 = 33554432;
+pub const GCP_NUMERICOVERRIDE: i32 = 16777216;
+pub const GCP_NUMERICSLATIN: i32 = 67108864;
+pub const GCP_NUMERICSLOCAL: i32 = 134217728;
+pub const GCP_REORDER: i32 = 2;
+pub const GCP_SYMSWAPOFF: i32 = 8388608;
+pub const GCP_USEKERNING: i32 = 8;
+pub const FLI_GLYPHS: i32 = 262144;
+pub const FLI_MASK: i32 = 4155;
+pub const GGO_METRICS: i32 = 0;
+pub const GGO_BITMAP: i32 = 1;
+pub const GGO_NATIVE: i32 = 2;
+pub const GGO_BEZIER: i32 = 3;
+pub const GGO_GRAY2_BITMAP: i32 = 4;
+pub const GGO_GRAY4_BITMAP: i32 = 5;
+pub const GGO_GRAY8_BITMAP: i32 = 6;
+pub const GGO_GLYPH_INDEX: i32 = 128;
+pub const GGO_UNHINTED: i32 = 256;
+pub const GM_COMPATIBLE: i32 = 1;
+pub const GM_ADVANCED: i32 = 2;
+pub const GM_LAST: i32 = 2;
+pub const MM_ANISOTROPIC: i32 = 8;
+pub const MM_HIENGLISH: i32 = 5;
+pub const MM_HIMETRIC: i32 = 3;
+pub const MM_ISOTROPIC: i32 = 7;
+pub const MM_LOENGLISH: i32 = 4;
+pub const MM_LOMETRIC: i32 = 2;
+pub const MM_TEXT: i32 = 1;
+pub const MM_TWIPS: i32 = 6;
+pub const MM_MAX_FIXEDSCALE: i32 = 6;
+pub const MM_MIN: i32 = 1;
+pub const MM_MAX: i32 = 8;
+pub const ABSOLUTE: i32 = 1;
+pub const RELATIVE: i32 = 2;
+pub const PC_EXPLICIT: i32 = 2;
+pub const PC_NOCOLLAPSE: i32 = 4;
+pub const PC_RESERVED: i32 = 1;
+pub const CLR_INVALID: i64 = 4294967295;
+pub const TT_AVAILABLE: i32 = 1;
+pub const TT_ENABLED: i32 = 2;
+pub const BLACK_BRUSH: i32 = 4;
+pub const DKGRAY_BRUSH: i32 = 3;
+pub const GRAY_BRUSH: i32 = 2;
+pub const HOLLOW_BRUSH: i32 = 5;
+pub const LTGRAY_BRUSH: i32 = 1;
+pub const NULL_BRUSH: i32 = 5;
+pub const WHITE_BRUSH: i32 = 0;
+pub const BLACK_PEN: i32 = 7;
+pub const NULL_PEN: i32 = 8;
+pub const WHITE_PEN: i32 = 6;
+pub const ANSI_FIXED_FONT: i32 = 11;
+pub const ANSI_VAR_FONT: i32 = 12;
+pub const DEVICE_DEFAULT_FONT: i32 = 14;
+pub const DEFAULT_GUI_FONT: i32 = 17;
+pub const OEM_FIXED_FONT: i32 = 10;
+pub const SYSTEM_FONT: i32 = 13;
+pub const SYSTEM_FIXED_FONT: i32 = 16;
+pub const DEFAULT_PALETTE: i32 = 15;
+pub const DC_BRUSH: i32 = 18;
+pub const DC_PEN: i32 = 19;
+pub const STOCK_LAST: i32 = 19;
+pub const TA_BASELINE: i32 = 24;
+pub const TA_BOTTOM: i32 = 8;
+pub const TA_TOP: i32 = 0;
+pub const TA_CENTER: i32 = 6;
+pub const TA_LEFT: i32 = 0;
+pub const TA_RIGHT: i32 = 2;
+pub const TA_RTLREADING: i32 = 256;
+pub const TA_NOUPDATECP: i32 = 0;
+pub const TA_UPDATECP: i32 = 1;
+pub const TA_MASK: i32 = 287;
+pub const VTA_BASELINE: i32 = 24;
+pub const VTA_CENTER: i32 = 6;
+pub const VTA_LEFT: i32 = 8;
+pub const VTA_RIGHT: i32 = 0;
+pub const VTA_BOTTOM: i32 = 2;
+pub const VTA_TOP: i32 = 0;
+pub const MWT_IDENTITY: i32 = 1;
+pub const MWT_LEFTMULTIPLY: i32 = 2;
+pub const MWT_RIGHTMULTIPLY: i32 = 3;
+pub const MWT_MIN: i32 = 1;
+pub const MWT_MAX: i32 = 3;
+pub const OPAQUE: i32 = 2;
+pub const TRANSPARENT: i32 = 1;
+pub const BKMODE_LAST: i32 = 2;
+pub const BLACKONWHITE: i32 = 1;
+pub const WHITEONBLACK: i32 = 2;
+pub const COLORONCOLOR: i32 = 3;
+pub const HALFTONE: i32 = 4;
+pub const MAXSTRETCHBLTMODE: i32 = 4;
+pub const STRETCH_ANDSCANS: i32 = 1;
+pub const STRETCH_DELETESCANS: i32 = 3;
+pub const STRETCH_HALFTONE: i32 = 4;
+pub const STRETCH_ORSCANS: i32 = 2;
+pub const TCI_SRCCHARSET: i32 = 1;
+pub const TCI_SRCCODEPAGE: i32 = 2;
+pub const TCI_SRCFONTSIG: i32 = 3;
+pub const TCI_SRCLOCALE: i32 = 4096;
+pub const SHADEBLENDCAPS: i32 = 120;
+pub const COLORMGMTCAPS: i32 = 121;
+pub const SB_NONE: i32 = 0;
+pub const SB_CONST_ALPHA: i32 = 1;
+pub const SB_PIXEL_ALPHA: i32 = 2;
+pub const SB_PREMULT_ALPHA: i32 = 4;
+pub const SB_GRAD_RECT: i32 = 16;
+pub const SB_GRAD_TRI: i32 = 32;
+pub const CM_NONE: i32 = 0;
+pub const CM_DEVICE_ICM: i32 = 1;
+pub const CM_GAMMA_RAMP: i32 = 2;
+pub const CM_CMYK_COLOR: i32 = 4;
+pub const ICM_ON: i32 = 2;
+pub const ICM_OFF: i32 = 1;
+pub const ICM_QUERY: i32 = 3;
+pub const NEWFRAME: i32 = 1;
+pub const ABORTDOC: i32 = 2;
+pub const NEXTBAND: i32 = 3;
+pub const SETCOLORTABLE: i32 = 4;
+pub const GETCOLORTABLE: i32 = 5;
+pub const FLUSHOUTPUT: i32 = 6;
+pub const DRAFTMODE: i32 = 7;
+pub const QUERYESCSUPPORT: i32 = 8;
+pub const SETABORTPROC: i32 = 9;
+pub const STARTDOC: i32 = 10;
+pub const ENDDOC: i32 = 11;
+pub const GETPHYSPAGESIZE: i32 = 12;
+pub const GETPRINTINGOFFSET: i32 = 13;
+pub const GETSCALINGFACTOR: i32 = 14;
+pub const MFCOMMENT: i32 = 15;
+pub const GETPENWIDTH: i32 = 16;
+pub const SETCOPYCOUNT: i32 = 17;
+pub const SELECTPAPERSOURCE: i32 = 18;
+pub const DEVICEDATA: i32 = 19;
+pub const PASSTHROUGH: i32 = 19;
+pub const GETTECHNOLGY: i32 = 20;
+pub const GETTECHNOLOGY: i32 = 20;
+pub const SETLINECAP: i32 = 21;
+pub const SETLINEJOIN: i32 = 22;
+pub const SETMITERLIMIT: i32 = 23;
+pub const BANDINFO: i32 = 24;
+pub const DRAWPATTERNRECT: i32 = 25;
+pub const GETVECTORPENSIZE: i32 = 26;
+pub const GETVECTORBRUSHSIZE: i32 = 27;
+pub const ENABLEDUPLEX: i32 = 28;
+pub const GETSETPAPERBINS: i32 = 29;
+pub const GETSETPRINTORIENT: i32 = 30;
+pub const ENUMPAPERBINS: i32 = 31;
+pub const SETDIBSCALING: i32 = 32;
+pub const EPSPRINTING: i32 = 33;
+pub const ENUMPAPERMETRICS: i32 = 34;
+pub const GETSETPAPERMETRICS: i32 = 35;
+pub const POSTSCRIPT_DATA: i32 = 37;
+pub const POSTSCRIPT_IGNORE: i32 = 38;
+pub const MOUSETRAILS: i32 = 39;
+pub const GETDEVICEUNITS: i32 = 42;
+pub const GETEXTENDEDTEXTMETRICS: i32 = 256;
+pub const GETEXTENTTABLE: i32 = 257;
+pub const GETPAIRKERNTABLE: i32 = 258;
+pub const GETTRACKKERNTABLE: i32 = 259;
+pub const EXTTEXTOUT: i32 = 512;
+pub const GETFACENAME: i32 = 513;
+pub const DOWNLOADFACE: i32 = 514;
+pub const ENABLERELATIVEWIDTHS: i32 = 768;
+pub const ENABLEPAIRKERNING: i32 = 769;
+pub const SETKERNTRACK: i32 = 770;
+pub const SETALLJUSTVALUES: i32 = 771;
+pub const SETCHARSET: i32 = 772;
+pub const STRETCHBLT: i32 = 2048;
+pub const METAFILE_DRIVER: i32 = 2049;
+pub const GETSETSCREENPARAMS: i32 = 3072;
+pub const QUERYDIBSUPPORT: i32 = 3073;
+pub const BEGIN_PATH: i32 = 4096;
+pub const CLIP_TO_PATH: i32 = 4097;
+pub const END_PATH: i32 = 4098;
+pub const EXT_DEVICE_CAPS: i32 = 4099;
+pub const RESTORE_CTM: i32 = 4100;
+pub const SAVE_CTM: i32 = 4101;
+pub const SET_ARC_DIRECTION: i32 = 4102;
+pub const SET_BACKGROUND_COLOR: i32 = 4103;
+pub const SET_POLY_MODE: i32 = 4104;
+pub const SET_SCREEN_ANGLE: i32 = 4105;
+pub const SET_SPREAD: i32 = 4106;
+pub const TRANSFORM_CTM: i32 = 4107;
+pub const SET_CLIP_BOX: i32 = 4108;
+pub const SET_BOUNDS: i32 = 4109;
+pub const SET_MIRROR_MODE: i32 = 4110;
+pub const OPENCHANNEL: i32 = 4110;
+pub const DOWNLOADHEADER: i32 = 4111;
+pub const CLOSECHANNEL: i32 = 4112;
+pub const POSTSCRIPT_PASSTHROUGH: i32 = 4115;
+pub const ENCAPSULATED_POSTSCRIPT: i32 = 4116;
+pub const POSTSCRIPT_IDENTIFY: i32 = 4117;
+pub const POSTSCRIPT_INJECTION: i32 = 4118;
+pub const CHECKJPEGFORMAT: i32 = 4119;
+pub const CHECKPNGFORMAT: i32 = 4120;
+pub const GET_PS_FEATURESETTING: i32 = 4121;
+pub const SPCLPASSTHROUGH2: i32 = 4568;
+pub const QDI_SETDIBITS: i32 = 1;
+pub const QDI_GETDIBITS: i32 = 2;
+pub const QDI_DIBTOSCREEN: i32 = 4;
+pub const QDI_STRETCHDIB: i32 = 8;
+pub const SP_NOTREPORTED: i32 = 16384;
+pub const PR_JOBSTATUS: i32 = 0;
+pub const ASPECT_FILTERING: i32 = 1;
+pub const GS_8BIT_INDICES: i32 = 1;
+pub const GGI_MARK_NONEXISTING_GLYPHS: i32 = 1;
+pub const BS_SOLID: i32 = 0;
+pub const BS_NULL: i32 = 1;
+pub const BS_HOLLOW: i32 = 1;
+pub const BS_HATCHED: i32 = 2;
+pub const BS_PATTERN: i32 = 3;
+pub const BS_INDEXED: i32 = 4;
+pub const BS_DIBPATTERN: i32 = 5;
+pub const BS_DIBPATTERNPT: i32 = 6;
+pub const BS_PATTERN8X8: i32 = 7;
+pub const BS_DIBPATTERN8X8: i32 = 8;
+pub const BS_MONOPATTERN: i32 = 9;
+pub const LCS_CALIBRATED_RGB: i32 = 0;
+pub const LCS_DEVICE_RGB: i32 = 1;
+pub const LCS_DEVICE_CMYK: i32 = 2;
+pub const LCS_GM_BUSINESS: i32 = 1;
+pub const LCS_GM_GRAPHICS: i32 = 2;
+pub const LCS_GM_IMAGES: i32 = 4;
+pub const LCS_GM_ABS_COLORIMETRIC: i32 = 8;
+pub const LCS_SIGNATURE: i32 = 1347637059;
+pub const RASTER_FONTTYPE: i32 = 1;
+pub const DEVICE_FONTTYPE: i32 = 2;
+pub const TRUETYPE_FONTTYPE: i32 = 4;
+pub const DMORIENT_PORTRAIT: i32 = 1;
+pub const DMORIENT_LANDSCAPE: i32 = 2;
+pub const DMPAPER_FIRST: i32 = 1;
+pub const DMPAPER_LETTER: i32 = 1;
+pub const DMPAPER_LETTERSMALL: i32 = 2;
+pub const DMPAPER_TABLOID: i32 = 3;
+pub const DMPAPER_LEDGER: i32 = 4;
+pub const DMPAPER_LEGAL: i32 = 5;
+pub const DMPAPER_STATEMENT: i32 = 6;
+pub const DMPAPER_EXECUTIVE: i32 = 7;
+pub const DMPAPER_A3: i32 = 8;
+pub const DMPAPER_A4: i32 = 9;
+pub const DMPAPER_A4SMALL: i32 = 10;
+pub const DMPAPER_A5: i32 = 11;
+pub const DMPAPER_B4: i32 = 12;
+pub const DMPAPER_B5: i32 = 13;
+pub const DMPAPER_FOLIO: i32 = 14;
+pub const DMPAPER_QUARTO: i32 = 15;
+pub const DMPAPER_10X14: i32 = 16;
+pub const DMPAPER_11X17: i32 = 17;
+pub const DMPAPER_NOTE: i32 = 18;
+pub const DMPAPER_ENV_9: i32 = 19;
+pub const DMPAPER_ENV_10: i32 = 20;
+pub const DMPAPER_ENV_11: i32 = 21;
+pub const DMPAPER_ENV_12: i32 = 22;
+pub const DMPAPER_ENV_14: i32 = 23;
+pub const DMPAPER_CSHEET: i32 = 24;
+pub const DMPAPER_DSHEET: i32 = 25;
+pub const DMPAPER_ESHEET: i32 = 26;
+pub const DMPAPER_ENV_DL: i32 = 27;
+pub const DMPAPER_ENV_C5: i32 = 28;
+pub const DMPAPER_ENV_C3: i32 = 29;
+pub const DMPAPER_ENV_C4: i32 = 30;
+pub const DMPAPER_ENV_C6: i32 = 31;
+pub const DMPAPER_ENV_C65: i32 = 32;
+pub const DMPAPER_ENV_B4: i32 = 33;
+pub const DMPAPER_ENV_B5: i32 = 34;
+pub const DMPAPER_ENV_B6: i32 = 35;
+pub const DMPAPER_ENV_ITALY: i32 = 36;
+pub const DMPAPER_ENV_MONARCH: i32 = 37;
+pub const DMPAPER_ENV_PERSONAL: i32 = 38;
+pub const DMPAPER_FANFOLD_US: i32 = 39;
+pub const DMPAPER_FANFOLD_STD_GERMAN: i32 = 40;
+pub const DMPAPER_FANFOLD_LGL_GERMAN: i32 = 41;
+pub const DMPAPER_ISO_B4: i32 = 42;
+pub const DMPAPER_JAPANESE_POSTCARD: i32 = 43;
+pub const DMPAPER_9X11: i32 = 44;
+pub const DMPAPER_10X11: i32 = 45;
+pub const DMPAPER_15X11: i32 = 46;
+pub const DMPAPER_ENV_INVITE: i32 = 47;
+pub const DMPAPER_RESERVED_48: i32 = 48;
+pub const DMPAPER_RESERVED_49: i32 = 49;
+pub const DMPAPER_LETTER_EXTRA: i32 = 50;
+pub const DMPAPER_LEGAL_EXTRA: i32 = 51;
+pub const DMPAPER_TABLOID_EXTRA: i32 = 52;
+pub const DMPAPER_A4_EXTRA: i32 = 53;
+pub const DMPAPER_LETTER_TRANSVERSE: i32 = 54;
+pub const DMPAPER_A4_TRANSVERSE: i32 = 55;
+pub const DMPAPER_LETTER_EXTRA_TRANSVERSE: i32 = 56;
+pub const DMPAPER_A_PLUS: i32 = 57;
+pub const DMPAPER_B_PLUS: i32 = 58;
+pub const DMPAPER_LETTER_PLUS: i32 = 59;
+pub const DMPAPER_A4_PLUS: i32 = 60;
+pub const DMPAPER_A5_TRANSVERSE: i32 = 61;
+pub const DMPAPER_B5_TRANSVERSE: i32 = 62;
+pub const DMPAPER_A3_EXTRA: i32 = 63;
+pub const DMPAPER_A5_EXTRA: i32 = 64;
+pub const DMPAPER_B5_EXTRA: i32 = 65;
+pub const DMPAPER_A2: i32 = 66;
+pub const DMPAPER_A3_TRANSVERSE: i32 = 67;
+pub const DMPAPER_A3_EXTRA_TRANSVERSE: i32 = 68;
+pub const DMPAPER_LAST: i32 = 68;
+pub const DMPAPER_USER: i32 = 256;
+pub const DMBIN_FIRST: i32 = 1;
+pub const DMBIN_UPPER: i32 = 1;
+pub const DMBIN_ONLYONE: i32 = 1;
+pub const DMBIN_LOWER: i32 = 2;
+pub const DMBIN_MIDDLE: i32 = 3;
+pub const DMBIN_MANUAL: i32 = 4;
+pub const DMBIN_ENVELOPE: i32 = 5;
+pub const DMBIN_ENVMANUAL: i32 = 6;
+pub const DMBIN_AUTO: i32 = 7;
+pub const DMBIN_TRACTOR: i32 = 8;
+pub const DMBIN_SMALLFMT: i32 = 9;
+pub const DMBIN_LARGEFMT: i32 = 10;
+pub const DMBIN_LARGECAPACITY: i32 = 11;
+pub const DMBIN_CASSETTE: i32 = 14;
+pub const DMBIN_FORMSOURCE: i32 = 15;
+pub const DMBIN_LAST: i32 = 15;
+pub const DMBIN_USER: i32 = 256;
 pub const DMRES_DRAFT: i32 = -1;
 pub const DMRES_LOW: i32 = -2;
 pub const DMRES_MEDIUM: i32 = -3;
 pub const DMRES_HIGH: i32 = -4;
-pub const DMCOLOR_MONOCHROME: u32 = 1;
-pub const DMCOLOR_COLOR: u32 = 2;
-pub const DMDUP_SIMPLEX: u32 = 1;
-pub const DMDUP_VERTICAL: u32 = 2;
-pub const DMDUP_HORIZONTAL: u32 = 3;
-pub const DMTT_BITMAP: u32 = 1;
-pub const DMTT_DOWNLOAD: u32 = 2;
-pub const DMTT_SUBDEV: u32 = 3;
-pub const DMTT_DOWNLOAD_OUTLINE: u32 = 4;
-pub const DMCOLLATE_FALSE: u32 = 0;
-pub const DMCOLLATE_TRUE: u32 = 1;
-pub const DMDO_DEFAULT: u32 = 0;
-pub const DMDO_90: u32 = 1;
-pub const DMDO_180: u32 = 2;
-pub const DMDO_270: u32 = 3;
-pub const DMDFO_DEFAULT: u32 = 0;
-pub const DMDFO_STRETCH: u32 = 1;
-pub const DMDFO_CENTER: u32 = 2;
-pub const DM_GRAYSCALE: u32 = 1;
-pub const DM_INTERLACED: u32 = 2;
-pub const DMDISPLAYFLAGS_TEXTMODE: u32 = 4;
-pub const DM_SPECVERSION: u32 = 1025;
-pub const DM_ORIENTATION: u32 = 1;
-pub const DM_PAPERSIZE: u32 = 2;
-pub const DM_PAPERLENGTH: u32 = 4;
-pub const DM_PAPERWIDTH: u32 = 8;
-pub const DM_SCALE: u32 = 16;
-pub const DM_POSITION: u32 = 32;
-pub const DM_NUP: u32 = 64;
-pub const DM_DISPLAYORIENTATION: u32 = 128;
-pub const DM_COPIES: u32 = 256;
-pub const DM_DEFAULTSOURCE: u32 = 512;
-pub const DM_PRINTQUALITY: u32 = 1024;
-pub const DM_COLOR: u32 = 2048;
-pub const DM_DUPLEX: u32 = 4096;
-pub const DM_YRESOLUTION: u32 = 8192;
-pub const DM_TTOPTION: u32 = 16384;
-pub const DM_COLLATE: u32 = 32768;
-pub const DM_FORMNAME: u32 = 65536;
-pub const DM_LOGPIXELS: u32 = 131072;
-pub const DM_BITSPERPEL: u32 = 262144;
-pub const DM_PELSWIDTH: u32 = 524288;
-pub const DM_PELSHEIGHT: u32 = 1048576;
-pub const DM_DISPLAYFLAGS: u32 = 2097152;
-pub const DM_DISPLAYFREQUENCY: u32 = 4194304;
-pub const DM_ICMMETHOD: u32 = 8388608;
-pub const DM_ICMINTENT: u32 = 16777216;
-pub const DM_MEDIATYPE: u32 = 33554432;
-pub const DM_DITHERTYPE: u32 = 67108864;
-pub const DM_PANNINGWIDTH: u32 = 134217728;
-pub const DM_PANNINGHEIGHT: u32 = 268435456;
-pub const DM_DISPLAYFIXEDOUTPUT: u32 = 536870912;
-pub const QDC_ALL_PATHS: u32 = 1;
-pub const DMICMMETHOD_NONE: u32 = 1;
-pub const DMICMMETHOD_SYSTEM: u32 = 2;
-pub const DMICMMETHOD_DRIVER: u32 = 3;
-pub const DMICMMETHOD_DEVICE: u32 = 4;
-pub const DMICMMETHOD_USER: u32 = 256;
-pub const DMICM_SATURATE: u32 = 1;
-pub const DMICM_CONTRAST: u32 = 2;
-pub const DMICM_COLORMETRIC: u32 = 3;
-pub const DMICM_USER: u32 = 256;
-pub const DMMEDIA_STANDARD: u32 = 1;
-pub const DMMEDIA_TRANSPARENCY: u32 = 2;
-pub const DMMEDIA_GLOSSY: u32 = 3;
-pub const DMMEDIA_USER: u32 = 256;
-pub const DMDITHER_NONE: u32 = 1;
-pub const DMDITHER_COARSE: u32 = 2;
-pub const DMDITHER_FINE: u32 = 3;
-pub const DMDITHER_LINEART: u32 = 4;
-pub const DMDITHER_ERRORDIFFUSION: u32 = 5;
-pub const DMDITHER_RESERVED6: u32 = 6;
-pub const DMDITHER_RESERVED7: u32 = 7;
-pub const DMDITHER_RESERVED8: u32 = 8;
-pub const DMDITHER_RESERVED9: u32 = 9;
-pub const DMDITHER_GRAYSCALE: u32 = 10;
-pub const DMDITHER_USER: u32 = 256;
-pub const GDI_ERROR: u32 = 4294967295;
-pub const TMPF_FIXED_PITCH: u32 = 1;
-pub const TMPF_VECTOR: u32 = 2;
-pub const TMPF_TRUETYPE: u32 = 4;
-pub const TMPF_DEVICE: u32 = 8;
-pub const NTM_ITALIC: u32 = 1;
-pub const NTM_BOLD: u32 = 32;
-pub const NTM_REGULAR: u32 = 64;
-pub const TT_POLYGON_TYPE: u32 = 24;
-pub const TT_PRIM_LINE: u32 = 1;
-pub const TT_PRIM_QSPLINE: u32 = 2;
-pub const TT_PRIM_CSPLINE: u32 = 3;
-pub const FONTMAPPER_MAX: u32 = 10;
-pub const ENHMETA_STOCK_OBJECT: u32 = 2147483648;
-pub const WGL_FONT_LINES: u32 = 0;
-pub const WGL_FONT_POLYGONS: u32 = 1;
-pub const LPD_DOUBLEBUFFER: u32 = 1;
-pub const LPD_STEREO: u32 = 2;
-pub const LPD_SUPPORT_GDI: u32 = 16;
-pub const LPD_SUPPORT_OPENGL: u32 = 32;
-pub const LPD_SHARE_DEPTH: u32 = 64;
-pub const LPD_SHARE_STENCIL: u32 = 128;
-pub const LPD_SHARE_ACCUM: u32 = 256;
-pub const LPD_SWAP_EXCHANGE: u32 = 512;
-pub const LPD_SWAP_COPY: u32 = 1024;
-pub const LPD_TRANSPARENT: u32 = 4096;
-pub const LPD_TYPE_RGBA: u32 = 0;
-pub const LPD_TYPE_COLORINDEX: u32 = 1;
-pub const WGL_SWAP_MAIN_PLANE: u32 = 1;
-pub const WGL_SWAP_OVERLAY1: u32 = 2;
-pub const WGL_SWAP_OVERLAY2: u32 = 4;
-pub const WGL_SWAP_OVERLAY3: u32 = 8;
-pub const WGL_SWAP_OVERLAY4: u32 = 16;
-pub const WGL_SWAP_OVERLAY5: u32 = 32;
-pub const WGL_SWAP_OVERLAY6: u32 = 64;
-pub const WGL_SWAP_OVERLAY7: u32 = 128;
-pub const WGL_SWAP_OVERLAY8: u32 = 256;
-pub const WGL_SWAP_OVERLAY9: u32 = 512;
-pub const WGL_SWAP_OVERLAY10: u32 = 1024;
-pub const WGL_SWAP_OVERLAY11: u32 = 2048;
-pub const WGL_SWAP_OVERLAY12: u32 = 4096;
-pub const WGL_SWAP_OVERLAY13: u32 = 8192;
-pub const WGL_SWAP_OVERLAY14: u32 = 16384;
-pub const WGL_SWAP_OVERLAY15: u32 = 32768;
-pub const WGL_SWAP_UNDERLAY1: u32 = 65536;
-pub const WGL_SWAP_UNDERLAY2: u32 = 131072;
-pub const WGL_SWAP_UNDERLAY3: u32 = 262144;
-pub const WGL_SWAP_UNDERLAY4: u32 = 524288;
-pub const WGL_SWAP_UNDERLAY5: u32 = 1048576;
-pub const WGL_SWAP_UNDERLAY6: u32 = 2097152;
-pub const WGL_SWAP_UNDERLAY7: u32 = 4194304;
-pub const WGL_SWAP_UNDERLAY8: u32 = 8388608;
-pub const WGL_SWAP_UNDERLAY9: u32 = 16777216;
-pub const WGL_SWAP_UNDERLAY10: u32 = 33554432;
-pub const WGL_SWAP_UNDERLAY11: u32 = 67108864;
-pub const WGL_SWAP_UNDERLAY12: u32 = 134217728;
-pub const WGL_SWAP_UNDERLAY13: u32 = 268435456;
-pub const WGL_SWAP_UNDERLAY14: u32 = 536870912;
-pub const WGL_SWAP_UNDERLAY15: u32 = 1073741824;
-pub const LAYOUT_LTR: u32 = 0;
-pub const LAYOUT_RTL: u32 = 1;
-pub const LAYOUT_BTT: u32 = 2;
-pub const LAYOUT_VBH: u32 = 4;
-pub const LAYOUT_ORIENTATIONMASK: u32 = 7;
-pub const LAYOUT_BITMAPORIENTATIONPRESERVED: u32 = 8;
-pub const CAPTUREBLT: u32 = 1073741824;
-pub const NOMIRRORBITMAP: u32 = 2147483648;
-pub const CS_ENABLE: u32 = 1;
-pub const CS_DISABLE: u32 = 2;
-pub const CS_DELETE_TRANSFORM: u32 = 3;
-pub const GRADIENT_FILL_RECT_H: u32 = 0;
-pub const GRADIENT_FILL_RECT_V: u32 = 1;
-pub const GRADIENT_FILL_TRIANGLE: u32 = 2;
-pub const GRADIENT_FILL_OP_FLAG: u32 = 255;
-pub const COLORMATCHTOTARGET_EMBEDED: u32 = 1;
-pub const CREATECOLORSPACE_EMBEDED: u32 = 1;
-pub const SETICMPROFILE_EMBEDED: u32 = 1;
-pub const DISPLAY_DEVICE_ATTACHED_TO_DESKTOP: u32 = 1;
-pub const DISPLAY_DEVICE_MULTI_DRIVER: u32 = 2;
-pub const DISPLAY_DEVICE_PRIMARY_DEVICE: u32 = 4;
-pub const DISPLAY_DEVICE_MIRRORING_DRIVER: u32 = 8;
-pub const DISPLAY_DEVICE_VGA_COMPATIBLE: u32 = 16;
-pub const DISPLAY_DEVICE_TS_COMPATIBLE: u32 = 2097152;
-pub const DISPLAY_DEVICE_MODESPRUNED: u32 = 134217728;
-pub const DISPLAY_DEVICE_REMOVABLE: u32 = 32;
-pub const DISPLAY_DEVICE_RDPUDD: u32 = 16777216;
-pub const DISPLAY_DEVICE_DISCONNECT: u32 = 33554432;
-pub const DISPLAY_DEVICE_REMOTE: u32 = 67108864;
-pub const DISPLAY_DEVICE_ACTIVE: u32 = 1;
-pub const DISPLAY_DEVICE_ATTACHED: u32 = 2;
-pub const SYSRGN: u32 = 4;
-pub const MM_MAX_NUMAXES: u32 = 16;
-pub const MM_MAX_AXES_NAMELEN: u32 = 16;
-pub const WGL_SWAPMULTIPLE_MAX: u32 = 16;
-pub const STGM_DIRECT: u32 = 0;
-pub const STGM_TRANSACTED: u32 = 65536;
-pub const STGM_SIMPLE: u32 = 134217728;
-pub const STGM_READ: u32 = 0;
-pub const STGM_WRITE: u32 = 1;
-pub const STGM_READWRITE: u32 = 2;
-pub const STGM_SHARE_DENY_NONE: u32 = 64;
-pub const STGM_SHARE_DENY_READ: u32 = 48;
-pub const STGM_SHARE_DENY_WRITE: u32 = 32;
-pub const STGM_SHARE_EXCLUSIVE: u32 = 16;
-pub const STGM_PRIORITY: u32 = 262144;
-pub const STGM_DELETEONRELEASE: u32 = 67108864;
-pub const STGM_CREATE: u32 = 4096;
-pub const STGM_CONVERT: u32 = 131072;
-pub const STGM_FAILIFTHERE: u32 = 0;
-pub const STGM_NOSCRATCH: u32 = 1048576;
-pub const STGM_NOSNAPSHOT: u32 = 2097152;
-pub const STGM_DIRECT_SWMR: u32 = 4194304;
-pub const STGFMT_STORAGE: u32 = 0;
-pub const STGFMT_FILE: u32 = 3;
-pub const STGFMT_ANY: u32 = 4;
-pub const STGFMT_DOCFILE: u32 = 5;
-pub const OLEIVERB_PRIMARY: u32 = 0;
+pub const DMCOLOR_MONOCHROME: i32 = 1;
+pub const DMCOLOR_COLOR: i32 = 2;
+pub const DMDUP_SIMPLEX: i32 = 1;
+pub const DMDUP_VERTICAL: i32 = 2;
+pub const DMDUP_HORIZONTAL: i32 = 3;
+pub const DMTT_BITMAP: i32 = 1;
+pub const DMTT_DOWNLOAD: i32 = 2;
+pub const DMTT_SUBDEV: i32 = 3;
+pub const DMTT_DOWNLOAD_OUTLINE: i32 = 4;
+pub const DMCOLLATE_FALSE: i32 = 0;
+pub const DMCOLLATE_TRUE: i32 = 1;
+pub const DMDO_DEFAULT: i32 = 0;
+pub const DMDO_90: i32 = 1;
+pub const DMDO_180: i32 = 2;
+pub const DMDO_270: i32 = 3;
+pub const DMDFO_DEFAULT: i32 = 0;
+pub const DMDFO_STRETCH: i32 = 1;
+pub const DMDFO_CENTER: i32 = 2;
+pub const DM_GRAYSCALE: i32 = 1;
+pub const DM_INTERLACED: i32 = 2;
+pub const DMDISPLAYFLAGS_TEXTMODE: i32 = 4;
+pub const DM_SPECVERSION: i32 = 1025;
+pub const DM_ORIENTATION: i32 = 1;
+pub const DM_PAPERSIZE: i32 = 2;
+pub const DM_PAPERLENGTH: i32 = 4;
+pub const DM_PAPERWIDTH: i32 = 8;
+pub const DM_SCALE: i32 = 16;
+pub const DM_POSITION: i32 = 32;
+pub const DM_NUP: i32 = 64;
+pub const DM_DISPLAYORIENTATION: i32 = 128;
+pub const DM_COPIES: i32 = 256;
+pub const DM_DEFAULTSOURCE: i32 = 512;
+pub const DM_PRINTQUALITY: i32 = 1024;
+pub const DM_COLOR: i32 = 2048;
+pub const DM_DUPLEX: i32 = 4096;
+pub const DM_YRESOLUTION: i32 = 8192;
+pub const DM_TTOPTION: i32 = 16384;
+pub const DM_COLLATE: i32 = 32768;
+pub const DM_FORMNAME: i32 = 65536;
+pub const DM_LOGPIXELS: i32 = 131072;
+pub const DM_BITSPERPEL: i32 = 262144;
+pub const DM_PELSWIDTH: i32 = 524288;
+pub const DM_PELSHEIGHT: i32 = 1048576;
+pub const DM_DISPLAYFLAGS: i32 = 2097152;
+pub const DM_DISPLAYFREQUENCY: i32 = 4194304;
+pub const DM_ICMMETHOD: i32 = 8388608;
+pub const DM_ICMINTENT: i32 = 16777216;
+pub const DM_MEDIATYPE: i32 = 33554432;
+pub const DM_DITHERTYPE: i32 = 67108864;
+pub const DM_PANNINGWIDTH: i32 = 134217728;
+pub const DM_PANNINGHEIGHT: i32 = 268435456;
+pub const DM_DISPLAYFIXEDOUTPUT: i32 = 536870912;
+pub const QDC_ALL_PATHS: i32 = 1;
+pub const DMICMMETHOD_NONE: i32 = 1;
+pub const DMICMMETHOD_SYSTEM: i32 = 2;
+pub const DMICMMETHOD_DRIVER: i32 = 3;
+pub const DMICMMETHOD_DEVICE: i32 = 4;
+pub const DMICMMETHOD_USER: i32 = 256;
+pub const DMICM_SATURATE: i32 = 1;
+pub const DMICM_CONTRAST: i32 = 2;
+pub const DMICM_COLORMETRIC: i32 = 3;
+pub const DMICM_USER: i32 = 256;
+pub const DMMEDIA_STANDARD: i32 = 1;
+pub const DMMEDIA_TRANSPARENCY: i32 = 2;
+pub const DMMEDIA_GLOSSY: i32 = 3;
+pub const DMMEDIA_USER: i32 = 256;
+pub const DMDITHER_NONE: i32 = 1;
+pub const DMDITHER_COARSE: i32 = 2;
+pub const DMDITHER_FINE: i32 = 3;
+pub const DMDITHER_LINEART: i32 = 4;
+pub const DMDITHER_ERRORDIFFUSION: i32 = 5;
+pub const DMDITHER_RESERVED6: i32 = 6;
+pub const DMDITHER_RESERVED7: i32 = 7;
+pub const DMDITHER_RESERVED8: i32 = 8;
+pub const DMDITHER_RESERVED9: i32 = 9;
+pub const DMDITHER_GRAYSCALE: i32 = 10;
+pub const DMDITHER_USER: i32 = 256;
+pub const GDI_ERROR: i64 = 4294967295;
+pub const TMPF_FIXED_PITCH: i32 = 1;
+pub const TMPF_VECTOR: i32 = 2;
+pub const TMPF_TRUETYPE: i32 = 4;
+pub const TMPF_DEVICE: i32 = 8;
+pub const NTM_ITALIC: i32 = 1;
+pub const NTM_BOLD: i32 = 32;
+pub const NTM_REGULAR: i32 = 64;
+pub const TT_POLYGON_TYPE: i32 = 24;
+pub const TT_PRIM_LINE: i32 = 1;
+pub const TT_PRIM_QSPLINE: i32 = 2;
+pub const TT_PRIM_CSPLINE: i32 = 3;
+pub const FONTMAPPER_MAX: i32 = 10;
+pub const ENHMETA_STOCK_OBJECT: i64 = 2147483648;
+pub const WGL_FONT_LINES: i32 = 0;
+pub const WGL_FONT_POLYGONS: i32 = 1;
+pub const LPD_DOUBLEBUFFER: i32 = 1;
+pub const LPD_STEREO: i32 = 2;
+pub const LPD_SUPPORT_GDI: i32 = 16;
+pub const LPD_SUPPORT_OPENGL: i32 = 32;
+pub const LPD_SHARE_DEPTH: i32 = 64;
+pub const LPD_SHARE_STENCIL: i32 = 128;
+pub const LPD_SHARE_ACCUM: i32 = 256;
+pub const LPD_SWAP_EXCHANGE: i32 = 512;
+pub const LPD_SWAP_COPY: i32 = 1024;
+pub const LPD_TRANSPARENT: i32 = 4096;
+pub const LPD_TYPE_RGBA: i32 = 0;
+pub const LPD_TYPE_COLORINDEX: i32 = 1;
+pub const WGL_SWAP_MAIN_PLANE: i32 = 1;
+pub const WGL_SWAP_OVERLAY1: i32 = 2;
+pub const WGL_SWAP_OVERLAY2: i32 = 4;
+pub const WGL_SWAP_OVERLAY3: i32 = 8;
+pub const WGL_SWAP_OVERLAY4: i32 = 16;
+pub const WGL_SWAP_OVERLAY5: i32 = 32;
+pub const WGL_SWAP_OVERLAY6: i32 = 64;
+pub const WGL_SWAP_OVERLAY7: i32 = 128;
+pub const WGL_SWAP_OVERLAY8: i32 = 256;
+pub const WGL_SWAP_OVERLAY9: i32 = 512;
+pub const WGL_SWAP_OVERLAY10: i32 = 1024;
+pub const WGL_SWAP_OVERLAY11: i32 = 2048;
+pub const WGL_SWAP_OVERLAY12: i32 = 4096;
+pub const WGL_SWAP_OVERLAY13: i32 = 8192;
+pub const WGL_SWAP_OVERLAY14: i32 = 16384;
+pub const WGL_SWAP_OVERLAY15: i32 = 32768;
+pub const WGL_SWAP_UNDERLAY1: i32 = 65536;
+pub const WGL_SWAP_UNDERLAY2: i32 = 131072;
+pub const WGL_SWAP_UNDERLAY3: i32 = 262144;
+pub const WGL_SWAP_UNDERLAY4: i32 = 524288;
+pub const WGL_SWAP_UNDERLAY5: i32 = 1048576;
+pub const WGL_SWAP_UNDERLAY6: i32 = 2097152;
+pub const WGL_SWAP_UNDERLAY7: i32 = 4194304;
+pub const WGL_SWAP_UNDERLAY8: i32 = 8388608;
+pub const WGL_SWAP_UNDERLAY9: i32 = 16777216;
+pub const WGL_SWAP_UNDERLAY10: i32 = 33554432;
+pub const WGL_SWAP_UNDERLAY11: i32 = 67108864;
+pub const WGL_SWAP_UNDERLAY12: i32 = 134217728;
+pub const WGL_SWAP_UNDERLAY13: i32 = 268435456;
+pub const WGL_SWAP_UNDERLAY14: i32 = 536870912;
+pub const WGL_SWAP_UNDERLAY15: i32 = 1073741824;
+pub const LAYOUT_LTR: i32 = 0;
+pub const LAYOUT_RTL: i32 = 1;
+pub const LAYOUT_BTT: i32 = 2;
+pub const LAYOUT_VBH: i32 = 4;
+pub const LAYOUT_ORIENTATIONMASK: i32 = 7;
+pub const LAYOUT_BITMAPORIENTATIONPRESERVED: i32 = 8;
+pub const CAPTUREBLT: i32 = 1073741824;
+pub const NOMIRRORBITMAP: i64 = 2147483648;
+pub const CS_ENABLE: i32 = 1;
+pub const CS_DISABLE: i32 = 2;
+pub const CS_DELETE_TRANSFORM: i32 = 3;
+pub const GRADIENT_FILL_RECT_H: i32 = 0;
+pub const GRADIENT_FILL_RECT_V: i32 = 1;
+pub const GRADIENT_FILL_TRIANGLE: i32 = 2;
+pub const GRADIENT_FILL_OP_FLAG: i32 = 255;
+pub const COLORMATCHTOTARGET_EMBEDED: i32 = 1;
+pub const CREATECOLORSPACE_EMBEDED: i32 = 1;
+pub const SETICMPROFILE_EMBEDED: i32 = 1;
+pub const DISPLAY_DEVICE_ATTACHED_TO_DESKTOP: i32 = 1;
+pub const DISPLAY_DEVICE_MULTI_DRIVER: i32 = 2;
+pub const DISPLAY_DEVICE_PRIMARY_DEVICE: i32 = 4;
+pub const DISPLAY_DEVICE_MIRRORING_DRIVER: i32 = 8;
+pub const DISPLAY_DEVICE_VGA_COMPATIBLE: i32 = 16;
+pub const DISPLAY_DEVICE_TS_COMPATIBLE: i32 = 2097152;
+pub const DISPLAY_DEVICE_MODESPRUNED: i32 = 134217728;
+pub const DISPLAY_DEVICE_REMOVABLE: i32 = 32;
+pub const DISPLAY_DEVICE_RDPUDD: i32 = 16777216;
+pub const DISPLAY_DEVICE_DISCONNECT: i32 = 33554432;
+pub const DISPLAY_DEVICE_REMOTE: i32 = 67108864;
+pub const DISPLAY_DEVICE_ACTIVE: i32 = 1;
+pub const DISPLAY_DEVICE_ATTACHED: i32 = 2;
+pub const SYSRGN: i32 = 4;
+pub const MM_MAX_NUMAXES: i32 = 16;
+pub const MM_MAX_AXES_NAMELEN: i32 = 16;
+pub const WGL_SWAPMULTIPLE_MAX: i32 = 16;
+pub const __REQUIRED_RPCNDR_H_VERSION__: i32 = 475;
+pub const ROT_COMPARE_MAX: i32 = 2048;
+pub const ROTFLAGS_REGISTRATIONKEEPSALIVE: i32 = 1;
+pub const ROTFLAGS_ALLOWANYCLIENT: i32 = 2;
+pub const WDT_INPROC_CALL: i32 = 1215587415;
+pub const WDT_REMOTE_CALL: i32 = 1383359575;
+pub const WDT_INPROC64_CALL: i32 = 1349805143;
+pub const STGM_DIRECT: i32 = 0;
+pub const STGM_TRANSACTED: i32 = 65536;
+pub const STGM_SIMPLE: i32 = 134217728;
+pub const STGM_READ: i32 = 0;
+pub const STGM_WRITE: i32 = 1;
+pub const STGM_READWRITE: i32 = 2;
+pub const STGM_SHARE_DENY_NONE: i32 = 64;
+pub const STGM_SHARE_DENY_READ: i32 = 48;
+pub const STGM_SHARE_DENY_WRITE: i32 = 32;
+pub const STGM_SHARE_EXCLUSIVE: i32 = 16;
+pub const STGM_PRIORITY: i32 = 262144;
+pub const STGM_DELETEONRELEASE: i32 = 67108864;
+pub const STGM_CREATE: i32 = 4096;
+pub const STGM_CONVERT: i32 = 131072;
+pub const STGM_FAILIFTHERE: i32 = 0;
+pub const STGM_NOSCRATCH: i32 = 1048576;
+pub const STGM_NOSNAPSHOT: i32 = 2097152;
+pub const STGM_DIRECT_SWMR: i32 = 4194304;
+pub const STGFMT_STORAGE: i32 = 0;
+pub const STGFMT_FILE: i32 = 3;
+pub const STGFMT_ANY: i32 = 4;
+pub const STGFMT_DOCFILE: i32 = 5;
+pub const FALT: i32 = 16;
+pub const FCONTROL: i32 = 8;
+pub const FNOINVERT: i32 = 2;
+pub const FSHIFT: i32 = 4;
+pub const FVIRTKEY: i32 = 1;
+pub const ATF_TIMEOUTON: i32 = 1;
+pub const ATF_ONOFFFEEDBACK: i32 = 2;
+pub const ATF_AVAILABLE: i32 = 4;
+pub const WH_MIN: i32 = -1;
+pub const WH_MSGFILTER: i32 = -1;
+pub const WH_JOURNALRECORD: i32 = 0;
+pub const WH_JOURNALPLAYBACK: i32 = 1;
+pub const WH_KEYBOARD: i32 = 2;
+pub const WH_GETMESSAGE: i32 = 3;
+pub const WH_CALLWNDPROC: i32 = 4;
+pub const WH_CBT: i32 = 5;
+pub const WH_SYSMSGFILTER: i32 = 6;
+pub const WH_MOUSE: i32 = 7;
+pub const WH_HARDWARE: i32 = 8;
+pub const WH_DEBUG: i32 = 9;
+pub const WH_SHELL: i32 = 10;
+pub const WH_FOREGROUNDIDLE: i32 = 11;
+pub const WH_CALLWNDPROCRET: i32 = 12;
+pub const WH_KEYBOARD_LL: i32 = 13;
+pub const WH_MOUSE_LL: i32 = 14;
+pub const WH_MAX: i32 = 14;
+pub const WH_MINHOOK: i32 = -1;
+pub const WH_MAXHOOK: i32 = 14;
+pub const HC_ACTION: i32 = 0;
+pub const HC_GETNEXT: i32 = 1;
+pub const HC_SKIP: i32 = 2;
+pub const HC_NOREMOVE: i32 = 3;
+pub const HC_NOREM: i32 = 3;
+pub const HC_SYSMODALON: i32 = 4;
+pub const HC_SYSMODALOFF: i32 = 5;
+pub const HCBT_MOVESIZE: i32 = 0;
+pub const HCBT_MINMAX: i32 = 1;
+pub const HCBT_QS: i32 = 2;
+pub const HCBT_CREATEWND: i32 = 3;
+pub const HCBT_DESTROYWND: i32 = 4;
+pub const HCBT_ACTIVATE: i32 = 5;
+pub const HCBT_CLICKSKIPPED: i32 = 6;
+pub const HCBT_KEYSKIPPED: i32 = 7;
+pub const HCBT_SYSCOMMAND: i32 = 8;
+pub const HCBT_SETFOCUS: i32 = 9;
+pub const CF_TEXT: i32 = 1;
+pub const CF_BITMAP: i32 = 2;
+pub const CF_METAFILEPICT: i32 = 3;
+pub const CF_SYLK: i32 = 4;
+pub const CF_DIF: i32 = 5;
+pub const CF_TIFF: i32 = 6;
+pub const CF_OEMTEXT: i32 = 7;
+pub const CF_DIB: i32 = 8;
+pub const CF_PALETTE: i32 = 9;
+pub const CF_PENDATA: i32 = 10;
+pub const CF_RIFF: i32 = 11;
+pub const CF_WAVE: i32 = 12;
+pub const CF_UNICODETEXT: i32 = 13;
+pub const CF_ENHMETAFILE: i32 = 14;
+pub const CF_HDROP: i32 = 15;
+pub const CF_LOCALE: i32 = 16;
+pub const CF_DIBV5: i32 = 17;
+pub const CF_MAX: i32 = 18;
+pub const CF_OWNERDISPLAY: i32 = 128;
+pub const CF_DSPTEXT: i32 = 129;
+pub const CF_DSPBITMAP: i32 = 130;
+pub const CF_DSPMETAFILEPICT: i32 = 131;
+pub const CF_DSPENHMETAFILE: i32 = 142;
+pub const CF_PRIVATEFIRST: i32 = 512;
+pub const CF_PRIVATELAST: i32 = 767;
+pub const CF_GDIOBJFIRST: i32 = 768;
+pub const CF_GDIOBJLAST: i32 = 1023;
+pub const HKL_NEXT: i32 = 1;
+pub const HKL_PREV: i32 = 0;
+pub const KLF_ACTIVATE: i32 = 1;
+pub const KLF_SUBSTITUTE_OK: i32 = 2;
+pub const KLF_UNLOADPREVIOUS: i32 = 4;
+pub const KLF_REORDER: i32 = 8;
+pub const KLF_REPLACELANG: i32 = 16;
+pub const KLF_NOTELLSHELL: i32 = 128;
+pub const KLF_SETFORPROCESS: i32 = 256;
+pub const KLF_SHIFTLOCK: i32 = 65536;
+pub const KLF_RESET: i32 = 1073741824;
+pub const KL_NAMELENGTH: i32 = 9;
+pub const INPUTLANGCHANGE_BACKWARD: i32 = 4;
+pub const INPUTLANGCHANGE_FORWARD: i32 = 2;
+pub const INPUTLANGCHANGE_SYSCHARSET: i32 = 1;
+pub const MF_ENABLED: i32 = 0;
+pub const MF_GRAYED: i32 = 1;
+pub const MF_DISABLED: i32 = 2;
+pub const MF_BITMAP: i32 = 4;
+pub const MF_CHECKED: i32 = 8;
+pub const MF_MENUBARBREAK: i32 = 32;
+pub const MF_MENUBREAK: i32 = 64;
+pub const MF_OWNERDRAW: i32 = 256;
+pub const MF_POPUP: i32 = 16;
+pub const MF_SEPARATOR: i32 = 2048;
+pub const MF_STRING: i32 = 0;
+pub const MF_UNCHECKED: i32 = 0;
+pub const MF_DEFAULT: i32 = 4096;
+pub const MF_SYSMENU: i32 = 8192;
+pub const MF_HELP: i32 = 16384;
+pub const MF_END: i32 = 128;
+pub const MF_RIGHTJUSTIFY: i32 = 16384;
+pub const MF_MOUSESELECT: i32 = 32768;
+pub const MF_INSERT: i32 = 0;
+pub const MF_CHANGE: i32 = 128;
+pub const MF_APPEND: i32 = 256;
+pub const MF_DELETE: i32 = 512;
+pub const MF_REMOVE: i32 = 4096;
+pub const MF_USECHECKBITMAPS: i32 = 512;
+pub const MF_UNHILITE: i32 = 0;
+pub const MF_HILITE: i32 = 128;
+pub const BSM_ALLCOMPONENTS: i32 = 0;
+pub const BSM_APPLICATIONS: i32 = 8;
+pub const BSM_ALLDESKTOPS: i32 = 16;
+pub const BSM_INSTALLABLEDRIVERS: i32 = 4;
+pub const BSM_NETDRIVER: i32 = 2;
+pub const BSM_VXDS: i32 = 1;
+pub const BSF_FLUSHDISK: i32 = 4;
+pub const BSF_FORCEIFHUNG: i32 = 32;
+pub const BSF_IGNORECURRENTTASK: i32 = 2;
+pub const BSF_NOHANG: i32 = 8;
+pub const BSF_NOTIMEOUTIFNOTHUNG: i32 = 64;
+pub const BSF_POSTMESSAGE: i32 = 16;
+pub const BSF_QUERY: i32 = 1;
+pub const BSF_ALLOWSFW: i32 = 128;
+pub const BSF_SENDNOTIFYMESSAGE: i32 = 256;
+pub const BSF_LUID: i32 = 1024;
+pub const BSF_RETURNHDESK: i32 = 512;
+pub const BROADCAST_QUERY_DENY: i32 = 1112363332;
+pub const CDS_UPDATEREGISTRY: i32 = 1;
+pub const CDS_TEST: i32 = 2;
+pub const CDS_FULLSCREEN: i32 = 4;
+pub const CDS_GLOBAL: i32 = 8;
+pub const CDS_SET_PRIMARY: i32 = 16;
+pub const CDS_VIDEOPARAMETERS: i32 = 20;
+pub const CDS_RESET: i32 = 1073741824;
+pub const CDS_SETRECT: i32 = 536870912;
+pub const CDS_NORESET: i32 = 268435456;
+pub const DISP_CHANGE_SUCCESSFUL: i32 = 0;
+pub const DISP_CHANGE_RESTART: i32 = 1;
+pub const DISP_CHANGE_BADFLAGS: i32 = -4;
+pub const DISP_CHANGE_BADPARAM: i32 = -5;
+pub const DISP_CHANGE_FAILED: i32 = -1;
+pub const DISP_CHANGE_BADMODE: i32 = -2;
+pub const DISP_CHANGE_NOTUPDATED: i32 = -3;
+pub const BST_CHECKED: i32 = 1;
+pub const BST_INDETERMINATE: i32 = 2;
+pub const BST_UNCHECKED: i32 = 0;
+pub const BST_FOCUS: i32 = 8;
+pub const BST_PUSHED: i32 = 4;
+pub const MF_BYCOMMAND: i32 = 0;
+pub const MF_BYPOSITION: i32 = 1024;
+pub const CWP_ALL: i32 = 0;
+pub const CWP_SKIPINVISIBLE: i32 = 1;
+pub const CWP_SKIPDISABLED: i32 = 2;
+pub const CWP_SKIPTRANSPARENT: i32 = 4;
+pub const IMAGE_BITMAP: i32 = 0;
+pub const IMAGE_ICON: i32 = 1;
+pub const IMAGE_CURSOR: i32 = 2;
+pub const IMAGE_ENHMETAFILE: i32 = 3;
+pub const DF_ALLOWOTHERACCOUNTHOOK: i32 = 1;
+pub const DESKTOP_CREATEMENU: i32 = 4;
+pub const DESKTOP_CREATEWINDOW: i32 = 2;
+pub const DESKTOP_ENUMERATE: i32 = 64;
+pub const DESKTOP_HOOKCONTROL: i32 = 8;
+pub const DESKTOP_JOURNALPLAYBACK: i32 = 32;
+pub const DESKTOP_JOURNALRECORD: i32 = 16;
+pub const DESKTOP_READOBJECTS: i32 = 1;
+pub const DESKTOP_SWITCHDESKTOP: i32 = 256;
+pub const DESKTOP_WRITEOBJECTS: i32 = 128;
+pub const WS_BORDER: i32 = 8388608;
+pub const WS_CAPTION: i32 = 12582912;
+pub const WS_CHILD: i32 = 1073741824;
+pub const WS_CHILDWINDOW: i32 = 1073741824;
+pub const WS_CLIPCHILDREN: i32 = 33554432;
+pub const WS_CLIPSIBLINGS: i32 = 67108864;
+pub const WS_DISABLED: i32 = 134217728;
+pub const WS_DLGFRAME: i32 = 4194304;
+pub const WS_GROUP: i32 = 131072;
+pub const WS_HSCROLL: i32 = 1048576;
+pub const WS_ICONIC: i32 = 536870912;
+pub const WS_MAXIMIZE: i32 = 16777216;
+pub const WS_MAXIMIZEBOX: i32 = 65536;
+pub const WS_MINIMIZE: i32 = 536870912;
+pub const WS_MINIMIZEBOX: i32 = 131072;
+pub const WS_OVERLAPPED: i32 = 0;
+pub const WS_OVERLAPPEDWINDOW: i32 = 13565952;
+pub const WS_POPUP: i64 = 2147483648;
+pub const WS_POPUPWINDOW: i64 = 2156396544;
+pub const WS_SIZEBOX: i32 = 262144;
+pub const WS_SYSMENU: i32 = 524288;
+pub const WS_TABSTOP: i32 = 65536;
+pub const WS_THICKFRAME: i32 = 262144;
+pub const WS_TILED: i32 = 0;
+pub const WS_TILEDWINDOW: i32 = 13565952;
+pub const WS_VISIBLE: i32 = 268435456;
+pub const WS_VSCROLL: i32 = 2097152;
+pub const MDIS_ALLCHILDSTYLES: i32 = 1;
+pub const BS_3STATE: i32 = 5;
+pub const BS_AUTO3STATE: i32 = 6;
+pub const BS_AUTOCHECKBOX: i32 = 3;
+pub const BS_AUTORADIOBUTTON: i32 = 9;
+pub const BS_BITMAP: i32 = 128;
+pub const BS_BOTTOM: i32 = 2048;
+pub const BS_CENTER: i32 = 768;
+pub const BS_CHECKBOX: i32 = 2;
+pub const BS_DEFPUSHBUTTON: i32 = 1;
+pub const BS_GROUPBOX: i32 = 7;
+pub const BS_ICON: i32 = 64;
+pub const BS_LEFT: i32 = 256;
+pub const BS_LEFTTEXT: i32 = 32;
+pub const BS_MULTILINE: i32 = 8192;
+pub const BS_NOTIFY: i32 = 16384;
+pub const BS_OWNERDRAW: i32 = 11;
+pub const BS_TYPEMASK: i32 = 15;
+pub const BS_PUSHBUTTON: i32 = 0;
+pub const BS_PUSHLIKE: i32 = 4096;
+pub const BS_RADIOBUTTON: i32 = 4;
+pub const BS_RIGHT: i32 = 512;
+pub const BS_RIGHTBUTTON: i32 = 32;
+pub const BS_TEXT: i32 = 0;
+pub const BS_TOP: i32 = 1024;
+pub const BS_USERBUTTON: i32 = 8;
+pub const BS_VCENTER: i32 = 3072;
+pub const BS_FLAT: i32 = 32768;
+pub const CBS_AUTOHSCROLL: i32 = 64;
+pub const CBS_DISABLENOSCROLL: i32 = 2048;
+pub const CBS_DROPDOWN: i32 = 2;
+pub const CBS_DROPDOWNLIST: i32 = 3;
+pub const CBS_HASSTRINGS: i32 = 512;
+pub const CBS_LOWERCASE: i32 = 16384;
+pub const CBS_NOINTEGRALHEIGHT: i32 = 1024;
+pub const CBS_OEMCONVERT: i32 = 128;
+pub const CBS_OWNERDRAWFIXED: i32 = 16;
+pub const CBS_OWNERDRAWVARIABLE: i32 = 32;
+pub const CBS_SIMPLE: i32 = 1;
+pub const CBS_SORT: i32 = 256;
+pub const CBS_UPPERCASE: i32 = 8192;
+pub const ES_AUTOHSCROLL: i32 = 128;
+pub const ES_AUTOVSCROLL: i32 = 64;
+pub const ES_CENTER: i32 = 1;
+pub const ES_LEFT: i32 = 0;
+pub const ES_LOWERCASE: i32 = 16;
+pub const ES_MULTILINE: i32 = 4;
+pub const ES_NOHIDESEL: i32 = 256;
+pub const ES_NUMBER: i32 = 8192;
+pub const ES_OEMCONVERT: i32 = 1024;
+pub const ES_PASSWORD: i32 = 32;
+pub const ES_READONLY: i32 = 2048;
+pub const ES_RIGHT: i32 = 2;
+pub const ES_UPPERCASE: i32 = 8;
+pub const ES_WANTRETURN: i32 = 4096;
+pub const LBS_DISABLENOSCROLL: i32 = 4096;
+pub const LBS_EXTENDEDSEL: i32 = 2048;
+pub const LBS_HASSTRINGS: i32 = 64;
+pub const LBS_MULTICOLUMN: i32 = 512;
+pub const LBS_MULTIPLESEL: i32 = 8;
+pub const LBS_NODATA: i32 = 8192;
+pub const LBS_NOINTEGRALHEIGHT: i32 = 256;
+pub const LBS_NOREDRAW: i32 = 4;
+pub const LBS_NOSEL: i32 = 16384;
+pub const LBS_NOTIFY: i32 = 1;
+pub const LBS_OWNERDRAWFIXED: i32 = 16;
+pub const LBS_OWNERDRAWVARIABLE: i32 = 32;
+pub const LBS_SORT: i32 = 2;
+pub const LBS_STANDARD: i32 = 10485763;
+pub const LBS_USETABSTOPS: i32 = 128;
+pub const LBS_WANTKEYBOARDINPUT: i32 = 1024;
+pub const LBS_COMBOBOX: i32 = 32768;
+pub const SBS_BOTTOMALIGN: i32 = 4;
+pub const SBS_HORZ: i32 = 0;
+pub const SBS_LEFTALIGN: i32 = 2;
+pub const SBS_RIGHTALIGN: i32 = 4;
+pub const SBS_SIZEBOX: i32 = 8;
+pub const SBS_SIZEBOXBOTTOMRIGHTALIGN: i32 = 4;
+pub const SBS_SIZEBOXTOPLEFTALIGN: i32 = 2;
+pub const SBS_SIZEGRIP: i32 = 16;
+pub const SBS_TOPALIGN: i32 = 2;
+pub const SBS_VERT: i32 = 1;
+pub const SS_BITMAP: i32 = 14;
+pub const SS_BLACKFRAME: i32 = 7;
+pub const SS_BLACKRECT: i32 = 4;
+pub const SS_CENTER: i32 = 1;
+pub const SS_CENTERIMAGE: i32 = 512;
+pub const SS_EDITCONTROL: i32 = 8192;
+pub const SS_ENHMETAFILE: i32 = 15;
+pub const SS_ETCHEDFRAME: i32 = 18;
+pub const SS_ETCHEDHORZ: i32 = 16;
+pub const SS_ETCHEDVERT: i32 = 17;
+pub const SS_GRAYFRAME: i32 = 8;
+pub const SS_GRAYRECT: i32 = 5;
+pub const SS_ICON: i32 = 3;
+pub const SS_LEFT: i32 = 0;
+pub const SS_LEFTNOWORDWRAP: i32 = 12;
+pub const SS_NOPREFIX: i32 = 128;
+pub const SS_NOTIFY: i32 = 256;
+pub const SS_OWNERDRAW: i32 = 13;
+pub const SS_REALSIZECONTROL: i32 = 64;
+pub const SS_REALSIZEIMAGE: i32 = 2048;
+pub const SS_RIGHT: i32 = 2;
+pub const SS_RIGHTJUST: i32 = 1024;
+pub const SS_SIMPLE: i32 = 11;
+pub const SS_SUNKEN: i32 = 4096;
+pub const SS_WHITEFRAME: i32 = 9;
+pub const SS_WHITERECT: i32 = 6;
+pub const SS_USERITEM: i32 = 10;
+pub const SS_TYPEMASK: i32 = 31;
+pub const SS_ENDELLIPSIS: i32 = 16384;
+pub const SS_PATHELLIPSIS: i32 = 32768;
+pub const SS_WORDELLIPSIS: i32 = 49152;
+pub const SS_ELLIPSISMASK: i32 = 49152;
+pub const DS_3DLOOK: i32 = 4;
+pub const DS_ABSALIGN: i32 = 1;
+pub const DS_CENTER: i32 = 2048;
+pub const DS_CENTERMOUSE: i32 = 4096;
+pub const DS_CONTEXTHELP: i32 = 8192;
+pub const DS_CONTROL: i32 = 1024;
+pub const DS_FIXEDSYS: i32 = 8;
+pub const DS_LOCALEDIT: i32 = 32;
+pub const DS_MODALFRAME: i32 = 128;
+pub const DS_NOFAILCREATE: i32 = 16;
+pub const DS_NOIDLEMSG: i32 = 256;
+pub const DS_SETFONT: i32 = 64;
+pub const DS_SETFOREGROUND: i32 = 512;
+pub const DS_SYSMODAL: i32 = 2;
+pub const DS_SHELLFONT: i32 = 72;
+pub const WS_EX_ACCEPTFILES: i32 = 16;
+pub const WS_EX_APPWINDOW: i32 = 262144;
+pub const WS_EX_CLIENTEDGE: i32 = 512;
+pub const WS_EX_COMPOSITED: i32 = 33554432;
+pub const WS_EX_CONTEXTHELP: i32 = 1024;
+pub const WS_EX_CONTROLPARENT: i32 = 65536;
+pub const WS_EX_DLGMODALFRAME: i32 = 1;
+pub const WS_EX_LAYERED: i32 = 524288;
+pub const WS_EX_LAYOUTRTL: i32 = 4194304;
+pub const WS_EX_LEFT: i32 = 0;
+pub const WS_EX_LEFTSCROLLBAR: i32 = 16384;
+pub const WS_EX_LTRREADING: i32 = 0;
+pub const WS_EX_MDICHILD: i32 = 64;
+pub const WS_EX_NOACTIVATE: i32 = 134217728;
+pub const WS_EX_NOINHERITLAYOUT: i32 = 1048576;
+pub const WS_EX_NOPARENTNOTIFY: i32 = 4;
+pub const WS_EX_OVERLAPPEDWINDOW: i32 = 768;
+pub const WS_EX_PALETTEWINDOW: i32 = 392;
+pub const WS_EX_RIGHT: i32 = 4096;
+pub const WS_EX_RIGHTSCROLLBAR: i32 = 0;
+pub const WS_EX_RTLREADING: i32 = 8192;
+pub const WS_EX_STATICEDGE: i32 = 131072;
+pub const WS_EX_TOOLWINDOW: i32 = 128;
+pub const WS_EX_TOPMOST: i32 = 8;
+pub const WS_EX_TRANSPARENT: i32 = 32;
+pub const WS_EX_WINDOWEDGE: i32 = 256;
+pub const WINSTA_ACCESSCLIPBOARD: i32 = 4;
+pub const WINSTA_ACCESSGLOBALATOMS: i32 = 32;
+pub const WINSTA_CREATEDESKTOP: i32 = 8;
+pub const WINSTA_ENUMDESKTOPS: i32 = 1;
+pub const WINSTA_ENUMERATE: i32 = 256;
+pub const WINSTA_EXITWINDOWS: i32 = 64;
+pub const WINSTA_READATTRIBUTES: i32 = 2;
+pub const WINSTA_READSCREEN: i32 = 512;
+pub const WINSTA_WRITEATTRIBUTES: i32 = 16;
+pub const WINSTA_ALL_ACCESS: i32 = 895;
+pub const DDL_READWRITE: i32 = 0;
+pub const DDL_READONLY: i32 = 1;
+pub const DDL_HIDDEN: i32 = 2;
+pub const DDL_SYSTEM: i32 = 4;
+pub const DDL_DIRECTORY: i32 = 16;
+pub const DDL_ARCHIVE: i32 = 32;
+pub const DDL_POSTMSGS: i32 = 8192;
+pub const DDL_DRIVES: i32 = 16384;
+pub const DDL_EXCLUSIVE: i32 = 32768;
+pub const DC_ACTIVE: i32 = 1;
+pub const DC_SMALLCAP: i32 = 2;
+pub const DC_ICON: i32 = 4;
+pub const DC_TEXT: i32 = 8;
+pub const DC_INBUTTON: i32 = 16;
+pub const DC_GRADIENT: i32 = 32;
+pub const DC_BUTTONS: i32 = 4096;
+pub const DC_CAPTION: i32 = 4108;
+pub const BDR_RAISEDOUTER: i32 = 1;
+pub const BDR_SUNKENOUTER: i32 = 2;
+pub const BDR_RAISEDINNER: i32 = 4;
+pub const BDR_SUNKENINNER: i32 = 8;
+pub const BDR_OUTER: i32 = 3;
+pub const BDR_INNER: i32 = 12;
+pub const BDR_RAISED: i32 = 5;
+pub const BDR_SUNKEN: i32 = 10;
+pub const EDGE_RAISED: i32 = 5;
+pub const EDGE_SUNKEN: i32 = 10;
+pub const EDGE_ETCHED: i32 = 6;
+pub const EDGE_BUMP: i32 = 9;
+pub const BF_LEFT: i32 = 1;
+pub const BF_TOP: i32 = 2;
+pub const BF_RIGHT: i32 = 4;
+pub const BF_BOTTOM: i32 = 8;
+pub const BF_TOPLEFT: i32 = 3;
+pub const BF_TOPRIGHT: i32 = 6;
+pub const BF_BOTTOMLEFT: i32 = 9;
+pub const BF_BOTTOMRIGHT: i32 = 12;
+pub const BF_RECT: i32 = 15;
+pub const BF_DIAGONAL: i32 = 16;
+pub const BF_DIAGONAL_ENDTOPRIGHT: i32 = 22;
+pub const BF_DIAGONAL_ENDTOPLEFT: i32 = 19;
+pub const BF_DIAGONAL_ENDBOTTOMLEFT: i32 = 25;
+pub const BF_DIAGONAL_ENDBOTTOMRIGHT: i32 = 28;
+pub const BF_MIDDLE: i32 = 2048;
+pub const BF_SOFT: i32 = 4096;
+pub const BF_ADJUST: i32 = 8192;
+pub const BF_FLAT: i32 = 16384;
+pub const BF_MONO: i32 = 32768;
+pub const DFC_CAPTION: i32 = 1;
+pub const DFC_MENU: i32 = 2;
+pub const DFC_SCROLL: i32 = 3;
+pub const DFC_BUTTON: i32 = 4;
+pub const DFC_POPUPMENU: i32 = 5;
+pub const DFCS_CAPTIONCLOSE: i32 = 0;
+pub const DFCS_CAPTIONMIN: i32 = 1;
+pub const DFCS_CAPTIONMAX: i32 = 2;
+pub const DFCS_CAPTIONRESTORE: i32 = 3;
+pub const DFCS_CAPTIONHELP: i32 = 4;
+pub const DFCS_MENUARROW: i32 = 0;
+pub const DFCS_MENUCHECK: i32 = 1;
+pub const DFCS_MENUBULLET: i32 = 2;
+pub const DFCS_MENUARROWRIGHT: i32 = 4;
+pub const DFCS_SCROLLUP: i32 = 0;
+pub const DFCS_SCROLLDOWN: i32 = 1;
+pub const DFCS_SCROLLLEFT: i32 = 2;
+pub const DFCS_SCROLLRIGHT: i32 = 3;
+pub const DFCS_SCROLLCOMBOBOX: i32 = 5;
+pub const DFCS_SCROLLSIZEGRIP: i32 = 8;
+pub const DFCS_SCROLLSIZEGRIPRIGHT: i32 = 16;
+pub const DFCS_BUTTONCHECK: i32 = 0;
+pub const DFCS_BUTTONRADIOIMAGE: i32 = 1;
+pub const DFCS_BUTTONRADIOMASK: i32 = 2;
+pub const DFCS_BUTTONRADIO: i32 = 4;
+pub const DFCS_BUTTON3STATE: i32 = 8;
+pub const DFCS_BUTTONPUSH: i32 = 16;
+pub const DFCS_INACTIVE: i32 = 256;
+pub const DFCS_PUSHED: i32 = 512;
+pub const DFCS_CHECKED: i32 = 1024;
+pub const DFCS_TRANSPARENT: i32 = 2048;
+pub const DFCS_HOT: i32 = 4096;
+pub const DFCS_ADJUSTRECT: i32 = 8192;
+pub const DFCS_FLAT: i32 = 16384;
+pub const DFCS_MONO: i32 = 32768;
+pub const DST_COMPLEX: i32 = 0;
+pub const DST_TEXT: i32 = 1;
+pub const DST_PREFIXTEXT: i32 = 2;
+pub const DST_ICON: i32 = 3;
+pub const DST_BITMAP: i32 = 4;
+pub const DSS_NORMAL: i32 = 0;
+pub const DSS_UNION: i32 = 16;
+pub const DSS_DISABLED: i32 = 32;
+pub const DSS_DEFAULT: i32 = 64;
+pub const DSS_MONO: i32 = 128;
+pub const DSS_HIDEPREFIX: i32 = 512;
+pub const DSS_PREFIXONLY: i32 = 1024;
+pub const DSS_RIGHT: i32 = 32768;
+pub const DT_BOTTOM: i32 = 8;
+pub const DT_CALCRECT: i32 = 1024;
+pub const DT_CENTER: i32 = 1;
+pub const DT_EDITCONTROL: i32 = 8192;
+pub const DT_END_ELLIPSIS: i32 = 32768;
+pub const DT_PATH_ELLIPSIS: i32 = 16384;
+pub const DT_WORD_ELLIPSIS: i32 = 262144;
+pub const DT_EXPANDTABS: i32 = 64;
+pub const DT_EXTERNALLEADING: i32 = 512;
+pub const DT_LEFT: i32 = 0;
+pub const DT_MODIFYSTRING: i32 = 65536;
+pub const DT_NOCLIP: i32 = 256;
+pub const DT_NOPREFIX: i32 = 2048;
+pub const DT_RIGHT: i32 = 2;
+pub const DT_RTLREADING: i32 = 131072;
+pub const DT_SINGLELINE: i32 = 32;
+pub const DT_TABSTOP: i32 = 128;
+pub const DT_TOP: i32 = 0;
+pub const DT_VCENTER: i32 = 4;
+pub const DT_WORDBREAK: i32 = 16;
+pub const DT_INTERNAL: i32 = 4096;
+pub const DT_NOFULLWIDTHCHARBREAK: i32 = 524288;
+pub const DT_HIDEPREFIX: i32 = 1048576;
+pub const DT_PREFIXONLY: i32 = 2097152;
+pub const WB_ISDELIMITER: i32 = 2;
+pub const WB_LEFT: i32 = 0;
+pub const WB_RIGHT: i32 = 1;
+pub const SB_HORZ: i32 = 0;
+pub const SB_VERT: i32 = 1;
+pub const SB_CTL: i32 = 2;
+pub const SB_BOTH: i32 = 3;
+pub const ESB_DISABLE_BOTH: i32 = 3;
+pub const ESB_DISABLE_DOWN: i32 = 2;
+pub const ESB_DISABLE_LEFT: i32 = 1;
+pub const ESB_DISABLE_LTUP: i32 = 1;
+pub const ESB_DISABLE_RIGHT: i32 = 2;
+pub const ESB_DISABLE_RTDN: i32 = 2;
+pub const ESB_DISABLE_UP: i32 = 1;
+pub const ESB_ENABLE_BOTH: i32 = 0;
+pub const SB_LINEUP: i32 = 0;
+pub const SB_LINEDOWN: i32 = 1;
+pub const SB_LINELEFT: i32 = 0;
+pub const SB_LINERIGHT: i32 = 1;
+pub const SB_PAGEUP: i32 = 2;
+pub const SB_PAGEDOWN: i32 = 3;
+pub const SB_PAGELEFT: i32 = 2;
+pub const SB_PAGERIGHT: i32 = 3;
+pub const SB_THUMBPOSITION: i32 = 4;
+pub const SB_THUMBTRACK: i32 = 5;
+pub const SB_ENDSCROLL: i32 = 8;
+pub const SB_LEFT: i32 = 6;
+pub const SB_RIGHT: i32 = 7;
+pub const SB_BOTTOM: i32 = 7;
+pub const SB_TOP: i32 = 6;
+pub const DIFFERENCE: i32 = 11;
+pub const EWX_FORCE: i32 = 4;
+pub const EWX_LOGOFF: i32 = 0;
+pub const EWX_POWEROFF: i32 = 8;
+pub const EWX_REBOOT: i32 = 2;
+pub const EWX_SHUTDOWN: i32 = 1;
+pub const EWX_FORCEIFHUNG: i32 = 16;
+pub const CS_BYTEALIGNCLIENT: i32 = 4096;
+pub const CS_BYTEALIGNWINDOW: i32 = 8192;
+pub const CS_KEYCVTWINDOW: i32 = 4;
+pub const CS_NOKEYCVT: i32 = 256;
+pub const CS_CLASSDC: i32 = 64;
+pub const CS_DBLCLKS: i32 = 8;
+pub const CS_GLOBALCLASS: i32 = 16384;
+pub const CS_HREDRAW: i32 = 2;
+pub const CS_NOCLOSE: i32 = 512;
+pub const CS_OWNDC: i32 = 32;
+pub const CS_PARENTDC: i32 = 128;
+pub const CS_SAVEBITS: i32 = 2048;
+pub const CS_VREDRAW: i32 = 1;
+pub const CS_IME: i32 = 65536;
+pub const CS_DROPSHADOW: i32 = 131072;
+pub const GCW_ATOM: i32 = -32;
+pub const GCL_CBCLSEXTRA: i32 = -20;
+pub const GCL_CBWNDEXTRA: i32 = -18;
+pub const GCL_HBRBACKGROUND: i32 = -10;
+pub const GCL_HCURSOR: i32 = -12;
+pub const GCL_HICON: i32 = -14;
+pub const GCL_HICONSM: i32 = -34;
+pub const GCL_HMODULE: i32 = -16;
+pub const GCL_MENUNAME: i32 = -8;
+pub const GCL_STYLE: i32 = -26;
+pub const GCL_WNDPROC: i32 = -24;
+pub const GCLP_HBRBACKGROUND: i32 = -10;
+pub const GCLP_HCURSOR: i32 = -12;
+pub const GCLP_HICON: i32 = -14;
+pub const GCLP_HICONSM: i32 = -34;
+pub const GCLP_HMODULE: i32 = -16;
+pub const GCLP_MENUNAME: i32 = -8;
+pub const GCLP_WNDPROC: i32 = -24;
+pub const MIIM_STATE: i32 = 1;
+pub const MIIM_ID: i32 = 2;
+pub const MIIM_SUBMENU: i32 = 4;
+pub const MIIM_CHECKMARKS: i32 = 8;
+pub const MIIM_TYPE: i32 = 16;
+pub const MIIM_DATA: i32 = 32;
+pub const MIIM_STRING: i32 = 64;
+pub const MIIM_BITMAP: i32 = 128;
+pub const MIIM_FTYPE: i32 = 256;
+pub const MIM_MAXHEIGHT: i32 = 1;
+pub const MIM_BACKGROUND: i32 = 2;
+pub const MIM_HELPID: i32 = 4;
+pub const MIM_MENUDATA: i32 = 8;
+pub const MIM_STYLE: i32 = 16;
+pub const MIM_APPLYTOSUBMENUS: i64 = 2147483648;
+pub const MFT_BITMAP: i32 = 4;
+pub const MFT_MENUBARBREAK: i32 = 32;
+pub const MFT_MENUBREAK: i32 = 64;
+pub const MFT_OWNERDRAW: i32 = 256;
+pub const MFT_RADIOCHECK: i32 = 512;
+pub const MFT_RIGHTJUSTIFY: i32 = 16384;
+pub const MFT_SEPARATOR: i32 = 2048;
+pub const MFT_RIGHTORDER: i32 = 8192;
+pub const MFT_STRING: i32 = 0;
+pub const MFS_CHECKED: i32 = 8;
+pub const MFS_DEFAULT: i32 = 4096;
+pub const MFS_DISABLED: i32 = 3;
+pub const MFS_ENABLED: i32 = 0;
+pub const MFS_GRAYED: i32 = 3;
+pub const MFS_HILITE: i32 = 128;
+pub const MFS_UNCHECKED: i32 = 0;
+pub const MFS_UNHILITE: i32 = 0;
+pub const MNS_NOCHECK: i64 = 2147483648;
+pub const MNS_MODELESS: i32 = 1073741824;
+pub const MNS_DRAGDROP: i32 = 536870912;
+pub const MNS_AUTODISMISS: i32 = 268435456;
+pub const MNS_NOTIFYBYPOS: i32 = 134217728;
+pub const MNS_CHECKORBMP: i32 = 67108864;
+pub const GW_HWNDNEXT: i32 = 2;
+pub const GW_HWNDPREV: i32 = 3;
+pub const GW_CHILD: i32 = 5;
+pub const GW_HWNDFIRST: i32 = 0;
+pub const GW_HWNDLAST: i32 = 1;
+pub const GW_OWNER: i32 = 4;
+pub const GW_ENABLEDPOPUP: i32 = 6;
+pub const SW_HIDE: i32 = 0;
+pub const SW_NORMAL: i32 = 1;
+pub const SW_SHOWNORMAL: i32 = 1;
+pub const SW_SHOWMINIMIZED: i32 = 2;
+pub const SW_MAXIMIZE: i32 = 3;
+pub const SW_SHOWMAXIMIZED: i32 = 3;
+pub const SW_SHOWNOACTIVATE: i32 = 4;
+pub const SW_SHOW: i32 = 5;
+pub const SW_MINIMIZE: i32 = 6;
+pub const SW_SHOWMINNOACTIVE: i32 = 7;
+pub const SW_SHOWNA: i32 = 8;
+pub const SW_RESTORE: i32 = 9;
+pub const SW_SHOWDEFAULT: i32 = 10;
+pub const SW_FORCEMINIMIZE: i32 = 11;
+pub const SW_MAX: i32 = 11;
+pub const MB_USERICON: i32 = 128;
+pub const MB_ICONASTERISK: i32 = 64;
+pub const MB_ICONEXCLAMATION: i32 = 48;
+pub const MB_ICONWARNING: i32 = 48;
+pub const MB_ICONERROR: i32 = 16;
+pub const MB_ICONHAND: i32 = 16;
+pub const MB_ICONQUESTION: i32 = 32;
+pub const MB_OK: i32 = 0;
+pub const MB_ABORTRETRYIGNORE: i32 = 2;
+pub const MB_APPLMODAL: i32 = 0;
+pub const MB_DEFAULT_DESKTOP_ONLY: i32 = 131072;
+pub const MB_HELP: i32 = 16384;
+pub const MB_RIGHT: i32 = 524288;
+pub const MB_RTLREADING: i32 = 1048576;
+pub const MB_TOPMOST: i32 = 262144;
+pub const MB_DEFBUTTON1: i32 = 0;
+pub const MB_DEFBUTTON2: i32 = 256;
+pub const MB_DEFBUTTON3: i32 = 512;
+pub const MB_DEFBUTTON4: i32 = 768;
+pub const MB_ICONINFORMATION: i32 = 64;
+pub const MB_ICONSTOP: i32 = 16;
+pub const MB_OKCANCEL: i32 = 1;
+pub const MB_RETRYCANCEL: i32 = 5;
+pub const MB_SERVICE_NOTIFICATION: i32 = 2097152;
+pub const MB_SERVICE_NOTIFICATION_NT3X: i32 = 262144;
+pub const MB_SETFOREGROUND: i32 = 65536;
+pub const MB_SYSTEMMODAL: i32 = 4096;
+pub const MB_TASKMODAL: i32 = 8192;
+pub const MB_YESNO: i32 = 4;
+pub const MB_YESNOCANCEL: i32 = 3;
+pub const MB_ICONMASK: i32 = 240;
+pub const MB_DEFMASK: i32 = 3840;
+pub const MB_MODEMASK: i32 = 12288;
+pub const MB_MISCMASK: i32 = 49152;
+pub const MB_NOFOCUS: i32 = 32768;
+pub const MB_TYPEMASK: i32 = 15;
+pub const MB_CANCELTRYCONTINUE: i32 = 6;
+pub const IDOK: i32 = 1;
+pub const IDCANCEL: i32 = 2;
+pub const IDABORT: i32 = 3;
+pub const IDRETRY: i32 = 4;
+pub const IDIGNORE: i32 = 5;
+pub const IDYES: i32 = 6;
+pub const IDNO: i32 = 7;
+pub const IDCLOSE: i32 = 8;
+pub const IDHELP: i32 = 9;
+pub const IDTRYAGAIN: i32 = 10;
+pub const IDCONTINUE: i32 = 11;
+pub const IDTIMEOUT: i32 = 32000;
+pub const GWL_EXSTYLE: i32 = -20;
+pub const GWL_STYLE: i32 = -16;
+pub const GWL_WNDPROC: i32 = -4;
+pub const GWLP_WNDPROC: i32 = -4;
+pub const GWL_HINSTANCE: i32 = -6;
+pub const GWLP_HINSTANCE: i32 = -6;
+pub const GWL_HWNDPARENT: i32 = -8;
+pub const GWLP_HWNDPARENT: i32 = -8;
+pub const GWL_ID: i32 = -12;
+pub const GWLP_ID: i32 = -12;
+pub const GWL_USERDATA: i32 = -21;
+pub const GWLP_USERDATA: i32 = -21;
+pub const DWLP_MSGRESULT: i32 = 0;
+pub const QS_KEY: i32 = 1;
+pub const QS_MOUSEMOVE: i32 = 2;
+pub const QS_MOUSEBUTTON: i32 = 4;
+pub const QS_POSTMESSAGE: i32 = 8;
+pub const QS_TIMER: i32 = 16;
+pub const QS_PAINT: i32 = 32;
+pub const QS_SENDMESSAGE: i32 = 64;
+pub const QS_HOTKEY: i32 = 128;
+pub const QS_ALLPOSTMESSAGE: i32 = 256;
+pub const QS_RAWINPUT: i32 = 1024;
+pub const QS_MOUSE: i32 = 6;
+pub const QS_INPUT: i32 = 1031;
+pub const QS_ALLEVENTS: i32 = 1215;
+pub const QS_ALLINPUT: i32 = 1279;
+pub const USER_TIMER_MAXIMUM: i32 = 2147483647;
+pub const USER_TIMER_MINIMUM: i32 = 10;
+pub const MWMO_WAITALL: i32 = 1;
+pub const MWMO_ALERTABLE: i32 = 2;
+pub const MWMO_INPUTAVAILABLE: i32 = 4;
+pub const COLOR_SCROLLBAR: i32 = 0;
+pub const COLOR_BACKGROUND: i32 = 1;
+pub const COLOR_DESKTOP: i32 = 1;
+pub const COLOR_ACTIVECAPTION: i32 = 2;
+pub const COLOR_INACTIVECAPTION: i32 = 3;
+pub const COLOR_MENU: i32 = 4;
+pub const COLOR_WINDOW: i32 = 5;
+pub const COLOR_WINDOWFRAME: i32 = 6;
+pub const COLOR_MENUTEXT: i32 = 7;
+pub const COLOR_WINDOWTEXT: i32 = 8;
+pub const COLOR_CAPTIONTEXT: i32 = 9;
+pub const COLOR_ACTIVEBORDER: i32 = 10;
+pub const COLOR_INACTIVEBORDER: i32 = 11;
+pub const COLOR_APPWORKSPACE: i32 = 12;
+pub const COLOR_HIGHLIGHT: i32 = 13;
+pub const COLOR_HIGHLIGHTTEXT: i32 = 14;
+pub const COLOR_BTNFACE: i32 = 15;
+pub const COLOR_3DFACE: i32 = 15;
+pub const COLOR_BTNSHADOW: i32 = 16;
+pub const COLOR_3DSHADOW: i32 = 16;
+pub const COLOR_GRAYTEXT: i32 = 17;
+pub const COLOR_BTNTEXT: i32 = 18;
+pub const COLOR_INACTIVECAPTIONTEXT: i32 = 19;
+pub const COLOR_BTNHIGHLIGHT: i32 = 20;
+pub const COLOR_3DHIGHLIGHT: i32 = 20;
+pub const COLOR_3DHILIGHT: i32 = 20;
+pub const COLOR_BTNHILIGHT: i32 = 20;
+pub const COLOR_3DDKSHADOW: i32 = 21;
+pub const COLOR_3DLIGHT: i32 = 22;
+pub const COLOR_INFOTEXT: i32 = 23;
+pub const COLOR_INFOBK: i32 = 24;
+pub const COLOR_HOTLIGHT: i32 = 26;
+pub const COLOR_GRADIENTACTIVECAPTION: i32 = 27;
+pub const COLOR_GRADIENTINACTIVECAPTION: i32 = 28;
+pub const COLOR_MENUHILIGHT: i32 = 29;
+pub const COLOR_MENUBAR: i32 = 30;
+pub const CTLCOLOR_MSGBOX: i32 = 0;
+pub const CTLCOLOR_EDIT: i32 = 1;
+pub const CTLCOLOR_LISTBOX: i32 = 2;
+pub const CTLCOLOR_BTN: i32 = 3;
+pub const CTLCOLOR_DLG: i32 = 4;
+pub const CTLCOLOR_SCROLLBAR: i32 = 5;
+pub const CTLCOLOR_STATIC: i32 = 6;
+pub const CTLCOLOR_MAX: i32 = 7;
+pub const SM_CXSCREEN: i32 = 0;
+pub const SM_CYSCREEN: i32 = 1;
+pub const SM_CXVSCROLL: i32 = 2;
+pub const SM_CYHSCROLL: i32 = 3;
+pub const SM_CYCAPTION: i32 = 4;
+pub const SM_CXBORDER: i32 = 5;
+pub const SM_CYBORDER: i32 = 6;
+pub const SM_CXDLGFRAME: i32 = 7;
+pub const SM_CXFIXEDFRAME: i32 = 7;
+pub const SM_CYDLGFRAME: i32 = 8;
+pub const SM_CYFIXEDFRAME: i32 = 8;
+pub const SM_CYVTHUMB: i32 = 9;
+pub const SM_CXHTHUMB: i32 = 10;
+pub const SM_CXICON: i32 = 11;
+pub const SM_CYICON: i32 = 12;
+pub const SM_CXCURSOR: i32 = 13;
+pub const SM_CYCURSOR: i32 = 14;
+pub const SM_CYMENU: i32 = 15;
+pub const SM_CXFULLSCREEN: i32 = 16;
+pub const SM_CYFULLSCREEN: i32 = 17;
+pub const SM_CYKANJIWINDOW: i32 = 18;
+pub const SM_MOUSEPRESENT: i32 = 19;
+pub const SM_CYVSCROLL: i32 = 20;
+pub const SM_CXHSCROLL: i32 = 21;
+pub const SM_DEBUG: i32 = 22;
+pub const SM_SWAPBUTTON: i32 = 23;
+pub const SM_RESERVED1: i32 = 24;
+pub const SM_RESERVED2: i32 = 25;
+pub const SM_RESERVED3: i32 = 26;
+pub const SM_RESERVED4: i32 = 27;
+pub const SM_CXMIN: i32 = 28;
+pub const SM_CYMIN: i32 = 29;
+pub const SM_CXSIZE: i32 = 30;
+pub const SM_CYSIZE: i32 = 31;
+pub const SM_CXSIZEFRAME: i32 = 32;
+pub const SM_CXFRAME: i32 = 32;
+pub const SM_CYSIZEFRAME: i32 = 33;
+pub const SM_CYFRAME: i32 = 33;
+pub const SM_CXMINTRACK: i32 = 34;
+pub const SM_CYMINTRACK: i32 = 35;
+pub const SM_CXDOUBLECLK: i32 = 36;
+pub const SM_CYDOUBLECLK: i32 = 37;
+pub const SM_CXICONSPACING: i32 = 38;
+pub const SM_CYICONSPACING: i32 = 39;
+pub const SM_MENUDROPALIGNMENT: i32 = 40;
+pub const SM_PENWINDOWS: i32 = 41;
+pub const SM_DBCSENABLED: i32 = 42;
+pub const SM_CMOUSEBUTTONS: i32 = 43;
+pub const SM_SECURE: i32 = 44;
+pub const SM_CXEDGE: i32 = 45;
+pub const SM_CYEDGE: i32 = 46;
+pub const SM_CXMINSPACING: i32 = 47;
+pub const SM_CYMINSPACING: i32 = 48;
+pub const SM_CXSMICON: i32 = 49;
+pub const SM_CYSMICON: i32 = 50;
+pub const SM_CYSMCAPTION: i32 = 51;
+pub const SM_CXSMSIZE: i32 = 52;
+pub const SM_CYSMSIZE: i32 = 53;
+pub const SM_CXMENUSIZE: i32 = 54;
+pub const SM_CYMENUSIZE: i32 = 55;
+pub const SM_ARRANGE: i32 = 56;
+pub const SM_CXMINIMIZED: i32 = 57;
+pub const SM_CYMINIMIZED: i32 = 58;
+pub const SM_CXMAXTRACK: i32 = 59;
+pub const SM_CYMAXTRACK: i32 = 60;
+pub const SM_CXMAXIMIZED: i32 = 61;
+pub const SM_CYMAXIMIZED: i32 = 62;
+pub const SM_NETWORK: i32 = 63;
+pub const SM_CLEANBOOT: i32 = 67;
+pub const SM_CXDRAG: i32 = 68;
+pub const SM_CYDRAG: i32 = 69;
+pub const SM_SHOWSOUNDS: i32 = 70;
+pub const SM_CXMENUCHECK: i32 = 71;
+pub const SM_CYMENUCHECK: i32 = 72;
+pub const SM_SLOWMACHINE: i32 = 73;
+pub const SM_MIDEASTENABLED: i32 = 74;
+pub const SM_MOUSEWHEELPRESENT: i32 = 75;
+pub const SM_XVIRTUALSCREEN: i32 = 76;
+pub const SM_YVIRTUALSCREEN: i32 = 77;
+pub const SM_CXVIRTUALSCREEN: i32 = 78;
+pub const SM_CYVIRTUALSCREEN: i32 = 79;
+pub const SM_CMONITORS: i32 = 80;
+pub const SM_SAMEDISPLAYFORMAT: i32 = 81;
+pub const SM_IMMENABLED: i32 = 82;
+pub const SM_CXFOCUSBORDER: i32 = 83;
+pub const SM_CYFOCUSBORDER: i32 = 84;
+pub const SM_TABLETPC: i32 = 86;
+pub const SM_MEDIACENTER: i32 = 87;
+pub const SM_STARTER: i32 = 88;
+pub const SM_SERVERR2: i32 = 89;
+pub const SM_REMOTESESSION: i32 = 4096;
+pub const SM_SHUTTINGDOWN: i32 = 8192;
+pub const SM_REMOTECONTROL: i32 = 8193;
+pub const SM_CMETRICS: i32 = 93;
+pub const ARW_BOTTOMLEFT: i32 = 0;
+pub const ARW_BOTTOMRIGHT: i32 = 1;
+pub const ARW_HIDE: i32 = 8;
+pub const ARW_TOPLEFT: i32 = 2;
+pub const ARW_TOPRIGHT: i32 = 3;
+pub const ARW_DOWN: i32 = 4;
+pub const ARW_LEFT: i32 = 0;
+pub const ARW_RIGHT: i32 = 0;
+pub const ARW_UP: i32 = 4;
+pub const UOI_FLAGS: i32 = 1;
+pub const UOI_NAME: i32 = 2;
+pub const UOI_TYPE: i32 = 3;
+pub const UOI_USER_SID: i32 = 4;
+pub const LR_DEFAULTCOLOR: i32 = 0;
+pub const LR_MONOCHROME: i32 = 1;
+pub const LR_COLOR: i32 = 2;
+pub const LR_COPYRETURNORG: i32 = 4;
+pub const LR_COPYDELETEORG: i32 = 8;
+pub const LR_LOADFROMFILE: i32 = 16;
+pub const LR_LOADTRANSPARENT: i32 = 32;
+pub const LR_DEFAULTSIZE: i32 = 64;
+pub const LR_LOADREALSIZE: i32 = 128;
+pub const LR_VGACOLOR: i32 = 128;
+pub const LR_LOADMAP3DCOLORS: i32 = 4096;
+pub const LR_CREATEDIBSECTION: i32 = 8192;
+pub const LR_COPYFROMRESOURCE: i32 = 16384;
+pub const LR_SHARED: i32 = 32768;
+pub const KEYEVENTF_EXTENDEDKEY: i32 = 1;
+pub const KEYEVENTF_KEYUP: i32 = 2;
+pub const KEYEVENTF_UNICODE: i32 = 4;
+pub const KEYEVENTF_SCANCODE: i32 = 8;
+pub const HELPINFO_MENUITEM: i32 = 2;
+pub const HELPINFO_WINDOW: i32 = 1;
+pub const MSGF_DIALOGBOX: i32 = 0;
+pub const MSGF_MESSAGEBOX: i32 = 1;
+pub const MSGF_MENU: i32 = 2;
+pub const MSGF_MOVE: i32 = 3;
+pub const MSGF_SIZE: i32 = 4;
+pub const MSGF_SCROLLBAR: i32 = 5;
+pub const MSGF_NEXTWINDOW: i32 = 6;
+pub const MSGF_MAINLOOP: i32 = 8;
+pub const MSGF_USER: i32 = 4096;
+pub const MSGF_MAX: i32 = 8;
+pub const MOUSEEVENTF_MOVE: i32 = 1;
+pub const MOUSEEVENTF_LEFTDOWN: i32 = 2;
+pub const MOUSEEVENTF_LEFTUP: i32 = 4;
+pub const MOUSEEVENTF_RIGHTDOWN: i32 = 8;
+pub const MOUSEEVENTF_RIGHTUP: i32 = 16;
+pub const MOUSEEVENTF_MIDDLEDOWN: i32 = 32;
+pub const MOUSEEVENTF_MIDDLEUP: i32 = 64;
+pub const MOUSEEVENTF_XDOWN: i32 = 128;
+pub const MOUSEEVENTF_XUP: i32 = 256;
+pub const MOUSEEVENTF_WHEEL: i32 = 2048;
+pub const MOUSEEVENTF_VIRTUALDESK: i32 = 16384;
+pub const MOUSEEVENTF_ABSOLUTE: i32 = 32768;
+pub const PM_NOREMOVE: i32 = 0;
+pub const PM_REMOVE: i32 = 1;
+pub const PM_NOYIELD: i32 = 2;
+pub const PM_QS_INPUT: i32 = 67567616;
+pub const PM_QS_POSTMESSAGE: i32 = 9961472;
+pub const PM_QS_PAINT: i32 = 2097152;
+pub const PM_QS_SENDMESSAGE: i32 = 4194304;
+pub const RDW_ERASE: i32 = 4;
+pub const RDW_FRAME: i32 = 1024;
+pub const RDW_INTERNALPAINT: i32 = 2;
+pub const RDW_INVALIDATE: i32 = 1;
+pub const RDW_NOERASE: i32 = 32;
+pub const RDW_NOFRAME: i32 = 2048;
+pub const RDW_NOINTERNALPAINT: i32 = 16;
+pub const RDW_VALIDATE: i32 = 8;
+pub const RDW_ERASENOW: i32 = 512;
+pub const RDW_UPDATENOW: i32 = 256;
+pub const RDW_ALLCHILDREN: i32 = 128;
+pub const RDW_NOCHILDREN: i32 = 64;
+pub const SMTO_ABORTIFHUNG: i32 = 2;
+pub const SMTO_BLOCK: i32 = 1;
+pub const SMTO_NORMAL: i32 = 0;
+pub const SMTO_NOTIMEOUTIFNOTHUNG: i32 = 8;
+pub const SIF_ALL: i32 = 23;
+pub const SIF_PAGE: i32 = 2;
+pub const SIF_POS: i32 = 4;
+pub const SIF_RANGE: i32 = 1;
+pub const SIF_DISABLENOSCROLL: i32 = 8;
+pub const SIF_TRACKPOS: i32 = 16;
+pub const SIF_THEMED: i32 = 128;
+pub const SWP_DRAWFRAME: i32 = 32;
+pub const SWP_FRAMECHANGED: i32 = 32;
+pub const SWP_HIDEWINDOW: i32 = 128;
+pub const SWP_NOACTIVATE: i32 = 16;
+pub const SWP_NOCOPYBITS: i32 = 256;
+pub const SWP_NOMOVE: i32 = 2;
+pub const SWP_NOSIZE: i32 = 1;
+pub const SWP_NOREDRAW: i32 = 8;
+pub const SWP_NOZORDER: i32 = 4;
+pub const SWP_SHOWWINDOW: i32 = 64;
+pub const SWP_NOOWNERZORDER: i32 = 512;
+pub const SWP_NOREPOSITION: i32 = 512;
+pub const SWP_NOSENDCHANGING: i32 = 1024;
+pub const SWP_DEFERERASE: i32 = 8192;
+pub const SWP_ASYNCWINDOWPOS: i32 = 16384;
+pub const HSHELL_WINDOWCREATED: i32 = 1;
+pub const HSHELL_WINDOWDESTROYED: i32 = 2;
+pub const HSHELL_ACTIVATESHELLWINDOW: i32 = 3;
+pub const HSHELL_WINDOWACTIVATED: i32 = 4;
+pub const HSHELL_GETMINRECT: i32 = 5;
+pub const HSHELL_REDRAW: i32 = 6;
+pub const HSHELL_TASKMAN: i32 = 7;
+pub const HSHELL_LANGUAGE: i32 = 8;
+pub const HSHELL_SYSMENU: i32 = 9;
+pub const HSHELL_ENDTASK: i32 = 10;
+pub const HSHELL_ACCESSIBILITYSTATE: i32 = 11;
+pub const ACCESS_STICKYKEYS: i32 = 1;
+pub const ACCESS_FILTERKEYS: i32 = 2;
+pub const ACCESS_MOUSEKEYS: i32 = 3;
+pub const HSHELL_APPCOMMAND: i32 = 12;
+pub const HSHELL_WINDOWREPLACED: i32 = 13;
+pub const HSHELL_WINDOWREPLACING: i32 = 14;
+pub const HSHELL_HIGHBIT: i32 = 32768;
+pub const HSHELL_FLASH: i32 = 32774;
+pub const HSHELL_RUDEAPPACTIVATED: i32 = 32772;
+pub const APPCOMMAND_BROWSER_BACKWARD: i32 = 1;
+pub const APPCOMMAND_BROWSER_FORWARD: i32 = 2;
+pub const APPCOMMAND_BROWSER_REFRESH: i32 = 3;
+pub const APPCOMMAND_BROWSER_STOP: i32 = 4;
+pub const APPCOMMAND_BROWSER_SEARCH: i32 = 5;
+pub const APPCOMMAND_BROWSER_FAVORITES: i32 = 6;
+pub const APPCOMMAND_BROWSER_HOME: i32 = 7;
+pub const APPCOMMAND_VOLUME_MUTE: i32 = 8;
+pub const APPCOMMAND_VOLUME_DOWN: i32 = 9;
+pub const APPCOMMAND_VOLUME_UP: i32 = 10;
+pub const APPCOMMAND_MEDIA_NEXTTRACK: i32 = 11;
+pub const APPCOMMAND_MEDIA_PREVIOUSTRACK: i32 = 12;
+pub const APPCOMMAND_MEDIA_STOP: i32 = 13;
+pub const APPCOMMAND_MEDIA_PLAY_PAUSE: i32 = 14;
+pub const APPCOMMAND_LAUNCH_MAIL: i32 = 15;
+pub const APPCOMMAND_LAUNCH_MEDIA_SELECT: i32 = 16;
+pub const APPCOMMAND_LAUNCH_APP1: i32 = 17;
+pub const APPCOMMAND_LAUNCH_APP2: i32 = 18;
+pub const APPCOMMAND_BASS_DOWN: i32 = 19;
+pub const APPCOMMAND_BASS_BOOST: i32 = 20;
+pub const APPCOMMAND_BASS_UP: i32 = 21;
+pub const APPCOMMAND_TREBLE_DOWN: i32 = 22;
+pub const APPCOMMAND_TREBLE_UP: i32 = 23;
+pub const APPCOMMAND_MICROPHONE_VOLUME_MUTE: i32 = 24;
+pub const APPCOMMAND_MICROPHONE_VOLUME_DOWN: i32 = 25;
+pub const APPCOMMAND_MICROPHONE_VOLUME_UP: i32 = 26;
+pub const APPCOMMAND_HELP: i32 = 27;
+pub const APPCOMMAND_FIND: i32 = 28;
+pub const APPCOMMAND_NEW: i32 = 29;
+pub const APPCOMMAND_OPEN: i32 = 30;
+pub const APPCOMMAND_CLOSE: i32 = 31;
+pub const APPCOMMAND_SAVE: i32 = 32;
+pub const APPCOMMAND_PRINT: i32 = 33;
+pub const APPCOMMAND_UNDO: i32 = 34;
+pub const APPCOMMAND_REDO: i32 = 35;
+pub const APPCOMMAND_COPY: i32 = 36;
+pub const APPCOMMAND_CUT: i32 = 37;
+pub const APPCOMMAND_PASTE: i32 = 38;
+pub const APPCOMMAND_REPLY_TO_MAIL: i32 = 39;
+pub const APPCOMMAND_FORWARD_MAIL: i32 = 40;
+pub const APPCOMMAND_SEND_MAIL: i32 = 41;
+pub const APPCOMMAND_SPELL_CHECK: i32 = 42;
+pub const APPCOMMAND_DICTATE_OR_COMMAND_CONTROL_TOGGLE: i32 = 43;
+pub const APPCOMMAND_MIC_ON_OFF_TOGGLE: i32 = 44;
+pub const APPCOMMAND_CORRECTION_LIST: i32 = 45;
+pub const APPCOMMAND_MEDIA_PLAY: i32 = 46;
+pub const APPCOMMAND_MEDIA_PAUSE: i32 = 47;
+pub const APPCOMMAND_MEDIA_RECORD: i32 = 48;
+pub const APPCOMMAND_MEDIA_FAST_FORWARD: i32 = 49;
+pub const APPCOMMAND_MEDIA_REWIND: i32 = 50;
+pub const APPCOMMAND_MEDIA_CHANNEL_UP: i32 = 51;
+pub const APPCOMMAND_MEDIA_CHANNEL_DOWN: i32 = 52;
+pub const FAPPCOMMAND_MOUSE: i32 = 32768;
+pub const FAPPCOMMAND_KEY: i32 = 0;
+pub const FAPPCOMMAND_OEM: i32 = 4096;
+pub const FAPPCOMMAND_MASK: i32 = 61440;
+pub const SPI_GETBEEP: i32 = 1;
+pub const SPI_SETBEEP: i32 = 2;
+pub const SPI_GETMOUSE: i32 = 3;
+pub const SPI_SETMOUSE: i32 = 4;
+pub const SPI_GETBORDER: i32 = 5;
+pub const SPI_SETBORDER: i32 = 6;
+pub const SPI_GETKEYBOARDSPEED: i32 = 10;
+pub const SPI_SETKEYBOARDSPEED: i32 = 11;
+pub const SPI_LANGDRIVER: i32 = 12;
+pub const SPI_ICONHORIZONTALSPACING: i32 = 13;
+pub const SPI_GETSCREENSAVETIMEOUT: i32 = 14;
+pub const SPI_SETSCREENSAVETIMEOUT: i32 = 15;
+pub const SPI_GETSCREENSAVEACTIVE: i32 = 16;
+pub const SPI_SETSCREENSAVEACTIVE: i32 = 17;
+pub const SPI_GETGRIDGRANULARITY: i32 = 18;
+pub const SPI_SETGRIDGRANULARITY: i32 = 19;
+pub const SPI_SETDESKWALLPAPER: i32 = 20;
+pub const SPI_SETDESKPATTERN: i32 = 21;
+pub const SPI_GETKEYBOARDDELAY: i32 = 22;
+pub const SPI_SETKEYBOARDDELAY: i32 = 23;
+pub const SPI_ICONVERTICALSPACING: i32 = 24;
+pub const SPI_GETICONTITLEWRAP: i32 = 25;
+pub const SPI_SETICONTITLEWRAP: i32 = 26;
+pub const SPI_GETMENUDROPALIGNMENT: i32 = 27;
+pub const SPI_SETMENUDROPALIGNMENT: i32 = 28;
+pub const SPI_SETDOUBLECLKWIDTH: i32 = 29;
+pub const SPI_SETDOUBLECLKHEIGHT: i32 = 30;
+pub const SPI_GETICONTITLELOGFONT: i32 = 31;
+pub const SPI_SETDOUBLECLICKTIME: i32 = 32;
+pub const SPI_SETMOUSEBUTTONSWAP: i32 = 33;
+pub const SPI_SETICONTITLELOGFONT: i32 = 34;
+pub const SPI_GETFASTTASKSWITCH: i32 = 35;
+pub const SPI_SETFASTTASKSWITCH: i32 = 36;
+pub const SPI_SETDRAGFULLWINDOWS: i32 = 37;
+pub const SPI_GETDRAGFULLWINDOWS: i32 = 38;
+pub const SPI_GETNONCLIENTMETRICS: i32 = 41;
+pub const SPI_SETNONCLIENTMETRICS: i32 = 42;
+pub const SPI_GETMINIMIZEDMETRICS: i32 = 43;
+pub const SPI_SETMINIMIZEDMETRICS: i32 = 44;
+pub const SPI_GETICONMETRICS: i32 = 45;
+pub const SPI_SETICONMETRICS: i32 = 46;
+pub const SPI_SETWORKAREA: i32 = 47;
+pub const SPI_GETWORKAREA: i32 = 48;
+pub const SPI_SETPENWINDOWS: i32 = 49;
+pub const SPI_GETFILTERKEYS: i32 = 50;
+pub const SPI_SETFILTERKEYS: i32 = 51;
+pub const SPI_GETTOGGLEKEYS: i32 = 52;
+pub const SPI_SETTOGGLEKEYS: i32 = 53;
+pub const SPI_GETMOUSEKEYS: i32 = 54;
+pub const SPI_SETMOUSEKEYS: i32 = 55;
+pub const SPI_GETSHOWSOUNDS: i32 = 56;
+pub const SPI_SETSHOWSOUNDS: i32 = 57;
+pub const SPI_GETSTICKYKEYS: i32 = 58;
+pub const SPI_SETSTICKYKEYS: i32 = 59;
+pub const SPI_GETACCESSTIMEOUT: i32 = 60;
+pub const SPI_SETACCESSTIMEOUT: i32 = 61;
+pub const SPI_GETSERIALKEYS: i32 = 62;
+pub const SPI_SETSERIALKEYS: i32 = 63;
+pub const SPI_GETSOUNDSENTRY: i32 = 64;
+pub const SPI_SETSOUNDSENTRY: i32 = 65;
+pub const SPI_GETHIGHCONTRAST: i32 = 66;
+pub const SPI_SETHIGHCONTRAST: i32 = 67;
+pub const SPI_GETKEYBOARDPREF: i32 = 68;
+pub const SPI_SETKEYBOARDPREF: i32 = 69;
+pub const SPI_GETSCREENREADER: i32 = 70;
+pub const SPI_SETSCREENREADER: i32 = 71;
+pub const SPI_GETANIMATION: i32 = 72;
+pub const SPI_SETANIMATION: i32 = 73;
+pub const SPI_GETFONTSMOOTHING: i32 = 74;
+pub const SPI_SETFONTSMOOTHING: i32 = 75;
+pub const SPI_SETDRAGWIDTH: i32 = 76;
+pub const SPI_SETDRAGHEIGHT: i32 = 77;
+pub const SPI_SETHANDHELD: i32 = 78;
+pub const SPI_GETLOWPOWERTIMEOUT: i32 = 79;
+pub const SPI_GETPOWEROFFTIMEOUT: i32 = 80;
+pub const SPI_SETLOWPOWERTIMEOUT: i32 = 81;
+pub const SPI_SETPOWEROFFTIMEOUT: i32 = 82;
+pub const SPI_GETLOWPOWERACTIVE: i32 = 83;
+pub const SPI_GETPOWEROFFACTIVE: i32 = 84;
+pub const SPI_SETLOWPOWERACTIVE: i32 = 85;
+pub const SPI_SETPOWEROFFACTIVE: i32 = 86;
+pub const SPI_SETCURSORS: i32 = 87;
+pub const SPI_SETICONS: i32 = 88;
+pub const SPI_GETDEFAULTINPUTLANG: i32 = 89;
+pub const SPI_SETDEFAULTINPUTLANG: i32 = 90;
+pub const SPI_SETLANGTOGGLE: i32 = 91;
+pub const SPI_GETWINDOWSEXTENSION: i32 = 92;
+pub const SPI_SETMOUSETRAILS: i32 = 93;
+pub const SPI_GETMOUSETRAILS: i32 = 94;
+pub const SPI_GETSNAPTODEFBUTTON: i32 = 95;
+pub const SPI_SETSNAPTODEFBUTTON: i32 = 96;
+pub const SPI_SCREENSAVERRUNNING: i32 = 97;
+pub const SPI_SETSCREENSAVERRUNNING: i32 = 97;
+pub const SPI_GETMOUSEHOVERWIDTH: i32 = 98;
+pub const SPI_SETMOUSEHOVERWIDTH: i32 = 99;
+pub const SPI_GETMOUSEHOVERHEIGHT: i32 = 100;
+pub const SPI_SETMOUSEHOVERHEIGHT: i32 = 101;
+pub const SPI_GETMOUSEHOVERTIME: i32 = 102;
+pub const SPI_SETMOUSEHOVERTIME: i32 = 103;
+pub const SPI_GETWHEELSCROLLLINES: i32 = 104;
+pub const SPI_SETWHEELSCROLLLINES: i32 = 105;
+pub const SPI_GETMENUSHOWDELAY: i32 = 106;
+pub const SPI_SETMENUSHOWDELAY: i32 = 107;
+pub const SPI_GETSHOWIMEUI: i32 = 110;
+pub const SPI_SETSHOWIMEUI: i32 = 111;
+pub const SPI_GETMOUSESPEED: i32 = 112;
+pub const SPI_SETMOUSESPEED: i32 = 113;
+pub const SPI_GETSCREENSAVERRUNNING: i32 = 114;
+pub const SPI_GETDESKWALLPAPER: i32 = 115;
+pub const SPI_GETWINARRANGING: i32 = 130;
+pub const SPI_SETWINARRANGING: i32 = 131;
+pub const SPI_GETDRAGFROMMAXIMIZE: i32 = 140;
+pub const SPI_SETDRAGFROMMAXIMIZE: i32 = 141;
+pub const SPI_GETDOCKMOVING: i32 = 144;
+pub const SPI_SETDOCKMOVING: i32 = 145;
+pub const SPI_GETACTIVEWINDOWTRACKING: i32 = 4096;
+pub const SPI_SETACTIVEWINDOWTRACKING: i32 = 4097;
+pub const SPI_GETMENUANIMATION: i32 = 4098;
+pub const SPI_SETMENUANIMATION: i32 = 4099;
+pub const SPI_GETCOMBOBOXANIMATION: i32 = 4100;
+pub const SPI_SETCOMBOBOXANIMATION: i32 = 4101;
+pub const SPI_GETLISTBOXSMOOTHSCROLLING: i32 = 4102;
+pub const SPI_SETLISTBOXSMOOTHSCROLLING: i32 = 4103;
+pub const SPI_GETGRADIENTCAPTIONS: i32 = 4104;
+pub const SPI_SETGRADIENTCAPTIONS: i32 = 4105;
+pub const SPI_GETKEYBOARDCUES: i32 = 4106;
+pub const SPI_SETKEYBOARDCUES: i32 = 4107;
+pub const SPI_GETMENUUNDERLINES: i32 = 4106;
+pub const SPI_SETMENUUNDERLINES: i32 = 4107;
+pub const SPI_GETACTIVEWNDTRKZORDER: i32 = 4108;
+pub const SPI_SETACTIVEWNDTRKZORDER: i32 = 4109;
+pub const SPI_GETHOTTRACKING: i32 = 4110;
+pub const SPI_SETHOTTRACKING: i32 = 4111;
+pub const SPI_GETMENUFADE: i32 = 4114;
+pub const SPI_SETMENUFADE: i32 = 4115;
+pub const SPI_GETSELECTIONFADE: i32 = 4116;
+pub const SPI_SETSELECTIONFADE: i32 = 4117;
+pub const SPI_GETTOOLTIPANIMATION: i32 = 4118;
+pub const SPI_SETTOOLTIPANIMATION: i32 = 4119;
+pub const SPI_GETTOOLTIPFADE: i32 = 4120;
+pub const SPI_SETTOOLTIPFADE: i32 = 4121;
+pub const SPI_GETCURSORSHADOW: i32 = 4122;
+pub const SPI_SETCURSORSHADOW: i32 = 4123;
+pub const SPI_GETMOUSESONAR: i32 = 4124;
+pub const SPI_SETMOUSESONAR: i32 = 4125;
+pub const SPI_GETMOUSECLICKLOCK: i32 = 4126;
+pub const SPI_SETMOUSECLICKLOCK: i32 = 4127;
+pub const SPI_GETMOUSEVANISH: i32 = 4128;
+pub const SPI_SETMOUSEVANISH: i32 = 4129;
+pub const SPI_GETFLATMENU: i32 = 4130;
+pub const SPI_SETFLATMENU: i32 = 4131;
+pub const SPI_GETDROPSHADOW: i32 = 4132;
+pub const SPI_SETDROPSHADOW: i32 = 4133;
+pub const SPI_GETBLOCKSENDINPUTRESETS: i32 = 4134;
+pub const SPI_SETBLOCKSENDINPUTRESETS: i32 = 4135;
+pub const SPI_GETUIEFFECTS: i32 = 4158;
+pub const SPI_SETUIEFFECTS: i32 = 4159;
+pub const SPI_GETFOREGROUNDLOCKTIMEOUT: i32 = 8192;
+pub const SPI_SETFOREGROUNDLOCKTIMEOUT: i32 = 8193;
+pub const SPI_GETACTIVEWNDTRKTIMEOUT: i32 = 8194;
+pub const SPI_SETACTIVEWNDTRKTIMEOUT: i32 = 8195;
+pub const SPI_GETFOREGROUNDFLASHCOUNT: i32 = 8196;
+pub const SPI_SETFOREGROUNDFLASHCOUNT: i32 = 8197;
+pub const SPI_GETCARETWIDTH: i32 = 8198;
+pub const SPI_SETCARETWIDTH: i32 = 8199;
+pub const SPI_GETMOUSECLICKLOCKTIME: i32 = 8200;
+pub const SPI_SETMOUSECLICKLOCKTIME: i32 = 8201;
+pub const SPI_GETFONTSMOOTHINGTYPE: i32 = 8202;
+pub const SPI_SETFONTSMOOTHINGTYPE: i32 = 8203;
+pub const SPI_GETFONTSMOOTHINGCONTRAST: i32 = 8204;
+pub const SPI_SETFONTSMOOTHINGCONTRAST: i32 = 8205;
+pub const SPI_GETFOCUSBORDERWIDTH: i32 = 8206;
+pub const SPI_SETFOCUSBORDERWIDTH: i32 = 8207;
+pub const SPI_GETFOCUSBORDERHEIGHT: i32 = 8208;
+pub const SPI_SETFOCUSBORDERHEIGHT: i32 = 8209;
+pub const SPI_GETFONTSMOOTHINGORIENTATION: i32 = 8210;
+pub const SPI_SETFONTSMOOTHINGORIENTATION: i32 = 8211;
+pub const FE_FONTSMOOTHINGSTANDARD: i32 = 1;
+pub const FE_FONTSMOOTHINGCLEARTYPE: i32 = 2;
+pub const FE_FONTSMOOTHINGDOCKING: i32 = 32768;
+pub const FE_FONTSMOOTHINGORIENTATIONBGR: i32 = 0;
+pub const FE_FONTSMOOTHINGORIENTATIONRGB: i32 = 1;
+pub const SPIF_UPDATEINIFILE: i32 = 1;
+pub const SPIF_SENDCHANGE: i32 = 2;
+pub const SPIF_SENDWININICHANGE: i32 = 2;
+pub const UIS_SET: i32 = 1;
+pub const UIS_CLEAR: i32 = 2;
+pub const UIS_INITIALIZE: i32 = 3;
+pub const UISF_HIDEFOCUS: i32 = 1;
+pub const UISF_HIDEACCEL: i32 = 2;
+pub const UISF_ACTIVE: i32 = 4;
+pub const PBT_APMQUERYSUSPEND: i32 = 0;
+pub const PBT_APMQUERYSTANDBY: i32 = 1;
+pub const PBT_APMQUERYSUSPENDFAILED: i32 = 2;
+pub const PBT_APMQUERYSTANDBYFAILED: i32 = 3;
+pub const PBT_APMSUSPEND: i32 = 4;
+pub const PBT_APMSTANDBY: i32 = 5;
+pub const PBT_APMRESUMECRITICAL: i32 = 6;
+pub const PBT_APMRESUMESUSPEND: i32 = 7;
+pub const PBT_APMRESUMESTANDBY: i32 = 8;
+pub const PBTF_APMRESUMEFROMFAILURE: i32 = 1;
+pub const PBT_APMBATTERYLOW: i32 = 9;
+pub const PBT_APMPOWERSTATUSCHANGE: i32 = 10;
+pub const PBT_APMOEMEVENT: i32 = 11;
+pub const PBT_APMRESUMEAUTOMATIC: i32 = 18;
+pub const WM_NULL: i32 = 0;
+pub const WM_CREATE: i32 = 1;
+pub const WM_DESTROY: i32 = 2;
+pub const WM_MOVE: i32 = 3;
+pub const WM_SIZE: i32 = 5;
+pub const WM_ACTIVATE: i32 = 6;
+pub const WM_SETFOCUS: i32 = 7;
+pub const WM_KILLFOCUS: i32 = 8;
+pub const WM_ENABLE: i32 = 10;
+pub const WM_SETREDRAW: i32 = 11;
+pub const WM_SETTEXT: i32 = 12;
+pub const WM_GETTEXT: i32 = 13;
+pub const WM_GETTEXTLENGTH: i32 = 14;
+pub const WM_PAINT: i32 = 15;
+pub const WM_CLOSE: i32 = 16;
+pub const WM_QUERYENDSESSION: i32 = 17;
+pub const WM_QUIT: i32 = 18;
+pub const WM_QUERYOPEN: i32 = 19;
+pub const WM_ERASEBKGND: i32 = 20;
+pub const WM_SYSCOLORCHANGE: i32 = 21;
+pub const WM_ENDSESSION: i32 = 22;
+pub const WM_SHOWWINDOW: i32 = 24;
+pub const WM_SETTINGCHANGE: i32 = 26;
+pub const WM_WININICHANGE: i32 = 26;
+pub const WM_DEVMODECHANGE: i32 = 27;
+pub const WM_ACTIVATEAPP: i32 = 28;
+pub const WM_FONTCHANGE: i32 = 29;
+pub const WM_TIMECHANGE: i32 = 30;
+pub const WM_CANCELMODE: i32 = 31;
+pub const WM_SETCURSOR: i32 = 32;
+pub const WM_MOUSEACTIVATE: i32 = 33;
+pub const WM_CHILDACTIVATE: i32 = 34;
+pub const WM_QUEUESYNC: i32 = 35;
+pub const WM_GETMINMAXINFO: i32 = 36;
+pub const WM_PAINTICON: i32 = 38;
+pub const WM_ICONERASEBKGND: i32 = 39;
+pub const WM_NEXTDLGCTL: i32 = 40;
+pub const WM_SPOOLERSTATUS: i32 = 42;
+pub const WM_DRAWITEM: i32 = 43;
+pub const WM_MEASUREITEM: i32 = 44;
+pub const WM_DELETEITEM: i32 = 45;
+pub const WM_VKEYTOITEM: i32 = 46;
+pub const WM_CHARTOITEM: i32 = 47;
+pub const WM_SETFONT: i32 = 48;
+pub const WM_GETFONT: i32 = 49;
+pub const WM_SETHOTKEY: i32 = 50;
+pub const WM_GETHOTKEY: i32 = 51;
+pub const WM_QUERYDRAGICON: i32 = 55;
+pub const WM_COMPAREITEM: i32 = 57;
+pub const WM_GETOBJECT: i32 = 61;
+pub const WM_COMPACTING: i32 = 65;
+pub const WM_COMMNOTIFY: i32 = 68;
+pub const WM_WINDOWPOSCHANGING: i32 = 70;
+pub const WM_WINDOWPOSCHANGED: i32 = 71;
+pub const WM_POWER: i32 = 72;
+pub const WM_COPYDATA: i32 = 74;
+pub const WM_CANCELJOURNAL: i32 = 75;
+pub const WM_NOTIFY: i32 = 78;
+pub const WM_INPUTLANGCHANGEREQUEST: i32 = 80;
+pub const WM_INPUTLANGCHANGE: i32 = 81;
+pub const WM_TCARD: i32 = 82;
+pub const WM_HELP: i32 = 83;
+pub const WM_USERCHANGED: i32 = 84;
+pub const WM_NOTIFYFORMAT: i32 = 85;
+pub const WM_CONTEXTMENU: i32 = 123;
+pub const WM_STYLECHANGING: i32 = 124;
+pub const WM_STYLECHANGED: i32 = 125;
+pub const WM_DISPLAYCHANGE: i32 = 126;
+pub const WM_GETICON: i32 = 127;
+pub const WM_SETICON: i32 = 128;
+pub const WM_NCCREATE: i32 = 129;
+pub const WM_NCDESTROY: i32 = 130;
+pub const WM_NCCALCSIZE: i32 = 131;
+pub const WM_NCHITTEST: i32 = 132;
+pub const WM_NCPAINT: i32 = 133;
+pub const WM_NCACTIVATE: i32 = 134;
+pub const WM_GETDLGCODE: i32 = 135;
+pub const WM_SYNCPAINT: i32 = 136;
+pub const WM_NCMOUSEMOVE: i32 = 160;
+pub const WM_NCLBUTTONDOWN: i32 = 161;
+pub const WM_NCLBUTTONUP: i32 = 162;
+pub const WM_NCLBUTTONDBLCLK: i32 = 163;
+pub const WM_NCRBUTTONDOWN: i32 = 164;
+pub const WM_NCRBUTTONUP: i32 = 165;
+pub const WM_NCRBUTTONDBLCLK: i32 = 166;
+pub const WM_NCMBUTTONDOWN: i32 = 167;
+pub const WM_NCMBUTTONUP: i32 = 168;
+pub const WM_NCMBUTTONDBLCLK: i32 = 169;
+pub const WM_NCXBUTTONDOWN: i32 = 171;
+pub const WM_NCXBUTTONUP: i32 = 172;
+pub const WM_NCXBUTTONDBLCLK: i32 = 173;
+pub const GIDC_ARRIVAL: i32 = 1;
+pub const GIDC_REMOVAL: i32 = 2;
+pub const WM_INPUT_DEVICE_CHANGE: i32 = 254;
+pub const WM_INPUT: i32 = 255;
+pub const WM_KEYFIRST: i32 = 256;
+pub const WM_KEYDOWN: i32 = 256;
+pub const WM_KEYUP: i32 = 257;
+pub const WM_CHAR: i32 = 258;
+pub const WM_DEADCHAR: i32 = 259;
+pub const WM_SYSKEYDOWN: i32 = 260;
+pub const WM_SYSKEYUP: i32 = 261;
+pub const WM_SYSCHAR: i32 = 262;
+pub const WM_SYSDEADCHAR: i32 = 263;
+pub const WM_UNICHAR: i32 = 265;
+pub const WM_KEYLAST: i32 = 265;
+pub const UNICODE_NOCHAR: i32 = 65535;
+pub const WM_IME_STARTCOMPOSITION: i32 = 269;
+pub const WM_IME_ENDCOMPOSITION: i32 = 270;
+pub const WM_IME_COMPOSITION: i32 = 271;
+pub const WM_IME_KEYLAST: i32 = 271;
+pub const WM_INITDIALOG: i32 = 272;
+pub const WM_COMMAND: i32 = 273;
+pub const WM_SYSCOMMAND: i32 = 274;
+pub const WM_TIMER: i32 = 275;
+pub const WM_HSCROLL: i32 = 276;
+pub const WM_VSCROLL: i32 = 277;
+pub const WM_INITMENU: i32 = 278;
+pub const WM_INITMENUPOPUP: i32 = 279;
+pub const WM_MENUSELECT: i32 = 287;
+pub const WM_MENUCHAR: i32 = 288;
+pub const WM_ENTERIDLE: i32 = 289;
+pub const WM_MENURBUTTONUP: i32 = 290;
+pub const WM_MENUDRAG: i32 = 291;
+pub const WM_MENUGETOBJECT: i32 = 292;
+pub const WM_UNINITMENUPOPUP: i32 = 293;
+pub const WM_MENUCOMMAND: i32 = 294;
+pub const WM_CHANGEUISTATE: i32 = 295;
+pub const WM_UPDATEUISTATE: i32 = 296;
+pub const WM_QUERYUISTATE: i32 = 297;
+pub const WM_CTLCOLORMSGBOX: i32 = 306;
+pub const WM_CTLCOLOREDIT: i32 = 307;
+pub const WM_CTLCOLORLISTBOX: i32 = 308;
+pub const WM_CTLCOLORBTN: i32 = 309;
+pub const WM_CTLCOLORDLG: i32 = 310;
+pub const WM_CTLCOLORSCROLLBAR: i32 = 311;
+pub const WM_CTLCOLORSTATIC: i32 = 312;
+pub const MN_GETHMENU: i32 = 481;
+pub const WM_MOUSEFIRST: i32 = 512;
+pub const WM_MOUSEMOVE: i32 = 512;
+pub const WM_LBUTTONDOWN: i32 = 513;
+pub const WM_LBUTTONUP: i32 = 514;
+pub const WM_LBUTTONDBLCLK: i32 = 515;
+pub const WM_RBUTTONDOWN: i32 = 516;
+pub const WM_RBUTTONUP: i32 = 517;
+pub const WM_RBUTTONDBLCLK: i32 = 518;
+pub const WM_MBUTTONDOWN: i32 = 519;
+pub const WM_MBUTTONUP: i32 = 520;
+pub const WM_MBUTTONDBLCLK: i32 = 521;
+pub const WM_MOUSEWHEEL: i32 = 522;
+pub const WM_XBUTTONDOWN: i32 = 523;
+pub const WM_XBUTTONUP: i32 = 524;
+pub const WM_XBUTTONDBLCLK: i32 = 525;
+pub const WM_MOUSELAST: i32 = 525;
+pub const WM_PARENTNOTIFY: i32 = 528;
+pub const WM_ENTERMENULOOP: i32 = 529;
+pub const WM_EXITMENULOOP: i32 = 530;
+pub const WM_NEXTMENU: i32 = 531;
+pub const WM_SIZING: i32 = 532;
+pub const WM_CAPTURECHANGED: i32 = 533;
+pub const WM_MOVING: i32 = 534;
+pub const WM_POWERBROADCAST: i32 = 536;
+pub const WM_DEVICECHANGE: i32 = 537;
+pub const WM_MDICREATE: i32 = 544;
+pub const WM_MDIDESTROY: i32 = 545;
+pub const WM_MDIACTIVATE: i32 = 546;
+pub const WM_MDIRESTORE: i32 = 547;
+pub const WM_MDINEXT: i32 = 548;
+pub const WM_MDIMAXIMIZE: i32 = 549;
+pub const WM_MDITILE: i32 = 550;
+pub const WM_MDICASCADE: i32 = 551;
+pub const WM_MDIICONARRANGE: i32 = 552;
+pub const WM_MDIGETACTIVE: i32 = 553;
+pub const WM_MDISETMENU: i32 = 560;
+pub const WM_ENTERSIZEMOVE: i32 = 561;
+pub const WM_EXITSIZEMOVE: i32 = 562;
+pub const WM_DROPFILES: i32 = 563;
+pub const WM_MDIREFRESHMENU: i32 = 564;
+pub const WM_IME_SETCONTEXT: i32 = 641;
+pub const WM_IME_NOTIFY: i32 = 642;
+pub const WM_IME_CONTROL: i32 = 643;
+pub const WM_IME_COMPOSITIONFULL: i32 = 644;
+pub const WM_IME_SELECT: i32 = 645;
+pub const WM_IME_CHAR: i32 = 646;
+pub const WM_IME_REQUEST: i32 = 648;
+pub const WM_IME_KEYDOWN: i32 = 656;
+pub const WM_IME_KEYUP: i32 = 657;
+pub const WM_NCMOUSEHOVER: i32 = 672;
+pub const WM_NCMOUSELEAVE: i32 = 674;
+pub const WM_MOUSEHOVER: i32 = 673;
+pub const WM_MOUSELEAVE: i32 = 675;
+pub const WTS_CONSOLE_CONNECT: i32 = 1;
+pub const WTS_CONSOLE_DISCONNECT: i32 = 2;
+pub const WTS_REMOTE_CONNECT: i32 = 3;
+pub const WTS_REMOTE_DISCONNECT: i32 = 4;
+pub const WTS_SESSION_LOGON: i32 = 5;
+pub const WTS_SESSION_LOGOFF: i32 = 6;
+pub const WTS_SESSION_LOCK: i32 = 7;
+pub const WTS_SESSION_UNLOCK: i32 = 8;
+pub const WTS_SESSION_REMOTE_CONTROL: i32 = 9;
+pub const WTS_SESSION_CREATE: i32 = 10;
+pub const WTS_SESSION_TERMINATE: i32 = 11;
+pub const WM_WTSSESSION_CHANGE: i32 = 689;
+pub const WM_CUT: i32 = 768;
+pub const WM_COPY: i32 = 769;
+pub const WM_PASTE: i32 = 770;
+pub const WM_CLEAR: i32 = 771;
+pub const WM_UNDO: i32 = 772;
+pub const WM_RENDERFORMAT: i32 = 773;
+pub const WM_RENDERALLFORMATS: i32 = 774;
+pub const WM_DESTROYCLIPBOARD: i32 = 775;
+pub const WM_DRAWCLIPBOARD: i32 = 776;
+pub const WM_PAINTCLIPBOARD: i32 = 777;
+pub const WM_VSCROLLCLIPBOARD: i32 = 778;
+pub const WM_SIZECLIPBOARD: i32 = 779;
+pub const WM_ASKCBFORMATNAME: i32 = 780;
+pub const WM_CHANGECBCHAIN: i32 = 781;
+pub const WM_HSCROLLCLIPBOARD: i32 = 782;
+pub const WM_PALETTEISCHANGING: i32 = 784;
+pub const WM_PALETTECHANGED: i32 = 785;
+pub const WM_QUERYNEWPALETTE: i32 = 783;
+pub const WM_HOTKEY: i32 = 786;
+pub const WM_PRINT: i32 = 791;
+pub const WM_PRINTCLIENT: i32 = 792;
+pub const WM_APPCOMMAND: i32 = 793;
+pub const WM_DWMCOMPOSITIONCHANGED: i32 = 798;
+pub const WM_DWMNCRENDERINGCHANGED: i32 = 799;
+pub const WM_DWMCOLORIZATIONCOLORCHANGED: i32 = 800;
+pub const WM_DWMWINDOWMAXIMIZEDCHANGE: i32 = 801;
+pub const WM_HANDHELDFIRST: i32 = 856;
+pub const WM_HANDHELDLAST: i32 = 863;
+pub const WM_AFXFIRST: i32 = 864;
+pub const WM_AFXLAST: i32 = 895;
+pub const WM_PENWINFIRST: i32 = 896;
+pub const WM_PENWINLAST: i32 = 911;
+pub const WM_USER: i32 = 1024;
+pub const WM_APP: i32 = 32768;
+pub const WM_GETTITLEBARINFOEX: i32 = 831;
+pub const WHEEL_DELTA: i32 = 120;
+pub const WHEEL_PAGESCROLL: i64 = 4294967295;
+pub const XBUTTON1: i32 = 1;
+pub const XBUTTON2: i32 = 2;
+pub const WM_THEMECHANGED: i32 = 794;
+pub const WM_CLIPBOARDUPDATE: i32 = 797;
+pub const BM_CLICK: i32 = 245;
+pub const BM_GETCHECK: i32 = 240;
+pub const BM_GETIMAGE: i32 = 246;
+pub const BM_GETSTATE: i32 = 242;
+pub const BM_SETCHECK: i32 = 241;
+pub const BM_SETIMAGE: i32 = 247;
+pub const BM_SETSTATE: i32 = 243;
+pub const BM_SETSTYLE: i32 = 244;
+pub const BN_CLICKED: i32 = 0;
+pub const BN_DBLCLK: i32 = 5;
+pub const BN_DISABLE: i32 = 4;
+pub const BN_DOUBLECLICKED: i32 = 5;
+pub const BN_HILITE: i32 = 2;
+pub const BN_KILLFOCUS: i32 = 7;
+pub const BN_PAINT: i32 = 1;
+pub const BN_PUSHED: i32 = 2;
+pub const BN_SETFOCUS: i32 = 6;
+pub const BN_UNHILITE: i32 = 3;
+pub const BN_UNPUSHED: i32 = 3;
+pub const CB_ADDSTRING: i32 = 323;
+pub const CB_DELETESTRING: i32 = 324;
+pub const CB_DIR: i32 = 325;
+pub const CB_FINDSTRING: i32 = 332;
+pub const CB_FINDSTRINGEXACT: i32 = 344;
+pub const CB_GETCOMBOBOXINFO: i32 = 356;
+pub const CB_GETCOUNT: i32 = 326;
+pub const CB_GETCURSEL: i32 = 327;
+pub const CB_GETDROPPEDCONTROLRECT: i32 = 338;
+pub const CB_GETDROPPEDSTATE: i32 = 343;
+pub const CB_GETDROPPEDWIDTH: i32 = 351;
+pub const CB_GETEDITSEL: i32 = 320;
+pub const CB_GETEXTENDEDUI: i32 = 342;
+pub const CB_GETHORIZONTALEXTENT: i32 = 349;
+pub const CB_GETITEMDATA: i32 = 336;
+pub const CB_GETITEMHEIGHT: i32 = 340;
+pub const CB_GETLBTEXT: i32 = 328;
+pub const CB_GETLBTEXTLEN: i32 = 329;
+pub const CB_GETLOCALE: i32 = 346;
+pub const CB_GETTOPINDEX: i32 = 347;
+pub const CB_INITSTORAGE: i32 = 353;
+pub const CB_INSERTSTRING: i32 = 330;
+pub const CB_LIMITTEXT: i32 = 321;
+pub const CB_RESETCONTENT: i32 = 331;
+pub const CB_SELECTSTRING: i32 = 333;
+pub const CB_SETCURSEL: i32 = 334;
+pub const CB_SETDROPPEDWIDTH: i32 = 352;
+pub const CB_SETEDITSEL: i32 = 322;
+pub const CB_SETEXTENDEDUI: i32 = 341;
+pub const CB_SETHORIZONTALEXTENT: i32 = 350;
+pub const CB_SETITEMDATA: i32 = 337;
+pub const CB_SETITEMHEIGHT: i32 = 339;
+pub const CB_SETLOCALE: i32 = 345;
+pub const CB_SETTOPINDEX: i32 = 348;
+pub const CB_SHOWDROPDOWN: i32 = 335;
+pub const CB_MSGMAX: i32 = 357;
+pub const CBN_CLOSEUP: i32 = 8;
+pub const CBN_DBLCLK: i32 = 2;
+pub const CBN_DROPDOWN: i32 = 7;
+pub const CBN_EDITCHANGE: i32 = 5;
+pub const CBN_EDITUPDATE: i32 = 6;
+pub const CBN_ERRSPACE: i32 = -1;
+pub const CBN_KILLFOCUS: i32 = 4;
+pub const CBN_SELCHANGE: i32 = 1;
+pub const CBN_SELENDCANCEL: i32 = 10;
+pub const CBN_SELENDOK: i32 = 9;
+pub const CBN_SETFOCUS: i32 = 3;
+pub const EM_CANUNDO: i32 = 198;
+pub const EM_CHARFROMPOS: i32 = 215;
+pub const EM_EMPTYUNDOBUFFER: i32 = 205;
+pub const EM_FMTLINES: i32 = 200;
+pub const EM_GETIMESTATUS: i32 = 217;
+pub const EM_GETFIRSTVISIBLELINE: i32 = 206;
+pub const EM_GETHANDLE: i32 = 189;
+pub const EM_GETLIMITTEXT: i32 = 213;
+pub const EM_GETLINE: i32 = 196;
+pub const EM_GETLINECOUNT: i32 = 186;
+pub const EM_GETMARGINS: i32 = 212;
+pub const EM_GETMODIFY: i32 = 184;
+pub const EM_GETPASSWORDCHAR: i32 = 210;
+pub const EM_GETRECT: i32 = 178;
+pub const EM_GETSEL: i32 = 176;
+pub const EM_GETTHUMB: i32 = 190;
+pub const EM_GETWORDBREAKPROC: i32 = 209;
+pub const EM_LIMITTEXT: i32 = 197;
+pub const EM_LINEFROMCHAR: i32 = 201;
+pub const EM_LINEINDEX: i32 = 187;
+pub const EM_LINELENGTH: i32 = 193;
+pub const EM_LINESCROLL: i32 = 182;
+pub const EM_POSFROMCHAR: i32 = 214;
+pub const EM_REPLACESEL: i32 = 194;
+pub const EM_SCROLL: i32 = 181;
+pub const EM_SCROLLCARET: i32 = 183;
+pub const EM_SETHANDLE: i32 = 188;
+pub const EM_SETIMESTATUS: i32 = 216;
+pub const EM_SETLIMITTEXT: i32 = 197;
+pub const EM_SETMARGINS: i32 = 211;
+pub const EM_SETMODIFY: i32 = 185;
+pub const EM_SETPASSWORDCHAR: i32 = 204;
+pub const EM_SETREADONLY: i32 = 207;
+pub const EM_SETRECT: i32 = 179;
+pub const EM_SETRECTNP: i32 = 180;
+pub const EM_SETSEL: i32 = 177;
+pub const EM_SETTABSTOPS: i32 = 203;
+pub const EM_SETWORDBREAKPROC: i32 = 208;
+pub const EM_UNDO: i32 = 199;
+pub const EN_CHANGE: i32 = 768;
+pub const EN_ERRSPACE: i32 = 1280;
+pub const EN_HSCROLL: i32 = 1537;
+pub const EN_KILLFOCUS: i32 = 512;
+pub const EN_MAXTEXT: i32 = 1281;
+pub const EN_SETFOCUS: i32 = 256;
+pub const EN_UPDATE: i32 = 1024;
+pub const EN_VSCROLL: i32 = 1538;
+pub const LB_ADDFILE: i32 = 406;
+pub const LB_ADDSTRING: i32 = 384;
+pub const LB_DELETESTRING: i32 = 386;
+pub const LB_DIR: i32 = 397;
+pub const LB_FINDSTRING: i32 = 399;
+pub const LB_FINDSTRINGEXACT: i32 = 418;
+pub const LB_GETANCHORINDEX: i32 = 413;
+pub const LB_GETCARETINDEX: i32 = 415;
+pub const LB_GETCOUNT: i32 = 395;
+pub const LB_GETCURSEL: i32 = 392;
+pub const LB_GETHORIZONTALEXTENT: i32 = 403;
+pub const LB_GETITEMDATA: i32 = 409;
+pub const LB_GETITEMHEIGHT: i32 = 417;
+pub const LB_GETITEMRECT: i32 = 408;
+pub const LB_GETLISTBOXINFO: i32 = 434;
+pub const LB_MSGMAX: i32 = 435;
+pub const LB_GETLOCALE: i32 = 422;
+pub const LB_GETSEL: i32 = 391;
+pub const LB_GETSELCOUNT: i32 = 400;
+pub const LB_GETSELITEMS: i32 = 401;
+pub const LB_GETTEXT: i32 = 393;
+pub const LB_GETTEXTLEN: i32 = 394;
+pub const LB_GETTOPINDEX: i32 = 398;
+pub const LB_INITSTORAGE: i32 = 424;
+pub const LB_INSERTSTRING: i32 = 385;
+pub const LB_ITEMFROMPOINT: i32 = 425;
+pub const LB_RESETCONTENT: i32 = 388;
+pub const LB_SELECTSTRING: i32 = 396;
+pub const LB_SELITEMRANGE: i32 = 411;
+pub const LB_SELITEMRANGEEX: i32 = 387;
+pub const LB_SETANCHORINDEX: i32 = 412;
+pub const LB_SETCARETINDEX: i32 = 414;
+pub const LB_SETCOLUMNWIDTH: i32 = 405;
+pub const LB_SETCOUNT: i32 = 423;
+pub const LB_SETCURSEL: i32 = 390;
+pub const LB_SETHORIZONTALEXTENT: i32 = 404;
+pub const LB_SETITEMDATA: i32 = 410;
+pub const LB_SETITEMHEIGHT: i32 = 416;
+pub const LB_SETLOCALE: i32 = 421;
+pub const LB_SETSEL: i32 = 389;
+pub const LB_SETTABSTOPS: i32 = 402;
+pub const LB_SETTOPINDEX: i32 = 407;
+pub const LBN_DBLCLK: i32 = 2;
+pub const LBN_ERRSPACE: i32 = -2;
+pub const LBN_KILLFOCUS: i32 = 5;
+pub const LBN_SELCANCEL: i32 = 3;
+pub const LBN_SELCHANGE: i32 = 1;
+pub const LBN_SETFOCUS: i32 = 4;
+pub const SBM_ENABLE_ARROWS: i32 = 228;
+pub const SBM_GETPOS: i32 = 225;
+pub const SBM_GETRANGE: i32 = 227;
+pub const SBM_SETPOS: i32 = 224;
+pub const SBM_SETRANGE: i32 = 226;
+pub const SBM_SETRANGEREDRAW: i32 = 230;
+pub const SBM_GETSCROLLINFO: i32 = 234;
+pub const SBM_SETSCROLLINFO: i32 = 233;
+pub const SBM_GETSCROLLBARINFO: i32 = 235;
+pub const STM_GETICON: i32 = 369;
+pub const STM_GETIMAGE: i32 = 371;
+pub const STM_SETICON: i32 = 368;
+pub const STM_SETIMAGE: i32 = 370;
+pub const STN_CLICKED: i32 = 0;
+pub const STN_DBLCLK: i32 = 1;
+pub const STN_DISABLE: i32 = 3;
+pub const STN_ENABLE: i32 = 2;
+pub const DM_GETDEFID: i32 = 1024;
+pub const DM_SETDEFID: i32 = 1025;
+pub const DM_REPOSITION: i32 = 1026;
+pub const PSM_PAGEINFO: i32 = 1124;
+pub const PSM_SHEETINFO: i32 = 1125;
+pub const PSI_SETACTIVE: i32 = 1;
+pub const PSI_KILLACTIVE: i32 = 2;
+pub const PSI_APPLY: i32 = 3;
+pub const PSI_RESET: i32 = 4;
+pub const PSI_HASHELP: i32 = 5;
+pub const PSI_HELP: i32 = 6;
+pub const PSI_CHANGED: i32 = 1;
+pub const PSI_GUISTART: i32 = 2;
+pub const PSI_REBOOT: i32 = 3;
+pub const PSI_GETSIBLINGS: i32 = 4;
+pub const DCX_WINDOW: i32 = 1;
+pub const DCX_CACHE: i32 = 2;
+pub const DCX_PARENTCLIP: i32 = 32;
+pub const DCX_CLIPSIBLINGS: i32 = 16;
+pub const DCX_CLIPCHILDREN: i32 = 8;
+pub const DCX_NORESETATTRS: i32 = 4;
+pub const DCX_INTERSECTUPDATE: i32 = 512;
+pub const DCX_LOCKWINDOWUPDATE: i32 = 1024;
+pub const DCX_EXCLUDERGN: i32 = 64;
+pub const DCX_INTERSECTRGN: i32 = 128;
+pub const DCX_VALIDATE: i32 = 2097152;
+pub const DCX_EXCLUDEUPDATE: i32 = 256;
+pub const GMDI_GOINTOPOPUPS: i32 = 2;
+pub const GMDI_USEDISABLED: i32 = 1;
+pub const FKF_AVAILABLE: i32 = 2;
+pub const FKF_CLICKON: i32 = 64;
+pub const FKF_FILTERKEYSON: i32 = 1;
+pub const FKF_HOTKEYACTIVE: i32 = 4;
+pub const FKF_HOTKEYSOUND: i32 = 16;
+pub const FKF_CONFIRMHOTKEY: i32 = 8;
+pub const FKF_INDICATOR: i32 = 32;
+pub const HCF_HIGHCONTRASTON: i32 = 1;
+pub const HCF_AVAILABLE: i32 = 2;
+pub const HCF_HOTKEYACTIVE: i32 = 4;
+pub const HCF_CONFIRMHOTKEY: i32 = 8;
+pub const HCF_HOTKEYSOUND: i32 = 16;
+pub const HCF_INDICATOR: i32 = 32;
+pub const HCF_HOTKEYAVAILABLE: i32 = 64;
+pub const MKF_MOUSEKEYSON: i32 = 1;
+pub const MKF_AVAILABLE: i32 = 2;
+pub const MKF_HOTKEYACTIVE: i32 = 4;
+pub const MKF_CONFIRMHOTKEY: i32 = 8;
+pub const MKF_HOTKEYSOUND: i32 = 16;
+pub const MKF_INDICATOR: i32 = 32;
+pub const MKF_MODIFIERS: i32 = 64;
+pub const MKF_REPLACENUMBERS: i32 = 128;
+pub const MKF_LEFTBUTTONDOWN: i32 = 16777216;
+pub const MKF_RIGHTBUTTONDOWN: i32 = 33554432;
+pub const MKF_LEFTBUTTONSEL: i32 = 268435456;
+pub const MKF_RIGHTBUTTONSEL: i32 = 536870912;
+pub const MKF_MOUSEMODE: i64 = 2147483648;
+pub const SERKF_ACTIVE: i32 = 8;
+pub const SERKF_AVAILABLE: i32 = 2;
+pub const SERKF_INDICATOR: i32 = 4;
+pub const SERKF_SERIALKEYSON: i32 = 1;
+pub const SSF_AVAILABLE: i32 = 2;
+pub const SSF_SOUNDSENTRYON: i32 = 1;
+pub const SSTF_BORDER: i32 = 2;
+pub const SSTF_CHARS: i32 = 1;
+pub const SSTF_DISPLAY: i32 = 3;
+pub const SSTF_NONE: i32 = 0;
+pub const SSGF_DISPLAY: i32 = 3;
+pub const SSGF_NONE: i32 = 0;
+pub const SSWF_CUSTOM: i32 = 4;
+pub const SSWF_DISPLAY: i32 = 3;
+pub const SSWF_NONE: i32 = 0;
+pub const SSWF_TITLE: i32 = 1;
+pub const SSWF_WINDOW: i32 = 2;
+pub const SKF_AUDIBLEFEEDBACK: i32 = 64;
+pub const SKF_AVAILABLE: i32 = 2;
+pub const SKF_CONFIRMHOTKEY: i32 = 8;
+pub const SKF_HOTKEYACTIVE: i32 = 4;
+pub const SKF_HOTKEYSOUND: i32 = 16;
+pub const SKF_INDICATOR: i32 = 32;
+pub const SKF_STICKYKEYSON: i32 = 1;
+pub const SKF_TRISTATE: i32 = 128;
+pub const SKF_TWOKEYSOFF: i32 = 256;
+pub const TKF_AVAILABLE: i32 = 2;
+pub const TKF_CONFIRMHOTKEY: i32 = 8;
+pub const TKF_HOTKEYACTIVE: i32 = 4;
+pub const TKF_HOTKEYSOUND: i32 = 16;
+pub const TKF_TOGGLEKEYSON: i32 = 1;
+pub const MDITILE_SKIPDISABLED: i32 = 2;
+pub const MDITILE_HORIZONTAL: i32 = 1;
+pub const MDITILE_VERTICAL: i32 = 0;
+pub const VK_LBUTTON: i32 = 1;
+pub const VK_RBUTTON: i32 = 2;
+pub const VK_CANCEL: i32 = 3;
+pub const VK_MBUTTON: i32 = 4;
+pub const VK_XBUTTON1: i32 = 5;
+pub const VK_XBUTTON2: i32 = 6;
+pub const VK_BACK: i32 = 8;
+pub const VK_TAB: i32 = 9;
+pub const VK_CLEAR: i32 = 12;
+pub const VK_RETURN: i32 = 13;
+pub const VK_SHIFT: i32 = 16;
+pub const VK_CONTROL: i32 = 17;
+pub const VK_MENU: i32 = 18;
+pub const VK_PAUSE: i32 = 19;
+pub const VK_CAPITAL: i32 = 20;
+pub const VK_KANA: i32 = 21;
+pub const VK_HANGEUL: i32 = 21;
+pub const VK_HANGUL: i32 = 21;
+pub const VK_JUNJA: i32 = 23;
+pub const VK_FINAL: i32 = 24;
+pub const VK_HANJA: i32 = 25;
+pub const VK_KANJI: i32 = 25;
+pub const VK_ESCAPE: i32 = 27;
+pub const VK_CONVERT: i32 = 28;
+pub const VK_NONCONVERT: i32 = 29;
+pub const VK_ACCEPT: i32 = 30;
+pub const VK_MODECHANGE: i32 = 31;
+pub const VK_SPACE: i32 = 32;
+pub const VK_PRIOR: i32 = 33;
+pub const VK_NEXT: i32 = 34;
+pub const VK_END: i32 = 35;
+pub const VK_HOME: i32 = 36;
+pub const VK_LEFT: i32 = 37;
+pub const VK_UP: i32 = 38;
+pub const VK_RIGHT: i32 = 39;
+pub const VK_DOWN: i32 = 40;
+pub const VK_SELECT: i32 = 41;
+pub const VK_PRINT: i32 = 42;
+pub const VK_EXECUTE: i32 = 43;
+pub const VK_SNAPSHOT: i32 = 44;
+pub const VK_INSERT: i32 = 45;
+pub const VK_DELETE: i32 = 46;
+pub const VK_HELP: i32 = 47;
+pub const VK_LWIN: i32 = 91;
+pub const VK_RWIN: i32 = 92;
+pub const VK_APPS: i32 = 93;
+pub const VK_SLEEP: i32 = 95;
+pub const VK_NUMPAD0: i32 = 96;
+pub const VK_NUMPAD1: i32 = 97;
+pub const VK_NUMPAD2: i32 = 98;
+pub const VK_NUMPAD3: i32 = 99;
+pub const VK_NUMPAD4: i32 = 100;
+pub const VK_NUMPAD5: i32 = 101;
+pub const VK_NUMPAD6: i32 = 102;
+pub const VK_NUMPAD7: i32 = 103;
+pub const VK_NUMPAD8: i32 = 104;
+pub const VK_NUMPAD9: i32 = 105;
+pub const VK_MULTIPLY: i32 = 106;
+pub const VK_ADD: i32 = 107;
+pub const VK_SEPARATOR: i32 = 108;
+pub const VK_SUBTRACT: i32 = 109;
+pub const VK_DECIMAL: i32 = 110;
+pub const VK_DIVIDE: i32 = 111;
+pub const VK_F1: i32 = 112;
+pub const VK_F2: i32 = 113;
+pub const VK_F3: i32 = 114;
+pub const VK_F4: i32 = 115;
+pub const VK_F5: i32 = 116;
+pub const VK_F6: i32 = 117;
+pub const VK_F7: i32 = 118;
+pub const VK_F8: i32 = 119;
+pub const VK_F9: i32 = 120;
+pub const VK_F10: i32 = 121;
+pub const VK_F11: i32 = 122;
+pub const VK_F12: i32 = 123;
+pub const VK_F13: i32 = 124;
+pub const VK_F14: i32 = 125;
+pub const VK_F15: i32 = 126;
+pub const VK_F16: i32 = 127;
+pub const VK_F17: i32 = 128;
+pub const VK_F18: i32 = 129;
+pub const VK_F19: i32 = 130;
+pub const VK_F20: i32 = 131;
+pub const VK_F21: i32 = 132;
+pub const VK_F22: i32 = 133;
+pub const VK_F23: i32 = 134;
+pub const VK_F24: i32 = 135;
+pub const VK_NUMLOCK: i32 = 144;
+pub const VK_SCROLL: i32 = 145;
+pub const VK_OEM_NEC_EQUAL: i32 = 146;
+pub const VK_LSHIFT: i32 = 160;
+pub const VK_RSHIFT: i32 = 161;
+pub const VK_LCONTROL: i32 = 162;
+pub const VK_RCONTROL: i32 = 163;
+pub const VK_LMENU: i32 = 164;
+pub const VK_RMENU: i32 = 165;
+pub const VK_BROWSER_BACK: i32 = 166;
+pub const VK_BROWSER_FORWARD: i32 = 167;
+pub const VK_BROWSER_REFRESH: i32 = 168;
+pub const VK_BROWSER_STOP: i32 = 169;
+pub const VK_BROWSER_SEARCH: i32 = 170;
+pub const VK_BROWSER_FAVORITES: i32 = 171;
+pub const VK_BROWSER_HOME: i32 = 172;
+pub const VK_VOLUME_MUTE: i32 = 173;
+pub const VK_VOLUME_DOWN: i32 = 174;
+pub const VK_VOLUME_UP: i32 = 175;
+pub const VK_MEDIA_NEXT_TRACK: i32 = 176;
+pub const VK_MEDIA_PREV_TRACK: i32 = 177;
+pub const VK_MEDIA_STOP: i32 = 178;
+pub const VK_MEDIA_PLAY_PAUSE: i32 = 179;
+pub const VK_LAUNCH_MAIL: i32 = 180;
+pub const VK_LAUNCH_MEDIA_SELECT: i32 = 181;
+pub const VK_LAUNCH_APP1: i32 = 182;
+pub const VK_LAUNCH_APP2: i32 = 183;
+pub const VK_OEM_1: i32 = 186;
+pub const VK_OEM_PLUS: i32 = 187;
+pub const VK_OEM_COMMA: i32 = 188;
+pub const VK_OEM_MINUS: i32 = 189;
+pub const VK_OEM_PERIOD: i32 = 190;
+pub const VK_OEM_2: i32 = 191;
+pub const VK_OEM_3: i32 = 192;
+pub const VK_OEM_4: i32 = 219;
+pub const VK_OEM_5: i32 = 220;
+pub const VK_OEM_6: i32 = 221;
+pub const VK_OEM_7: i32 = 222;
+pub const VK_OEM_8: i32 = 223;
+pub const VK_OEM_102: i32 = 226;
+pub const VK_ICO_HELP: i32 = 227;
+pub const VK_ICO_00: i32 = 228;
+pub const VK_PROCESSKEY: i32 = 229;
+pub const VK_PACKET: i32 = 231;
+pub const VK_OEM_RESET: i32 = 233;
+pub const VK_OEM_JUMP: i32 = 234;
+pub const VK_OEM_PA1: i32 = 235;
+pub const VK_OEM_PA2: i32 = 236;
+pub const VK_OEM_PA3: i32 = 237;
+pub const VK_OEM_WSCTRL: i32 = 238;
+pub const VK_OEM_CUSEL: i32 = 239;
+pub const VK_OEM_ATTN: i32 = 240;
+pub const VK_OEM_FINISH: i32 = 241;
+pub const VK_OEM_COPY: i32 = 242;
+pub const VK_OEM_AUTO: i32 = 243;
+pub const VK_OEM_ENLW: i32 = 244;
+pub const VK_OEM_BACKTAB: i32 = 245;
+pub const VK_ATTN: i32 = 246;
+pub const VK_CRSEL: i32 = 247;
+pub const VK_EXSEL: i32 = 248;
+pub const VK_EREOF: i32 = 249;
+pub const VK_PLAY: i32 = 250;
+pub const VK_ZOOM: i32 = 251;
+pub const VK_NONAME: i32 = 252;
+pub const VK_PA1: i32 = 253;
+pub const VK_OEM_CLEAR: i32 = 254;
+pub const MAPVK_VK_TO_VSC: i32 = 0;
+pub const MAPVK_VSC_TO_VK: i32 = 1;
+pub const MAPVK_VK_TO_CHAR: i32 = 2;
+pub const MAPVK_VSC_TO_VK_EX: i32 = 3;
+pub const MAPVK_VK_TO_VSC_EX: i32 = 4;
+pub const TME_HOVER: i32 = 1;
+pub const TME_LEAVE: i32 = 2;
+pub const TME_NONCLIENT: i32 = 16;
+pub const TME_QUERY: i32 = 1073741824;
+pub const TME_CANCEL: i64 = 2147483648;
+pub const HOVER_DEFAULT: i64 = 4294967295;
+pub const MK_LBUTTON: i32 = 1;
+pub const MK_RBUTTON: i32 = 2;
+pub const MK_SHIFT: i32 = 4;
+pub const MK_CONTROL: i32 = 8;
+pub const MK_MBUTTON: i32 = 16;
+pub const MK_XBUTTON1: i32 = 32;
+pub const MK_XBUTTON2: i32 = 64;
+pub const TPM_CENTERALIGN: i32 = 4;
+pub const TPM_LEFTALIGN: i32 = 0;
+pub const TPM_RIGHTALIGN: i32 = 8;
+pub const TPM_LEFTBUTTON: i32 = 0;
+pub const TPM_RIGHTBUTTON: i32 = 2;
+pub const TPM_HORIZONTAL: i32 = 0;
+pub const TPM_VERTICAL: i32 = 64;
+pub const TPM_TOPALIGN: i32 = 0;
+pub const TPM_VCENTERALIGN: i32 = 16;
+pub const TPM_BOTTOMALIGN: i32 = 32;
+pub const TPM_NONOTIFY: i32 = 128;
+pub const TPM_RETURNCMD: i32 = 256;
+pub const TPM_RECURSE: i32 = 1;
+pub const TPM_HORPOSANIMATION: i32 = 1024;
+pub const TPM_HORNEGANIMATION: i32 = 2048;
+pub const TPM_VERPOSANIMATION: i32 = 4096;
+pub const TPM_VERNEGANIMATION: i32 = 8192;
+pub const TPM_NOANIMATION: i32 = 16384;
+pub const TPM_LAYOUTRTL: i32 = 32768;
+pub const HELP_COMMAND: i32 = 258;
+pub const HELP_CONTENTS: i32 = 3;
+pub const HELP_CONTEXT: i32 = 1;
+pub const HELP_CONTEXTPOPUP: i32 = 8;
+pub const HELP_FORCEFILE: i32 = 9;
+pub const HELP_HELPONHELP: i32 = 4;
+pub const HELP_INDEX: i32 = 3;
+pub const HELP_KEY: i32 = 257;
+pub const HELP_MULTIKEY: i32 = 513;
+pub const HELP_PARTIALKEY: i32 = 261;
+pub const HELP_QUIT: i32 = 2;
+pub const HELP_SETCONTENTS: i32 = 5;
+pub const HELP_SETINDEX: i32 = 5;
+pub const HELP_SETWINPOS: i32 = 515;
+pub const HELP_CONTEXTMENU: i32 = 10;
+pub const HELP_FINDER: i32 = 11;
+pub const HELP_WM_HELP: i32 = 12;
+pub const HELP_TCARD: i32 = 32768;
+pub const HELP_TCARD_DATA: i32 = 16;
+pub const HELP_TCARD_OTHER_CALLER: i32 = 17;
+pub const IDH_NO_HELP: i32 = 28440;
+pub const IDH_MISSING_CONTEXT: i32 = 28441;
+pub const IDH_GENERIC_HELP_BUTTON: i32 = 28442;
+pub const IDH_OK: i32 = 28443;
+pub const IDH_CANCEL: i32 = 28444;
+pub const IDH_HELP: i32 = 28445;
+pub const LB_CTLCODE: i32 = 0;
+pub const LB_OKAY: i32 = 0;
+pub const LB_ERR: i32 = -1;
+pub const LB_ERRSPACE: i32 = -2;
+pub const CB_OKAY: i32 = 0;
+pub const CB_ERR: i32 = -1;
+pub const CB_ERRSPACE: i32 = -2;
+pub const HIDE_WINDOW: i32 = 0;
+pub const SHOW_OPENWINDOW: i32 = 1;
+pub const SHOW_ICONWINDOW: i32 = 2;
+pub const SHOW_FULLSCREEN: i32 = 3;
+pub const SHOW_OPENNOACTIVATE: i32 = 4;
+pub const SW_PARENTCLOSING: i32 = 1;
+pub const SW_OTHERZOOM: i32 = 2;
+pub const SW_PARENTOPENING: i32 = 3;
+pub const SW_OTHERUNZOOM: i32 = 4;
+pub const KF_EXTENDED: i32 = 256;
+pub const KF_DLGMODE: i32 = 2048;
+pub const KF_MENUMODE: i32 = 4096;
+pub const KF_ALTDOWN: i32 = 8192;
+pub const KF_REPEAT: i32 = 16384;
+pub const KF_UP: i32 = 32768;
+pub const WSF_VISIBLE: i32 = 1;
+pub const PWR_OK: i32 = 1;
+pub const PWR_FAIL: i32 = -1;
+pub const PWR_SUSPENDREQUEST: i32 = 1;
+pub const PWR_SUSPENDRESUME: i32 = 2;
+pub const PWR_CRITICALRESUME: i32 = 3;
+pub const NFR_ANSI: i32 = 1;
+pub const NFR_UNICODE: i32 = 2;
+pub const NF_QUERY: i32 = 3;
+pub const NF_REQUERY: i32 = 4;
+pub const MENULOOP_WINDOW: i32 = 0;
+pub const MENULOOP_POPUP: i32 = 1;
+pub const WMSZ_LEFT: i32 = 1;
+pub const WMSZ_RIGHT: i32 = 2;
+pub const WMSZ_TOP: i32 = 3;
+pub const WMSZ_TOPLEFT: i32 = 4;
+pub const WMSZ_TOPRIGHT: i32 = 5;
+pub const WMSZ_BOTTOM: i32 = 6;
+pub const WMSZ_BOTTOMLEFT: i32 = 7;
+pub const WMSZ_BOTTOMRIGHT: i32 = 8;
+pub const HTERROR: i32 = -2;
+pub const HTTRANSPARENT: i32 = -1;
+pub const HTNOWHERE: i32 = 0;
+pub const HTCLIENT: i32 = 1;
+pub const HTCAPTION: i32 = 2;
+pub const HTSYSMENU: i32 = 3;
+pub const HTGROWBOX: i32 = 4;
+pub const HTSIZE: i32 = 4;
+pub const HTMENU: i32 = 5;
+pub const HTHSCROLL: i32 = 6;
+pub const HTVSCROLL: i32 = 7;
+pub const HTMINBUTTON: i32 = 8;
+pub const HTMAXBUTTON: i32 = 9;
+pub const HTREDUCE: i32 = 8;
+pub const HTZOOM: i32 = 9;
+pub const HTLEFT: i32 = 10;
+pub const HTSIZEFIRST: i32 = 10;
+pub const HTRIGHT: i32 = 11;
+pub const HTTOP: i32 = 12;
+pub const HTTOPLEFT: i32 = 13;
+pub const HTTOPRIGHT: i32 = 14;
+pub const HTBOTTOM: i32 = 15;
+pub const HTBOTTOMLEFT: i32 = 16;
+pub const HTBOTTOMRIGHT: i32 = 17;
+pub const HTSIZELAST: i32 = 17;
+pub const HTBORDER: i32 = 18;
+pub const HTOBJECT: i32 = 19;
+pub const HTCLOSE: i32 = 20;
+pub const HTHELP: i32 = 21;
+pub const MA_ACTIVATE: i32 = 1;
+pub const MA_ACTIVATEANDEAT: i32 = 2;
+pub const MA_NOACTIVATE: i32 = 3;
+pub const MA_NOACTIVATEANDEAT: i32 = 4;
+pub const SIZE_RESTORED: i32 = 0;
+pub const SIZE_MINIMIZED: i32 = 1;
+pub const SIZE_MAXIMIZED: i32 = 2;
+pub const SIZE_MAXSHOW: i32 = 3;
+pub const SIZE_MAXHIDE: i32 = 4;
+pub const SIZENORMAL: i32 = 0;
+pub const SIZEICONIC: i32 = 1;
+pub const SIZEFULLSCREEN: i32 = 2;
+pub const SIZEZOOMSHOW: i32 = 3;
+pub const SIZEZOOMHIDE: i32 = 4;
+pub const WVR_ALIGNTOP: i32 = 16;
+pub const WVR_ALIGNLEFT: i32 = 32;
+pub const WVR_ALIGNBOTTOM: i32 = 64;
+pub const WVR_ALIGNRIGHT: i32 = 128;
+pub const WVR_HREDRAW: i32 = 256;
+pub const WVR_VREDRAW: i32 = 512;
+pub const WVR_REDRAW: i32 = 768;
+pub const WVR_VALIDRECTS: i32 = 1024;
+pub const PRF_CHECKVISIBLE: i32 = 1;
+pub const PRF_NONCLIENT: i32 = 2;
+pub const PRF_CLIENT: i32 = 4;
+pub const PRF_ERASEBKGND: i32 = 8;
+pub const PRF_CHILDREN: i32 = 16;
+pub const PRF_OWNED: i32 = 32;
+pub const IDANI_OPEN: i32 = 1;
+pub const IDANI_CLOSE: i32 = 2;
+pub const IDANI_CAPTION: i32 = 3;
+pub const WPF_RESTORETOMAXIMIZED: i32 = 2;
+pub const WPF_SETMINPOSITION: i32 = 1;
+pub const WPF_ASYNCWINDOWPLACEMENT: i32 = 4;
+pub const ODT_MENU: i32 = 1;
+pub const ODT_LISTBOX: i32 = 2;
+pub const ODT_COMBOBOX: i32 = 3;
+pub const ODT_BUTTON: i32 = 4;
+pub const ODT_STATIC: i32 = 5;
+pub const ODA_DRAWENTIRE: i32 = 1;
+pub const ODA_SELECT: i32 = 2;
+pub const ODA_FOCUS: i32 = 4;
+pub const ODS_SELECTED: i32 = 1;
+pub const ODS_GRAYED: i32 = 2;
+pub const ODS_DISABLED: i32 = 4;
+pub const ODS_CHECKED: i32 = 8;
+pub const ODS_FOCUS: i32 = 16;
+pub const ODS_DEFAULT: i32 = 32;
+pub const ODS_COMBOBOXEDIT: i32 = 4096;
+pub const ODS_HOTLIGHT: i32 = 64;
+pub const ODS_INACTIVE: i32 = 128;
+pub const ODS_NOACCEL: i32 = 256;
+pub const ODS_NOFOCUSRECT: i32 = 512;
+pub const IDHOT_SNAPWINDOW: i32 = -1;
+pub const IDHOT_SNAPDESKTOP: i32 = -2;
+pub const DBWF_LPARAMPOINTER: i32 = 32768;
+pub const DLGWINDOWEXTRA: i32 = 30;
+pub const MNC_IGNORE: i32 = 0;
+pub const MNC_CLOSE: i32 = 1;
+pub const MNC_EXECUTE: i32 = 2;
+pub const MNC_SELECT: i32 = 3;
+pub const DOF_EXECUTABLE: i32 = 32769;
+pub const DOF_DOCUMENT: i32 = 32770;
+pub const DOF_DIRECTORY: i32 = 32771;
+pub const DOF_MULTIPLE: i32 = 32772;
+pub const DOF_PROGMAN: i32 = 1;
+pub const DOF_SHELLDATA: i32 = 2;
+pub const DO_DROPFILE: i32 = 1162627398;
+pub const DO_PRINTFILE: i32 = 1414419024;
+pub const SW_SCROLLCHILDREN: i32 = 1;
+pub const SW_INVALIDATE: i32 = 2;
+pub const SW_ERASE: i32 = 4;
+pub const SW_SMOOTHSCROLL: i32 = 16;
+pub const SC_SIZE: i32 = 61440;
+pub const SC_MOVE: i32 = 61456;
+pub const SC_MINIMIZE: i32 = 61472;
+pub const SC_ICON: i32 = 61472;
+pub const SC_MAXIMIZE: i32 = 61488;
+pub const SC_ZOOM: i32 = 61488;
+pub const SC_NEXTWINDOW: i32 = 61504;
+pub const SC_PREVWINDOW: i32 = 61520;
+pub const SC_CLOSE: i32 = 61536;
+pub const SC_VSCROLL: i32 = 61552;
+pub const SC_HSCROLL: i32 = 61568;
+pub const SC_MOUSEMENU: i32 = 61584;
+pub const SC_KEYMENU: i32 = 61696;
+pub const SC_ARRANGE: i32 = 61712;
+pub const SC_RESTORE: i32 = 61728;
+pub const SC_TASKLIST: i32 = 61744;
+pub const SC_SCREENSAVE: i32 = 61760;
+pub const SC_HOTKEY: i32 = 61776;
+pub const SC_DEFAULT: i32 = 61792;
+pub const SC_MONITORPOWER: i32 = 61808;
+pub const SC_CONTEXTHELP: i32 = 61824;
+pub const SC_SEPARATOR: i32 = 61455;
+pub const EC_LEFTMARGIN: i32 = 1;
+pub const EC_RIGHTMARGIN: i32 = 2;
+pub const EC_USEFONTINFO: i32 = 65535;
+pub const EMSIS_COMPOSITIONSTRING: i32 = 1;
+pub const EIMES_GETCOMPSTRATONCE: i32 = 1;
+pub const EIMES_CANCELCOMPSTRINFOCUS: i32 = 2;
+pub const EIMES_COMPLETECOMPSTRKILLFOCUS: i32 = 4;
+pub const DC_HASDEFID: i32 = 21323;
+pub const DLGC_WANTARROWS: i32 = 1;
+pub const DLGC_WANTTAB: i32 = 2;
+pub const DLGC_WANTALLKEYS: i32 = 4;
+pub const DLGC_WANTMESSAGE: i32 = 4;
+pub const DLGC_HASSETSEL: i32 = 8;
+pub const DLGC_DEFPUSHBUTTON: i32 = 16;
+pub const DLGC_UNDEFPUSHBUTTON: i32 = 32;
+pub const DLGC_RADIOBUTTON: i32 = 64;
+pub const DLGC_WANTCHARS: i32 = 128;
+pub const DLGC_STATIC: i32 = 256;
+pub const DLGC_BUTTON: i32 = 8192;
+pub const WA_INACTIVE: i32 = 0;
+pub const WA_ACTIVE: i32 = 1;
+pub const WA_CLICKACTIVE: i32 = 2;
+pub const ICON_SMALL: i32 = 0;
+pub const ICON_BIG: i32 = 1;
+pub const ICON_SMALL2: i32 = 2;
+pub const MOD_ALT: i32 = 1;
+pub const MOD_CONTROL: i32 = 2;
+pub const MOD_SHIFT: i32 = 4;
+pub const MOD_WIN: i32 = 8;
+pub const LLKHF_EXTENDED: i32 = 1;
+pub const LLKHF_INJECTED: i32 = 16;
+pub const LLKHF_ALTDOWN: i32 = 32;
+pub const LLKHF_UP: i32 = 128;
+pub const LLMHF_INJECTED: i32 = 1;
+pub const FLASHW_STOP: i32 = 0;
+pub const FLASHW_CAPTION: i32 = 1;
+pub const FLASHW_TRAY: i32 = 2;
+pub const FLASHW_ALL: i32 = 3;
+pub const FLASHW_TIMER: i32 = 4;
+pub const FLASHW_TIMERNOFG: i32 = 12;
+pub const CURSOR_SHOWING: i32 = 1;
+pub const WS_ACTIVECAPTION: i32 = 1;
+pub const INPUT_MOUSE: i32 = 0;
+pub const INPUT_KEYBOARD: i32 = 1;
+pub const INPUT_HARDWARE: i32 = 2;
+pub const ENDSESSION_LOGOFF: i64 = 2147483648;
+pub const ENDSESSION_CRITICAL: i32 = 1073741824;
+pub const ENDSESSION_CLOSEAPP: i32 = 1;
+pub const CHILDID_SELF: i32 = 0;
+pub const OBJID_WINDOW: i32 = 0;
+pub const OBJID_SYSMENU: i64 = 4294967295;
+pub const OBJID_TITLEBAR: i64 = 4294967294;
+pub const OBJID_MENU: i64 = 4294967293;
+pub const OBJID_CLIENT: i64 = 4294967292;
+pub const OBJID_VSCROLL: i64 = 4294967291;
+pub const OBJID_HSCROLL: i64 = 4294967290;
+pub const OBJID_SIZEGRIP: i64 = 4294967289;
+pub const OBJID_CARET: i64 = 4294967288;
+pub const OBJID_CURSOR: i64 = 4294967287;
+pub const OBJID_ALERT: i64 = 4294967286;
+pub const OBJID_SOUND: i64 = 4294967285;
+pub const OBJID_QUERYCLASSNAMEIDX: i64 = 4294967284;
+pub const OBJID_NATIVEOM: i32 = 268435440;
+pub const GUI_CARETBLINKING: i32 = 1;
+pub const GUI_INMOVESIZE: i32 = 2;
+pub const GUI_INMENUMODE: i32 = 4;
+pub const GUI_SYSTEMMENUMODE: i32 = 8;
+pub const GUI_POPUPMENUMODE: i32 = 16;
+pub const GUI_16BITTASK: i32 = 32;
+pub const WINEVENT_OUTOFCONTEXT: i32 = 0;
+pub const WINEVENT_SKIPOWNTHREAD: i32 = 1;
+pub const WINEVENT_SKIPOWNPROCESS: i32 = 2;
+pub const WINEVENT_INCONTEXT: i32 = 4;
+pub const AW_HOR_POSITIVE: i32 = 1;
+pub const AW_HOR_NEGATIVE: i32 = 2;
+pub const AW_VER_POSITIVE: i32 = 4;
+pub const AW_VER_NEGATIVE: i32 = 8;
+pub const AW_CENTER: i32 = 16;
+pub const AW_HIDE: i32 = 65536;
+pub const AW_ACTIVATE: i32 = 131072;
+pub const AW_SLIDE: i32 = 262144;
+pub const AW_BLEND: i32 = 524288;
+pub const DEVICE_NOTIFY_WINDOW_HANDLE: i32 = 0;
+pub const DEVICE_NOTIFY_SERVICE_HANDLE: i32 = 1;
+pub const DEVICE_NOTIFY_ALL_INTERFACE_CLASSES: i32 = 4;
+pub const EVENT_MIN: i32 = 1;
+pub const EVENT_SYSTEM_SOUND: i32 = 1;
+pub const EVENT_SYSTEM_ALERT: i32 = 2;
+pub const ALERT_SYSTEM_INFORMATIONAL: i32 = 1;
+pub const ALERT_SYSTEM_WARNING: i32 = 2;
+pub const ALERT_SYSTEM_ERROR: i32 = 3;
+pub const ALERT_SYSTEM_QUERY: i32 = 4;
+pub const ALERT_SYSTEM_CRITICAL: i32 = 5;
+pub const CALERT_SYSTEM: i32 = 6;
+pub const EVENT_SYSTEM_FOREGROUND: i32 = 3;
+pub const EVENT_SYSTEM_MENUSTART: i32 = 4;
+pub const EVENT_SYSTEM_MENUEND: i32 = 5;
+pub const EVENT_SYSTEM_MENUPOPUPSTART: i32 = 6;
+pub const EVENT_SYSTEM_MENUPOPUPEND: i32 = 7;
+pub const EVENT_SYSTEM_CAPTURESTART: i32 = 8;
+pub const EVENT_SYSTEM_CAPTUREEND: i32 = 9;
+pub const EVENT_SYSTEM_MOVESIZESTART: i32 = 10;
+pub const EVENT_SYSTEM_MOVESIZEEND: i32 = 11;
+pub const EVENT_SYSTEM_CONTEXTHELPSTART: i32 = 12;
+pub const EVENT_SYSTEM_CONTEXTHELPEND: i32 = 13;
+pub const EVENT_SYSTEM_DRAGDROPSTART: i32 = 14;
+pub const EVENT_SYSTEM_DRAGDROPEND: i32 = 15;
+pub const EVENT_SYSTEM_DIALOGSTART: i32 = 16;
+pub const EVENT_SYSTEM_DIALOGEND: i32 = 17;
+pub const EVENT_SYSTEM_SCROLLINGSTART: i32 = 18;
+pub const EVENT_SYSTEM_SCROLLINGEND: i32 = 19;
+pub const EVENT_SYSTEM_SWITCHSTART: i32 = 20;
+pub const EVENT_SYSTEM_SWITCHEND: i32 = 21;
+pub const EVENT_SYSTEM_MINIMIZESTART: i32 = 22;
+pub const EVENT_SYSTEM_MINIMIZEEND: i32 = 23;
+pub const EVENT_CONSOLE_CARET: i32 = 16385;
+pub const CONSOLE_CARET_SELECTION: i32 = 1;
+pub const CONSOLE_CARET_VISIBLE: i32 = 2;
+pub const EVENT_CONSOLE_UPDATE_REGION: i32 = 16386;
+pub const EVENT_CONSOLE_UPDATE_SIMPLE: i32 = 16387;
+pub const EVENT_CONSOLE_UPDATE_SCROLL: i32 = 16388;
+pub const EVENT_CONSOLE_LAYOUT: i32 = 16389;
+pub const EVENT_CONSOLE_START_APPLICATION: i32 = 16390;
+pub const CONSOLE_APPLICATION_16BIT: i32 = 1;
+pub const EVENT_CONSOLE_END_APPLICATION: i32 = 16391;
+pub const EVENT_OBJECT_CREATE: i32 = 32768;
+pub const EVENT_OBJECT_DESTROY: i32 = 32769;
+pub const EVENT_OBJECT_SHOW: i32 = 32770;
+pub const EVENT_OBJECT_HIDE: i32 = 32771;
+pub const EVENT_OBJECT_REORDER: i32 = 32772;
+pub const EVENT_OBJECT_FOCUS: i32 = 32773;
+pub const EVENT_OBJECT_SELECTION: i32 = 32774;
+pub const EVENT_OBJECT_SELECTIONADD: i32 = 32775;
+pub const EVENT_OBJECT_SELECTIONREMOVE: i32 = 32776;
+pub const EVENT_OBJECT_SELECTIONWITHIN: i32 = 32777;
+pub const EVENT_OBJECT_STATECHANGE: i32 = 32778;
+pub const EVENT_OBJECT_LOCATIONCHANGE: i32 = 32779;
+pub const EVENT_OBJECT_NAMECHANGE: i32 = 32780;
+pub const EVENT_OBJECT_DESCRIPTIONCHANGE: i32 = 32781;
+pub const EVENT_OBJECT_VALUECHANGE: i32 = 32782;
+pub const EVENT_OBJECT_PARENTCHANGE: i32 = 32783;
+pub const EVENT_OBJECT_HELPCHANGE: i32 = 32784;
+pub const EVENT_OBJECT_DEFACTIONCHANGE: i32 = 32785;
+pub const EVENT_OBJECT_ACCELERATORCHANGE: i32 = 32786;
+pub const EVENT_MAX: i32 = 2147483647;
+pub const LSFW_LOCK: i32 = 1;
+pub const LSFW_UNLOCK: i32 = 2;
+pub const LWA_COLORKEY: i32 = 1;
+pub const LWA_ALPHA: i32 = 2;
+pub const ULW_COLORKEY: i32 = 1;
+pub const ULW_ALPHA: i32 = 2;
+pub const ULW_OPAQUE: i32 = 4;
+pub const ULW_EX_NORESIZE: i32 = 8;
+pub const GA_PARENT: i32 = 1;
+pub const GA_ROOT: i32 = 2;
+pub const GA_ROOTOWNER: i32 = 3;
+pub const MONITOR_DEFAULTTONULL: i32 = 0;
+pub const MONITOR_DEFAULTTOPRIMARY: i32 = 1;
+pub const MONITOR_DEFAULTTONEAREST: i32 = 2;
+pub const MONITORINFOF_PRIMARY: i32 = 1;
+pub const EDD_GET_DEVICE_INTERFACE_NAME: i32 = 1;
+pub const EDS_RAWMODE: i32 = 2;
+pub const EDS_ROTATEDMODE: i32 = 4;
+pub const ISMEX_NOSEND: i32 = 0;
+pub const ISMEX_CALLBACK: i32 = 4;
+pub const ISMEX_NOTIFY: i32 = 2;
+pub const ISMEX_REPLIED: i32 = 8;
+pub const ISMEX_SEND: i32 = 1;
+pub const GR_GDIOBJECTS: i32 = 0;
+pub const GR_USEROBJECTS: i32 = 1;
+pub const GMMP_USE_DISPLAY_POINTS: i32 = 1;
+pub const GMMP_USE_HIGH_RESOLUTION_POINTS: i32 = 2;
+pub const PW_CLIENTONLY: i32 = 1;
+pub const RIM_INPUT: i32 = 0;
+pub const RIM_INPUTSINK: i32 = 1;
+pub const RIM_TYPEMOUSE: i32 = 0;
+pub const RIM_TYPEKEYBOARD: i32 = 1;
+pub const RIM_TYPEHID: i32 = 2;
+pub const MOUSE_MOVE_RELATIVE: i32 = 0;
+pub const MOUSE_MOVE_ABSOLUTE: i32 = 1;
+pub const MOUSE_VIRTUAL_DESKTOP: i32 = 2;
+pub const MOUSE_ATTRIBUTES_CHANGED: i32 = 4;
+pub const RI_MOUSE_LEFT_BUTTON_DOWN: i32 = 1;
+pub const RI_MOUSE_LEFT_BUTTON_UP: i32 = 2;
+pub const RI_MOUSE_RIGHT_BUTTON_DOWN: i32 = 4;
+pub const RI_MOUSE_RIGHT_BUTTON_UP: i32 = 8;
+pub const RI_MOUSE_MIDDLE_BUTTON_DOWN: i32 = 16;
+pub const RI_MOUSE_MIDDLE_BUTTON_UP: i32 = 32;
+pub const RI_MOUSE_BUTTON_1_DOWN: i32 = 1;
+pub const RI_MOUSE_BUTTON_1_UP: i32 = 2;
+pub const RI_MOUSE_BUTTON_2_DOWN: i32 = 4;
+pub const RI_MOUSE_BUTTON_2_UP: i32 = 8;
+pub const RI_MOUSE_BUTTON_3_DOWN: i32 = 16;
+pub const RI_MOUSE_BUTTON_3_UP: i32 = 32;
+pub const RI_MOUSE_BUTTON_4_DOWN: i32 = 64;
+pub const RI_MOUSE_BUTTON_4_UP: i32 = 128;
+pub const RI_MOUSE_BUTTON_5_DOWN: i32 = 256;
+pub const RI_MOUSE_BUTTON_5_UP: i32 = 512;
+pub const RI_MOUSE_WHEEL: i32 = 1024;
+pub const KEYBOARD_OVERRUN_MAKE_CODE: i32 = 255;
+pub const RI_KEY_MAKE: i32 = 0;
+pub const RI_KEY_BREAK: i32 = 1;
+pub const RI_KEY_E0: i32 = 2;
+pub const RI_KEY_E1: i32 = 4;
+pub const RI_KEY_TERMSRV_SET_LED: i32 = 8;
+pub const RI_KEY_TERMSRV_SHADOW: i32 = 16;
+pub const RID_INPUT: i32 = 268435459;
+pub const RID_HEADER: i32 = 268435461;
+pub const RIDI_PREPARSEDDATA: i32 = 536870917;
+pub const RIDI_DEVICENAME: i32 = 536870919;
+pub const RIDI_DEVICEINFO: i32 = 536870923;
+pub const RIDEV_REMOVE: i32 = 1;
+pub const RIDEV_EXCLUDE: i32 = 16;
+pub const RIDEV_PAGEONLY: i32 = 32;
+pub const RIDEV_NOLEGACY: i32 = 48;
+pub const RIDEV_INPUTSINK: i32 = 256;
+pub const RIDEV_CAPTUREMOUSE: i32 = 512;
+pub const RIDEV_NOHOTKEYS: i32 = 512;
+pub const RIDEV_APPKEYS: i32 = 1024;
+pub const STATE_SYSTEM_UNAVAILABLE: i32 = 1;
+pub const STATE_SYSTEM_SELECTED: i32 = 2;
+pub const STATE_SYSTEM_FOCUSED: i32 = 4;
+pub const STATE_SYSTEM_PRESSED: i32 = 8;
+pub const STATE_SYSTEM_CHECKED: i32 = 16;
+pub const STATE_SYSTEM_MIXED: i32 = 32;
+pub const STATE_SYSTEM_READONLY: i32 = 64;
+pub const STATE_SYSTEM_HOTTRACKED: i32 = 128;
+pub const STATE_SYSTEM_DEFAULT: i32 = 256;
+pub const STATE_SYSTEM_EXPANDED: i32 = 512;
+pub const STATE_SYSTEM_COLLAPSED: i32 = 1024;
+pub const STATE_SYSTEM_BUSY: i32 = 2048;
+pub const STATE_SYSTEM_FLOATING: i32 = 4096;
+pub const STATE_SYSTEM_MARQUEED: i32 = 8192;
+pub const STATE_SYSTEM_ANIMATED: i32 = 16384;
+pub const STATE_SYSTEM_INVISIBLE: i32 = 32768;
+pub const STATE_SYSTEM_OFFSCREEN: i32 = 65536;
+pub const STATE_SYSTEM_SIZEABLE: i32 = 131072;
+pub const STATE_SYSTEM_MOVEABLE: i32 = 262144;
+pub const STATE_SYSTEM_SELFVOICING: i32 = 524288;
+pub const STATE_SYSTEM_FOCUSABLE: i32 = 1048576;
+pub const STATE_SYSTEM_SELECTABLE: i32 = 2097152;
+pub const STATE_SYSTEM_LINKED: i32 = 4194304;
+pub const STATE_SYSTEM_TRAVERSED: i32 = 8388608;
+pub const STATE_SYSTEM_MULTISELECTABLE: i32 = 16777216;
+pub const STATE_SYSTEM_EXTSELECTABLE: i32 = 33554432;
+pub const STATE_SYSTEM_ALERT_LOW: i32 = 67108864;
+pub const STATE_SYSTEM_ALERT_MEDIUM: i32 = 134217728;
+pub const STATE_SYSTEM_ALERT_HIGH: i32 = 268435456;
+pub const STATE_SYSTEM_VALID: i32 = 536870911;
+pub const USER_DEFAULT_SCREEN_DPI: i32 = 96;
+pub const MNGOF_TOPGAP: i32 = 1;
+pub const MNGOF_BOTTOMGAP: i32 = 2;
+pub const WDA_NONE: i32 = 0;
+pub const WDA_MONITOR: i32 = 1;
+pub const CCHILDREN_SCROLLBAR: i32 = 5;
+pub const CCHILDREN_TITLEBAR: i32 = 5;
+pub const FADF_AUTO: i32 = 1;
+pub const FADF_STATIC: i32 = 2;
+pub const FADF_EMBEDDED: i32 = 4;
+pub const FADF_FIXEDSIZE: i32 = 16;
+pub const FADF_RECORD: i32 = 32;
+pub const FADF_HAVEIID: i32 = 64;
+pub const FADF_HAVEVARTYPE: i32 = 128;
+pub const FADF_BSTR: i32 = 256;
+pub const FADF_UNKNOWN: i32 = 512;
+pub const FADF_DISPATCH: i32 = 1024;
+pub const FADF_VARIANT: i32 = 2048;
+pub const FADF_RESERVED: i32 = 61448;
+pub const FADF_DATADELETED: i32 = 4096;
+pub const FADF_CREATEVECTOR: i32 = 8192;
+pub const PARAMFLAG_NONE: i32 = 0;
+pub const PARAMFLAG_FIN: i32 = 1;
+pub const PARAMFLAG_FOUT: i32 = 2;
+pub const PARAMFLAG_FLCID: i32 = 4;
+pub const PARAMFLAG_FRETVAL: i32 = 8;
+pub const PARAMFLAG_FOPT: i32 = 16;
+pub const PARAMFLAG_FHASDEFAULT: i32 = 32;
+pub const PARAMFLAG_FHASCUSTDATA: i32 = 64;
+pub const IDLFLAG_NONE: i32 = 0;
+pub const IDLFLAG_FIN: i32 = 1;
+pub const IDLFLAG_FOUT: i32 = 2;
+pub const IDLFLAG_FLCID: i32 = 4;
+pub const IDLFLAG_FRETVAL: i32 = 8;
+pub const IMPLTYPEFLAG_FDEFAULT: i32 = 1;
+pub const IMPLTYPEFLAG_FSOURCE: i32 = 2;
+pub const IMPLTYPEFLAG_FRESTRICTED: i32 = 4;
+pub const IMPLTYPEFLAG_FDEFAULTVTABLE: i32 = 8;
+pub const DISPID_UNKNOWN: i32 = -1;
+pub const DISPID_VALUE: i32 = 0;
+pub const DISPID_PROPERTYPUT: i32 = -3;
+pub const DISPID_NEWENUM: i32 = -4;
+pub const DISPID_EVALUATE: i32 = -5;
+pub const DISPID_CONSTRUCTOR: i32 = -6;
+pub const DISPID_DESTRUCTOR: i32 = -7;
+pub const DISPID_COLLECT: i32 = -8;
+pub const OLEIVERB_PRIMARY: i32 = 0;
 pub const OLEIVERB_SHOW: i32 = -1;
 pub const OLEIVERB_OPEN: i32 = -2;
 pub const OLEIVERB_HIDE: i32 = -3;
@@ -1330,128 +4188,248 @@ pub const OLEIVERB_UIACTIVATE: i32 = -4;
 pub const OLEIVERB_INPLACEACTIVATE: i32 = -5;
 pub const OLEIVERB_DISCARDUNDOSTATE: i32 = -6;
 pub const OLEIVERB_PROPERTIES: i32 = -7;
-pub const EMBDHLP_INPROC_HANDLER: u32 = 0;
-pub const EMBDHLP_INPROC_SERVER: u32 = 1;
-pub const EMBDHLP_CREATENOW: u32 = 0;
-pub const EMBDHLP_DELAYCREATE: u32 = 65536;
-pub const DSOP_FILTER_INCLUDE_ADVANCED_VIEW: u32 = 1;
-pub const DSOP_FILTER_USERS: u32 = 2;
-pub const DSOP_FILTER_BUILTIN_GROUPS: u32 = 4;
-pub const DSOP_FILTER_WELL_KNOWN_PRINCIPALS: u32 = 8;
-pub const DSOP_FILTER_UNIVERSAL_GROUPS_DL: u32 = 16;
-pub const DSOP_FILTER_UNIVERSAL_GROUPS_SE: u32 = 32;
-pub const DSOP_FILTER_GLOBAL_GROUPS_DL: u32 = 64;
-pub const DSOP_FILTER_GLOBAL_GROUPS_SE: u32 = 128;
-pub const DSOP_FILTER_DOMAIN_LOCAL_GROUPS_DL: u32 = 256;
-pub const DSOP_FILTER_DOMAIN_LOCAL_GROUPS_SE: u32 = 512;
-pub const DSOP_FILTER_CONTACTS: u32 = 1024;
-pub const DSOP_FILTER_COMPUTERS: u32 = 2048;
-pub const DSOP_DOWNLEVEL_FILTER_USERS: u32 = 2147483649;
-pub const DSOP_DOWNLEVEL_FILTER_LOCAL_GROUPS: u32 = 2147483650;
-pub const DSOP_DOWNLEVEL_FILTER_GLOBAL_GROUPS: u32 = 2147483652;
-pub const DSOP_DOWNLEVEL_FILTER_COMPUTERS: u32 = 2147483656;
-pub const DSOP_DOWNLEVEL_FILTER_WORLD: u32 = 2147483664;
-pub const DSOP_DOWNLEVEL_FILTER_AUTHENTICATED_USER: u32 = 2147483680;
-pub const DSOP_DOWNLEVEL_FILTER_ANONYMOUS: u32 = 2147483712;
-pub const DSOP_DOWNLEVEL_FILTER_BATCH: u32 = 2147483776;
-pub const DSOP_DOWNLEVEL_FILTER_CREATOR_OWNER: u32 = 2147483904;
-pub const DSOP_DOWNLEVEL_FILTER_CREATOR_GROUP: u32 = 2147484160;
-pub const DSOP_DOWNLEVEL_FILTER_DIALUP: u32 = 2147484672;
-pub const DSOP_DOWNLEVEL_FILTER_INTERACTIVE: u32 = 2147485696;
-pub const DSOP_DOWNLEVEL_FILTER_NETWORK: u32 = 2147487744;
-pub const DSOP_DOWNLEVEL_FILTER_SERVICE: u32 = 2147491840;
-pub const DSOP_DOWNLEVEL_FILTER_SYSTEM: u32 = 2147500032;
-pub const DSOP_DOWNLEVEL_FILTER_EXCLUDE_BUILTIN_GROUPS: u32 = 2147516416;
-pub const DSOP_DOWNLEVEL_FILTER_TERMINAL_SERVER: u32 = 2147549184;
-pub const DSOP_DOWNLEVEL_FILTER_ALL_WELLKNOWN_SIDS: u32 = 2147614720;
-pub const DSOP_DOWNLEVEL_FILTER_LOCAL_SERVICE: u32 = 2147745792;
-pub const DSOP_DOWNLEVEL_FILTER_NETWORK_SERVICE: u32 = 2148007936;
-pub const DSOP_DOWNLEVEL_FILTER_REMOTE_LOGON: u32 = 2148532224;
-pub const DSOP_SCOPE_FLAG_STARTING_SCOPE: u32 = 1;
-pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_WINNT: u32 = 2;
-pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_LDAP: u32 = 4;
-pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_GC: u32 = 8;
-pub const DSOP_SCOPE_FLAG_WANT_SID_PATH: u32 = 16;
-pub const DSOP_SCOPE_FLAG_WANT_DOWNLEVEL_BUILTIN_PATH: u32 = 32;
-pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_USERS: u32 = 64;
-pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_GROUPS: u32 = 128;
-pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_COMPUTERS: u32 = 256;
-pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_CONTACTS: u32 = 512;
-pub const DSOP_FLAG_MULTISELECT: u32 = 1;
-pub const DSOP_FLAG_SKIP_TARGET_COMPUTER_DC_CHECK: u32 = 2;
-pub const DSOP_SCOPE_TYPE_TARGET_COMPUTER: u32 = 1;
-pub const DSOP_SCOPE_TYPE_UPLEVEL_JOINED_DOMAIN: u32 = 2;
-pub const DSOP_SCOPE_TYPE_DOWNLEVEL_JOINED_DOMAIN: u32 = 4;
-pub const DSOP_SCOPE_TYPE_ENTERPRISE_DOMAIN: u32 = 8;
-pub const DSOP_SCOPE_TYPE_GLOBAL_CATALOG: u32 = 16;
-pub const DSOP_SCOPE_TYPE_EXTERNAL_UPLEVEL_DOMAIN: u32 = 32;
-pub const DSOP_SCOPE_TYPE_EXTERNAL_DOWNLEVEL_DOMAIN: u32 = 64;
-pub const DSOP_SCOPE_TYPE_WORKGROUP: u32 = 128;
-pub const DSOP_SCOPE_TYPE_USER_ENTERED_UPLEVEL_SCOPE: u32 = 256;
-pub const DSOP_SCOPE_TYPE_USER_ENTERED_DOWNLEVEL_SCOPE: u32 = 512;
-pub const MAXPROPPAGES: u32 = 100;
-pub const PSP_DEFAULT: u32 = 0;
-pub const PSP_DLGINDIRECT: u32 = 1;
-pub const PSP_USEHICON: u32 = 2;
-pub const PSP_USEICONID: u32 = 4;
-pub const PSP_USETITLE: u32 = 8;
-pub const PSP_RTLREADING: u32 = 16;
-pub const PSP_HASHELP: u32 = 32;
-pub const PSP_USEREFPARENT: u32 = 64;
-pub const PSP_USECALLBACK: u32 = 128;
-pub const PSP_PREMATURE: u32 = 1024;
-pub const PSP_HIDEHEADER: u32 = 2048;
-pub const PSP_USEHEADERTITLE: u32 = 4096;
-pub const PSP_USEHEADERSUBTITLE: u32 = 8192;
-pub const PSPCB_RELEASE: u32 = 1;
-pub const PSPCB_CREATE: u32 = 2;
-pub const PSH_DEFAULT: u32 = 0;
-pub const PSH_PROPTITLE: u32 = 1;
-pub const PSH_USEHICON: u32 = 2;
-pub const PSH_USEICONID: u32 = 4;
-pub const PSH_PROPSHEETPAGE: u32 = 8;
-pub const PSH_WIZARDHASFINISH: u32 = 16;
-pub const PSH_WIZARD: u32 = 32;
-pub const PSH_USEPSTARTPAGE: u32 = 64;
-pub const PSH_NOAPPLYNOW: u32 = 128;
-pub const PSH_USECALLBACK: u32 = 256;
-pub const PSH_HASHELP: u32 = 512;
-pub const PSH_MODELESS: u32 = 1024;
-pub const PSH_RTLREADING: u32 = 2048;
-pub const PSH_WIZARDCONTEXTHELP: u32 = 4096;
-pub const PSH_WATERMARK: u32 = 32768;
-pub const PSH_USEHBMWATERMARK: u32 = 65536;
-pub const PSH_USEHPLWATERMARK: u32 = 131072;
-pub const PSH_STRETCHWATERMARK: u32 = 262144;
-pub const PSH_HEADER: u32 = 524288;
-pub const PSH_USEHBMHEADER: u32 = 1048576;
-pub const PSH_USEPAGELANG: u32 = 2097152;
-pub const PSH_WIZARD97: u32 = 16777216;
-pub const PSH_WIZARD_LITE: u32 = 4194304;
-pub const PSH_NOCONTEXTHELP: u32 = 33554432;
-pub const PSCB_INITIALIZED: u32 = 1;
-pub const PSCB_PRECREATE: u32 = 2;
-pub const PSCB_BUTTONPRESSED: u32 = 3;
-pub const PSM_GETTABCONTROL: u32 = 1140;
-pub const PSM_GETCURRENTPAGEHWND: u32 = 1142;
-pub const PSM_GETRESULT: u32 = 1159;
-pub const PSM_HWNDTOINDEX: u32 = 1153;
-pub const PSM_IDTOINDEX: u32 = 1157;
-pub const PSM_INDEXTOHWND: u32 = 1154;
-pub const PSM_INDEXTOID: u32 = 1158;
-pub const PSM_INDEXTOPAGE: u32 = 1156;
-pub const PSM_INSERTPAGE: u32 = 1143;
-pub const PSM_ISDIALOGMESSAGE: u32 = 1141;
-pub const PSM_PAGETOINDEX: u32 = 1155;
-pub const PSM_PRESSBUTTON: u32 = 1137;
-pub const PSM_RECALCPAGESIZES: u32 = 1160;
-pub const PSM_SETCURSELID: u32 = 1138;
-pub const PSM_SETFINISHTEXTW: u32 = 1145;
-pub const PSM_SETFINISHTEXTA: u32 = 1139;
-pub const PSM_SETHEADERTITLEA: u32 = 1149;
-pub const PSM_SETHEADERTITLEW: u32 = 1150;
-pub const PSM_SETHEADERSUBTITLEA: u32 = 1151;
-pub const PSM_SETHEADERSUBTITLEW: u32 = 1152;
+pub const EMBDHLP_INPROC_HANDLER: i32 = 0;
+pub const EMBDHLP_INPROC_SERVER: i32 = 1;
+pub const EMBDHLP_CREATENOW: i32 = 0;
+pub const EMBDHLP_DELAYCREATE: i32 = 65536;
+pub const DSOP_FILTER_INCLUDE_ADVANCED_VIEW: i32 = 1;
+pub const DSOP_FILTER_USERS: i32 = 2;
+pub const DSOP_FILTER_BUILTIN_GROUPS: i32 = 4;
+pub const DSOP_FILTER_WELL_KNOWN_PRINCIPALS: i32 = 8;
+pub const DSOP_FILTER_UNIVERSAL_GROUPS_DL: i32 = 16;
+pub const DSOP_FILTER_UNIVERSAL_GROUPS_SE: i32 = 32;
+pub const DSOP_FILTER_GLOBAL_GROUPS_DL: i32 = 64;
+pub const DSOP_FILTER_GLOBAL_GROUPS_SE: i32 = 128;
+pub const DSOP_FILTER_DOMAIN_LOCAL_GROUPS_DL: i32 = 256;
+pub const DSOP_FILTER_DOMAIN_LOCAL_GROUPS_SE: i32 = 512;
+pub const DSOP_FILTER_CONTACTS: i32 = 1024;
+pub const DSOP_FILTER_COMPUTERS: i32 = 2048;
+pub const DSOP_DOWNLEVEL_FILTER_USERS: i64 = 2147483649;
+pub const DSOP_DOWNLEVEL_FILTER_LOCAL_GROUPS: i64 = 2147483650;
+pub const DSOP_DOWNLEVEL_FILTER_GLOBAL_GROUPS: i64 = 2147483652;
+pub const DSOP_DOWNLEVEL_FILTER_COMPUTERS: i64 = 2147483656;
+pub const DSOP_DOWNLEVEL_FILTER_WORLD: i64 = 2147483664;
+pub const DSOP_DOWNLEVEL_FILTER_AUTHENTICATED_USER: i64 = 2147483680;
+pub const DSOP_DOWNLEVEL_FILTER_ANONYMOUS: i64 = 2147483712;
+pub const DSOP_DOWNLEVEL_FILTER_BATCH: i64 = 2147483776;
+pub const DSOP_DOWNLEVEL_FILTER_CREATOR_OWNER: i64 = 2147483904;
+pub const DSOP_DOWNLEVEL_FILTER_CREATOR_GROUP: i64 = 2147484160;
+pub const DSOP_DOWNLEVEL_FILTER_DIALUP: i64 = 2147484672;
+pub const DSOP_DOWNLEVEL_FILTER_INTERACTIVE: i64 = 2147485696;
+pub const DSOP_DOWNLEVEL_FILTER_NETWORK: i64 = 2147487744;
+pub const DSOP_DOWNLEVEL_FILTER_SERVICE: i64 = 2147491840;
+pub const DSOP_DOWNLEVEL_FILTER_SYSTEM: i64 = 2147500032;
+pub const DSOP_DOWNLEVEL_FILTER_EXCLUDE_BUILTIN_GROUPS: i64 = 2147516416;
+pub const DSOP_DOWNLEVEL_FILTER_TERMINAL_SERVER: i64 = 2147549184;
+pub const DSOP_DOWNLEVEL_FILTER_ALL_WELLKNOWN_SIDS: i64 = 2147614720;
+pub const DSOP_DOWNLEVEL_FILTER_LOCAL_SERVICE: i64 = 2147745792;
+pub const DSOP_DOWNLEVEL_FILTER_NETWORK_SERVICE: i64 = 2148007936;
+pub const DSOP_DOWNLEVEL_FILTER_REMOTE_LOGON: i64 = 2148532224;
+pub const DSOP_SCOPE_FLAG_STARTING_SCOPE: i32 = 1;
+pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_WINNT: i32 = 2;
+pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_LDAP: i32 = 4;
+pub const DSOP_SCOPE_FLAG_WANT_PROVIDER_GC: i32 = 8;
+pub const DSOP_SCOPE_FLAG_WANT_SID_PATH: i32 = 16;
+pub const DSOP_SCOPE_FLAG_WANT_DOWNLEVEL_BUILTIN_PATH: i32 = 32;
+pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_USERS: i32 = 64;
+pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_GROUPS: i32 = 128;
+pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_COMPUTERS: i32 = 256;
+pub const DSOP_SCOPE_FLAG_DEFAULT_FILTER_CONTACTS: i32 = 512;
+pub const DSOP_FLAG_MULTISELECT: i32 = 1;
+pub const DSOP_FLAG_SKIP_TARGET_COMPUTER_DC_CHECK: i32 = 2;
+pub const DSOP_SCOPE_TYPE_TARGET_COMPUTER: i32 = 1;
+pub const DSOP_SCOPE_TYPE_UPLEVEL_JOINED_DOMAIN: i32 = 2;
+pub const DSOP_SCOPE_TYPE_DOWNLEVEL_JOINED_DOMAIN: i32 = 4;
+pub const DSOP_SCOPE_TYPE_ENTERPRISE_DOMAIN: i32 = 8;
+pub const DSOP_SCOPE_TYPE_GLOBAL_CATALOG: i32 = 16;
+pub const DSOP_SCOPE_TYPE_EXTERNAL_UPLEVEL_DOMAIN: i32 = 32;
+pub const DSOP_SCOPE_TYPE_EXTERNAL_DOWNLEVEL_DOMAIN: i32 = 64;
+pub const DSOP_SCOPE_TYPE_WORKGROUP: i32 = 128;
+pub const DSOP_SCOPE_TYPE_USER_ENTERED_UPLEVEL_SCOPE: i32 = 256;
+pub const DSOP_SCOPE_TYPE_USER_ENTERED_DOWNLEVEL_SCOPE: i32 = 512;
+pub const ACTRL_RESERVED: i32 = 0;
+pub const ACTRL_ACCESS_PROTECTED: i32 = 1;
+pub const ACTRL_ACCESS_ALLOWED: i32 = 1;
+pub const ACTRL_ACCESS_DENIED: i32 = 2;
+pub const ACTRL_AUDIT_SUCCESS: i32 = 4;
+pub const ACTRL_AUDIT_FAILURE: i32 = 8;
+pub const ACTRL_SYSTEM_ACCESS: i32 = 67108864;
+pub const ACTRL_DELETE: i32 = 134217728;
+pub const ACTRL_READ_CONTROL: i32 = 268435456;
+pub const ACTRL_CHANGE_ACCESS: i32 = 536870912;
+pub const ACTRL_CHANGE_OWNER: i32 = 1073741824;
+pub const ACTRL_SYNCHRONIZE: i64 = 2147483648;
+pub const ACTRL_STD_RIGHTS_ALL: i64 = 4160749568;
+pub const ACTRL_FILE_READ: i32 = 1;
+pub const ACTRL_FILE_WRITE: i32 = 2;
+pub const ACTRL_FILE_APPEND: i32 = 4;
+pub const ACTRL_FILE_READ_PROP: i32 = 8;
+pub const ACTRL_FILE_WRITE_PROP: i32 = 16;
+pub const ACTRL_FILE_EXECUTE: i32 = 32;
+pub const ACTRL_FILE_READ_ATTRIB: i32 = 128;
+pub const ACTRL_FILE_WRITE_ATTRIB: i32 = 256;
+pub const ACTRL_FILE_CREATE_PIPE: i32 = 512;
+pub const ACTRL_DIR_LIST: i32 = 1;
+pub const ACTRL_DIR_CREATE_OBJECT: i32 = 2;
+pub const ACTRL_DIR_CREATE_CHILD: i32 = 4;
+pub const ACTRL_DIR_DELETE_CHILD: i32 = 64;
+pub const ACTRL_DIR_TRAVERSE: i32 = 32;
+pub const ACTRL_KERNEL_TERMINATE: i32 = 1;
+pub const ACTRL_KERNEL_THREAD: i32 = 2;
+pub const ACTRL_KERNEL_VM: i32 = 4;
+pub const ACTRL_KERNEL_VM_READ: i32 = 8;
+pub const ACTRL_KERNEL_VM_WRITE: i32 = 16;
+pub const ACTRL_KERNEL_DUP_HANDLE: i32 = 32;
+pub const ACTRL_KERNEL_PROCESS: i32 = 64;
+pub const ACTRL_KERNEL_SET_INFO: i32 = 128;
+pub const ACTRL_KERNEL_GET_INFO: i32 = 256;
+pub const ACTRL_KERNEL_CONTROL: i32 = 512;
+pub const ACTRL_KERNEL_ALERT: i32 = 1024;
+pub const ACTRL_KERNEL_GET_CONTEXT: i32 = 2048;
+pub const ACTRL_KERNEL_SET_CONTEXT: i32 = 4096;
+pub const ACTRL_KERNEL_TOKEN: i32 = 8192;
+pub const ACTRL_KERNEL_IMPERSONATE: i32 = 16384;
+pub const ACTRL_KERNEL_DIMPERSONATE: i32 = 32768;
+pub const ACTRL_PRINT_SADMIN: i32 = 1;
+pub const ACTRL_PRINT_SLIST: i32 = 2;
+pub const ACTRL_PRINT_PADMIN: i32 = 4;
+pub const ACTRL_PRINT_PUSE: i32 = 8;
+pub const ACTRL_PRINT_JADMIN: i32 = 16;
+pub const ACTRL_SVC_GET_INFO: i32 = 1;
+pub const ACTRL_SVC_SET_INFO: i32 = 2;
+pub const ACTRL_SVC_STATUS: i32 = 4;
+pub const ACTRL_SVC_LIST: i32 = 8;
+pub const ACTRL_SVC_START: i32 = 16;
+pub const ACTRL_SVC_STOP: i32 = 32;
+pub const ACTRL_SVC_PAUSE: i32 = 64;
+pub const ACTRL_SVC_INTERROGATE: i32 = 128;
+pub const ACTRL_SVC_UCONTROL: i32 = 256;
+pub const ACTRL_REG_QUERY: i32 = 1;
+pub const ACTRL_REG_SET: i32 = 2;
+pub const ACTRL_REG_CREATE_CHILD: i32 = 4;
+pub const ACTRL_REG_LIST: i32 = 8;
+pub const ACTRL_REG_NOTIFY: i32 = 16;
+pub const ACTRL_REG_LINK: i32 = 32;
+pub const ACTRL_WIN_CLIPBRD: i32 = 1;
+pub const ACTRL_WIN_GLOBAL_ATOMS: i32 = 2;
+pub const ACTRL_WIN_CREATE: i32 = 4;
+pub const ACTRL_WIN_LIST_DESK: i32 = 8;
+pub const ACTRL_WIN_LIST: i32 = 16;
+pub const ACTRL_WIN_READ_ATTRIBS: i32 = 32;
+pub const ACTRL_WIN_WRITE_ATTRIBS: i32 = 64;
+pub const ACTRL_WIN_SCREEN: i32 = 128;
+pub const ACTRL_WIN_EXIT: i32 = 256;
+pub const ACTRL_ACCESS_NO_OPTIONS: i32 = 0;
+pub const ACTRL_ACCESS_SUPPORTS_OBJECT_ENTRIES: i32 = 1;
+pub const ACCCTRL_DEFAULT_PROVIDERA: &[u8; 27] = b"Windows NT Access Provider\0";
+pub const ACCCTRL_DEFAULT_PROVIDERW: &[u8; 27] = b"Windows NT Access Provider\0";
+pub const TRUSTEE_ACCESS_ALLOWED: i32 = 1;
+pub const TRUSTEE_ACCESS_READ: i32 = 2;
+pub const TRUSTEE_ACCESS_WRITE: i32 = 4;
+pub const TRUSTEE_ACCESS_EXPLICIT: i32 = 1;
+pub const TRUSTEE_ACCESS_READ_WRITE: i32 = 6;
+pub const TRUSTEE_ACCESS_ALL: i64 = 4294967295;
+pub const NO_INHERITANCE: i32 = 0;
+pub const SUB_OBJECTS_ONLY_INHERIT: i32 = 1;
+pub const SUB_CONTAINERS_ONLY_INHERIT: i32 = 2;
+pub const SUB_CONTAINERS_AND_OBJECTS_INHERIT: i32 = 3;
+pub const INHERIT_NO_PROPAGATE: i32 = 4;
+pub const INHERIT_ONLY: i32 = 8;
+pub const INHERITED_ACCESS_ENTRY: i32 = 16;
+pub const INHERITED_PARENT: i32 = 268435456;
+pub const INHERITED_GRANDPARENT: i32 = 536870912;
+pub const SI_EDIT_PERMS: i32 = 0;
+pub const SI_EDIT_OWNER: i32 = 1;
+pub const SI_EDIT_AUDITS: i32 = 2;
+pub const SI_CONTAINER: i32 = 4;
+pub const SI_READONLY: i32 = 8;
+pub const SI_ADVANCED: i32 = 16;
+pub const SI_RESET: i32 = 32;
+pub const SI_OWNER_READONLY: i32 = 64;
+pub const SI_EDIT_PROPERTIES: i32 = 128;
+pub const SI_OWNER_RECURSE: i32 = 256;
+pub const SI_NO_ACL_PROTECT: i32 = 512;
+pub const SI_NO_TREE_APPLY: i32 = 1024;
+pub const SI_PAGE_TITLE: i32 = 2048;
+pub const SI_SERVER_IS_DC: i32 = 4096;
+pub const SI_RESET_DACL_TREE: i32 = 16384;
+pub const SI_RESET_SACL_TREE: i32 = 32768;
+pub const SI_OBJECT_GUID: i32 = 65536;
+pub const SI_EDIT_EFFECTIVE: i32 = 131072;
+pub const SI_RESET_DACL: i32 = 262144;
+pub const SI_RESET_SACL: i32 = 524288;
+pub const SI_RESET_OWNER: i32 = 1048576;
+pub const SI_NO_ADDITIONAL_PERMISSION: i32 = 2097152;
+pub const SI_MAY_WRITE: i32 = 268435456;
+pub const SI_EDIT_ALL: i32 = 3;
+pub const SI_ACCESS_SPECIFIC: i32 = 65536;
+pub const SI_ACCESS_GENERAL: i32 = 131072;
+pub const SI_ACCESS_CONTAINER: i32 = 262144;
+pub const SI_ACCESS_PROPERTY: i32 = 524288;
+pub const ACCCTRL_DEFAULT_PROVIDER: &[u8; 27] = b"Windows NT Access Provider\0";
+pub const MAXPROPPAGES: i32 = 100;
+pub const PSP_DEFAULT: i32 = 0;
+pub const PSP_DLGINDIRECT: i32 = 1;
+pub const PSP_USEHICON: i32 = 2;
+pub const PSP_USEICONID: i32 = 4;
+pub const PSP_USETITLE: i32 = 8;
+pub const PSP_RTLREADING: i32 = 16;
+pub const PSP_HASHELP: i32 = 32;
+pub const PSP_USEREFPARENT: i32 = 64;
+pub const PSP_USECALLBACK: i32 = 128;
+pub const PSP_PREMATURE: i32 = 1024;
+pub const PSP_HIDEHEADER: i32 = 2048;
+pub const PSP_USEHEADERTITLE: i32 = 4096;
+pub const PSP_USEHEADERSUBTITLE: i32 = 8192;
+pub const PSPCB_RELEASE: i32 = 1;
+pub const PSPCB_CREATE: i32 = 2;
+pub const PSH_DEFAULT: i32 = 0;
+pub const PSH_PROPTITLE: i32 = 1;
+pub const PSH_USEHICON: i32 = 2;
+pub const PSH_USEICONID: i32 = 4;
+pub const PSH_PROPSHEETPAGE: i32 = 8;
+pub const PSH_WIZARDHASFINISH: i32 = 16;
+pub const PSH_WIZARD: i32 = 32;
+pub const PSH_USEPSTARTPAGE: i32 = 64;
+pub const PSH_NOAPPLYNOW: i32 = 128;
+pub const PSH_USECALLBACK: i32 = 256;
+pub const PSH_HASHELP: i32 = 512;
+pub const PSH_MODELESS: i32 = 1024;
+pub const PSH_RTLREADING: i32 = 2048;
+pub const PSH_WIZARDCONTEXTHELP: i32 = 4096;
+pub const PSH_WATERMARK: i32 = 32768;
+pub const PSH_USEHBMWATERMARK: i32 = 65536;
+pub const PSH_USEHPLWATERMARK: i32 = 131072;
+pub const PSH_STRETCHWATERMARK: i32 = 262144;
+pub const PSH_HEADER: i32 = 524288;
+pub const PSH_USEHBMHEADER: i32 = 1048576;
+pub const PSH_USEPAGELANG: i32 = 2097152;
+pub const PSH_WIZARD97: i32 = 16777216;
+pub const PSH_WIZARD_LITE: i32 = 4194304;
+pub const PSH_NOCONTEXTHELP: i32 = 33554432;
+pub const PSCB_INITIALIZED: i32 = 1;
+pub const PSCB_PRECREATE: i32 = 2;
+pub const PSCB_BUTTONPRESSED: i32 = 3;
+pub const PSM_GETTABCONTROL: i32 = 1140;
+pub const PSM_GETCURRENTPAGEHWND: i32 = 1142;
+pub const PSM_GETRESULT: i32 = 1159;
+pub const PSM_HWNDTOINDEX: i32 = 1153;
+pub const PSM_IDTOINDEX: i32 = 1157;
+pub const PSM_INDEXTOHWND: i32 = 1154;
+pub const PSM_INDEXTOID: i32 = 1158;
+pub const PSM_INDEXTOPAGE: i32 = 1156;
+pub const PSM_INSERTPAGE: i32 = 1143;
+pub const PSM_ISDIALOGMESSAGE: i32 = 1141;
+pub const PSM_PAGETOINDEX: i32 = 1155;
+pub const PSM_PRESSBUTTON: i32 = 1137;
+pub const PSM_RECALCPAGESIZES: i32 = 1160;
+pub const PSM_SETCURSELID: i32 = 1138;
+pub const PSM_SETFINISHTEXTW: i32 = 1145;
+pub const PSM_SETFINISHTEXTA: i32 = 1139;
+pub const PSM_SETHEADERTITLEA: i32 = 1149;
+pub const PSM_SETHEADERTITLEW: i32 = 1150;
+pub const PSM_SETHEADERSUBTITLEA: i32 = 1151;
+pub const PSM_SETHEADERSUBTITLEW: i32 = 1152;
 pub const PSN_FIRST: i32 = -200;
 pub const PSN_SETACTIVE: i32 = -200;
 pub const PSN_KILLACTIVE: i32 = -201;
@@ -1466,97 +4444,97 @@ pub const PSN_GETOBJECT: i32 = -210;
 pub const PSN_TRANSLATEACCELERATOR: i32 = -212;
 pub const PSN_QUERYINITIALFOCUS: i32 = -213;
 pub const PSN_LAST: i32 = -299;
-pub const PSNRET_NOERROR: u32 = 0;
-pub const PSNRET_INVALID: u32 = 1;
-pub const PSNRET_INVALID_NOCHANGEPAGE: u32 = 2;
-pub const ID_PSRESTARTWINDOWS: u32 = 2;
-pub const ID_PSREBOOTSYSTEM: u32 = 3;
-pub const WIZ_CXDLG: u32 = 276;
-pub const WIZ_CYDLG: u32 = 140;
-pub const WIZ_CXBMP: u32 = 80;
-pub const WIZ_BODYX: u32 = 92;
-pub const WIZ_BODYCX: u32 = 184;
-pub const PROP_SM_CXDLG: u32 = 212;
-pub const PROP_SM_CYDLG: u32 = 188;
-pub const PROP_MED_CXDLG: u32 = 227;
-pub const PROP_MED_CYDLG: u32 = 215;
-pub const PROP_LG_CXDLG: u32 = 252;
-pub const PROP_LG_CYDLG: u32 = 218;
-pub const PSBTN_MAX: u32 = 6;
-pub const PSBTN_BACK: u32 = 0;
-pub const PSBTN_NEXT: u32 = 1;
-pub const PSBTN_FINISH: u32 = 2;
-pub const PSBTN_OK: u32 = 3;
-pub const PSBTN_APPLYNOW: u32 = 4;
-pub const PSBTN_CANCEL: u32 = 5;
-pub const PSBTN_HELP: u32 = 6;
-pub const PSWIZB_BACK: u32 = 1;
-pub const PSWIZB_NEXT: u32 = 2;
-pub const PSWIZB_FINISH: u32 = 4;
-pub const PSWIZB_DISABLEDFINISH: u32 = 8;
-pub const PSM_SETWIZBUTTONS: u32 = 1136;
-pub const PSM_APPLY: u32 = 1134;
-pub const PSM_UNCHANGED: u32 = 1133;
-pub const PSM_QUERYSIBLINGS: u32 = 1132;
-pub const PSM_CANCELTOCLOSE: u32 = 1131;
-pub const PSM_REBOOTSYSTEM: u32 = 1130;
-pub const PSM_RESTARTWINDOWS: u32 = 1129;
-pub const PSM_CHANGED: u32 = 1128;
-pub const PSM_ADDPAGE: u32 = 1127;
-pub const PSM_REMOVEPAGE: u32 = 1126;
-pub const PSM_SETCURSEL: u32 = 1125;
-pub const PSM_SETTITLEA: u32 = 1135;
-pub const PSM_SETTITLEW: u32 = 1144;
-pub const PSPCB_ADDREF: u32 = 0;
+pub const PSNRET_NOERROR: i32 = 0;
+pub const PSNRET_INVALID: i32 = 1;
+pub const PSNRET_INVALID_NOCHANGEPAGE: i32 = 2;
+pub const ID_PSRESTARTWINDOWS: i32 = 2;
+pub const ID_PSREBOOTSYSTEM: i32 = 3;
+pub const WIZ_CXDLG: i32 = 276;
+pub const WIZ_CYDLG: i32 = 140;
+pub const WIZ_CXBMP: i32 = 80;
+pub const WIZ_BODYX: i32 = 92;
+pub const WIZ_BODYCX: i32 = 184;
+pub const PROP_SM_CXDLG: i32 = 212;
+pub const PROP_SM_CYDLG: i32 = 188;
+pub const PROP_MED_CXDLG: i32 = 227;
+pub const PROP_MED_CYDLG: i32 = 215;
+pub const PROP_LG_CXDLG: i32 = 252;
+pub const PROP_LG_CYDLG: i32 = 218;
+pub const PSBTN_MAX: i32 = 6;
+pub const PSBTN_BACK: i32 = 0;
+pub const PSBTN_NEXT: i32 = 1;
+pub const PSBTN_FINISH: i32 = 2;
+pub const PSBTN_OK: i32 = 3;
+pub const PSBTN_APPLYNOW: i32 = 4;
+pub const PSBTN_CANCEL: i32 = 5;
+pub const PSBTN_HELP: i32 = 6;
+pub const PSWIZB_BACK: i32 = 1;
+pub const PSWIZB_NEXT: i32 = 2;
+pub const PSWIZB_FINISH: i32 = 4;
+pub const PSWIZB_DISABLEDFINISH: i32 = 8;
+pub const PSM_SETWIZBUTTONS: i32 = 1136;
+pub const PSM_APPLY: i32 = 1134;
+pub const PSM_UNCHANGED: i32 = 1133;
+pub const PSM_QUERYSIBLINGS: i32 = 1132;
+pub const PSM_CANCELTOCLOSE: i32 = 1131;
+pub const PSM_REBOOTSYSTEM: i32 = 1130;
+pub const PSM_RESTARTWINDOWS: i32 = 1129;
+pub const PSM_CHANGED: i32 = 1128;
+pub const PSM_ADDPAGE: i32 = 1127;
+pub const PSM_REMOVEPAGE: i32 = 1126;
+pub const PSM_SETCURSEL: i32 = 1125;
+pub const PSM_SETTITLEA: i32 = 1135;
+pub const PSM_SETTITLEW: i32 = 1144;
+pub const PSPCB_ADDREF: i32 = 0;
 pub const WC_PROPSHEETA: &[u8; 17] = b"SysPropertySheet\0";
-pub const PSM_SETTITLE: u32 = 1144;
-pub const PSM_SETFINISHTEXT: u32 = 1145;
-pub const PSM_SETHEADERTITLE: u32 = 1150;
-pub const PSM_SETHEADERSUBTITLE: u32 = 1152;
-pub const ICC_LISTVIEW_CLASSES: u32 = 1;
-pub const ICC_TREEVIEW_CLASSES: u32 = 2;
-pub const ICC_BAR_CLASSES: u32 = 4;
-pub const ICC_TAB_CLASSES: u32 = 8;
-pub const ICC_UPDOWN_CLASS: u32 = 16;
-pub const ICC_PROGRESS_CLASS: u32 = 32;
-pub const ICC_HOTKEY_CLASS: u32 = 64;
-pub const ICC_ANIMATE_CLASS: u32 = 128;
-pub const ICC_WIN95_CLASSES: u32 = 255;
-pub const ICC_DATE_CLASSES: u32 = 256;
-pub const ICC_USEREX_CLASSES: u32 = 512;
-pub const ICC_COOL_CLASSES: u32 = 1024;
-pub const ICC_INTERNET_CLASSES: u32 = 2048;
-pub const ICC_PAGESCROLLER_CLASS: u32 = 4096;
-pub const ICC_NATIVEFNTCTL_CLASS: u32 = 8192;
-pub const ICC_STANDARD_CLASSES: u32 = 16384;
-pub const ICC_LINK_CLASS: u32 = 32768;
-pub const ODT_HEADER: u32 = 100;
-pub const ODT_TAB: u32 = 101;
-pub const ODT_LISTVIEW: u32 = 102;
-pub const LVM_FIRST: u32 = 4096;
-pub const TV_FIRST: u32 = 4352;
-pub const HDM_FIRST: u32 = 4608;
-pub const TCM_FIRST: u32 = 4864;
-pub const PGM_FIRST: u32 = 5120;
-pub const ECM_FIRST: u32 = 5376;
-pub const BCM_FIRST: u32 = 5632;
-pub const CBM_FIRST: u32 = 5888;
-pub const CCM_FIRST: u32 = 8192;
-pub const CCM_LAST: u32 = 8704;
-pub const CCM_SETBKCOLOR: u32 = 8193;
-pub const CCM_SETCOLORSCHEME: u32 = 8194;
-pub const CCM_GETCOLORSCHEME: u32 = 8195;
-pub const CCM_GETDROPTARGET: u32 = 8196;
-pub const CCM_SETUNICODEFORMAT: u32 = 8197;
-pub const CCM_GETUNICODEFORMAT: u32 = 8198;
-pub const COMCTL32_VERSION: u32 = 6;
-pub const CCM_SETVERSION: u32 = 8199;
-pub const CCM_GETVERSION: u32 = 8200;
-pub const CCM_SETNOTIFYWINDOW: u32 = 8201;
-pub const CCM_SETWINDOWTHEME: u32 = 8203;
-pub const CCM_DPISCALE: u32 = 8204;
-pub const INFOTIPSIZE: u32 = 1024;
-pub const NM_FIRST: u32 = 0;
+pub const PSM_SETTITLE: i32 = 1144;
+pub const PSM_SETFINISHTEXT: i32 = 1145;
+pub const PSM_SETHEADERTITLE: i32 = 1150;
+pub const PSM_SETHEADERSUBTITLE: i32 = 1152;
+pub const ICC_LISTVIEW_CLASSES: i32 = 1;
+pub const ICC_TREEVIEW_CLASSES: i32 = 2;
+pub const ICC_BAR_CLASSES: i32 = 4;
+pub const ICC_TAB_CLASSES: i32 = 8;
+pub const ICC_UPDOWN_CLASS: i32 = 16;
+pub const ICC_PROGRESS_CLASS: i32 = 32;
+pub const ICC_HOTKEY_CLASS: i32 = 64;
+pub const ICC_ANIMATE_CLASS: i32 = 128;
+pub const ICC_WIN95_CLASSES: i32 = 255;
+pub const ICC_DATE_CLASSES: i32 = 256;
+pub const ICC_USEREX_CLASSES: i32 = 512;
+pub const ICC_COOL_CLASSES: i32 = 1024;
+pub const ICC_INTERNET_CLASSES: i32 = 2048;
+pub const ICC_PAGESCROLLER_CLASS: i32 = 4096;
+pub const ICC_NATIVEFNTCTL_CLASS: i32 = 8192;
+pub const ICC_STANDARD_CLASSES: i32 = 16384;
+pub const ICC_LINK_CLASS: i32 = 32768;
+pub const ODT_HEADER: i32 = 100;
+pub const ODT_TAB: i32 = 101;
+pub const ODT_LISTVIEW: i32 = 102;
+pub const LVM_FIRST: i32 = 4096;
+pub const TV_FIRST: i32 = 4352;
+pub const HDM_FIRST: i32 = 4608;
+pub const TCM_FIRST: i32 = 4864;
+pub const PGM_FIRST: i32 = 5120;
+pub const ECM_FIRST: i32 = 5376;
+pub const BCM_FIRST: i32 = 5632;
+pub const CBM_FIRST: i32 = 5888;
+pub const CCM_FIRST: i32 = 8192;
+pub const CCM_LAST: i32 = 8704;
+pub const CCM_SETBKCOLOR: i32 = 8193;
+pub const CCM_SETCOLORSCHEME: i32 = 8194;
+pub const CCM_GETCOLORSCHEME: i32 = 8195;
+pub const CCM_GETDROPTARGET: i32 = 8196;
+pub const CCM_SETUNICODEFORMAT: i32 = 8197;
+pub const CCM_GETUNICODEFORMAT: i32 = 8198;
+pub const COMCTL32_VERSION: i32 = 6;
+pub const CCM_SETVERSION: i32 = 8199;
+pub const CCM_GETVERSION: i32 = 8200;
+pub const CCM_SETNOTIFYWINDOW: i32 = 8201;
+pub const CCM_SETWINDOWTHEME: i32 = 8203;
+pub const CCM_DPISCALE: i32 = 8204;
+pub const INFOTIPSIZE: i32 = 1024;
+pub const NM_FIRST: i32 = 0;
 pub const NM_LAST: i32 = -99;
 pub const LVN_FIRST: i32 = -100;
 pub const LVN_LAST: i32 = -199;
@@ -1590,157 +4568,157 @@ pub const PGN_FIRST: i32 = -900;
 pub const PGN_LAST: i32 = -950;
 pub const WMN_FIRST: i32 = -1000;
 pub const WMN_LAST: i32 = -1200;
-pub const BCSIF_GLYPH: u32 = 1;
-pub const BCSIF_IMAGE: u32 = 2;
-pub const BCSIF_STYLE: u32 = 4;
-pub const BCSIF_SIZE: u32 = 8;
-pub const BCSS_STRETCH: u32 = 2;
-pub const BCSS_IMAGE: u32 = 8;
+pub const BCSIF_GLYPH: i32 = 1;
+pub const BCSIF_IMAGE: i32 = 2;
+pub const BCSIF_STYLE: i32 = 4;
+pub const BCSIF_SIZE: i32 = 8;
+pub const BCSS_STRETCH: i32 = 2;
+pub const BCSS_IMAGE: i32 = 8;
 pub const BCN_FIRST: i32 = -1250;
 pub const BCN_LAST: i32 = -1350;
 pub const BCN_HOTITEMCHANGE: i32 = -1249;
 pub const BCN_DROPDOWN: i32 = -1248;
-pub const MSGF_COMMCTRL_BEGINDRAG: u32 = 16896;
-pub const MSGF_COMMCTRL_SIZEHEADER: u32 = 16897;
-pub const MSGF_COMMCTRL_DRAGSELECT: u32 = 16898;
-pub const MSGF_COMMCTRL_TOOLBARCUST: u32 = 16899;
-pub const CDRF_DODEFAULT: u32 = 0;
-pub const CDRF_NEWFONT: u32 = 2;
-pub const CDRF_SKIPDEFAULT: u32 = 4;
-pub const CDRF_DOERASE: u32 = 8;
-pub const CDRF_SKIPPOSTPAINT: u32 = 256;
-pub const CDRF_NOTIFYPOSTPAINT: u32 = 16;
-pub const CDRF_NOTIFYITEMDRAW: u32 = 32;
-pub const CDRF_NOTIFYSUBITEMDRAW: u32 = 32;
-pub const CDRF_NOTIFYPOSTERASE: u32 = 64;
-pub const CDRF_NOTIFYITEMERASE: u32 = 128;
-pub const CDDS_PREPAINT: u32 = 1;
-pub const CDDS_POSTPAINT: u32 = 2;
-pub const CDDS_PREERASE: u32 = 3;
-pub const CDDS_POSTERASE: u32 = 4;
-pub const CDDS_ITEM: u32 = 65536;
-pub const CDDS_ITEMPREPAINT: u32 = 65537;
-pub const CDDS_ITEMPOSTPAINT: u32 = 65538;
-pub const CDDS_ITEMPREERASE: u32 = 65539;
-pub const CDDS_ITEMPOSTERASE: u32 = 65540;
-pub const CDDS_SUBITEM: u32 = 131072;
-pub const CDIS_SELECTED: u32 = 1;
-pub const CDIS_GRAYED: u32 = 2;
-pub const CDIS_DISABLED: u32 = 4;
-pub const CDIS_CHECKED: u32 = 8;
-pub const CDIS_FOCUS: u32 = 16;
-pub const CDIS_DEFAULT: u32 = 32;
-pub const CDIS_HOT: u32 = 64;
-pub const CDIS_MARKED: u32 = 128;
-pub const CDIS_INDETERMINATE: u32 = 256;
-pub const CDIS_SHOWKEYBOARDCUES: u32 = 512;
-pub const CLR_NONE: u32 = 4294967295;
-pub const CLR_DEFAULT: u32 = 4278190080;
-pub const ILC_MASK: u32 = 1;
-pub const ILC_COLOR: u32 = 0;
-pub const ILC_COLORDDB: u32 = 254;
-pub const ILC_COLOR4: u32 = 4;
-pub const ILC_COLOR8: u32 = 8;
-pub const ILC_COLOR16: u32 = 16;
-pub const ILC_COLOR24: u32 = 24;
-pub const ILC_COLOR32: u32 = 32;
-pub const ILC_PALETTE: u32 = 2048;
-pub const ILC_MIRROR: u32 = 8192;
-pub const ILC_PERITEMMIRROR: u32 = 32768;
-pub const ILD_NORMAL: u32 = 0;
-pub const ILD_TRANSPARENT: u32 = 1;
-pub const ILD_MASK: u32 = 16;
-pub const ILD_IMAGE: u32 = 32;
-pub const ILD_ROP: u32 = 64;
-pub const ILD_BLEND25: u32 = 2;
-pub const ILD_BLEND50: u32 = 4;
-pub const ILD_OVERLAYMASK: u32 = 3840;
-pub const ILD_PRESERVEALPHA: u32 = 4096;
-pub const ILD_SCALE: u32 = 8192;
-pub const ILD_DPISCALE: u32 = 16384;
-pub const ILD_SELECTED: u32 = 4;
-pub const ILD_FOCUS: u32 = 2;
-pub const ILD_BLEND: u32 = 4;
-pub const CLR_HILIGHT: u32 = 4278190080;
-pub const ILS_NORMAL: u32 = 0;
-pub const ILS_GLOW: u32 = 1;
-pub const ILS_SHADOW: u32 = 2;
-pub const ILS_SATURATE: u32 = 4;
-pub const ILS_ALPHA: u32 = 8;
-pub const ILCF_MOVE: u32 = 0;
-pub const ILCF_SWAP: u32 = 1;
-pub const ILP_NORMAL: u32 = 0;
-pub const ILP_DOWNLEVEL: u32 = 1;
+pub const MSGF_COMMCTRL_BEGINDRAG: i32 = 16896;
+pub const MSGF_COMMCTRL_SIZEHEADER: i32 = 16897;
+pub const MSGF_COMMCTRL_DRAGSELECT: i32 = 16898;
+pub const MSGF_COMMCTRL_TOOLBARCUST: i32 = 16899;
+pub const CDRF_DODEFAULT: i32 = 0;
+pub const CDRF_NEWFONT: i32 = 2;
+pub const CDRF_SKIPDEFAULT: i32 = 4;
+pub const CDRF_DOERASE: i32 = 8;
+pub const CDRF_SKIPPOSTPAINT: i32 = 256;
+pub const CDRF_NOTIFYPOSTPAINT: i32 = 16;
+pub const CDRF_NOTIFYITEMDRAW: i32 = 32;
+pub const CDRF_NOTIFYSUBITEMDRAW: i32 = 32;
+pub const CDRF_NOTIFYPOSTERASE: i32 = 64;
+pub const CDRF_NOTIFYITEMERASE: i32 = 128;
+pub const CDDS_PREPAINT: i32 = 1;
+pub const CDDS_POSTPAINT: i32 = 2;
+pub const CDDS_PREERASE: i32 = 3;
+pub const CDDS_POSTERASE: i32 = 4;
+pub const CDDS_ITEM: i32 = 65536;
+pub const CDDS_ITEMPREPAINT: i32 = 65537;
+pub const CDDS_ITEMPOSTPAINT: i32 = 65538;
+pub const CDDS_ITEMPREERASE: i32 = 65539;
+pub const CDDS_ITEMPOSTERASE: i32 = 65540;
+pub const CDDS_SUBITEM: i32 = 131072;
+pub const CDIS_SELECTED: i32 = 1;
+pub const CDIS_GRAYED: i32 = 2;
+pub const CDIS_DISABLED: i32 = 4;
+pub const CDIS_CHECKED: i32 = 8;
+pub const CDIS_FOCUS: i32 = 16;
+pub const CDIS_DEFAULT: i32 = 32;
+pub const CDIS_HOT: i32 = 64;
+pub const CDIS_MARKED: i32 = 128;
+pub const CDIS_INDETERMINATE: i32 = 256;
+pub const CDIS_SHOWKEYBOARDCUES: i32 = 512;
+pub const CLR_NONE: i64 = 4294967295;
+pub const CLR_DEFAULT: i64 = 4278190080;
+pub const ILC_MASK: i32 = 1;
+pub const ILC_COLOR: i32 = 0;
+pub const ILC_COLORDDB: i32 = 254;
+pub const ILC_COLOR4: i32 = 4;
+pub const ILC_COLOR8: i32 = 8;
+pub const ILC_COLOR16: i32 = 16;
+pub const ILC_COLOR24: i32 = 24;
+pub const ILC_COLOR32: i32 = 32;
+pub const ILC_PALETTE: i32 = 2048;
+pub const ILC_MIRROR: i32 = 8192;
+pub const ILC_PERITEMMIRROR: i32 = 32768;
+pub const ILD_NORMAL: i32 = 0;
+pub const ILD_TRANSPARENT: i32 = 1;
+pub const ILD_MASK: i32 = 16;
+pub const ILD_IMAGE: i32 = 32;
+pub const ILD_ROP: i32 = 64;
+pub const ILD_BLEND25: i32 = 2;
+pub const ILD_BLEND50: i32 = 4;
+pub const ILD_OVERLAYMASK: i32 = 3840;
+pub const ILD_PRESERVEALPHA: i32 = 4096;
+pub const ILD_SCALE: i32 = 8192;
+pub const ILD_DPISCALE: i32 = 16384;
+pub const ILD_SELECTED: i32 = 4;
+pub const ILD_FOCUS: i32 = 2;
+pub const ILD_BLEND: i32 = 4;
+pub const CLR_HILIGHT: i64 = 4278190080;
+pub const ILS_NORMAL: i32 = 0;
+pub const ILS_GLOW: i32 = 1;
+pub const ILS_SHADOW: i32 = 2;
+pub const ILS_SATURATE: i32 = 4;
+pub const ILS_ALPHA: i32 = 8;
+pub const ILCF_MOVE: i32 = 0;
+pub const ILCF_SWAP: i32 = 1;
+pub const ILP_NORMAL: i32 = 0;
+pub const ILP_DOWNLEVEL: i32 = 1;
 pub const WC_HEADERA: &[u8; 12] = b"SysHeader32\0";
 pub const WC_HEADERW: &[u8; 12] = b"SysHeader32\0";
-pub const HDS_HORZ: u32 = 0;
-pub const HDS_BUTTONS: u32 = 2;
-pub const HDS_HOTTRACK: u32 = 4;
-pub const HDS_HIDDEN: u32 = 8;
-pub const HDS_DRAGDROP: u32 = 64;
-pub const HDS_FULLDRAG: u32 = 128;
-pub const HDS_FILTERBAR: u32 = 256;
-pub const HDS_FLAT: u32 = 512;
-pub const HDFT_ISSTRING: u32 = 0;
-pub const HDFT_ISNUMBER: u32 = 1;
-pub const HDFT_HASNOVALUE: u32 = 32768;
-pub const HDI_WIDTH: u32 = 1;
-pub const HDI_HEIGHT: u32 = 1;
-pub const HDI_TEXT: u32 = 2;
-pub const HDI_FORMAT: u32 = 4;
-pub const HDI_LPARAM: u32 = 8;
-pub const HDI_BITMAP: u32 = 16;
-pub const HDI_IMAGE: u32 = 32;
-pub const HDI_DI_SETITEM: u32 = 64;
-pub const HDI_ORDER: u32 = 128;
-pub const HDI_FILTER: u32 = 256;
-pub const HDF_LEFT: u32 = 0;
-pub const HDF_RIGHT: u32 = 1;
-pub const HDF_CENTER: u32 = 2;
-pub const HDF_JUSTIFYMASK: u32 = 3;
-pub const HDF_RTLREADING: u32 = 4;
-pub const HDF_OWNERDRAW: u32 = 32768;
-pub const HDF_STRING: u32 = 16384;
-pub const HDF_BITMAP: u32 = 8192;
-pub const HDF_BITMAP_ON_RIGHT: u32 = 4096;
-pub const HDF_IMAGE: u32 = 2048;
-pub const HDF_SORTUP: u32 = 1024;
-pub const HDF_SORTDOWN: u32 = 512;
-pub const HDM_GETITEMCOUNT: u32 = 4608;
-pub const HDM_INSERTITEMA: u32 = 4609;
-pub const HDM_INSERTITEMW: u32 = 4618;
-pub const HDM_DELETEITEM: u32 = 4610;
-pub const HDM_GETITEMA: u32 = 4611;
-pub const HDM_GETITEMW: u32 = 4619;
-pub const HDM_SETITEMA: u32 = 4612;
-pub const HDM_SETITEMW: u32 = 4620;
-pub const HDM_LAYOUT: u32 = 4613;
-pub const HHT_NOWHERE: u32 = 1;
-pub const HHT_ONHEADER: u32 = 2;
-pub const HHT_ONDIVIDER: u32 = 4;
-pub const HHT_ONDIVOPEN: u32 = 8;
-pub const HHT_ONFILTER: u32 = 16;
-pub const HHT_ONFILTERBUTTON: u32 = 32;
-pub const HHT_ABOVE: u32 = 256;
-pub const HHT_BELOW: u32 = 512;
-pub const HHT_TORIGHT: u32 = 1024;
-pub const HHT_TOLEFT: u32 = 2048;
-pub const HDM_HITTEST: u32 = 4614;
-pub const HDM_GETITEMRECT: u32 = 4615;
-pub const HDM_SETIMAGELIST: u32 = 4616;
-pub const HDM_GETIMAGELIST: u32 = 4617;
-pub const HDM_ORDERTOINDEX: u32 = 4623;
-pub const HDM_CREATEDRAGIMAGE: u32 = 4624;
-pub const HDM_GETORDERARRAY: u32 = 4625;
-pub const HDM_SETORDERARRAY: u32 = 4626;
-pub const HDM_SETHOTDIVIDER: u32 = 4627;
-pub const HDM_SETBITMAPMARGIN: u32 = 4628;
-pub const HDM_GETBITMAPMARGIN: u32 = 4629;
-pub const HDM_SETUNICODEFORMAT: u32 = 8197;
-pub const HDM_GETUNICODEFORMAT: u32 = 8198;
-pub const HDM_SETFILTERCHANGETIMEOUT: u32 = 4630;
-pub const HDM_EDITFILTER: u32 = 4631;
-pub const HDM_CLEARFILTER: u32 = 4632;
+pub const HDS_HORZ: i32 = 0;
+pub const HDS_BUTTONS: i32 = 2;
+pub const HDS_HOTTRACK: i32 = 4;
+pub const HDS_HIDDEN: i32 = 8;
+pub const HDS_DRAGDROP: i32 = 64;
+pub const HDS_FULLDRAG: i32 = 128;
+pub const HDS_FILTERBAR: i32 = 256;
+pub const HDS_FLAT: i32 = 512;
+pub const HDFT_ISSTRING: i32 = 0;
+pub const HDFT_ISNUMBER: i32 = 1;
+pub const HDFT_HASNOVALUE: i32 = 32768;
+pub const HDI_WIDTH: i32 = 1;
+pub const HDI_HEIGHT: i32 = 1;
+pub const HDI_TEXT: i32 = 2;
+pub const HDI_FORMAT: i32 = 4;
+pub const HDI_LPARAM: i32 = 8;
+pub const HDI_BITMAP: i32 = 16;
+pub const HDI_IMAGE: i32 = 32;
+pub const HDI_DI_SETITEM: i32 = 64;
+pub const HDI_ORDER: i32 = 128;
+pub const HDI_FILTER: i32 = 256;
+pub const HDF_LEFT: i32 = 0;
+pub const HDF_RIGHT: i32 = 1;
+pub const HDF_CENTER: i32 = 2;
+pub const HDF_JUSTIFYMASK: i32 = 3;
+pub const HDF_RTLREADING: i32 = 4;
+pub const HDF_OWNERDRAW: i32 = 32768;
+pub const HDF_STRING: i32 = 16384;
+pub const HDF_BITMAP: i32 = 8192;
+pub const HDF_BITMAP_ON_RIGHT: i32 = 4096;
+pub const HDF_IMAGE: i32 = 2048;
+pub const HDF_SORTUP: i32 = 1024;
+pub const HDF_SORTDOWN: i32 = 512;
+pub const HDM_GETITEMCOUNT: i32 = 4608;
+pub const HDM_INSERTITEMA: i32 = 4609;
+pub const HDM_INSERTITEMW: i32 = 4618;
+pub const HDM_DELETEITEM: i32 = 4610;
+pub const HDM_GETITEMA: i32 = 4611;
+pub const HDM_GETITEMW: i32 = 4619;
+pub const HDM_SETITEMA: i32 = 4612;
+pub const HDM_SETITEMW: i32 = 4620;
+pub const HDM_LAYOUT: i32 = 4613;
+pub const HHT_NOWHERE: i32 = 1;
+pub const HHT_ONHEADER: i32 = 2;
+pub const HHT_ONDIVIDER: i32 = 4;
+pub const HHT_ONDIVOPEN: i32 = 8;
+pub const HHT_ONFILTER: i32 = 16;
+pub const HHT_ONFILTERBUTTON: i32 = 32;
+pub const HHT_ABOVE: i32 = 256;
+pub const HHT_BELOW: i32 = 512;
+pub const HHT_TORIGHT: i32 = 1024;
+pub const HHT_TOLEFT: i32 = 2048;
+pub const HDM_HITTEST: i32 = 4614;
+pub const HDM_GETITEMRECT: i32 = 4615;
+pub const HDM_SETIMAGELIST: i32 = 4616;
+pub const HDM_GETIMAGELIST: i32 = 4617;
+pub const HDM_ORDERTOINDEX: i32 = 4623;
+pub const HDM_CREATEDRAGIMAGE: i32 = 4624;
+pub const HDM_GETORDERARRAY: i32 = 4625;
+pub const HDM_SETORDERARRAY: i32 = 4626;
+pub const HDM_SETHOTDIVIDER: i32 = 4627;
+pub const HDM_SETBITMAPMARGIN: i32 = 4628;
+pub const HDM_GETBITMAPMARGIN: i32 = 4629;
+pub const HDM_SETUNICODEFORMAT: i32 = 8197;
+pub const HDM_GETUNICODEFORMAT: i32 = 8198;
+pub const HDM_SETFILTERCHANGETIMEOUT: i32 = 4630;
+pub const HDM_EDITFILTER: i32 = 4631;
+pub const HDM_CLEARFILTER: i32 = 4632;
 pub const HDN_ITEMCHANGINGA: i32 = -300;
 pub const HDN_ITEMCHANGINGW: i32 = -320;
 pub const HDN_ITEMCHANGEDA: i32 = -301;
@@ -1771,206 +4749,206 @@ pub const HDN_DROPDOWN: i32 = -318;
 pub const HDN_OVERFLOWCLICK: i32 = -319;
 pub const TOOLBARCLASSNAMEW: &[u8; 16] = b"ToolbarWindow32\0";
 pub const TOOLBARCLASSNAMEA: &[u8; 16] = b"ToolbarWindow32\0";
-pub const CMB_MASKED: u32 = 2;
-pub const TBSTATE_CHECKED: u32 = 1;
-pub const TBSTATE_PRESSED: u32 = 2;
-pub const TBSTATE_ENABLED: u32 = 4;
-pub const TBSTATE_HIDDEN: u32 = 8;
-pub const TBSTATE_INDETERMINATE: u32 = 16;
-pub const TBSTATE_WRAP: u32 = 32;
-pub const TBSTATE_ELLIPSES: u32 = 64;
-pub const TBSTATE_MARKED: u32 = 128;
-pub const TBSTYLE_BUTTON: u32 = 0;
-pub const TBSTYLE_SEP: u32 = 1;
-pub const TBSTYLE_CHECK: u32 = 2;
-pub const TBSTYLE_GROUP: u32 = 4;
-pub const TBSTYLE_CHECKGROUP: u32 = 6;
-pub const TBSTYLE_DROPDOWN: u32 = 8;
-pub const TBSTYLE_AUTOSIZE: u32 = 16;
-pub const TBSTYLE_NOPREFIX: u32 = 32;
-pub const TBSTYLE_TOOLTIPS: u32 = 256;
-pub const TBSTYLE_WRAPABLE: u32 = 512;
-pub const TBSTYLE_ALTDRAG: u32 = 1024;
-pub const TBSTYLE_FLAT: u32 = 2048;
-pub const TBSTYLE_LIST: u32 = 4096;
-pub const TBSTYLE_CUSTOMERASE: u32 = 8192;
-pub const TBSTYLE_REGISTERDROP: u32 = 16384;
-pub const TBSTYLE_TRANSPARENT: u32 = 32768;
-pub const BTNS_BUTTON: u32 = 0;
-pub const BTNS_SEP: u32 = 1;
-pub const BTNS_CHECK: u32 = 2;
-pub const BTNS_GROUP: u32 = 4;
-pub const BTNS_CHECKGROUP: u32 = 6;
-pub const BTNS_DROPDOWN: u32 = 8;
-pub const BTNS_AUTOSIZE: u32 = 16;
-pub const BTNS_NOPREFIX: u32 = 32;
-pub const BTNS_SHOWTEXT: u32 = 64;
-pub const BTNS_WHOLEDROPDOWN: u32 = 128;
-pub const TBSTYLE_EX_DRAWDDARROWS: u32 = 1;
-pub const TBSTYLE_EX_MULTICOLUMN: u32 = 2;
-pub const TBSTYLE_EX_VERTICAL: u32 = 4;
-pub const TBSTYLE_EX_MIXEDBUTTONS: u32 = 8;
-pub const TBSTYLE_EX_HIDECLIPPEDBUTTONS: u32 = 16;
-pub const TBSTYLE_EX_DOUBLEBUFFER: u32 = 128;
-pub const TBCDRF_NOEDGES: u32 = 65536;
-pub const TBCDRF_HILITEHOTTRACK: u32 = 131072;
-pub const TBCDRF_NOOFFSET: u32 = 262144;
-pub const TBCDRF_NOMARK: u32 = 524288;
-pub const TBCDRF_NOETCHEDEFFECT: u32 = 1048576;
-pub const TBCDRF_BLENDICON: u32 = 2097152;
-pub const TBCDRF_NOBACKGROUND: u32 = 4194304;
-pub const TB_ENABLEBUTTON: u32 = 1025;
-pub const TB_CHECKBUTTON: u32 = 1026;
-pub const TB_PRESSBUTTON: u32 = 1027;
-pub const TB_HIDEBUTTON: u32 = 1028;
-pub const TB_INDETERMINATE: u32 = 1029;
-pub const TB_MARKBUTTON: u32 = 1030;
-pub const TB_ISBUTTONENABLED: u32 = 1033;
-pub const TB_ISBUTTONCHECKED: u32 = 1034;
-pub const TB_ISBUTTONPRESSED: u32 = 1035;
-pub const TB_ISBUTTONHIDDEN: u32 = 1036;
-pub const TB_ISBUTTONINDETERMINATE: u32 = 1037;
-pub const TB_ISBUTTONHIGHLIGHTED: u32 = 1038;
-pub const TB_SETSTATE: u32 = 1041;
-pub const TB_GETSTATE: u32 = 1042;
-pub const TB_ADDBITMAP: u32 = 1043;
-pub const IDB_STD_SMALL_COLOR: u32 = 0;
-pub const IDB_STD_LARGE_COLOR: u32 = 1;
-pub const IDB_VIEW_SMALL_COLOR: u32 = 4;
-pub const IDB_VIEW_LARGE_COLOR: u32 = 5;
-pub const IDB_HIST_SMALL_COLOR: u32 = 8;
-pub const IDB_HIST_LARGE_COLOR: u32 = 9;
-pub const STD_CUT: u32 = 0;
-pub const STD_COPY: u32 = 1;
-pub const STD_PASTE: u32 = 2;
-pub const STD_UNDO: u32 = 3;
-pub const STD_REDOW: u32 = 4;
-pub const STD_DELETE: u32 = 5;
-pub const STD_FILENEW: u32 = 6;
-pub const STD_FILEOPEN: u32 = 7;
-pub const STD_FILESAVE: u32 = 8;
-pub const STD_PRINTPRE: u32 = 9;
-pub const STD_PROPERTIES: u32 = 10;
-pub const STD_HELP: u32 = 11;
-pub const STD_FIND: u32 = 12;
-pub const STD_REPLACE: u32 = 13;
-pub const STD_PRINT: u32 = 14;
-pub const VIEW_LARGEICONS: u32 = 0;
-pub const VIEW_SMALLICONS: u32 = 1;
-pub const VIEW_LIST: u32 = 2;
-pub const VIEW_DETAILS: u32 = 3;
-pub const VIEW_SORTNAME: u32 = 4;
-pub const VIEW_SORTSIZE: u32 = 5;
-pub const VIEW_SORTDATE: u32 = 6;
-pub const VIEW_SORTTYPE: u32 = 7;
-pub const VIEW_PARENTFOLDER: u32 = 8;
-pub const VIEW_NETCONNECT: u32 = 9;
-pub const VIEW_NETDISCONNECT: u32 = 10;
-pub const VIEW_NEWFOLDER: u32 = 11;
-pub const VIEW_VIEWMENU: u32 = 12;
-pub const HIST_BACK: u32 = 0;
-pub const HIST_FORWARD: u32 = 1;
-pub const HIST_FAVORITES: u32 = 2;
-pub const HIST_ADDTOFAVORITES: u32 = 3;
-pub const HIST_VIEWTREE: u32 = 4;
-pub const TB_ADDBUTTONSA: u32 = 1044;
-pub const TB_INSERTBUTTONA: u32 = 1045;
-pub const TB_DELETEBUTTON: u32 = 1046;
-pub const TB_GETBUTTON: u32 = 1047;
-pub const TB_BUTTONCOUNT: u32 = 1048;
-pub const TB_COMMANDTOINDEX: u32 = 1049;
-pub const TB_SAVERESTOREA: u32 = 1050;
-pub const TB_SAVERESTOREW: u32 = 1100;
-pub const TB_CUSTOMIZE: u32 = 1051;
-pub const TB_ADDSTRINGA: u32 = 1052;
-pub const TB_ADDSTRINGW: u32 = 1101;
-pub const TB_GETITEMRECT: u32 = 1053;
-pub const TB_BUTTONSTRUCTSIZE: u32 = 1054;
-pub const TB_SETBUTTONSIZE: u32 = 1055;
-pub const TB_SETBITMAPSIZE: u32 = 1056;
-pub const TB_AUTOSIZE: u32 = 1057;
-pub const TB_GETTOOLTIPS: u32 = 1059;
-pub const TB_SETTOOLTIPS: u32 = 1060;
-pub const TB_SETPARENT: u32 = 1061;
-pub const TB_SETROWS: u32 = 1063;
-pub const TB_GETROWS: u32 = 1064;
-pub const TB_SETCMDID: u32 = 1066;
-pub const TB_CHANGEBITMAP: u32 = 1067;
-pub const TB_GETBITMAP: u32 = 1068;
-pub const TB_GETBUTTONTEXTA: u32 = 1069;
-pub const TB_GETBUTTONTEXTW: u32 = 1099;
-pub const TB_REPLACEBITMAP: u32 = 1070;
-pub const TB_SETINDENT: u32 = 1071;
-pub const TB_SETIMAGELIST: u32 = 1072;
-pub const TB_GETIMAGELIST: u32 = 1073;
-pub const TB_LOADIMAGES: u32 = 1074;
-pub const TB_GETRECT: u32 = 1075;
-pub const TB_SETHOTIMAGELIST: u32 = 1076;
-pub const TB_GETHOTIMAGELIST: u32 = 1077;
-pub const TB_SETDISABLEDIMAGELIST: u32 = 1078;
-pub const TB_GETDISABLEDIMAGELIST: u32 = 1079;
-pub const TB_SETSTYLE: u32 = 1080;
-pub const TB_GETSTYLE: u32 = 1081;
-pub const TB_GETBUTTONSIZE: u32 = 1082;
-pub const TB_SETBUTTONWIDTH: u32 = 1083;
-pub const TB_SETMAXTEXTROWS: u32 = 1084;
-pub const TB_GETTEXTROWS: u32 = 1085;
-pub const TB_GETOBJECT: u32 = 1086;
-pub const TB_GETHOTITEM: u32 = 1095;
-pub const TB_SETHOTITEM: u32 = 1096;
-pub const TB_SETANCHORHIGHLIGHT: u32 = 1097;
-pub const TB_GETANCHORHIGHLIGHT: u32 = 1098;
-pub const TB_MAPACCELERATORA: u32 = 1102;
-pub const TB_SETBOUNDINGSIZE: u32 = 1117;
-pub const TBIMHT_AFTER: u32 = 1;
-pub const TBIMHT_BACKGROUND: u32 = 2;
-pub const TB_GETINSERTMARK: u32 = 1103;
-pub const TB_SETINSERTMARK: u32 = 1104;
-pub const TB_INSERTMARKHITTEST: u32 = 1105;
-pub const TB_MOVEBUTTON: u32 = 1106;
-pub const TB_GETMAXSIZE: u32 = 1107;
-pub const TB_SETEXTENDEDSTYLE: u32 = 1108;
-pub const TB_GETEXTENDEDSTYLE: u32 = 1109;
-pub const TB_GETPADDING: u32 = 1110;
-pub const TB_SETPADDING: u32 = 1111;
-pub const TB_SETINSERTMARKCOLOR: u32 = 1112;
-pub const TB_GETINSERTMARKCOLOR: u32 = 1113;
-pub const TB_SETCOLORSCHEME: u32 = 8194;
-pub const TB_GETCOLORSCHEME: u32 = 8195;
-pub const TB_SETUNICODEFORMAT: u32 = 8197;
-pub const TB_GETUNICODEFORMAT: u32 = 8198;
-pub const TB_MAPACCELERATORW: u32 = 1114;
-pub const TBBF_LARGE: u32 = 1;
-pub const TB_GETBITMAPFLAGS: u32 = 1065;
-pub const TBIF_IMAGE: u32 = 1;
-pub const TBIF_TEXT: u32 = 2;
-pub const TBIF_STATE: u32 = 4;
-pub const TBIF_STYLE: u32 = 8;
-pub const TBIF_LPARAM: u32 = 16;
-pub const TBIF_COMMAND: u32 = 32;
-pub const TBIF_SIZE: u32 = 64;
-pub const TBIF_BYINDEX: u32 = 2147483648;
-pub const TB_GETBUTTONINFOW: u32 = 1087;
-pub const TB_SETBUTTONINFOW: u32 = 1088;
-pub const TB_GETBUTTONINFOA: u32 = 1089;
-pub const TB_SETBUTTONINFOA: u32 = 1090;
-pub const TB_INSERTBUTTONW: u32 = 1091;
-pub const TB_ADDBUTTONSW: u32 = 1092;
-pub const TB_HITTEST: u32 = 1093;
-pub const TB_SETDRAWTEXTFLAGS: u32 = 1094;
-pub const TB_GETSTRINGW: u32 = 1115;
-pub const TB_GETSTRINGA: u32 = 1116;
-pub const TB_SETHOTITEM2: u32 = 1118;
-pub const TB_HASACCELERATOR: u32 = 1119;
-pub const TB_SETLISTGAP: u32 = 1120;
-pub const TB_GETIMAGELISTCOUNT: u32 = 1122;
-pub const TB_GETIDEALSIZE: u32 = 1123;
-pub const TBMF_PAD: u32 = 1;
-pub const TBMF_BARPAD: u32 = 2;
-pub const TBMF_BUTTONSPACING: u32 = 4;
-pub const TB_GETMETRICS: u32 = 1125;
-pub const TB_SETMETRICS: u32 = 1126;
-pub const TB_SETWINDOWTHEME: u32 = 8203;
+pub const CMB_MASKED: i32 = 2;
+pub const TBSTATE_CHECKED: i32 = 1;
+pub const TBSTATE_PRESSED: i32 = 2;
+pub const TBSTATE_ENABLED: i32 = 4;
+pub const TBSTATE_HIDDEN: i32 = 8;
+pub const TBSTATE_INDETERMINATE: i32 = 16;
+pub const TBSTATE_WRAP: i32 = 32;
+pub const TBSTATE_ELLIPSES: i32 = 64;
+pub const TBSTATE_MARKED: i32 = 128;
+pub const TBSTYLE_BUTTON: i32 = 0;
+pub const TBSTYLE_SEP: i32 = 1;
+pub const TBSTYLE_CHECK: i32 = 2;
+pub const TBSTYLE_GROUP: i32 = 4;
+pub const TBSTYLE_CHECKGROUP: i32 = 6;
+pub const TBSTYLE_DROPDOWN: i32 = 8;
+pub const TBSTYLE_AUTOSIZE: i32 = 16;
+pub const TBSTYLE_NOPREFIX: i32 = 32;
+pub const TBSTYLE_TOOLTIPS: i32 = 256;
+pub const TBSTYLE_WRAPABLE: i32 = 512;
+pub const TBSTYLE_ALTDRAG: i32 = 1024;
+pub const TBSTYLE_FLAT: i32 = 2048;
+pub const TBSTYLE_LIST: i32 = 4096;
+pub const TBSTYLE_CUSTOMERASE: i32 = 8192;
+pub const TBSTYLE_REGISTERDROP: i32 = 16384;
+pub const TBSTYLE_TRANSPARENT: i32 = 32768;
+pub const BTNS_BUTTON: i32 = 0;
+pub const BTNS_SEP: i32 = 1;
+pub const BTNS_CHECK: i32 = 2;
+pub const BTNS_GROUP: i32 = 4;
+pub const BTNS_CHECKGROUP: i32 = 6;
+pub const BTNS_DROPDOWN: i32 = 8;
+pub const BTNS_AUTOSIZE: i32 = 16;
+pub const BTNS_NOPREFIX: i32 = 32;
+pub const BTNS_SHOWTEXT: i32 = 64;
+pub const BTNS_WHOLEDROPDOWN: i32 = 128;
+pub const TBSTYLE_EX_DRAWDDARROWS: i32 = 1;
+pub const TBSTYLE_EX_MULTICOLUMN: i32 = 2;
+pub const TBSTYLE_EX_VERTICAL: i32 = 4;
+pub const TBSTYLE_EX_MIXEDBUTTONS: i32 = 8;
+pub const TBSTYLE_EX_HIDECLIPPEDBUTTONS: i32 = 16;
+pub const TBSTYLE_EX_DOUBLEBUFFER: i32 = 128;
+pub const TBCDRF_NOEDGES: i32 = 65536;
+pub const TBCDRF_HILITEHOTTRACK: i32 = 131072;
+pub const TBCDRF_NOOFFSET: i32 = 262144;
+pub const TBCDRF_NOMARK: i32 = 524288;
+pub const TBCDRF_NOETCHEDEFFECT: i32 = 1048576;
+pub const TBCDRF_BLENDICON: i32 = 2097152;
+pub const TBCDRF_NOBACKGROUND: i32 = 4194304;
+pub const TB_ENABLEBUTTON: i32 = 1025;
+pub const TB_CHECKBUTTON: i32 = 1026;
+pub const TB_PRESSBUTTON: i32 = 1027;
+pub const TB_HIDEBUTTON: i32 = 1028;
+pub const TB_INDETERMINATE: i32 = 1029;
+pub const TB_MARKBUTTON: i32 = 1030;
+pub const TB_ISBUTTONENABLED: i32 = 1033;
+pub const TB_ISBUTTONCHECKED: i32 = 1034;
+pub const TB_ISBUTTONPRESSED: i32 = 1035;
+pub const TB_ISBUTTONHIDDEN: i32 = 1036;
+pub const TB_ISBUTTONINDETERMINATE: i32 = 1037;
+pub const TB_ISBUTTONHIGHLIGHTED: i32 = 1038;
+pub const TB_SETSTATE: i32 = 1041;
+pub const TB_GETSTATE: i32 = 1042;
+pub const TB_ADDBITMAP: i32 = 1043;
+pub const IDB_STD_SMALL_COLOR: i32 = 0;
+pub const IDB_STD_LARGE_COLOR: i32 = 1;
+pub const IDB_VIEW_SMALL_COLOR: i32 = 4;
+pub const IDB_VIEW_LARGE_COLOR: i32 = 5;
+pub const IDB_HIST_SMALL_COLOR: i32 = 8;
+pub const IDB_HIST_LARGE_COLOR: i32 = 9;
+pub const STD_CUT: i32 = 0;
+pub const STD_COPY: i32 = 1;
+pub const STD_PASTE: i32 = 2;
+pub const STD_UNDO: i32 = 3;
+pub const STD_REDOW: i32 = 4;
+pub const STD_DELETE: i32 = 5;
+pub const STD_FILENEW: i32 = 6;
+pub const STD_FILEOPEN: i32 = 7;
+pub const STD_FILESAVE: i32 = 8;
+pub const STD_PRINTPRE: i32 = 9;
+pub const STD_PROPERTIES: i32 = 10;
+pub const STD_HELP: i32 = 11;
+pub const STD_FIND: i32 = 12;
+pub const STD_REPLACE: i32 = 13;
+pub const STD_PRINT: i32 = 14;
+pub const VIEW_LARGEICONS: i32 = 0;
+pub const VIEW_SMALLICONS: i32 = 1;
+pub const VIEW_LIST: i32 = 2;
+pub const VIEW_DETAILS: i32 = 3;
+pub const VIEW_SORTNAME: i32 = 4;
+pub const VIEW_SORTSIZE: i32 = 5;
+pub const VIEW_SORTDATE: i32 = 6;
+pub const VIEW_SORTTYPE: i32 = 7;
+pub const VIEW_PARENTFOLDER: i32 = 8;
+pub const VIEW_NETCONNECT: i32 = 9;
+pub const VIEW_NETDISCONNECT: i32 = 10;
+pub const VIEW_NEWFOLDER: i32 = 11;
+pub const VIEW_VIEWMENU: i32 = 12;
+pub const HIST_BACK: i32 = 0;
+pub const HIST_FORWARD: i32 = 1;
+pub const HIST_FAVORITES: i32 = 2;
+pub const HIST_ADDTOFAVORITES: i32 = 3;
+pub const HIST_VIEWTREE: i32 = 4;
+pub const TB_ADDBUTTONSA: i32 = 1044;
+pub const TB_INSERTBUTTONA: i32 = 1045;
+pub const TB_DELETEBUTTON: i32 = 1046;
+pub const TB_GETBUTTON: i32 = 1047;
+pub const TB_BUTTONCOUNT: i32 = 1048;
+pub const TB_COMMANDTOINDEX: i32 = 1049;
+pub const TB_SAVERESTOREA: i32 = 1050;
+pub const TB_SAVERESTOREW: i32 = 1100;
+pub const TB_CUSTOMIZE: i32 = 1051;
+pub const TB_ADDSTRINGA: i32 = 1052;
+pub const TB_ADDSTRINGW: i32 = 1101;
+pub const TB_GETITEMRECT: i32 = 1053;
+pub const TB_BUTTONSTRUCTSIZE: i32 = 1054;
+pub const TB_SETBUTTONSIZE: i32 = 1055;
+pub const TB_SETBITMAPSIZE: i32 = 1056;
+pub const TB_AUTOSIZE: i32 = 1057;
+pub const TB_GETTOOLTIPS: i32 = 1059;
+pub const TB_SETTOOLTIPS: i32 = 1060;
+pub const TB_SETPARENT: i32 = 1061;
+pub const TB_SETROWS: i32 = 1063;
+pub const TB_GETROWS: i32 = 1064;
+pub const TB_SETCMDID: i32 = 1066;
+pub const TB_CHANGEBITMAP: i32 = 1067;
+pub const TB_GETBITMAP: i32 = 1068;
+pub const TB_GETBUTTONTEXTA: i32 = 1069;
+pub const TB_GETBUTTONTEXTW: i32 = 1099;
+pub const TB_REPLACEBITMAP: i32 = 1070;
+pub const TB_SETINDENT: i32 = 1071;
+pub const TB_SETIMAGELIST: i32 = 1072;
+pub const TB_GETIMAGELIST: i32 = 1073;
+pub const TB_LOADIMAGES: i32 = 1074;
+pub const TB_GETRECT: i32 = 1075;
+pub const TB_SETHOTIMAGELIST: i32 = 1076;
+pub const TB_GETHOTIMAGELIST: i32 = 1077;
+pub const TB_SETDISABLEDIMAGELIST: i32 = 1078;
+pub const TB_GETDISABLEDIMAGELIST: i32 = 1079;
+pub const TB_SETSTYLE: i32 = 1080;
+pub const TB_GETSTYLE: i32 = 1081;
+pub const TB_GETBUTTONSIZE: i32 = 1082;
+pub const TB_SETBUTTONWIDTH: i32 = 1083;
+pub const TB_SETMAXTEXTROWS: i32 = 1084;
+pub const TB_GETTEXTROWS: i32 = 1085;
+pub const TB_GETOBJECT: i32 = 1086;
+pub const TB_GETHOTITEM: i32 = 1095;
+pub const TB_SETHOTITEM: i32 = 1096;
+pub const TB_SETANCHORHIGHLIGHT: i32 = 1097;
+pub const TB_GETANCHORHIGHLIGHT: i32 = 1098;
+pub const TB_MAPACCELERATORA: i32 = 1102;
+pub const TB_SETBOUNDINGSIZE: i32 = 1117;
+pub const TBIMHT_AFTER: i32 = 1;
+pub const TBIMHT_BACKGROUND: i32 = 2;
+pub const TB_GETINSERTMARK: i32 = 1103;
+pub const TB_SETINSERTMARK: i32 = 1104;
+pub const TB_INSERTMARKHITTEST: i32 = 1105;
+pub const TB_MOVEBUTTON: i32 = 1106;
+pub const TB_GETMAXSIZE: i32 = 1107;
+pub const TB_SETEXTENDEDSTYLE: i32 = 1108;
+pub const TB_GETEXTENDEDSTYLE: i32 = 1109;
+pub const TB_GETPADDING: i32 = 1110;
+pub const TB_SETPADDING: i32 = 1111;
+pub const TB_SETINSERTMARKCOLOR: i32 = 1112;
+pub const TB_GETINSERTMARKCOLOR: i32 = 1113;
+pub const TB_SETCOLORSCHEME: i32 = 8194;
+pub const TB_GETCOLORSCHEME: i32 = 8195;
+pub const TB_SETUNICODEFORMAT: i32 = 8197;
+pub const TB_GETUNICODEFORMAT: i32 = 8198;
+pub const TB_MAPACCELERATORW: i32 = 1114;
+pub const TBBF_LARGE: i32 = 1;
+pub const TB_GETBITMAPFLAGS: i32 = 1065;
+pub const TBIF_IMAGE: i32 = 1;
+pub const TBIF_TEXT: i32 = 2;
+pub const TBIF_STATE: i32 = 4;
+pub const TBIF_STYLE: i32 = 8;
+pub const TBIF_LPARAM: i32 = 16;
+pub const TBIF_COMMAND: i32 = 32;
+pub const TBIF_SIZE: i32 = 64;
+pub const TBIF_BYINDEX: i64 = 2147483648;
+pub const TB_GETBUTTONINFOW: i32 = 1087;
+pub const TB_SETBUTTONINFOW: i32 = 1088;
+pub const TB_GETBUTTONINFOA: i32 = 1089;
+pub const TB_SETBUTTONINFOA: i32 = 1090;
+pub const TB_INSERTBUTTONW: i32 = 1091;
+pub const TB_ADDBUTTONSW: i32 = 1092;
+pub const TB_HITTEST: i32 = 1093;
+pub const TB_SETDRAWTEXTFLAGS: i32 = 1094;
+pub const TB_GETSTRINGW: i32 = 1115;
+pub const TB_GETSTRINGA: i32 = 1116;
+pub const TB_SETHOTITEM2: i32 = 1118;
+pub const TB_HASACCELERATOR: i32 = 1119;
+pub const TB_SETLISTGAP: i32 = 1120;
+pub const TB_GETIMAGELISTCOUNT: i32 = 1122;
+pub const TB_GETIDEALSIZE: i32 = 1123;
+pub const TBMF_PAD: i32 = 1;
+pub const TBMF_BARPAD: i32 = 2;
+pub const TBMF_BUTTONSPACING: i32 = 4;
+pub const TB_GETMETRICS: i32 = 1125;
+pub const TB_SETMETRICS: i32 = 1126;
+pub const TB_SETWINDOWTHEME: i32 = 8203;
 pub const TBN_GETBUTTONINFOA: i32 = -700;
 pub const TBN_BEGINDRAG: i32 = -701;
 pub const TBN_ENDDRAG: i32 = -702;
@@ -1983,16 +4961,16 @@ pub const TBN_TOOLBARCHANGE: i32 = -708;
 pub const TBN_CUSTHELP: i32 = -709;
 pub const TBN_DROPDOWN: i32 = -710;
 pub const TBN_GETOBJECT: i32 = -712;
-pub const HICF_OTHER: u32 = 0;
-pub const HICF_MOUSE: u32 = 1;
-pub const HICF_ARROWKEYS: u32 = 2;
-pub const HICF_ACCELERATOR: u32 = 4;
-pub const HICF_DUPACCEL: u32 = 8;
-pub const HICF_ENTERING: u32 = 16;
-pub const HICF_LEAVING: u32 = 32;
-pub const HICF_RESELECT: u32 = 64;
-pub const HICF_LMOUSE: u32 = 128;
-pub const HICF_TOGGLEDROPDOWN: u32 = 256;
+pub const HICF_OTHER: i32 = 0;
+pub const HICF_MOUSE: i32 = 1;
+pub const HICF_ARROWKEYS: i32 = 2;
+pub const HICF_ACCELERATOR: i32 = 4;
+pub const HICF_DUPACCEL: i32 = 8;
+pub const HICF_ENTERING: i32 = 16;
+pub const HICF_LEAVING: i32 = 32;
+pub const HICF_RESELECT: i32 = 64;
+pub const HICF_LMOUSE: i32 = 128;
+pub const HICF_TOGGLEDROPDOWN: i32 = 256;
 pub const TBN_HOTITEMCHANGE: i32 = -713;
 pub const TBN_DRAGOUT: i32 = -714;
 pub const TBN_DELETINGBUTTON: i32 = -715;
@@ -2009,92 +4987,92 @@ pub const TBN_DUPACCELERATOR: i32 = -725;
 pub const TBN_WRAPACCELERATOR: i32 = -726;
 pub const TBN_DRAGOVER: i32 = -727;
 pub const TBN_MAPACCELERATOR: i32 = -728;
-pub const TBNRF_HIDEHELP: u32 = 1;
-pub const TBNRF_ENDCUSTOMIZE: u32 = 2;
-pub const TBNF_IMAGE: u32 = 1;
-pub const TBNF_TEXT: u32 = 2;
-pub const TBNF_DI_SETITEM: u32 = 268435456;
-pub const TBDDRET_DEFAULT: u32 = 0;
-pub const TBDDRET_NODEFAULT: u32 = 1;
-pub const TBDDRET_TREATPRESSED: u32 = 2;
+pub const TBNRF_HIDEHELP: i32 = 1;
+pub const TBNRF_ENDCUSTOMIZE: i32 = 2;
+pub const TBNF_IMAGE: i32 = 1;
+pub const TBNF_TEXT: i32 = 2;
+pub const TBNF_DI_SETITEM: i32 = 268435456;
+pub const TBDDRET_DEFAULT: i32 = 0;
+pub const TBDDRET_NODEFAULT: i32 = 1;
+pub const TBDDRET_TREATPRESSED: i32 = 2;
 pub const REBARCLASSNAMEW: &[u8; 14] = b"ReBarWindow32\0";
 pub const REBARCLASSNAMEA: &[u8; 14] = b"ReBarWindow32\0";
-pub const RBIM_IMAGELIST: u32 = 1;
-pub const RBS_TOOLTIPS: u32 = 256;
-pub const RBS_VARHEIGHT: u32 = 512;
-pub const RBS_BANDBORDERS: u32 = 1024;
-pub const RBS_FIXEDORDER: u32 = 2048;
-pub const RBS_REGISTERDROP: u32 = 4096;
-pub const RBS_AUTOSIZE: u32 = 8192;
-pub const RBS_VERTICALGRIPPER: u32 = 16384;
-pub const RBS_DBLCLKTOGGLE: u32 = 32768;
-pub const RBBS_BREAK: u32 = 1;
-pub const RBBS_FIXEDSIZE: u32 = 2;
-pub const RBBS_CHILDEDGE: u32 = 4;
-pub const RBBS_HIDDEN: u32 = 8;
-pub const RBBS_NOVERT: u32 = 16;
-pub const RBBS_FIXEDBMP: u32 = 32;
-pub const RBBS_VARIABLEHEIGHT: u32 = 64;
-pub const RBBS_GRIPPERALWAYS: u32 = 128;
-pub const RBBS_NOGRIPPER: u32 = 256;
-pub const RBBS_USECHEVRON: u32 = 512;
-pub const RBBS_HIDETITLE: u32 = 1024;
-pub const RBBS_TOPALIGN: u32 = 2048;
-pub const RBBIM_STYLE: u32 = 1;
-pub const RBBIM_COLORS: u32 = 2;
-pub const RBBIM_TEXT: u32 = 4;
-pub const RBBIM_IMAGE: u32 = 8;
-pub const RBBIM_CHILD: u32 = 16;
-pub const RBBIM_CHILDSIZE: u32 = 32;
-pub const RBBIM_SIZE: u32 = 64;
-pub const RBBIM_BACKGROUND: u32 = 128;
-pub const RBBIM_ID: u32 = 256;
-pub const RBBIM_IDEALSIZE: u32 = 512;
-pub const RBBIM_LPARAM: u32 = 1024;
-pub const RBBIM_HEADERSIZE: u32 = 2048;
-pub const RB_INSERTBANDA: u32 = 1025;
-pub const RB_DELETEBAND: u32 = 1026;
-pub const RB_GETBARINFO: u32 = 1027;
-pub const RB_SETBARINFO: u32 = 1028;
-pub const RB_SETBANDINFOA: u32 = 1030;
-pub const RB_SETPARENT: u32 = 1031;
-pub const RB_HITTEST: u32 = 1032;
-pub const RB_GETRECT: u32 = 1033;
-pub const RB_INSERTBANDW: u32 = 1034;
-pub const RB_SETBANDINFOW: u32 = 1035;
-pub const RB_GETBANDCOUNT: u32 = 1036;
-pub const RB_GETROWCOUNT: u32 = 1037;
-pub const RB_GETROWHEIGHT: u32 = 1038;
-pub const RB_IDTOINDEX: u32 = 1040;
-pub const RB_GETTOOLTIPS: u32 = 1041;
-pub const RB_SETTOOLTIPS: u32 = 1042;
-pub const RB_SETBKCOLOR: u32 = 1043;
-pub const RB_GETBKCOLOR: u32 = 1044;
-pub const RB_SETTEXTCOLOR: u32 = 1045;
-pub const RB_GETTEXTCOLOR: u32 = 1046;
-pub const RBSTR_CHANGERECT: u32 = 1;
-pub const RB_SIZETORECT: u32 = 1047;
-pub const RB_SETCOLORSCHEME: u32 = 8194;
-pub const RB_GETCOLORSCHEME: u32 = 8195;
-pub const RB_BEGINDRAG: u32 = 1048;
-pub const RB_ENDDRAG: u32 = 1049;
-pub const RB_DRAGMOVE: u32 = 1050;
-pub const RB_GETBARHEIGHT: u32 = 1051;
-pub const RB_GETBANDINFOW: u32 = 1052;
-pub const RB_GETBANDINFOA: u32 = 1053;
-pub const RB_MINIMIZEBAND: u32 = 1054;
-pub const RB_MAXIMIZEBAND: u32 = 1055;
-pub const RB_GETDROPTARGET: u32 = 8196;
-pub const RB_GETBANDBORDERS: u32 = 1058;
-pub const RB_SHOWBAND: u32 = 1059;
-pub const RB_SETPALETTE: u32 = 1061;
-pub const RB_GETPALETTE: u32 = 1062;
-pub const RB_MOVEBAND: u32 = 1063;
-pub const RB_SETUNICODEFORMAT: u32 = 8197;
-pub const RB_GETUNICODEFORMAT: u32 = 8198;
-pub const RB_GETBANDMARGINS: u32 = 1064;
-pub const RB_SETWINDOWTHEME: u32 = 8203;
-pub const RB_PUSHCHEVRON: u32 = 1067;
+pub const RBIM_IMAGELIST: i32 = 1;
+pub const RBS_TOOLTIPS: i32 = 256;
+pub const RBS_VARHEIGHT: i32 = 512;
+pub const RBS_BANDBORDERS: i32 = 1024;
+pub const RBS_FIXEDORDER: i32 = 2048;
+pub const RBS_REGISTERDROP: i32 = 4096;
+pub const RBS_AUTOSIZE: i32 = 8192;
+pub const RBS_VERTICALGRIPPER: i32 = 16384;
+pub const RBS_DBLCLKTOGGLE: i32 = 32768;
+pub const RBBS_BREAK: i32 = 1;
+pub const RBBS_FIXEDSIZE: i32 = 2;
+pub const RBBS_CHILDEDGE: i32 = 4;
+pub const RBBS_HIDDEN: i32 = 8;
+pub const RBBS_NOVERT: i32 = 16;
+pub const RBBS_FIXEDBMP: i32 = 32;
+pub const RBBS_VARIABLEHEIGHT: i32 = 64;
+pub const RBBS_GRIPPERALWAYS: i32 = 128;
+pub const RBBS_NOGRIPPER: i32 = 256;
+pub const RBBS_USECHEVRON: i32 = 512;
+pub const RBBS_HIDETITLE: i32 = 1024;
+pub const RBBS_TOPALIGN: i32 = 2048;
+pub const RBBIM_STYLE: i32 = 1;
+pub const RBBIM_COLORS: i32 = 2;
+pub const RBBIM_TEXT: i32 = 4;
+pub const RBBIM_IMAGE: i32 = 8;
+pub const RBBIM_CHILD: i32 = 16;
+pub const RBBIM_CHILDSIZE: i32 = 32;
+pub const RBBIM_SIZE: i32 = 64;
+pub const RBBIM_BACKGROUND: i32 = 128;
+pub const RBBIM_ID: i32 = 256;
+pub const RBBIM_IDEALSIZE: i32 = 512;
+pub const RBBIM_LPARAM: i32 = 1024;
+pub const RBBIM_HEADERSIZE: i32 = 2048;
+pub const RB_INSERTBANDA: i32 = 1025;
+pub const RB_DELETEBAND: i32 = 1026;
+pub const RB_GETBARINFO: i32 = 1027;
+pub const RB_SETBARINFO: i32 = 1028;
+pub const RB_SETBANDINFOA: i32 = 1030;
+pub const RB_SETPARENT: i32 = 1031;
+pub const RB_HITTEST: i32 = 1032;
+pub const RB_GETRECT: i32 = 1033;
+pub const RB_INSERTBANDW: i32 = 1034;
+pub const RB_SETBANDINFOW: i32 = 1035;
+pub const RB_GETBANDCOUNT: i32 = 1036;
+pub const RB_GETROWCOUNT: i32 = 1037;
+pub const RB_GETROWHEIGHT: i32 = 1038;
+pub const RB_IDTOINDEX: i32 = 1040;
+pub const RB_GETTOOLTIPS: i32 = 1041;
+pub const RB_SETTOOLTIPS: i32 = 1042;
+pub const RB_SETBKCOLOR: i32 = 1043;
+pub const RB_GETBKCOLOR: i32 = 1044;
+pub const RB_SETTEXTCOLOR: i32 = 1045;
+pub const RB_GETTEXTCOLOR: i32 = 1046;
+pub const RBSTR_CHANGERECT: i32 = 1;
+pub const RB_SIZETORECT: i32 = 1047;
+pub const RB_SETCOLORSCHEME: i32 = 8194;
+pub const RB_GETCOLORSCHEME: i32 = 8195;
+pub const RB_BEGINDRAG: i32 = 1048;
+pub const RB_ENDDRAG: i32 = 1049;
+pub const RB_DRAGMOVE: i32 = 1050;
+pub const RB_GETBARHEIGHT: i32 = 1051;
+pub const RB_GETBANDINFOW: i32 = 1052;
+pub const RB_GETBANDINFOA: i32 = 1053;
+pub const RB_MINIMIZEBAND: i32 = 1054;
+pub const RB_MAXIMIZEBAND: i32 = 1055;
+pub const RB_GETDROPTARGET: i32 = 8196;
+pub const RB_GETBANDBORDERS: i32 = 1058;
+pub const RB_SHOWBAND: i32 = 1059;
+pub const RB_SETPALETTE: i32 = 1061;
+pub const RB_GETPALETTE: i32 = 1062;
+pub const RB_MOVEBAND: i32 = 1063;
+pub const RB_SETUNICODEFORMAT: i32 = 8197;
+pub const RB_GETUNICODEFORMAT: i32 = 8198;
+pub const RB_GETBANDMARGINS: i32 = 1064;
+pub const RB_SETWINDOWTHEME: i32 = 8203;
+pub const RB_PUSHCHEVRON: i32 = 1067;
 pub const RBN_HEIGHTCHANGE: i32 = -831;
 pub const RBN_GETOBJECT: i32 = -832;
 pub const RBN_LAYOUTCHANGED: i32 = -833;
@@ -2107,86 +5085,86 @@ pub const RBN_CHILDSIZE: i32 = -839;
 pub const RBN_CHEVRONPUSHED: i32 = -841;
 pub const RBN_MINMAX: i32 = -852;
 pub const RBN_AUTOBREAK: i32 = -853;
-pub const RBNM_ID: u32 = 1;
-pub const RBNM_STYLE: u32 = 2;
-pub const RBNM_LPARAM: u32 = 4;
-pub const RBAB_AUTOSIZE: u32 = 1;
-pub const RBAB_ADDBAND: u32 = 2;
-pub const RBHT_NOWHERE: u32 = 1;
-pub const RBHT_CAPTION: u32 = 2;
-pub const RBHT_CLIENT: u32 = 3;
-pub const RBHT_GRABBER: u32 = 4;
-pub const RBHT_CHEVRON: u32 = 8;
+pub const RBNM_ID: i32 = 1;
+pub const RBNM_STYLE: i32 = 2;
+pub const RBNM_LPARAM: i32 = 4;
+pub const RBAB_AUTOSIZE: i32 = 1;
+pub const RBAB_ADDBAND: i32 = 2;
+pub const RBHT_NOWHERE: i32 = 1;
+pub const RBHT_CAPTION: i32 = 2;
+pub const RBHT_CLIENT: i32 = 3;
+pub const RBHT_GRABBER: i32 = 4;
+pub const RBHT_CHEVRON: i32 = 8;
 pub const TOOLTIPS_CLASSW: &[u8; 17] = b"tooltips_class32\0";
 pub const TOOLTIPS_CLASSA: &[u8; 17] = b"tooltips_class32\0";
-pub const TTS_ALWAYSTIP: u32 = 1;
-pub const TTS_NOPREFIX: u32 = 2;
-pub const TTS_NOANIMATE: u32 = 16;
-pub const TTS_NOFADE: u32 = 32;
-pub const TTS_BALLOON: u32 = 64;
-pub const TTS_CLOSE: u32 = 128;
-pub const TTF_IDISHWND: u32 = 1;
-pub const TTF_CENTERTIP: u32 = 2;
-pub const TTF_RTLREADING: u32 = 4;
-pub const TTF_SUBCLASS: u32 = 16;
-pub const TTF_TRACK: u32 = 32;
-pub const TTF_ABSOLUTE: u32 = 128;
-pub const TTF_TRANSPARENT: u32 = 256;
-pub const TTF_PARSELINKS: u32 = 4096;
-pub const TTF_DI_SETITEM: u32 = 32768;
-pub const TTDT_AUTOMATIC: u32 = 0;
-pub const TTDT_RESHOW: u32 = 1;
-pub const TTDT_AUTOPOP: u32 = 2;
-pub const TTDT_INITIAL: u32 = 3;
-pub const TTI_NONE: u32 = 0;
-pub const TTI_INFO: u32 = 1;
-pub const TTI_WARNING: u32 = 2;
-pub const TTI_ERROR: u32 = 3;
-pub const TTM_ACTIVATE: u32 = 1025;
-pub const TTM_SETDELAYTIME: u32 = 1027;
-pub const TTM_ADDTOOLA: u32 = 1028;
-pub const TTM_ADDTOOLW: u32 = 1074;
-pub const TTM_DELTOOLA: u32 = 1029;
-pub const TTM_DELTOOLW: u32 = 1075;
-pub const TTM_NEWTOOLRECTA: u32 = 1030;
-pub const TTM_NEWTOOLRECTW: u32 = 1076;
-pub const TTM_RELAYEVENT: u32 = 1031;
-pub const TTM_GETTOOLINFOA: u32 = 1032;
-pub const TTM_GETTOOLINFOW: u32 = 1077;
-pub const TTM_SETTOOLINFOA: u32 = 1033;
-pub const TTM_SETTOOLINFOW: u32 = 1078;
-pub const TTM_HITTESTA: u32 = 1034;
-pub const TTM_HITTESTW: u32 = 1079;
-pub const TTM_GETTEXTA: u32 = 1035;
-pub const TTM_GETTEXTW: u32 = 1080;
-pub const TTM_UPDATETIPTEXTA: u32 = 1036;
-pub const TTM_UPDATETIPTEXTW: u32 = 1081;
-pub const TTM_GETTOOLCOUNT: u32 = 1037;
-pub const TTM_ENUMTOOLSA: u32 = 1038;
-pub const TTM_ENUMTOOLSW: u32 = 1082;
-pub const TTM_GETCURRENTTOOLA: u32 = 1039;
-pub const TTM_GETCURRENTTOOLW: u32 = 1083;
-pub const TTM_WINDOWFROMPOINT: u32 = 1040;
-pub const TTM_TRACKACTIVATE: u32 = 1041;
-pub const TTM_TRACKPOSITION: u32 = 1042;
-pub const TTM_SETTIPBKCOLOR: u32 = 1043;
-pub const TTM_SETTIPTEXTCOLOR: u32 = 1044;
-pub const TTM_GETDELAYTIME: u32 = 1045;
-pub const TTM_GETTIPBKCOLOR: u32 = 1046;
-pub const TTM_GETTIPTEXTCOLOR: u32 = 1047;
-pub const TTM_SETMAXTIPWIDTH: u32 = 1048;
-pub const TTM_GETMAXTIPWIDTH: u32 = 1049;
-pub const TTM_SETMARGIN: u32 = 1050;
-pub const TTM_GETMARGIN: u32 = 1051;
-pub const TTM_POP: u32 = 1052;
-pub const TTM_UPDATE: u32 = 1053;
-pub const TTM_GETBUBBLESIZE: u32 = 1054;
-pub const TTM_ADJUSTRECT: u32 = 1055;
-pub const TTM_SETTITLEA: u32 = 1056;
-pub const TTM_SETTITLEW: u32 = 1057;
-pub const TTM_POPUP: u32 = 1058;
-pub const TTM_GETTITLE: u32 = 1059;
-pub const TTM_SETWINDOWTHEME: u32 = 8203;
+pub const TTS_ALWAYSTIP: i32 = 1;
+pub const TTS_NOPREFIX: i32 = 2;
+pub const TTS_NOANIMATE: i32 = 16;
+pub const TTS_NOFADE: i32 = 32;
+pub const TTS_BALLOON: i32 = 64;
+pub const TTS_CLOSE: i32 = 128;
+pub const TTF_IDISHWND: i32 = 1;
+pub const TTF_CENTERTIP: i32 = 2;
+pub const TTF_RTLREADING: i32 = 4;
+pub const TTF_SUBCLASS: i32 = 16;
+pub const TTF_TRACK: i32 = 32;
+pub const TTF_ABSOLUTE: i32 = 128;
+pub const TTF_TRANSPARENT: i32 = 256;
+pub const TTF_PARSELINKS: i32 = 4096;
+pub const TTF_DI_SETITEM: i32 = 32768;
+pub const TTDT_AUTOMATIC: i32 = 0;
+pub const TTDT_RESHOW: i32 = 1;
+pub const TTDT_AUTOPOP: i32 = 2;
+pub const TTDT_INITIAL: i32 = 3;
+pub const TTI_NONE: i32 = 0;
+pub const TTI_INFO: i32 = 1;
+pub const TTI_WARNING: i32 = 2;
+pub const TTI_ERROR: i32 = 3;
+pub const TTM_ACTIVATE: i32 = 1025;
+pub const TTM_SETDELAYTIME: i32 = 1027;
+pub const TTM_ADDTOOLA: i32 = 1028;
+pub const TTM_ADDTOOLW: i32 = 1074;
+pub const TTM_DELTOOLA: i32 = 1029;
+pub const TTM_DELTOOLW: i32 = 1075;
+pub const TTM_NEWTOOLRECTA: i32 = 1030;
+pub const TTM_NEWTOOLRECTW: i32 = 1076;
+pub const TTM_RELAYEVENT: i32 = 1031;
+pub const TTM_GETTOOLINFOA: i32 = 1032;
+pub const TTM_GETTOOLINFOW: i32 = 1077;
+pub const TTM_SETTOOLINFOA: i32 = 1033;
+pub const TTM_SETTOOLINFOW: i32 = 1078;
+pub const TTM_HITTESTA: i32 = 1034;
+pub const TTM_HITTESTW: i32 = 1079;
+pub const TTM_GETTEXTA: i32 = 1035;
+pub const TTM_GETTEXTW: i32 = 1080;
+pub const TTM_UPDATETIPTEXTA: i32 = 1036;
+pub const TTM_UPDATETIPTEXTW: i32 = 1081;
+pub const TTM_GETTOOLCOUNT: i32 = 1037;
+pub const TTM_ENUMTOOLSA: i32 = 1038;
+pub const TTM_ENUMTOOLSW: i32 = 1082;
+pub const TTM_GETCURRENTTOOLA: i32 = 1039;
+pub const TTM_GETCURRENTTOOLW: i32 = 1083;
+pub const TTM_WINDOWFROMPOINT: i32 = 1040;
+pub const TTM_TRACKACTIVATE: i32 = 1041;
+pub const TTM_TRACKPOSITION: i32 = 1042;
+pub const TTM_SETTIPBKCOLOR: i32 = 1043;
+pub const TTM_SETTIPTEXTCOLOR: i32 = 1044;
+pub const TTM_GETDELAYTIME: i32 = 1045;
+pub const TTM_GETTIPBKCOLOR: i32 = 1046;
+pub const TTM_GETTIPTEXTCOLOR: i32 = 1047;
+pub const TTM_SETMAXTIPWIDTH: i32 = 1048;
+pub const TTM_GETMAXTIPWIDTH: i32 = 1049;
+pub const TTM_SETMARGIN: i32 = 1050;
+pub const TTM_GETMARGIN: i32 = 1051;
+pub const TTM_POP: i32 = 1052;
+pub const TTM_UPDATE: i32 = 1053;
+pub const TTM_GETBUBBLESIZE: i32 = 1054;
+pub const TTM_ADJUSTRECT: i32 = 1055;
+pub const TTM_SETTITLEA: i32 = 1056;
+pub const TTM_SETTITLEW: i32 = 1057;
+pub const TTM_POPUP: i32 = 1058;
+pub const TTM_GETTITLE: i32 = 1059;
+pub const TTM_SETWINDOWTHEME: i32 = 8203;
 pub const TTN_GETDISPINFOA: i32 = -520;
 pub const TTN_GETDISPINFOW: i32 = -530;
 pub const TTN_SHOW: i32 = -521;
@@ -2194,488 +5172,488 @@ pub const TTN_POP: i32 = -522;
 pub const TTN_LINKCLICK: i32 = -523;
 pub const TTN_NEEDTEXTA: i32 = -520;
 pub const TTN_NEEDTEXTW: i32 = -530;
-pub const SBARS_SIZEGRIP: u32 = 256;
-pub const SBARS_TOOLTIPS: u32 = 2048;
-pub const SBT_TOOLTIPS: u32 = 2048;
+pub const SBARS_SIZEGRIP: i32 = 256;
+pub const SBARS_TOOLTIPS: i32 = 2048;
+pub const SBT_TOOLTIPS: i32 = 2048;
 pub const STATUSCLASSNAMEW: &[u8; 19] = b"msctls_statusbar32\0";
 pub const STATUSCLASSNAMEA: &[u8; 19] = b"msctls_statusbar32\0";
-pub const SB_SETTEXTA: u32 = 1025;
-pub const SB_SETTEXTW: u32 = 1035;
-pub const SB_GETTEXTA: u32 = 1026;
-pub const SB_GETTEXTW: u32 = 1037;
-pub const SB_GETTEXTLENGTHA: u32 = 1027;
-pub const SB_GETTEXTLENGTHW: u32 = 1036;
-pub const SB_SETPARTS: u32 = 1028;
-pub const SB_GETPARTS: u32 = 1030;
-pub const SB_GETBORDERS: u32 = 1031;
-pub const SB_SETMINHEIGHT: u32 = 1032;
-pub const SB_SIMPLE: u32 = 1033;
-pub const SB_GETRECT: u32 = 1034;
-pub const SB_ISSIMPLE: u32 = 1038;
-pub const SB_SETICON: u32 = 1039;
-pub const SB_SETTIPTEXTA: u32 = 1040;
-pub const SB_SETTIPTEXTW: u32 = 1041;
-pub const SB_GETTIPTEXTA: u32 = 1042;
-pub const SB_GETTIPTEXTW: u32 = 1043;
-pub const SB_GETICON: u32 = 1044;
-pub const SB_SETUNICODEFORMAT: u32 = 8197;
-pub const SB_GETUNICODEFORMAT: u32 = 8198;
-pub const SBT_OWNERDRAW: u32 = 4096;
-pub const SBT_NOBORDERS: u32 = 256;
-pub const SBT_POPOUT: u32 = 512;
-pub const SBT_RTLREADING: u32 = 1024;
-pub const SBT_NOTABPARSING: u32 = 2048;
-pub const SB_SETBKCOLOR: u32 = 8193;
+pub const SB_SETTEXTA: i32 = 1025;
+pub const SB_SETTEXTW: i32 = 1035;
+pub const SB_GETTEXTA: i32 = 1026;
+pub const SB_GETTEXTW: i32 = 1037;
+pub const SB_GETTEXTLENGTHA: i32 = 1027;
+pub const SB_GETTEXTLENGTHW: i32 = 1036;
+pub const SB_SETPARTS: i32 = 1028;
+pub const SB_GETPARTS: i32 = 1030;
+pub const SB_GETBORDERS: i32 = 1031;
+pub const SB_SETMINHEIGHT: i32 = 1032;
+pub const SB_SIMPLE: i32 = 1033;
+pub const SB_GETRECT: i32 = 1034;
+pub const SB_ISSIMPLE: i32 = 1038;
+pub const SB_SETICON: i32 = 1039;
+pub const SB_SETTIPTEXTA: i32 = 1040;
+pub const SB_SETTIPTEXTW: i32 = 1041;
+pub const SB_GETTIPTEXTA: i32 = 1042;
+pub const SB_GETTIPTEXTW: i32 = 1043;
+pub const SB_GETICON: i32 = 1044;
+pub const SB_SETUNICODEFORMAT: i32 = 8197;
+pub const SB_GETUNICODEFORMAT: i32 = 8198;
+pub const SBT_OWNERDRAW: i32 = 4096;
+pub const SBT_NOBORDERS: i32 = 256;
+pub const SBT_POPOUT: i32 = 512;
+pub const SBT_RTLREADING: i32 = 1024;
+pub const SBT_NOTABPARSING: i32 = 2048;
+pub const SB_SETBKCOLOR: i32 = 8193;
 pub const SBN_SIMPLEMODECHANGE: i32 = -880;
-pub const SB_SIMPLEID: u32 = 255;
-pub const MINSYSCOMMAND: u32 = 61440;
+pub const SB_SIMPLEID: i32 = 255;
+pub const MINSYSCOMMAND: i32 = 61440;
 pub const TRACKBAR_CLASSA: &[u8; 18] = b"msctls_trackbar32\0";
 pub const TRACKBAR_CLASSW: &[u8; 18] = b"msctls_trackbar32\0";
-pub const TBS_AUTOTICKS: u32 = 1;
-pub const TBS_VERT: u32 = 2;
-pub const TBS_HORZ: u32 = 0;
-pub const TBS_TOP: u32 = 4;
-pub const TBS_BOTTOM: u32 = 0;
-pub const TBS_LEFT: u32 = 4;
-pub const TBS_RIGHT: u32 = 0;
-pub const TBS_BOTH: u32 = 8;
-pub const TBS_NOTICKS: u32 = 16;
-pub const TBS_ENABLESELRANGE: u32 = 32;
-pub const TBS_FIXEDLENGTH: u32 = 64;
-pub const TBS_NOTHUMB: u32 = 128;
-pub const TBS_TOOLTIPS: u32 = 256;
-pub const TBS_REVERSED: u32 = 512;
-pub const TBS_DOWNISLEFT: u32 = 1024;
-pub const TBM_GETPOS: u32 = 1024;
-pub const TBM_GETRANGEMIN: u32 = 1025;
-pub const TBM_GETRANGEMAX: u32 = 1026;
-pub const TBM_GETTIC: u32 = 1027;
-pub const TBM_SETTIC: u32 = 1028;
-pub const TBM_SETPOS: u32 = 1029;
-pub const TBM_SETRANGE: u32 = 1030;
-pub const TBM_SETRANGEMIN: u32 = 1031;
-pub const TBM_SETRANGEMAX: u32 = 1032;
-pub const TBM_CLEARTICS: u32 = 1033;
-pub const TBM_SETSEL: u32 = 1034;
-pub const TBM_SETSELSTART: u32 = 1035;
-pub const TBM_SETSELEND: u32 = 1036;
-pub const TBM_GETPTICS: u32 = 1038;
-pub const TBM_GETTICPOS: u32 = 1039;
-pub const TBM_GETNUMTICS: u32 = 1040;
-pub const TBM_GETSELSTART: u32 = 1041;
-pub const TBM_GETSELEND: u32 = 1042;
-pub const TBM_CLEARSEL: u32 = 1043;
-pub const TBM_SETTICFREQ: u32 = 1044;
-pub const TBM_SETPAGESIZE: u32 = 1045;
-pub const TBM_GETPAGESIZE: u32 = 1046;
-pub const TBM_SETLINESIZE: u32 = 1047;
-pub const TBM_GETLINESIZE: u32 = 1048;
-pub const TBM_GETTHUMBRECT: u32 = 1049;
-pub const TBM_GETCHANNELRECT: u32 = 1050;
-pub const TBM_SETTHUMBLENGTH: u32 = 1051;
-pub const TBM_GETTHUMBLENGTH: u32 = 1052;
-pub const TBM_SETTOOLTIPS: u32 = 1053;
-pub const TBM_GETTOOLTIPS: u32 = 1054;
-pub const TBM_SETTIPSIDE: u32 = 1055;
-pub const TBTS_TOP: u32 = 0;
-pub const TBTS_LEFT: u32 = 1;
-pub const TBTS_BOTTOM: u32 = 2;
-pub const TBTS_RIGHT: u32 = 3;
-pub const TBM_SETBUDDY: u32 = 1056;
-pub const TBM_GETBUDDY: u32 = 1057;
-pub const TBM_SETUNICODEFORMAT: u32 = 8197;
-pub const TBM_GETUNICODEFORMAT: u32 = 8198;
-pub const TB_LINEUP: u32 = 0;
-pub const TB_LINEDOWN: u32 = 1;
-pub const TB_PAGEUP: u32 = 2;
-pub const TB_PAGEDOWN: u32 = 3;
-pub const TB_THUMBPOSITION: u32 = 4;
-pub const TB_THUMBTRACK: u32 = 5;
-pub const TB_TOP: u32 = 6;
-pub const TB_BOTTOM: u32 = 7;
-pub const TB_ENDTRACK: u32 = 8;
-pub const TBCD_TICS: u32 = 1;
-pub const TBCD_THUMB: u32 = 2;
-pub const TBCD_CHANNEL: u32 = 3;
-pub const DL_BEGINDRAG: u32 = 1157;
-pub const DL_DRAGGING: u32 = 1158;
-pub const DL_DROPPED: u32 = 1159;
-pub const DL_CANCELDRAG: u32 = 1160;
-pub const DL_CURSORSET: u32 = 0;
-pub const DL_STOPCURSOR: u32 = 1;
-pub const DL_COPYCURSOR: u32 = 2;
-pub const DL_MOVECURSOR: u32 = 3;
+pub const TBS_AUTOTICKS: i32 = 1;
+pub const TBS_VERT: i32 = 2;
+pub const TBS_HORZ: i32 = 0;
+pub const TBS_TOP: i32 = 4;
+pub const TBS_BOTTOM: i32 = 0;
+pub const TBS_LEFT: i32 = 4;
+pub const TBS_RIGHT: i32 = 0;
+pub const TBS_BOTH: i32 = 8;
+pub const TBS_NOTICKS: i32 = 16;
+pub const TBS_ENABLESELRANGE: i32 = 32;
+pub const TBS_FIXEDLENGTH: i32 = 64;
+pub const TBS_NOTHUMB: i32 = 128;
+pub const TBS_TOOLTIPS: i32 = 256;
+pub const TBS_REVERSED: i32 = 512;
+pub const TBS_DOWNISLEFT: i32 = 1024;
+pub const TBM_GETPOS: i32 = 1024;
+pub const TBM_GETRANGEMIN: i32 = 1025;
+pub const TBM_GETRANGEMAX: i32 = 1026;
+pub const TBM_GETTIC: i32 = 1027;
+pub const TBM_SETTIC: i32 = 1028;
+pub const TBM_SETPOS: i32 = 1029;
+pub const TBM_SETRANGE: i32 = 1030;
+pub const TBM_SETRANGEMIN: i32 = 1031;
+pub const TBM_SETRANGEMAX: i32 = 1032;
+pub const TBM_CLEARTICS: i32 = 1033;
+pub const TBM_SETSEL: i32 = 1034;
+pub const TBM_SETSELSTART: i32 = 1035;
+pub const TBM_SETSELEND: i32 = 1036;
+pub const TBM_GETPTICS: i32 = 1038;
+pub const TBM_GETTICPOS: i32 = 1039;
+pub const TBM_GETNUMTICS: i32 = 1040;
+pub const TBM_GETSELSTART: i32 = 1041;
+pub const TBM_GETSELEND: i32 = 1042;
+pub const TBM_CLEARSEL: i32 = 1043;
+pub const TBM_SETTICFREQ: i32 = 1044;
+pub const TBM_SETPAGESIZE: i32 = 1045;
+pub const TBM_GETPAGESIZE: i32 = 1046;
+pub const TBM_SETLINESIZE: i32 = 1047;
+pub const TBM_GETLINESIZE: i32 = 1048;
+pub const TBM_GETTHUMBRECT: i32 = 1049;
+pub const TBM_GETCHANNELRECT: i32 = 1050;
+pub const TBM_SETTHUMBLENGTH: i32 = 1051;
+pub const TBM_GETTHUMBLENGTH: i32 = 1052;
+pub const TBM_SETTOOLTIPS: i32 = 1053;
+pub const TBM_GETTOOLTIPS: i32 = 1054;
+pub const TBM_SETTIPSIDE: i32 = 1055;
+pub const TBTS_TOP: i32 = 0;
+pub const TBTS_LEFT: i32 = 1;
+pub const TBTS_BOTTOM: i32 = 2;
+pub const TBTS_RIGHT: i32 = 3;
+pub const TBM_SETBUDDY: i32 = 1056;
+pub const TBM_GETBUDDY: i32 = 1057;
+pub const TBM_SETUNICODEFORMAT: i32 = 8197;
+pub const TBM_GETUNICODEFORMAT: i32 = 8198;
+pub const TB_LINEUP: i32 = 0;
+pub const TB_LINEDOWN: i32 = 1;
+pub const TB_PAGEUP: i32 = 2;
+pub const TB_PAGEDOWN: i32 = 3;
+pub const TB_THUMBPOSITION: i32 = 4;
+pub const TB_THUMBTRACK: i32 = 5;
+pub const TB_TOP: i32 = 6;
+pub const TB_BOTTOM: i32 = 7;
+pub const TB_ENDTRACK: i32 = 8;
+pub const TBCD_TICS: i32 = 1;
+pub const TBCD_THUMB: i32 = 2;
+pub const TBCD_CHANNEL: i32 = 3;
+pub const DL_BEGINDRAG: i32 = 1157;
+pub const DL_DRAGGING: i32 = 1158;
+pub const DL_DROPPED: i32 = 1159;
+pub const DL_CANCELDRAG: i32 = 1160;
+pub const DL_CURSORSET: i32 = 0;
+pub const DL_STOPCURSOR: i32 = 1;
+pub const DL_COPYCURSOR: i32 = 2;
+pub const DL_MOVECURSOR: i32 = 3;
 pub const UPDOWN_CLASSA: &[u8; 16] = b"msctls_updown32\0";
 pub const UPDOWN_CLASSW: &[u8; 16] = b"msctls_updown32\0";
-pub const UD_MAXVAL: u32 = 32767;
+pub const UD_MAXVAL: i32 = 32767;
 pub const UD_MINVAL: i32 = -32767;
-pub const UDS_WRAP: u32 = 1;
-pub const UDS_SETBUDDYINT: u32 = 2;
-pub const UDS_ALIGNRIGHT: u32 = 4;
-pub const UDS_ALIGNLEFT: u32 = 8;
-pub const UDS_AUTOBUDDY: u32 = 16;
-pub const UDS_ARROWKEYS: u32 = 32;
-pub const UDS_HORZ: u32 = 64;
-pub const UDS_NOTHOUSANDS: u32 = 128;
-pub const UDS_HOTTRACK: u32 = 256;
-pub const UDM_SETRANGE: u32 = 1125;
-pub const UDM_GETRANGE: u32 = 1126;
-pub const UDM_SETPOS: u32 = 1127;
-pub const UDM_GETPOS: u32 = 1128;
-pub const UDM_SETBUDDY: u32 = 1129;
-pub const UDM_GETBUDDY: u32 = 1130;
-pub const UDM_SETACCEL: u32 = 1131;
-pub const UDM_GETACCEL: u32 = 1132;
-pub const UDM_SETBASE: u32 = 1133;
-pub const UDM_GETBASE: u32 = 1134;
-pub const UDM_SETRANGE32: u32 = 1135;
-pub const UDM_GETRANGE32: u32 = 1136;
-pub const UDM_SETUNICODEFORMAT: u32 = 8197;
-pub const UDM_GETUNICODEFORMAT: u32 = 8198;
-pub const UDM_SETPOS32: u32 = 1137;
-pub const UDM_GETPOS32: u32 = 1138;
+pub const UDS_WRAP: i32 = 1;
+pub const UDS_SETBUDDYINT: i32 = 2;
+pub const UDS_ALIGNRIGHT: i32 = 4;
+pub const UDS_ALIGNLEFT: i32 = 8;
+pub const UDS_AUTOBUDDY: i32 = 16;
+pub const UDS_ARROWKEYS: i32 = 32;
+pub const UDS_HORZ: i32 = 64;
+pub const UDS_NOTHOUSANDS: i32 = 128;
+pub const UDS_HOTTRACK: i32 = 256;
+pub const UDM_SETRANGE: i32 = 1125;
+pub const UDM_GETRANGE: i32 = 1126;
+pub const UDM_SETPOS: i32 = 1127;
+pub const UDM_GETPOS: i32 = 1128;
+pub const UDM_SETBUDDY: i32 = 1129;
+pub const UDM_GETBUDDY: i32 = 1130;
+pub const UDM_SETACCEL: i32 = 1131;
+pub const UDM_GETACCEL: i32 = 1132;
+pub const UDM_SETBASE: i32 = 1133;
+pub const UDM_GETBASE: i32 = 1134;
+pub const UDM_SETRANGE32: i32 = 1135;
+pub const UDM_GETRANGE32: i32 = 1136;
+pub const UDM_SETUNICODEFORMAT: i32 = 8197;
+pub const UDM_GETUNICODEFORMAT: i32 = 8198;
+pub const UDM_SETPOS32: i32 = 1137;
+pub const UDM_GETPOS32: i32 = 1138;
 pub const UDN_DELTAPOS: i32 = -722;
 pub const PROGRESS_CLASSA: &[u8; 18] = b"msctls_progress32\0";
 pub const PROGRESS_CLASSW: &[u8; 18] = b"msctls_progress32\0";
-pub const PBS_SMOOTH: u32 = 1;
-pub const PBS_VERTICAL: u32 = 4;
-pub const PBM_SETRANGE: u32 = 1025;
-pub const PBM_SETPOS: u32 = 1026;
-pub const PBM_DELTAPOS: u32 = 1027;
-pub const PBM_SETSTEP: u32 = 1028;
-pub const PBM_STEPIT: u32 = 1029;
-pub const PBM_SETRANGE32: u32 = 1030;
-pub const PBM_GETRANGE: u32 = 1031;
-pub const PBM_GETPOS: u32 = 1032;
-pub const PBM_SETBARCOLOR: u32 = 1033;
-pub const PBM_SETBKCOLOR: u32 = 8193;
-pub const PBS_MARQUEE: u32 = 8;
-pub const PBM_SETMARQUEE: u32 = 1034;
-pub const HOTKEYF_SHIFT: u32 = 1;
-pub const HOTKEYF_CONTROL: u32 = 2;
-pub const HOTKEYF_ALT: u32 = 4;
-pub const HOTKEYF_EXT: u32 = 8;
-pub const HKCOMB_NONE: u32 = 1;
-pub const HKCOMB_S: u32 = 2;
-pub const HKCOMB_C: u32 = 4;
-pub const HKCOMB_A: u32 = 8;
-pub const HKCOMB_SC: u32 = 16;
-pub const HKCOMB_SA: u32 = 32;
-pub const HKCOMB_CA: u32 = 64;
-pub const HKCOMB_SCA: u32 = 128;
-pub const HKM_SETHOTKEY: u32 = 1025;
-pub const HKM_GETHOTKEY: u32 = 1026;
-pub const HKM_SETRULES: u32 = 1027;
+pub const PBS_SMOOTH: i32 = 1;
+pub const PBS_VERTICAL: i32 = 4;
+pub const PBM_SETRANGE: i32 = 1025;
+pub const PBM_SETPOS: i32 = 1026;
+pub const PBM_DELTAPOS: i32 = 1027;
+pub const PBM_SETSTEP: i32 = 1028;
+pub const PBM_STEPIT: i32 = 1029;
+pub const PBM_SETRANGE32: i32 = 1030;
+pub const PBM_GETRANGE: i32 = 1031;
+pub const PBM_GETPOS: i32 = 1032;
+pub const PBM_SETBARCOLOR: i32 = 1033;
+pub const PBM_SETBKCOLOR: i32 = 8193;
+pub const PBS_MARQUEE: i32 = 8;
+pub const PBM_SETMARQUEE: i32 = 1034;
+pub const HOTKEYF_SHIFT: i32 = 1;
+pub const HOTKEYF_CONTROL: i32 = 2;
+pub const HOTKEYF_ALT: i32 = 4;
+pub const HOTKEYF_EXT: i32 = 8;
+pub const HKCOMB_NONE: i32 = 1;
+pub const HKCOMB_S: i32 = 2;
+pub const HKCOMB_C: i32 = 4;
+pub const HKCOMB_A: i32 = 8;
+pub const HKCOMB_SC: i32 = 16;
+pub const HKCOMB_SA: i32 = 32;
+pub const HKCOMB_CA: i32 = 64;
+pub const HKCOMB_SCA: i32 = 128;
+pub const HKM_SETHOTKEY: i32 = 1025;
+pub const HKM_GETHOTKEY: i32 = 1026;
+pub const HKM_SETRULES: i32 = 1027;
 pub const HOTKEY_CLASSA: &[u8; 16] = b"msctls_hotkey32\0";
 pub const HOTKEY_CLASSW: &[u8; 16] = b"msctls_hotkey32\0";
-pub const CCS_TOP: u32 = 1;
-pub const CCS_NOMOVEY: u32 = 2;
-pub const CCS_BOTTOM: u32 = 3;
-pub const CCS_NORESIZE: u32 = 4;
-pub const CCS_NOPARENTALIGN: u32 = 8;
-pub const CCS_ADJUSTABLE: u32 = 32;
-pub const CCS_NODIVIDER: u32 = 64;
-pub const CCS_VERT: u32 = 128;
-pub const CCS_LEFT: u32 = 129;
-pub const CCS_RIGHT: u32 = 131;
-pub const CCS_NOMOVEX: u32 = 130;
+pub const CCS_TOP: i32 = 1;
+pub const CCS_NOMOVEY: i32 = 2;
+pub const CCS_BOTTOM: i32 = 3;
+pub const CCS_NORESIZE: i32 = 4;
+pub const CCS_NOPARENTALIGN: i32 = 8;
+pub const CCS_ADJUSTABLE: i32 = 32;
+pub const CCS_NODIVIDER: i32 = 64;
+pub const CCS_VERT: i32 = 128;
+pub const CCS_LEFT: i32 = 129;
+pub const CCS_RIGHT: i32 = 131;
+pub const CCS_NOMOVEX: i32 = 130;
 pub const WC_LISTVIEWA: &[u8; 14] = b"SysListView32\0";
 pub const WC_LISTVIEWW: &[u8; 14] = b"SysListView32\0";
-pub const LVS_ICON: u32 = 0;
-pub const LVS_REPORT: u32 = 1;
-pub const LVS_SMALLICON: u32 = 2;
-pub const LVS_LIST: u32 = 3;
-pub const LVS_TYPEMASK: u32 = 3;
-pub const LVS_SINGLESEL: u32 = 4;
-pub const LVS_SHOWSELALWAYS: u32 = 8;
-pub const LVS_SORTASCENDING: u32 = 16;
-pub const LVS_SORTDESCENDING: u32 = 32;
-pub const LVS_SHAREIMAGELISTS: u32 = 64;
-pub const LVS_NOLABELWRAP: u32 = 128;
-pub const LVS_AUTOARRANGE: u32 = 256;
-pub const LVS_EDITLABELS: u32 = 512;
-pub const LVS_OWNERDATA: u32 = 4096;
-pub const LVS_NOSCROLL: u32 = 8192;
-pub const LVS_TYPESTYLEMASK: u32 = 64512;
-pub const LVS_ALIGNTOP: u32 = 0;
-pub const LVS_ALIGNLEFT: u32 = 2048;
-pub const LVS_ALIGNMASK: u32 = 3072;
-pub const LVS_OWNERDRAWFIXED: u32 = 1024;
-pub const LVS_NOCOLUMNHEADER: u32 = 16384;
-pub const LVS_NOSORTHEADER: u32 = 32768;
-pub const LVM_SETUNICODEFORMAT: u32 = 8197;
-pub const LVM_GETUNICODEFORMAT: u32 = 8198;
-pub const LVM_GETBKCOLOR: u32 = 4096;
-pub const LVM_SETBKCOLOR: u32 = 4097;
-pub const LVM_GETIMAGELIST: u32 = 4098;
-pub const LVSIL_NORMAL: u32 = 0;
-pub const LVSIL_SMALL: u32 = 1;
-pub const LVSIL_STATE: u32 = 2;
-pub const LVSIL_GROUPHEADER: u32 = 3;
-pub const LVM_SETIMAGELIST: u32 = 4099;
-pub const LVM_GETITEMCOUNT: u32 = 4100;
-pub const LVIF_TEXT: u32 = 1;
-pub const LVIF_IMAGE: u32 = 2;
-pub const LVIF_PARAM: u32 = 4;
-pub const LVIF_STATE: u32 = 8;
-pub const LVIF_INDENT: u32 = 16;
-pub const LVIF_NORECOMPUTE: u32 = 2048;
-pub const LVIF_GROUPID: u32 = 256;
-pub const LVIF_COLUMNS: u32 = 512;
-pub const LVIS_FOCUSED: u32 = 1;
-pub const LVIS_SELECTED: u32 = 2;
-pub const LVIS_CUT: u32 = 4;
-pub const LVIS_DROPHILITED: u32 = 8;
-pub const LVIS_GLOW: u32 = 16;
-pub const LVIS_ACTIVATING: u32 = 32;
-pub const LVIS_OVERLAYMASK: u32 = 3840;
-pub const LVIS_STATEIMAGEMASK: u32 = 61440;
+pub const LVS_ICON: i32 = 0;
+pub const LVS_REPORT: i32 = 1;
+pub const LVS_SMALLICON: i32 = 2;
+pub const LVS_LIST: i32 = 3;
+pub const LVS_TYPEMASK: i32 = 3;
+pub const LVS_SINGLESEL: i32 = 4;
+pub const LVS_SHOWSELALWAYS: i32 = 8;
+pub const LVS_SORTASCENDING: i32 = 16;
+pub const LVS_SORTDESCENDING: i32 = 32;
+pub const LVS_SHAREIMAGELISTS: i32 = 64;
+pub const LVS_NOLABELWRAP: i32 = 128;
+pub const LVS_AUTOARRANGE: i32 = 256;
+pub const LVS_EDITLABELS: i32 = 512;
+pub const LVS_OWNERDATA: i32 = 4096;
+pub const LVS_NOSCROLL: i32 = 8192;
+pub const LVS_TYPESTYLEMASK: i32 = 64512;
+pub const LVS_ALIGNTOP: i32 = 0;
+pub const LVS_ALIGNLEFT: i32 = 2048;
+pub const LVS_ALIGNMASK: i32 = 3072;
+pub const LVS_OWNERDRAWFIXED: i32 = 1024;
+pub const LVS_NOCOLUMNHEADER: i32 = 16384;
+pub const LVS_NOSORTHEADER: i32 = 32768;
+pub const LVM_SETUNICODEFORMAT: i32 = 8197;
+pub const LVM_GETUNICODEFORMAT: i32 = 8198;
+pub const LVM_GETBKCOLOR: i32 = 4096;
+pub const LVM_SETBKCOLOR: i32 = 4097;
+pub const LVM_GETIMAGELIST: i32 = 4098;
+pub const LVSIL_NORMAL: i32 = 0;
+pub const LVSIL_SMALL: i32 = 1;
+pub const LVSIL_STATE: i32 = 2;
+pub const LVSIL_GROUPHEADER: i32 = 3;
+pub const LVM_SETIMAGELIST: i32 = 4099;
+pub const LVM_GETITEMCOUNT: i32 = 4100;
+pub const LVIF_TEXT: i32 = 1;
+pub const LVIF_IMAGE: i32 = 2;
+pub const LVIF_PARAM: i32 = 4;
+pub const LVIF_STATE: i32 = 8;
+pub const LVIF_INDENT: i32 = 16;
+pub const LVIF_NORECOMPUTE: i32 = 2048;
+pub const LVIF_GROUPID: i32 = 256;
+pub const LVIF_COLUMNS: i32 = 512;
+pub const LVIS_FOCUSED: i32 = 1;
+pub const LVIS_SELECTED: i32 = 2;
+pub const LVIS_CUT: i32 = 4;
+pub const LVIS_DROPHILITED: i32 = 8;
+pub const LVIS_GLOW: i32 = 16;
+pub const LVIS_ACTIVATING: i32 = 32;
+pub const LVIS_OVERLAYMASK: i32 = 3840;
+pub const LVIS_STATEIMAGEMASK: i32 = 61440;
 pub const I_INDENTCALLBACK: i32 = -1;
 pub const I_GROUPIDCALLBACK: i32 = -1;
 pub const I_GROUPIDNONE: i32 = -2;
 pub const I_IMAGECALLBACK: i32 = -1;
 pub const I_IMAGENONE: i32 = -2;
-pub const LVM_GETITEMA: u32 = 4101;
-pub const LVM_GETITEMW: u32 = 4171;
-pub const LVM_SETITEMA: u32 = 4102;
-pub const LVM_SETITEMW: u32 = 4172;
-pub const LVM_INSERTITEMA: u32 = 4103;
-pub const LVM_INSERTITEMW: u32 = 4173;
-pub const LVM_DELETEITEM: u32 = 4104;
-pub const LVM_DELETEALLITEMS: u32 = 4105;
-pub const LVM_GETCALLBACKMASK: u32 = 4106;
-pub const LVM_SETCALLBACKMASK: u32 = 4107;
-pub const LVNI_ALL: u32 = 0;
-pub const LVNI_FOCUSED: u32 = 1;
-pub const LVNI_SELECTED: u32 = 2;
-pub const LVNI_CUT: u32 = 4;
-pub const LVNI_DROPHILITED: u32 = 8;
-pub const LVNI_ABOVE: u32 = 256;
-pub const LVNI_BELOW: u32 = 512;
-pub const LVNI_TOLEFT: u32 = 1024;
-pub const LVNI_TORIGHT: u32 = 2048;
-pub const LVM_GETNEXTITEM: u32 = 4108;
-pub const LVFI_PARAM: u32 = 1;
-pub const LVFI_STRING: u32 = 2;
-pub const LVFI_SUBSTRING: u32 = 4;
-pub const LVFI_PARTIAL: u32 = 8;
-pub const LVFI_WRAP: u32 = 32;
-pub const LVFI_NEARESTXY: u32 = 64;
-pub const LVM_FINDITEMA: u32 = 4109;
-pub const LVM_FINDITEMW: u32 = 4179;
-pub const LVIR_BOUNDS: u32 = 0;
-pub const LVIR_ICON: u32 = 1;
-pub const LVIR_LABEL: u32 = 2;
-pub const LVIR_SELECTBOUNDS: u32 = 3;
-pub const LVM_GETITEMRECT: u32 = 4110;
-pub const LVM_SETITEMPOSITION: u32 = 4111;
-pub const LVM_GETITEMPOSITION: u32 = 4112;
-pub const LVM_GETSTRINGWIDTHA: u32 = 4113;
-pub const LVM_GETSTRINGWIDTHW: u32 = 4183;
-pub const LVHT_NOWHERE: u32 = 1;
-pub const LVHT_ONITEMICON: u32 = 2;
-pub const LVHT_ONITEMLABEL: u32 = 4;
-pub const LVHT_ONITEMSTATEICON: u32 = 8;
-pub const LVHT_ONITEM: u32 = 14;
-pub const LVHT_ABOVE: u32 = 8;
-pub const LVHT_BELOW: u32 = 16;
-pub const LVHT_TORIGHT: u32 = 32;
-pub const LVHT_TOLEFT: u32 = 64;
-pub const LVM_HITTEST: u32 = 4114;
-pub const LVM_ENSUREVISIBLE: u32 = 4115;
-pub const LVM_SCROLL: u32 = 4116;
-pub const LVM_REDRAWITEMS: u32 = 4117;
-pub const LVA_DEFAULT: u32 = 0;
-pub const LVA_ALIGNLEFT: u32 = 1;
-pub const LVA_ALIGNTOP: u32 = 2;
-pub const LVA_SNAPTOGRID: u32 = 5;
-pub const LVM_ARRANGE: u32 = 4118;
-pub const LVM_EDITLABELA: u32 = 4119;
-pub const LVM_EDITLABELW: u32 = 4214;
-pub const LVM_GETEDITCONTROL: u32 = 4120;
-pub const LVCF_FMT: u32 = 1;
-pub const LVCF_WIDTH: u32 = 2;
-pub const LVCF_TEXT: u32 = 4;
-pub const LVCF_SUBITEM: u32 = 8;
-pub const LVCF_IMAGE: u32 = 16;
-pub const LVCF_ORDER: u32 = 32;
-pub const LVCFMT_LEFT: u32 = 0;
-pub const LVCFMT_RIGHT: u32 = 1;
-pub const LVCFMT_CENTER: u32 = 2;
-pub const LVCFMT_JUSTIFYMASK: u32 = 3;
-pub const LVCFMT_IMAGE: u32 = 2048;
-pub const LVCFMT_BITMAP_ON_RIGHT: u32 = 4096;
-pub const LVCFMT_COL_HAS_IMAGES: u32 = 32768;
-pub const LVM_GETCOLUMNA: u32 = 4121;
-pub const LVM_GETCOLUMNW: u32 = 4191;
-pub const LVM_SETCOLUMNA: u32 = 4122;
-pub const LVM_SETCOLUMNW: u32 = 4192;
-pub const LVM_INSERTCOLUMNA: u32 = 4123;
-pub const LVM_INSERTCOLUMNW: u32 = 4193;
-pub const LVM_DELETECOLUMN: u32 = 4124;
-pub const LVM_GETCOLUMNWIDTH: u32 = 4125;
+pub const LVM_GETITEMA: i32 = 4101;
+pub const LVM_GETITEMW: i32 = 4171;
+pub const LVM_SETITEMA: i32 = 4102;
+pub const LVM_SETITEMW: i32 = 4172;
+pub const LVM_INSERTITEMA: i32 = 4103;
+pub const LVM_INSERTITEMW: i32 = 4173;
+pub const LVM_DELETEITEM: i32 = 4104;
+pub const LVM_DELETEALLITEMS: i32 = 4105;
+pub const LVM_GETCALLBACKMASK: i32 = 4106;
+pub const LVM_SETCALLBACKMASK: i32 = 4107;
+pub const LVNI_ALL: i32 = 0;
+pub const LVNI_FOCUSED: i32 = 1;
+pub const LVNI_SELECTED: i32 = 2;
+pub const LVNI_CUT: i32 = 4;
+pub const LVNI_DROPHILITED: i32 = 8;
+pub const LVNI_ABOVE: i32 = 256;
+pub const LVNI_BELOW: i32 = 512;
+pub const LVNI_TOLEFT: i32 = 1024;
+pub const LVNI_TORIGHT: i32 = 2048;
+pub const LVM_GETNEXTITEM: i32 = 4108;
+pub const LVFI_PARAM: i32 = 1;
+pub const LVFI_STRING: i32 = 2;
+pub const LVFI_SUBSTRING: i32 = 4;
+pub const LVFI_PARTIAL: i32 = 8;
+pub const LVFI_WRAP: i32 = 32;
+pub const LVFI_NEARESTXY: i32 = 64;
+pub const LVM_FINDITEMA: i32 = 4109;
+pub const LVM_FINDITEMW: i32 = 4179;
+pub const LVIR_BOUNDS: i32 = 0;
+pub const LVIR_ICON: i32 = 1;
+pub const LVIR_LABEL: i32 = 2;
+pub const LVIR_SELECTBOUNDS: i32 = 3;
+pub const LVM_GETITEMRECT: i32 = 4110;
+pub const LVM_SETITEMPOSITION: i32 = 4111;
+pub const LVM_GETITEMPOSITION: i32 = 4112;
+pub const LVM_GETSTRINGWIDTHA: i32 = 4113;
+pub const LVM_GETSTRINGWIDTHW: i32 = 4183;
+pub const LVHT_NOWHERE: i32 = 1;
+pub const LVHT_ONITEMICON: i32 = 2;
+pub const LVHT_ONITEMLABEL: i32 = 4;
+pub const LVHT_ONITEMSTATEICON: i32 = 8;
+pub const LVHT_ONITEM: i32 = 14;
+pub const LVHT_ABOVE: i32 = 8;
+pub const LVHT_BELOW: i32 = 16;
+pub const LVHT_TORIGHT: i32 = 32;
+pub const LVHT_TOLEFT: i32 = 64;
+pub const LVM_HITTEST: i32 = 4114;
+pub const LVM_ENSUREVISIBLE: i32 = 4115;
+pub const LVM_SCROLL: i32 = 4116;
+pub const LVM_REDRAWITEMS: i32 = 4117;
+pub const LVA_DEFAULT: i32 = 0;
+pub const LVA_ALIGNLEFT: i32 = 1;
+pub const LVA_ALIGNTOP: i32 = 2;
+pub const LVA_SNAPTOGRID: i32 = 5;
+pub const LVM_ARRANGE: i32 = 4118;
+pub const LVM_EDITLABELA: i32 = 4119;
+pub const LVM_EDITLABELW: i32 = 4214;
+pub const LVM_GETEDITCONTROL: i32 = 4120;
+pub const LVCF_FMT: i32 = 1;
+pub const LVCF_WIDTH: i32 = 2;
+pub const LVCF_TEXT: i32 = 4;
+pub const LVCF_SUBITEM: i32 = 8;
+pub const LVCF_IMAGE: i32 = 16;
+pub const LVCF_ORDER: i32 = 32;
+pub const LVCFMT_LEFT: i32 = 0;
+pub const LVCFMT_RIGHT: i32 = 1;
+pub const LVCFMT_CENTER: i32 = 2;
+pub const LVCFMT_JUSTIFYMASK: i32 = 3;
+pub const LVCFMT_IMAGE: i32 = 2048;
+pub const LVCFMT_BITMAP_ON_RIGHT: i32 = 4096;
+pub const LVCFMT_COL_HAS_IMAGES: i32 = 32768;
+pub const LVM_GETCOLUMNA: i32 = 4121;
+pub const LVM_GETCOLUMNW: i32 = 4191;
+pub const LVM_SETCOLUMNA: i32 = 4122;
+pub const LVM_SETCOLUMNW: i32 = 4192;
+pub const LVM_INSERTCOLUMNA: i32 = 4123;
+pub const LVM_INSERTCOLUMNW: i32 = 4193;
+pub const LVM_DELETECOLUMN: i32 = 4124;
+pub const LVM_GETCOLUMNWIDTH: i32 = 4125;
 pub const LVSCW_AUTOSIZE: i32 = -1;
 pub const LVSCW_AUTOSIZE_USEHEADER: i32 = -2;
-pub const LVM_SETCOLUMNWIDTH: u32 = 4126;
-pub const LVM_GETHEADER: u32 = 4127;
-pub const LVM_CREATEDRAGIMAGE: u32 = 4129;
-pub const LVM_GETVIEWRECT: u32 = 4130;
-pub const LVM_GETTEXTCOLOR: u32 = 4131;
-pub const LVM_SETTEXTCOLOR: u32 = 4132;
-pub const LVM_GETTEXTBKCOLOR: u32 = 4133;
-pub const LVM_SETTEXTBKCOLOR: u32 = 4134;
-pub const LVM_GETTOPINDEX: u32 = 4135;
-pub const LVM_GETCOUNTPERPAGE: u32 = 4136;
-pub const LVM_GETORIGIN: u32 = 4137;
-pub const LVM_UPDATE: u32 = 4138;
-pub const LVM_SETITEMSTATE: u32 = 4139;
-pub const LVM_GETITEMSTATE: u32 = 4140;
-pub const LVM_GETITEMTEXTA: u32 = 4141;
-pub const LVM_GETITEMTEXTW: u32 = 4211;
-pub const LVM_SETITEMTEXTA: u32 = 4142;
-pub const LVM_SETITEMTEXTW: u32 = 4212;
-pub const LVSICF_NOINVALIDATEALL: u32 = 1;
-pub const LVSICF_NOSCROLL: u32 = 2;
-pub const LVM_SETITEMCOUNT: u32 = 4143;
-pub const LVM_SORTITEMS: u32 = 4144;
-pub const LVM_SETITEMPOSITION32: u32 = 4145;
-pub const LVM_GETSELECTEDCOUNT: u32 = 4146;
-pub const LVM_GETITEMSPACING: u32 = 4147;
-pub const LVM_GETISEARCHSTRINGA: u32 = 4148;
-pub const LVM_GETISEARCHSTRINGW: u32 = 4213;
-pub const LVM_SETICONSPACING: u32 = 4149;
-pub const LVM_SETEXTENDEDLISTVIEWSTYLE: u32 = 4150;
-pub const LVM_GETEXTENDEDLISTVIEWSTYLE: u32 = 4151;
-pub const LVS_EX_GRIDLINES: u32 = 1;
-pub const LVS_EX_SUBITEMIMAGES: u32 = 2;
-pub const LVS_EX_CHECKBOXES: u32 = 4;
-pub const LVS_EX_TRACKSELECT: u32 = 8;
-pub const LVS_EX_HEADERDRAGDROP: u32 = 16;
-pub const LVS_EX_FULLROWSELECT: u32 = 32;
-pub const LVS_EX_ONECLICKACTIVATE: u32 = 64;
-pub const LVS_EX_TWOCLICKACTIVATE: u32 = 128;
-pub const LVS_EX_FLATSB: u32 = 256;
-pub const LVS_EX_REGIONAL: u32 = 512;
-pub const LVS_EX_INFOTIP: u32 = 1024;
-pub const LVS_EX_UNDERLINEHOT: u32 = 2048;
-pub const LVS_EX_UNDERLINECOLD: u32 = 4096;
-pub const LVS_EX_MULTIWORKAREAS: u32 = 8192;
-pub const LVS_EX_LABELTIP: u32 = 16384;
-pub const LVS_EX_BORDERSELECT: u32 = 32768;
-pub const LVS_EX_DOUBLEBUFFER: u32 = 65536;
-pub const LVS_EX_HIDELABELS: u32 = 131072;
-pub const LVS_EX_SINGLEROW: u32 = 262144;
-pub const LVS_EX_SNAPTOGRID: u32 = 524288;
-pub const LVS_EX_SIMPLESELECT: u32 = 1048576;
-pub const LVM_GETSUBITEMRECT: u32 = 4152;
-pub const LVM_SUBITEMHITTEST: u32 = 4153;
-pub const LVM_SETCOLUMNORDERARRAY: u32 = 4154;
-pub const LVM_GETCOLUMNORDERARRAY: u32 = 4155;
-pub const LVM_SETHOTITEM: u32 = 4156;
-pub const LVM_GETHOTITEM: u32 = 4157;
-pub const LVM_SETHOTCURSOR: u32 = 4158;
-pub const LVM_GETHOTCURSOR: u32 = 4159;
-pub const LVM_APPROXIMATEVIEWRECT: u32 = 4160;
-pub const LV_MAX_WORKAREAS: u32 = 16;
-pub const LVM_SETWORKAREAS: u32 = 4161;
-pub const LVM_GETWORKAREAS: u32 = 4166;
-pub const LVM_GETNUMBEROFWORKAREAS: u32 = 4169;
-pub const LVM_GETSELECTIONMARK: u32 = 4162;
-pub const LVM_SETSELECTIONMARK: u32 = 4163;
-pub const LVM_SETHOVERTIME: u32 = 4167;
-pub const LVM_GETHOVERTIME: u32 = 4168;
-pub const LVM_SETTOOLTIPS: u32 = 4170;
-pub const LVM_GETTOOLTIPS: u32 = 4174;
-pub const LVM_SORTITEMSEX: u32 = 4177;
-pub const LVBKIF_SOURCE_NONE: u32 = 0;
-pub const LVBKIF_SOURCE_HBITMAP: u32 = 1;
-pub const LVBKIF_SOURCE_URL: u32 = 2;
-pub const LVBKIF_SOURCE_MASK: u32 = 3;
-pub const LVBKIF_STYLE_NORMAL: u32 = 0;
-pub const LVBKIF_STYLE_TILE: u32 = 16;
-pub const LVBKIF_STYLE_MASK: u32 = 16;
-pub const LVBKIF_FLAG_TILEOFFSET: u32 = 256;
-pub const LVBKIF_TYPE_WATERMARK: u32 = 268435456;
-pub const LVM_SETBKIMAGEA: u32 = 4164;
-pub const LVM_SETBKIMAGEW: u32 = 4234;
-pub const LVM_GETBKIMAGEA: u32 = 4165;
-pub const LVM_GETBKIMAGEW: u32 = 4235;
-pub const LVM_SETSELECTEDCOLUMN: u32 = 4236;
-pub const LVM_SETTILEWIDTH: u32 = 4237;
-pub const LV_VIEW_ICON: u32 = 0;
-pub const LV_VIEW_DETAILS: u32 = 1;
-pub const LV_VIEW_SMALLICON: u32 = 2;
-pub const LV_VIEW_LIST: u32 = 3;
-pub const LV_VIEW_TILE: u32 = 4;
-pub const LV_VIEW_MAX: u32 = 4;
-pub const LVM_SETVIEW: u32 = 4238;
-pub const LVM_GETVIEW: u32 = 4239;
-pub const LVGF_NONE: u32 = 0;
-pub const LVGF_HEADER: u32 = 1;
-pub const LVGF_FOOTER: u32 = 2;
-pub const LVGF_STATE: u32 = 4;
-pub const LVGF_ALIGN: u32 = 8;
-pub const LVGF_GROUPID: u32 = 16;
-pub const LVGS_NORMAL: u32 = 0;
-pub const LVGS_COLLAPSED: u32 = 1;
-pub const LVGS_HIDDEN: u32 = 2;
-pub const LVGA_HEADER_LEFT: u32 = 1;
-pub const LVGA_HEADER_CENTER: u32 = 2;
-pub const LVGA_HEADER_RIGHT: u32 = 4;
-pub const LVGA_FOOTER_LEFT: u32 = 8;
-pub const LVGA_FOOTER_CENTER: u32 = 16;
-pub const LVGA_FOOTER_RIGHT: u32 = 32;
-pub const LVM_INSERTGROUP: u32 = 4241;
-pub const LVM_SETGROUPINFO: u32 = 4243;
-pub const LVM_GETGROUPINFO: u32 = 4245;
-pub const LVM_REMOVEGROUP: u32 = 4246;
-pub const LVM_MOVEGROUP: u32 = 4247;
-pub const LVM_MOVEITEMTOGROUP: u32 = 4250;
-pub const LVGMF_NONE: u32 = 0;
-pub const LVGMF_BORDERSIZE: u32 = 1;
-pub const LVGMF_BORDERCOLOR: u32 = 2;
-pub const LVGMF_TEXTCOLOR: u32 = 4;
-pub const LVM_SETGROUPMETRICS: u32 = 4251;
-pub const LVM_GETGROUPMETRICS: u32 = 4252;
-pub const LVM_ENABLEGROUPVIEW: u32 = 4253;
-pub const LVM_SORTGROUPS: u32 = 4254;
-pub const LVM_INSERTGROUPSORTED: u32 = 4255;
-pub const LVM_REMOVEALLGROUPS: u32 = 4256;
-pub const LVM_HASGROUP: u32 = 4257;
-pub const LVTVIF_AUTOSIZE: u32 = 0;
-pub const LVTVIF_FIXEDWIDTH: u32 = 1;
-pub const LVTVIF_FIXEDHEIGHT: u32 = 2;
-pub const LVTVIF_FIXEDSIZE: u32 = 3;
-pub const LVTVIM_TILESIZE: u32 = 1;
-pub const LVTVIM_COLUMNS: u32 = 2;
-pub const LVTVIM_LABELMARGIN: u32 = 4;
-pub const LVM_SETTILEVIEWINFO: u32 = 4258;
-pub const LVM_GETTILEVIEWINFO: u32 = 4259;
-pub const LVM_SETTILEINFO: u32 = 4260;
-pub const LVM_GETTILEINFO: u32 = 4261;
-pub const LVIM_AFTER: u32 = 1;
-pub const LVM_SETINSERTMARK: u32 = 4262;
-pub const LVM_GETINSERTMARK: u32 = 4263;
-pub const LVM_INSERTMARKHITTEST: u32 = 4264;
-pub const LVM_GETINSERTMARKRECT: u32 = 4265;
-pub const LVM_SETINSERTMARKCOLOR: u32 = 4266;
-pub const LVM_GETINSERTMARKCOLOR: u32 = 4267;
-pub const LVM_SETINFOTIP: u32 = 4269;
-pub const LVM_GETSELECTEDCOLUMN: u32 = 4270;
-pub const LVM_ISGROUPVIEWENABLED: u32 = 4271;
-pub const LVM_GETOUTLINECOLOR: u32 = 4272;
-pub const LVM_SETOUTLINECOLOR: u32 = 4273;
-pub const LVM_CANCELEDITLABEL: u32 = 4275;
-pub const LVM_MAPINDEXTOID: u32 = 4276;
-pub const LVM_MAPIDTOINDEX: u32 = 4277;
-pub const LVM_ISITEMVISIBLE: u32 = 4278;
-pub const LVKF_ALT: u32 = 1;
-pub const LVKF_CONTROL: u32 = 2;
-pub const LVKF_SHIFT: u32 = 4;
-pub const LVCDI_ITEM: u32 = 0;
-pub const LVCDI_GROUP: u32 = 1;
-pub const LVCDRF_NOSELECT: u32 = 65536;
-pub const LVCDRF_NOGROUPFRAME: u32 = 131072;
+pub const LVM_SETCOLUMNWIDTH: i32 = 4126;
+pub const LVM_GETHEADER: i32 = 4127;
+pub const LVM_CREATEDRAGIMAGE: i32 = 4129;
+pub const LVM_GETVIEWRECT: i32 = 4130;
+pub const LVM_GETTEXTCOLOR: i32 = 4131;
+pub const LVM_SETTEXTCOLOR: i32 = 4132;
+pub const LVM_GETTEXTBKCOLOR: i32 = 4133;
+pub const LVM_SETTEXTBKCOLOR: i32 = 4134;
+pub const LVM_GETTOPINDEX: i32 = 4135;
+pub const LVM_GETCOUNTPERPAGE: i32 = 4136;
+pub const LVM_GETORIGIN: i32 = 4137;
+pub const LVM_UPDATE: i32 = 4138;
+pub const LVM_SETITEMSTATE: i32 = 4139;
+pub const LVM_GETITEMSTATE: i32 = 4140;
+pub const LVM_GETITEMTEXTA: i32 = 4141;
+pub const LVM_GETITEMTEXTW: i32 = 4211;
+pub const LVM_SETITEMTEXTA: i32 = 4142;
+pub const LVM_SETITEMTEXTW: i32 = 4212;
+pub const LVSICF_NOINVALIDATEALL: i32 = 1;
+pub const LVSICF_NOSCROLL: i32 = 2;
+pub const LVM_SETITEMCOUNT: i32 = 4143;
+pub const LVM_SORTITEMS: i32 = 4144;
+pub const LVM_SETITEMPOSITION32: i32 = 4145;
+pub const LVM_GETSELECTEDCOUNT: i32 = 4146;
+pub const LVM_GETITEMSPACING: i32 = 4147;
+pub const LVM_GETISEARCHSTRINGA: i32 = 4148;
+pub const LVM_GETISEARCHSTRINGW: i32 = 4213;
+pub const LVM_SETICONSPACING: i32 = 4149;
+pub const LVM_SETEXTENDEDLISTVIEWSTYLE: i32 = 4150;
+pub const LVM_GETEXTENDEDLISTVIEWSTYLE: i32 = 4151;
+pub const LVS_EX_GRIDLINES: i32 = 1;
+pub const LVS_EX_SUBITEMIMAGES: i32 = 2;
+pub const LVS_EX_CHECKBOXES: i32 = 4;
+pub const LVS_EX_TRACKSELECT: i32 = 8;
+pub const LVS_EX_HEADERDRAGDROP: i32 = 16;
+pub const LVS_EX_FULLROWSELECT: i32 = 32;
+pub const LVS_EX_ONECLICKACTIVATE: i32 = 64;
+pub const LVS_EX_TWOCLICKACTIVATE: i32 = 128;
+pub const LVS_EX_FLATSB: i32 = 256;
+pub const LVS_EX_REGIONAL: i32 = 512;
+pub const LVS_EX_INFOTIP: i32 = 1024;
+pub const LVS_EX_UNDERLINEHOT: i32 = 2048;
+pub const LVS_EX_UNDERLINECOLD: i32 = 4096;
+pub const LVS_EX_MULTIWORKAREAS: i32 = 8192;
+pub const LVS_EX_LABELTIP: i32 = 16384;
+pub const LVS_EX_BORDERSELECT: i32 = 32768;
+pub const LVS_EX_DOUBLEBUFFER: i32 = 65536;
+pub const LVS_EX_HIDELABELS: i32 = 131072;
+pub const LVS_EX_SINGLEROW: i32 = 262144;
+pub const LVS_EX_SNAPTOGRID: i32 = 524288;
+pub const LVS_EX_SIMPLESELECT: i32 = 1048576;
+pub const LVM_GETSUBITEMRECT: i32 = 4152;
+pub const LVM_SUBITEMHITTEST: i32 = 4153;
+pub const LVM_SETCOLUMNORDERARRAY: i32 = 4154;
+pub const LVM_GETCOLUMNORDERARRAY: i32 = 4155;
+pub const LVM_SETHOTITEM: i32 = 4156;
+pub const LVM_GETHOTITEM: i32 = 4157;
+pub const LVM_SETHOTCURSOR: i32 = 4158;
+pub const LVM_GETHOTCURSOR: i32 = 4159;
+pub const LVM_APPROXIMATEVIEWRECT: i32 = 4160;
+pub const LV_MAX_WORKAREAS: i32 = 16;
+pub const LVM_SETWORKAREAS: i32 = 4161;
+pub const LVM_GETWORKAREAS: i32 = 4166;
+pub const LVM_GETNUMBEROFWORKAREAS: i32 = 4169;
+pub const LVM_GETSELECTIONMARK: i32 = 4162;
+pub const LVM_SETSELECTIONMARK: i32 = 4163;
+pub const LVM_SETHOVERTIME: i32 = 4167;
+pub const LVM_GETHOVERTIME: i32 = 4168;
+pub const LVM_SETTOOLTIPS: i32 = 4170;
+pub const LVM_GETTOOLTIPS: i32 = 4174;
+pub const LVM_SORTITEMSEX: i32 = 4177;
+pub const LVBKIF_SOURCE_NONE: i32 = 0;
+pub const LVBKIF_SOURCE_HBITMAP: i32 = 1;
+pub const LVBKIF_SOURCE_URL: i32 = 2;
+pub const LVBKIF_SOURCE_MASK: i32 = 3;
+pub const LVBKIF_STYLE_NORMAL: i32 = 0;
+pub const LVBKIF_STYLE_TILE: i32 = 16;
+pub const LVBKIF_STYLE_MASK: i32 = 16;
+pub const LVBKIF_FLAG_TILEOFFSET: i32 = 256;
+pub const LVBKIF_TYPE_WATERMARK: i32 = 268435456;
+pub const LVM_SETBKIMAGEA: i32 = 4164;
+pub const LVM_SETBKIMAGEW: i32 = 4234;
+pub const LVM_GETBKIMAGEA: i32 = 4165;
+pub const LVM_GETBKIMAGEW: i32 = 4235;
+pub const LVM_SETSELECTEDCOLUMN: i32 = 4236;
+pub const LVM_SETTILEWIDTH: i32 = 4237;
+pub const LV_VIEW_ICON: i32 = 0;
+pub const LV_VIEW_DETAILS: i32 = 1;
+pub const LV_VIEW_SMALLICON: i32 = 2;
+pub const LV_VIEW_LIST: i32 = 3;
+pub const LV_VIEW_TILE: i32 = 4;
+pub const LV_VIEW_MAX: i32 = 4;
+pub const LVM_SETVIEW: i32 = 4238;
+pub const LVM_GETVIEW: i32 = 4239;
+pub const LVGF_NONE: i32 = 0;
+pub const LVGF_HEADER: i32 = 1;
+pub const LVGF_FOOTER: i32 = 2;
+pub const LVGF_STATE: i32 = 4;
+pub const LVGF_ALIGN: i32 = 8;
+pub const LVGF_GROUPID: i32 = 16;
+pub const LVGS_NORMAL: i32 = 0;
+pub const LVGS_COLLAPSED: i32 = 1;
+pub const LVGS_HIDDEN: i32 = 2;
+pub const LVGA_HEADER_LEFT: i32 = 1;
+pub const LVGA_HEADER_CENTER: i32 = 2;
+pub const LVGA_HEADER_RIGHT: i32 = 4;
+pub const LVGA_FOOTER_LEFT: i32 = 8;
+pub const LVGA_FOOTER_CENTER: i32 = 16;
+pub const LVGA_FOOTER_RIGHT: i32 = 32;
+pub const LVM_INSERTGROUP: i32 = 4241;
+pub const LVM_SETGROUPINFO: i32 = 4243;
+pub const LVM_GETGROUPINFO: i32 = 4245;
+pub const LVM_REMOVEGROUP: i32 = 4246;
+pub const LVM_MOVEGROUP: i32 = 4247;
+pub const LVM_MOVEITEMTOGROUP: i32 = 4250;
+pub const LVGMF_NONE: i32 = 0;
+pub const LVGMF_BORDERSIZE: i32 = 1;
+pub const LVGMF_BORDERCOLOR: i32 = 2;
+pub const LVGMF_TEXTCOLOR: i32 = 4;
+pub const LVM_SETGROUPMETRICS: i32 = 4251;
+pub const LVM_GETGROUPMETRICS: i32 = 4252;
+pub const LVM_ENABLEGROUPVIEW: i32 = 4253;
+pub const LVM_SORTGROUPS: i32 = 4254;
+pub const LVM_INSERTGROUPSORTED: i32 = 4255;
+pub const LVM_REMOVEALLGROUPS: i32 = 4256;
+pub const LVM_HASGROUP: i32 = 4257;
+pub const LVTVIF_AUTOSIZE: i32 = 0;
+pub const LVTVIF_FIXEDWIDTH: i32 = 1;
+pub const LVTVIF_FIXEDHEIGHT: i32 = 2;
+pub const LVTVIF_FIXEDSIZE: i32 = 3;
+pub const LVTVIM_TILESIZE: i32 = 1;
+pub const LVTVIM_COLUMNS: i32 = 2;
+pub const LVTVIM_LABELMARGIN: i32 = 4;
+pub const LVM_SETTILEVIEWINFO: i32 = 4258;
+pub const LVM_GETTILEVIEWINFO: i32 = 4259;
+pub const LVM_SETTILEINFO: i32 = 4260;
+pub const LVM_GETTILEINFO: i32 = 4261;
+pub const LVIM_AFTER: i32 = 1;
+pub const LVM_SETINSERTMARK: i32 = 4262;
+pub const LVM_GETINSERTMARK: i32 = 4263;
+pub const LVM_INSERTMARKHITTEST: i32 = 4264;
+pub const LVM_GETINSERTMARKRECT: i32 = 4265;
+pub const LVM_SETINSERTMARKCOLOR: i32 = 4266;
+pub const LVM_GETINSERTMARKCOLOR: i32 = 4267;
+pub const LVM_SETINFOTIP: i32 = 4269;
+pub const LVM_GETSELECTEDCOLUMN: i32 = 4270;
+pub const LVM_ISGROUPVIEWENABLED: i32 = 4271;
+pub const LVM_GETOUTLINECOLOR: i32 = 4272;
+pub const LVM_SETOUTLINECOLOR: i32 = 4273;
+pub const LVM_CANCELEDITLABEL: i32 = 4275;
+pub const LVM_MAPINDEXTOID: i32 = 4276;
+pub const LVM_MAPIDTOINDEX: i32 = 4277;
+pub const LVM_ISITEMVISIBLE: i32 = 4278;
+pub const LVKF_ALT: i32 = 1;
+pub const LVKF_CONTROL: i32 = 2;
+pub const LVKF_SHIFT: i32 = 4;
+pub const LVCDI_ITEM: i32 = 0;
+pub const LVCDI_GROUP: i32 = 1;
+pub const LVCDRF_NOSELECT: i32 = 65536;
+pub const LVCDRF_NOGROUPFRAME: i32 = 131072;
 pub const LVN_ITEMCHANGING: i32 = -100;
 pub const LVN_ITEMCHANGED: i32 = -101;
 pub const LVN_INSERTITEM: i32 = -102;
@@ -2700,144 +5678,144 @@ pub const LVN_SETDISPINFOA: i32 = -151;
 pub const LVN_SETDISPINFOW: i32 = -178;
 pub const LVN_INCREMENTALSEARCHA: i32 = -162;
 pub const LVN_INCREMENTALSEARCHW: i32 = -163;
-pub const LVIF_DI_SETITEM: u32 = 4096;
+pub const LVIF_DI_SETITEM: i32 = 4096;
 pub const LVN_KEYDOWN: i32 = -155;
 pub const LVN_MARQUEEBEGIN: i32 = -156;
-pub const LVGIT_UNFOLDED: u32 = 1;
+pub const LVGIT_UNFOLDED: i32 = 1;
 pub const LVN_GETINFOTIPA: i32 = -157;
 pub const LVN_GETINFOTIPW: i32 = -158;
 pub const LVN_BEGINSCROLL: i32 = -180;
 pub const LVN_ENDSCROLL: i32 = -181;
 pub const WC_TREEVIEWA: &[u8; 14] = b"SysTreeView32\0";
 pub const WC_TREEVIEWW: &[u8; 14] = b"SysTreeView32\0";
-pub const TVS_HASBUTTONS: u32 = 1;
-pub const TVS_HASLINES: u32 = 2;
-pub const TVS_LINESATROOT: u32 = 4;
-pub const TVS_EDITLABELS: u32 = 8;
-pub const TVS_DISABLEDRAGDROP: u32 = 16;
-pub const TVS_SHOWSELALWAYS: u32 = 32;
-pub const TVS_RTLREADING: u32 = 64;
-pub const TVS_NOTOOLTIPS: u32 = 128;
-pub const TVS_CHECKBOXES: u32 = 256;
-pub const TVS_TRACKSELECT: u32 = 512;
-pub const TVS_SINGLEEXPAND: u32 = 1024;
-pub const TVS_INFOTIP: u32 = 2048;
-pub const TVS_FULLROWSELECT: u32 = 4096;
-pub const TVS_NOSCROLL: u32 = 8192;
-pub const TVS_NONEVENHEIGHT: u32 = 16384;
-pub const TVS_NOHSCROLL: u32 = 32768;
-pub const TVIF_TEXT: u32 = 1;
-pub const TVIF_IMAGE: u32 = 2;
-pub const TVIF_PARAM: u32 = 4;
-pub const TVIF_STATE: u32 = 8;
-pub const TVIF_HANDLE: u32 = 16;
-pub const TVIF_SELECTEDIMAGE: u32 = 32;
-pub const TVIF_CHILDREN: u32 = 64;
-pub const TVIF_INTEGRAL: u32 = 128;
-pub const TVIF_STATEEX: u32 = 256;
-pub const TVIF_EXPANDEDIMAGE: u32 = 512;
-pub const TVIS_SELECTED: u32 = 2;
-pub const TVIS_CUT: u32 = 4;
-pub const TVIS_DROPHILITED: u32 = 8;
-pub const TVIS_BOLD: u32 = 16;
-pub const TVIS_EXPANDED: u32 = 32;
-pub const TVIS_EXPANDEDONCE: u32 = 64;
-pub const TVIS_EXPANDPARTIAL: u32 = 128;
-pub const TVIS_OVERLAYMASK: u32 = 3840;
-pub const TVIS_STATEIMAGEMASK: u32 = 61440;
-pub const TVIS_USERMASK: u32 = 61440;
-pub const TVIS_FOCUSED: u32 = 1;
+pub const TVS_HASBUTTONS: i32 = 1;
+pub const TVS_HASLINES: i32 = 2;
+pub const TVS_LINESATROOT: i32 = 4;
+pub const TVS_EDITLABELS: i32 = 8;
+pub const TVS_DISABLEDRAGDROP: i32 = 16;
+pub const TVS_SHOWSELALWAYS: i32 = 32;
+pub const TVS_RTLREADING: i32 = 64;
+pub const TVS_NOTOOLTIPS: i32 = 128;
+pub const TVS_CHECKBOXES: i32 = 256;
+pub const TVS_TRACKSELECT: i32 = 512;
+pub const TVS_SINGLEEXPAND: i32 = 1024;
+pub const TVS_INFOTIP: i32 = 2048;
+pub const TVS_FULLROWSELECT: i32 = 4096;
+pub const TVS_NOSCROLL: i32 = 8192;
+pub const TVS_NONEVENHEIGHT: i32 = 16384;
+pub const TVS_NOHSCROLL: i32 = 32768;
+pub const TVIF_TEXT: i32 = 1;
+pub const TVIF_IMAGE: i32 = 2;
+pub const TVIF_PARAM: i32 = 4;
+pub const TVIF_STATE: i32 = 8;
+pub const TVIF_HANDLE: i32 = 16;
+pub const TVIF_SELECTEDIMAGE: i32 = 32;
+pub const TVIF_CHILDREN: i32 = 64;
+pub const TVIF_INTEGRAL: i32 = 128;
+pub const TVIF_STATEEX: i32 = 256;
+pub const TVIF_EXPANDEDIMAGE: i32 = 512;
+pub const TVIS_SELECTED: i32 = 2;
+pub const TVIS_CUT: i32 = 4;
+pub const TVIS_DROPHILITED: i32 = 8;
+pub const TVIS_BOLD: i32 = 16;
+pub const TVIS_EXPANDED: i32 = 32;
+pub const TVIS_EXPANDEDONCE: i32 = 64;
+pub const TVIS_EXPANDPARTIAL: i32 = 128;
+pub const TVIS_OVERLAYMASK: i32 = 3840;
+pub const TVIS_STATEIMAGEMASK: i32 = 61440;
+pub const TVIS_USERMASK: i32 = 61440;
+pub const TVIS_FOCUSED: i32 = 1;
 pub const I_CHILDRENCALLBACK: i32 = -1;
-pub const TVM_INSERTITEMA: u32 = 4352;
-pub const TVM_INSERTITEMW: u32 = 4402;
-pub const TVM_DELETEITEM: u32 = 4353;
-pub const TVM_EXPAND: u32 = 4354;
-pub const TVE_COLLAPSE: u32 = 1;
-pub const TVE_EXPAND: u32 = 2;
-pub const TVE_TOGGLE: u32 = 3;
-pub const TVE_EXPANDPARTIAL: u32 = 16384;
-pub const TVE_COLLAPSERESET: u32 = 32768;
-pub const TVM_GETITEMRECT: u32 = 4356;
-pub const TVM_GETCOUNT: u32 = 4357;
-pub const TVM_GETINDENT: u32 = 4358;
-pub const TVM_SETINDENT: u32 = 4359;
-pub const TVM_GETIMAGELIST: u32 = 4360;
-pub const TVSIL_NORMAL: u32 = 0;
-pub const TVSIL_STATE: u32 = 2;
-pub const TVM_SETIMAGELIST: u32 = 4361;
-pub const TVM_GETNEXTITEM: u32 = 4362;
-pub const TVGN_ROOT: u32 = 0;
-pub const TVGN_NEXT: u32 = 1;
-pub const TVGN_PREVIOUS: u32 = 2;
-pub const TVGN_PARENT: u32 = 3;
-pub const TVGN_CHILD: u32 = 4;
-pub const TVGN_FIRSTVISIBLE: u32 = 5;
-pub const TVGN_NEXTVISIBLE: u32 = 6;
-pub const TVGN_PREVIOUSVISIBLE: u32 = 7;
-pub const TVGN_DROPHILITE: u32 = 8;
-pub const TVGN_CARET: u32 = 9;
-pub const TVGN_LASTVISIBLE: u32 = 10;
-pub const TVSI_NOSINGLEEXPAND: u32 = 32768;
-pub const TVM_SELECTITEM: u32 = 4363;
-pub const TVM_GETITEMA: u32 = 4364;
-pub const TVM_GETITEMW: u32 = 4414;
-pub const TVM_SETITEMA: u32 = 4365;
-pub const TVM_SETITEMW: u32 = 4415;
-pub const TVM_EDITLABELA: u32 = 4366;
-pub const TVM_EDITLABELW: u32 = 4417;
-pub const TVM_GETEDITCONTROL: u32 = 4367;
-pub const TVM_GETVISIBLECOUNT: u32 = 4368;
-pub const TVM_HITTEST: u32 = 4369;
-pub const TVHT_NOWHERE: u32 = 1;
-pub const TVHT_ONITEMICON: u32 = 2;
-pub const TVHT_ONITEMLABEL: u32 = 4;
-pub const TVHT_ONITEMINDENT: u32 = 8;
-pub const TVHT_ONITEMBUTTON: u32 = 16;
-pub const TVHT_ONITEMRIGHT: u32 = 32;
-pub const TVHT_ONITEMSTATEICON: u32 = 64;
-pub const TVHT_ABOVE: u32 = 256;
-pub const TVHT_BELOW: u32 = 512;
-pub const TVHT_TORIGHT: u32 = 1024;
-pub const TVHT_TOLEFT: u32 = 2048;
-pub const TVM_CREATEDRAGIMAGE: u32 = 4370;
-pub const TVM_SORTCHILDREN: u32 = 4371;
-pub const TVM_ENSUREVISIBLE: u32 = 4372;
-pub const TVM_SORTCHILDRENCB: u32 = 4373;
-pub const TVM_ENDEDITLABELNOW: u32 = 4374;
-pub const TVM_GETISEARCHSTRINGA: u32 = 4375;
-pub const TVM_GETISEARCHSTRINGW: u32 = 4416;
-pub const TVM_SETTOOLTIPS: u32 = 4376;
-pub const TVM_GETTOOLTIPS: u32 = 4377;
-pub const TVM_SETINSERTMARK: u32 = 4378;
-pub const TVM_SETUNICODEFORMAT: u32 = 8197;
-pub const TVM_GETUNICODEFORMAT: u32 = 8198;
-pub const TVM_SETITEMHEIGHT: u32 = 4379;
-pub const TVM_GETITEMHEIGHT: u32 = 4380;
-pub const TVM_SETBKCOLOR: u32 = 4381;
-pub const TVM_SETTEXTCOLOR: u32 = 4382;
-pub const TVM_GETBKCOLOR: u32 = 4383;
-pub const TVM_GETTEXTCOLOR: u32 = 4384;
-pub const TVM_SETSCROLLTIME: u32 = 4385;
-pub const TVM_GETSCROLLTIME: u32 = 4386;
-pub const TVM_SETINSERTMARKCOLOR: u32 = 4389;
-pub const TVM_GETINSERTMARKCOLOR: u32 = 4390;
-pub const TVM_GETITEMSTATE: u32 = 4391;
-pub const TVM_SETLINECOLOR: u32 = 4392;
-pub const TVM_GETLINECOLOR: u32 = 4393;
-pub const TVM_MAPACCIDTOHTREEITEM: u32 = 4394;
-pub const TVM_MAPHTREEITEMTOACCID: u32 = 4395;
+pub const TVM_INSERTITEMA: i32 = 4352;
+pub const TVM_INSERTITEMW: i32 = 4402;
+pub const TVM_DELETEITEM: i32 = 4353;
+pub const TVM_EXPAND: i32 = 4354;
+pub const TVE_COLLAPSE: i32 = 1;
+pub const TVE_EXPAND: i32 = 2;
+pub const TVE_TOGGLE: i32 = 3;
+pub const TVE_EXPANDPARTIAL: i32 = 16384;
+pub const TVE_COLLAPSERESET: i32 = 32768;
+pub const TVM_GETITEMRECT: i32 = 4356;
+pub const TVM_GETCOUNT: i32 = 4357;
+pub const TVM_GETINDENT: i32 = 4358;
+pub const TVM_SETINDENT: i32 = 4359;
+pub const TVM_GETIMAGELIST: i32 = 4360;
+pub const TVSIL_NORMAL: i32 = 0;
+pub const TVSIL_STATE: i32 = 2;
+pub const TVM_SETIMAGELIST: i32 = 4361;
+pub const TVM_GETNEXTITEM: i32 = 4362;
+pub const TVGN_ROOT: i32 = 0;
+pub const TVGN_NEXT: i32 = 1;
+pub const TVGN_PREVIOUS: i32 = 2;
+pub const TVGN_PARENT: i32 = 3;
+pub const TVGN_CHILD: i32 = 4;
+pub const TVGN_FIRSTVISIBLE: i32 = 5;
+pub const TVGN_NEXTVISIBLE: i32 = 6;
+pub const TVGN_PREVIOUSVISIBLE: i32 = 7;
+pub const TVGN_DROPHILITE: i32 = 8;
+pub const TVGN_CARET: i32 = 9;
+pub const TVGN_LASTVISIBLE: i32 = 10;
+pub const TVSI_NOSINGLEEXPAND: i32 = 32768;
+pub const TVM_SELECTITEM: i32 = 4363;
+pub const TVM_GETITEMA: i32 = 4364;
+pub const TVM_GETITEMW: i32 = 4414;
+pub const TVM_SETITEMA: i32 = 4365;
+pub const TVM_SETITEMW: i32 = 4415;
+pub const TVM_EDITLABELA: i32 = 4366;
+pub const TVM_EDITLABELW: i32 = 4417;
+pub const TVM_GETEDITCONTROL: i32 = 4367;
+pub const TVM_GETVISIBLECOUNT: i32 = 4368;
+pub const TVM_HITTEST: i32 = 4369;
+pub const TVHT_NOWHERE: i32 = 1;
+pub const TVHT_ONITEMICON: i32 = 2;
+pub const TVHT_ONITEMLABEL: i32 = 4;
+pub const TVHT_ONITEMINDENT: i32 = 8;
+pub const TVHT_ONITEMBUTTON: i32 = 16;
+pub const TVHT_ONITEMRIGHT: i32 = 32;
+pub const TVHT_ONITEMSTATEICON: i32 = 64;
+pub const TVHT_ABOVE: i32 = 256;
+pub const TVHT_BELOW: i32 = 512;
+pub const TVHT_TORIGHT: i32 = 1024;
+pub const TVHT_TOLEFT: i32 = 2048;
+pub const TVM_CREATEDRAGIMAGE: i32 = 4370;
+pub const TVM_SORTCHILDREN: i32 = 4371;
+pub const TVM_ENSUREVISIBLE: i32 = 4372;
+pub const TVM_SORTCHILDRENCB: i32 = 4373;
+pub const TVM_ENDEDITLABELNOW: i32 = 4374;
+pub const TVM_GETISEARCHSTRINGA: i32 = 4375;
+pub const TVM_GETISEARCHSTRINGW: i32 = 4416;
+pub const TVM_SETTOOLTIPS: i32 = 4376;
+pub const TVM_GETTOOLTIPS: i32 = 4377;
+pub const TVM_SETINSERTMARK: i32 = 4378;
+pub const TVM_SETUNICODEFORMAT: i32 = 8197;
+pub const TVM_GETUNICODEFORMAT: i32 = 8198;
+pub const TVM_SETITEMHEIGHT: i32 = 4379;
+pub const TVM_GETITEMHEIGHT: i32 = 4380;
+pub const TVM_SETBKCOLOR: i32 = 4381;
+pub const TVM_SETTEXTCOLOR: i32 = 4382;
+pub const TVM_GETBKCOLOR: i32 = 4383;
+pub const TVM_GETTEXTCOLOR: i32 = 4384;
+pub const TVM_SETSCROLLTIME: i32 = 4385;
+pub const TVM_GETSCROLLTIME: i32 = 4386;
+pub const TVM_SETINSERTMARKCOLOR: i32 = 4389;
+pub const TVM_GETINSERTMARKCOLOR: i32 = 4390;
+pub const TVM_GETITEMSTATE: i32 = 4391;
+pub const TVM_SETLINECOLOR: i32 = 4392;
+pub const TVM_GETLINECOLOR: i32 = 4393;
+pub const TVM_MAPACCIDTOHTREEITEM: i32 = 4394;
+pub const TVM_MAPHTREEITEMTOACCID: i32 = 4395;
 pub const TVN_SELCHANGINGA: i32 = -401;
 pub const TVN_SELCHANGINGW: i32 = -450;
 pub const TVN_SELCHANGEDA: i32 = -402;
 pub const TVN_SELCHANGEDW: i32 = -451;
-pub const TVC_UNKNOWN: u32 = 0;
-pub const TVC_BYMOUSE: u32 = 1;
-pub const TVC_BYKEYBOARD: u32 = 2;
+pub const TVC_UNKNOWN: i32 = 0;
+pub const TVC_BYMOUSE: i32 = 1;
+pub const TVC_BYKEYBOARD: i32 = 2;
 pub const TVN_GETDISPINFOA: i32 = -403;
 pub const TVN_GETDISPINFOW: i32 = -452;
 pub const TVN_SETDISPINFOA: i32 = -404;
 pub const TVN_SETDISPINFOW: i32 = -453;
-pub const TVIF_DI_SETITEM: u32 = 4096;
+pub const TVIF_DI_SETITEM: i32 = 4096;
 pub const TVN_ITEMEXPANDINGA: i32 = -405;
 pub const TVN_ITEMEXPANDINGW: i32 = -454;
 pub const TVN_ITEMEXPANDEDA: i32 = -406;
@@ -2856,43 +5834,43 @@ pub const TVN_KEYDOWN: i32 = -412;
 pub const TVN_GETINFOTIPA: i32 = -413;
 pub const TVN_GETINFOTIPW: i32 = -414;
 pub const TVN_SINGLEEXPAND: i32 = -415;
-pub const TVNRET_DEFAULT: u32 = 0;
-pub const TVNRET_SKIPOLD: u32 = 1;
-pub const TVNRET_SKIPNEW: u32 = 2;
-pub const TVCDRF_NOIMAGES: u32 = 65536;
+pub const TVNRET_DEFAULT: i32 = 0;
+pub const TVNRET_SKIPOLD: i32 = 1;
+pub const TVNRET_SKIPNEW: i32 = 2;
+pub const TVCDRF_NOIMAGES: i32 = 65536;
 pub const WC_COMBOBOXEXW: &[u8; 13] = b"ComboBoxEx32\0";
 pub const WC_COMBOBOXEXA: &[u8; 13] = b"ComboBoxEx32\0";
-pub const CBEIF_TEXT: u32 = 1;
-pub const CBEIF_IMAGE: u32 = 2;
-pub const CBEIF_SELECTEDIMAGE: u32 = 4;
-pub const CBEIF_OVERLAY: u32 = 8;
-pub const CBEIF_INDENT: u32 = 16;
-pub const CBEIF_LPARAM: u32 = 32;
-pub const CBEIF_DI_SETITEM: u32 = 268435456;
-pub const CBEM_INSERTITEMA: u32 = 1025;
-pub const CBEM_SETIMAGELIST: u32 = 1026;
-pub const CBEM_GETIMAGELIST: u32 = 1027;
-pub const CBEM_GETITEMA: u32 = 1028;
-pub const CBEM_SETITEMA: u32 = 1029;
-pub const CBEM_DELETEITEM: u32 = 324;
-pub const CBEM_GETCOMBOCONTROL: u32 = 1030;
-pub const CBEM_GETEDITCONTROL: u32 = 1031;
-pub const CBEM_SETEXSTYLE: u32 = 1032;
-pub const CBEM_SETEXTENDEDSTYLE: u32 = 1038;
-pub const CBEM_GETEXSTYLE: u32 = 1033;
-pub const CBEM_GETEXTENDEDSTYLE: u32 = 1033;
-pub const CBEM_SETUNICODEFORMAT: u32 = 8197;
-pub const CBEM_GETUNICODEFORMAT: u32 = 8198;
-pub const CBEM_HASEDITCHANGED: u32 = 1034;
-pub const CBEM_INSERTITEMW: u32 = 1035;
-pub const CBEM_SETITEMW: u32 = 1036;
-pub const CBEM_GETITEMW: u32 = 1037;
-pub const CBEM_SETWINDOWTHEME: u32 = 8203;
-pub const CBES_EX_NOEDITIMAGE: u32 = 1;
-pub const CBES_EX_NOEDITIMAGEINDENT: u32 = 2;
-pub const CBES_EX_PATHWORDBREAKPROC: u32 = 4;
-pub const CBES_EX_NOSIZELIMIT: u32 = 8;
-pub const CBES_EX_CASESENSITIVE: u32 = 16;
+pub const CBEIF_TEXT: i32 = 1;
+pub const CBEIF_IMAGE: i32 = 2;
+pub const CBEIF_SELECTEDIMAGE: i32 = 4;
+pub const CBEIF_OVERLAY: i32 = 8;
+pub const CBEIF_INDENT: i32 = 16;
+pub const CBEIF_LPARAM: i32 = 32;
+pub const CBEIF_DI_SETITEM: i32 = 268435456;
+pub const CBEM_INSERTITEMA: i32 = 1025;
+pub const CBEM_SETIMAGELIST: i32 = 1026;
+pub const CBEM_GETIMAGELIST: i32 = 1027;
+pub const CBEM_GETITEMA: i32 = 1028;
+pub const CBEM_SETITEMA: i32 = 1029;
+pub const CBEM_DELETEITEM: i32 = 324;
+pub const CBEM_GETCOMBOCONTROL: i32 = 1030;
+pub const CBEM_GETEDITCONTROL: i32 = 1031;
+pub const CBEM_SETEXSTYLE: i32 = 1032;
+pub const CBEM_SETEXTENDEDSTYLE: i32 = 1038;
+pub const CBEM_GETEXSTYLE: i32 = 1033;
+pub const CBEM_GETEXTENDEDSTYLE: i32 = 1033;
+pub const CBEM_SETUNICODEFORMAT: i32 = 8197;
+pub const CBEM_GETUNICODEFORMAT: i32 = 8198;
+pub const CBEM_HASEDITCHANGED: i32 = 1034;
+pub const CBEM_INSERTITEMW: i32 = 1035;
+pub const CBEM_SETITEMW: i32 = 1036;
+pub const CBEM_GETITEMW: i32 = 1037;
+pub const CBEM_SETWINDOWTHEME: i32 = 8203;
+pub const CBES_EX_NOEDITIMAGE: i32 = 1;
+pub const CBES_EX_NOEDITIMAGEINDENT: i32 = 2;
+pub const CBES_EX_PATHWORDBREAKPROC: i32 = 4;
+pub const CBES_EX_NOSIZELIMIT: i32 = 8;
+pub const CBES_EX_CASESENSITIVE: i32 = 16;
 pub const CBEN_GETDISPINFOA: i32 = -800;
 pub const CBEN_INSERTITEM: i32 = -801;
 pub const CBEN_DELETEITEM: i32 = -802;
@@ -2902,78 +5880,78 @@ pub const CBEN_ENDEDITW: i32 = -806;
 pub const CBEN_GETDISPINFOW: i32 = -807;
 pub const CBEN_DRAGBEGINA: i32 = -808;
 pub const CBEN_DRAGBEGINW: i32 = -809;
-pub const CBENF_KILLFOCUS: u32 = 1;
-pub const CBENF_RETURN: u32 = 2;
-pub const CBENF_ESCAPE: u32 = 3;
-pub const CBENF_DROPDOWN: u32 = 4;
-pub const CBEMAXSTRLEN: u32 = 260;
+pub const CBENF_KILLFOCUS: i32 = 1;
+pub const CBENF_RETURN: i32 = 2;
+pub const CBENF_ESCAPE: i32 = 3;
+pub const CBENF_DROPDOWN: i32 = 4;
+pub const CBEMAXSTRLEN: i32 = 260;
 pub const WC_TABCONTROLA: &[u8; 16] = b"SysTabControl32\0";
 pub const WC_TABCONTROLW: &[u8; 16] = b"SysTabControl32\0";
-pub const TCS_SCROLLOPPOSITE: u32 = 1;
-pub const TCS_BOTTOM: u32 = 2;
-pub const TCS_RIGHT: u32 = 2;
-pub const TCS_MULTISELECT: u32 = 4;
-pub const TCS_FLATBUTTONS: u32 = 8;
-pub const TCS_FORCEICONLEFT: u32 = 16;
-pub const TCS_FORCELABELLEFT: u32 = 32;
-pub const TCS_HOTTRACK: u32 = 64;
-pub const TCS_VERTICAL: u32 = 128;
-pub const TCS_TABS: u32 = 0;
-pub const TCS_BUTTONS: u32 = 256;
-pub const TCS_SINGLELINE: u32 = 0;
-pub const TCS_MULTILINE: u32 = 512;
-pub const TCS_RIGHTJUSTIFY: u32 = 0;
-pub const TCS_FIXEDWIDTH: u32 = 1024;
-pub const TCS_RAGGEDRIGHT: u32 = 2048;
-pub const TCS_FOCUSONBUTTONDOWN: u32 = 4096;
-pub const TCS_OWNERDRAWFIXED: u32 = 8192;
-pub const TCS_TOOLTIPS: u32 = 16384;
-pub const TCS_FOCUSNEVER: u32 = 32768;
-pub const TCS_EX_FLATSEPARATORS: u32 = 1;
-pub const TCS_EX_REGISTERDROP: u32 = 2;
-pub const TCM_GETIMAGELIST: u32 = 4866;
-pub const TCM_SETIMAGELIST: u32 = 4867;
-pub const TCM_GETITEMCOUNT: u32 = 4868;
-pub const TCIF_TEXT: u32 = 1;
-pub const TCIF_IMAGE: u32 = 2;
-pub const TCIF_RTLREADING: u32 = 4;
-pub const TCIF_PARAM: u32 = 8;
-pub const TCIF_STATE: u32 = 16;
-pub const TCIS_BUTTONPRESSED: u32 = 1;
-pub const TCIS_HIGHLIGHTED: u32 = 2;
-pub const TCM_GETITEMA: u32 = 4869;
-pub const TCM_GETITEMW: u32 = 4924;
-pub const TCM_SETITEMA: u32 = 4870;
-pub const TCM_SETITEMW: u32 = 4925;
-pub const TCM_INSERTITEMA: u32 = 4871;
-pub const TCM_INSERTITEMW: u32 = 4926;
-pub const TCM_DELETEITEM: u32 = 4872;
-pub const TCM_DELETEALLITEMS: u32 = 4873;
-pub const TCM_GETITEMRECT: u32 = 4874;
-pub const TCM_GETCURSEL: u32 = 4875;
-pub const TCM_SETCURSEL: u32 = 4876;
-pub const TCHT_NOWHERE: u32 = 1;
-pub const TCHT_ONITEMICON: u32 = 2;
-pub const TCHT_ONITEMLABEL: u32 = 4;
-pub const TCHT_ONITEM: u32 = 6;
-pub const TCM_HITTEST: u32 = 4877;
-pub const TCM_SETITEMEXTRA: u32 = 4878;
-pub const TCM_ADJUSTRECT: u32 = 4904;
-pub const TCM_SETITEMSIZE: u32 = 4905;
-pub const TCM_REMOVEIMAGE: u32 = 4906;
-pub const TCM_SETPADDING: u32 = 4907;
-pub const TCM_GETROWCOUNT: u32 = 4908;
-pub const TCM_GETTOOLTIPS: u32 = 4909;
-pub const TCM_SETTOOLTIPS: u32 = 4910;
-pub const TCM_GETCURFOCUS: u32 = 4911;
-pub const TCM_SETCURFOCUS: u32 = 4912;
-pub const TCM_SETMINTABWIDTH: u32 = 4913;
-pub const TCM_DESELECTALL: u32 = 4914;
-pub const TCM_HIGHLIGHTITEM: u32 = 4915;
-pub const TCM_SETEXTENDEDSTYLE: u32 = 4916;
-pub const TCM_GETEXTENDEDSTYLE: u32 = 4917;
-pub const TCM_SETUNICODEFORMAT: u32 = 8197;
-pub const TCM_GETUNICODEFORMAT: u32 = 8198;
+pub const TCS_SCROLLOPPOSITE: i32 = 1;
+pub const TCS_BOTTOM: i32 = 2;
+pub const TCS_RIGHT: i32 = 2;
+pub const TCS_MULTISELECT: i32 = 4;
+pub const TCS_FLATBUTTONS: i32 = 8;
+pub const TCS_FORCEICONLEFT: i32 = 16;
+pub const TCS_FORCELABELLEFT: i32 = 32;
+pub const TCS_HOTTRACK: i32 = 64;
+pub const TCS_VERTICAL: i32 = 128;
+pub const TCS_TABS: i32 = 0;
+pub const TCS_BUTTONS: i32 = 256;
+pub const TCS_SINGLELINE: i32 = 0;
+pub const TCS_MULTILINE: i32 = 512;
+pub const TCS_RIGHTJUSTIFY: i32 = 0;
+pub const TCS_FIXEDWIDTH: i32 = 1024;
+pub const TCS_RAGGEDRIGHT: i32 = 2048;
+pub const TCS_FOCUSONBUTTONDOWN: i32 = 4096;
+pub const TCS_OWNERDRAWFIXED: i32 = 8192;
+pub const TCS_TOOLTIPS: i32 = 16384;
+pub const TCS_FOCUSNEVER: i32 = 32768;
+pub const TCS_EX_FLATSEPARATORS: i32 = 1;
+pub const TCS_EX_REGISTERDROP: i32 = 2;
+pub const TCM_GETIMAGELIST: i32 = 4866;
+pub const TCM_SETIMAGELIST: i32 = 4867;
+pub const TCM_GETITEMCOUNT: i32 = 4868;
+pub const TCIF_TEXT: i32 = 1;
+pub const TCIF_IMAGE: i32 = 2;
+pub const TCIF_RTLREADING: i32 = 4;
+pub const TCIF_PARAM: i32 = 8;
+pub const TCIF_STATE: i32 = 16;
+pub const TCIS_BUTTONPRESSED: i32 = 1;
+pub const TCIS_HIGHLIGHTED: i32 = 2;
+pub const TCM_GETITEMA: i32 = 4869;
+pub const TCM_GETITEMW: i32 = 4924;
+pub const TCM_SETITEMA: i32 = 4870;
+pub const TCM_SETITEMW: i32 = 4925;
+pub const TCM_INSERTITEMA: i32 = 4871;
+pub const TCM_INSERTITEMW: i32 = 4926;
+pub const TCM_DELETEITEM: i32 = 4872;
+pub const TCM_DELETEALLITEMS: i32 = 4873;
+pub const TCM_GETITEMRECT: i32 = 4874;
+pub const TCM_GETCURSEL: i32 = 4875;
+pub const TCM_SETCURSEL: i32 = 4876;
+pub const TCHT_NOWHERE: i32 = 1;
+pub const TCHT_ONITEMICON: i32 = 2;
+pub const TCHT_ONITEMLABEL: i32 = 4;
+pub const TCHT_ONITEM: i32 = 6;
+pub const TCM_HITTEST: i32 = 4877;
+pub const TCM_SETITEMEXTRA: i32 = 4878;
+pub const TCM_ADJUSTRECT: i32 = 4904;
+pub const TCM_SETITEMSIZE: i32 = 4905;
+pub const TCM_REMOVEIMAGE: i32 = 4906;
+pub const TCM_SETPADDING: i32 = 4907;
+pub const TCM_GETROWCOUNT: i32 = 4908;
+pub const TCM_GETTOOLTIPS: i32 = 4909;
+pub const TCM_SETTOOLTIPS: i32 = 4910;
+pub const TCM_GETCURFOCUS: i32 = 4911;
+pub const TCM_SETCURFOCUS: i32 = 4912;
+pub const TCM_SETMINTABWIDTH: i32 = 4913;
+pub const TCM_DESELECTALL: i32 = 4914;
+pub const TCM_HIGHLIGHTITEM: i32 = 4915;
+pub const TCM_SETEXTENDEDSTYLE: i32 = 4916;
+pub const TCM_GETEXTENDEDSTYLE: i32 = 4917;
+pub const TCM_SETUNICODEFORMAT: i32 = 8197;
+pub const TCM_GETUNICODEFORMAT: i32 = 8198;
 pub const TCN_KEYDOWN: i32 = -550;
 pub const TCN_SELCHANGE: i32 = -551;
 pub const TCN_SELCHANGING: i32 = -552;
@@ -2981,105 +5959,105 @@ pub const TCN_GETOBJECT: i32 = -553;
 pub const TCN_FOCUSCHANGE: i32 = -554;
 pub const ANIMATE_CLASSW: &[u8; 13] = b"SysAnimate32\0";
 pub const ANIMATE_CLASSA: &[u8; 13] = b"SysAnimate32\0";
-pub const ACS_CENTER: u32 = 1;
-pub const ACS_TRANSPARENT: u32 = 2;
-pub const ACS_AUTOPLAY: u32 = 4;
-pub const ACS_TIMER: u32 = 8;
-pub const ACM_OPENA: u32 = 1124;
-pub const ACM_OPENW: u32 = 1127;
-pub const ACM_PLAY: u32 = 1125;
-pub const ACM_STOP: u32 = 1126;
-pub const ACN_START: u32 = 1;
-pub const ACN_STOP: u32 = 2;
+pub const ACS_CENTER: i32 = 1;
+pub const ACS_TRANSPARENT: i32 = 2;
+pub const ACS_AUTOPLAY: i32 = 4;
+pub const ACS_TIMER: i32 = 8;
+pub const ACM_OPENA: i32 = 1124;
+pub const ACM_OPENW: i32 = 1127;
+pub const ACM_PLAY: i32 = 1125;
+pub const ACM_STOP: i32 = 1126;
+pub const ACN_START: i32 = 1;
+pub const ACN_STOP: i32 = 2;
 pub const MONTHCAL_CLASSW: &[u8; 14] = b"SysMonthCal32\0";
 pub const MONTHCAL_CLASSA: &[u8; 14] = b"SysMonthCal32\0";
-pub const MCM_FIRST: u32 = 4096;
-pub const MCM_GETCURSEL: u32 = 4097;
-pub const MCM_SETCURSEL: u32 = 4098;
-pub const MCM_GETMAXSELCOUNT: u32 = 4099;
-pub const MCM_SETMAXSELCOUNT: u32 = 4100;
-pub const MCM_GETSELRANGE: u32 = 4101;
-pub const MCM_SETSELRANGE: u32 = 4102;
-pub const MCM_GETMONTHRANGE: u32 = 4103;
-pub const MCM_SETDAYSTATE: u32 = 4104;
-pub const MCM_GETMINREQRECT: u32 = 4105;
-pub const MCM_SETCOLOR: u32 = 4106;
-pub const MCM_GETCOLOR: u32 = 4107;
-pub const MCSC_BACKGROUND: u32 = 0;
-pub const MCSC_TEXT: u32 = 1;
-pub const MCSC_TITLEBK: u32 = 2;
-pub const MCSC_TITLETEXT: u32 = 3;
-pub const MCSC_MONTHBK: u32 = 4;
-pub const MCSC_TRAILINGTEXT: u32 = 5;
-pub const MCM_SETTODAY: u32 = 4108;
-pub const MCM_GETTODAY: u32 = 4109;
-pub const MCM_HITTEST: u32 = 4110;
-pub const MCHT_TITLE: u32 = 65536;
-pub const MCHT_CALENDAR: u32 = 131072;
-pub const MCHT_TODAYLINK: u32 = 196608;
-pub const MCHT_NEXT: u32 = 16777216;
-pub const MCHT_PREV: u32 = 33554432;
-pub const MCHT_NOWHERE: u32 = 0;
-pub const MCHT_TITLEBK: u32 = 65536;
-pub const MCHT_TITLEMONTH: u32 = 65537;
-pub const MCHT_TITLEYEAR: u32 = 65538;
-pub const MCHT_TITLEBTNNEXT: u32 = 16842755;
-pub const MCHT_TITLEBTNPREV: u32 = 33619971;
-pub const MCHT_CALENDARBK: u32 = 131072;
-pub const MCHT_CALENDARDATE: u32 = 131073;
-pub const MCHT_CALENDARDATENEXT: u32 = 16908289;
-pub const MCHT_CALENDARDATEPREV: u32 = 33685505;
-pub const MCHT_CALENDARDAY: u32 = 131074;
-pub const MCHT_CALENDARWEEKNUM: u32 = 131075;
-pub const MCM_SETFIRSTDAYOFWEEK: u32 = 4111;
-pub const MCM_GETFIRSTDAYOFWEEK: u32 = 4112;
-pub const MCM_GETRANGE: u32 = 4113;
-pub const MCM_SETRANGE: u32 = 4114;
-pub const MCM_GETMONTHDELTA: u32 = 4115;
-pub const MCM_SETMONTHDELTA: u32 = 4116;
-pub const MCM_GETMAXTODAYWIDTH: u32 = 4117;
-pub const MCM_GETCURRENTVIEW: u32 = 4118;
-pub const MCM_GETCALENDARCOUNT: u32 = 4119;
-pub const MCM_SETUNICODEFORMAT: u32 = 8197;
-pub const MCM_GETUNICODEFORMAT: u32 = 8198;
-pub const MCM_SIZERECTTOMIN: u32 = 4125;
-pub const MCM_SETCALENDARBORDER: u32 = 4126;
-pub const MCM_GETCALENDARBORDER: u32 = 4127;
+pub const MCM_FIRST: i32 = 4096;
+pub const MCM_GETCURSEL: i32 = 4097;
+pub const MCM_SETCURSEL: i32 = 4098;
+pub const MCM_GETMAXSELCOUNT: i32 = 4099;
+pub const MCM_SETMAXSELCOUNT: i32 = 4100;
+pub const MCM_GETSELRANGE: i32 = 4101;
+pub const MCM_SETSELRANGE: i32 = 4102;
+pub const MCM_GETMONTHRANGE: i32 = 4103;
+pub const MCM_SETDAYSTATE: i32 = 4104;
+pub const MCM_GETMINREQRECT: i32 = 4105;
+pub const MCM_SETCOLOR: i32 = 4106;
+pub const MCM_GETCOLOR: i32 = 4107;
+pub const MCSC_BACKGROUND: i32 = 0;
+pub const MCSC_TEXT: i32 = 1;
+pub const MCSC_TITLEBK: i32 = 2;
+pub const MCSC_TITLETEXT: i32 = 3;
+pub const MCSC_MONTHBK: i32 = 4;
+pub const MCSC_TRAILINGTEXT: i32 = 5;
+pub const MCM_SETTODAY: i32 = 4108;
+pub const MCM_GETTODAY: i32 = 4109;
+pub const MCM_HITTEST: i32 = 4110;
+pub const MCHT_TITLE: i32 = 65536;
+pub const MCHT_CALENDAR: i32 = 131072;
+pub const MCHT_TODAYLINK: i32 = 196608;
+pub const MCHT_NEXT: i32 = 16777216;
+pub const MCHT_PREV: i32 = 33554432;
+pub const MCHT_NOWHERE: i32 = 0;
+pub const MCHT_TITLEBK: i32 = 65536;
+pub const MCHT_TITLEMONTH: i32 = 65537;
+pub const MCHT_TITLEYEAR: i32 = 65538;
+pub const MCHT_TITLEBTNNEXT: i32 = 16842755;
+pub const MCHT_TITLEBTNPREV: i32 = 33619971;
+pub const MCHT_CALENDARBK: i32 = 131072;
+pub const MCHT_CALENDARDATE: i32 = 131073;
+pub const MCHT_CALENDARDATENEXT: i32 = 16908289;
+pub const MCHT_CALENDARDATEPREV: i32 = 33685505;
+pub const MCHT_CALENDARDAY: i32 = 131074;
+pub const MCHT_CALENDARWEEKNUM: i32 = 131075;
+pub const MCM_SETFIRSTDAYOFWEEK: i32 = 4111;
+pub const MCM_GETFIRSTDAYOFWEEK: i32 = 4112;
+pub const MCM_GETRANGE: i32 = 4113;
+pub const MCM_SETRANGE: i32 = 4114;
+pub const MCM_GETMONTHDELTA: i32 = 4115;
+pub const MCM_SETMONTHDELTA: i32 = 4116;
+pub const MCM_GETMAXTODAYWIDTH: i32 = 4117;
+pub const MCM_GETCURRENTVIEW: i32 = 4118;
+pub const MCM_GETCALENDARCOUNT: i32 = 4119;
+pub const MCM_SETUNICODEFORMAT: i32 = 8197;
+pub const MCM_GETUNICODEFORMAT: i32 = 8198;
+pub const MCM_SIZERECTTOMIN: i32 = 4125;
+pub const MCM_SETCALENDARBORDER: i32 = 4126;
+pub const MCM_GETCALENDARBORDER: i32 = 4127;
 pub const MCN_SELCHANGE: i32 = -749;
 pub const MCN_GETDAYSTATE: i32 = -747;
 pub const MCN_SELECT: i32 = -746;
-pub const MCS_DAYSTATE: u32 = 1;
-pub const MCS_MULTISELECT: u32 = 2;
-pub const MCS_WEEKNUMBERS: u32 = 4;
-pub const MCS_NOTODAYCIRCLE: u32 = 8;
-pub const MCS_NOTODAY: u32 = 16;
-pub const MCS_NOTRAILINGDATES: u32 = 64;
-pub const MCS_SHORTDAYSOFWEEK: u32 = 128;
-pub const GMR_VISIBLE: u32 = 0;
-pub const GMR_DAYSTATE: u32 = 1;
+pub const MCS_DAYSTATE: i32 = 1;
+pub const MCS_MULTISELECT: i32 = 2;
+pub const MCS_WEEKNUMBERS: i32 = 4;
+pub const MCS_NOTODAYCIRCLE: i32 = 8;
+pub const MCS_NOTODAY: i32 = 16;
+pub const MCS_NOTRAILINGDATES: i32 = 64;
+pub const MCS_SHORTDAYSOFWEEK: i32 = 128;
+pub const GMR_VISIBLE: i32 = 0;
+pub const GMR_DAYSTATE: i32 = 1;
 pub const DATETIMEPICK_CLASSW: &[u8; 18] = b"SysDateTimePick32\0";
 pub const DATETIMEPICK_CLASSA: &[u8; 18] = b"SysDateTimePick32\0";
-pub const DTM_FIRST: u32 = 4096;
-pub const DTM_GETSYSTEMTIME: u32 = 4097;
-pub const DTM_SETSYSTEMTIME: u32 = 4098;
-pub const DTM_GETRANGE: u32 = 4099;
-pub const DTM_SETRANGE: u32 = 4100;
-pub const DTM_SETFORMATA: u32 = 4101;
-pub const DTM_SETFORMATW: u32 = 4146;
-pub const DTM_SETMCCOLOR: u32 = 4102;
-pub const DTM_GETMCCOLOR: u32 = 4103;
-pub const DTM_GETMONTHCAL: u32 = 4104;
-pub const DTM_SETMCFONT: u32 = 4105;
-pub const DTM_GETMCFONT: u32 = 4106;
-pub const DTM_GETIDEALSIZE: u32 = 4111;
-pub const DTS_UPDOWN: u32 = 1;
-pub const DTS_SHOWNONE: u32 = 2;
-pub const DTS_SHORTDATEFORMAT: u32 = 0;
-pub const DTS_LONGDATEFORMAT: u32 = 4;
-pub const DTS_SHORTDATECENTURYFORMAT: u32 = 12;
-pub const DTS_TIMEFORMAT: u32 = 9;
-pub const DTS_APPCANPARSE: u32 = 16;
-pub const DTS_RIGHTALIGN: u32 = 32;
+pub const DTM_FIRST: i32 = 4096;
+pub const DTM_GETSYSTEMTIME: i32 = 4097;
+pub const DTM_SETSYSTEMTIME: i32 = 4098;
+pub const DTM_GETRANGE: i32 = 4099;
+pub const DTM_SETRANGE: i32 = 4100;
+pub const DTM_SETFORMATA: i32 = 4101;
+pub const DTM_SETFORMATW: i32 = 4146;
+pub const DTM_SETMCCOLOR: i32 = 4102;
+pub const DTM_GETMCCOLOR: i32 = 4103;
+pub const DTM_GETMONTHCAL: i32 = 4104;
+pub const DTM_SETMCFONT: i32 = 4105;
+pub const DTM_GETMCFONT: i32 = 4106;
+pub const DTM_GETIDEALSIZE: i32 = 4111;
+pub const DTS_UPDOWN: i32 = 1;
+pub const DTS_SHOWNONE: i32 = 2;
+pub const DTS_SHORTDATEFORMAT: i32 = 0;
+pub const DTS_LONGDATEFORMAT: i32 = 4;
+pub const DTS_SHORTDATECENTURYFORMAT: i32 = 12;
+pub const DTS_TIMEFORMAT: i32 = 9;
+pub const DTS_APPCANPARSE: i32 = 16;
+pub const DTS_RIGHTALIGN: i32 = 32;
 pub const DTN_DATETIMECHANGE: i32 = -759;
 pub const DTN_USERSTRINGA: i32 = -758;
 pub const DTN_USERSTRINGW: i32 = -745;
@@ -3091,378 +6069,4066 @@ pub const DTN_FORMATQUERYA: i32 = -755;
 pub const DTN_FORMATQUERYW: i32 = -742;
 pub const DTN_DROPDOWN: i32 = -754;
 pub const DTN_CLOSEUP: i32 = -753;
-pub const GDTR_MIN: u32 = 1;
-pub const GDTR_MAX: u32 = 2;
+pub const GDTR_MIN: i32 = 1;
+pub const GDTR_MAX: i32 = 2;
 pub const GDT_ERROR: i32 = -1;
-pub const GDT_VALID: u32 = 0;
-pub const GDT_NONE: u32 = 1;
-pub const IPM_CLEARADDRESS: u32 = 1124;
-pub const IPM_SETADDRESS: u32 = 1125;
-pub const IPM_GETADDRESS: u32 = 1126;
-pub const IPM_SETRANGE: u32 = 1127;
-pub const IPM_SETFOCUS: u32 = 1128;
-pub const IPM_ISBLANK: u32 = 1129;
+pub const GDT_VALID: i32 = 0;
+pub const GDT_NONE: i32 = 1;
+pub const IPM_CLEARADDRESS: i32 = 1124;
+pub const IPM_SETADDRESS: i32 = 1125;
+pub const IPM_GETADDRESS: i32 = 1126;
+pub const IPM_SETRANGE: i32 = 1127;
+pub const IPM_SETFOCUS: i32 = 1128;
+pub const IPM_ISBLANK: i32 = 1129;
 pub const WC_IPADDRESSW: &[u8; 15] = b"SysIPAddress32\0";
 pub const WC_IPADDRESSA: &[u8; 15] = b"SysIPAddress32\0";
 pub const IPN_FIELDCHANGED: i32 = -860;
 pub const WC_PAGESCROLLERW: &[u8; 9] = b"SysPager\0";
 pub const WC_PAGESCROLLERA: &[u8; 9] = b"SysPager\0";
-pub const PGS_VERT: u32 = 0;
-pub const PGS_HORZ: u32 = 1;
-pub const PGS_AUTOSCROLL: u32 = 2;
-pub const PGS_DRAGNDROP: u32 = 4;
-pub const PGF_INVISIBLE: u32 = 0;
-pub const PGF_NORMAL: u32 = 1;
-pub const PGF_GRAYED: u32 = 2;
-pub const PGF_DEPRESSED: u32 = 4;
-pub const PGF_HOT: u32 = 8;
-pub const PGB_TOPORLEFT: u32 = 0;
-pub const PGB_BOTTOMORRIGHT: u32 = 1;
-pub const PGM_SETCHILD: u32 = 5121;
-pub const PGM_RECALCSIZE: u32 = 5122;
-pub const PGM_FORWARDMOUSE: u32 = 5123;
-pub const PGM_SETBKCOLOR: u32 = 5124;
-pub const PGM_GETBKCOLOR: u32 = 5125;
-pub const PGM_SETBORDER: u32 = 5126;
-pub const PGM_GETBORDER: u32 = 5127;
-pub const PGM_SETPOS: u32 = 5128;
-pub const PGM_GETPOS: u32 = 5129;
-pub const PGM_SETBUTTONSIZE: u32 = 5130;
-pub const PGM_GETBUTTONSIZE: u32 = 5131;
-pub const PGM_GETBUTTONSTATE: u32 = 5132;
-pub const PGM_GETDROPTARGET: u32 = 8196;
+pub const PGS_VERT: i32 = 0;
+pub const PGS_HORZ: i32 = 1;
+pub const PGS_AUTOSCROLL: i32 = 2;
+pub const PGS_DRAGNDROP: i32 = 4;
+pub const PGF_INVISIBLE: i32 = 0;
+pub const PGF_NORMAL: i32 = 1;
+pub const PGF_GRAYED: i32 = 2;
+pub const PGF_DEPRESSED: i32 = 4;
+pub const PGF_HOT: i32 = 8;
+pub const PGB_TOPORLEFT: i32 = 0;
+pub const PGB_BOTTOMORRIGHT: i32 = 1;
+pub const PGM_SETCHILD: i32 = 5121;
+pub const PGM_RECALCSIZE: i32 = 5122;
+pub const PGM_FORWARDMOUSE: i32 = 5123;
+pub const PGM_SETBKCOLOR: i32 = 5124;
+pub const PGM_GETBKCOLOR: i32 = 5125;
+pub const PGM_SETBORDER: i32 = 5126;
+pub const PGM_GETBORDER: i32 = 5127;
+pub const PGM_SETPOS: i32 = 5128;
+pub const PGM_GETPOS: i32 = 5129;
+pub const PGM_SETBUTTONSIZE: i32 = 5130;
+pub const PGM_GETBUTTONSIZE: i32 = 5131;
+pub const PGM_GETBUTTONSTATE: i32 = 5132;
+pub const PGM_GETDROPTARGET: i32 = 8196;
 pub const PGN_SCROLL: i32 = -901;
-pub const PGF_SCROLLUP: u32 = 1;
-pub const PGF_SCROLLDOWN: u32 = 2;
-pub const PGF_SCROLLLEFT: u32 = 4;
-pub const PGF_SCROLLRIGHT: u32 = 8;
-pub const PGK_SHIFT: u32 = 1;
-pub const PGK_CONTROL: u32 = 2;
-pub const PGK_MENU: u32 = 4;
+pub const PGF_SCROLLUP: i32 = 1;
+pub const PGF_SCROLLDOWN: i32 = 2;
+pub const PGF_SCROLLLEFT: i32 = 4;
+pub const PGF_SCROLLRIGHT: i32 = 8;
+pub const PGK_SHIFT: i32 = 1;
+pub const PGK_CONTROL: i32 = 2;
+pub const PGK_MENU: i32 = 4;
 pub const PGN_CALCSIZE: i32 = -902;
-pub const PGF_CALCWIDTH: u32 = 1;
-pub const PGF_CALCHEIGHT: u32 = 2;
+pub const PGF_CALCWIDTH: i32 = 1;
+pub const PGF_CALCHEIGHT: i32 = 2;
 pub const PGN_HOTITEMCHANGE: i32 = -903;
 pub const WC_NATIVEFONTCTLW: &[u8; 14] = b"NativeFontCtl\0";
 pub const WC_NATIVEFONTCTLA: &[u8; 14] = b"NativeFontCtl\0";
-pub const NFS_EDIT: u32 = 1;
-pub const NFS_STATIC: u32 = 2;
-pub const NFS_LISTCOMBO: u32 = 4;
-pub const NFS_BUTTON: u32 = 8;
-pub const NFS_ALL: u32 = 16;
-pub const NFS_USEFONTASSOC: u32 = 32;
+pub const NFS_EDIT: i32 = 1;
+pub const NFS_STATIC: i32 = 2;
+pub const NFS_LISTCOMBO: i32 = 4;
+pub const NFS_BUTTON: i32 = 8;
+pub const NFS_ALL: i32 = 16;
+pub const NFS_USEFONTASSOC: i32 = 32;
 pub const WC_BUTTONA: &[u8; 7] = b"Button\0";
 pub const WC_BUTTONW: &[u8; 7] = b"Button\0";
-pub const BUTTON_IMAGELIST_ALIGN_LEFT: u32 = 0;
-pub const BUTTON_IMAGELIST_ALIGN_RIGHT: u32 = 1;
-pub const BUTTON_IMAGELIST_ALIGN_TOP: u32 = 2;
-pub const BUTTON_IMAGELIST_ALIGN_BOTTOM: u32 = 3;
-pub const BUTTON_IMAGELIST_ALIGN_CENTER: u32 = 4;
-pub const BCM_GETIDEALSIZE: u32 = 5633;
-pub const BCM_SETIMAGELIST: u32 = 5634;
-pub const BCM_GETIMAGELIST: u32 = 5635;
-pub const BCM_SETTEXTMARGIN: u32 = 5636;
-pub const BCM_GETTEXTMARGIN: u32 = 5637;
-pub const BCM_SETSHIELD: u32 = 5644;
-pub const BCM_SETDROPDOWNSTATE: u32 = 5638;
-pub const BCM_SETSPLITINFO: u32 = 5639;
-pub const BCM_GETSPLITINFO: u32 = 5640;
-pub const BCM_SETNOTE: u32 = 5641;
-pub const BCM_GETNOTE: u32 = 5642;
-pub const BCM_GETNOTELENGTH: u32 = 5643;
-pub const BST_HOT: u32 = 512;
-pub const BS_SPLITBUTTON: u32 = 12;
-pub const BS_DEFSPLITBUTTON: u32 = 13;
-pub const BS_COMMANDLINK: u32 = 14;
-pub const BS_DEFCOMMANDLINK: u32 = 15;
+pub const BUTTON_IMAGELIST_ALIGN_LEFT: i32 = 0;
+pub const BUTTON_IMAGELIST_ALIGN_RIGHT: i32 = 1;
+pub const BUTTON_IMAGELIST_ALIGN_TOP: i32 = 2;
+pub const BUTTON_IMAGELIST_ALIGN_BOTTOM: i32 = 3;
+pub const BUTTON_IMAGELIST_ALIGN_CENTER: i32 = 4;
+pub const BCM_GETIDEALSIZE: i32 = 5633;
+pub const BCM_SETIMAGELIST: i32 = 5634;
+pub const BCM_GETIMAGELIST: i32 = 5635;
+pub const BCM_SETTEXTMARGIN: i32 = 5636;
+pub const BCM_GETTEXTMARGIN: i32 = 5637;
+pub const BCM_SETSHIELD: i32 = 5644;
+pub const BCM_SETDROPDOWNSTATE: i32 = 5638;
+pub const BCM_SETSPLITINFO: i32 = 5639;
+pub const BCM_GETSPLITINFO: i32 = 5640;
+pub const BCM_SETNOTE: i32 = 5641;
+pub const BCM_GETNOTE: i32 = 5642;
+pub const BCM_GETNOTELENGTH: i32 = 5643;
+pub const BST_HOT: i32 = 512;
+pub const BS_SPLITBUTTON: i32 = 12;
+pub const BS_DEFSPLITBUTTON: i32 = 13;
+pub const BS_COMMANDLINK: i32 = 14;
+pub const BS_DEFCOMMANDLINK: i32 = 15;
 pub const WC_STATICA: &[u8; 7] = b"Static\0";
 pub const WC_STATICW: &[u8; 7] = b"Static\0";
 pub const WC_EDITA: &[u8; 5] = b"Edit\0";
 pub const WC_EDITW: &[u8; 5] = b"Edit\0";
-pub const EM_SETCUEBANNER: u32 = 5377;
-pub const EM_GETCUEBANNER: u32 = 5378;
-pub const EM_SHOWBALLOONTIP: u32 = 5379;
-pub const EM_HIDEBALLOONTIP: u32 = 5380;
+pub const EM_SETCUEBANNER: i32 = 5377;
+pub const EM_GETCUEBANNER: i32 = 5378;
+pub const EM_SHOWBALLOONTIP: i32 = 5379;
+pub const EM_HIDEBALLOONTIP: i32 = 5380;
 pub const WC_LISTBOXA: &[u8; 8] = b"ListBox\0";
 pub const WC_LISTBOXW: &[u8; 8] = b"ListBox\0";
 pub const WC_COMBOBOXA: &[u8; 9] = b"ComboBox\0";
 pub const WC_COMBOBOXW: &[u8; 9] = b"ComboBox\0";
-pub const CB_SETMINVISIBLE: u32 = 5889;
-pub const CB_GETMINVISIBLE: u32 = 5890;
+pub const CB_SETMINVISIBLE: i32 = 5889;
+pub const CB_GETMINVISIBLE: i32 = 5890;
 pub const WC_SCROLLBARA: &[u8; 10] = b"ScrollBar\0";
 pub const WC_SCROLLBARW: &[u8; 10] = b"ScrollBar\0";
 pub const INVALID_LINK_INDEX: i32 = -1;
-pub const MAX_LINKID_TEXT: u32 = 48;
+pub const MAX_LINKID_TEXT: i32 = 48;
 pub const WC_LINK: &[u8; 8] = b"SysLink\0";
-pub const LWS_TRANSPARENT: u32 = 1;
-pub const LWS_IGNORERETURN: u32 = 2;
-pub const LIF_ITEMINDEX: u32 = 1;
-pub const LIF_STATE: u32 = 2;
-pub const LIF_ITEMID: u32 = 4;
-pub const LIF_URL: u32 = 8;
-pub const LIS_FOCUSED: u32 = 1;
-pub const LIS_ENABLED: u32 = 2;
-pub const LIS_VISITED: u32 = 4;
-pub const LM_HITTEST: u32 = 1792;
-pub const LM_GETIDEALHEIGHT: u32 = 1793;
-pub const LM_GETIDEALSIZE: u32 = 1793;
-pub const LM_SETITEM: u32 = 1794;
-pub const LM_GETITEM: u32 = 1795;
-pub const DA_LAST: u32 = 2147483647;
-pub const DPA_APPEND: u32 = 2147483647;
+pub const LWS_TRANSPARENT: i32 = 1;
+pub const LWS_IGNORERETURN: i32 = 2;
+pub const LIF_ITEMINDEX: i32 = 1;
+pub const LIF_STATE: i32 = 2;
+pub const LIF_ITEMID: i32 = 4;
+pub const LIF_URL: i32 = 8;
+pub const LIS_FOCUSED: i32 = 1;
+pub const LIS_ENABLED: i32 = 2;
+pub const LIS_VISITED: i32 = 4;
+pub const LM_HITTEST: i32 = 1792;
+pub const LM_GETIDEALHEIGHT: i32 = 1793;
+pub const LM_GETIDEALSIZE: i32 = 1793;
+pub const LM_SETITEM: i32 = 1794;
+pub const LM_GETITEM: i32 = 1795;
+pub const DA_LAST: i32 = 2147483647;
+pub const DPA_APPEND: i32 = 2147483647;
 pub const DPA_ERR: i32 = -1;
-pub const DSA_APPEND: u32 = 2147483647;
+pub const DSA_APPEND: i32 = 2147483647;
 pub const DSA_ERR: i32 = -1;
-pub const DPAS_SORTED: u32 = 1;
-pub const DPAS_INSERTBEFORE: u32 = 2;
-pub const DPAS_INSERTAFTER: u32 = 4;
-pub const DPAM_SORTED: u32 = 1;
-pub const DPAM_NORMAL: u32 = 2;
-pub const DPAM_UNION: u32 = 4;
-pub const DPAM_INTERSECT: u32 = 8;
-pub const DPAMM_MERGE: u32 = 1;
-pub const DPAMM_DELETE: u32 = 2;
-pub const DPAMM_INSERT: u32 = 3;
-pub const WSB_PROP_CYVSCROLL: u32 = 1;
-pub const WSB_PROP_CXHSCROLL: u32 = 2;
-pub const WSB_PROP_CYHSCROLL: u32 = 4;
-pub const WSB_PROP_CXVSCROLL: u32 = 8;
-pub const WSB_PROP_CXHTHUMB: u32 = 16;
-pub const WSB_PROP_CYVTHUMB: u32 = 32;
-pub const WSB_PROP_VBKGCOLOR: u32 = 64;
-pub const WSB_PROP_HBKGCOLOR: u32 = 128;
-pub const WSB_PROP_VSTYLE: u32 = 256;
-pub const WSB_PROP_HSTYLE: u32 = 512;
-pub const WSB_PROP_WINSTYLE: u32 = 1024;
-pub const WSB_PROP_PALETTE: u32 = 2048;
-pub const WSB_PROP_MASK: u32 = 4095;
-pub const FSB_FLAT_MODE: u32 = 2;
-pub const FSB_ENCARTA_MODE: u32 = 1;
-pub const FSB_REGULAR_MODE: u32 = 0;
-pub const CIS_DENYDISABLED: u32 = 8;
-pub const CIS_DENYENABLED: u32 = 0;
-pub const CIS_ALLOWDISABLED: u32 = 4;
-pub const CIS_ALLOWENABLED: u32 = 0;
-pub const CIS_ALLOW: u32 = 2;
-pub const CIS_DENY: u32 = 1;
-pub const CIS_NONE: u32 = 0;
-pub const CIS_DISABLED: u32 = 12;
-pub const CLB_ALLOW: u32 = 1;
-pub const CLB_DENY: u32 = 0;
-pub const CIS_MASK: u32 = 15;
-pub const CLM_ADDITEM: u32 = 1025;
-pub const CLM_DELITEM: u32 = 1026;
-pub const CLM_GETITEMCOUNT: u32 = 1027;
-pub const CLM_CLEAR: u32 = 1028;
-pub const CLM_SETCHECKBOXCOLUMN: u32 = 1029;
-pub const CLM_GETCHECKBOXCOLUMN: u32 = 1030;
-pub const CLM_CLEARCHECKBOXES: u32 = 1031;
-pub const CLM_SETITEMSTATE: u32 = 1032;
-pub const CLM_ENABLEQUICKSEARCH: u32 = 1033;
-pub const CLM_SETQUICKSEARCH_TIMEOUT_RESET: u32 = 1034;
-pub const CLM_SETQUICKSEARCH_TIMEOUT_SETFOCUS: u32 = 1035;
-pub const CLM_FINDITEMBYACCESSMASK: u32 = 1036;
-pub const CLN_CHANGINGITEMCHECKBOX: u32 = 101;
-pub const SDDL_REVISION_1: u32 = 1;
-pub const SDDL_REVISION: u32 = 1;
-pub const SDDL_ALIAS_SIZE: u32 = 2;
-pub const IDD_SECPAGE: u32 = 101;
-pub const IDC_PRINCIPALS: u32 = 1001;
-pub const IDC_ADD_PRINCIPAL: u32 = 1002;
-pub const IDC_REMOVE_PRINCIPAL: u32 = 1003;
-pub const IDC_ACE_CHECKLIST: u32 = 1004;
-pub const IDC_LABEL_ALLOW: u32 = 1005;
-pub const IDC_LABEL_DENY: u32 = 1006;
-pub const IDC_ADVANCED: u32 = 1007;
-pub const IDC_LABEL_ADVANCED: u32 = 1008;
-pub const IDC_LABEL_PERMISSIONS_FOR: u32 = 1009;
-pub const IDC_OWNER: u32 = 1010;
-pub const IDS_PSP_TITLE: u32 = 1001;
-pub const IDS_UNKNOWN: u32 = 1002;
-pub const IDS_SPECIAL_PERMISSIONS: u32 = 1003;
-pub const IDS_PERMISSIONS_FOR: u32 = 1004;
-pub const IDS_PERMISSIONS: u32 = 1005;
-pub const IDS_USERDOMAINFORMAT: u32 = 1006;
-pub const IDS_USERFORMAT: u32 = 1007;
-pub const IDB_USRGRPIMAGES: u32 = 1001;
-pub const DTBG_CLIPRECT: u32 = 1;
-pub const DTBG_DRAWSOLID: u32 = 2;
-pub const DTBG_OMITBORDER: u32 = 4;
-pub const DTBG_OMITCONTENT: u32 = 8;
-pub const DTBG_COMPUTINGREGION: u32 = 16;
-pub const DTBG_MIRRORDC: u32 = 32;
-pub const DTT_GRAYED: u32 = 1;
-pub const DTT_TEXTCOLOR: u32 = 1;
-pub const DTT_BORDERCOLOR: u32 = 2;
-pub const DTT_SHADOWCOLOR: u32 = 4;
-pub const DTT_SHADOWTYPE: u32 = 8;
-pub const DTT_SHADOWOFFSET: u32 = 16;
-pub const DTT_BORDERSIZE: u32 = 32;
-pub const DTT_FONTPROP: u32 = 64;
-pub const DTT_COLORPROP: u32 = 128;
-pub const DTT_STATEID: u32 = 256;
-pub const DTT_CALCRECT: u32 = 512;
-pub const DTT_APPLYOVERLAY: u32 = 1024;
-pub const DTT_GLOWSIZE: u32 = 2048;
-pub const DTT_CALLBACK: u32 = 4096;
-pub const DTT_COMPOSITED: u32 = 8192;
-pub const DTT_VALIDBITS: u32 = 16383;
-pub const ETDT_DISABLE: u32 = 1;
-pub const ETDT_ENABLE: u32 = 2;
-pub const ETDT_USETABTEXTURE: u32 = 4;
-pub const ETDT_ENABLETAB: u32 = 6;
-pub const STAP_ALLOW_NONCLIENT: u32 = 1;
-pub const STAP_ALLOW_CONTROLS: u32 = 2;
-pub const STAP_ALLOW_WEBCONTENT: u32 = 4;
-pub const HTTB_BACKGROUNDSEG: u32 = 0;
-pub const HTTB_FIXEDBORDER: u32 = 2;
-pub const HTTB_CAPTION: u32 = 4;
-pub const HTTB_RESIZINGBORDER_LEFT: u32 = 16;
-pub const HTTB_RESIZINGBORDER_TOP: u32 = 32;
-pub const HTTB_RESIZINGBORDER_RIGHT: u32 = 64;
-pub const HTTB_RESIZINGBORDER_BOTTOM: u32 = 128;
-pub const HTTB_RESIZINGBORDER: u32 = 240;
-pub const HTTB_SIZINGTEMPLATE: u32 = 256;
-pub const HTTB_SYSTEMSIZINGMARGINS: u32 = 512;
-pub const OTD_FORCE_RECT_SIZING: u32 = 1;
-pub const OTD_NONCLIENT: u32 = 2;
-pub const OTD_VALIDBITS: u32 = 3;
-pub const MAX_INTLIST_COUNT: u32 = 10;
-pub const KERB_WRAP_NO_ENCRYPT: u32 = 2147483649;
-pub const LOGON_GUEST: u32 = 1;
-pub const LOGON_NOENCRYPTION: u32 = 2;
-pub const LOGON_CACHED_ACCOUNT: u32 = 4;
-pub const LOGON_USED_LM_PASSWORD: u32 = 8;
-pub const LOGON_EXTRA_SIDS: u32 = 32;
-pub const LOGON_SUBAUTH_SESSION_KEY: u32 = 64;
-pub const LOGON_SERVER_TRUST_ACCOUNT: u32 = 128;
-pub const LOGON_NTLMV2_ENABLED: u32 = 256;
-pub const LOGON_RESOURCE_GROUPS: u32 = 512;
-pub const LOGON_PROFILE_PATH_RETURNED: u32 = 1024;
-pub const LOGON_GRACE_LOGON: u32 = 16777216;
-pub const LSA_MODE_PASSWORD_PROTECTED: u32 = 1;
-pub const LSA_MODE_INDIVIDUAL_ACCOUNTS: u32 = 2;
-pub const LSA_MODE_MANDATORY_ACCESS: u32 = 3;
-pub const LSA_MODE_LOG_FULL: u32 = 4;
+pub const DPAS_SORTED: i32 = 1;
+pub const DPAS_INSERTBEFORE: i32 = 2;
+pub const DPAS_INSERTAFTER: i32 = 4;
+pub const DPAM_SORTED: i32 = 1;
+pub const DPAM_NORMAL: i32 = 2;
+pub const DPAM_UNION: i32 = 4;
+pub const DPAM_INTERSECT: i32 = 8;
+pub const DPAMM_MERGE: i32 = 1;
+pub const DPAMM_DELETE: i32 = 2;
+pub const DPAMM_INSERT: i32 = 3;
+pub const WSB_PROP_CYVSCROLL: i32 = 1;
+pub const WSB_PROP_CXHSCROLL: i32 = 2;
+pub const WSB_PROP_CYHSCROLL: i32 = 4;
+pub const WSB_PROP_CXVSCROLL: i32 = 8;
+pub const WSB_PROP_CXHTHUMB: i32 = 16;
+pub const WSB_PROP_CYVTHUMB: i32 = 32;
+pub const WSB_PROP_VBKGCOLOR: i32 = 64;
+pub const WSB_PROP_HBKGCOLOR: i32 = 128;
+pub const WSB_PROP_VSTYLE: i32 = 256;
+pub const WSB_PROP_HSTYLE: i32 = 512;
+pub const WSB_PROP_WINSTYLE: i32 = 1024;
+pub const WSB_PROP_PALETTE: i32 = 2048;
+pub const WSB_PROP_MASK: i32 = 4095;
+pub const FSB_FLAT_MODE: i32 = 2;
+pub const FSB_ENCARTA_MODE: i32 = 1;
+pub const FSB_REGULAR_MODE: i32 = 0;
+pub const CIS_DENYDISABLED: i32 = 8;
+pub const CIS_DENYENABLED: i32 = 0;
+pub const CIS_ALLOWDISABLED: i32 = 4;
+pub const CIS_ALLOWENABLED: i32 = 0;
+pub const CIS_ALLOW: i32 = 2;
+pub const CIS_DENY: i32 = 1;
+pub const CIS_NONE: i32 = 0;
+pub const CIS_DISABLED: i32 = 12;
+pub const CLB_ALLOW: i32 = 1;
+pub const CLB_DENY: i32 = 0;
+pub const CIS_MASK: i32 = 15;
+pub const CLM_ADDITEM: i32 = 1025;
+pub const CLM_DELITEM: i32 = 1026;
+pub const CLM_GETITEMCOUNT: i32 = 1027;
+pub const CLM_CLEAR: i32 = 1028;
+pub const CLM_SETCHECKBOXCOLUMN: i32 = 1029;
+pub const CLM_GETCHECKBOXCOLUMN: i32 = 1030;
+pub const CLM_CLEARCHECKBOXES: i32 = 1031;
+pub const CLM_SETITEMSTATE: i32 = 1032;
+pub const CLM_ENABLEQUICKSEARCH: i32 = 1033;
+pub const CLM_SETQUICKSEARCH_TIMEOUT_RESET: i32 = 1034;
+pub const CLM_SETQUICKSEARCH_TIMEOUT_SETFOCUS: i32 = 1035;
+pub const CLM_FINDITEMBYACCESSMASK: i32 = 1036;
+pub const CLN_CHANGINGITEMCHECKBOX: i32 = 101;
+pub const SDDL_REVISION_1: i32 = 1;
+pub const SDDL_REVISION: i32 = 1;
+pub const SDDL_ALIAS_SIZE: i32 = 2;
+pub const IDD_SECPAGE: i32 = 101;
+pub const IDC_PRINCIPALS: i32 = 1001;
+pub const IDC_ADD_PRINCIPAL: i32 = 1002;
+pub const IDC_REMOVE_PRINCIPAL: i32 = 1003;
+pub const IDC_ACE_CHECKLIST: i32 = 1004;
+pub const IDC_LABEL_ALLOW: i32 = 1005;
+pub const IDC_LABEL_DENY: i32 = 1006;
+pub const IDC_ADVANCED: i32 = 1007;
+pub const IDC_LABEL_ADVANCED: i32 = 1008;
+pub const IDC_LABEL_PERMISSIONS_FOR: i32 = 1009;
+pub const IDC_OWNER: i32 = 1010;
+pub const IDS_PSP_TITLE: i32 = 1001;
+pub const IDS_UNKNOWN: i32 = 1002;
+pub const IDS_SPECIAL_PERMISSIONS: i32 = 1003;
+pub const IDS_PERMISSIONS_FOR: i32 = 1004;
+pub const IDS_PERMISSIONS: i32 = 1005;
+pub const IDS_USERDOMAINFORMAT: i32 = 1006;
+pub const IDS_USERFORMAT: i32 = 1007;
+pub const IDB_USRGRPIMAGES: i32 = 1001;
+pub const DTBG_CLIPRECT: i32 = 1;
+pub const DTBG_DRAWSOLID: i32 = 2;
+pub const DTBG_OMITBORDER: i32 = 4;
+pub const DTBG_OMITCONTENT: i32 = 8;
+pub const DTBG_COMPUTINGREGION: i32 = 16;
+pub const DTBG_MIRRORDC: i32 = 32;
+pub const DTT_GRAYED: i32 = 1;
+pub const DTT_TEXTCOLOR: i32 = 1;
+pub const DTT_BORDERCOLOR: i32 = 2;
+pub const DTT_SHADOWCOLOR: i32 = 4;
+pub const DTT_SHADOWTYPE: i32 = 8;
+pub const DTT_SHADOWOFFSET: i32 = 16;
+pub const DTT_BORDERSIZE: i32 = 32;
+pub const DTT_FONTPROP: i32 = 64;
+pub const DTT_COLORPROP: i32 = 128;
+pub const DTT_STATEID: i32 = 256;
+pub const DTT_CALCRECT: i32 = 512;
+pub const DTT_APPLYOVERLAY: i32 = 1024;
+pub const DTT_GLOWSIZE: i32 = 2048;
+pub const DTT_CALLBACK: i32 = 4096;
+pub const DTT_COMPOSITED: i32 = 8192;
+pub const DTT_VALIDBITS: i32 = 16383;
+pub const ETDT_DISABLE: i32 = 1;
+pub const ETDT_ENABLE: i32 = 2;
+pub const ETDT_USETABTEXTURE: i32 = 4;
+pub const ETDT_ENABLETAB: i32 = 6;
+pub const STAP_ALLOW_NONCLIENT: i32 = 1;
+pub const STAP_ALLOW_CONTROLS: i32 = 2;
+pub const STAP_ALLOW_WEBCONTENT: i32 = 4;
+pub const HTTB_BACKGROUNDSEG: i32 = 0;
+pub const HTTB_FIXEDBORDER: i32 = 2;
+pub const HTTB_CAPTION: i32 = 4;
+pub const HTTB_RESIZINGBORDER_LEFT: i32 = 16;
+pub const HTTB_RESIZINGBORDER_TOP: i32 = 32;
+pub const HTTB_RESIZINGBORDER_RIGHT: i32 = 64;
+pub const HTTB_RESIZINGBORDER_BOTTOM: i32 = 128;
+pub const HTTB_RESIZINGBORDER: i32 = 240;
+pub const HTTB_SIZINGTEMPLATE: i32 = 256;
+pub const HTTB_SYSTEMSIZINGMARGINS: i32 = 512;
+pub const OTD_FORCE_RECT_SIZING: i32 = 1;
+pub const OTD_NONCLIENT: i32 = 2;
+pub const OTD_VALIDBITS: i32 = 3;
+pub const MAX_INTLIST_COUNT: i32 = 10;
+pub const KERB_WRAP_NO_ENCRYPT: i64 = 2147483649;
+pub const LOGON_GUEST: i32 = 1;
+pub const LOGON_NOENCRYPTION: i32 = 2;
+pub const LOGON_CACHED_ACCOUNT: i32 = 4;
+pub const LOGON_USED_LM_PASSWORD: i32 = 8;
+pub const LOGON_EXTRA_SIDS: i32 = 32;
+pub const LOGON_SUBAUTH_SESSION_KEY: i32 = 64;
+pub const LOGON_SERVER_TRUST_ACCOUNT: i32 = 128;
+pub const LOGON_NTLMV2_ENABLED: i32 = 256;
+pub const LOGON_RESOURCE_GROUPS: i32 = 512;
+pub const LOGON_PROFILE_PATH_RETURNED: i32 = 1024;
+pub const LOGON_GRACE_LOGON: i32 = 16777216;
+pub const LSA_MODE_PASSWORD_PROTECTED: i32 = 1;
+pub const LSA_MODE_INDIVIDUAL_ACCOUNTS: i32 = 2;
+pub const LSA_MODE_MANDATORY_ACCESS: i32 = 3;
+pub const LSA_MODE_LOG_FULL: i32 = 4;
 pub const MICROSOFT_KERBEROS_NAME_A: &[u8; 9] = b"Kerberos\0";
 pub const MICROSOFT_KERBEROS_NAME_W: &[u8; 9] = b"Kerberos\0";
-pub const MSV1_0_ALLOW_SERVER_TRUST_ACCOUNT: u32 = 32;
-pub const MSV1_0_ALLOW_WORKSTATION_TRUST_ACCOUNT: u32 = 2048;
-pub const MSV1_0_CHALLENGE_LENGTH: u32 = 8;
-pub const MSV1_0_CLEARTEXT_PASSWORD_ALLOWED: u32 = 2;
-pub const MSV1_0_CRED_LM_PRESENT: u32 = 1;
-pub const MSV1_0_CRED_NT_PRESENT: u32 = 2;
-pub const MSV1_0_CRED_VERSION: u32 = 0;
-pub const MSV1_0_DONT_TRY_GUEST_ACCOUNT: u32 = 16;
-pub const MSV1_0_LANMAN_SESSION_KEY_LENGTH: u32 = 8;
-pub const MSV1_0_MAX_NTLM3_LIFE: u32 = 1800;
-pub const MSV1_0_MAX_AVL_SIZE: u32 = 64000;
-pub const MSV1_0_MNS_LOGON: u32 = 16777216;
-pub const MSV1_0_NTLM3_RESPONSE_LENGTH: u32 = 16;
-pub const MSV1_0_NTLM3_OWF_LENGTH: u32 = 16;
-pub const MSV1_0_OWF_PASSWORD_LENGTH: u32 = 16;
+pub const MSV1_0_ALLOW_SERVER_TRUST_ACCOUNT: i32 = 32;
+pub const MSV1_0_ALLOW_WORKSTATION_TRUST_ACCOUNT: i32 = 2048;
+pub const MSV1_0_CHALLENGE_LENGTH: i32 = 8;
+pub const MSV1_0_CLEARTEXT_PASSWORD_ALLOWED: i32 = 2;
+pub const MSV1_0_CRED_LM_PRESENT: i32 = 1;
+pub const MSV1_0_CRED_NT_PRESENT: i32 = 2;
+pub const MSV1_0_CRED_VERSION: i32 = 0;
+pub const MSV1_0_DONT_TRY_GUEST_ACCOUNT: i32 = 16;
+pub const MSV1_0_LANMAN_SESSION_KEY_LENGTH: i32 = 8;
+pub const MSV1_0_MAX_NTLM3_LIFE: i32 = 1800;
+pub const MSV1_0_MAX_AVL_SIZE: i32 = 64000;
+pub const MSV1_0_MNS_LOGON: i32 = 16777216;
+pub const MSV1_0_NTLM3_RESPONSE_LENGTH: i32 = 16;
+pub const MSV1_0_NTLM3_OWF_LENGTH: i32 = 16;
+pub const MSV1_0_OWF_PASSWORD_LENGTH: i32 = 16;
 pub const MSV1_0_PACKAGE_NAME: &[u8; 38] = b"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0\0";
 pub const MSV1_0_PACKAGE_NAMEW: &[u8; 38] = b"MICROSOFT_AUTHENTICATION_PACKAGE_V1_0\0";
-pub const MSV1_0_RETURN_USER_PARAMETERS: u32 = 8;
-pub const MSV1_0_RETURN_PASSWORD_EXPIRY: u32 = 64;
-pub const MSV1_0_RETURN_PROFILE_PATH: u32 = 512;
-pub const MSV1_0_SUBAUTHENTICATION_DLL_EX: u32 = 1048576;
-pub const MSV1_0_SUBAUTHENTICATION_DLL: u32 = 4278190080;
-pub const MSV1_0_SUBAUTHENTICATION_DLL_SHIFT: u32 = 24;
-pub const MSV1_0_SUBAUTHENTICATION_DLL_RAS: u32 = 2;
-pub const MSV1_0_SUBAUTHENTICATION_DLL_IIS: u32 = 132;
-pub const MSV1_0_SUBAUTHENTICATION_FLAGS: u32 = 4278190080;
+pub const MSV1_0_RETURN_USER_PARAMETERS: i32 = 8;
+pub const MSV1_0_RETURN_PASSWORD_EXPIRY: i32 = 64;
+pub const MSV1_0_RETURN_PROFILE_PATH: i32 = 512;
+pub const MSV1_0_SUBAUTHENTICATION_DLL_EX: i32 = 1048576;
+pub const MSV1_0_SUBAUTHENTICATION_DLL: i64 = 4278190080;
+pub const MSV1_0_SUBAUTHENTICATION_DLL_SHIFT: i32 = 24;
+pub const MSV1_0_SUBAUTHENTICATION_DLL_RAS: i32 = 2;
+pub const MSV1_0_SUBAUTHENTICATION_DLL_IIS: i32 = 132;
+pub const MSV1_0_SUBAUTHENTICATION_FLAGS: i64 = 4278190080;
 pub const MSV1_0_SUBAUTHENTICATION_KEY: &[u8; 44] =
     b"System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\0";
 pub const MSV1_0_SUBAUTHENTICATION_VALUE: &[u8; 5] = b"Auth\0";
-pub const MSV1_0_TRY_GUEST_ACCOUNT_ONLY: u32 = 256;
-pub const MSV1_0_TRY_SPECIFIED_DOMAIN_ONLY: u32 = 1024;
-pub const MSV1_0_UPDATE_LOGON_STATISTICS: u32 = 4;
-pub const MSV1_0_USE_CLIENT_CHALLENGE: u32 = 128;
-pub const MSV1_0_USER_SESSION_KEY_LENGTH: u32 = 16;
-pub const POLICY_VIEW_LOCAL_INFORMATION: u32 = 1;
-pub const POLICY_VIEW_AUDIT_INFORMATION: u32 = 2;
-pub const POLICY_GET_PRIVATE_INFORMATION: u32 = 4;
-pub const POLICY_TRUST_ADMIN: u32 = 8;
-pub const POLICY_CREATE_ACCOUNT: u32 = 16;
-pub const POLICY_CREATE_SECRET: u32 = 32;
-pub const POLICY_CREATE_PRIVILEGE: u32 = 64;
-pub const POLICY_SET_DEFAULT_QUOTA_LIMITS: u32 = 128;
-pub const POLICY_SET_AUDIT_REQUIREMENTS: u32 = 256;
-pub const POLICY_AUDIT_LOG_ADMIN: u32 = 512;
-pub const POLICY_SERVER_ADMIN: u32 = 1024;
-pub const POLICY_LOOKUP_NAMES: u32 = 2048;
-pub const POLICY_NOTIFICATION: u32 = 4096;
-pub const POLICY_READ: u32 = 131078;
-pub const POLICY_WRITE: u32 = 133112;
-pub const POLICY_EXECUTE: u32 = 133121;
-pub const POLICY_ALL_ACCESS: u32 = 987135;
-pub const POLICY_AUDIT_EVENT_UNCHANGED: u32 = 0;
-pub const POLICY_AUDIT_EVENT_SUCCESS: u32 = 1;
-pub const POLICY_AUDIT_EVENT_FAILURE: u32 = 2;
-pub const POLICY_AUDIT_EVENT_NONE: u32 = 4;
-pub const POLICY_AUDIT_EVENT_MASK: u32 = 7;
-pub const POLICY_LOCATION_LOCAL: u32 = 1;
-pub const POLICY_LOCATION_DS: u32 = 2;
-pub const POLICY_MACHINE_POLICY_LOCAL: u32 = 0;
-pub const POLICY_MACHINE_POLICY_DEFAULTED: u32 = 1;
-pub const POLICY_MACHINE_POLICY_EXPLICIT: u32 = 2;
-pub const POLICY_MACHINE_POLICY_UNKNOWN: u32 = 4294967295;
-pub const POLICY_QOS_SCHANEL_REQUIRED: u32 = 1;
-pub const POLICY_QOS_OUTBOUND_INTEGRITY: u32 = 2;
-pub const POLICY_QOS_OUTBOUND_CONFIDENTIALITY: u32 = 4;
-pub const POLICY_QOS_INBOUND_INTEGREITY: u32 = 8;
-pub const POLICY_QOS_INBOUND_CONFIDENTIALITY: u32 = 16;
-pub const POLICY_QOS_ALLOW_LOCAL_ROOT_CERT_STORE: u32 = 32;
-pub const POLICY_QOS_RAS_SERVER_ALLOWED: u32 = 64;
-pub const POLICY_QOS_DHCP_SERVER_ALLOWD: u32 = 128;
-pub const POLICY_KERBEROS_FORWARDABLE: u32 = 1;
-pub const POLICY_KERBEROS_PROXYABLE: u32 = 2;
-pub const POLICY_KERBEROS_RENEWABLE: u32 = 4;
-pub const POLICY_KERBEROS_POSTDATEABLE: u32 = 8;
+pub const MSV1_0_TRY_GUEST_ACCOUNT_ONLY: i32 = 256;
+pub const MSV1_0_TRY_SPECIFIED_DOMAIN_ONLY: i32 = 1024;
+pub const MSV1_0_UPDATE_LOGON_STATISTICS: i32 = 4;
+pub const MSV1_0_USE_CLIENT_CHALLENGE: i32 = 128;
+pub const MSV1_0_USER_SESSION_KEY_LENGTH: i32 = 16;
+pub const POLICY_VIEW_LOCAL_INFORMATION: i32 = 1;
+pub const POLICY_VIEW_AUDIT_INFORMATION: i32 = 2;
+pub const POLICY_GET_PRIVATE_INFORMATION: i32 = 4;
+pub const POLICY_TRUST_ADMIN: i32 = 8;
+pub const POLICY_CREATE_ACCOUNT: i32 = 16;
+pub const POLICY_CREATE_SECRET: i32 = 32;
+pub const POLICY_CREATE_PRIVILEGE: i32 = 64;
+pub const POLICY_SET_DEFAULT_QUOTA_LIMITS: i32 = 128;
+pub const POLICY_SET_AUDIT_REQUIREMENTS: i32 = 256;
+pub const POLICY_AUDIT_LOG_ADMIN: i32 = 512;
+pub const POLICY_SERVER_ADMIN: i32 = 1024;
+pub const POLICY_LOOKUP_NAMES: i32 = 2048;
+pub const POLICY_NOTIFICATION: i32 = 4096;
+pub const POLICY_READ: i32 = 131078;
+pub const POLICY_WRITE: i32 = 133112;
+pub const POLICY_EXECUTE: i32 = 133121;
+pub const POLICY_ALL_ACCESS: i32 = 987135;
+pub const POLICY_AUDIT_EVENT_UNCHANGED: i32 = 0;
+pub const POLICY_AUDIT_EVENT_SUCCESS: i32 = 1;
+pub const POLICY_AUDIT_EVENT_FAILURE: i32 = 2;
+pub const POLICY_AUDIT_EVENT_NONE: i32 = 4;
+pub const POLICY_AUDIT_EVENT_MASK: i32 = 7;
+pub const POLICY_LOCATION_LOCAL: i32 = 1;
+pub const POLICY_LOCATION_DS: i32 = 2;
+pub const POLICY_MACHINE_POLICY_LOCAL: i32 = 0;
+pub const POLICY_MACHINE_POLICY_DEFAULTED: i32 = 1;
+pub const POLICY_MACHINE_POLICY_EXPLICIT: i32 = 2;
+pub const POLICY_MACHINE_POLICY_UNKNOWN: i64 = 4294967295;
+pub const POLICY_QOS_SCHANEL_REQUIRED: i32 = 1;
+pub const POLICY_QOS_OUTBOUND_INTEGRITY: i32 = 2;
+pub const POLICY_QOS_OUTBOUND_CONFIDENTIALITY: i32 = 4;
+pub const POLICY_QOS_INBOUND_INTEGREITY: i32 = 8;
+pub const POLICY_QOS_INBOUND_CONFIDENTIALITY: i32 = 16;
+pub const POLICY_QOS_ALLOW_LOCAL_ROOT_CERT_STORE: i32 = 32;
+pub const POLICY_QOS_RAS_SERVER_ALLOWED: i32 = 64;
+pub const POLICY_QOS_DHCP_SERVER_ALLOWD: i32 = 128;
+pub const POLICY_KERBEROS_FORWARDABLE: i32 = 1;
+pub const POLICY_KERBEROS_PROXYABLE: i32 = 2;
+pub const POLICY_KERBEROS_RENEWABLE: i32 = 4;
+pub const POLICY_KERBEROS_POSTDATEABLE: i32 = 8;
 pub const SAM_PASSWORD_CHANGE_NOTIFY_ROUTINE: &[u8; 21] = b"PasswordChangeNotify\0";
 pub const SAM_INIT_NOTIFICATION_ROUTINE: &[u8; 23] = b"InitializeChangeNotify\0";
 pub const SAM_PASSWORD_FILTER_ROUTINE: &[u8; 15] = b"PasswordFilter\0";
-pub const TRUST_ATTRIBUTE_NON_TRANSITIVE: u32 = 1;
-pub const TRUST_ATTRIBUTE_UPLEVEL_ONLY: u32 = 2;
-pub const TRUST_ATTRIBUTE_TREE_PARENT: u32 = 4194304;
+pub const TRUST_ATTRIBUTE_NON_TRANSITIVE: i32 = 1;
+pub const TRUST_ATTRIBUTE_UPLEVEL_ONLY: i32 = 2;
+pub const TRUST_ATTRIBUTE_TREE_PARENT: i32 = 4194304;
 pub const TRUST_ATTRIBUTES_VALID: i32 = -16580609;
-pub const TRUST_AUTH_TYPE_NONE: u32 = 0;
-pub const TRUST_AUTH_TYPE_NT4OWF: u32 = 1;
-pub const TRUST_AUTH_TYPE_CLEAR: u32 = 2;
-pub const TRUST_DIRECTION_DISABLED: u32 = 0;
-pub const TRUST_DIRECTION_INBOUND: u32 = 1;
-pub const TRUST_DIRECTION_OUTBOUND: u32 = 2;
-pub const TRUST_DIRECTION_BIDIRECTIONAL: u32 = 3;
-pub const TRUST_TYPE_DOWNLEVEL: u32 = 1;
-pub const TRUST_TYPE_UPLEVEL: u32 = 2;
-pub const TRUST_TYPE_MIT: u32 = 3;
-pub const TRUST_TYPE_DCE: u32 = 4;
-pub const SCESTATUS_SUCCESS: u32 = 0;
-pub const SCESTATUS_INVALID_PARAMETER: u32 = 1;
-pub const SCESTATUS_RECORD_NOT_FOUND: u32 = 2;
-pub const SCESTATUS_INVALID_DATA: u32 = 3;
-pub const SCESTATUS_OBJECT_EXISTS: u32 = 4;
-pub const SCESTATUS_BUFFER_TOO_SMALL: u32 = 5;
-pub const SCESTATUS_PROFILE_NOT_FOUND: u32 = 6;
-pub const SCESTATUS_BAD_FORMAT: u32 = 7;
-pub const SCESTATUS_NOT_ENOUGH_RESOURCE: u32 = 8;
-pub const SCESTATUS_ACCESS_DENIED: u32 = 9;
-pub const SCESTATUS_CANT_DELETE: u32 = 10;
-pub const SCESTATUS_PREFIX_OVERFLOW: u32 = 11;
-pub const SCESTATUS_OTHER_ERROR: u32 = 12;
-pub const SCESTATUS_ALREADY_RUNNING: u32 = 13;
-pub const SCESTATUS_SERVICE_NOT_SUPPORT: u32 = 14;
-pub const SCESTATUS_MOD_NOT_FOUND: u32 = 15;
-pub const SCESTATUS_EXCEPTION_IN_SERVER: u32 = 16;
-pub const SCESTATUS_NO_TEMPLATE_GIVEN: u32 = 17;
-pub const SCESTATUS_NO_MAPPING: u32 = 18;
-pub const SCESTATUS_TRUST_FAIL: u32 = 19;
-pub const MSV1_0_DERIVECRED_TYPE_SHA1: u32 = 0;
-pub const RTL_ENCRYPT_MEMORY_SIZE: u32 = 8;
-pub const RTL_ENCRYPT_OPTION_SAME_PROCESS: u32 = 0;
-pub const RTL_ENCRYPT_OPTION_CROSS_PROCESS: u32 = 1;
-pub const RTL_ENCRYPT_OPTION_SAME_LOGON: u32 = 2;
+pub const TRUST_AUTH_TYPE_NONE: i32 = 0;
+pub const TRUST_AUTH_TYPE_NT4OWF: i32 = 1;
+pub const TRUST_AUTH_TYPE_CLEAR: i32 = 2;
+pub const TRUST_DIRECTION_DISABLED: i32 = 0;
+pub const TRUST_DIRECTION_INBOUND: i32 = 1;
+pub const TRUST_DIRECTION_OUTBOUND: i32 = 2;
+pub const TRUST_DIRECTION_BIDIRECTIONAL: i32 = 3;
+pub const TRUST_TYPE_DOWNLEVEL: i32 = 1;
+pub const TRUST_TYPE_UPLEVEL: i32 = 2;
+pub const TRUST_TYPE_MIT: i32 = 3;
+pub const TRUST_TYPE_DCE: i32 = 4;
+pub const SCESTATUS_SUCCESS: i32 = 0;
+pub const SCESTATUS_INVALID_PARAMETER: i32 = 1;
+pub const SCESTATUS_RECORD_NOT_FOUND: i32 = 2;
+pub const SCESTATUS_INVALID_DATA: i32 = 3;
+pub const SCESTATUS_OBJECT_EXISTS: i32 = 4;
+pub const SCESTATUS_BUFFER_TOO_SMALL: i32 = 5;
+pub const SCESTATUS_PROFILE_NOT_FOUND: i32 = 6;
+pub const SCESTATUS_BAD_FORMAT: i32 = 7;
+pub const SCESTATUS_NOT_ENOUGH_RESOURCE: i32 = 8;
+pub const SCESTATUS_ACCESS_DENIED: i32 = 9;
+pub const SCESTATUS_CANT_DELETE: i32 = 10;
+pub const SCESTATUS_PREFIX_OVERFLOW: i32 = 11;
+pub const SCESTATUS_OTHER_ERROR: i32 = 12;
+pub const SCESTATUS_ALREADY_RUNNING: i32 = 13;
+pub const SCESTATUS_SERVICE_NOT_SUPPORT: i32 = 14;
+pub const SCESTATUS_MOD_NOT_FOUND: i32 = 15;
+pub const SCESTATUS_EXCEPTION_IN_SERVER: i32 = 16;
+pub const SCESTATUS_NO_TEMPLATE_GIVEN: i32 = 17;
+pub const SCESTATUS_NO_MAPPING: i32 = 18;
+pub const SCESTATUS_TRUST_FAIL: i32 = 19;
+pub const MSV1_0_DERIVECRED_TYPE_SHA1: i32 = 0;
+pub const RTL_ENCRYPT_MEMORY_SIZE: i32 = 8;
+pub const RTL_ENCRYPT_OPTION_SAME_PROCESS: i32 = 0;
+pub const RTL_ENCRYPT_OPTION_CROSS_PROCESS: i32 = 1;
+pub const RTL_ENCRYPT_OPTION_SAME_LOGON: i32 = 2;
+unsafe extern "C" {
+    pub fn WinMain(
+        arg1: HINSTANCE,
+        arg2: HINSTANCE,
+        arg3: LPSTR,
+        arg4: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wWinMain(
+        arg1: HINSTANCE,
+        arg2: HINSTANCE,
+        arg3: LPWSTR,
+        arg4: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn _hread(
+        hFile: HFILE,
+        lpBuffer: LPVOID,
+        lBytes: ::core::ffi::c_long,
+    ) -> ::core::ffi::c_long;
+}
+unsafe extern "C" {
+    pub fn _hwrite(
+        hFile: HFILE,
+        lpBuffer: LPCCH,
+        lBytes: ::core::ffi::c_long,
+    ) -> ::core::ffi::c_long;
+}
+unsafe extern "C" {
+    pub fn _lclose(arg1: HFILE) -> HFILE;
+}
+unsafe extern "C" {
+    pub fn _lcreat(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
+}
+unsafe extern "C" {
+    pub fn _llseek(arg1: HFILE, arg2: LONG, arg3: ::core::ffi::c_int) -> LONG;
+}
+unsafe extern "C" {
+    pub fn _lopen(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
+}
+unsafe extern "C" {
+    pub fn _lread(hFile: HFILE, lpBuffer: LPVOID, uBytes: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn _lwrite(hFile: HFILE, lpBuffer: LPCCH, uBytes: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn AccessCheck(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: HANDLE,
+        arg3: DWORD,
+        arg4: PGENERIC_MAPPING,
+        arg5: PPRIVILEGE_SET,
+        arg6: PDWORD,
+        arg7: PDWORD,
+        arg8: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AccessCheckAndAuditAlarmA(
+        SubsystemName: LPCSTR,
+        HandleId: LPVOID,
+        ObjectTypeName: LPSTR,
+        ObjectName: LPSTR,
+        SecurityDescriptor: PSECURITY_DESCRIPTOR,
+        DesiredAccess: DWORD,
+        GenericMapping: PGENERIC_MAPPING,
+        ObjectCreation: BOOL,
+        GrantedAccess: LPDWORD,
+        AccessStatus: LPBOOL,
+        pfGenerateOnClose: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AccessCheckAndAuditAlarmW(
+        arg1: LPCWSTR,
+        arg2: LPVOID,
+        arg3: LPWSTR,
+        arg4: LPWSTR,
+        arg5: PSECURITY_DESCRIPTOR,
+        arg6: DWORD,
+        arg7: PGENERIC_MAPPING,
+        arg8: BOOL,
+        arg9: PDWORD,
+        arg10: PBOOL,
+        arg11: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ActivateActCtx(arg1: HANDLE, arg2: *mut ULONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessAllowedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessDeniedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessAllowedAceEx(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: PSID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessDeniedAceEx(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: PSID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessAllowedObjectAce(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: *mut GUID,
+        arg6: *mut GUID,
+        arg7: PSID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAccessDeniedObjectAce(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: *mut GUID,
+        arg6: *mut GUID,
+        arg7: PSID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PVOID, arg5: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAtomA(arg1: LPCSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn AddAtomW(arg1: LPCWSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn AddAuditAccessAce(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: PSID,
+        arg5: BOOL,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddAuditAccessObjectAce(
+        arg1: PACL,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: *mut GUID,
+        arg6: *mut GUID,
+        arg7: PSID,
+        arg8: BOOL,
+        arg9: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddRefActCtx(arg1: HANDLE);
+}
+unsafe extern "C" {
+    pub fn AddVectoredExceptionHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn AddVectoredContinueHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn AccessCheckByType(
+        pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+        PrincipalSelfSid: PSID,
+        ClientToken: HANDLE,
+        DesiredAccess: DWORD,
+        ObjectTypeList: POBJECT_TYPE_LIST,
+        ObjectTypeListLength: DWORD,
+        GenericMapping: PGENERIC_MAPPING,
+        PrivilegeSet: PPRIVILEGE_SET,
+        PrivilegeSetLength: LPDWORD,
+        GrantedAccess: LPDWORD,
+        AccessStatus: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AccessCheckByTypeResultList(
+        pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+        PrincipalSelfSid: PSID,
+        ClientToken: HANDLE,
+        DesiredAccess: DWORD,
+        ObjectTypeList: POBJECT_TYPE_LIST,
+        ObjectTypeListLength: DWORD,
+        GenericMapping: PGENERIC_MAPPING,
+        PrivilegeSet: PPRIVILEGE_SET,
+        PrivilegeSetLength: LPDWORD,
+        GrantedAccess: LPDWORD,
+        AccessStatus: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AdjustTokenGroups(
+        arg1: HANDLE,
+        arg2: BOOL,
+        arg3: PTOKEN_GROUPS,
+        arg4: DWORD,
+        arg5: PTOKEN_GROUPS,
+        arg6: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AdjustTokenPrivileges(
+        arg1: HANDLE,
+        arg2: BOOL,
+        arg3: PTOKEN_PRIVILEGES,
+        arg4: DWORD,
+        arg5: PTOKEN_PRIVILEGES,
+        arg6: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AllocateAndInitializeSid(
+        arg1: PSID_IDENTIFIER_AUTHORITY,
+        arg2: BYTE,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: DWORD,
+        arg10: DWORD,
+        arg11: *mut PSID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckTokenMembership(arg1: HANDLE, arg2: PSID, arg3: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AllocateLocallyUniqueId(arg1: PLUID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AreAllAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AreAnyAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AreFileApisANSI() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BackupEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BackupEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BackupRead(
+        hFile: HANDLE,
+        lpBuffer: LPBYTE,
+        nNumberOfBytesToRead: DWORD,
+        lpNumberOfBytesRead: LPDWORD,
+        bAbort: BOOL,
+        bProcessSecurity: BOOL,
+        lpContext: *mut LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BackupSeek(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: LPDWORD,
+        arg5: LPDWORD,
+        arg6: *mut LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BackupWrite(
+        hFile: HANDLE,
+        lpBuffer: LPBYTE,
+        nNumberOfBytesToWrite: DWORD,
+        lpNumberOfBytesWritten: LPDWORD,
+        bAbort: BOOL,
+        bProcessSecurity: BOOL,
+        lpContext: *mut LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BeginUpdateResourceA(arg1: LPCSTR, arg2: BOOL) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn BeginUpdateResourceW(arg1: LPCWSTR, arg2: BOOL) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn BindIoCompletionCallback(
+        arg1: HANDLE,
+        arg2: LPOVERLAPPED_COMPLETION_ROUTINE,
+        arg3: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BuildCommDCBA(arg1: LPCSTR, arg2: LPDCB) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BuildCommDCBW(arg1: LPCWSTR, arg2: LPDCB) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BuildCommDCBAndTimeoutsA(arg1: LPCSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BuildCommDCBAndTimeoutsW(arg1: LPCWSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CallNamedPipeA(
+        lpNamedPipeName: LPCSTR,
+        lpInBuffer: LPVOID,
+        nInBufferSize: DWORD,
+        lpOutBuffer: LPVOID,
+        nOutBufferSize: DWORD,
+        lpBytesRead: LPDWORD,
+        nTimeOut: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CallNamedPipeW(
+        lpNamedPipeName: LPCWSTR,
+        lpInBuffer: LPVOID,
+        nInBufferSize: DWORD,
+        lpOutBuffer: LPVOID,
+        nOutBufferSize: DWORD,
+        lpBytesRead: LPDWORD,
+        nTimeOut: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CancelDeviceWakeupRequest(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CancelWaitableTimer(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckNameLegalDOS8Dot3A(
+        lpName: LPCSTR,
+        lpOemName: LPSTR,
+        OemNameSize: DWORD,
+        pbNameContainsSpaces: PBOOL,
+        pbNameLegal: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckNameLegalDOS8Dot3W(
+        lpName: LPCWSTR,
+        lpOemName: LPSTR,
+        OemNameSize: DWORD,
+        pbNameContainsSpaces: PBOOL,
+        pbNameLegal: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckRemoteDebuggerPresent(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ClearCommBreak(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ClearCommError(arg1: HANDLE, arg2: PDWORD, arg3: LPCOMSTAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ClearEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ClearEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseEventLog(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseHandle(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CommConfigDialogA(arg1: LPCSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CommConfigDialogW(arg1: LPCWSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CompareFileTime(arg1: *const FILETIME, arg2: *const FILETIME) -> LONG;
+}
+unsafe extern "C" {
+    pub fn ConnectNamedPipe(arg1: HANDLE, arg2: LPOVERLAPPED) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ContinueDebugEvent(arg1: DWORD, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertFiberToThread() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertThreadToFiber(arg1: PVOID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn CopyFileA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopyFileW(
+        lpExistingFileName: LPCWSTR,
+        lpNewFileName: LPCWSTR,
+        bFailIfExists: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopyFileExA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: LPBOOL,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopyFileExW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: LPBOOL,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopySid(arg1: DWORD, arg2: PSID, arg3: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateActCtxA(arg1: PCACTCTXA) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateActCtxW(arg1: PCACTCTXW) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateDirectoryA(
+        lpPathName: LPCSTR,
+        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateDirectoryW(
+        lpPathName: LPCWSTR,
+        lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateDirectoryExA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateDirectoryExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateEventA(
+        lpEventAttributes: LPSECURITY_ATTRIBUTES,
+        bManualReset: BOOL,
+        bInitialState: BOOL,
+        lpName: LPCSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateEventW(
+        arg1: LPSECURITY_ATTRIBUTES,
+        bManualReset: BOOL,
+        bInitialState: BOOL,
+        lpName: LPCWSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateFiber(arg1: SIZE_T, arg2: LPFIBER_START_ROUTINE, arg3: LPVOID) -> LPVOID;
+}
+unsafe extern "C" {
+    pub fn CreateFiberEx(
+        arg1: SIZE_T,
+        arg2: SIZE_T,
+        arg3: DWORD,
+        arg4: LPFIBER_START_ROUTINE,
+        arg5: LPVOID,
+    ) -> LPVOID;
+}
+unsafe extern "C" {
+    pub fn CreateFileA(
+        arg1: LPCSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: HANDLE,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateFileW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: HANDLE,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateFileMappingA(
+        arg1: HANDLE,
+        arg2: LPSECURITY_ATTRIBUTES,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: LPCSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateFileMappingW(
+        arg1: HANDLE,
+        arg2: LPSECURITY_ATTRIBUTES,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: LPCWSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateHardLinkA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateHardLinkW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateJobObjectA(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateJobObjectW(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn TerminateJobObject(arg1: HANDLE, arg2: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AssignProcessToJobObject(arg1: HANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateMailslotA(
+        arg1: LPCSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: LPSECURITY_ATTRIBUTES,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateMailslotW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: LPSECURITY_ATTRIBUTES,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateMemoryResourceNotification(arg1: MEMORY_RESOURCE_NOTIFICATION_TYPE) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateMutexA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateMutexW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateNamedPipeA(
+        arg1: LPCSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: DWORD,
+        arg8: LPSECURITY_ATTRIBUTES,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateNamedPipeW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: DWORD,
+        arg8: LPSECURITY_ATTRIBUTES,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreatePipe(
+        arg1: PHANDLE,
+        arg2: PHANDLE,
+        arg3: LPSECURITY_ATTRIBUTES,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreatePrivateObjectSecurity(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: *mut PSECURITY_DESCRIPTOR,
+        arg4: BOOL,
+        arg5: HANDLE,
+        arg6: PGENERIC_MAPPING,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessA(
+        arg1: LPCSTR,
+        arg2: LPSTR,
+        arg3: LPSECURITY_ATTRIBUTES,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: BOOL,
+        arg6: DWORD,
+        arg7: PVOID,
+        arg8: LPCSTR,
+        arg9: LPSTARTUPINFOA,
+        arg10: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessW(
+        arg1: LPCWSTR,
+        arg2: LPWSTR,
+        arg3: LPSECURITY_ATTRIBUTES,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: BOOL,
+        arg6: DWORD,
+        arg7: PVOID,
+        arg8: LPCWSTR,
+        arg9: LPSTARTUPINFOW,
+        arg10: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessAsUserA(
+        arg1: HANDLE,
+        arg2: LPCSTR,
+        arg3: LPSTR,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: LPSECURITY_ATTRIBUTES,
+        arg6: BOOL,
+        arg7: DWORD,
+        arg8: PVOID,
+        arg9: LPCSTR,
+        arg10: LPSTARTUPINFOA,
+        arg11: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessAsUserW(
+        arg1: HANDLE,
+        arg2: LPCWSTR,
+        arg3: LPWSTR,
+        arg4: LPSECURITY_ATTRIBUTES,
+        arg5: LPSECURITY_ATTRIBUTES,
+        arg6: BOOL,
+        arg7: DWORD,
+        arg8: PVOID,
+        arg9: LPCWSTR,
+        arg10: LPSTARTUPINFOW,
+        arg11: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessWithLogonW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPCWSTR,
+        arg4: DWORD,
+        arg5: LPCWSTR,
+        arg6: LPWSTR,
+        arg7: DWORD,
+        arg8: LPVOID,
+        arg9: LPCWSTR,
+        arg10: LPSTARTUPINFOW,
+        arg11: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateProcessWithTokenW(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: LPCWSTR,
+        arg4: LPWSTR,
+        arg5: DWORD,
+        arg6: LPVOID,
+        arg7: LPCWSTR,
+        arg8: LPSTARTUPINFOW,
+        arg9: LPPROCESS_INFORMATION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateRemoteThread(
+        arg1: HANDLE,
+        arg2: LPSECURITY_ATTRIBUTES,
+        arg3: DWORD,
+        arg4: LPTHREAD_START_ROUTINE,
+        arg5: LPVOID,
+        arg6: DWORD,
+        arg7: LPDWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateRestrictedToken(
+        ExistingTokenHandle: HANDLE,
+        Flags: DWORD,
+        DisableSidCount: DWORD,
+        SidsToDisable: PSID_AND_ATTRIBUTES,
+        DeletePrivilegeCount: DWORD,
+        PrivilegesToDelete: PLUID_AND_ATTRIBUTES,
+        RestrictedSidCount: DWORD,
+        SidsToRestrict: PSID_AND_ATTRIBUTES,
+        NewTokenHandle: PHANDLE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateSemaphoreA(
+        arg1: LPSECURITY_ATTRIBUTES,
+        arg2: LONG,
+        arg3: LONG,
+        arg4: LPCSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateSemaphoreW(
+        arg1: LPSECURITY_ATTRIBUTES,
+        arg2: LONG,
+        arg3: LONG,
+        arg4: LPCWSTR,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateTapePartition(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CreateTimerQueue() -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateTimerQueueTimer(
+        arg1: PHANDLE,
+        arg2: HANDLE,
+        arg3: WAITORTIMERCALLBACK,
+        arg4: PVOID,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ChangeTimerQueueTimer(
+        TimerQueue: HANDLE,
+        Timer: HANDLE,
+        DueTime: ULONG,
+        Period: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateThread(
+        arg1: LPSECURITY_ATTRIBUTES,
+        arg2: DWORD,
+        arg3: LPTHREAD_START_ROUTINE,
+        arg4: PVOID,
+        arg5: DWORD,
+        arg6: PDWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateWaitableTimerA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateWaitableTimerW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CreateWellKnownSid(
+        arg1: WELL_KNOWN_SID_TYPE,
+        arg2: PSID,
+        arg3: PSID,
+        arg4: *mut DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeactivateActCtx(arg1: DWORD, arg2: ULONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DebugActiveProcess(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DebugActiveProcessStop(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DebugBreak();
+}
+unsafe extern "C" {
+    pub fn DebugBreakProcess(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DebugSetProcessKillOnExit(arg1: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DecodePointer(arg1: PVOID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn DecodeSystemPointer(arg1: PVOID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn DecryptFileA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DecryptFileW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DefineDosDeviceA(arg1: DWORD, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DefineDosDeviceW(arg1: DWORD, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteAce(arg1: PACL, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteAtom(arg1: ATOM) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn DeleteCriticalSection(arg1: PCRITICAL_SECTION);
+}
+unsafe extern "C" {
+    pub fn DeleteFiber(arg1: PVOID);
+}
+unsafe extern "C" {
+    pub fn DeleteFileA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteFileW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteTimerQueue(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteTimerQueueEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteTimerQueueTimer(arg1: HANDLE, arg2: HANDLE, arg3: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteVolumeMountPointA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteVolumeMountPointW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeregisterEventSource(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyPrivateObjectSecurity(arg1: *mut PSECURITY_DESCRIPTOR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DisableThreadLibraryCalls(arg1: HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DnsHostnameToComputerNameA(
+        Hostname: LPCSTR,
+        ComputerName: LPSTR,
+        nSize: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DnsHostnameToComputerNameW(
+        Hostname: LPCWSTR,
+        ComputerName: LPWSTR,
+        nSize: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DisconnectNamedPipe(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DosDateTimeToFileTime(arg1: WORD, arg2: WORD, arg3: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DuplicateHandle(
+        arg1: HANDLE,
+        arg2: HANDLE,
+        arg3: HANDLE,
+        arg4: PHANDLE,
+        arg5: DWORD,
+        arg6: BOOL,
+        arg7: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DuplicateToken(arg1: HANDLE, arg2: SECURITY_IMPERSONATION_LEVEL, arg3: PHANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DuplicateTokenEx(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: LPSECURITY_ATTRIBUTES,
+        arg4: SECURITY_IMPERSONATION_LEVEL,
+        arg5: TOKEN_TYPE,
+        arg6: PHANDLE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EncodePointer(arg1: PVOID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn EncodeSystemPointer(arg1: PVOID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn EncryptFileA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EncryptFileW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndUpdateResourceW(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION);
+}
+unsafe extern "C" {
+    pub fn EnumResourceLanguagesA(
+        arg1: HMODULE,
+        arg2: LPCSTR,
+        arg3: LPCSTR,
+        arg4: ENUMRESLANGPROCA,
+        arg5: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumResourceLanguagesW(
+        arg1: HMODULE,
+        arg2: LPCWSTR,
+        arg3: LPCWSTR,
+        arg4: ENUMRESLANGPROCW,
+        arg5: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumResourceNamesA(
+        arg1: HMODULE,
+        arg2: LPCSTR,
+        arg3: ENUMRESNAMEPROCA,
+        arg4: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumResourceNamesW(
+        arg1: HMODULE,
+        arg2: LPCWSTR,
+        arg3: ENUMRESNAMEPROCW,
+        arg4: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumResourceTypesA(arg1: HMODULE, arg2: ENUMRESTYPEPROCA, arg3: LONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumResourceTypesW(arg1: HMODULE, arg2: ENUMRESTYPEPROCW, arg3: LONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EqualPrefixSid(arg1: PSID, arg2: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EqualSid(arg1: PSID, arg2: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EraseTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn EscapeCommFunction(arg1: HANDLE, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ExitProcess(arg1: UINT) -> !;
+}
+unsafe extern "C" {
+    pub fn ExitThread(dwExitCode: DWORD) -> !;
+}
+unsafe extern "C" {
+    pub fn ExpandEnvironmentStringsA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ExpandEnvironmentStringsW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn FatalAppExitA(arg1: UINT, arg2: LPCSTR);
+}
+unsafe extern "C" {
+    pub fn FatalAppExitW(arg1: UINT, arg2: LPCWSTR);
+}
+unsafe extern "C" {
+    pub fn FatalExit(arg1: ::core::ffi::c_int);
+}
+unsafe extern "C" {
+    pub fn FileEncryptionStatusA(arg1: LPCSTR, arg2: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FileEncryptionStatusW(arg1: LPCWSTR, arg2: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FileTimeToDosDateTime(arg1: *const FILETIME, arg2: LPWORD, arg3: LPWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FileTimeToLocalFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindActCtxSectionGuid(
+        arg1: DWORD,
+        arg2: *const GUID,
+        arg3: ULONG,
+        arg4: *const GUID,
+        arg5: PACTCTX_SECTION_KEYED_DATA,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindActCtxSectionStringA(
+        arg1: DWORD,
+        arg2: *const GUID,
+        arg3: ULONG,
+        arg4: LPCSTR,
+        arg5: PACTCTX_SECTION_KEYED_DATA,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindActCtxSectionStringW(
+        arg1: DWORD,
+        arg2: *const GUID,
+        arg3: ULONG,
+        arg4: LPCWSTR,
+        arg5: PACTCTX_SECTION_KEYED_DATA,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindAtomA(arg1: LPCSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn FindAtomW(arg1: LPCWSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn FindClose(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindCloseChangeNotification(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindFirstChangeNotificationA(arg1: LPCSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstChangeNotificationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileExA(
+        arg1: LPCSTR,
+        arg2: FINDEX_INFO_LEVELS,
+        arg3: PVOID,
+        arg4: FINDEX_SEARCH_OPS,
+        arg5: PVOID,
+        arg6: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFileExW(
+        arg1: LPCWSTR,
+        arg2: FINDEX_INFO_LEVELS,
+        arg3: PVOID,
+        arg4: FINDEX_SEARCH_OPS,
+        arg5: PVOID,
+        arg6: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstStreamW(
+        arg1: LPCWSTR,
+        arg2: STREAM_INFO_LEVELS,
+        arg3: LPVOID,
+        arg4: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstFreeAce(arg1: PACL, arg2: *mut PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindFirstVolumeA(lpszVolumeName: LPSTR, cchBufferLength: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstVolumeW(arg1: LPWSTR, arg2: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstVolumeMountPointA(
+        lpszRootPathName: LPCSTR,
+        lpszVolumeMountPoint: LPSTR,
+        cchBufferLength: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindFirstVolumeMountPointW(
+        lpszRootPathName: LPCWSTR,
+        lpszVolumeMountPoint: LPWSTR,
+        cchBufferLength: DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn FindNextChangeNotification(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextStreamW(arg1: HANDLE, arg2: LPVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextVolumeA(
+        hFindVolume: HANDLE,
+        lpszVolumeName: LPSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextVolumeW(arg1: HANDLE, arg2: LPWSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextVolumeMountPointA(
+        hFindVolumeMountPoint: HANDLE,
+        lpszVolumeMountPoint: LPSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindNextVolumeMountPointW(
+        hFindVolumeMountPoint: HANDLE,
+        lpszVolumeMountPoint: LPWSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindVolumeClose(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindVolumeMountPointClose(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindResourceA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR) -> HRSRC;
+}
+unsafe extern "C" {
+    pub fn FindResourceW(arg1: HMODULE, arg2: LPCWSTR, arg3: LPCWSTR) -> HRSRC;
+}
+unsafe extern "C" {
+    pub fn FindResourceExA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR, arg4: WORD) -> HRSRC;
+}
+unsafe extern "C" {
+    pub fn FindResourceExW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPCWSTR, arg4: WORD) -> HRSRC;
+}
+unsafe extern "C" {
+    pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlushInstructionCache(arg1: HANDLE, arg2: LPCVOID, arg3: SIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlushViewOfFile(arg1: LPCVOID, arg2: SIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlsAlloc(arg1: PFLS_CALLBACK_FUNCTION) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn FlsGetValue(arg1: DWORD) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn FlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlsFree(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FormatMessageA(
+        dwFlags: DWORD,
+        lpSource: LPCVOID,
+        dwMessageId: DWORD,
+        dwLanguageId: DWORD,
+        lpBuffer: LPSTR,
+        nSize: DWORD,
+        Arguments: *mut va_list,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn FormatMessageW(
+        dwFlags: DWORD,
+        lpSource: LPCVOID,
+        dwMessageId: DWORD,
+        dwLanguageId: DWORD,
+        lpBuffer: LPWSTR,
+        nSize: DWORD,
+        Arguments: *mut va_list,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeLibraryAndExitThread(arg1: HMODULE, arg2: DWORD) -> !;
+}
+unsafe extern "C" {
+    pub fn FreeResource(arg1: HGLOBAL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeSid(arg1: PSID) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn GetAce(arg1: PACL, arg2: DWORD, arg3: *mut LPVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetAclInformation(
+        arg1: PACL,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: ACL_INFORMATION_CLASS,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetBinaryTypeA(arg1: LPCSTR, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetBinaryTypeW(arg1: LPCWSTR, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommandLineA() -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn GetCommandLineW() -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn GetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommMask(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommModemStatus(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommProperties(arg1: HANDLE, arg2: LPCOMMPROP) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCompressedFileSizeA(arg1: LPCSTR, arg2: PDWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCompressedFileSizeW(arg1: LPCWSTR, arg2: PDWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetComputerNameA(lpBuffer: LPSTR, nSize: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetComputerNameW(lpBuffer: LPWSTR, nSize: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPSTR, arg3: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPWSTR, arg3: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentActCtx(arg1: *mut HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentDirectoryA(arg1: DWORD, arg2: LPSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCurrentHwProfileA(arg1: LPHW_PROFILE_INFOA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentHwProfileW(arg1: LPHW_PROFILE_INFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCurrentProcess() -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetCurrentProcessId() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCurrentThread() -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetCurrentThreadId() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceA(
+        arg1: LPCSTR,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceW(
+        arg1: LPCWSTR,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceExA(
+        arg1: LPCSTR,
+        arg2: PULARGE_INTEGER,
+        arg3: PULARGE_INTEGER,
+        arg4: PULARGE_INTEGER,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDiskFreeSpaceExW(
+        arg1: LPCWSTR,
+        arg2: PULARGE_INTEGER,
+        arg3: PULARGE_INTEGER,
+        arg4: PULARGE_INTEGER,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDllDirectoryA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetDllDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetDriveTypeA(arg1: LPCSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStrings() -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentStringsW() -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentVariableA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFileAttributesExA(
+        lpFileName: LPCSTR,
+        fInfoLevelId: GET_FILEEX_INFO_LEVELS,
+        lpFileInformation: PVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileAttributesExW(
+        lpFileName: LPCWSTR,
+        fInfoLevelId: GET_FILEEX_INFO_LEVELS,
+        lpFileInformation: PVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileInformationByHandle(arg1: HANDLE, arg2: LPBY_HANDLE_FILE_INFORMATION) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileSecurityA(
+        lpFileName: LPCSTR,
+        RequestedInformation: SECURITY_INFORMATION,
+        pSecurityDescriptor: PSECURITY_DESCRIPTOR,
+        nLength: DWORD,
+        lpnLengthNeeded: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileSecurityW(
+        arg1: LPCWSTR,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+        arg4: DWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileSize(arg1: HANDLE, arg2: PDWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFileSizeEx(arg1: HANDLE, arg2: PLARGE_INTEGER) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileTime(arg1: HANDLE, arg2: LPFILETIME, arg3: LPFILETIME, arg4: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetFileType(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFullPathNameA(arg1: LPCSTR, arg2: DWORD, arg3: LPSTR, arg4: *mut LPSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetHandleInformation(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKernelObjectSecurity(
+        arg1: HANDLE,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+        arg4: DWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetLastError() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLengthSid(arg1: PSID) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLocalTime(arg1: LPSYSTEMTIME);
+}
+unsafe extern "C" {
+    pub fn GetLogicalDrives() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLogicalDriveStringsA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLogicalDriveStringsW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLongPathNameA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLongPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetMailslotInfo(
+        arg1: HANDLE,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetModuleFileNameA(hModule: HINSTANCE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetModuleHandleA(arg1: LPCSTR) -> HMODULE;
+}
+unsafe extern "C" {
+    pub fn GetModuleHandleW(arg1: LPCWSTR) -> HMODULE;
+}
+unsafe extern "C" {
+    pub fn GetModuleHandleExA(arg1: DWORD, arg2: LPCSTR, arg3: *mut HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetModuleHandleExW(arg1: DWORD, arg2: LPCWSTR, arg3: *mut HMODULE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn NeedCurrentDirectoryForExePathA(ExeName: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn NeedCurrentDirectoryForExePathW(ExeName: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNamedPipeClientProcessId(Pipe: HANDLE, ClientProcessId: PULONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNamedPipeHandleStateA(
+        hNamedPipe: HANDLE,
+        lpState: LPDWORD,
+        lpCurInstances: LPDWORD,
+        lpMaxCollectionCount: LPDWORD,
+        lpCollectDataTimeout: LPDWORD,
+        lpUserName: LPSTR,
+        nMaxUserNameSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNamedPipeHandleStateW(
+        hNamedPipe: HANDLE,
+        lpState: LPDWORD,
+        lpCurInstances: LPDWORD,
+        lpMaxCollectionCount: LPDWORD,
+        lpCollectDataTimeout: LPDWORD,
+        lpUserName: LPWSTR,
+        nMaxUserNameSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNamedPipeInfo(
+        arg1: HANDLE,
+        arg2: PDWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNativeSystemInfo(arg1: LPSYSTEM_INFO);
+}
+unsafe extern "C" {
+    pub fn GetEventLogInformation(
+        hEventLog: HANDLE,
+        dwInfoLevel: DWORD,
+        lpBuffer: LPVOID,
+        cbBufSize: DWORD,
+        pcbBytesNeeded: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNumberOfEventLogRecords(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetOldestEventLogRecord(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetPriorityClass(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateObjectSecurity(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+        arg4: DWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT, arg4: LPCSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT, arg4: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileSectionA(
+        lpAppName: LPCSTR,
+        lpReturnedString: LPSTR,
+        nSize: DWORD,
+        lpFileName: LPCSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileSectionW(
+        lpAppName: LPCWSTR,
+        lpReturnedString: LPWSTR,
+        nSize: DWORD,
+        lpFileName: LPCWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileSectionNamesA(
+        lpszReturnBuffer: LPSTR,
+        nSize: DWORD,
+        lpFileName: LPCSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileSectionNamesW(
+        lpszReturnBuffer: LPWSTR,
+        nSize: DWORD,
+        lpFileName: LPCWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileStringA(
+        lpAppName: LPCSTR,
+        lpKeyName: LPCSTR,
+        lpDefault: LPCSTR,
+        lpReturnedString: LPSTR,
+        nSize: DWORD,
+        lpFileName: LPCSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileStringW(
+        lpAppName: LPCWSTR,
+        lpKeyName: LPCWSTR,
+        lpDefault: LPCWSTR,
+        lpReturnedString: LPWSTR,
+        nSize: DWORD,
+        lpFileName: LPCWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileStructA(
+        lpszSection: LPCSTR,
+        lpszKey: LPCSTR,
+        lpStruct: LPVOID,
+        uSizeStruct: UINT,
+        szFile: LPCSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetPrivateProfileStructW(
+        lpszSection: LPCWSTR,
+        lpszKey: LPCWSTR,
+        lpStruct: LPVOID,
+        uSizeStruct: UINT,
+        szFile: LPCWSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcAddress(arg1: HINSTANCE, arg2: LPCSTR) -> FARPROC;
+}
+unsafe extern "C" {
+    pub fn GetProcessAffinityMask(arg1: HANDLE, arg2: PDWORD_PTR, arg3: PDWORD_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessHandleCount(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessHeap() -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetProcessHeaps(arg1: DWORD, arg2: PHANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProcessId(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProcessIdOfThread(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProcessIoCounters(arg1: HANDLE, arg2: PIO_COUNTERS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessShutdownParameters(arg1: PDWORD, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessTimes(
+        arg1: HANDLE,
+        arg2: LPFILETIME,
+        arg3: LPFILETIME,
+        arg4: LPFILETIME,
+        arg5: LPFILETIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessVersion(arg1: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProcessWindowStation() -> HWINSTA;
+}
+unsafe extern "C" {
+    pub fn GetProcessWorkingSetSize(arg1: HANDLE, arg2: PSIZE_T, arg3: PSIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetProfileSectionA(lpAppName: LPCSTR, lpReturnedString: LPSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProfileSectionW(lpAppName: LPCWSTR, lpReturnedString: LPWSTR, nSize: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProfileStringA(
+        lpAppName: LPCSTR,
+        lpKeyName: LPCSTR,
+        lpDefault: LPCSTR,
+        lpReturnedString: LPSTR,
+        nSize: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetProfileStringW(
+        lpAppName: LPCWSTR,
+        lpKeyName: LPCWSTR,
+        lpDefault: LPCWSTR,
+        lpReturnedString: LPWSTR,
+        nSize: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorControl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR_CONTROL,
+        arg3: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorDacl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: LPBOOL,
+        arg3: *mut PACL,
+        arg4: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorGroup(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: *mut PSID,
+        arg3: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorLength(arg1: PSECURITY_DESCRIPTOR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorOwner(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: *mut PSID,
+        arg3: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSecurityDescriptorSacl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: LPBOOL,
+        arg3: *mut PACL,
+        arg4: LPBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetShortPathNameA(lpszLongPath: LPCSTR, lpszShortPath: LPSTR, cchBuffer: DWORD)
+        -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetShortPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSidIdentifierAuthority(arg1: PSID) -> PSID_IDENTIFIER_AUTHORITY;
+}
+unsafe extern "C" {
+    pub fn GetSidLengthRequired(arg1: UCHAR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSidSubAuthority(arg1: PSID, arg2: DWORD) -> PDWORD;
+}
+unsafe extern "C" {
+    pub fn GetSidSubAuthorityCount(arg1: PSID) -> PUCHAR;
+}
+unsafe extern "C" {
+    pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
+}
+unsafe extern "C" {
+    pub fn GetStartupInfoW(arg1: LPSTARTUPINFOW);
+}
+unsafe extern "C" {
+    pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetSystemDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemInfo(arg1: LPSYSTEM_INFO);
+}
+unsafe extern "C" {
+    pub fn GetSystemPowerStatus(arg1: LPSYSTEM_POWER_STATUS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSystemRegistryQuota(arg1: PDWORD, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSystemTime(lpSystemTime: LPSYSTEMTIME);
+}
+unsafe extern "C" {
+    pub fn GetSystemTimes(arg1: LPFILETIME, arg2: LPFILETIME, arg3: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSystemTimeAdjustment(arg1: PDWORD, arg2: PDWORD, arg3: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetSystemTimeAsFileTime(arg1: LPFILETIME);
+}
+unsafe extern "C" {
+    pub fn GetSystemWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemWow64DirectoryA(lpBuffer: LPSTR, uSize: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemWow64DirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTapeParameters(
+        hDevice: HANDLE,
+        dwOperation: DWORD,
+        lpdwSize: LPDWORD,
+        lpTapeInformation: LPVOID,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTapePosition(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: PDWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTapeStatus(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTempFileNameA(
+        lpPathName: LPCSTR,
+        lpPrefixString: LPCSTR,
+        uUnique: UINT,
+        lpTempFileName: LPSTR,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTempPathA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTempPathW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetThreadContext(arg1: HANDLE, arg2: LPCONTEXT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetThreadIOPendingFlag(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetThreadPriority(arg1: HANDLE) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetThreadPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetThreadSelectorEntry(arg1: HANDLE, arg2: DWORD, arg3: LPLDT_ENTRY) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetThreadTimes(
+        arg1: HANDLE,
+        arg2: LPFILETIME,
+        arg3: LPFILETIME,
+        arg4: LPFILETIME,
+        arg5: LPFILETIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTickCount() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetThreadId(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTokenInformation(
+        arg1: HANDLE,
+        arg2: TOKEN_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: DWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetUserNameA(lpBuffer: LPSTR, pcbBuffer: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetUserNameW(lpBuffer: LPWSTR, pcbBuffer: LPDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVersion() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetVersionExA(arg1: LPOSVERSIONINFOA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumeInformationA(
+        lpRootPathName: LPCSTR,
+        lpVolumeNameBuffer: LPSTR,
+        nVolumeNameSize: DWORD,
+        lpVolumeSerialNumber: LPDWORD,
+        lpMaximumComponentLength: LPDWORD,
+        lpFileSystemFlags: LPDWORD,
+        lpFileSystemNameBuffer: LPSTR,
+        nFileSystemNameSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumeInformationW(
+        arg1: LPCWSTR,
+        arg2: LPWSTR,
+        arg3: DWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+        arg6: PDWORD,
+        arg7: LPWSTR,
+        arg8: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumeNameForVolumeMountPointA(
+        lpszVolumeMountPoint: LPCSTR,
+        lpszVolumeName: LPSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumeNameForVolumeMountPointW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumePathNameA(
+        lpszFileName: LPCSTR,
+        lpszVolumePathName: LPSTR,
+        cchBufferLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumePathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumePathNamesForVolumeNameA(
+        lpszVolumeName: LPCSTR,
+        lpszVolumePathNames: LPCH,
+        cchBufferLength: DWORD,
+        lpcchReturnLength: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetVolumePathNamesForVolumeNameW(
+        arg1: LPCWSTR,
+        arg2: LPWSTR,
+        arg3: DWORD,
+        arg4: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: PDWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetWriteWatch(
+        arg1: DWORD,
+        arg2: PVOID,
+        arg3: SIZE_T,
+        arg4: *mut PVOID,
+        arg5: PULONG_PTR,
+        arg6: PULONG,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GlobalAddAtomA(arg1: LPCSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn GlobalAddAtomW(arg1: LPCWSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn GlobalAlloc(arg1: UINT, arg2: SIZE_T) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn GlobalCompact(arg1: DWORD) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn GlobalDeleteAtom(arg1: ATOM) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn GlobalFindAtomA(arg1: LPCSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn GlobalFindAtomW(arg1: LPCWSTR) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn GlobalFix(arg1: HGLOBAL);
+}
+unsafe extern "C" {
+    pub fn GlobalFlags(arg1: HGLOBAL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GlobalFree(arg1: HGLOBAL) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn GlobalGetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GlobalGetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GlobalHandle(arg1: LPCVOID) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn GlobalLock(arg1: HGLOBAL) -> LPVOID;
+}
+unsafe extern "C" {
+    pub fn GlobalMemoryStatus(arg1: LPMEMORYSTATUS);
+}
+unsafe extern "C" {
+    pub fn GlobalMemoryStatusEx(arg1: LPMEMORYSTATUSEX) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GlobalReAlloc(arg1: HGLOBAL, arg2: SIZE_T, arg3: UINT) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn GlobalSize(arg1: HGLOBAL) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn GlobalUnfix(arg1: HGLOBAL);
+}
+unsafe extern "C" {
+    pub fn GlobalUnlock(arg1: HGLOBAL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GlobalUnWire(arg1: HGLOBAL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GlobalWire(arg1: HGLOBAL) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn HeapCompact(arg1: HANDLE, arg2: DWORD) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn HeapCreate(arg1: DWORD, arg2: SIZE_T, arg3: SIZE_T) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn HeapDestroy(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapLock(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapQueryInformation(
+        arg1: HANDLE,
+        arg2: HEAP_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: SIZE_T,
+        arg5: PSIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn HeapSetInformation(
+        arg1: HANDLE,
+        arg2: HEAP_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: SIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapSize(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn HeapUnlock(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapValidate(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HeapWalk(arg1: HANDLE, arg2: LPPROCESS_HEAP_ENTRY) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImpersonateAnonymousToken(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImpersonateLoggedOnUser(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImpersonateNamedPipeClient(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImpersonateSelf(arg1: SECURITY_IMPERSONATION_LEVEL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitAtomTable(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitializeAcl(arg1: PACL, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
+}
+unsafe extern "C" {
+    pub fn InitializeCriticalSectionAndSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCriticalSectionSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn InitializeSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitializeSid(arg1: PSID, arg2: PSID_IDENTIFIER_AUTHORITY, arg3: BYTE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadCodePtr(arg1: FARPROC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadHugeReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadHugeWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadStringPtrA(arg1: LPCSTR, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadStringPtrW(arg1: LPCWSTR, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsBadWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsDebuggerPresent() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsProcessInJob(arg1: HANDLE, arg2: HANDLE, arg3: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsProcessorFeaturePresent(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsSystemResumeAutomatic() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsTextUnicode(
+        lpv: *const ::core::ffi::c_void,
+        iSize: ::core::ffi::c_int,
+        lpiResult: LPINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsValidAcl(arg1: PACL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsValidSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsValidSid(arg1: PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWellKnownSid(arg1: PSID, arg2: WELL_KNOWN_SID_TYPE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWow64Process(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION);
+}
+unsafe extern "C" {
+    pub fn LoadLibraryA(arg1: LPCSTR) -> HINSTANCE;
+}
+unsafe extern "C" {
+    pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE;
+}
+unsafe extern "C" {
+    pub fn LoadLibraryExA(arg1: LPCSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
+}
+unsafe extern "C" {
+    pub fn LoadLibraryExW(arg1: LPCWSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
+}
+unsafe extern "C" {
+    pub fn LoadModule(arg1: LPCSTR, arg2: PVOID) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn LoadResource(arg1: HINSTANCE, arg2: HRSRC) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn LocalAlloc(arg1: UINT, arg2: SIZE_T) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalCompact(arg1: UINT) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn LocalFileTimeToFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LocalFlags(arg1: HLOCAL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn LocalFree(arg1: HLOCAL) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalHandle(arg1: LPCVOID) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalLock(arg1: HLOCAL) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn LocalReAlloc(arg1: HLOCAL, arg2: SIZE_T, arg3: UINT) -> HLOCAL;
+}
+unsafe extern "C" {
+    pub fn LocalShrink(arg1: HLOCAL, arg2: UINT) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn LocalSize(arg1: HLOCAL) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn LocalUnlock(arg1: HLOCAL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LockFileEx(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LockResource(arg1: HGLOBAL) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn LogonUserA(
+        arg1: LPSTR,
+        arg2: LPSTR,
+        arg3: LPSTR,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: PHANDLE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LogonUserW(
+        arg1: LPWSTR,
+        arg2: LPWSTR,
+        arg3: LPWSTR,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: PHANDLE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LogonUserExA(
+        lpszUsername: LPSTR,
+        lpszDomain: LPSTR,
+        lpszPassword: LPSTR,
+        dwLogonType: DWORD,
+        dwLogonProvider: DWORD,
+        phToken: PHANDLE,
+        ppLogonSid: *mut PSID,
+        ppProfileBuffer: *mut PVOID,
+        pdwProfileLength: LPDWORD,
+        pQuotaLimits: PQUOTA_LIMITS,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LogonUserExW(
+        lpszUsername: LPWSTR,
+        lpszDomain: LPWSTR,
+        lpszPassword: LPWSTR,
+        dwLogonType: DWORD,
+        dwLogonProvider: DWORD,
+        phToken: PHANDLE,
+        ppLogonSid: *mut PSID,
+        ppProfileBuffer: *mut PVOID,
+        pdwProfileLength: LPDWORD,
+        pQuotaLimits: PQUOTA_LIMITS,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupAccountNameA(
+        lpSystemName: LPCSTR,
+        lpAccountName: LPCSTR,
+        Sid: PSID,
+        cbSid: LPDWORD,
+        ReferencedDomainName: LPSTR,
+        cchReferencedDomainName: LPDWORD,
+        peUse: PSID_NAME_USE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupAccountNameW(
+        lpSystemName: LPCWSTR,
+        lpAccountName: LPCWSTR,
+        Sid: PSID,
+        cbSid: LPDWORD,
+        ReferencedDomainName: LPWSTR,
+        cchReferencedDomainName: LPDWORD,
+        peUse: PSID_NAME_USE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupAccountSidA(
+        lpSystemName: LPCSTR,
+        Sid: PSID,
+        Name: LPSTR,
+        cchName: LPDWORD,
+        ReferencedDomainName: LPSTR,
+        cchReferencedDomainName: LPDWORD,
+        peUse: PSID_NAME_USE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupAccountSidW(
+        lpSystemName: LPCWSTR,
+        Sid: PSID,
+        Name: LPWSTR,
+        cchName: LPDWORD,
+        ReferencedDomainName: LPWSTR,
+        cchReferencedDomainName: LPDWORD,
+        peUse: PSID_NAME_USE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeDisplayNameA(
+        lpSystemName: LPCSTR,
+        lpName: LPCSTR,
+        lpDisplayName: LPSTR,
+        cchDisplayName: LPDWORD,
+        lpLanguageId: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeDisplayNameW(
+        lpSystemName: LPCWSTR,
+        lpName: LPCWSTR,
+        lpDisplayName: LPWSTR,
+        cchDisplayName: LPDWORD,
+        lpLanguageId: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeNameA(
+        lpSystemName: LPCSTR,
+        lpLuid: PLUID,
+        lpName: LPSTR,
+        cchName: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeNameW(
+        lpSystemName: LPCWSTR,
+        lpLuid: PLUID,
+        lpName: LPWSTR,
+        cchName: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeValueA(arg1: LPCSTR, arg2: LPCSTR, arg3: PLUID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupPrivilegeValueW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PLUID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn lstrcatA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcmpA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrcmpiA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrcmpiW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrcmpW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrcpyA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcpynA(arg1: LPSTR, arg2: LPCSTR, arg3: ::core::ffi::c_int) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn lstrcpynW(arg1: LPWSTR, arg2: LPCWSTR, arg3: ::core::ffi::c_int) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn lstrlenA(arg1: LPCSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn lstrlenW(arg1: LPCWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MakeAbsoluteSD(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: PDWORD,
+        arg4: PACL,
+        arg5: PDWORD,
+        arg6: PACL,
+        arg7: PDWORD,
+        arg8: PSID,
+        arg9: PDWORD,
+        arg10: PSID,
+        arg11: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MakeSelfRelativeSD(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MapGenericMask(arg1: PDWORD, arg2: PGENERIC_MAPPING);
+}
+unsafe extern "C" {
+    pub fn MapViewOfFile(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: SIZE_T,
+    ) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn MapViewOfFileEx(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: SIZE_T,
+        arg6: PVOID,
+    ) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn MoveFileA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveFileW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveFileExA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveFileWithProgressA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveFileWithProgressW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPPROGRESS_ROUTINE,
+        arg4: LPVOID,
+        arg5: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MulDiv(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn NotifyChangeEventLog(arg1: HANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectCloseAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectCloseAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectDeleteAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectDeleteAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectOpenAuditAlarmA(
+        arg1: LPCSTR,
+        arg2: PVOID,
+        arg3: LPSTR,
+        arg4: LPSTR,
+        arg5: PSECURITY_DESCRIPTOR,
+        arg6: HANDLE,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: PPRIVILEGE_SET,
+        arg10: BOOL,
+        arg11: BOOL,
+        arg12: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectOpenAuditAlarmW(
+        arg1: LPCWSTR,
+        arg2: PVOID,
+        arg3: LPWSTR,
+        arg4: LPWSTR,
+        arg5: PSECURITY_DESCRIPTOR,
+        arg6: HANDLE,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: PPRIVILEGE_SET,
+        arg10: BOOL,
+        arg11: BOOL,
+        arg12: PBOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectPrivilegeAuditAlarmA(
+        arg1: LPCSTR,
+        arg2: PVOID,
+        arg3: HANDLE,
+        arg4: DWORD,
+        arg5: PPRIVILEGE_SET,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ObjectPrivilegeAuditAlarmW(
+        arg1: LPCWSTR,
+        arg2: PVOID,
+        arg3: HANDLE,
+        arg4: DWORD,
+        arg5: PPRIVILEGE_SET,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenBackupEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenBackupEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenEventA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenEventW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenFile(arg1: LPCSTR, arg2: LPOFSTRUCT, arg3: UINT) -> HFILE;
+}
+unsafe extern "C" {
+    pub fn OpenFileMappingA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenFileMappingW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenMutexA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenMutexW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenProcess(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenProcessToken(arg1: HANDLE, arg2: DWORD, arg3: PHANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenSemaphoreA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenSemaphoreW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenThread(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenThreadToken(arg1: HANDLE, arg2: DWORD, arg3: BOOL, arg4: PHANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenWaitableTimerA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OpenWaitableTimerW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn OutputDebugStringA(arg1: LPCSTR);
+}
+unsafe extern "C" {
+    pub fn OutputDebugStringW(arg1: LPCWSTR);
+}
+unsafe extern "C" {
+    pub fn PeekNamedPipe(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: PDWORD,
+        arg5: PDWORD,
+        arg6: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PrepareTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn PrivilegeCheck(arg1: HANDLE, arg2: PPRIVILEGE_SET, arg3: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PrivilegedServiceAuditAlarmA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: HANDLE,
+        arg4: PPRIVILEGE_SET,
+        arg5: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PrivilegedServiceAuditAlarmW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: HANDLE,
+        arg4: PPRIVILEGE_SET,
+        arg5: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ProcessIdToSessionId(arg1: DWORD, arg2: *mut DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PulseEvent(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PurgeComm(arg1: HANDLE, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn QueryActCtxW(
+        dwFlags: DWORD,
+        hActCtx: HANDLE,
+        pvSubInstance: PVOID,
+        ulInfoClass: ULONG,
+        pvBuffer: PVOID,
+        cbBuffer: SIZE_T,
+        pcbWrittenOrRequired: *mut SIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn QueryDosDeviceA(lpDeviceName: LPCSTR, lpTargetPath: LPSTR, ucchMax: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn QueryDosDeviceW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn QueryMemoryResourceNotification(arg1: HANDLE, arg2: PBOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn QueryPerformanceCounter(arg1: PLARGE_INTEGER) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn QueryPerformanceFrequency(arg1: PLARGE_INTEGER) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn QueueUserAPC(arg1: PAPCFUNC, arg2: HANDLE, arg3: ULONG_PTR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn QueueUserWorkItem(arg1: LPTHREAD_START_ROUTINE, arg2: PVOID, arg3: ULONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
+}
+unsafe extern "C" {
+    pub fn QueryInformationJobObject(
+        hJob: HANDLE,
+        JobObjectInformationClass: JOBOBJECTINFOCLASS,
+        lpJobObjectInformation: LPVOID,
+        cbJobObjectInformationLength: DWORD,
+        lpReturnLength: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadDirectoryChangesW(
+        hDirectory: HANDLE,
+        lpBuffer: LPVOID,
+        nBufferLength: DWORD,
+        bWatchSubtree: BOOL,
+        dwNotifyFilter: DWORD,
+        lpBytesReturned: LPDWORD,
+        lpOverlapped: LPOVERLAPPED,
+        lpCompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadEventLogA(
+        hEventLog: HANDLE,
+        dwReadFlags: DWORD,
+        dwRecordOffset: DWORD,
+        lpBuffer: LPVOID,
+        nNumberOfBytesToRead: DWORD,
+        pnBytesRead: *mut DWORD,
+        pnMinNumberOfBytesNeeded: *mut DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadEventLogW(
+        hEventLog: HANDLE,
+        dwReadFlags: DWORD,
+        dwRecordOffset: DWORD,
+        lpBuffer: LPVOID,
+        nNumberOfBytesToRead: DWORD,
+        pnBytesRead: *mut DWORD,
+        pnMinNumberOfBytesNeeded: *mut DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadFile(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: PDWORD,
+        arg5: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadFileEx(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: LPOVERLAPPED,
+        arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadFileScatter(
+        arg1: HANDLE,
+        arg2: *mut FILE_SEGMENT_ELEMENT,
+        arg3: DWORD,
+        arg4: LPDWORD,
+        arg5: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReadProcessMemory(
+        arg1: HANDLE,
+        arg2: LPCVOID,
+        arg3: LPVOID,
+        arg4: SIZE_T,
+        arg5: PSIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterEventSourceA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn RegisterEventSourceW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn RegisterWaitForSingleObject(
+        arg1: PHANDLE,
+        arg2: HANDLE,
+        arg3: WAITORTIMERCALLBACK,
+        arg4: PVOID,
+        arg5: ULONG,
+        arg6: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterWaitForSingleObjectEx(
+        arg1: HANDLE,
+        arg2: WAITORTIMERCALLBACK,
+        arg3: PVOID,
+        arg4: ULONG,
+        arg5: ULONG,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn ReleaseActCtx(arg1: HANDLE);
+}
+unsafe extern "C" {
+    pub fn ReleaseMutex(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReleaseSemaphore(arg1: HANDLE, arg2: LONG, arg3: LPLONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveDirectoryA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveVectoredExceptionHandler(arg1: PVOID) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn RemoveVectoredContinueHandler(arg1: PVOID) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn ReplaceFileA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPCSTR,
+        arg4: DWORD,
+        arg5: LPVOID,
+        arg6: LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReplaceFileW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPCWSTR,
+        arg4: DWORD,
+        arg5: LPVOID,
+        arg6: LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReportEventA(
+        hEventLog: HANDLE,
+        wType: WORD,
+        wCategory: WORD,
+        dwEventID: DWORD,
+        lpUserSid: PSID,
+        wNumStrings: WORD,
+        dwDataSize: DWORD,
+        lpStrings: *mut LPCSTR,
+        lpRawData: LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReportEventW(
+        hEventLog: HANDLE,
+        wType: WORD,
+        wCategory: WORD,
+        dwEventID: DWORD,
+        lpUserSid: PSID,
+        wNumStrings: WORD,
+        dwDataSize: DWORD,
+        lpStrings: *mut LPCWSTR,
+        lpRawData: LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ResetEvent(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ResetWriteWatch(arg1: LPVOID, arg2: SIZE_T) -> UINT;
+}
+unsafe extern "C" {
+    pub fn ResumeThread(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn RevertToSelf() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SearchPathA(
+        lpPath: LPCSTR,
+        lpFileName: LPCSTR,
+        lpExtension: LPCSTR,
+        nBufferLength: DWORD,
+        lpBuffer: LPSTR,
+        lpFilePart: *mut LPSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SearchPathW(
+        lpPath: LPCWSTR,
+        lpFileName: LPCWSTR,
+        lpExtension: LPCWSTR,
+        nBufferLength: DWORD,
+        lpBuffer: LPWSTR,
+        lpFilePart: *mut LPWSTR,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetAclInformation(
+        arg1: PACL,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: ACL_INFORMATION_CLASS,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCommBreak(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCommMask(arg1: HANDLE, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetComputerNameA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetComputerNameW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCurrentDirectoryA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDllDirectoryA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDllDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetEnvironmentVariableA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetErrorMode(arg1: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetEvent(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileApisToANSI();
+}
+unsafe extern "C" {
+    pub fn SetFileApisToOEM();
+}
+unsafe extern "C" {
+    pub fn SetFileAttributesA(lpFileName: LPCSTR, dwFileAttributes: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFilePointer(arg1: HANDLE, arg2: LONG, arg3: PLONG, arg4: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetFilePointerEx(
+        arg1: HANDLE,
+        arg2: LARGE_INTEGER,
+        arg3: PLARGE_INTEGER,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileSecurityA(
+        arg1: LPCSTR,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileSecurityW(
+        arg1: LPCWSTR,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileShortNameA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileShortNameW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileTime(
+        arg1: HANDLE,
+        arg2: *const FILETIME,
+        arg3: *const FILETIME,
+        arg4: *const FILETIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFileValidData(arg1: HANDLE, arg2: LONGLONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumSystemFirmwareTables(
+        FirmwareTableProviderSignature: DWORD,
+        pFirmwareTableEnumBuffer: PVOID,
+        BufferSize: DWORD,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemFirmwareTable(
+        FirmwareTableProviderSignature: DWORD,
+        FirmwareTableID: DWORD,
+        pFirmwareTableBuffer: PVOID,
+        BufferSize: DWORD,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetFirmwareEnvironmentVariableA(
+        lpName: LPCSTR,
+        lpGuid: LPCSTR,
+        pBuffer: PVOID,
+        nSize: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFirmwareEnvironmentVariableW(
+        lpName: LPCWSTR,
+        lpGuid: LPCWSTR,
+        pBuffer: PVOID,
+        nSize: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetFirmwareEnvironmentVariableA(
+        lpName: LPCSTR,
+        lpGuid: LPCSTR,
+        pValue: PVOID,
+        nSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFirmwareEnvironmentVariableW(
+        lpName: LPCWSTR,
+        lpGuid: LPCWSTR,
+        pValue: PVOID,
+        nSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetHandleCount(arg1: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetHandleInformation(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetInformationJobObject(
+        hJob: HANDLE,
+        JobObjectInformationClass: JOBOBJECTINFOCLASS,
+        lpJobObjectInformation: LPVOID,
+        cbJobObjectInformationLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetKernelObjectSecurity(
+        arg1: HANDLE,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetLastError(arg1: DWORD);
+}
+unsafe extern "C" {
+    pub fn SetLastErrorEx(arg1: DWORD, arg2: DWORD);
+}
+unsafe extern "C" {
+    pub fn SetLocalTime(arg1: *const SYSTEMTIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMailslotInfo(arg1: HANDLE, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetNamedPipeHandleState(arg1: HANDLE, arg2: PDWORD, arg3: PDWORD, arg4: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPriorityClass(arg1: HANDLE, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPrivateObjectSecurity(
+        arg1: SECURITY_INFORMATION,
+        arg2: PSECURITY_DESCRIPTOR,
+        arg3: *mut PSECURITY_DESCRIPTOR,
+        arg4: PGENERIC_MAPPING,
+        arg5: HANDLE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetProcessAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetProcessPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetProcessShutdownParameters(arg1: DWORD, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetProcessWorkingSetSize(arg1: HANDLE, arg2: SIZE_T, arg3: SIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorControl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: SECURITY_DESCRIPTOR_CONTROL,
+        arg3: SECURITY_DESCRIPTOR_CONTROL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorDacl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: BOOL,
+        arg3: PACL,
+        arg4: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorGroup(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorOwner(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetSecurityDescriptorSacl(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: BOOL,
+        arg3: PACL,
+        arg4: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSystemPowerState(arg1: BOOL, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSystemTime(arg1: *const SYSTEMTIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSystemTimeAdjustment(arg1: DWORD, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetTapeParameters(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetTapePosition(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: BOOL,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetThreadAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> DWORD_PTR;
+}
+unsafe extern "C" {
+    pub fn SetThreadContext(arg1: HANDLE, arg2: *const CONTEXT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetThreadIdealProcessor(arg1: HANDLE, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetThreadPriority(arg1: HANDLE, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetThreadPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetThreadToken(arg1: PHANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetTimeZoneInformation(arg1: *const TIME_ZONE_INFORMATION) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetTokenInformation(
+        arg1: HANDLE,
+        arg2: TOKEN_INFORMATION_CLASS,
+        arg3: PVOID,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetUnhandledExceptionFilter(
+        arg1: LPTOP_LEVEL_EXCEPTION_FILTER,
+    ) -> LPTOP_LEVEL_EXCEPTION_FILTER;
+}
+unsafe extern "C" {
+    pub fn SetupComm(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetVolumeLabelA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetVolumeLabelW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetVolumeMountPointA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetVolumeMountPointW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWaitableTimer(
+        arg1: HANDLE,
+        arg2: *const LARGE_INTEGER,
+        arg3: LONG,
+        arg4: PTIMERAPCROUTINE,
+        arg5: PVOID,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SignalObjectAndWait(arg1: HANDLE, arg2: HANDLE, arg3: DWORD, arg4: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SizeofResource(arg1: HINSTANCE, arg2: HRSRC) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn Sleep(arg1: DWORD);
+}
+unsafe extern "C" {
+    pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SuspendThread(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SwitchToFiber(arg1: PVOID);
+}
+unsafe extern "C" {
+    pub fn SwitchToThread() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SystemTimeToTzSpecificLocalTime(
+        arg1: *const TIME_ZONE_INFORMATION,
+        arg2: *const SYSTEMTIME,
+        arg3: LPSYSTEMTIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TerminateThread(hThread: HANDLE, dwExitCode: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TlsAlloc() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn TlsFree(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TlsGetValue(arg1: DWORD) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TransactNamedPipe(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: DWORD,
+        arg4: PVOID,
+        arg5: DWORD,
+        arg6: PDWORD,
+        arg7: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TransmitCommChar(arg1: HANDLE, arg2: ::core::ffi::c_char) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TzSpecificLocalTimeToSystemTime(
+        arg1: LPTIME_ZONE_INFORMATION,
+        arg2: LPSYSTEMTIME,
+        arg3: LPSYSTEMTIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnhandledExceptionFilter(arg1: LPEXCEPTION_POINTERS) -> LONG;
+}
+unsafe extern "C" {
+    pub fn UnlockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnlockFileEx(
+        arg1: HANDLE,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnmapViewOfFile(arg1: LPCVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterWait(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterWaitEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateResourceA(
+        hUpdate: HANDLE,
+        lpType: LPCSTR,
+        lpName: LPCSTR,
+        wLanguage: WORD,
+        lpData: LPVOID,
+        cb: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateResourceW(
+        hUpdate: HANDLE,
+        lpType: LPCWSTR,
+        lpName: LPCWSTR,
+        wLanguage: WORD,
+        lpData: LPVOID,
+        cb: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VerifyVersionInfoA(arg1: LPOSVERSIONINFOEXA, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VerifyVersionInfoW(arg1: LPOSVERSIONINFOEXW, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualAlloc(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: DWORD) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn VirtualAllocEx(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: SIZE_T,
+        arg4: DWORD,
+        arg5: DWORD,
+    ) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn VirtualFree(arg1: PVOID, arg2: SIZE_T, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualFreeEx(arg1: HANDLE, arg2: PVOID, arg3: SIZE_T, arg4: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualLock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualProtect(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: PDWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualProtectEx(
+        arg1: HANDLE,
+        arg2: PVOID,
+        arg3: SIZE_T,
+        arg4: DWORD,
+        arg5: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VirtualQuery(arg1: LPCVOID, arg2: PMEMORY_BASIC_INFORMATION, arg3: SIZE_T) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn VirtualQueryEx(
+        arg1: HANDLE,
+        arg2: LPCVOID,
+        arg3: PMEMORY_BASIC_INFORMATION,
+        arg4: SIZE_T,
+    ) -> SIZE_T;
+}
+unsafe extern "C" {
+    pub fn VirtualUnlock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WaitCommEvent(arg1: HANDLE, arg2: PDWORD, arg3: LPOVERLAPPED) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WaitForDebugEvent(arg1: LPDEBUG_EVENT, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WaitForMultipleObjects(
+        nCount: DWORD,
+        lpHandles: *const HANDLE,
+        bWaitAll: BOOL,
+        dwMilliseconds: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WaitForMultipleObjectsEx(
+        arg1: DWORD,
+        arg2: *const HANDLE,
+        arg3: BOOL,
+        arg4: DWORD,
+        arg5: BOOL,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WaitForSingleObjectEx(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WaitNamedPipeA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WaitNamedPipeW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WinLoadTrustProvider(arg1: *mut GUID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Wow64DisableWow64FsRedirection(arg1: *mut PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Wow64EnableWow64FsRedirection(arg1: BOOLEAN) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn Wow64RevertWow64FsRedirection(arg1: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteEncryptedFileRaw(arg1: PFE_IMPORT_FUNC, arg2: PVOID, arg3: PVOID) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WriteFile(
+        arg1: HANDLE,
+        arg2: LPCVOID,
+        arg3: DWORD,
+        arg4: LPDWORD,
+        arg5: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteFileEx(
+        arg1: HANDLE,
+        arg2: LPCVOID,
+        arg3: DWORD,
+        arg4: LPOVERLAPPED,
+        arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteFileGather(
+        arg1: HANDLE,
+        arg2: *mut FILE_SEGMENT_ELEMENT,
+        arg3: DWORD,
+        arg4: LPDWORD,
+        arg5: LPOVERLAPPED,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileSectionA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileStringA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: LPCSTR,
+        arg4: LPCSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileStringW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPCWSTR,
+        arg4: LPCWSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileStructA(
+        lpszSection: LPCSTR,
+        lpszKey: LPCSTR,
+        lpStruct: LPVOID,
+        uSizeStruct: UINT,
+        szFile: LPCSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WritePrivateProfileStructW(
+        lpszSection: LPCWSTR,
+        lpszKey: LPCWSTR,
+        lpStruct: LPVOID,
+        uSizeStruct: UINT,
+        szFile: LPCWSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteProcessMemory(
+        arg1: HANDLE,
+        arg2: LPVOID,
+        arg3: LPCVOID,
+        arg4: SIZE_T,
+        arg5: *mut SIZE_T,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteProfileSectionA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteProfileStringA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteProfileStringW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WriteTapemark(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: BOOL) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WTSGetActiveConsoleSessionId() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn ZombifyActCtx(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AllocateUserPhysicalPages(
+        hProcess: HANDLE,
+        NumberOfPages: PULONG_PTR,
+        PageArray: PULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FreeUserPhysicalPages(
+        hProcess: HANDLE,
+        NumberOfPages: PULONG_PTR,
+        PageArray: PULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MapUserPhysicalPages(
+        VirtualAddress: PVOID,
+        NumberOfPages: ULONG_PTR,
+        PageArray: PULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MapUserPhysicalPagesScatter(
+        VirtualAddresses: *mut PVOID,
+        NumberOfPages: ULONG_PTR,
+        PageArray: PULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitOnceExecuteOnce(
+        InitOnce: PINIT_ONCE,
+        InitFn: PINIT_ONCE_FN,
+        Parameter: PVOID,
+        Context: *mut LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitializeSListHead(ListHead: PSLIST_HEADER);
+}
+unsafe extern "C" {
+    pub fn InterlockedPopEntrySList(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
+}
+unsafe extern "C" {
+    pub fn InterlockedPushEntrySList(
+        ListHead: PSLIST_HEADER,
+        ListEntry: PSLIST_ENTRY,
+    ) -> PSLIST_ENTRY;
+}
+unsafe extern "C" {
+    pub fn InterlockedFlushSList(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
+}
+unsafe extern "C" {
+    pub fn QueryDepthSList(ListHead: PSLIST_HEADER) -> USHORT;
+}
 #[repr(C)]
 pub struct _DRAWPATRECT {
     pub ptPosition: POINT,
@@ -5561,6 +12227,1882 @@ pub type LPFNDEVCAPS = ::core::option::Option<
         arg5: LPDEVMODEA,
     ) -> DWORD,
 >;
+unsafe extern "C" {
+    pub fn AbortDoc(hdc: HDC) -> INT;
+}
+unsafe extern "C" {
+    pub fn AbortPath(hdc: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AddFontResourceA(pszFilename: LPCSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn AddFontResourceW(pszFilename: LPCWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn AddFontMemResourceEx(
+        pvFileView: PVOID,
+        cjSize: DWORD,
+        pvResrved: PVOID,
+        pNumFonts: *mut DWORD,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn AddFontResourceExA(pszFilename: LPCSTR, fl: DWORD, pvReserved: PVOID) -> INT;
+}
+unsafe extern "C" {
+    pub fn AddFontResourceExW(pszFilename: LPCWSTR, fl: DWORD, pvReserved: PVOID) -> INT;
+}
+unsafe extern "C" {
+    pub fn AngleArc(
+        hdc: HDC,
+        x: INT,
+        y: INT,
+        dwRadius: DWORD,
+        eStartAngle: FLOAT,
+        eSweepAngle: FLOAT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AnimatePalette(
+        hPal: HPALETTE,
+        iStartIndex: UINT,
+        cEntries: UINT,
+        ppe: *const PALETTEENTRY,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Arc(
+        hdc: HDC,
+        xLeft: INT,
+        yTop: INT,
+        xRight: INT,
+        yBottom: INT,
+        xStartArc: INT,
+        yStartArc: INT,
+        xEndArc: INT,
+        yEndArc: INT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ArcTo(
+        hdc: HDC,
+        xLeft: INT,
+        yTop: INT,
+        xRight: INT,
+        yBottom: INT,
+        xRadial1: INT,
+        yRadial1: INT,
+        xRadial2: INT,
+        yRadial2: INT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BeginPath(hdc: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BitBlt(
+        hdcDest: HDC,
+        xDest: INT,
+        yDest: INT,
+        cxDest: INT,
+        cyDest: INT,
+        hdcSrc: HDC,
+        xSrc: INT,
+        ySrc: INT,
+        dwRop: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CancelDC(hdc: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckColorsInGamut(
+        hdc: HDC,
+        pRGBTriple: LPVOID,
+        pvBuffer: LPVOID,
+        nCount: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Chord(
+        hdc: HDC,
+        xLeft: INT,
+        yTop: INT,
+        xRight: INT,
+        yBottom: INT,
+        xRadial1: INT,
+        yRadial1: INT,
+        xRadial2: INT,
+        yRadial2: INT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CloseEnhMetaFile(hdc: HDC) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn CloseFigure(hdc: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseMetaFile(hdc: HDC) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn ColorMatchToTarget(hdc: HDC, hdcTarget: HDC, uAction: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CombineRgn(
+        hrgnDest: HRGN,
+        hrgnSrc1: HRGN,
+        hrgnSrc2: HRGN,
+        fnCombineMode: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CombineTransform(
+        pxformResult: LPXFORM,
+        pxform1: *const XFORM,
+        pxform2: *const XFORM,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopyEnhMetaFileA(hemfSrc: HENHMETAFILE, pszFile: LPCSTR) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn CopyEnhMetaFileW(hemfSrc: HENHMETAFILE, pszFile: LPCWSTR) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn CopyMetaFileA(hmfSrc: HMETAFILE, pszFile: LPCSTR) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn CopyMetaFileW(hmfSrc: HMETAFILE, pszFile: LPCWSTR) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn CreateBitmap(
+        cx: INT,
+        cy: INT,
+        cPlanes: UINT,
+        cBitsPerPel: UINT,
+        pvBits: *const ::core::ffi::c_void,
+    ) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateBitmapIndirect(pbm: *const BITMAP) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateBrushIndirect(plb: *const LOGBRUSH) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn CreateColorSpaceA(pLogColorSpace: LPLOGCOLORSPACEA) -> HCOLORSPACE;
+}
+unsafe extern "C" {
+    pub fn CreateColorSpaceW(pLogColorSpace: LPLOGCOLORSPACEW) -> HCOLORSPACE;
+}
+unsafe extern "C" {
+    pub fn CreateCompatibleBitmap(hdc: HDC, cx: INT, cy: INT) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateDCA(
+        pszDriver: LPCSTR,
+        pszDevice: LPCSTR,
+        pszOutput: LPCSTR,
+        pdmInit: *const DEVMODEA,
+    ) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateDCW(
+        pszDriver: LPCWSTR,
+        pszDevice: LPCWSTR,
+        psz: LPCWSTR,
+        pdmInit: *const DEVMODEW,
+    ) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateDIBitmap(
+        hdc: HDC,
+        pbmih: *const BITMAPINFOHEADER,
+        fdwInit: DWORD,
+        pvInit: *const ::core::ffi::c_void,
+        pbmi: *const BITMAPINFO,
+        uUsage: UINT,
+    ) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateDIBPatternBrush(hglbDIBPacked: HGLOBAL, uUsage: UINT) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn CreateDIBPatternBrushPt(pvPackedDIB: *const ::core::ffi::c_void, uUsage: UINT)
+        -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn CreateDIBSection(
+        hdc: HDC,
+        pbmi: *const BITMAPINFO,
+        usage: UINT,
+        ppvBits: *mut *mut ::core::ffi::c_void,
+        hSection: HANDLE,
+        offset: DWORD,
+    ) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateDiscardableBitmap(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn CreateEllipticRgn(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+    ) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateEllipticRgnIndirect(arg1: LPCRECT) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateEnhMetaFileA(arg1: HDC, arg2: LPCSTR, arg3: LPCRECT, arg4: LPCSTR) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateEnhMetaFileW(arg1: HDC, arg2: LPCWSTR, arg3: LPCRECT, arg4: LPCWSTR) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateFontA(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: DWORD,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: DWORD,
+        arg10: DWORD,
+        arg11: DWORD,
+        arg12: DWORD,
+        arg13: DWORD,
+        arg14: LPCSTR,
+    ) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateFontW(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: DWORD,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: DWORD,
+        arg10: DWORD,
+        arg11: DWORD,
+        arg12: DWORD,
+        arg13: DWORD,
+        arg14: LPCWSTR,
+    ) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateFontIndirectA(arg1: *const LOGFONTA) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateFontIndirectW(arg1: *const LOGFONTW) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateFontIndirectExA(arg1: *const ENUMLOGFONTEXDVA) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateFontIndirectExW(arg1: *const ENUMLOGFONTEXDVW) -> HFONT;
+}
+unsafe extern "C" {
+    pub fn CreateHalftonePalette(arg1: HDC) -> HPALETTE;
+}
+unsafe extern "C" {
+    pub fn CreateHatchBrush(arg1: ::core::ffi::c_int, arg2: COLORREF) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn CreateICA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR, arg4: *const DEVMODEA) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateICW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR, arg4: *const DEVMODEW) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateMetaFileA(arg1: LPCSTR) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreateMetaFileW(arg1: LPCWSTR) -> HDC;
+}
+unsafe extern "C" {
+    pub fn CreatePalette(arg1: *const LOGPALETTE) -> HPALETTE;
+}
+unsafe extern "C" {
+    pub fn CreatePatternBrush(arg1: HBITMAP) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn CreatePen(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int, arg3: COLORREF) -> HPEN;
+}
+unsafe extern "C" {
+    pub fn CreatePenIndirect(arg1: *const LOGPEN) -> HPEN;
+}
+unsafe extern "C" {
+    pub fn CreatePolygonRgn(
+        pptl: *const POINT,
+        cPoint: ::core::ffi::c_int,
+        iMode: ::core::ffi::c_int,
+    ) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreatePolyPolygonRgn(
+        pptl: *const POINT,
+        pc: *const INT,
+        cPoly: ::core::ffi::c_int,
+        iMode: ::core::ffi::c_int,
+    ) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateRectRgn(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+    ) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateRectRgnIndirect(arg1: LPCRECT) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateRoundRectRgn(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+    ) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn CreateScalableFontResourceA(
+        arg1: DWORD,
+        arg2: LPCSTR,
+        arg3: LPCSTR,
+        arg4: LPCSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateScalableFontResourceW(
+        arg1: DWORD,
+        arg2: LPCWSTR,
+        arg3: LPCWSTR,
+        arg4: LPCWSTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateSolidBrush(arg1: COLORREF) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn DeleteColorSpace(arg1: HCOLORSPACE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteDC(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteEnhMetaFile(arg1: HENHMETAFILE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteMetaFile(arg1: HMETAFILE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeleteObject(arg1: HGDIOBJ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DescribePixelFormat(
+        hdc: HDC,
+        iPixelFormat: ::core::ffi::c_int,
+        nBytes: UINT,
+        ppfd: LPPIXELFORMATDESCRIPTOR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DeviceCapabilitiesA(
+        pDevice: LPCSTR,
+        pPort: LPCSTR,
+        fwCapability: WORD,
+        pOutput: LPSTR,
+        pDevMode: *const DEVMODEA,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn DeviceCapabilitiesW(
+        pDevice: LPCWSTR,
+        pPort: LPCWSTR,
+        fwCapability: WORD,
+        pOutput: LPWSTR,
+        pDevMode: *const DEVMODEW,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn DPtoLP(hdc: HDC, lppt: LPPOINT, c: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawEscape(
+        hdc: HDC,
+        iEscape: ::core::ffi::c_int,
+        cjIn: ::core::ffi::c_int,
+        lpIn: LPCSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn Ellipse(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndDoc(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EndPage(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EndPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumEnhMetaFile(
+        arg1: HDC,
+        arg2: HENHMETAFILE,
+        arg3: ENHMFENUMPROC,
+        arg4: PVOID,
+        arg5: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumFontFamiliesA(
+        arg1: HDC,
+        arg2: LPCSTR,
+        arg3: FONTENUMPROCA,
+        arg4: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumFontFamiliesW(
+        arg1: HDC,
+        arg2: LPCWSTR,
+        arg3: FONTENUMPROCW,
+        arg4: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumFontFamiliesExA(
+        arg1: HDC,
+        arg2: PLOGFONTA,
+        arg3: FONTENUMPROCA,
+        arg4: LPARAM,
+        arg5: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumFontFamiliesExW(
+        arg1: HDC,
+        arg2: PLOGFONTW,
+        arg3: FONTENUMPROCW,
+        arg4: LPARAM,
+        arg5: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumFontsA(
+        arg1: HDC,
+        arg2: LPCSTR,
+        arg3: FONTENUMPROCA,
+        arg4: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumFontsW(
+        arg1: HDC,
+        arg2: LPCWSTR,
+        arg3: FONTENUMPROCW,
+        arg4: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumICMProfilesA(arg1: HDC, arg2: ICMENUMPROCA, arg3: LPARAM) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumICMProfilesW(arg1: HDC, arg2: ICMENUMPROCW, arg3: LPARAM) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumMetaFile(arg1: HDC, arg2: HMETAFILE, arg3: MFENUMPROC, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumObjects(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: GOBJENUMPROC,
+        arg4: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EqualRgn(arg1: HRGN, arg2: HRGN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Escape(
+        hdc: HDC,
+        iEscape: ::core::ffi::c_int,
+        cjIn: ::core::ffi::c_int,
+        pvIn: LPCSTR,
+        pvOut: LPVOID,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ExcludeClipRect(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ExcludeUpdateRgn(arg1: HDC, arg2: HWND) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ExtCreatePen(
+        iPenStyle: DWORD,
+        cWidth: DWORD,
+        plbrush: *const LOGBRUSH,
+        cStyle: DWORD,
+        pstyle: *const DWORD,
+    ) -> HPEN;
+}
+unsafe extern "C" {
+    pub fn ExtCreateRegion(lpx: *const XFORM, nCount: DWORD, lpData: *const RGNDATA) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn ExtEscape(
+        hdc: HDC,
+        iEscape: ::core::ffi::c_int,
+        cjInput: ::core::ffi::c_int,
+        lpInData: LPCSTR,
+        cjOutput: ::core::ffi::c_int,
+        lpOutData: LPSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ExtFloodFill(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: COLORREF,
+        arg5: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ExtSelectClipRgn(arg1: HDC, arg2: HRGN, arg3: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ExtTextOutA(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        options: UINT,
+        lprect: *const RECT,
+        lpString: LPCSTR,
+        c: UINT,
+        lpDx: *const INT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ExtTextOutW(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        options: UINT,
+        lprect: *const RECT,
+        lpString: LPCWSTR,
+        c: UINT,
+        lpDx: *const INT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FillPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FillRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FillRgn(arg1: HDC, arg2: HRGN, arg3: HBRUSH) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FixBrushOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlattenPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FloodFill(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: COLORREF,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FrameRgn(
+        arg1: HDC,
+        arg2: HRGN,
+        arg3: HBRUSH,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiAlphaBlend(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: ::core::ffi::c_int,
+        arg11: BLENDFUNCTION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiComment(hdc: HDC, nSize: UINT, lpData: *const BYTE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiConvertToDevmodeW(arg1: *const DEVMODEA) -> *mut DEVMODEW;
+}
+unsafe extern "C" {
+    pub fn GdiFlush() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiGetCharDimensions(arg1: HDC, arg2: LPTEXTMETRICW, arg3: *mut LONG) -> LONG;
+}
+unsafe extern "C" {
+    pub fn GdiGetCodePage(arg1: HDC) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GdiGetBatchLimit() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GdiSetBatchLimit(arg1: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GdiGradientFill(
+        hdc: HDC,
+        pVertex: PTRIVERTEX,
+        nVertex: ULONG,
+        pMesh: PVOID,
+        nCount: ULONG,
+        ulMode: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiTransparentBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: ::core::ffi::c_int,
+        arg11: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GdiIsMetaFileDC(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetArcDirection(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetAspectRatioFilterEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetBitmapBits(hbit: HBITMAP, cb: LONG, lpvBits: LPVOID) -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetBitmapDimensionEx(arg1: HBITMAP, arg2: LPSIZE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetBkColor(arg1: HDC) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetBkMode(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetBoundsRect(arg1: HDC, arg2: LPRECT, arg3: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetBrushOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharABCWidthsA(hdc: HDC, wFirst: UINT, wLast: UINT, lpABC: LPABC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharABCWidthsW(hdc: HDC, wFirst: UINT, wLast: UINT, lpABC: LPABC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharABCWidthsFloatA(hdc: HDC, iFirst: UINT, iLast: UINT, lpABC: LPABCFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharABCWidthsFloatW(hdc: HDC, iFirst: UINT, iLast: UINT, lpABC: LPABCFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharABCWidthsI(hdc: HDC, giFirst: UINT, cgi: UINT, pgi: LPWORD, pabc: LPABC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharacterPlacementA(
+        hdc: HDC,
+        lpString: LPCSTR,
+        nCount: ::core::ffi::c_int,
+        nMexExtent: ::core::ffi::c_int,
+        lpResults: LPGCP_RESULTSA,
+        dwFlags: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCharacterPlacementW(
+        hdc: HDC,
+        lpString: LPCWSTR,
+        nCount: ::core::ffi::c_int,
+        nMexExtent: ::core::ffi::c_int,
+        lpResults: LPGCP_RESULTSW,
+        dwFlags: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetCharWidth32A(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidth32W(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidthA(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidthW(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidthI(hdc: HDC, giFirst: UINT, cgi: UINT, pgi: LPWORD, piWidths: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidthFloatA(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: PFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCharWidthFloatW(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: PFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClipBox(arg1: HDC, arg2: LPRECT) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetClipRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetColorAdjustment(arg1: HDC, arg2: LPCOLORADJUSTMENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetColorSpace(arg1: HDC) -> HCOLORSPACE;
+}
+unsafe extern "C" {
+    pub fn GetCurrentObject(arg1: HDC, arg2: UINT) -> HGDIOBJ;
+}
+unsafe extern "C" {
+    pub fn GetCurrentPositionEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCursor() -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn GetDCOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDCBrushColor(arg1: HDC) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetDCPenColor(arg1: HDC) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetDeviceCaps(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetDeviceGammaRamp(hdc: HDC, lpRamp: LPVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDIBColorTable(hdc: HDC, iStart: UINT, cEntries: UINT, prgbq: *mut RGBQUAD) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetDIBits(
+        hdc: HDC,
+        hbm: HBITMAP,
+        start: UINT,
+        cLines: UINT,
+        lpvBits: LPVOID,
+        lpbmi: LPBITMAPINFO,
+        usage: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileA(arg1: LPCSTR) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileW(arg1: LPCWSTR) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileBits(hEMF: HENHMETAFILE, nSize: UINT, lpData: LPBYTE) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileDescriptionA(
+        hemf: HENHMETAFILE,
+        cchBuffer: UINT,
+        lpDescription: LPSTR,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileDescriptionW(
+        hemf: HENHMETAFILE,
+        cchBuffer: UINT,
+        lpDescription: LPWSTR,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFileHeader(
+        hemf: HENHMETAFILE,
+        nSize: UINT,
+        lpEnhMetaHeader: LPENHMETAHEADER,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFilePaletteEntries(
+        hemf: HENHMETAFILE,
+        nNumEntries: UINT,
+        lpPaletteEntries: LPPALETTEENTRY,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetEnhMetaFilePixelFormat(
+        hemf: HENHMETAFILE,
+        cbBuffer: UINT,
+        ppfd: *mut PIXELFORMATDESCRIPTOR,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetFontData(
+        hdc: HDC,
+        dwTable: DWORD,
+        dwOffset: DWORD,
+        pvBuffer: PVOID,
+        cjBuffer: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFontLanguageInfo(arg1: HDC) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetFontUnicodeRanges(arg1: HDC, arg2: LPGLYPHSET) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetGlyphIndicesA(
+        hdc: HDC,
+        lpstr: LPCSTR,
+        c: ::core::ffi::c_int,
+        pgi: LPWORD,
+        fl: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetGlyphIndicesW(
+        hdc: HDC,
+        lpstr: LPCWSTR,
+        c: ::core::ffi::c_int,
+        pgi: LPWORD,
+        fl: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetGlyphOutlineA(
+        hdc: HDC,
+        uChar: UINT,
+        fuFormat: UINT,
+        lpgm: LPGLYPHMETRICS,
+        cjBuffer: DWORD,
+        pvBuffer: LPVOID,
+        lpmat2: *const MAT2,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetGlyphOutlineW(
+        hdc: HDC,
+        uChar: UINT,
+        fuFormat: UINT,
+        lpgm: LPGLYPHMETRICS,
+        cjBuffer: DWORD,
+        pvBuffer: LPVOID,
+        lpmat2: *const MAT2,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetGraphicsMode(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetICMProfileA(hdc: HDC, pBufSize: LPDWORD, pszFilename: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetICMProfileW(hdc: HDC, pBufSize: LPDWORD, pszFilename: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKerningPairsA(hdc: HDC, nPairs: DWORD, lpKernPair: LPKERNINGPAIR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetKerningPairsW(hdc: HDC, nPairs: DWORD, lpKernPair: LPKERNINGPAIR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLogColorSpaceA(
+        hColorSpace: HCOLORSPACE,
+        lpBuffer: LPLOGCOLORSPACEA,
+        nSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetLogColorSpaceW(
+        hColorSpace: HCOLORSPACE,
+        lpBuffer: LPLOGCOLORSPACEW,
+        nSize: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMapMode(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetMetaFileA(arg1: LPCSTR) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn GetMetaFileW(arg1: LPCWSTR) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn GetMetaFileBitsEx(hMF: HMETAFILE, cbBuffer: UINT, lpData: LPVOID) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetMetaRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetMiterLimit(arg1: HDC, arg2: PFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetNearestColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetNearestPaletteIndex(arg1: HPALETTE, arg2: COLORREF) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetObjectA(h: HANDLE, c: ::core::ffi::c_int, pv: LPVOID) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetObjectW(h: HANDLE, c: ::core::ffi::c_int, pv: LPVOID) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetObjectType(arg1: HGDIOBJ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetOutlineTextMetricsA(hdc: HDC, cjCopy: UINT, potm: LPOUTLINETEXTMETRICA) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetOutlineTextMetricsW(hdc: HDC, cjCopy: UINT, potm: LPOUTLINETEXTMETRICW) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetPaletteEntries(
+        hpal: HPALETTE,
+        iStart: UINT,
+        cEntries: UINT,
+        pPalEntries: LPPALETTEENTRY,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetPath(
+        hdc: HDC,
+        apt: LPPOINT,
+        aj: LPBYTE,
+        cpt: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetPixel(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetPixelFormat(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetPolyFillMode(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetRasterizerCaps(lpraststat: LPRASTERIZER_STATUS, cjBytes: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetRandomRgn(arg1: HDC, arg2: HRGN, arg3: INT) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetRegionData(hrgn: HRGN, nCount: DWORD, lpRgnData: LPRGNDATA) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetRgnBox(arg1: HRGN, arg2: LPRECT) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetROP2(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetStockObject(arg1: ::core::ffi::c_int) -> HGDIOBJ;
+}
+unsafe extern "C" {
+    pub fn GetStretchBltMode(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetSystemPaletteEntries(
+        hdc: HDC,
+        iStart: UINT,
+        cEntries: UINT,
+        pPalEntries: LPPALETTEENTRY,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetSystemPaletteUse(arg1: HDC) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTextAlign(arg1: HDC) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetTextCharacterExtra(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTextCharset(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTextCharsetInfo(arg1: HDC, arg2: LPFONTSIGNATURE, arg3: DWORD) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTextColor(arg1: HDC) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentExPointA(
+        hdc: HDC,
+        lpszString: LPCSTR,
+        cchString: ::core::ffi::c_int,
+        nMaxExtent: ::core::ffi::c_int,
+        lpnFit: LPINT,
+        lpnDx: LPINT,
+        lpSize: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentExPointW(
+        hdc: HDC,
+        lpszString: LPCWSTR,
+        cchString: ::core::ffi::c_int,
+        nMaxExtent: ::core::ffi::c_int,
+        lpnFit: LPINT,
+        lpnDx: LPINT,
+        lpSize: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentExPointI(
+        hdc: HDC,
+        lpwszString: LPWORD,
+        cwchString: ::core::ffi::c_int,
+        nMaxExtent: ::core::ffi::c_int,
+        lpnFit: LPINT,
+        lpnDx: LPINT,
+        lpSize: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentPointA(
+        hdc: HDC,
+        lpString: LPCSTR,
+        c: ::core::ffi::c_int,
+        lpsz: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentPointW(
+        hdc: HDC,
+        lpString: LPCWSTR,
+        c: ::core::ffi::c_int,
+        lpsz: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentPointI(
+        hdc: HDC,
+        pgiIn: LPWORD,
+        cgi: ::core::ffi::c_int,
+        psize: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentPoint32A(
+        hdc: HDC,
+        lpString: LPCSTR,
+        c: ::core::ffi::c_int,
+        psizl: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextExtentPoint32W(
+        hdc: HDC,
+        lpString: LPCWSTR,
+        c: ::core::ffi::c_int,
+        psizl: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextFaceA(hdc: HDC, c: ::core::ffi::c_int, lpName: LPSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTextFaceW(hdc: HDC, c: ::core::ffi::c_int, lpName: LPWSTR) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTextMetricsA(arg1: HDC, arg2: LPTEXTMETRICA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTextMetricsW(arg1: HDC, arg2: LPTEXTMETRICW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTransform(arg1: HDC, arg2: DWORD, arg3: *mut XFORM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetViewportExtEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetViewportOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowExtEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWinMetaFileBits(
+        hemf: HENHMETAFILE,
+        cbData16: UINT,
+        pData16: LPBYTE,
+        iMapMode: INT,
+        hdcRef: HDC,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetWorldTransform(arg1: HDC, arg2: LPXFORM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IntersectClipRect(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn InvertRgn(arg1: HDC, arg2: HRGN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LineDDA(
+        arg1: ::core::ffi::c_int,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: LINEDDAPROC,
+        arg6: LPARAM,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LineTo(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LPtoDP(hdc: HDC, lppt: LPPOINT, c: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MaskBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: HBITMAP,
+        arg10: ::core::ffi::c_int,
+        arg11: ::core::ffi::c_int,
+        arg12: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ModifyWorldTransform(arg1: HDC, arg2: *const XFORM, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MoveToEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OffsetClipRgn(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn OffsetRgn(
+        arg1: HRGN,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn OffsetViewportOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OffsetWindowOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PaintRgn(arg1: HDC, arg2: HRGN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PatBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PathToRegion(arg1: HDC) -> HRGN;
+}
+unsafe extern "C" {
+    pub fn Pie(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PlayEnhMetaFile(arg1: HDC, arg2: HENHMETAFILE, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PlayEnhMetaFileRecord(
+        hdc: HDC,
+        pht: LPHANDLETABLE,
+        pmr: *const ENHMETARECORD,
+        cht: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PlayMetaFile(arg1: HDC, arg2: HMETAFILE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PlayMetaFileRecord(
+        hdc: HDC,
+        lpHandleTable: LPHANDLETABLE,
+        lpMR: LPMETARECORD,
+        noObjs: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PlgBlt(
+        hdcDest: HDC,
+        lpPoint: *const POINT,
+        hdcSrc: HDC,
+        xSrc: ::core::ffi::c_int,
+        ySrc: ::core::ffi::c_int,
+        width: ::core::ffi::c_int,
+        height: ::core::ffi::c_int,
+        hbmMask: HBITMAP,
+        xMask: ::core::ffi::c_int,
+        yMask: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyBezier(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyBezierTo(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyDraw(hdc: HDC, apt: *const POINT, aj: *const BYTE, cpt: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Polygon(hdc: HDC, apt: *const POINT, cpt: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Polyline(hdc: HDC, apt: *const POINT, cpt: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolylineTo(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyPolygon(
+        hdc: HDC,
+        apt: *const POINT,
+        asz: *const INT,
+        csz: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyPolyline(hdc: HDC, apt: *const POINT, asz: *const DWORD, csz: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyTextOutA(hdc: HDC, ppt: *const POLYTEXTA, nstrings: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PolyTextOutW(hdc: HDC, ppt: *const POLYTEXTW, nstrings: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PtInRegion(arg1: HRGN, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PtVisible(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RealizePalette(arg1: HDC) -> UINT;
+}
+unsafe extern "C" {
+    pub fn Rectangle(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RectInRegion(arg1: HRGN, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RectVisible(arg1: HDC, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveFontResourceA(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveFontResourceW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveFontMemResourceEx(arg1: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveFontResourceExA(arg1: LPCSTR, arg2: DWORD, arg3: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveFontResourceExW(arg1: LPCWSTR, arg2: DWORD, arg3: PVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ResetDCA(arg1: HDC, arg2: *const DEVMODEA) -> HDC;
+}
+unsafe extern "C" {
+    pub fn ResetDCW(arg1: HDC, arg2: *const DEVMODEW) -> HDC;
+}
+unsafe extern "C" {
+    pub fn ResizePalette(arg1: HPALETTE, arg2: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RestoreDC(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RoundRect(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SaveDC(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ScaleViewportExtEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ScaleWindowExtEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SelectClipRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SelectObject(arg1: HDC, arg2: HGDIOBJ) -> HGDIOBJ;
+}
+unsafe extern "C" {
+    pub fn SelectPalette(arg1: HDC, arg2: HPALETTE, arg3: BOOL) -> HPALETTE;
+}
+unsafe extern "C" {
+    pub fn SetAbortProc(arg1: HDC, arg2: ABORTPROC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetArcDirection(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetBitmapBits(hbm: HBITMAP, cb: DWORD, pvBits: *const ::core::ffi::c_void) -> LONG;
+}
+unsafe extern "C" {
+    pub fn SetBitmapDimensionEx(
+        arg1: HBITMAP,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetBkColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn SetBkMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetBoundsRect(arg1: HDC, arg2: LPCRECT, arg3: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetBrushOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetColorAdjustment(arg1: HDC, arg2: *const COLORADJUSTMENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetColorSpace(arg1: HDC, arg2: HCOLORSPACE) -> HCOLORSPACE;
+}
+unsafe extern "C" {
+    pub fn SetDCBrushColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn SetDCPenColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn SetDeviceGammaRamp(hdc: HDC, lpRamp: LPVOID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDIBColorTable(hdc: HDC, iStart: UINT, cEntries: UINT, prgbq: *const RGBQUAD) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetDIBits(
+        arg1: HDC,
+        arg2: HBITMAP,
+        arg3: UINT,
+        arg4: UINT,
+        arg5: *const ::core::ffi::c_void,
+        arg6: *const BITMAPINFO,
+        arg7: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetDIBitsToDevice(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: DWORD,
+        arg5: DWORD,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: UINT,
+        arg9: UINT,
+        arg10: *const ::core::ffi::c_void,
+        arg11: *const BITMAPINFO,
+        arg12: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetEnhMetaFileBits(nSize: UINT, pb: *const BYTE) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn SetGraphicsMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetICMMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetICMProfileA(arg1: HDC, arg2: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetICMProfileW(arg1: HDC, arg2: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMapMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetMapperFlags(arg1: HDC, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetLayout(arg1: HDC, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetLayout(arg1: HDC) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetMetaFileBitsEx(cbBuffer: UINT, lpData: *const BYTE) -> HMETAFILE;
+}
+unsafe extern "C" {
+    pub fn SetMetaRgn(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetMiterLimit(arg1: HDC, arg2: FLOAT, arg3: PFLOAT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPaletteEntries(
+        hpal: HPALETTE,
+        iStart: UINT,
+        cEntries: UINT,
+        pPalEntries: *const PALETTEENTRY,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetPixel(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: COLORREF,
+    ) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn SetPixelFormat(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: *const PIXELFORMATDESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPixelV(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: COLORREF,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPolyFillMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetRectRgn(
+        arg1: HRGN,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetRelAbs(arg1: HDC, arg2: INT) -> INT;
+}
+unsafe extern "C" {
+    pub fn SetROP2(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetStretchBltMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetSystemPaletteUse(arg1: HDC, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetTextAlign(arg1: HDC, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SetTextCharacterExtra(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetTextColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn SetTextJustification(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetViewportExtEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetViewportOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowExtEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPSIZE,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowOrgEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPPOINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWinMetaFileBits(
+        nSize: UINT,
+        lpMeta16Data: *const BYTE,
+        hdcRef: HDC,
+        lpMFP: *const METAFILEPICT,
+    ) -> HENHMETAFILE;
+}
+unsafe extern "C" {
+    pub fn SetWorldTransform(arg1: HDC, arg2: *const XFORM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn StartDocA(arg1: HDC, arg2: *const DOCINFOA) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn StartDocW(arg1: HDC, arg2: *const DOCINFOW) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn StartPage(arg1: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn StretchBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: ::core::ffi::c_int,
+        arg11: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn StretchDIBits(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: *const ::core::ffi::c_void,
+        arg11: *const BITMAPINFO,
+        arg12: UINT,
+        arg13: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn StrokeAndFillPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn StrokePath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SwapBuffers(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TextOutA(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        lpString: LPCSTR,
+        c: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TextOutW(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        lpString: LPCWSTR,
+        c: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TranslateCharsetInfo(arg1: PDWORD, arg2: LPCHARSETINFO, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnrealizeObject(arg1: HGDIOBJ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateColors(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateICMRegKeyA(arg1: DWORD, arg2: LPSTR, arg3: LPSTR, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateICMRegKeyW(arg1: DWORD, arg2: LPWSTR, arg3: LPWSTR, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WidenPath(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglCopyContext(arg1: HGLRC, arg2: HGLRC, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglCreateContext(arg1: HDC) -> HGLRC;
+}
+unsafe extern "C" {
+    pub fn wglCreateLayerContext(arg1: HDC, arg2: ::core::ffi::c_int) -> HGLRC;
+}
+unsafe extern "C" {
+    pub fn wglDeleteContext(arg1: HGLRC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglDescribeLayerPlane(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: UINT,
+        arg5: LPLAYERPLANEDESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglGetCurrentContext() -> HGLRC;
+}
+unsafe extern "C" {
+    pub fn wglGetCurrentDC() -> HDC;
+}
+unsafe extern "C" {
+    pub fn wglGetLayerPaletteEntries(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut COLORREF,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wglGetProcAddress(arg1: LPCSTR) -> PROC;
+}
+unsafe extern "C" {
+    pub fn wglMakeCurrent(arg1: HDC, arg2: HGLRC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglRealizeLayerPalette(arg1: HDC, arg2: ::core::ffi::c_int, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglSetLayerPaletteEntries(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const COLORREF,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wglShareLists(arg1: HGLRC, arg2: HGLRC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglSwapLayerBuffers(arg1: HDC, arg2: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglUseFontBitmapsA(arg1: HDC, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglUseFontBitmapsW(arg1: HDC, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglUseFontOutlinesA(
+        arg1: HDC,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: FLOAT,
+        arg6: FLOAT,
+        arg7: ::core::ffi::c_int,
+        arg8: LPGLYPHMETRICSFLOAT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wglUseFontOutlinesW(
+        arg1: HDC,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: FLOAT,
+        arg6: FLOAT,
+        arg7: ::core::ffi::c_int,
+        arg8: LPGLYPHMETRICSFLOAT,
+    ) -> BOOL;
+}
 #[repr(C)]
 pub struct _WGLSWAP {
     pub hdc: HDC,
@@ -5569,6 +14111,49 @@ pub struct _WGLSWAP {
 pub type WGLSWAP = _WGLSWAP;
 pub type PWGLSWAP = *mut _WGLSWAP;
 pub type LPWGLSWAP = *mut _WGLSWAP;
+unsafe extern "C" {
+    pub fn wglSwapMultipleBuffers(arg1: UINT, arg2: *const WGLSWAP) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn AlphaBlend(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: ::core::ffi::c_int,
+        arg11: BLENDFUNCTION,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GradientFill(
+        hdc: HDC,
+        pVertex: PTRIVERTEX,
+        nVertex: ULONG,
+        pMesh: PVOID,
+        nMesh: ULONG,
+        ulMode: ULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TransparentBlt(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HDC,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: ::core::ffi::c_int,
+        arg11: UINT,
+    ) -> BOOL;
+}
 pub type AXESLIST = AXESLISTW;
 pub type PAXESLIST = PAXESLISTW;
 pub type LPAXESLIST = LPAXESLISTW;
@@ -5617,8 +14202,47 @@ pub type LPENUMLOGFONTEX = *mut ENUMLOGFONTEXW;
 pub type DISPLAY_DEVICE = DISPLAY_DEVICEW;
 pub type PDISPLAY_DEVICE = *mut DISPLAY_DEVICEW;
 pub type LPDISPLAY_DEVICE = *mut DISPLAY_DEVICEW;
+pub type I_RPC_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_AUTH_IDENTITY_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_AUTHZ_HANDLE = *mut ::core::ffi::c_void;
+pub type RPC_IF_HANDLE = *mut ::core::ffi::c_void;
+pub type RPC_BINDING_HANDLE = I_RPC_HANDLE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RPC_VERSION {
+    pub MajorVersion: ::core::ffi::c_ushort,
+    pub MinorVersion: ::core::ffi::c_ushort,
+}
+pub type RPC_VERSION = _RPC_VERSION;
+#[repr(C)]
+pub struct _RPC_SYNTAX_IDENTIFIER {
+    pub SyntaxGUID: GUID,
+    pub SyntaxVersion: RPC_VERSION,
+}
+pub type PRPC_SYNTAX_IDENTIFIER = *mut _RPC_SYNTAX_IDENTIFIER;
+#[repr(C)]
+pub struct _RPC_MESSAGE {
+    pub Handle: RPC_BINDING_HANDLE,
+    pub DataRepresentation: ULONG,
+    pub Buffer: *mut ::core::ffi::c_void,
+    pub BufferLength: ::core::ffi::c_uint,
+    pub ProcNum: ::core::ffi::c_uint,
+    pub TransferSyntax: PRPC_SYNTAX_IDENTIFIER,
+    pub RpcInterfaceInformation: *mut ::core::ffi::c_void,
+    pub ReservedForRuntime: *mut ::core::ffi::c_void,
+    pub ManagerEpv: *mut ::core::ffi::c_void,
+    pub ImportContext: *mut ::core::ffi::c_void,
+    pub RpcFlags: ULONG,
+}
+pub type PRPC_MESSAGE = *mut _RPC_MESSAGE;
+pub type byte = ::core::ffi::c_uchar;
+pub type hyper = INT64;
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_c_ifspec: RPC_IF_HANDLE;
+}
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_s_ifspec: RPC_IF_HANDLE;
+}
 pub type DOUBLE = f64;
 pub type OLECHAR = WCHAR;
 pub type LPOLESTR = *mut OLECHAR;
@@ -5646,8 +14270,303 @@ pub struct _COAUTHINFO {
     pub dwCapabilities: DWORD,
 }
 pub type COAUTHINFO = _COAUTHINFO;
+pub const tagMEMCTX_MEMCTX_TASK: tagMEMCTX = 1;
+pub const tagMEMCTX_MEMCTX_SHARED: tagMEMCTX = 2;
+pub const tagMEMCTX_MEMCTX_MACSYSTEM: tagMEMCTX = 3;
+pub const tagMEMCTX_MEMCTX_UNKNOWN: tagMEMCTX = -1;
+pub const tagMEMCTX_MEMCTX_SAME: tagMEMCTX = -2;
+pub type tagMEMCTX = ::core::ffi::c_int;
+pub use self::tagMEMCTX as MEMCTX;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER: tagCLSCTX = 1;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER: tagCLSCTX = 2;
+pub const tagCLSCTX_CLSCTX_LOCAL_SERVER: tagCLSCTX = 4;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER16: tagCLSCTX = 8;
+pub const tagCLSCTX_CLSCTX_REMOTE_SERVER: tagCLSCTX = 16;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER16: tagCLSCTX = 32;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVERX86: tagCLSCTX = 64;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLERX86: tagCLSCTX = 128;
+pub const tagCLSCTX_CLSCTX_ESERVER_HANDLER: tagCLSCTX = 256;
+pub const tagCLSCTX_CLSCTX_NO_CODE_DOWNLOAD: tagCLSCTX = 1024;
+pub const tagCLSCTX_CLSCTX_NO_CUSTOM_MARSHAL: tagCLSCTX = 4096;
+pub const tagCLSCTX_CLSCTX_ENABLE_CODE_DOWNLOAD: tagCLSCTX = 8192;
+pub const tagCLSCTX_CLSCTX_NO_FAILURE_LOG: tagCLSCTX = 16384;
+pub const tagCLSCTX_CLSCTX_DISABLE_AAA: tagCLSCTX = 32768;
+pub const tagCLSCTX_CLSCTX_ENABLE_AAA: tagCLSCTX = 65536;
+pub const tagCLSCTX_CLSCTX_FROM_DEFAULT_CONTEXT: tagCLSCTX = 131072;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_X86_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_32_BIT_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_64_BIT_SERVER: tagCLSCTX = 524288;
+pub const tagCLSCTX_CLSCTX_ENABLE_CLOAKING: tagCLSCTX = 1048576;
+pub const tagCLSCTX_CLSCTX_APPCONTAINER: tagCLSCTX = 4194304;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_AAA_AS_IU: tagCLSCTX = 8388608;
+pub const tagCLSCTX_CLSCTX_RESERVED6: tagCLSCTX = 16777216;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_ARM32_SERVER: tagCLSCTX = 33554432;
+pub const tagCLSCTX_CLSCTX_PS_DLL: tagCLSCTX = 2147483648;
+pub type tagCLSCTX = ::core::ffi::c_uint;
+pub use self::tagCLSCTX as CLSCTX;
+pub const tagMSHLFLAGS_MSHLFLAGS_NORMAL: tagMSHLFLAGS = 0;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLESTRONG: tagMSHLFLAGS = 1;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLEWEAK: tagMSHLFLAGS = 2;
+pub const tagMSHLFLAGS_MSHLFLAGS_NOPING: tagMSHLFLAGS = 4;
+pub type tagMSHLFLAGS = ::core::ffi::c_uint;
+pub use self::tagMSHLFLAGS as MSHLFLAGS;
+pub const tagMSHCTX_MSHCTX_LOCAL: tagMSHCTX = 0;
+pub const tagMSHCTX_MSHCTX_NOSHAREDMEM: tagMSHCTX = 1;
+pub const tagMSHCTX_MSHCTX_DIFFERENTMACHINE: tagMSHCTX = 2;
+pub const tagMSHCTX_MSHCTX_INPROC: tagMSHCTX = 3;
+pub const tagMSHCTX_MSHCTX_CROSSCTX: tagMSHCTX = 4;
+pub type tagMSHCTX = ::core::ffi::c_uint;
+pub use self::tagMSHCTX as MSHCTX;
+#[repr(C)]
+pub struct _BYTE_BLOB {
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type BYTE_BLOB = _BYTE_BLOB;
+pub type UP_BYTE_BLOB = *mut BYTE_BLOB;
+#[repr(C)]
+pub struct _FLAGGED_BYTE_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type FLAGGED_BYTE_BLOB = _FLAGGED_BYTE_BLOB;
+pub type UP_FLAGGED_BYTE_BLOB = *mut FLAGGED_BYTE_BLOB;
+#[repr(C)]
+pub struct _FLAGGED_WORD_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub asData: [::core::ffi::c_ushort; 1usize],
+}
+pub type FLAGGED_WORD_BLOB = _FLAGGED_WORD_BLOB;
+pub type UP_FLAGGED_WORD_BLOB = *mut FLAGGED_WORD_BLOB;
+#[repr(C)]
+pub struct _BYTE_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut byte,
+}
+pub type BYTE_SIZEDARR = _BYTE_SIZEDARR;
+#[repr(C)]
+pub struct _SHORT_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ::core::ffi::c_ushort,
+}
+pub type WORD_SIZEDARR = _SHORT_SIZEDARR;
+#[repr(C)]
+pub struct _LONG_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ULONG,
+}
+pub type DWORD_SIZEDARR = _LONG_SIZEDARR;
+#[repr(C)]
+pub struct _HYPER_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut hyper,
+}
+pub type HYPER_SIZEDARR = _HYPER_SIZEDARR;
+#[repr(C)]
+pub struct _userCLIPFORMAT {
+    pub fContext: LONG,
+    pub u: _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000,
+}
+#[repr(C)]
+pub struct _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000 {
+    pub dwValue: __BindgenUnionField<DWORD>,
+    pub pwszName: __BindgenUnionField<LPWSTR>,
+    pub bindgen_union_field: u64,
+}
+pub type userCLIPFORMAT = _userCLIPFORMAT;
+pub type wireCLIPFORMAT = *mut userCLIPFORMAT;
 pub type CLIPFORMAT = WORD;
+#[repr(C)]
+pub struct tagRemHGLOBAL {
+    pub fNullHGlobal: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHGLOBAL = tagRemHGLOBAL;
+#[repr(C)]
+pub struct _userHGLOBAL {
+    pub fContext: LONG,
+    pub u: _userHGLOBAL___WIDL_wtypes_generated_name_00000001,
+}
+#[repr(C)]
+pub struct _userHGLOBAL___WIDL_wtypes_generated_name_00000001 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut FLAGGED_BYTE_BLOB>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHGLOBAL = _userHGLOBAL;
+pub type wireHGLOBAL = *mut userHGLOBAL;
+#[repr(C)]
+pub struct tagRemHMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHMETAFILEPICT = tagRemHMETAFILEPICT;
+#[repr(C)]
+pub struct _userHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHMETAFILE___WIDL_wtypes_generated_name_00000002,
+}
+#[repr(C)]
+pub struct _userHMETAFILE___WIDL_wtypes_generated_name_00000002 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut BYTE_BLOB>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHMETAFILE = _userHMETAFILE;
+pub type wireHMETAFILE = *mut userHMETAFILE;
+#[repr(C)]
+pub struct _remoteMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub hMF: *mut userHMETAFILE,
+}
+pub type remoteMETAFILEPICT = _remoteMETAFILEPICT;
+#[repr(C)]
+pub struct _userHMETAFILEPICT {
+    pub fContext: LONG,
+    pub u: _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003,
+}
+#[repr(C)]
+pub struct _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut remoteMETAFILEPICT>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHMETAFILEPICT = _userHMETAFILEPICT;
+pub type wireHMETAFILEPICT = *mut userHMETAFILEPICT;
+#[repr(C)]
+pub struct tagRemHENHMETAFILE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHENHMETAFILE = tagRemHENHMETAFILE;
+#[repr(C)]
+pub struct _userHENHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004,
+}
+#[repr(C)]
+pub struct _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut BYTE_BLOB>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHENHMETAFILE = _userHENHMETAFILE;
+pub type wireHENHMETAFILE = *mut userHENHMETAFILE;
+#[repr(C)]
+pub struct tagRemHBITMAP {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHBITMAP = tagRemHBITMAP;
+#[repr(C)]
+pub struct _userBITMAP {
+    pub bmType: LONG,
+    pub bmWidth: LONG,
+    pub bmHeight: LONG,
+    pub bmWidthBytes: LONG,
+    pub bmPlanes: WORD,
+    pub bmBitsPixel: WORD,
+    pub cbSize: ULONG,
+    pub pBuffer: [byte; 1usize],
+}
+pub type userBITMAP = _userBITMAP;
+#[repr(C)]
+pub struct _userHBITMAP {
+    pub fContext: LONG,
+    pub u: _userHBITMAP___WIDL_wtypes_generated_name_00000005,
+}
+#[repr(C)]
+pub struct _userHBITMAP___WIDL_wtypes_generated_name_00000005 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut userBITMAP>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHBITMAP = _userHBITMAP;
+pub type wireHBITMAP = *mut userHBITMAP;
+#[repr(C)]
+pub struct tagRemHPALETTE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHPALETTE = tagRemHPALETTE;
+#[repr(C)]
+pub struct tagrpcLOGPALETTE {
+    pub palVersion: WORD,
+    pub palNumEntries: WORD,
+    pub palPalEntry: [PALETTEENTRY; 1usize],
+}
+pub type rpcLOGPALETTE = tagrpcLOGPALETTE;
+#[repr(C)]
+pub struct _userHPALETTE {
+    pub fContext: LONG,
+    pub u: _userHPALETTE___WIDL_wtypes_generated_name_00000006,
+}
+#[repr(C)]
+pub struct _userHPALETTE___WIDL_wtypes_generated_name_00000006 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<*mut rpcLOGPALETTE>,
+    pub hInproc64: __BindgenUnionField<INT64>,
+    pub bindgen_union_field: u64,
+}
+pub type userHPALETTE = _userHPALETTE;
+pub type wireHPALETTE = *mut userHPALETTE;
 pub type HMETAFILEPICT = *mut ::core::ffi::c_void;
+#[repr(C)]
+pub struct _RemotableHandle {
+    pub fContext: LONG,
+    pub u: _RemotableHandle___WIDL_wtypes_generated_name_00000007,
+}
+#[repr(C)]
+pub struct _RemotableHandle___WIDL_wtypes_generated_name_00000007 {
+    pub hInproc: __BindgenUnionField<LONG>,
+    pub hRemote: __BindgenUnionField<LONG>,
+    pub bindgen_union_field: u32,
+}
+pub type RemotableHandle = _RemotableHandle;
+pub type wireHACCEL = *mut RemotableHandle;
+pub type wireHBRUSH = *mut RemotableHandle;
+pub type wireHDC = *mut RemotableHandle;
+pub type wireHFONT = *mut RemotableHandle;
+pub type wireHICON = *mut RemotableHandle;
+pub type wireHMENU = *mut RemotableHandle;
+pub type wireHWND = *mut RemotableHandle;
+pub type wireHMONITOR = *mut RemotableHandle;
+pub const tagDVASPECT_DVASPECT_CONTENT: tagDVASPECT = 1;
+pub const tagDVASPECT_DVASPECT_THUMBNAIL: tagDVASPECT = 2;
+pub const tagDVASPECT_DVASPECT_ICON: tagDVASPECT = 4;
+pub const tagDVASPECT_DVASPECT_DOCPRINT: tagDVASPECT = 8;
+pub type tagDVASPECT = ::core::ffi::c_uint;
+pub use self::tagDVASPECT as DVASPECT;
+pub const tagSTGC_STGC_DEFAULT: tagSTGC = 0;
+pub const tagSTGC_STGC_OVERWRITE: tagSTGC = 1;
+pub const tagSTGC_STGC_ONLYIFCURRENT: tagSTGC = 2;
+pub const tagSTGC_STGC_DANGEROUSLYCOMMITMERELYTODISKCACHE: tagSTGC = 4;
+pub const tagSTGC_STGC_CONSOLIDATE: tagSTGC = 8;
+pub type tagSTGC = ::core::ffi::c_uint;
+pub use self::tagSTGC as STGC;
+pub const tagSTGMOVE_STGMOVE_MOVE: tagSTGMOVE = 0;
+pub const tagSTGMOVE_STGMOVE_COPY: tagSTGMOVE = 1;
+pub const tagSTGMOVE_STGMOVE_SHALLOWCOPY: tagSTGMOVE = 2;
+pub type tagSTGMOVE = ::core::ffi::c_uint;
+pub use self::tagSTGMOVE as STGMOVE;
+pub const tagSTATFLAG_STATFLAG_DEFAULT: tagSTATFLAG = 0;
+pub const tagSTATFLAG_STATFLAG_NONAME: tagSTATFLAG = 1;
+pub const tagSTATFLAG_STATFLAG_NOOPEN: tagSTATFLAG = 2;
+pub type tagSTATFLAG = ::core::ffi::c_uint;
+pub use self::tagSTATFLAG as STATFLAG;
 pub type DATE = f64;
 #[repr(C)]
 pub struct tagCY {
@@ -5661,6 +14580,7 @@ pub struct tagCY__bindgen_ty_1 {
     pub Hi: LONG,
 }
 pub type CY = tagCY;
+pub type LPCY = *mut CY;
 #[repr(C)]
 pub struct tagDEC {
     pub wReserved: USHORT,
@@ -5691,9 +14611,153 @@ pub struct tagDEC__bindgen_ty_2__bindgen_ty_1 {
     pub Mid32: ULONG,
 }
 pub type DECIMAL = tagDEC;
+pub type LPDECIMAL = *mut DECIMAL;
+pub type wireBSTR = *mut FLAGGED_WORD_BLOB;
 pub type BSTR = *mut OLECHAR;
+pub type LPBSTR = *mut BSTR;
 pub type VARIANT_BOOL = ::core::ffi::c_short;
+pub type _VARIANT_BOOL = VARIANT_BOOL;
+#[repr(C)]
+pub struct tagBSTRBLOB {
+    pub cbSize: ULONG,
+    pub pData: *mut BYTE,
+}
+pub type BSTRBLOB = tagBSTRBLOB;
+pub type LPBSTRBLOB = *mut tagBSTRBLOB;
+#[repr(C)]
+pub struct tagBLOB {
+    pub cbSize: ULONG,
+    pub pBlobData: *mut BYTE,
+}
+pub type BLOB = tagBLOB;
+pub type LPBLOB = *mut tagBLOB;
+#[repr(C)]
+pub struct tagCLIPDATA {
+    pub cbSize: ULONG,
+    pub ulClipFmt: LONG,
+    pub pClipData: *mut BYTE,
+}
+pub type CLIPDATA = tagCLIPDATA;
+pub type PROPID = ULONG;
 pub type VARTYPE = ::core::ffi::c_ushort;
+pub const VARENUM_VT_EMPTY: VARENUM = 0;
+pub const VARENUM_VT_NULL: VARENUM = 1;
+pub const VARENUM_VT_I2: VARENUM = 2;
+pub const VARENUM_VT_I4: VARENUM = 3;
+pub const VARENUM_VT_R4: VARENUM = 4;
+pub const VARENUM_VT_R8: VARENUM = 5;
+pub const VARENUM_VT_CY: VARENUM = 6;
+pub const VARENUM_VT_DATE: VARENUM = 7;
+pub const VARENUM_VT_BSTR: VARENUM = 8;
+pub const VARENUM_VT_DISPATCH: VARENUM = 9;
+pub const VARENUM_VT_ERROR: VARENUM = 10;
+pub const VARENUM_VT_BOOL: VARENUM = 11;
+pub const VARENUM_VT_VARIANT: VARENUM = 12;
+pub const VARENUM_VT_UNKNOWN: VARENUM = 13;
+pub const VARENUM_VT_DECIMAL: VARENUM = 14;
+pub const VARENUM_VT_I1: VARENUM = 16;
+pub const VARENUM_VT_UI1: VARENUM = 17;
+pub const VARENUM_VT_UI2: VARENUM = 18;
+pub const VARENUM_VT_UI4: VARENUM = 19;
+pub const VARENUM_VT_I8: VARENUM = 20;
+pub const VARENUM_VT_UI8: VARENUM = 21;
+pub const VARENUM_VT_INT: VARENUM = 22;
+pub const VARENUM_VT_UINT: VARENUM = 23;
+pub const VARENUM_VT_VOID: VARENUM = 24;
+pub const VARENUM_VT_HRESULT: VARENUM = 25;
+pub const VARENUM_VT_PTR: VARENUM = 26;
+pub const VARENUM_VT_SAFEARRAY: VARENUM = 27;
+pub const VARENUM_VT_CARRAY: VARENUM = 28;
+pub const VARENUM_VT_USERDEFINED: VARENUM = 29;
+pub const VARENUM_VT_LPSTR: VARENUM = 30;
+pub const VARENUM_VT_LPWSTR: VARENUM = 31;
+pub const VARENUM_VT_RECORD: VARENUM = 36;
+pub const VARENUM_VT_INT_PTR: VARENUM = 37;
+pub const VARENUM_VT_UINT_PTR: VARENUM = 38;
+pub const VARENUM_VT_FILETIME: VARENUM = 64;
+pub const VARENUM_VT_BLOB: VARENUM = 65;
+pub const VARENUM_VT_STREAM: VARENUM = 66;
+pub const VARENUM_VT_STORAGE: VARENUM = 67;
+pub const VARENUM_VT_STREAMED_OBJECT: VARENUM = 68;
+pub const VARENUM_VT_STORED_OBJECT: VARENUM = 69;
+pub const VARENUM_VT_BLOB_OBJECT: VARENUM = 70;
+pub const VARENUM_VT_CF: VARENUM = 71;
+pub const VARENUM_VT_CLSID: VARENUM = 72;
+pub const VARENUM_VT_VERSIONED_STREAM: VARENUM = 73;
+pub const VARENUM_VT_BSTR_BLOB: VARENUM = 4095;
+pub const VARENUM_VT_VECTOR: VARENUM = 4096;
+pub const VARENUM_VT_ARRAY: VARENUM = 8192;
+pub const VARENUM_VT_BYREF: VARENUM = 16384;
+pub const VARENUM_VT_RESERVED: VARENUM = 32768;
+pub const VARENUM_VT_ILLEGAL: VARENUM = 65535;
+pub const VARENUM_VT_ILLEGALMASKED: VARENUM = 4095;
+pub const VARENUM_VT_TYPEMASK: VARENUM = 4095;
+pub type VARENUM = ::core::ffi::c_uint;
+#[repr(C)]
+pub struct tagCSPLATFORM {
+    pub dwPlatformId: DWORD,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+    pub dwProcessorArch: DWORD,
+}
+pub type CSPLATFORM = tagCSPLATFORM;
+#[repr(C)]
+pub struct tagQUERYCONTEXT {
+    pub dwContext: DWORD,
+    pub Platform: CSPLATFORM,
+    pub Locale: LCID,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+}
+pub type QUERYCONTEXT = tagQUERYCONTEXT;
+pub const tagTYSPEC_TYSPEC_CLSID: tagTYSPEC = 0;
+pub const tagTYSPEC_TYSPEC_FILEEXT: tagTYSPEC = 1;
+pub const tagTYSPEC_TYSPEC_MIMETYPE: tagTYSPEC = 2;
+pub const tagTYSPEC_TYSPEC_PROGID: tagTYSPEC = 3;
+pub const tagTYSPEC_TYSPEC_FILENAME: tagTYSPEC = 4;
+pub const tagTYSPEC_TYSPEC_PACKAGENAME: tagTYSPEC = 5;
+pub const tagTYSPEC_TYSPEC_OBJECTID: tagTYSPEC = 6;
+pub type tagTYSPEC = ::core::ffi::c_uint;
+pub use self::tagTYSPEC as TYSPEC;
+#[repr(C)]
+pub struct __WIDL_wtypes_generated_name_00000009 {
+    pub tyspec: DWORD,
+    pub tagged_union: __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008,
+}
+#[repr(C)]
+pub struct __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008 {
+    pub clsid: __BindgenUnionField<CLSID>,
+    pub pFileExt: __BindgenUnionField<LPOLESTR>,
+    pub pMimeType: __BindgenUnionField<LPOLESTR>,
+    pub pProgId: __BindgenUnionField<LPOLESTR>,
+    pub pFileName: __BindgenUnionField<LPOLESTR>,
+    pub ByName: __BindgenUnionField<
+        __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008__bindgen_ty_1,
+    >,
+    pub ByObjectId: __BindgenUnionField<
+        __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008__bindgen_ty_2,
+    >,
+    pub bindgen_union_field: [u64; 4usize],
+}
+#[repr(C)]
+pub struct __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008__bindgen_ty_1
+{
+    pub pPackageName: LPOLESTR,
+    pub PolicyId: GUID,
+}
+#[repr(C)]
+pub struct __WIDL_wtypes_generated_name_00000009___WIDL_wtypes_generated_name_00000008__bindgen_ty_2
+{
+    pub ObjectId: GUID,
+    pub PolicyId: GUID,
+}
+pub type uCLSSPEC = __WIDL_wtypes_generated_name_00000009;
+#[repr(C)]
+pub struct _tagpropertykey {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type PROPERTYKEY = _tagpropertykey;
 pub type LPUNKNOWN = *mut IUnknown;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5743,6 +14807,21 @@ pub struct IClassFactory {
     pub lpVtbl: *mut IClassFactoryVtbl,
 }
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumContextProps {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IContext {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IObjContext {
+    _unused: [u8; 0],
+}
+#[repr(C)]
 pub struct _COSERVERINFO {
     pub dwReserved1: DWORD,
     pub pwszName: LPWSTR,
@@ -5751,6 +14830,9 @@ pub struct _COSERVERINFO {
 }
 pub type COSERVERINFO = _COSERVERINFO;
 pub type LPMARSHAL = *mut IMarshal;
+unsafe extern "C" {
+    pub static IID_IMarshal: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMarshalVtbl {
@@ -5816,6 +14898,220 @@ pub struct IMarshalVtbl {
 pub struct IMarshal {
     pub lpVtbl: *mut IMarshalVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IAgileObject: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileObjectVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAgileObject,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileObject {
+    pub lpVtbl: *mut IAgileObjectVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAgileReference: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileReferenceVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAgileReference,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
+    pub Resolve: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAgileReference,
+            riid: *const IID,
+            object: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileReference {
+    pub lpVtbl: *mut IAgileReferenceVtbl,
+}
+unsafe extern "C" {
+    pub static IID_INoMarshal: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct INoMarshalVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut INoMarshal,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct INoMarshal {
+    pub lpVtbl: *mut INoMarshalVtbl,
+}
+pub type LPMARSHAL2 = *mut IMarshal2;
+unsafe extern "C" {
+    pub static IID_IMarshal2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMarshal2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMarshal2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
+    pub GetUnmarshalClass: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMarshal2,
+            riid: *const IID,
+            pv: *mut ::core::ffi::c_void,
+            dwDestContext: DWORD,
+            pvDestContext: *mut ::core::ffi::c_void,
+            mshlflags: DWORD,
+            pCid: *mut CLSID,
+        ) -> HRESULT,
+    >,
+    pub GetMarshalSizeMax: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMarshal2,
+            riid: *const IID,
+            pv: *mut ::core::ffi::c_void,
+            dwDestContext: DWORD,
+            pvDestContext: *mut ::core::ffi::c_void,
+            mshlflags: DWORD,
+            pSize: *mut DWORD,
+        ) -> HRESULT,
+    >,
+    pub MarshalInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMarshal2,
+            pStm: *mut IStream,
+            riid: *const IID,
+            pv: *mut ::core::ffi::c_void,
+            dwDestContext: DWORD,
+            pvDestContext: *mut ::core::ffi::c_void,
+            mshlflags: DWORD,
+        ) -> HRESULT,
+    >,
+    pub UnmarshalInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMarshal2,
+            pStm: *mut IStream,
+            riid: *const IID,
+            ppv: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub ReleaseMarshalData: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IMarshal2, pStm: *mut IStream) -> HRESULT,
+    >,
+    pub DisconnectObject: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IMarshal2, dwReserved: DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMarshal2 {
+    pub lpVtbl: *mut IMarshal2Vtbl,
+}
+pub type LPSTDMARSHALINFO = *mut IStdMarshalInfo;
+unsafe extern "C" {
+    pub static IID_IStdMarshalInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IStdMarshalInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IStdMarshalInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub GetClassForHandler: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IStdMarshalInfo,
+            dwDestContext: DWORD,
+            pvDestContext: *mut ::core::ffi::c_void,
+            pClsid: *mut CLSID,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IStdMarshalInfo {
+    pub lpVtbl: *mut IStdMarshalInfoVtbl,
+}
+pub type LPEXTERNALCONNECTION = *mut IExternalConnection;
+pub const tagEXTCONN_EXTCONN_STRONG: tagEXTCONN = 1;
+pub const tagEXTCONN_EXTCONN_WEAK: tagEXTCONN = 2;
+pub const tagEXTCONN_EXTCONN_CALLABLE: tagEXTCONN = 4;
+pub type tagEXTCONN = ::core::ffi::c_uint;
+pub use self::tagEXTCONN as EXTCONN;
+unsafe extern "C" {
+    pub static IID_IExternalConnection: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExternalConnectionVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IExternalConnection,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
+    pub AddConnection: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IExternalConnection,
+            extconn: DWORD,
+            reserved: DWORD,
+        ) -> DWORD,
+    >,
+    pub ReleaseConnection: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IExternalConnection,
+            extconn: DWORD,
+            reserved: DWORD,
+            fLastReleaseCloses: BOOL,
+        ) -> DWORD,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExternalConnection {
+    pub lpVtbl: *mut IExternalConnectionVtbl,
+}
+pub type LPMULTIQI = *mut IMultiQI;
 #[repr(C)]
 pub struct tagMULTI_QI {
     pub pIID: *const IID,
@@ -5823,7 +15119,34 @@ pub struct tagMULTI_QI {
     pub hr: HRESULT,
 }
 pub type MULTI_QI = tagMULTI_QI;
+unsafe extern "C" {
+    pub static IID_IMultiQI: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMultiQIVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IMultiQI,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
+    pub QueryMultipleInterfaces: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IMultiQI, cMQIs: ULONG, pMQIs: *mut MULTI_QI) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMultiQI {
+    pub lpVtbl: *mut IMultiQIVtbl,
+}
 pub type LPMALLOC = *mut IMalloc;
+unsafe extern "C" {
+    pub static IID_IMalloc: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMallocVtbl {
@@ -5853,6 +15176,38 @@ pub struct IMallocVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IMalloc {
     pub lpVtbl: *mut IMallocVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IInternalUnknown: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IInternalUnknownVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IInternalUnknown,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub QueryInternalInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IInternalUnknown,
+            riid: *const IID,
+            ppv: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IInternalUnknown {
+    pub lpVtbl: *mut IInternalUnknownVtbl,
+}
+pub type LPENUMUNKNOWN = *mut IEnumUnknown;
+unsafe extern "C" {
+    pub static IID_IEnumUnknown: GUID;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5887,7 +15242,42 @@ pub struct IEnumUnknownVtbl {
 pub struct IEnumUnknown {
     pub lpVtbl: *mut IEnumUnknownVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumUnknown_RemoteNext_Proxy(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumUnknown_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumUnknown_Next_Proxy(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumUnknown_Next_Stub(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSURROGATE = *mut ISurrogate;
+unsafe extern "C" {
+    pub static IID_ISurrogate: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ISurrogateVtbl {
@@ -5910,6 +15300,53 @@ pub struct ISurrogateVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct ISurrogate {
     pub lpVtbl: *mut ISurrogateVtbl,
+}
+pub type LPGLOBALINTERFACETABLE = *mut IGlobalInterfaceTable;
+unsafe extern "C" {
+    pub static IID_IGlobalInterfaceTable: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalInterfaceTableVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalInterfaceTable,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG>,
+    pub RegisterInterfaceInGlobal: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalInterfaceTable,
+            pUnk: *mut IUnknown,
+            riid: *const IID,
+            pdwCookie: *mut DWORD,
+        ) -> HRESULT,
+    >,
+    pub RevokeInterfaceFromGlobal: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IGlobalInterfaceTable, dwCookie: DWORD) -> HRESULT,
+    >,
+    pub GetInterfaceFromGlobal: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalInterfaceTable,
+            dwCookie: DWORD,
+            riid: *const IID,
+            ppv: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalInterfaceTable {
+    pub lpVtbl: *mut IGlobalInterfaceTableVtbl,
+}
+pub type LPENUMSTRING = *mut IEnumString;
+unsafe extern "C" {
+    pub static IID_IEnumString: GUID;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5944,8 +15381,229 @@ pub struct IEnumStringVtbl {
 pub struct IEnumString {
     pub lpVtbl: *mut IEnumStringVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumString_RemoteNext_Proxy(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumString_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumString_Next_Proxy(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumString_Next_Stub(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_ISequentialStream: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISequentialStreamVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISequentialStream,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
+    pub Read: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISequentialStream,
+            pv: *mut ::core::ffi::c_void,
+            cb: ULONG,
+            pcbRead: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Write: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISequentialStream,
+            pv: *const ::core::ffi::c_void,
+            cb: ULONG,
+            pcbWritten: *mut ULONG,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISequentialStream {
+    pub lpVtbl: *mut ISequentialStreamVtbl,
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_RemoteRead_Proxy(
+        This: *mut ISequentialStream,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_RemoteRead_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_RemoteWrite_Proxy(
+        This: *mut ISequentialStream,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_RemoteWrite_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_Read_Proxy(
+        This: *mut ISequentialStream,
+        pv: *mut ::core::ffi::c_void,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_Read_Stub(
+        This: *mut ISequentialStream,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_Write_Proxy(
+        This: *mut ISequentialStream,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ISequentialStream_Write_Stub(
+        This: *mut ISequentialStream,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSTREAM = *mut IStream;
 pub type STATSTG = tagSTATSTG;
+pub const tagSTGTY_STGTY_STORAGE: tagSTGTY = 1;
+pub const tagSTGTY_STGTY_STREAM: tagSTGTY = 2;
+pub const tagSTGTY_STGTY_LOCKBYTES: tagSTGTY = 3;
+pub const tagSTGTY_STGTY_PROPERTY: tagSTGTY = 4;
+pub type tagSTGTY = ::core::ffi::c_uint;
+pub use self::tagSTGTY as STGTY;
+pub const tagSTREAM_SEEK_STREAM_SEEK_SET: tagSTREAM_SEEK = 0;
+pub const tagSTREAM_SEEK_STREAM_SEEK_CUR: tagSTREAM_SEEK = 1;
+pub const tagSTREAM_SEEK_STREAM_SEEK_END: tagSTREAM_SEEK = 2;
+pub type tagSTREAM_SEEK = ::core::ffi::c_uint;
+pub use self::tagSTREAM_SEEK as STREAM_SEEK;
+pub const tagLOCKTYPE_LOCK_WRITE: tagLOCKTYPE = 1;
+pub const tagLOCKTYPE_LOCK_EXCLUSIVE: tagLOCKTYPE = 2;
+pub const tagLOCKTYPE_LOCK_ONLYONCE: tagLOCKTYPE = 4;
+pub type tagLOCKTYPE = ::core::ffi::c_uint;
+pub use self::tagLOCKTYPE as LOCKTYPE;
+unsafe extern "C" {
+    pub static IID_IStream: GUID;
+}
+unsafe extern "C" {
+    pub fn IStream_RemoteSeek_Proxy(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStream_RemoteSeek_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IStream_RemoteCopyTo_Proxy(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStream_RemoteCopyTo_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IStream_Seek_Proxy(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStream_Seek_Stub(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStream_CopyTo_Proxy(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStream_CopyTo_Stub(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+pub type LPRPCCHANNELBUFFER = *mut IRpcChannelBuffer;
 pub type RPCOLEDATAREP = ULONG;
 #[repr(C)]
 pub struct tagRPCOLEMESSAGE {
@@ -5958,6 +15616,10 @@ pub struct tagRPCOLEMESSAGE {
     pub rpcFlags: ULONG,
 }
 pub type RPCOLEMESSAGE = tagRPCOLEMESSAGE;
+pub type PRPCOLEMESSAGE = *mut RPCOLEMESSAGE;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcChannelBufferVtbl {
@@ -6003,6 +15665,303 @@ pub struct IRpcChannelBufferVtbl {
 pub struct IRpcChannelBuffer {
     pub lpVtbl: *mut IRpcChannelBufferVtbl,
 }
+pub type LPRPCCHANNELBUFFER2 = *mut IRpcChannelBuffer2;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+    pub GetBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer2,
+            pMessage: *mut RPCOLEMESSAGE,
+            riid: *const IID,
+        ) -> HRESULT,
+    >,
+    pub SendReceive: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer2,
+            pMessage: *mut RPCOLEMESSAGE,
+            pStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub FreeBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer2,
+            pMessage: *mut RPCOLEMESSAGE,
+        ) -> HRESULT,
+    >,
+    pub GetDestCtx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer2,
+            pdwDestContext: *mut DWORD,
+            ppvDestContext: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub IsConnected:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> HRESULT>,
+    pub GetProtocolVersion: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer2, pdwVersion: *mut DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer2 {
+    pub lpVtbl: *mut IRpcChannelBuffer2Vtbl,
+}
+pub type LPRPCCHANNELBUFFER3 = *mut IRpcChannelBuffer3;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer3: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer3Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+    pub GetBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMessage: *mut RPCOLEMESSAGE,
+            riid: *const IID,
+        ) -> HRESULT,
+    >,
+    pub SendReceive: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMessage: *mut RPCOLEMESSAGE,
+            pStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub FreeBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMessage: *mut RPCOLEMESSAGE,
+        ) -> HRESULT,
+    >,
+    pub GetDestCtx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pdwDestContext: *mut DWORD,
+            ppvDestContext: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub IsConnected:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> HRESULT>,
+    pub GetProtocolVersion: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer3, pdwVersion: *mut DWORD) -> HRESULT,
+    >,
+    pub Send: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            pulStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Receive: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            ulSize: ULONG,
+            pulStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Cancel: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
+    >,
+    pub GetCallContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            riid: *const IID,
+            pInterface: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub GetDestCtxEx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            pdwDestContext: *mut DWORD,
+            ppvDestContext: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub GetState: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            pState: *mut DWORD,
+        ) -> HRESULT,
+    >,
+    pub RegisterAsync: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcChannelBuffer3,
+            pMsg: *mut RPCOLEMESSAGE,
+            pAsyncMgr: *mut IAsyncManager,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer3 {
+    pub lpVtbl: *mut IRpcChannelBuffer3Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAsyncRpcChannelBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncRpcChannelBufferVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG>,
+    pub GetBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMessage: *mut RPCOLEMESSAGE,
+            riid: *const IID,
+        ) -> HRESULT,
+    >,
+    pub SendReceive: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMessage: *mut RPCOLEMESSAGE,
+            pStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub FreeBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMessage: *mut RPCOLEMESSAGE,
+        ) -> HRESULT,
+    >,
+    pub GetDestCtx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pdwDestContext: *mut DWORD,
+            ppvDestContext: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub IsConnected:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> HRESULT>,
+    pub GetProtocolVersion: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer, pdwVersion: *mut DWORD) -> HRESULT,
+    >,
+    pub Send: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMsg: *mut RPCOLEMESSAGE,
+            pSync: *mut ISynchronize,
+            pulStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Receive: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMsg: *mut RPCOLEMESSAGE,
+            pulStatus: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub GetDestCtxEx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncRpcChannelBuffer,
+            pMsg: *mut RPCOLEMESSAGE,
+            pdwDestContext: *mut DWORD,
+            ppvDestContext: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncRpcChannelBuffer {
+    pub lpVtbl: *mut IAsyncRpcChannelBufferVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRpcSyntaxNegotiate: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcSyntaxNegotiateVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcSyntaxNegotiate,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+    pub NegotiateSyntax: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate, pMsg: *mut RPCOLEMESSAGE) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcSyntaxNegotiate {
+    pub lpVtbl: *mut IRpcSyntaxNegotiateVtbl,
+}
+pub type LPRPCPROXYBUFFER = *mut IRpcProxyBuffer;
+unsafe extern "C" {
+    pub static IID_IRpcProxyBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcProxyBufferVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcProxyBuffer,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub Connect: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcProxyBuffer,
+            pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        ) -> HRESULT,
+    >,
+    pub Disconnect: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer)>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcProxyBuffer {
+    pub lpVtbl: *mut IRpcProxyBufferVtbl,
+}
+pub type LPRPCSTUBBUFFER = *mut IRpcStubBuffer;
+unsafe extern "C" {
+    pub static IID_IRpcStubBuffer: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcStubBufferVtbl {
@@ -6044,6 +16003,58 @@ pub struct IRpcStubBufferVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcStubBuffer {
     pub lpVtbl: *mut IRpcStubBufferVtbl,
+}
+pub type LPPSFACTORYBUFFER = *mut IPSFactoryBuffer;
+unsafe extern "C" {
+    pub static IID_IPSFactoryBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPSFactoryBufferVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPSFactoryBuffer,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub CreateProxy: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPSFactoryBuffer,
+            pUnkOuter: *mut IUnknown,
+            riid: *const IID,
+            ppProxy: *mut *mut IRpcProxyBuffer,
+            ppv: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub CreateStub: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPSFactoryBuffer,
+            riid: *const IID,
+            pUnkServer: *mut IUnknown,
+            ppStub: *mut *mut IRpcStubBuffer,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPSFactoryBuffer {
+    pub lpVtbl: *mut IPSFactoryBufferVtbl,
+}
+pub type LPCHANNELHOOK = *mut IChannelHook;
+#[repr(C)]
+pub struct SChannelHookCallInfo {
+    pub iid: IID,
+    pub cbSize: DWORD,
+    pub uCausality: GUID,
+    pub dwServerPid: DWORD,
+    pub iMethod: DWORD,
+    pub pObject: *mut ::core::ffi::c_void,
+}
+unsafe extern "C" {
+    pub static IID_IChannelHook: GUID;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6120,6 +16131,15 @@ pub struct IChannelHookVtbl {
 pub struct IChannelHook {
     pub lpVtbl: *mut IChannelHookVtbl,
 }
+unsafe extern "C" {
+    pub static FMTID_SummaryInformation: FMTID;
+}
+unsafe extern "C" {
+    pub static FMTID_DocSummaryInformation: FMTID;
+}
+unsafe extern "C" {
+    pub static FMTID_UserDefinedProperties: FMTID;
+}
 #[repr(C)]
 pub struct tagSOLE_AUTHENTICATION_SERVICE {
     pub dwAuthnSvc: DWORD,
@@ -6128,6 +16148,627 @@ pub struct tagSOLE_AUTHENTICATION_SERVICE {
     pub hr: HRESULT,
 }
 pub type SOLE_AUTHENTICATION_SERVICE = tagSOLE_AUTHENTICATION_SERVICE;
+pub type PSOLE_AUTHENTICATION_SERVICE = *mut SOLE_AUTHENTICATION_SERVICE;
+#[repr(C)]
+pub struct tagSOLE_AUTHENTICATION_INFO {
+    pub dwAuthnSvc: DWORD,
+    pub dwAuthzSvc: DWORD,
+    pub pAuthInfo: *mut ::core::ffi::c_void,
+}
+pub type SOLE_AUTHENTICATION_INFO = tagSOLE_AUTHENTICATION_INFO;
+#[repr(C)]
+pub struct tagSOLE_AUTHENTICATION_LIST {
+    pub cAuthInfo: DWORD,
+    pub aAuthInfo: *mut SOLE_AUTHENTICATION_INFO,
+}
+pub type SOLE_AUTHENTICATION_LIST = tagSOLE_AUTHENTICATION_LIST;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_NONE: tagEOLE_AUTHENTICATION_CAPABILITIES = 0;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_MUTUAL_AUTH:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 1;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_SECURE_REFS:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 2;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_ACCESS_CONTROL:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 4;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_APPID: tagEOLE_AUTHENTICATION_CAPABILITIES = 8;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DYNAMIC: tagEOLE_AUTHENTICATION_CAPABILITIES =
+    16;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_STATIC_CLOAKING:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 32;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DYNAMIC_CLOAKING:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 64;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_ANY_AUTHORITY:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 128;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_MAKE_FULLSIC:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 256;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_REQUIRE_FULLSIC:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 512;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_AUTO_IMPERSONATE:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 1024;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DEFAULT: tagEOLE_AUTHENTICATION_CAPABILITIES =
+    2048;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DISABLE_AAA:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 4096;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_NO_CUSTOM_MARSHAL:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 8192;
+pub type tagEOLE_AUTHENTICATION_CAPABILITIES = ::core::ffi::c_uint;
+pub use self::tagEOLE_AUTHENTICATION_CAPABILITIES as EOLE_AUTHENTICATION_CAPABILITIES;
+unsafe extern "C" {
+    pub static IID_IClientSecurity: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClientSecurityVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClientSecurity,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub QueryBlanket: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClientSecurity,
+            pProxy: *mut IUnknown,
+            pAuthnSvc: *mut DWORD,
+            pAuthzSvc: *mut DWORD,
+            pServerPrincName: *mut *mut OLECHAR,
+            pAuthnLevel: *mut DWORD,
+            pImpLevel: *mut DWORD,
+            pAuthInfo: *mut *mut ::core::ffi::c_void,
+            pCapabilities: *mut DWORD,
+        ) -> HRESULT,
+    >,
+    pub SetBlanket: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClientSecurity,
+            pProxy: *mut IUnknown,
+            AuthnSvc: DWORD,
+            AuthzSvc: DWORD,
+            pServerPrincName: *mut OLECHAR,
+            AuthnLevel: DWORD,
+            ImpLevel: DWORD,
+            pAuthInfo: *mut ::core::ffi::c_void,
+            Capabilities: DWORD,
+        ) -> HRESULT,
+    >,
+    pub CopyProxy: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClientSecurity,
+            pProxy: *mut IUnknown,
+            ppCopy: *mut *mut IUnknown,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClientSecurity {
+    pub lpVtbl: *mut IClientSecurityVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IServerSecurity: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IServerSecurityVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IServerSecurity,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub QueryBlanket: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IServerSecurity,
+            pAuthnSvc: *mut DWORD,
+            pAuthzSvc: *mut DWORD,
+            pServerPrincName: *mut *mut OLECHAR,
+            pAuthnLevel: *mut DWORD,
+            pImpLevel: *mut DWORD,
+            pPrivs: *mut *mut ::core::ffi::c_void,
+            pCapabilities: *mut DWORD,
+        ) -> HRESULT,
+    >,
+    pub ImpersonateClient:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
+    pub RevertToSelf:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
+    pub IsImpersonating:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> BOOL>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IServerSecurity {
+    pub lpVtbl: *mut IServerSecurityVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAsyncSetup: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncSetupVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncSetup,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub GetAsyncManager: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncSetup,
+            riid: *const IID,
+            pOuter: *mut IUnknown,
+            dwFlags: DWORD,
+            ppInner: *mut *mut IUnknown,
+            ppAsyncMgr: *mut *mut IAsyncManager,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncSetup {
+    pub lpVtbl: *mut IAsyncSetupVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronize: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronize,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
+    pub Wait: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronize,
+            dwFlags: DWORD,
+            dwMilliseconds: DWORD,
+        ) -> HRESULT,
+    >,
+    pub Signal: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronize {
+    pub lpVtbl: *mut ISynchronizeVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeHandle: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeHandleVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeHandle,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+    pub GetHandle: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ISynchronizeHandle, ph: *mut HANDLE) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeHandle {
+    pub lpVtbl: *mut ISynchronizeHandleVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeEvent: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeEventVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeEvent,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+    pub GetHandle: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
+    >,
+    pub SetEventHandle: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeEvent {
+    pub lpVtbl: *mut ISynchronizeEventVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeContainer: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeContainerVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeContainer,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG>,
+    pub AddSynchronize: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ISynchronizeContainer, pSync: *mut ISynchronize) -> HRESULT,
+    >,
+    pub WaitMultiple: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeContainer,
+            dwFlags: DWORD,
+            dwTimeOut: DWORD,
+            ppSync: *mut *mut ISynchronize,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeContainer {
+    pub lpVtbl: *mut ISynchronizeContainerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeMutex: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeMutexVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeMutex,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+    pub Wait: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISynchronizeMutex,
+            dwFlags: DWORD,
+            dwMilliseconds: DWORD,
+        ) -> HRESULT,
+    >,
+    pub Signal:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+    pub Reset:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+    pub ReleaseMutex:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeMutex {
+    pub lpVtbl: *mut ISynchronizeMutexVtbl,
+}
+pub type LPCANCELMETHODCALLS = *mut ICancelMethodCalls;
+unsafe extern "C" {
+    pub static IID_ICancelMethodCalls: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICancelMethodCallsVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICancelMethodCalls,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+    pub Cancel: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICancelMethodCalls, ulSeconds: ULONG) -> HRESULT,
+    >,
+    pub TestCancel:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICancelMethodCalls {
+    pub lpVtbl: *mut ICancelMethodCallsVtbl,
+}
+pub const tagDCOM_CALL_STATE_DCOM_NONE: tagDCOM_CALL_STATE = 0;
+pub const tagDCOM_CALL_STATE_DCOM_CALL_COMPLETE: tagDCOM_CALL_STATE = 1;
+pub const tagDCOM_CALL_STATE_DCOM_CALL_CANCELED: tagDCOM_CALL_STATE = 2;
+pub type tagDCOM_CALL_STATE = ::core::ffi::c_uint;
+pub use self::tagDCOM_CALL_STATE as DCOM_CALL_STATE;
+unsafe extern "C" {
+    pub static IID_IAsyncManager: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncManagerVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncManager,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub CompleteCall: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IAsyncManager, Result: HRESULT) -> HRESULT,
+    >,
+    pub GetCallContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAsyncManager,
+            riid: *const IID,
+            pInterface: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub GetState: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IAsyncManager, pulStateFlags: *mut ULONG) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncManager {
+    pub lpVtbl: *mut IAsyncManagerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ICallFactory: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICallFactoryVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICallFactory,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
+    pub CreateCall: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICallFactory,
+            riid: *const IID,
+            pCtrlUnk: *mut IUnknown,
+            riid2: *const IID,
+            ppv: *mut *mut IUnknown,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICallFactory {
+    pub lpVtbl: *mut ICallFactoryVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRpcOptions: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcOptionsVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcOptions,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub Set: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcOptions,
+            pPrx: *mut IUnknown,
+            dwProperty: DWORD,
+            dwValue: ULONG_PTR,
+        ) -> HRESULT,
+    >,
+    pub Query: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcOptions,
+            pPrx: *mut IUnknown,
+            dwProperty: DWORD,
+            pdwValue: *mut ULONG_PTR,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcOptions {
+    pub lpVtbl: *mut IRpcOptionsVtbl,
+}
+pub const COMBND_RPCTIMEOUT: _bindgen_ty_2 = 1;
+pub const COMBND_SERVER_LOCALITY: _bindgen_ty_2 = 2;
+pub type _bindgen_ty_2 = ::core::ffi::c_uint;
+pub const SERVER_LOCALITY_PROCESS_LOCAL: _bindgen_ty_3 = 0;
+pub const SERVER_LOCALITY_MACHINE_LOCAL: _bindgen_ty_3 = 1;
+pub const SERVER_LOCALITY_REMOTE: _bindgen_ty_3 = 2;
+pub type _bindgen_ty_3 = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IRpcHelper: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcHelperVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcHelper,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub GetDCOMProtocolVersion: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRpcHelper, pComVersion: *mut DWORD) -> HRESULT,
+    >,
+    pub GetIIDFromOBJREF: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRpcHelper,
+            pObjRef: *mut ::core::ffi::c_void,
+            piid: *mut *mut IID,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcHelper {
+    pub lpVtbl: *mut IRpcHelperVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IReleaseMarshalBuffers: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IReleaseMarshalBuffersVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IReleaseMarshalBuffers,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG>,
+    pub ReleaseMarshalBuffer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IReleaseMarshalBuffers,
+            pMsg: *mut RPCOLEMESSAGE,
+            dwFlags: DWORD,
+            pChnl: *mut IUnknown,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IReleaseMarshalBuffers {
+    pub lpVtbl: *mut IReleaseMarshalBuffersVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IWaitMultiple: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IWaitMultipleVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IWaitMultiple,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub WaitMultiple: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IWaitMultiple,
+            timeout: DWORD,
+            pSync: *mut *mut ISynchronize,
+        ) -> HRESULT,
+    >,
+    pub AddSynchronize: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IWaitMultiple, pSync: *mut ISynchronize) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IWaitMultiple {
+    pub lpVtbl: *mut IWaitMultipleVtbl,
+}
+pub type LPADDRTRACKINGCONTROL = *mut IAddrTrackingControl;
+unsafe extern "C" {
+    pub static IID_IAddrTrackingControl: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrTrackingControlVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAddrTrackingControl,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG>,
+    pub EnableCOMDynamicAddrTracking:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
+    pub DisableCOMDynamicAddrTracking:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrTrackingControl {
+    pub lpVtbl: *mut IAddrTrackingControlVtbl,
+}
+pub type LPADDREXCLUSIONCONTROL = *mut IAddrExclusionControl;
+unsafe extern "C" {
+    pub static IID_IAddrExclusionControl: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrExclusionControlVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAddrExclusionControl,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG>,
+    pub GetCurrentAddrExclusionList: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAddrExclusionControl,
+            riid: *const IID,
+            ppEnumerator: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub UpdateAddrExclusionList: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAddrExclusionControl,
+            pEnumerator: *mut IUnknown,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrExclusionControl {
+    pub lpVtbl: *mut IAddrExclusionControlVtbl,
+}
 pub const _APTTYPE_APTTYPE_CURRENT: _APTTYPE = -1;
 pub const _APTTYPE_APTTYPE_STA: _APTTYPE = 0;
 pub const _APTTYPE_APTTYPE_MTA: _APTTYPE = 1;
@@ -6143,7 +16784,159 @@ pub const _APTTYPEQUALIFIER_APTTYPEQUALIFIER_NA_ON_IMPLICIT_MTA: _APTTYPEQUALIFI
 pub const _APTTYPEQUALIFIER_APTTYPEQUALIFIER_NA_ON_MAINSTA: _APTTYPEQUALIFIER = 5;
 pub type _APTTYPEQUALIFIER = ::core::ffi::c_uint;
 pub use self::_APTTYPEQUALIFIER as APTTYPEQUALIFIER;
+pub const _THDTYPE_THDTYPE_BLOCKMESSAGES: _THDTYPE = 0;
+pub const _THDTYPE_THDTYPE_PROCESSMESSAGES: _THDTYPE = 1;
+pub type _THDTYPE = ::core::ffi::c_uint;
+pub use self::_THDTYPE as THDTYPE;
+unsafe extern "C" {
+    pub static IID_IComThreadingInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IComThreadingInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IComThreadingInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
+    pub GetCurrentApartmentType: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, pAptType: *mut APTTYPE) -> HRESULT,
+    >,
+    pub GetCurrentThreadType: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, pThreadType: *mut THDTYPE) -> HRESULT,
+    >,
+    pub GetCurrentLogicalThreadId: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IComThreadingInfo,
+            pguidLogicalThreadId: *mut GUID,
+        ) -> HRESULT,
+    >,
+    pub SetCurrentLogicalThreadId: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IComThreadingInfo, rguid: *const GUID) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IComThreadingInfo {
+    pub lpVtbl: *mut IComThreadingInfoVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IProcessInitControl: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProcessInitControlVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IProcessInitControl,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
+    pub ResetInitializerTimeout: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IProcessInitControl, dwSecondsRemaining: DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProcessInitControl {
+    pub lpVtbl: *mut IProcessInitControlVtbl,
+}
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_EXCEPTION_HANDLING: tagGLOBALOPT_PROPERTIES = 1;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_APPID: tagGLOBALOPT_PROPERTIES = 2;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_RPC_THREADPOOL_SETTING: tagGLOBALOPT_PROPERTIES = 3;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_RO_SETTINGS: tagGLOBALOPT_PROPERTIES = 4;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_UNMARSHALING_POLICY: tagGLOBALOPT_PROPERTIES = 5;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED1: tagGLOBALOPT_PROPERTIES = 6;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED2: tagGLOBALOPT_PROPERTIES = 7;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED3: tagGLOBALOPT_PROPERTIES = 8;
+pub type tagGLOBALOPT_PROPERTIES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_PROPERTIES as GLOBALOPT_PROPERTIES;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_HANDLE: tagGLOBALOPT_EH_VALUES = 0;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE_FATAL: tagGLOBALOPT_EH_VALUES = 1;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE: tagGLOBALOPT_EH_VALUES = 1;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE_ANY: tagGLOBALOPT_EH_VALUES = 2;
+pub type tagGLOBALOPT_EH_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_EH_VALUES as GLOBALOPT_EH_VALUES;
+pub const tagGLOBALOPT_RPCTP_VALUES_COMGLB_RPC_THREADPOOL_SETTING_DEFAULT_POOL:
+    tagGLOBALOPT_RPCTP_VALUES = 0;
+pub const tagGLOBALOPT_RPCTP_VALUES_COMGLB_RPC_THREADPOOL_SETTING_PRIVATE_POOL:
+    tagGLOBALOPT_RPCTP_VALUES = 1;
+pub type tagGLOBALOPT_RPCTP_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_RPCTP_VALUES as GLOBALOPT_RPCTP_VALUES;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_REMOVE_TOUCH_MESSAGES: tagGLOBALOPT_RO_FLAGS =
+    1;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_REMOVE_INPUT_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 2;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_DONOT_REMOVE_INPUT_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 4;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_FAST_RUNDOWN: tagGLOBALOPT_RO_FLAGS = 8;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED1: tagGLOBALOPT_RO_FLAGS = 16;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED2: tagGLOBALOPT_RO_FLAGS = 32;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED3: tagGLOBALOPT_RO_FLAGS = 64;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_REORDER_POINTER_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 128;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED4: tagGLOBALOPT_RO_FLAGS = 256;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED5: tagGLOBALOPT_RO_FLAGS = 512;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED6: tagGLOBALOPT_RO_FLAGS = 1024;
+pub type tagGLOBALOPT_RO_FLAGS = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_RO_FLAGS as GLOBALOPT_RO_FLAGS;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_NORMAL:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 0;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_STRONG:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 1;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_HYBRID:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 2;
+pub type tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_UNMARSHALING_POLICY_VALUES as GLOBALOPT_UNMARSHALING_POLICY_VALUES;
+unsafe extern "C" {
+    pub static IID_IGlobalOptions: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalOptionsVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalOptions,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub Set: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalOptions,
+            property: GLOBALOPT_PROPERTIES,
+            value: ULONG_PTR,
+        ) -> HRESULT,
+    >,
+    pub Query: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IGlobalOptions,
+            property: GLOBALOPT_PROPERTIES,
+            value: *mut ULONG_PTR,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalOptions {
+    pub lpVtbl: *mut IGlobalOptionsVtbl,
+}
 pub type LPMALLOCSPY = *mut IMallocSpy;
+unsafe extern "C" {
+    pub static IID_IMallocSpy: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMallocSpyVtbl {
@@ -6203,6 +16996,7 @@ pub struct IMallocSpyVtbl {
 pub struct IMallocSpy {
     pub lpVtbl: *mut IMallocSpyVtbl,
 }
+pub type LPBINDCTX = *mut IBindCtx;
 pub type LPBC = *mut IBindCtx;
 #[repr(C)]
 pub struct tagBIND_OPTS {
@@ -6212,6 +17006,41 @@ pub struct tagBIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 pub type BIND_OPTS = tagBIND_OPTS;
+pub type LPBIND_OPTS = *mut tagBIND_OPTS;
+#[repr(C)]
+pub struct tagBIND_OPTS2 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+}
+pub type BIND_OPTS2 = tagBIND_OPTS2;
+pub type LPBIND_OPTS2 = *mut tagBIND_OPTS2;
+#[repr(C)]
+pub struct tagBIND_OPTS3 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+    pub hwnd: HWND,
+}
+pub type BIND_OPTS3 = tagBIND_OPTS3;
+pub type LPBIND_OPTS3 = *mut tagBIND_OPTS3;
+pub const tagBIND_FLAGS_BIND_MAYBOTHERUSER: tagBIND_FLAGS = 1;
+pub const tagBIND_FLAGS_BIND_JUSTTESTEXISTENCE: tagBIND_FLAGS = 2;
+pub type tagBIND_FLAGS = ::core::ffi::c_uint;
+pub use self::tagBIND_FLAGS as BIND_FLAGS;
+unsafe extern "C" {
+    pub static IID_IBindCtx: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IBindCtxVtbl {
@@ -6263,6 +17092,54 @@ pub struct IBindCtxVtbl {
 pub struct IBindCtx {
     pub lpVtbl: *mut IBindCtxVtbl,
 }
+unsafe extern "C" {
+    pub fn IBindCtx_RemoteSetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IBindCtx_RemoteSetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IBindCtx_RemoteGetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IBindCtx_RemoteGetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IBindCtx_SetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IBindCtx_SetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IBindCtx_GetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IBindCtx_GetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+pub type LPENUMMONIKER = *mut IEnumMoniker;
+unsafe extern "C" {
+    pub static IID_IEnumMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumMonikerVtbl {
@@ -6296,7 +17173,98 @@ pub struct IEnumMonikerVtbl {
 pub struct IEnumMoniker {
     pub lpVtbl: *mut IEnumMonikerVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumMoniker_RemoteNext_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumMoniker_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumMoniker_Next_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumMoniker_Next_Stub(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPRUNNABLEOBJECT = *mut IRunnableObject;
+unsafe extern "C" {
+    pub static IID_IRunnableObject: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRunnableObjectVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRunnableObject,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub GetRunningClass: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRunnableObject, lpClsid: LPCLSID) -> HRESULT,
+    >,
+    pub Run: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRunnableObject, pbc: LPBINDCTX) -> HRESULT,
+    >,
+    pub IsRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> BOOL>,
+    pub LockRunning: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRunnableObject,
+            fLock: BOOL,
+            fLastUnlockCloses: BOOL,
+        ) -> HRESULT,
+    >,
+    pub SetContainedObject: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRunnableObject, fContained: BOOL) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRunnableObject {
+    pub lpVtbl: *mut IRunnableObjectVtbl,
+}
+unsafe extern "C" {
+    pub fn IRunnableObject_RemoteIsRunning_Proxy(This: *mut IRunnableObject) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IRunnableObject_RemoteIsRunning_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IRunnableObject_IsRunning_Proxy(This: *mut IRunnableObject) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IRunnableObject_IsRunning_Stub(This: *mut IRunnableObject) -> HRESULT;
+}
 pub type LPRUNNINGOBJECTTABLE = *mut IRunningObjectTable;
+unsafe extern "C" {
+    pub static IID_IRunningObjectTable: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IRunningObjectTableVtbl {
@@ -6362,6 +17330,35 @@ pub struct IRunningObjectTableVtbl {
 pub struct IRunningObjectTable {
     pub lpVtbl: *mut IRunningObjectTableVtbl,
 }
+pub type LPPERSIST = *mut IPersist;
+unsafe extern "C" {
+    pub static IID_IPersist: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPersist,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub GetClassID: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IPersist, pClassID: *mut CLSID) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersist {
+    pub lpVtbl: *mut IPersistVtbl,
+}
+pub type LPPERSISTSTREAM = *mut IPersistStream;
+unsafe extern "C" {
+    pub static IID_IPersistStream: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistStreamVtbl {
@@ -6398,6 +17395,27 @@ pub struct IPersistStream {
     pub lpVtbl: *mut IPersistStreamVtbl,
 }
 pub type LPMONIKER = *mut IMoniker;
+pub const tagMKSYS_MKSYS_NONE: tagMKSYS = 0;
+pub const tagMKSYS_MKSYS_GENERICCOMPOSITE: tagMKSYS = 1;
+pub const tagMKSYS_MKSYS_FILEMONIKER: tagMKSYS = 2;
+pub const tagMKSYS_MKSYS_ANTIMONIKER: tagMKSYS = 3;
+pub const tagMKSYS_MKSYS_ITEMMONIKER: tagMKSYS = 4;
+pub const tagMKSYS_MKSYS_POINTERMONIKER: tagMKSYS = 5;
+pub const tagMKSYS_MKSYS_CLASSMONIKER: tagMKSYS = 7;
+pub const tagMKSYS_MKSYS_OBJREFMONIKER: tagMKSYS = 8;
+pub const tagMKSYS_MKSYS_SESSIONMONIKER: tagMKSYS = 9;
+pub const tagMKSYS_MKSYS_LUAMONIKER: tagMKSYS = 10;
+pub type tagMKSYS = ::core::ffi::c_uint;
+pub use self::tagMKSYS as MKSYS;
+pub const tagMKREDUCE_MKRREDUCE_ONE: tagMKREDUCE = 196608;
+pub const tagMKREDUCE_MKRREDUCE_TOUSER: tagMKREDUCE = 131072;
+pub const tagMKREDUCE_MKRREDUCE_THROUGHUSER: tagMKREDUCE = 65536;
+pub const tagMKREDUCE_MKRREDUCE_ALL: tagMKREDUCE = 0;
+pub type tagMKREDUCE = ::core::ffi::c_uint;
+pub use self::tagMKREDUCE as MKRREDUCE;
+unsafe extern "C" {
+    pub static IID_IMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMonikerVtbl {
@@ -6531,6 +17549,140 @@ pub struct IMonikerVtbl {
 pub struct IMoniker {
     pub lpVtbl: *mut IMonikerVtbl,
 }
+unsafe extern "C" {
+    pub fn IMoniker_RemoteBindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IMoniker_RemoteBindToObject_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IMoniker_RemoteBindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IMoniker_RemoteBindToStorage_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IMoniker_BindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IMoniker_BindToObject_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IMoniker_BindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IMoniker_BindToStorage_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IROTData: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IROTDataVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IROTData,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub GetComparisonData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IROTData,
+            pbData: *mut byte,
+            cbMax: ULONG,
+            pcbData: *mut ULONG,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IROTData {
+    pub lpVtbl: *mut IROTDataVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IClassActivator: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClassActivatorVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClassActivator,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub GetClassObject: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IClassActivator,
+            rclsid: *const CLSID,
+            dwClassContext: DWORD,
+            locale: LCID,
+            riid: *const IID,
+            ppv: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClassActivator {
+    pub lpVtbl: *mut IClassActivatorVtbl,
+}
+pub type LPENUMSTATSTG = *mut IEnumSTATSTG;
+unsafe extern "C" {
+    pub static IID_IEnumSTATSTG: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATSTGVtbl {
@@ -6564,8 +17716,51 @@ pub struct IEnumSTATSTGVtbl {
 pub struct IEnumSTATSTG {
     pub lpVtbl: *mut IEnumSTATSTGVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumSTATSTG_RemoteNext_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumSTATSTG_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumSTATSTG_Next_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumSTATSTG_Next_Stub(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSTORAGE = *mut IStorage;
+#[repr(C)]
+pub struct tagRemSNB {
+    pub ulCntStr: ULONG,
+    pub ulCntChar: ULONG,
+    pub rgString: [OLECHAR; 1usize],
+}
+pub type RemSNB = tagRemSNB;
+pub type wireSNB = *mut RemSNB;
 pub type SNB = *mut *mut OLECHAR;
+unsafe extern "C" {
+    pub static IID_IStorage: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IStorageVtbl {
@@ -6688,7 +17883,133 @@ pub struct IStorageVtbl {
 pub struct IStorage {
     pub lpVtbl: *mut IStorageVtbl,
 }
+unsafe extern "C" {
+    pub fn IStorage_RemoteOpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStorage_RemoteOpenStream_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IStorage_RemoteEnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStorage_RemoteEnumElements_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IStorage_OpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        reserved1: *mut ::core::ffi::c_void,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStorage_OpenStream_Stub(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStorage_EnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        reserved2: *mut ::core::ffi::c_void,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IStorage_EnumElements_Stub(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+pub type LPPERSISTFILE = *mut IPersistFile;
+unsafe extern "C" {
+    pub static IID_IPersistFile: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFileVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPersistFile,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub GetClassID: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IPersistFile, pClassID: *mut CLSID) -> HRESULT,
+    >,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> HRESULT>,
+    pub Load: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPersistFile,
+            pszFileName: LPCOLESTR,
+            dwMode: DWORD,
+        ) -> HRESULT,
+    >,
+    pub Save: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPersistFile,
+            pszFileName: LPCOLESTR,
+            fRemember: BOOL,
+        ) -> HRESULT,
+    >,
+    pub SaveCompleted: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IPersistFile, pszFileName: LPCOLESTR) -> HRESULT,
+    >,
+    pub GetCurFile: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IPersistFile, ppszFileName: *mut LPOLESTR) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFile {
+    pub lpVtbl: *mut IPersistFileVtbl,
+}
 pub type LPPERSISTSTORAGE = *mut IPersistStorage;
+unsafe extern "C" {
+    pub static IID_IPersistStorage: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IPersistStorageVtbl {
@@ -6730,7 +18051,35 @@ pub struct IPersistStorageVtbl {
 pub struct IPersistStorage {
     pub lpVtbl: *mut IPersistStorageVtbl,
 }
+pub type LPROOTSTORAGE = *mut IRootStorage;
+unsafe extern "C" {
+    pub static IID_IRootStorage: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRootStorageVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IRootStorage,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub SwitchToFile: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IRootStorage, pszFile: LPOLESTR) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRootStorage {
+    pub lpVtbl: *mut IRootStorageVtbl,
+}
 pub type LPLOCKBYTES = *mut ILockBytes;
+unsafe extern "C" {
+    pub static IID_ILockBytes: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ILockBytesVtbl {
@@ -6794,6 +18143,358 @@ pub struct ILockBytesVtbl {
 pub struct ILockBytes {
     pub lpVtbl: *mut ILockBytesVtbl,
 }
+unsafe extern "C" {
+    pub fn ILockBytes_RemoteReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ILockBytes_RemoteReadAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ILockBytes_RemoteWriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ILockBytes_RemoteWriteAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ILockBytes_ReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut ::core::ffi::c_void,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ILockBytes_ReadAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ILockBytes_WriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ILockBytes_WriteAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IFillLockBytes: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFillLockBytesVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IFillLockBytes,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub FillAppend: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IFillLockBytes,
+            pv: *const ::core::ffi::c_void,
+            cb: ULONG,
+            pcbWritten: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub FillAt: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IFillLockBytes,
+            ulOffset: ULARGE_INTEGER,
+            pv: *const ::core::ffi::c_void,
+            cb: ULONG,
+            pcbWritten: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub SetFillSize: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IFillLockBytes, ulSize: ULARGE_INTEGER) -> HRESULT,
+    >,
+    pub Terminate: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IFillLockBytes, bCanceled: BOOL) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFillLockBytes {
+    pub lpVtbl: *mut IFillLockBytesVtbl,
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_RemoteFillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_RemoteFillAppend_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_RemoteFillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_RemoteFillAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_FillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_FillAppend_Stub(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_FillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IFillLockBytes_FillAt_Stub(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IProgressNotify: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProgressNotifyVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IProgressNotify,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub OnProgress: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IProgressNotify,
+            dwProgressCurrent: DWORD,
+            dwProgressMaximum: DWORD,
+            fAccurate: BOOL,
+            fOwner: BOOL,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProgressNotify {
+    pub lpVtbl: *mut IProgressNotifyVtbl,
+}
+#[repr(C)]
+pub struct tagStorageLayout {
+    pub LayoutType: DWORD,
+    pub pwcsElementName: *mut OLECHAR,
+    pub cOffset: LARGE_INTEGER,
+    pub cBytes: LARGE_INTEGER,
+}
+pub type StorageLayout = tagStorageLayout;
+unsafe extern "C" {
+    pub static IID_ILayoutStorage: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ILayoutStorageVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ILayoutStorage,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub LayoutScript: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ILayoutStorage,
+            pStorageLayout: *mut StorageLayout,
+            nEntries: DWORD,
+            glfInterleavedFlag: DWORD,
+        ) -> HRESULT,
+    >,
+    pub BeginMonitor:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub EndMonitor:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub ReLayoutDocfile: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ILayoutStorage, pwcsNewDfName: *mut OLECHAR) -> HRESULT,
+    >,
+    pub ReLayoutDocfileOnILockBytes: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ILayoutStorage, pILockBytes: *mut ILockBytes) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ILayoutStorage {
+    pub lpVtbl: *mut ILayoutStorageVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IBlockingLock: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IBlockingLockVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IBlockingLock,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Lock: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IBlockingLock, dwTimeout: DWORD) -> HRESULT,
+    >,
+    pub Unlock: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IBlockingLock {
+    pub lpVtbl: *mut IBlockingLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITimeAndNoticeControl: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITimeAndNoticeControlVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITimeAndNoticeControl,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG>,
+    pub SuppressChanges: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITimeAndNoticeControl, res1: DWORD, res2: DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITimeAndNoticeControl {
+    pub lpVtbl: *mut ITimeAndNoticeControlVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IOplockStorage: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOplockStorageVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IOplockStorage,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub CreateStorageEx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IOplockStorage,
+            pwcsName: LPCWSTR,
+            grfMode: DWORD,
+            stgfmt: DWORD,
+            grfAttrs: DWORD,
+            riid: *const IID,
+            ppstgOpen: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub OpenStorageEx: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IOplockStorage,
+            pwcsName: LPCWSTR,
+            grfMode: DWORD,
+            stgfmt: DWORD,
+            grfAttrs: DWORD,
+            riid: *const IID,
+            ppstgOpen: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOplockStorage {
+    pub lpVtbl: *mut IOplockStorageVtbl,
+}
 pub type LPENUMFORMATETC = *mut IEnumFORMATETC;
 #[repr(C)]
 pub struct tagDVTARGETDEVICE {
@@ -6805,6 +18506,7 @@ pub struct tagDVTARGETDEVICE {
     pub tdData: [BYTE; 1usize],
 }
 pub type DVTARGETDEVICE = tagDVTARGETDEVICE;
+pub type LPCLIPFORMAT = *mut CLIPFORMAT;
 #[repr(C)]
 pub struct tagFORMATETC {
     pub cfFormat: CLIPFORMAT,
@@ -6815,6 +18517,9 @@ pub struct tagFORMATETC {
 }
 pub type FORMATETC = tagFORMATETC;
 pub type LPFORMATETC = *mut tagFORMATETC;
+unsafe extern "C" {
+    pub static IID_IEnumFORMATETC: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumFORMATETCVtbl {
@@ -6851,6 +18556,48 @@ pub struct IEnumFORMATETCVtbl {
 pub struct IEnumFORMATETC {
     pub lpVtbl: *mut IEnumFORMATETCVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumFORMATETC_RemoteNext_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumFORMATETC_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumFORMATETC_Next_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumFORMATETC_Next_Stub(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPENUMSTATDATA = *mut IEnumSTATDATA;
+pub const tagADVF_ADVF_NODATA: tagADVF = 1;
+pub const tagADVF_ADVF_PRIMEFIRST: tagADVF = 2;
+pub const tagADVF_ADVF_ONLYONCE: tagADVF = 4;
+pub const tagADVF_ADVF_DATAONSTOP: tagADVF = 64;
+pub const tagADVF_ADVFCACHE_NOHANDLER: tagADVF = 8;
+pub const tagADVF_ADVFCACHE_FORCEBUILTIN: tagADVF = 16;
+pub const tagADVF_ADVFCACHE_ONSAVE: tagADVF = 32;
+pub type tagADVF = ::core::ffi::c_uint;
+pub use self::tagADVF as ADVF;
 #[repr(C)]
 pub struct tagSTATDATA {
     pub formatetc: FORMATETC,
@@ -6859,6 +18606,10 @@ pub struct tagSTATDATA {
     pub dwConnection: DWORD,
 }
 pub type STATDATA = tagSTATDATA;
+pub type LPSTATDATA = *mut tagSTATDATA;
+unsafe extern "C" {
+    pub static IID_IEnumSTATDATA: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IEnumSTATDATAVtbl {
@@ -6892,6 +18643,59 @@ pub struct IEnumSTATDATAVtbl {
 pub struct IEnumSTATDATA {
     pub lpVtbl: *mut IEnumSTATDATAVtbl,
 }
+unsafe extern "C" {
+    pub fn IEnumSTATDATA_RemoteNext_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumSTATDATA_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumSTATDATA_Next_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumSTATDATA_Next_Stub(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPADVISESINK = *mut IAdviseSink;
+pub const tagTYMED_TYMED_HGLOBAL: tagTYMED = 1;
+pub const tagTYMED_TYMED_FILE: tagTYMED = 2;
+pub const tagTYMED_TYMED_ISTREAM: tagTYMED = 4;
+pub const tagTYMED_TYMED_ISTORAGE: tagTYMED = 8;
+pub const tagTYMED_TYMED_GDI: tagTYMED = 16;
+pub const tagTYMED_TYMED_MFPICT: tagTYMED = 32;
+pub const tagTYMED_TYMED_ENHMF: tagTYMED = 64;
+pub const tagTYMED_TYMED_NULL: tagTYMED = 0;
+pub type tagTYMED = ::core::ffi::c_uint;
+pub use self::tagTYMED as TYMED;
+#[repr(C)]
+pub struct tagRemSTGMEDIUM {
+    pub tymed: DWORD,
+    pub dwHandleType: DWORD,
+    pub pData: ULONG,
+    pub pUnkForRelease: ULONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemSTGMEDIUM = tagRemSTGMEDIUM;
 #[repr(C)]
 pub struct tagSTGMEDIUM {
     pub tymed: DWORD,
@@ -6910,8 +18714,64 @@ pub struct tagSTGMEDIUM__bindgen_ty_1 {
     pub bindgen_union_field: u64,
 }
 pub type uSTGMEDIUM = tagSTGMEDIUM;
+#[repr(C)]
+pub struct _GDI_OBJECT {
+    pub ObjectType: DWORD,
+    pub u: _GDI_OBJECT___WIDL_objidl_generated_name_0000000A,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _GDI_OBJECT___WIDL_objidl_generated_name_0000000A {
+    pub hBitmap: wireHBITMAP,
+    pub hPalette: wireHPALETTE,
+    pub hGeneric: wireHGLOBAL,
+}
+pub type GDI_OBJECT = _GDI_OBJECT;
+#[repr(C)]
+pub struct _userSTGMEDIUM {
+    pub __bindgen_anon_1: _userSTGMEDIUM__bindgen_ty_1,
+    pub pUnkForRelease: *mut IUnknown,
+}
+#[repr(C)]
+pub struct _userSTGMEDIUM__bindgen_ty_1 {
+    pub tymed: DWORD,
+    pub u: _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B {
+    pub hMetaFilePict: wireHMETAFILEPICT,
+    pub hHEnhMetaFile: wireHENHMETAFILE,
+    pub hGdiHandle: *mut GDI_OBJECT,
+    pub hGlobal: wireHGLOBAL,
+    pub lpszFileName: LPOLESTR,
+    pub pstm: *mut BYTE_BLOB,
+    pub pstg: *mut BYTE_BLOB,
+}
+pub type userSTGMEDIUM = _userSTGMEDIUM;
+pub type wireSTGMEDIUM = *mut userSTGMEDIUM;
 pub type STGMEDIUM = uSTGMEDIUM;
+pub type wireASYNC_STGMEDIUM = *mut userSTGMEDIUM;
+pub type ASYNC_STGMEDIUM = STGMEDIUM;
 pub type LPSTGMEDIUM = *mut STGMEDIUM;
+#[repr(C)]
+pub struct _userFLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: userSTGMEDIUM,
+}
+pub type userFLAG_STGMEDIUM = _userFLAG_STGMEDIUM;
+pub type wireFLAG_STGMEDIUM = *mut userFLAG_STGMEDIUM;
+#[repr(C)]
+pub struct _FLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: STGMEDIUM,
+}
+pub type FLAG_STGMEDIUM = _FLAG_STGMEDIUM;
+unsafe extern "C" {
+    pub static IID_IAdviseSink: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IAdviseSinkVtbl {
@@ -6944,7 +18804,180 @@ pub struct IAdviseSinkVtbl {
 pub struct IAdviseSink {
     pub lpVtbl: *mut IAdviseSinkVtbl,
 }
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnDataChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnViewChange_Proxy(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnViewChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnRename_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnSave_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnSave_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnClose_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_RemoteOnClose_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut STGMEDIUM,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnDataChange_Stub(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnViewChange_Proxy(This: *mut IAdviseSink, dwAspect: DWORD, lindex: LONG);
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnViewChange_Stub(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker);
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnRename_Stub(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnSave_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnSave_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnClose_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "C" {
+    pub fn IAdviseSink_OnClose_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+pub type LPADVISESINK2 = *mut IAdviseSink2;
+unsafe extern "C" {
+    pub static IID_IAdviseSink2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAdviseSink2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAdviseSink2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub OnDataChange: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IAdviseSink2,
+            pFormatetc: *mut FORMATETC,
+            pStgmed: *mut STGMEDIUM,
+        ),
+    >,
+    pub OnViewChange: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IAdviseSink2, dwAspect: DWORD, lindex: LONG),
+    >,
+    pub OnRename:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnLinkSrcChange:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker)>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAdviseSink2 {
+    pub lpVtbl: *mut IAdviseSink2Vtbl,
+}
+unsafe extern "C" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Proxy(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Proxy(This: *mut IAdviseSink2, pmk: *mut IMoniker);
+}
+unsafe extern "C" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Stub(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
 pub type LPDATAOBJECT = *mut IDataObject;
+pub const tagDATADIR_DATADIR_GET: tagDATADIR = 1;
+pub const tagDATADIR_DATADIR_SET: tagDATADIR = 2;
+pub type tagDATADIR = ::core::ffi::c_uint;
+pub use self::tagDATADIR as DATADIR;
+unsafe extern "C" {
+    pub static IID_IDataObject: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IDataObjectVtbl {
@@ -7020,7 +19053,100 @@ pub struct IDataObjectVtbl {
 pub struct IDataObject {
     pub lpVtbl: *mut IDataObjectVtbl,
 }
+unsafe extern "C" {
+    pub fn IDataObject_RemoteGetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_RemoteGetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IDataObject_RemoteGetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_RemoteGetDataHere_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IDataObject_RemoteSetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_RemoteSetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IDataObject_GetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_GetData_Stub(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_GetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_GetDataHere_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_SetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDataObject_SetData_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
 pub type LPDATAADVISEHOLDER = *mut IDataAdviseHolder;
+unsafe extern "C" {
+    pub static IID_IDataAdviseHolder: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IDataAdviseHolderVtbl {
@@ -7068,13 +19194,38 @@ pub struct IDataAdviseHolder {
     pub lpVtbl: *mut IDataAdviseHolderVtbl,
 }
 pub type LPMESSAGEFILTER = *mut IMessageFilter;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL: tagCALLTYPE = 1;
+pub const tagCALLTYPE_CALLTYPE_NESTED: tagCALLTYPE = 2;
+pub const tagCALLTYPE_CALLTYPE_ASYNC: tagCALLTYPE = 3;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL_CALLPENDING: tagCALLTYPE = 4;
+pub const tagCALLTYPE_CALLTYPE_ASYNC_CALLPENDING: tagCALLTYPE = 5;
+pub type tagCALLTYPE = ::core::ffi::c_uint;
+pub use self::tagCALLTYPE as CALLTYPE;
+pub const tagSERVERCALL_SERVERCALL_ISHANDLED: tagSERVERCALL = 0;
+pub const tagSERVERCALL_SERVERCALL_REJECTED: tagSERVERCALL = 1;
+pub const tagSERVERCALL_SERVERCALL_RETRYLATER: tagSERVERCALL = 2;
+pub type tagSERVERCALL = ::core::ffi::c_uint;
+pub use self::tagSERVERCALL as SERVERCALL;
+pub const tagPENDINGTYPE_PENDINGTYPE_TOPLEVEL: tagPENDINGTYPE = 1;
+pub const tagPENDINGTYPE_PENDINGTYPE_NESTED: tagPENDINGTYPE = 2;
+pub type tagPENDINGTYPE = ::core::ffi::c_uint;
+pub use self::tagPENDINGTYPE as PENDINGTYPE;
+pub const tagPENDINGMSG_PENDINGMSG_CANCELCALL: tagPENDINGMSG = 0;
+pub const tagPENDINGMSG_PENDINGMSG_WAITNOPROCESS: tagPENDINGMSG = 1;
+pub const tagPENDINGMSG_PENDINGMSG_WAITDEFPROCESS: tagPENDINGMSG = 2;
+pub type tagPENDINGMSG = ::core::ffi::c_uint;
+pub use self::tagPENDINGMSG as PENDINGMSG;
 #[repr(C)]
 pub struct tagINTERFACEINFO {
     pub pUnk: *mut IUnknown,
     pub iid: IID,
     pub wMethod: WORD,
 }
+pub type INTERFACEINFO = tagINTERFACEINFO;
 pub type LPINTERFACEINFO = *mut tagINTERFACEINFO;
+unsafe extern "C" {
+    pub static IID_IMessageFilter: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMessageFilterVtbl {
@@ -7118,6 +19269,104 @@ pub struct IMessageFilterVtbl {
 pub struct IMessageFilter {
     pub lpVtbl: *mut IMessageFilterVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IDirectWriterLock: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDirectWriterLockVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IDirectWriterLock,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub WaitForWriteAccess: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IDirectWriterLock, dwTimeout: DWORD) -> HRESULT,
+    >,
+    pub ReleaseWriteAccess:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+    pub HaveWriteAccess:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDirectWriterLock {
+    pub lpVtbl: *mut IDirectWriterLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUrlMon: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUrlMonVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IUrlMon,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub AsyncGetClassBits: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IUrlMon,
+            rclsid: *const CLSID,
+            pszTYPE: LPCWSTR,
+            pszExt: LPCWSTR,
+            dwFileVersionMS: DWORD,
+            dwFileVersionLS: DWORD,
+            pszCodeBase: LPCWSTR,
+            pbc: *mut IBindCtx,
+            dwClassContext: DWORD,
+            riid: *const IID,
+            flags: DWORD,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUrlMon {
+    pub lpVtbl: *mut IUrlMonVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IForegroundTransfer: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IForegroundTransferVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IForegroundTransfer,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub AllowForegroundTransfer: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IForegroundTransfer,
+            lpvReserved: *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IForegroundTransfer {
+    pub lpVtbl: *mut IForegroundTransferVtbl,
+}
+pub type LPINITIALIZESPY = *mut IInitializeSpy;
+unsafe extern "C" {
+    pub static IID_IInitializeSpy: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IInitializeSpyVtbl {
@@ -7157,12 +19406,368 @@ pub struct IInitializeSpyVtbl {
 pub struct IInitializeSpy {
     pub lpVtbl: *mut IInitializeSpyVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IThumbnailExtractor: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IThumbnailExtractorVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IThumbnailExtractor,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub ExtractThumbnail: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IThumbnailExtractor,
+            pStg: *mut IStorage,
+            ulLength: ULONG,
+            ulHeight: ULONG,
+            pulOutputLength: *mut ULONG,
+            pulOutputHeight: *mut ULONG,
+            phOutputBitmap: *mut HBITMAP,
+        ) -> HRESULT,
+    >,
+    pub OnFileUpdated: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IThumbnailExtractor, pStg: *mut IStorage) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IThumbnailExtractor {
+    pub lpVtbl: *mut IThumbnailExtractorVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDummyHICONIncluder: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDummyHICONIncluderVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IDummyHICONIncluder,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Dummy: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IDummyHICONIncluder, hIcon: HICON, hdc: HDC) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDummyHICONIncluder {
+    pub lpVtbl: *mut IDummyHICONIncluderVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IApartmentShutdown: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApartmentShutdownVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IApartmentShutdown,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub OnUninitialize: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IApartmentShutdown, identifier: UINT64),
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApartmentShutdown {
+    pub lpVtbl: *mut IApartmentShutdownVtbl,
+}
+unsafe extern "C" {
+    pub fn SNB_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut SNB) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn SNB_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn SNB_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn SNB_UserFree(arg1: *mut ULONG, arg2: *mut SNB);
+}
+unsafe extern "C" {
+    pub fn CLIPFORMAT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut CLIPFORMAT) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn CLIPFORMAT_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn CLIPFORMAT_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn CLIPFORMAT_UserFree(arg1: *mut ULONG, arg2: *mut CLIPFORMAT);
+}
+unsafe extern "C" {
+    pub fn STGMEDIUM_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut STGMEDIUM) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut STGMEDIUM);
+}
+unsafe extern "C" {
+    pub fn ASYNC_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn ASYNC_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn ASYNC_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn ASYNC_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut ASYNC_STGMEDIUM);
+}
+unsafe extern "C" {
+    pub fn FLAG_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn FLAG_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn FLAG_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn FLAG_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut FLAG_STGMEDIUM);
+}
+unsafe extern "C" {
+    pub fn HBITMAP_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HBITMAP) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn HBITMAP_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HBITMAP_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HBITMAP_UserFree(arg1: *mut ULONG, arg2: *mut HBITMAP);
+}
+unsafe extern "C" {
+    pub fn HICON_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HICON) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn HICON_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HICON_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HICON_UserFree(arg1: *mut ULONG, arg2: *mut HICON);
+}
+unsafe extern "C" {
+    pub fn HDC_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HDC) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn HDC_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HDC_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn HDC_UserFree(arg1: *mut ULONG, arg2: *mut HDC);
+}
+unsafe extern "C" {
+    pub fn CoBuildVersion() -> DWORD;
+}
 pub const tagCOINIT_COINIT_APARTMENTTHREADED: tagCOINIT = 2;
 pub const tagCOINIT_COINIT_MULTITHREADED: tagCOINIT = 0;
 pub const tagCOINIT_COINIT_DISABLE_OLE1DDE: tagCOINIT = 4;
 pub const tagCOINIT_COINIT_SPEED_OVER_MEMORY: tagCOINIT = 8;
 pub type tagCOINIT = ::core::ffi::c_uint;
 pub use self::tagCOINIT as COINIT;
+unsafe extern "C" {
+    pub fn CoInitialize(lpReserved: LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoInitializeEx(lpReserved: LPVOID, dwCoInit: DWORD) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoUninitialize();
+}
+unsafe extern "C" {
+    pub fn CoGetCurrentProcess() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CoGetCurrentLogicalThreadId(id: *mut GUID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetApartmentType(type_: *mut APTTYPE, qualifier: *mut APTTYPEQUALIFIER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoLoadLibrary(lpszLibName: LPOLESTR, bAutoFree: BOOL) -> HINSTANCE;
+}
+unsafe extern "C" {
+    pub fn CoFreeAllLibraries();
+}
+unsafe extern "C" {
+    pub fn CoFreeLibrary(hLibrary: HINSTANCE);
+}
+unsafe extern "C" {
+    pub fn CoFreeUnusedLibraries();
+}
+unsafe extern "C" {
+    pub fn CoFreeUnusedLibrariesEx(dwUnloadDelay: DWORD, dwReserved: DWORD);
+}
+unsafe extern "C" {
+    pub fn CoCreateInstance(
+        rclsid: *const CLSID,
+        pUnkOuter: LPUNKNOWN,
+        dwClsContext: DWORD,
+        iid: *const IID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoCreateInstanceEx(
+        rclsid: *const CLSID,
+        pUnkOuter: LPUNKNOWN,
+        dwClsContext: DWORD,
+        pServerInfo: *mut COSERVERINFO,
+        cmq: ULONG,
+        pResults: *mut MULTI_QI,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetInstanceFromFile(
+        pServerInfo: *mut COSERVERINFO,
+        pClsid: *mut CLSID,
+        punkOuter: *mut IUnknown,
+        dwClsCtx: DWORD,
+        grfMode: DWORD,
+        pwszName: *mut OLECHAR,
+        dwCount: DWORD,
+        pResults: *mut MULTI_QI,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetInstanceFromIStorage(
+        pServerInfo: *mut COSERVERINFO,
+        pClsid: *mut CLSID,
+        punkOuter: *mut IUnknown,
+        dwClsCtx: DWORD,
+        pstg: *mut IStorage,
+        dwCount: DWORD,
+        pResults: *mut MULTI_QI,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetMalloc(dwMemContext: DWORD, lpMalloc: *mut LPMALLOC) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoTaskMemAlloc(size: SIZE_T) -> LPVOID;
+}
+unsafe extern "C" {
+    pub fn CoTaskMemFree(ptr: LPVOID);
+}
+unsafe extern "C" {
+    pub fn CoTaskMemRealloc(ptr: LPVOID, size: SIZE_T) -> LPVOID;
+}
+unsafe extern "C" {
+    pub fn CoRegisterMallocSpy(pMallocSpy: LPMALLOCSPY) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRevokeMallocSpy() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetContextToken(token: *mut ULONG_PTR) -> HRESULT;
+}
 pub const tagREGCLS_REGCLS_SINGLEUSE: tagREGCLS = 0;
 pub const tagREGCLS_REGCLS_MULTIPLEUSE: tagREGCLS = 1;
 pub const tagREGCLS_REGCLS_MULTI_SEPARATE: tagREGCLS = 2;
@@ -7170,12 +19775,378 @@ pub const tagREGCLS_REGCLS_SUSPENDED: tagREGCLS = 4;
 pub const tagREGCLS_REGCLS_SURROGATE: tagREGCLS = 8;
 pub type tagREGCLS = ::core::ffi::c_uint;
 pub use self::tagREGCLS as REGCLS;
+unsafe extern "C" {
+    pub fn CoGetClassObject(
+        rclsid: *const CLSID,
+        dwClsContext: DWORD,
+        pServerInfo: *mut COSERVERINFO,
+        iid: *const IID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterClassObject(
+        rclsid: *const CLSID,
+        pUnk: LPUNKNOWN,
+        dwClsContext: DWORD,
+        flags: DWORD,
+        lpdwRegister: LPDWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRevokeClassObject(dwRegister: DWORD) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetPSClsid(riid: *const IID, pclsid: *mut CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterPSClsid(riid: *const IID, rclsid: *const CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterSurrogate(pSurrogate: LPSURROGATE) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoSuspendClassObjects() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoResumeClassObjects() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoAddRefServerProcess() -> ULONG;
+}
+unsafe extern "C" {
+    pub fn CoReleaseServerProcess() -> ULONG;
+}
+unsafe extern "C" {
+    pub fn CoCreateFreeThreadedMarshaler(
+        punkOuter: LPUNKNOWN,
+        ppunkMarshal: *mut LPUNKNOWN,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetInterfaceAndReleaseStream(
+        pStm: LPSTREAM,
+        iid: *const IID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetMarshalSizeMax(
+        pulSize: *mut ULONG,
+        riid: *const IID,
+        pUnk: LPUNKNOWN,
+        dwDestContext: DWORD,
+        pvDestContext: LPVOID,
+        mshlflags: DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetStandardMarshal(
+        riid: *const IID,
+        pUnk: LPUNKNOWN,
+        dwDestContext: DWORD,
+        pvDestContext: LPVOID,
+        mshlflags: DWORD,
+        ppMarshal: *mut LPMARSHAL,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoMarshalHresult(pstm: LPSTREAM, hresult: HRESULT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoMarshalInterface(
+        pStm: LPSTREAM,
+        riid: *const IID,
+        pUnk: LPUNKNOWN,
+        dwDestContext: DWORD,
+        pvDestContext: LPVOID,
+        mshlflags: DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoMarshalInterThreadInterfaceInStream(
+        riid: *const IID,
+        pUnk: LPUNKNOWN,
+        ppStm: *mut LPSTREAM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoReleaseMarshalData(pStm: LPSTREAM) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoDisconnectObject(lpUnk: LPUNKNOWN, reserved: DWORD) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoUnmarshalHresult(pstm: LPSTREAM, phresult: *mut HRESULT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoUnmarshalInterface(pStm: LPSTREAM, riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoLockObjectExternal(pUnk: LPUNKNOWN, fLock: BOOL, fLastUnlockReleases: BOOL)
+        -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoIsHandlerConnected(pUnk: LPUNKNOWN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CoInitializeSecurity(
+        pSecDesc: PSECURITY_DESCRIPTOR,
+        cAuthSvc: LONG,
+        asAuthSvc: *mut SOLE_AUTHENTICATION_SERVICE,
+        pReserved1: *mut ::core::ffi::c_void,
+        dwAuthnLevel: DWORD,
+        dwImpLevel: DWORD,
+        pReserved2: *mut ::core::ffi::c_void,
+        dwCapabilities: DWORD,
+        pReserved3: *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetCallContext(
+        riid: *const IID,
+        ppInterface: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoSwitchCallContext(
+        pContext: *mut IUnknown,
+        ppOldContext: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoQueryAuthenticationServices(
+        pcAuthSvc: *mut DWORD,
+        asAuthSvc: *mut *mut SOLE_AUTHENTICATION_SERVICE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoQueryProxyBlanket(
+        pProxy: *mut IUnknown,
+        pwAuthnSvc: *mut DWORD,
+        pAuthzSvc: *mut DWORD,
+        pServerPrincName: *mut *mut OLECHAR,
+        pAuthnLevel: *mut DWORD,
+        pImpLevel: *mut DWORD,
+        pAuthInfo: *mut RPC_AUTH_IDENTITY_HANDLE,
+        pCapabilities: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoSetProxyBlanket(
+        pProxy: *mut IUnknown,
+        dwAuthnSvc: DWORD,
+        dwAuthzSvc: DWORD,
+        pServerPrincName: *mut OLECHAR,
+        dwAuthnLevel: DWORD,
+        dwImpLevel: DWORD,
+        pAuthInfo: RPC_AUTH_IDENTITY_HANDLE,
+        dwCapabilities: DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoCopyProxy(pProxy: *mut IUnknown, ppCopy: *mut *mut IUnknown) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoImpersonateClient() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoQueryClientBlanket(
+        pAuthnSvc: *mut DWORD,
+        pAuthzSvc: *mut DWORD,
+        pServerPrincName: *mut *mut OLECHAR,
+        pAuthnLevel: *mut DWORD,
+        pImpLevel: *mut DWORD,
+        pPrivs: *mut RPC_AUTHZ_HANDLE,
+        pCapabilities: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRevertToSelf() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetTreatAsClass(clsidOld: *const CLSID, pClsidNew: LPCLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoTreatAsClass(clsidOld: *const CLSID, clsidNew: *const CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoAllowSetForegroundWindow(pUnk: *mut IUnknown, lpvReserved: LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetObjectContext(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterInitializeSpy(
+        spy: *mut IInitializeSpy,
+        cookie: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRevokeInitializeSpy(cookie: ULARGE_INTEGER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoCreateGuid(pguid: *mut GUID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoIsOle1Class(rclsid: *const CLSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CoDosDateTimeToFileTime(
+        nDosDate: WORD,
+        nDosTime: WORD,
+        lpFileTime: *mut FILETIME,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CoFileTimeToDosDateTime(
+        lpFileTime: *mut FILETIME,
+        lpDosDate: *mut WORD,
+        lpDosTime: *mut WORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CoFileTimeNow(lpFileTime: *mut FILETIME) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterMessageFilter(
+        lpMessageFilter: LPMESSAGEFILTER,
+        lplpMessageFilter: *mut LPMESSAGEFILTER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoRegisterChannelHook(
+        ExtensionGuid: *const GUID,
+        pChannelHook: *mut IChannelHook,
+    ) -> HRESULT;
+}
 pub const tagCOWAIT_FLAGS_COWAIT_DEFAULT: tagCOWAIT_FLAGS = 0;
 pub const tagCOWAIT_FLAGS_COWAIT_WAITALL: tagCOWAIT_FLAGS = 1;
 pub const tagCOWAIT_FLAGS_COWAIT_ALERTABLE: tagCOWAIT_FLAGS = 2;
 pub const tagCOWAIT_FLAGS_COWAIT_INPUTAVAILABLE: tagCOWAIT_FLAGS = 4;
 pub type tagCOWAIT_FLAGS = ::core::ffi::c_uint;
 pub use self::tagCOWAIT_FLAGS as COWAIT_FLAGS;
+unsafe extern "C" {
+    pub fn CoWaitForMultipleHandles(
+        dwFlags: DWORD,
+        dwTimeout: DWORD,
+        cHandles: ULONG,
+        pHandles: LPHANDLE,
+        lpdwindex: LPDWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StringFromCLSID(id: *const CLSID, arg1: *mut LPOLESTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CLSIDFromString(arg1: LPCOLESTR, arg2: LPCLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CLSIDFromProgID(progid: LPCOLESTR, riid: LPCLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ProgIDFromCLSID(clsid: *const CLSID, lplpszProgID: *mut LPOLESTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StringFromGUID2(id: *const GUID, str_: LPOLESTR, cmax: INT) -> INT;
+}
+unsafe extern "C" {
+    pub fn IIDFromString(lpsz: LPCOLESTR, lpiid: LPIID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DllGetClassObject(rclsid: *const CLSID, riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DllCanUnloadNow() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateDataAdviseHolder(ppDAHolder: *mut LPDATAADVISEHOLDER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateDataCache(
+        pUnkOuter: LPUNKNOWN,
+        rclsid: *const CLSID,
+        iid: *const IID,
+        ppv: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BindMoniker(
+        pmk: LPMONIKER,
+        grfOpt: DWORD,
+        iidResult: *const IID,
+        ppvResult: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CoGetObject(
+        pszName: LPCWSTR,
+        pBindOptions: *mut BIND_OPTS,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateAntiMoniker(ppmk: *mut LPMONIKER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateBindCtx(reserved: DWORD, ppbc: *mut LPBC) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateClassMoniker(rclsid: *const CLSID, ppmk: *mut LPMONIKER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateFileMoniker(lpszPathName: LPCOLESTR, ppmk: *mut LPMONIKER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateGenericComposite(
+        pmkFirst: LPMONIKER,
+        pmkRest: LPMONIKER,
+        ppmkComposite: *mut LPMONIKER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateItemMoniker(
+        lpszDelim: LPCOLESTR,
+        lpszItem: LPCOLESTR,
+        ppmk: *mut LPMONIKER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateObjrefMoniker(punk: LPUNKNOWN, ppmk: *mut LPMONIKER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreatePointerMoniker(punk: LPUNKNOWN, ppmk: *mut LPMONIKER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetClassFile(filePathName: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetRunningObjectTable(reserved: DWORD, pprot: *mut LPRUNNINGOBJECTTABLE) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn MkParseDisplayName(
+        pbc: LPBC,
+        szUserName: LPCOLESTR,
+        pchEaten: *mut ULONG,
+        ppmk: *mut LPMONIKER,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn MonikerCommonPrefixWith(
+        pmkThis: *mut IMoniker,
+        pmkOther: *mut IMoniker,
+        ppmkCommon: *mut *mut IMoniker,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn MonikerRelativePathTo(
+        pmkSrc: LPMONIKER,
+        pmkDest: LPMONIKER,
+        ppmkRelPath: *mut LPMONIKER,
+        dwReserved: BOOL,
+    ) -> HRESULT;
+}
 #[repr(C)]
 pub struct tagSTGOPTIONS {
     pub usVersion: USHORT,
@@ -7184,6 +20155,2844 @@ pub struct tagSTGOPTIONS {
     pub pwcsTemplateFile: *const WCHAR,
 }
 pub type STGOPTIONS = tagSTGOPTIONS;
+unsafe extern "C" {
+    pub fn StringFromIID(rclsid: *const IID, lplpsz: *mut LPOLESTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgCreateDocfile(
+        pwcsName: LPCOLESTR,
+        grfMode: DWORD,
+        reserved: DWORD,
+        ppstgOpen: *mut *mut IStorage,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgCreateStorageEx(
+        arg1: *const WCHAR,
+        arg2: DWORD,
+        arg3: DWORD,
+        arg4: DWORD,
+        arg5: *mut STGOPTIONS,
+        arg6: *mut ::core::ffi::c_void,
+        arg7: *const IID,
+        arg8: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgIsStorageILockBytes(plkbyt: *mut ILockBytes) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgOpenStorage(
+        pwcsName: *const OLECHAR,
+        pstgPriority: *mut IStorage,
+        grfMode: DWORD,
+        snbExclude: SNB,
+        reserved: DWORD,
+        ppstgOpen: *mut *mut IStorage,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgOpenStorageEx(
+        pwcwName: *const WCHAR,
+        grfMode: DWORD,
+        stgfmt: DWORD,
+        grfAttrs: DWORD,
+        pStgOptions: *mut STGOPTIONS,
+        reserved: *mut ::core::ffi::c_void,
+        riid: *const IID,
+        ppObjectOpen: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgCreateDocfileOnILockBytes(
+        plkbyt: *mut ILockBytes,
+        grfMode: DWORD,
+        reserved: DWORD,
+        ppstgOpen: *mut *mut IStorage,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgOpenStorageOnILockBytes(
+        plkbyt: *mut ILockBytes,
+        pstgPriority: *mut IStorage,
+        grfMode: DWORD,
+        snbExclude: SNB,
+        reserved: DWORD,
+        ppstgOpen: *mut *mut IStorage,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn StgSetTimes(
+        lpszName: *const OLECHAR,
+        pctime: *const FILETIME,
+        patime: *const FILETIME,
+        pmtime: *const FILETIME,
+    ) -> HRESULT;
+}
+pub use self::tagAR_STATE as AR_STATE;
+#[repr(C)]
+pub struct tagICONMETRICSA {
+    pub cbSize: UINT,
+    pub iHorzSpacing: ::core::ffi::c_int,
+    pub iVertSpacing: ::core::ffi::c_int,
+    pub iTitleWrap: ::core::ffi::c_int,
+    pub lfFont: LOGFONTA,
+}
+pub type ICONMETRICSA = tagICONMETRICSA;
+pub type PICONMETRICSA = *mut tagICONMETRICSA;
+pub type LPICONMETRICSA = *mut tagICONMETRICSA;
+#[repr(C)]
+pub struct tagICONMETRICSW {
+    pub cbSize: UINT,
+    pub iHorzSpacing: ::core::ffi::c_int,
+    pub iVertSpacing: ::core::ffi::c_int,
+    pub iTitleWrap: ::core::ffi::c_int,
+    pub lfFont: LOGFONTW,
+}
+pub type ICONMETRICSW = tagICONMETRICSW;
+pub type PICONMETRICSW = *mut tagICONMETRICSW;
+pub type LPICONMETRICSW = *mut tagICONMETRICSW;
+pub type ICONMETRICS = ICONMETRICSW;
+pub type LPICONMETRICS = *mut ICONMETRICSW;
+#[repr(C)]
+pub struct tagNONCLIENTMETRICSA {
+    pub cbSize: UINT,
+    pub iBorderWidth: ::core::ffi::c_int,
+    pub iScrollWidth: ::core::ffi::c_int,
+    pub iScrollHeight: ::core::ffi::c_int,
+    pub iCaptionWidth: ::core::ffi::c_int,
+    pub iCaptionHeight: ::core::ffi::c_int,
+    pub lfCaptionFont: LOGFONTA,
+    pub iSmCaptionWidth: ::core::ffi::c_int,
+    pub iSmCaptionHeight: ::core::ffi::c_int,
+    pub lfSmCaptionFont: LOGFONTA,
+    pub iMenuWidth: ::core::ffi::c_int,
+    pub iMenuHeight: ::core::ffi::c_int,
+    pub lfMenuFont: LOGFONTA,
+    pub lfStatusFont: LOGFONTA,
+    pub lfMessageFont: LOGFONTA,
+}
+pub type NONCLIENTMETRICSA = tagNONCLIENTMETRICSA;
+pub type PNONCLIENTMETRICSA = *mut tagNONCLIENTMETRICSA;
+pub type LPNONCLIENTMETRICSA = *mut tagNONCLIENTMETRICSA;
+#[repr(C)]
+pub struct tagNONCLIENTMETRICSW {
+    pub cbSize: UINT,
+    pub iBorderWidth: ::core::ffi::c_int,
+    pub iScrollWidth: ::core::ffi::c_int,
+    pub iScrollHeight: ::core::ffi::c_int,
+    pub iCaptionWidth: ::core::ffi::c_int,
+    pub iCaptionHeight: ::core::ffi::c_int,
+    pub lfCaptionFont: LOGFONTW,
+    pub iSmCaptionWidth: ::core::ffi::c_int,
+    pub iSmCaptionHeight: ::core::ffi::c_int,
+    pub lfSmCaptionFont: LOGFONTW,
+    pub iMenuWidth: ::core::ffi::c_int,
+    pub iMenuHeight: ::core::ffi::c_int,
+    pub lfMenuFont: LOGFONTW,
+    pub lfStatusFont: LOGFONTW,
+    pub lfMessageFont: LOGFONTW,
+}
+pub type NONCLIENTMETRICSW = tagNONCLIENTMETRICSW;
+pub type PNONCLIENTMETRICSW = *mut tagNONCLIENTMETRICSW;
+pub type LPNONCLIENTMETRICSW = *mut tagNONCLIENTMETRICSW;
+pub type NONCLIENTMETRICS = NONCLIENTMETRICSW;
+pub type LPNONCLIENTMETRICS = *mut NONCLIENTMETRICSW;
+unsafe extern "C" {
+    pub fn ActivateKeyboardLayout(arg1: HKL, arg2: UINT) -> HKL;
+}
+unsafe extern "C" {
+    pub fn AdjustWindowRect(arg1: LPRECT, arg2: DWORD, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AdjustWindowRectEx(arg1: LPRECT, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AnimateWindow(arg1: HWND, arg2: DWORD, arg3: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AnyPopup() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AppendMenuA(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn AppendMenuW(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ArrangeIconicWindows(arg1: HWND) -> UINT;
+}
+unsafe extern "C" {
+    pub fn AttachThreadInput(arg1: DWORD, arg2: DWORD, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BeginDeferWindowPos(arg1: ::core::ffi::c_int) -> HDWP;
+}
+unsafe extern "C" {
+    pub fn BeginPaint(arg1: HWND, arg2: LPPAINTSTRUCT) -> HDC;
+}
+unsafe extern "C" {
+    pub fn BringWindowToTop(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BroadcastSystemMessage(
+        arg1: DWORD,
+        arg2: LPDWORD,
+        arg3: UINT,
+        arg4: WPARAM,
+        arg5: LPARAM,
+    ) -> ::core::ffi::c_long;
+}
+unsafe extern "C" {
+    pub fn BroadcastSystemMessageA(
+        flags: DWORD,
+        lpInfo: LPDWORD,
+        Msg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn BroadcastSystemMessageW(
+        flags: DWORD,
+        lpInfo: LPDWORD,
+        Msg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn BroadcastSystemMessageExA(
+        flags: DWORD,
+        lpInfo: LPDWORD,
+        Msg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+        pbsmInfo: PBSMINFO,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn BroadcastSystemMessageExW(
+        flags: DWORD,
+        lpInfo: LPDWORD,
+        Msg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+        pbsmInfo: PBSMINFO,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn CalcChildScroll(arg1: HWND, arg2: INT);
+}
+unsafe extern "C" {
+    pub fn CallMsgFilterA(arg1: LPMSG, arg2: INT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CallMsgFilterW(arg1: LPMSG, arg2: INT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CallNextHookEx(
+        arg1: HHOOK,
+        arg2: ::core::ffi::c_int,
+        arg3: WPARAM,
+        arg4: LPARAM,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn CallWindowProcA(
+        arg1: WNDPROC,
+        arg2: HWND,
+        arg3: UINT,
+        arg4: WPARAM,
+        arg5: LPARAM,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn CallWindowProcW(
+        arg1: WNDPROC,
+        arg2: HWND,
+        arg3: UINT,
+        arg4: WPARAM,
+        arg5: LPARAM,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn CascadeWindows(
+        hwndParent: HWND,
+        wHow: UINT,
+        lpRect: *const RECT,
+        cKids: UINT,
+        lpKids: *const HWND,
+    ) -> WORD;
+}
+unsafe extern "C" {
+    pub fn ChangeClipboardChain(arg1: HWND, arg2: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ChangeDisplaySettingsA(arg1: PDEVMODEA, arg2: DWORD) -> LONG;
+}
+unsafe extern "C" {
+    pub fn ChangeDisplaySettingsW(arg1: PDEVMODEW, arg2: DWORD) -> LONG;
+}
+unsafe extern "C" {
+    pub fn ChangeDisplaySettingsExA(
+        arg1: LPCSTR,
+        arg2: LPDEVMODEA,
+        arg3: HWND,
+        arg4: DWORD,
+        arg5: LPVOID,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn ChangeDisplaySettingsExW(
+        arg1: LPCWSTR,
+        arg2: LPDEVMODEW,
+        arg3: HWND,
+        arg4: DWORD,
+        arg5: LPVOID,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn ChangeMenuA(arg1: HMENU, arg2: UINT, arg3: LPCSTR, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ChangeMenuW(arg1: HMENU, arg2: UINT, arg3: LPCWSTR, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CharLowerA(arg1: LPSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharLowerW(arg1: LPWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharLowerBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CharLowerBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CharNextA(arg1: LPCSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharNextW(arg1: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharNextExA(arg1: WORD, arg2: LPCSTR, arg3: DWORD) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharNextExW(arg1: WORD, arg2: LPCWSTR, arg3: DWORD) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharPrevA(arg1: LPCSTR, arg2: LPCSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharPrevW(arg1: LPCWSTR, arg2: LPCWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharPrevExA(arg1: WORD, arg2: LPCSTR, arg3: LPCSTR, arg4: DWORD) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharPrevExW(arg1: WORD, arg2: LPCWSTR, arg3: LPCWSTR, arg4: DWORD) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharToOemA(pSrc: LPCSTR, pDst: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CharToOemW(pSrc: LPCWSTR, pDst: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CharToOemBuffA(lpszSrc: LPCSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CharToOemBuffW(lpszSrc: LPCWSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CharUpperA(arg1: LPSTR) -> LPSTR;
+}
+unsafe extern "C" {
+    pub fn CharUpperW(arg1: LPWSTR) -> LPWSTR;
+}
+unsafe extern "C" {
+    pub fn CharUpperBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CharUpperBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CheckDlgButton(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn CheckMenuRadioItem(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CheckRadioButton(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ChildWindowFromPoint(arg1: HWND, arg2: POINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn ChildWindowFromPointEx(arg1: HWND, arg2: POINT, arg3: UINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ClipCursor(arg1: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseClipboard() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseDesktop(arg1: HDESK) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CloseWindowStation(arg1: HWINSTA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CopyAcceleratorTableA(
+        hAccelSrc: HACCEL,
+        lpAccelDst: LPACCEL,
+        cAccelEntries: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CopyAcceleratorTableW(
+        hAccelSrc: HACCEL,
+        lpAccelDst: LPACCEL,
+        cAccelEntries: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CopyIcon(arg1: HICON) -> HICON;
+}
+unsafe extern "C" {
+    pub fn CopyImage(
+        arg1: HANDLE,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn CopyRect(arg1: LPRECT, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CountClipboardFormats() -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CreateAcceleratorTableA(paccel: LPACCEL, cAccel: ::core::ffi::c_int) -> HACCEL;
+}
+unsafe extern "C" {
+    pub fn CreateAcceleratorTableW(paccel: LPACCEL, cAccel: ::core::ffi::c_int) -> HACCEL;
+}
+unsafe extern "C" {
+    pub fn CreateCaret(
+        arg1: HWND,
+        arg2: HBITMAP,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn CreateCursor(
+        arg1: HINSTANCE,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: *const ::core::ffi::c_void,
+        arg7: *const ::core::ffi::c_void,
+    ) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn CreateDesktopA(
+        lpszDesktop: LPCSTR,
+        lpszDevice: LPCSTR,
+        pDevmode: *mut DEVMODEA,
+        dwFlags: DWORD,
+        dwDesiredAccess: ACCESS_MASK,
+        lpsa: LPSECURITY_ATTRIBUTES,
+    ) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn CreateDesktopW(
+        lpszDesktop: LPCWSTR,
+        lpszDevice: LPCWSTR,
+        pDevmode: *mut DEVMODEW,
+        dwFlags: DWORD,
+        dwDesiredAccess: ACCESS_MASK,
+        lpsa: LPSECURITY_ATTRIBUTES,
+    ) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn CreateDialogIndirectParamA(
+        arg1: HINSTANCE,
+        arg2: LPCDLGTEMPLATE,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateDialogIndirectParamW(
+        arg1: HINSTANCE,
+        arg2: LPCDLGTEMPLATE,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateDialogParamA(
+        arg1: HINSTANCE,
+        arg2: LPCSTR,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateDialogParamW(
+        arg1: HINSTANCE,
+        arg2: LPCWSTR,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateIcon(
+        arg1: HINSTANCE,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: BYTE,
+        arg5: BYTE,
+        arg6: *const BYTE,
+        arg7: *const BYTE,
+    ) -> HICON;
+}
+unsafe extern "C" {
+    pub fn CreateIconFromResource(
+        presbits: PBYTE,
+        dwResSize: DWORD,
+        fIcon: BOOL,
+        dwVer: DWORD,
+    ) -> HICON;
+}
+unsafe extern "C" {
+    pub fn CreateIconFromResourceEx(
+        presbits: PBYTE,
+        dwResSize: DWORD,
+        fIcon: BOOL,
+        dwVer: DWORD,
+        cxDesired: ::core::ffi::c_int,
+        cyDesired: ::core::ffi::c_int,
+        Flags: UINT,
+    ) -> HICON;
+}
+unsafe extern "C" {
+    pub fn CreateIconIndirect(arg1: PICONINFO) -> HICON;
+}
+unsafe extern "C" {
+    pub fn CreateMDIWindowA(
+        arg1: LPCSTR,
+        arg2: LPCSTR,
+        arg3: DWORD,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: HWND,
+        arg9: HINSTANCE,
+        arg10: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateMDIWindowW(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: DWORD,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: HWND,
+        arg9: HINSTANCE,
+        arg10: LPARAM,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateMenu() -> HMENU;
+}
+unsafe extern "C" {
+    pub fn CreatePopupMenu() -> HMENU;
+}
+unsafe extern "C" {
+    pub fn CreateWindowExA(
+        dwExStyle: DWORD,
+        lpClassName: LPCSTR,
+        lpWindowName: LPCSTR,
+        dwStyle: DWORD,
+        X: ::core::ffi::c_int,
+        Y: ::core::ffi::c_int,
+        nWidth: ::core::ffi::c_int,
+        nHeight: ::core::ffi::c_int,
+        hWndParent: HWND,
+        hMenu: HMENU,
+        hInstance: HINSTANCE,
+        lpParam: LPVOID,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateWindowExW(
+        dwExStyle: DWORD,
+        lpClassName: LPCWSTR,
+        lpWindowName: LPCWSTR,
+        dwStyle: DWORD,
+        X: ::core::ffi::c_int,
+        Y: ::core::ffi::c_int,
+        nWidth: ::core::ffi::c_int,
+        nHeight: ::core::ffi::c_int,
+        hWndParent: HWND,
+        hMenu: HMENU,
+        hInstance: HINSTANCE,
+        lpParam: LPVOID,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateWindowStationA(
+        lpwinsta: LPCSTR,
+        dwFlags: DWORD,
+        dwDesiredAccess: ACCESS_MASK,
+        lpsa: LPSECURITY_ATTRIBUTES,
+    ) -> HWINSTA;
+}
+unsafe extern "C" {
+    pub fn CreateWindowStationW(
+        lpwinsta: LPCWSTR,
+        dwFlags: DWORD,
+        dwDesiredAccess: ACCESS_MASK,
+        lpsa: LPSECURITY_ATTRIBUTES,
+    ) -> HWINSTA;
+}
+unsafe extern "C" {
+    pub fn DefDlgProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefDlgProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DeferWindowPos(
+        arg1: HDWP,
+        arg2: HWND,
+        arg3: HWND,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: UINT,
+    ) -> HDWP;
+}
+unsafe extern "C" {
+    pub fn DefFrameProcA(arg1: HWND, arg2: HWND, arg3: UINT, arg4: WPARAM, arg5: LPARAM)
+        -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefFrameProcW(arg1: HWND, arg2: HWND, arg3: UINT, arg4: WPARAM, arg5: LPARAM)
+        -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefMDIChildProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefMDIChildProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefRawInputProc(paRawInput: *mut PRAWINPUT, nInput: INT, cbSizeHeader: UINT) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefWindowProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DefWindowProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DeleteMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DeregisterShellHookWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyAcceleratorTable(arg1: HACCEL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyCaret() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyCursor(arg1: HCURSOR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyIcon(arg1: HICON) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyMenu(arg1: HMENU) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DestroyWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DialogBoxIndirectParamA(
+        arg1: HINSTANCE,
+        arg2: LPCDLGTEMPLATE,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn DialogBoxIndirectParamW(
+        arg1: HINSTANCE,
+        arg2: LPCDLGTEMPLATE,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn DialogBoxParamA(
+        arg1: HINSTANCE,
+        arg2: LPCSTR,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn DialogBoxParamW(
+        arg1: HINSTANCE,
+        arg2: LPCWSTR,
+        arg3: HWND,
+        arg4: DLGPROC,
+        arg5: LPARAM,
+    ) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn DispatchMessageA(arg1: *const MSG) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DispatchMessageW(arg1: *const MSG) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DlgDirListA(
+        arg1: HWND,
+        arg2: LPSTR,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DlgDirListW(
+        arg1: HWND,
+        arg2: LPWSTR,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DlgDirListComboBoxA(
+        arg1: HWND,
+        arg2: LPSTR,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DlgDirListComboBoxW(
+        arg1: HWND,
+        arg2: LPWSTR,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DlgDirSelectComboBoxExA(
+        hwndDlg: HWND,
+        lpString: LPSTR,
+        cchOut: ::core::ffi::c_int,
+        idComboBox: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DlgDirSelectComboBoxExW(
+        hwndDlg: HWND,
+        lpString: LPWSTR,
+        cchOut: ::core::ffi::c_int,
+        idComboBox: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DlgDirSelectExA(
+        hwndDlg: HWND,
+        lpString: LPSTR,
+        chCount: ::core::ffi::c_int,
+        idListBox: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DlgDirSelectExW(
+        hwndDlg: HWND,
+        lpString: LPWSTR,
+        chCount: ::core::ffi::c_int,
+        idListBox: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DragDetect(arg1: HWND, arg2: POINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DragObject(arg1: HWND, arg2: HWND, arg3: UINT, arg4: ULONG_PTR, arg5: HCURSOR) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn DrawAnimatedRects(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: LPCRECT,
+        arg4: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawCaption(arg1: HWND, arg2: HDC, arg3: LPCRECT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawEdge(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawFocusRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawFrameControl(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawIcon(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: HICON,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawIconEx(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: HICON,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: UINT,
+        arg8: HBRUSH,
+        arg9: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawMenuBar(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawMenuBarTemp(arg1: HWND, arg2: HDC, arg3: LPRECT, arg4: HMENU, arg5: HFONT) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn DrawStateA(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: DRAWSTATEPROC,
+        arg4: LPARAM,
+        arg5: WPARAM,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawStateW(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: DRAWSTATEPROC,
+        arg4: LPARAM,
+        arg5: WPARAM,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+        arg10: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawTextA(
+        hdc: HDC,
+        lpchText: LPCSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DrawTextW(
+        hdc: HDC,
+        lpchText: LPCWSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DrawTextExA(
+        hdc: HDC,
+        lpchText: LPSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+        lpdtp: LPDRAWTEXTPARAMS,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DrawTextExW(
+        hdc: HDC,
+        lpchText: LPWSTR,
+        cchText: ::core::ffi::c_int,
+        lprc: LPRECT,
+        format: UINT,
+        lpdtp: LPDRAWTEXTPARAMS,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EmptyClipboard() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnableMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnableScrollBar(arg1: HWND, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnableWindow(arg1: HWND, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndDeferWindowPos(arg1: HDWP) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndDialog(arg1: HWND, arg2: INT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndMenu() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndPaint(arg1: HWND, arg2: *const PAINTSTRUCT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EndTask(arg1: HWND, arg2: BOOL, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumChildWindows(arg1: HWND, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumClipboardFormats(arg1: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn EnumDesktopsA(arg1: HWINSTA, arg2: DESKTOPENUMPROCA, arg3: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDesktopsW(arg1: HWINSTA, arg2: DESKTOPENUMPROCW, arg3: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDesktopWindows(arg1: HDESK, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplayMonitors(
+        arg1: HDC,
+        arg2: LPCRECT,
+        arg3: MONITORENUMPROC,
+        arg4: LPARAM,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplaySettingsA(arg1: LPCSTR, arg2: DWORD, arg3: PDEVMODEA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplaySettingsW(arg1: LPCWSTR, arg2: DWORD, arg3: PDEVMODEW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplaySettingsExA(arg1: LPCSTR, arg2: DWORD, arg3: LPDEVMODEA, arg4: DWORD)
+        -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplaySettingsExW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: LPDEVMODEW,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplayDevicesA(
+        arg1: LPCSTR,
+        arg2: DWORD,
+        arg3: PDISPLAY_DEVICEA,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumDisplayDevicesW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: PDISPLAY_DEVICEW,
+        arg4: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumPropsA(arg1: HWND, arg2: PROPENUMPROCA) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumPropsW(arg1: HWND, arg2: PROPENUMPROCW) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumPropsExA(arg1: HWND, arg2: PROPENUMPROCEXA, lParam: LPARAM) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumPropsExW(arg1: HWND, arg2: PROPENUMPROCEXW, lParam: LPARAM) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EnumThreadWindows(arg1: DWORD, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumWindowStationsA(arg1: WINSTAENUMPROCA, lParam: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EnumWindowStationsW(arg1: WINSTAENUMPROCW, lParam: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn EqualRect(arg1: LPCRECT, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ExitWindowsEx(arg1: UINT, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FindWindowA(arg1: LPCSTR, arg2: LPCSTR) -> HWND;
+}
+unsafe extern "C" {
+    pub fn FindWindowW(arg1: LPCWSTR, arg2: LPCWSTR) -> HWND;
+}
+unsafe extern "C" {
+    pub fn FindWindowExA(arg1: HWND, arg2: HWND, arg3: LPCSTR, arg4: LPCSTR) -> HWND;
+}
+unsafe extern "C" {
+    pub fn FindWindowExW(arg1: HWND, arg2: HWND, arg3: LPCWSTR, arg4: LPCWSTR) -> HWND;
+}
+unsafe extern "C" {
+    pub fn FlashWindow(arg1: HWND, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlashWindowEx(arg1: PFLASHWINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FrameRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetActiveWindow() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetAncestor(arg1: HWND, arg2: UINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetAsyncKeyState(arg1: ::core::ffi::c_int) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn GetCapture() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetCaretBlinkTime() -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetCaretPos(arg1: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClassInfoA(arg1: HINSTANCE, arg2: LPCSTR, arg3: LPWNDCLASSA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClassInfoExA(arg1: HINSTANCE, arg2: LPCSTR, arg3: LPWNDCLASSEXA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClassInfoW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPWNDCLASSW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClassInfoExW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPWNDCLASSEXW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClassLongA(arg1: HWND, arg2: ::core::ffi::c_int) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetClassLongW(arg1: HWND, arg2: ::core::ffi::c_int) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetClassLongPtrA(arg1: HWND, arg2: ::core::ffi::c_int) -> ULONG_PTR;
+}
+unsafe extern "C" {
+    pub fn GetClassLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int) -> ULONG_PTR;
+}
+unsafe extern "C" {
+    pub fn GetClassNameA(
+        hWnd: HWND,
+        lpClassName: LPSTR,
+        nMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetClassNameW(
+        hWnd: HWND,
+        lpClassName: LPWSTR,
+        nMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetClassWord(arg1: HWND, arg2: ::core::ffi::c_int) -> WORD;
+}
+unsafe extern "C" {
+    pub fn GetClientRect(arg1: HWND, arg2: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetClipboardData(arg1: UINT) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetClipboardFormatNameA(
+        format: UINT,
+        lpszFormatName: LPSTR,
+        cchMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetClipboardFormatNameW(
+        format: UINT,
+        lpszFormatName: LPWSTR,
+        cchMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetClipboardOwner() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetClipboardSequenceNumber() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetClipboardViewer() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetClipCursor(arg1: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCursorPos(arg1: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetDC(arg1: HWND) -> HDC;
+}
+unsafe extern "C" {
+    pub fn GetDCEx(arg1: HWND, arg2: HRGN, arg3: DWORD) -> HDC;
+}
+unsafe extern "C" {
+    pub fn GetDesktopWindow() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetDialogBaseUnits() -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetDlgCtrlID(arg1: HWND) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetDlgItem(arg1: HWND, arg2: ::core::ffi::c_int) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetDlgItemInt(arg1: HWND, arg2: ::core::ffi::c_int, arg3: PBOOL, arg4: BOOL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetDlgItemTextA(
+        hDlg: HWND,
+        nIDDlgItem: ::core::ffi::c_int,
+        lpString: LPSTR,
+        cchMax: ::core::ffi::c_int,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetDlgItemTextW(
+        hDlg: HWND,
+        nIDDlgItem: ::core::ffi::c_int,
+        lpString: LPWSTR,
+        cchMax: ::core::ffi::c_int,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetDoubleClickTime() -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetFocus() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetForegroundWindow() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetGuiResources(arg1: HANDLE, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetIconInfo(arg1: HICON, arg2: PICONINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetIconInfoExA(arg1: HICON, arg2: *mut ICONINFOEXA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetIconInfoExW(arg1: HICON, arg2: *mut ICONINFOEXW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetInputState() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKBCodePage() -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardLayout(arg1: DWORD) -> HKL;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardLayoutList(nBuff: ::core::ffi::c_int, lpList: *mut HKL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardLayoutNameA(arg1: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardLayoutNameW(arg1: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardState(lpKeyState: PBYTE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetKeyboardType(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetKeyNameTextA(
+        lParam: LONG,
+        lpString: LPSTR,
+        cchSize: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetKeyNameTextW(
+        lParam: LONG,
+        lpString: LPWSTR,
+        cchSize: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetKeyState(arg1: ::core::ffi::c_int) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn GetLastActivePopup(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetMenu(arg1: HWND) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn GetMenuCheckMarkDimensions() -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetMenuContextHelpId(arg1: HMENU) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetMenuDefaultItem(hMenu: HMENU, fByPos: UINT, gmdiFlags: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetMenuItemCount(arg1: HMENU) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetMenuItemID(arg1: HMENU, arg2: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetMenuItemInfoA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPMENUITEMINFOA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMenuItemInfoW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPMENUITEMINFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMenuItemRect(arg1: HWND, arg2: HMENU, arg3: UINT, arg4: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMenuState(arg1: HMENU, arg2: UINT, arg3: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetMenuStringA(
+        hMenu: HMENU,
+        uIDItem: UINT,
+        lpString: LPSTR,
+        cchMax: ::core::ffi::c_int,
+        flags: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetMenuStringW(
+        hMenu: HMENU,
+        uIDItem: UINT,
+        lpString: LPWSTR,
+        cchMax: ::core::ffi::c_int,
+        flags: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetMessageA(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMessageW(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMessageExtraInfo() -> LPARAM;
+}
+unsafe extern "C" {
+    pub fn GetMessagePos() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetMessageTime() -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetMouseMovePointsEx(
+        cbSize: UINT,
+        lppt: LPMOUSEMOVEPOINT,
+        lpptBuf: LPMOUSEMOVEPOINT,
+        nBufPoints: ::core::ffi::c_int,
+        resolution: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetNextDlgGroupItem(arg1: HWND, arg2: HWND, arg3: BOOL) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetNextDlgTabItem(arg1: HWND, arg2: HWND, arg3: BOOL) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetOpenClipboardWindow() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetParent(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetPriorityClipboardFormat(
+        paFormatPriorityList: *mut UINT,
+        cFormats: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetPropA(arg1: HWND, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetPropW(arg1: HWND, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn GetRawInputBuffer(pData: PRAWINPUT, pcbSize: PUINT, cbSizeHeader: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetRawInputData(
+        hRawInput: HRAWINPUT,
+        uiCommand: UINT,
+        pData: LPVOID,
+        pcbSize: PUINT,
+        cbSizeHeader: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetRawInputDeviceInfoA(
+        hDevice: HANDLE,
+        uiCommand: UINT,
+        pData: LPVOID,
+        pcbSize: PUINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetRawInputDeviceInfoW(
+        hDevice: HANDLE,
+        uiCommand: UINT,
+        pData: LPVOID,
+        pcbSize: PUINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetRawInputDeviceList(
+        pRawInputDeviceList: PRAWINPUTDEVICELIST,
+        puiNumDevices: PUINT,
+        cbSize: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetRegisteredRawInputDevices(
+        pRawInputDevices: PRAWINPUTDEVICE,
+        puiNumDevices: PUINT,
+        cbSize: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetQueueStatus(arg1: UINT) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetScrollInfo(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPSCROLLINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetScrollPos(arg1: HWND, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetScrollRange(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPINT, arg4: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetShellWindow() -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetSubMenu(arg1: HMENU, arg2: ::core::ffi::c_int) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn GetSysColor(arg1: ::core::ffi::c_int) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetSysColorBrush(arg1: ::core::ffi::c_int) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn GetSystemMenu(arg1: HWND, arg2: BOOL) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn GetSystemMetrics(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetTabbedTextExtentA(
+        hdc: HDC,
+        lpString: LPCSTR,
+        chCount: ::core::ffi::c_int,
+        nTabPositions: ::core::ffi::c_int,
+        lpnTabStopPositions: *const INT,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetTabbedTextExtentW(
+        hdc: HDC,
+        lpString: LPCWSTR,
+        chCount: ::core::ffi::c_int,
+        nTabPositions: ::core::ffi::c_int,
+        lpnTabStopPositions: *const INT,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetWindowLongA(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetWindowLongW(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG;
+}
+unsafe extern "C" {
+    pub fn GetWindowLongPtrA(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG_PTR;
+}
+unsafe extern "C" {
+    pub fn GetWindowLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG_PTR;
+}
+unsafe extern "C" {
+    pub fn GetThreadDesktop(arg1: DWORD) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn GetTopWindow(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetUpdateRect(arg1: HWND, arg2: LPRECT, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetUpdateRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetUserObjectInformationA(
+        hObj: HANDLE,
+        nIndex: ::core::ffi::c_int,
+        pvInfo: PVOID,
+        nLength: DWORD,
+        lpnLengthNeeded: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetUserObjectInformationW(
+        hObj: HANDLE,
+        nIndex: ::core::ffi::c_int,
+        pvInfo: PVOID,
+        nLength: DWORD,
+        lpnLengthNeeded: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetUserObjectSecurity(
+        hObj: HANDLE,
+        pSIRequested: PSECURITY_INFORMATION,
+        pSID: PSECURITY_DESCRIPTOR,
+        nLength: DWORD,
+        lpnLengthNeeded: LPDWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindow(arg1: HWND, arg2: UINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn GetWindowContextHelpId(arg1: HWND) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetWindowDC(arg1: HWND) -> HDC;
+}
+unsafe extern "C" {
+    pub fn GetWindowPlacement(arg1: HWND, arg2: *mut WINDOWPLACEMENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowRect(arg1: HWND, arg2: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowRgn(arg1: HWND, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetWindowTextA(
+        hWnd: HWND,
+        lpString: LPSTR,
+        nMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetWindowTextW(
+        hWnd: HWND,
+        lpString: LPWSTR,
+        nMaxCount: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetWindowTextLengthA(arg1: HWND) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetWindowTextLengthW(arg1: HWND) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetWindowWord(arg1: HWND, arg2: ::core::ffi::c_int) -> WORD;
+}
+unsafe extern "C" {
+    pub fn GetAltTabInfoA(
+        hwnd: HWND,
+        iItem: ::core::ffi::c_int,
+        pati: PALTTABINFO,
+        pszItemText: LPSTR,
+        cchItemText: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetAltTabInfoW(
+        hwnd: HWND,
+        iItem: ::core::ffi::c_int,
+        pati: PALTTABINFO,
+        pszItemText: LPWSTR,
+        cchItemText: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetComboBoxInfo(arg1: HWND, arg2: PCOMBOBOXINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetCursorInfo(arg1: PCURSORINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetGUIThreadInfo(arg1: DWORD, arg2: LPGUITHREADINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetLastInputInfo(arg1: PLASTINPUTINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetListBoxInfo(arg1: HWND) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetMenuBarInfo(arg1: HWND, arg2: LONG, arg3: LONG, arg4: PMENUBARINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMenuInfo(arg1: HMENU, arg2: LPMENUINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetProcessDefaultLayout(arg1: *mut DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetScrollBarInfo(arg1: HWND, arg2: LONG, arg3: PSCROLLBARINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetTitleBarInfo(arg1: HWND, arg2: PTITLEBARINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowInfo(arg1: HWND, arg2: PWINDOWINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMonitorInfoA(arg1: HMONITOR, arg2: LPMONITORINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetMonitorInfoW(arg1: HMONITOR, arg2: LPMONITORINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowModuleFileNameA(hwnd: HWND, pszFileName: LPSTR, cchFileNameMax: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GetWindowModuleFileNameW(hwnd: HWND, pszFileName: LPWSTR, cchFileNameMax: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn GrayStringA(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: GRAYSTRINGPROC,
+        arg4: LPARAM,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GrayStringW(
+        arg1: HDC,
+        arg2: HBRUSH,
+        arg3: GRAYSTRINGPROC,
+        arg4: LPARAM,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: ::core::ffi::c_int,
+        arg8: ::core::ffi::c_int,
+        arg9: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HideCaret(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HiliteMenuItem(arg1: HWND, arg2: HMENU, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InSendMessage() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InSendMessageEx(arg1: LPVOID) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn InsertMenuA(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InsertMenuW(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InsertMenuItemA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InsertMenuItemW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InternalGetWindowText(
+        hWnd: HWND,
+        pString: LPWSTR,
+        cchMaxCount: ::core::ffi::c_int,
+    ) -> INT;
+}
+unsafe extern "C" {
+    pub fn IntersectRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InvalidateRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InvertRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharAlphaA(ch: CHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharAlphaNumericA(arg1: CHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharAlphaNumericW(arg1: WCHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharAlphaW(arg1: WCHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharLowerA(arg1: CHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharLowerW(arg1: WCHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharUpperA(arg1: CHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsCharUpperW(arg1: WCHAR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsChild(arg1: HWND, arg2: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsClipboardFormatAvailable(arg1: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsDialogMessageA(arg1: HWND, arg2: LPMSG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsDialogMessageW(arg1: HWND, arg2: LPMSG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsDlgButtonChecked(arg1: HWND, arg2: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn IsGUIThread(arg1: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsHungAppWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsIconic(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsMenu(arg1: HMENU) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsRectEmpty(arg1: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWindowEnabled(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWindowUnicode(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWindowVisible(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsWinEventHookInstalled(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsZoomed(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn keybd_event(arg1: BYTE, arg2: BYTE, arg3: DWORD, arg4: ULONG_PTR);
+}
+unsafe extern "C" {
+    pub fn KillTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn KillSystemTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LoadAcceleratorsA(arg1: HINSTANCE, arg2: LPCSTR) -> HACCEL;
+}
+unsafe extern "C" {
+    pub fn LoadAcceleratorsW(arg1: HINSTANCE, arg2: LPCWSTR) -> HACCEL;
+}
+unsafe extern "C" {
+    pub fn LoadBitmapA(arg1: HINSTANCE, arg2: LPCSTR) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn LoadBitmapW(arg1: HINSTANCE, arg2: LPCWSTR) -> HBITMAP;
+}
+unsafe extern "C" {
+    pub fn LoadCursorA(arg1: HINSTANCE, arg2: LPCSTR) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn LoadCursorW(arg1: HINSTANCE, arg2: LPCWSTR) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn LoadCursorFromFileA(arg1: LPCSTR) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn LoadCursorFromFileW(arg1: LPCWSTR) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn LoadIconA(hInstance: HINSTANCE, lpIconName: LPCSTR) -> HICON;
+}
+unsafe extern "C" {
+    pub fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON;
+}
+unsafe extern "C" {
+    pub fn LoadImageA(
+        hInst: HINSTANCE,
+        name: LPCSTR,
+        type_: UINT,
+        cx: ::core::ffi::c_int,
+        cy: ::core::ffi::c_int,
+        fuLoad: UINT,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn LoadImageW(
+        hInst: HINSTANCE,
+        name: LPCWSTR,
+        type_: UINT,
+        cx: ::core::ffi::c_int,
+        cy: ::core::ffi::c_int,
+        fuLoad: UINT,
+    ) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn LoadKeyboardLayoutA(arg1: LPCSTR, arg2: UINT) -> HKL;
+}
+unsafe extern "C" {
+    pub fn LoadKeyboardLayoutW(arg1: LPCWSTR, arg2: UINT) -> HKL;
+}
+unsafe extern "C" {
+    pub fn LoadMenuA(arg1: HINSTANCE, arg2: LPCSTR) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn LoadMenuIndirectA(arg1: *const MENUTEMPLATE) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn LoadMenuIndirectW(arg1: *const MENUTEMPLATE) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn LoadMenuW(arg1: HINSTANCE, arg2: LPCWSTR) -> HMENU;
+}
+unsafe extern "C" {
+    pub fn LoadStringA(
+        hInstance: HINSTANCE,
+        uID: UINT,
+        lpBuffer: LPSTR,
+        cchBufferMax: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn LoadStringW(
+        hInstance: HINSTANCE,
+        uID: UINT,
+        lpBuffer: LPWSTR,
+        cchBufferMax: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn LockWindowUpdate(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LockWorkStation() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LookupIconIdFromDirectory(arg1: PBYTE, arg2: BOOL) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn LookupIconIdFromDirectoryEx(
+        arg1: PBYTE,
+        arg2: BOOL,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MapDialogRect(arg1: HWND, arg2: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MapVirtualKeyA(arg1: UINT, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn MapVirtualKeyExA(arg1: UINT, arg2: UINT, arg3: HKL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn MapVirtualKeyExW(arg1: UINT, arg2: UINT, arg3: HKL) -> UINT;
+}
+unsafe extern "C" {
+    pub fn MapVirtualKeyW(arg1: UINT, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn MapWindowPoints(
+        hWndFrom: HWND,
+        hWndTo: HWND,
+        lpPoints: LPPOINT,
+        cPoints: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MenuItemFromPoint(arg1: HWND, arg2: HMENU, arg3: POINT) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBeep(uType: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MessageBoxA(
+        hWnd: HWND,
+        lpText: LPCSTR,
+        lpCaption: LPCSTR,
+        uType: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBoxW(
+        hWnd: HWND,
+        lpText: LPCWSTR,
+        lpCaption: LPCWSTR,
+        uType: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBoxExA(
+        hWnd: HWND,
+        lpText: LPCSTR,
+        lpCaption: LPCSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBoxExW(
+        hWnd: HWND,
+        lpText: LPCWSTR,
+        lpCaption: LPCWSTR,
+        uType: UINT,
+        wLanguageId: WORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBoxIndirectA(lpmbp: *const MSGBOXPARAMSA) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ModifyMenuA(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ModifyMenuW(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MonitorFromPoint(arg1: POINT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
+    pub fn MonitorFromRect(arg1: LPCRECT, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
+    pub fn MonitorFromWindow(arg1: HWND, arg2: DWORD) -> HMONITOR;
+}
+unsafe extern "C" {
+    pub fn mouse_event(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: ULONG_PTR);
+}
+unsafe extern "C" {
+    pub fn MoveWindow(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn MsgWaitForMultipleObjects(
+        nCount: DWORD,
+        pHandles: *const HANDLE,
+        fWaitAll: BOOL,
+        dwMilliseconds: DWORD,
+        dwWakeMask: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn MsgWaitForMultipleObjectsEx(
+        nCount: DWORD,
+        pHandles: *const HANDLE,
+        dwMilliseconds: DWORD,
+        dwWakeMask: DWORD,
+        dwFlags: DWORD,
+    ) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn NotifyWinEvent(arg1: DWORD, arg2: HWND, arg3: LONG, arg4: LONG);
+}
+unsafe extern "C" {
+    pub fn OemKeyScan(arg1: WORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn OemToCharA(pSrc: LPCSTR, pDst: LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OemToCharBuffA(lpszSrc: LPCSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OemToCharBuffW(lpszSrc: LPCSTR, lpszDst: LPWSTR, cchDstLength: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OemToCharW(pSrc: LPCSTR, pDst: LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OffsetRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenClipboard(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenDesktopA(arg1: LPCSTR, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn OpenDesktopW(arg1: LPCWSTR, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn OpenIcon(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenInputDesktop(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HDESK;
+}
+unsafe extern "C" {
+    pub fn OpenWindowStationA(arg1: LPCSTR, arg2: BOOL, arg3: DWORD) -> HWINSTA;
+}
+unsafe extern "C" {
+    pub fn OpenWindowStationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HWINSTA;
+}
+unsafe extern "C" {
+    pub fn PaintDesktop(arg1: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PeekMessageA(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PeekMessageW(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PostMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PostMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PostQuitMessage(arg1: ::core::ffi::c_int);
+}
+unsafe extern "C" {
+    pub fn PostThreadMessageA(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PostThreadMessageW(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PrintWindow(arg1: HWND, arg2: HDC, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PrivateExtractIconsA(
+        szFileName: LPCSTR,
+        nIconIndex: ::core::ffi::c_int,
+        cxIcon: ::core::ffi::c_int,
+        cyIcon: ::core::ffi::c_int,
+        phicon: *mut HICON,
+        piconid: *mut UINT,
+        nIcons: UINT,
+        flags: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn PrivateExtractIconsW(
+        szFileName: LPCWSTR,
+        nIconIndex: ::core::ffi::c_int,
+        cxIcon: ::core::ffi::c_int,
+        cyIcon: ::core::ffi::c_int,
+        phicon: *mut HICON,
+        piconid: *mut UINT,
+        nIcons: UINT,
+        flags: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn PrivateExtractIconExA(
+        arg1: LPCSTR,
+        arg2: ::core::ffi::c_int,
+        arg3: *mut HICON,
+        arg4: *mut HICON,
+        arg5: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn PrivateExtractIconExW(
+        arg1: LPCWSTR,
+        arg2: ::core::ffi::c_int,
+        arg3: *mut HICON,
+        arg4: *mut HICON,
+        arg5: UINT,
+    ) -> UINT;
+}
+unsafe extern "C" {
+    pub fn PtInRect(arg1: LPCRECT, arg2: POINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RealChildWindowFromPoint(arg1: HWND, arg2: POINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn RealGetWindowClassA(hwnd: HWND, ptszClassName: LPSTR, cchClassNameMax: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn RealGetWindowClassW(hwnd: HWND, ptszClassName: LPWSTR, cchClassNameMax: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn RedrawWindow(arg1: HWND, arg2: LPCRECT, arg3: HRGN, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterClassA(arg1: *const WNDCLASSA) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn RegisterClassW(arg1: *const WNDCLASSW) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn RegisterClassExA(arg1: *const WNDCLASSEXA) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn RegisterClassExW(arg1: *const WNDCLASSEXW) -> ATOM;
+}
+unsafe extern "C" {
+    pub fn RegisterClipboardFormatA(arg1: LPCSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn RegisterClipboardFormatW(arg1: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn RegisterDeviceNotificationA(arg1: HANDLE, arg2: LPVOID, arg3: DWORD) -> HDEVNOTIFY;
+}
+unsafe extern "C" {
+    pub fn RegisterDeviceNotificationW(arg1: HANDLE, arg2: LPVOID, arg3: DWORD) -> HDEVNOTIFY;
+}
+unsafe extern "C" {
+    pub fn RegisterHotKey(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT, arg4: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterLogonProcess(arg1: DWORD, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterRawInputDevices(
+        pRawInputDevices: PCRAWINPUTDEVICE,
+        uiNumDevices: UINT,
+        cbSize: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterShellHookWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RegisterWindowMessageA(arg1: LPCSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn RegisterWindowMessageW(arg1: LPCWSTR) -> UINT;
+}
+unsafe extern "C" {
+    pub fn ReleaseCapture() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn RemoveMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemovePropA(arg1: HWND, arg2: LPCSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn RemovePropW(arg1: HWND, arg2: LPCWSTR) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn ReplyMessage(arg1: LRESULT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ScreenToClient(arg1: HWND, arg2: LPPOINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ScrollChildren(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM);
+}
+unsafe extern "C" {
+    pub fn ScrollDC(
+        arg1: HDC,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+        arg6: HRGN,
+        arg7: LPRECT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ScrollWindow(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ScrollWindowEx(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCRECT,
+        arg5: LPCRECT,
+        arg6: HRGN,
+        arg7: LPRECT,
+        arg8: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SendDlgItemMessageA(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: UINT,
+        arg4: WPARAM,
+        arg5: LPARAM,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendDlgItemMessageW(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: UINT,
+        arg4: WPARAM,
+        arg5: LPARAM,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendInput(cInputs: UINT, pInputs: LPINPUT, cbSize: ::core::ffi::c_int) -> UINT;
+}
+unsafe extern "C" {
+    pub fn SendMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendMessageCallbackA(
+        arg1: HWND,
+        arg2: UINT,
+        arg3: WPARAM,
+        arg4: LPARAM,
+        arg5: SENDASYNCPROC,
+        arg6: ULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SendMessageCallbackW(
+        arg1: HWND,
+        arg2: UINT,
+        arg3: WPARAM,
+        arg4: LPARAM,
+        arg5: SENDASYNCPROC,
+        arg6: ULONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SendMessageTimeoutA(
+        arg1: HWND,
+        arg2: UINT,
+        arg3: WPARAM,
+        arg4: LPARAM,
+        arg5: UINT,
+        arg6: UINT,
+        arg7: PDWORD_PTR,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendMessageTimeoutW(
+        arg1: HWND,
+        arg2: UINT,
+        arg3: WPARAM,
+        arg4: LPARAM,
+        arg5: UINT,
+        arg6: UINT,
+        arg7: PDWORD_PTR,
+    ) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn SendNotifyMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SendNotifyMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetActiveWindow(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn SetCapture(hWnd: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn SetCaretBlinkTime(arg1: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetCaretPos(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetClassLongA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetClassLongW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn SetClassLongPtrA(arg1: HWND, arg2: INT, arg3: LONG_PTR) -> ULONG_PTR;
+}
+unsafe extern "C" {
+    pub fn SetClassLongPtrW(arg1: HWND, arg2: INT, arg3: LONG_PTR) -> ULONG_PTR;
+}
+unsafe extern "C" {
+    pub fn SetClassWord(arg1: HWND, arg2: ::core::ffi::c_int, arg3: WORD) -> WORD;
+}
+unsafe extern "C" {
+    pub fn SetClipboardData(arg1: UINT, arg2: HANDLE) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn SetClipboardViewer(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn SetCursor(arg1: HCURSOR) -> HCURSOR;
+}
+unsafe extern "C" {
+    pub fn SetCursorPos(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDebugErrorLevel(arg1: DWORD);
+}
+unsafe extern "C" {
+    pub fn SetDeskWallPaper(arg1: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDlgItemInt(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT, arg4: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDlgItemTextA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDlgItemTextW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetDoubleClickTime(arg1: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetFocus(arg1: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn SetForegroundWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetKeyboardState(arg1: LPBYTE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenu(arg1: HWND, arg2: HMENU) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuContextHelpId(arg1: HMENU, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuDefaultItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuInfo(arg1: HMENU, arg2: LPCMENUINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuItemBitmaps(
+        arg1: HMENU,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: HBITMAP,
+        arg5: HBITMAP,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuItemInfoA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMenuItemInfoW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOW) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetMessageExtraInfo(arg1: LPARAM) -> LPARAM;
+}
+unsafe extern "C" {
+    pub fn SetMessageQueue(arg1: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetParent(arg1: HWND, arg2: HWND) -> HWND;
+}
+unsafe extern "C" {
+    pub fn SetProcessDefaultLayout(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetProcessWindowStation(arg1: HWINSTA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPropA(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetPropW(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetRect(
+        arg1: LPRECT,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetRectEmpty(arg1: LPRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetScrollInfo(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: LPCSCROLLINFO,
+        arg4: BOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetScrollPos(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: BOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetScrollRange(
+        arg1: HWND,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: BOOL,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSysColors(
+        cElements: ::core::ffi::c_int,
+        lpaElements: *const INT,
+        lpaRgbValues: *const COLORREF,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSysColorsTemp(
+        arg1: *const COLORREF,
+        arg2: *const HBRUSH,
+        arg3: DWORD_PTR,
+    ) -> DWORD_PTR;
+}
+unsafe extern "C" {
+    pub fn SetSystemCursor(arg1: HCURSOR, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetSystemMenu(arg1: HWND, arg2: HMENU) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetThreadDesktop(arg1: HDESK) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetTimer(arg1: HWND, arg2: UINT_PTR, arg3: UINT, arg4: TIMERPROC) -> UINT_PTR;
+}
+unsafe extern "C" {
+    pub fn SetSystemTimer(arg1: HWND, arg2: UINT_PTR, arg3: UINT, arg4: TIMERPROC) -> UINT_PTR;
+}
+unsafe extern "C" {
+    pub fn SetUserObjectInformationA(
+        hObj: HANDLE,
+        nIndex: ::core::ffi::c_int,
+        pvInfo: PVOID,
+        nLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetUserObjectInformationW(
+        hObj: HANDLE,
+        nIndex: ::core::ffi::c_int,
+        pvInfo: PVOID,
+        nLength: DWORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetUserObjectSecurity(
+        arg1: HANDLE,
+        arg2: PSECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWinEventHook(
+        arg1: UINT,
+        arg2: UINT,
+        arg3: HMODULE,
+        arg4: WINEVENTPROC,
+        arg5: DWORD,
+        arg6: DWORD,
+        arg7: UINT,
+    ) -> HWINEVENTHOOK;
+}
+unsafe extern "C" {
+    pub fn SetWindowContextHelpId(arg1: HWND, arg2: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowLongA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> LONG;
+}
+unsafe extern "C" {
+    pub fn SetWindowLongW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> LONG;
+}
+unsafe extern "C" {
+    pub fn SetWindowLongPtrA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG_PTR) -> LONG_PTR;
+}
+unsafe extern "C" {
+    pub fn SetWindowLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG_PTR) -> LONG_PTR;
+}
+unsafe extern "C" {
+    pub fn SetWindowPlacement(hWnd: HWND, arg1: *const WINDOWPLACEMENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowPos(
+        arg1: HWND,
+        arg2: HWND,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: ::core::ffi::c_int,
+        arg7: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SetWindowsHookA(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> HHOOK;
+}
+unsafe extern "C" {
+    pub fn SetWindowsHookW(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> HHOOK;
+}
+unsafe extern "C" {
+    pub fn SetWindowsHookExA(
+        arg1: ::core::ffi::c_int,
+        arg2: HOOKPROC,
+        arg3: HINSTANCE,
+        arg4: DWORD,
+    ) -> HHOOK;
+}
+unsafe extern "C" {
+    pub fn SetWindowsHookExW(
+        arg1: ::core::ffi::c_int,
+        arg2: HOOKPROC,
+        arg3: HINSTANCE,
+        arg4: DWORD,
+    ) -> HHOOK;
+}
+unsafe extern "C" {
+    pub fn SetWindowTextA(arg1: HWND, arg2: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowTextW(arg1: HWND, arg2: LPCWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetWindowWord(arg1: HWND, arg2: ::core::ffi::c_int, arg3: WORD) -> WORD;
+}
+unsafe extern "C" {
+    pub fn ShowCaret(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ShowCursor(arg1: BOOL) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ShowOwnedPopups(arg1: HWND, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ShowScrollBar(arg1: HWND, arg2: ::core::ffi::c_int, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ShowWindow(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SubtractRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SwapMouseButton(arg1: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SwitchDesktop(arg1: HDESK) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SwitchToThisWindow(arg1: HWND, arg2: BOOL);
+}
+unsafe extern "C" {
+    pub fn SystemParametersInfoA(
+        uiAction: UINT,
+        uiParam: UINT,
+        pvParam: PVOID,
+        fWinIni: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SystemParametersInfoW(
+        uiAction: UINT,
+        uiParam: UINT,
+        pvParam: PVOID,
+        fWinIni: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TabbedTextOutA(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        lpString: LPCSTR,
+        chCount: ::core::ffi::c_int,
+        nTabPositions: ::core::ffi::c_int,
+        lpnTabStopPositions: *const INT,
+        nTabOrigin: ::core::ffi::c_int,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn TabbedTextOutW(
+        hdc: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        lpString: LPCWSTR,
+        chCount: ::core::ffi::c_int,
+        nTabPositions: ::core::ffi::c_int,
+        lpnTabStopPositions: *const INT,
+        nTabOrigin: ::core::ffi::c_int,
+    ) -> LONG;
+}
+unsafe extern "C" {
+    pub fn TileWindows(
+        hwndParent: HWND,
+        wHow: UINT,
+        lpRect: *const RECT,
+        cKids: UINT,
+        lpKids: *const HWND,
+    ) -> WORD;
+}
+unsafe extern "C" {
+    pub fn ToAscii(
+        arg1: UINT,
+        arg2: UINT,
+        arg3: *const BYTE,
+        arg4: LPWORD,
+        arg5: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ToAsciiEx(
+        arg1: UINT,
+        arg2: UINT,
+        arg3: *const BYTE,
+        arg4: LPWORD,
+        arg5: UINT,
+        arg6: HKL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ToUnicode(
+        wVirtKey: UINT,
+        wScanCode: UINT,
+        lpKeyState: *const BYTE,
+        pwszBuff: LPWSTR,
+        cchBuff: ::core::ffi::c_int,
+        wFlags: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ToUnicodeEx(
+        wVirtKey: UINT,
+        wScanCode: UINT,
+        lpKeyState: *const BYTE,
+        pwszBuff: LPWSTR,
+        cchBuff: ::core::ffi::c_int,
+        wFlags: UINT,
+        dwhkl: HKL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn TrackMouseEvent(arg1: LPTRACKMOUSEEVENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TrackPopupMenu(
+        arg1: HMENU,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: HWND,
+        arg7: LPCRECT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TrackPopupMenuEx(
+        arg1: HMENU,
+        arg2: UINT,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: HWND,
+        arg6: LPTPMPARAMS,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TranslateAcceleratorA(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn TranslateAcceleratorW(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn TranslateMDISysAccel(arg1: HWND, arg2: LPMSG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn TranslateMessage(arg1: *const MSG) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnhookWindowsHook(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnhookWindowsHookEx(arg1: HHOOK) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnhookWinEvent(arg1: HWINEVENTHOOK) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnionRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnloadKeyboardLayout(arg1: HKL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterClassA(arg1: LPCSTR, arg2: HINSTANCE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterClassW(arg1: LPCWSTR, arg2: HINSTANCE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterDeviceNotification(arg1: HDEVNOTIFY) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UnregisterHotKey(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateWindow(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UserHandleGrantAccess(arg1: HANDLE, arg2: HANDLE, arg3: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ValidateRect(arg1: HWND, arg2: LPCRECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ValidateRgn(arg1: HWND, arg2: HRGN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn VkKeyScanA(arg1: CHAR) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn VkKeyScanExA(arg1: CHAR, arg2: HKL) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn VkKeyScanExW(arg1: WCHAR, arg2: HKL) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn VkKeyScanW(arg1: WCHAR) -> SHORT;
+}
+unsafe extern "C" {
+    pub fn WaitForInputIdle(arg1: HANDLE, arg2: DWORD) -> DWORD;
+}
+unsafe extern "C" {
+    pub fn WaitMessage() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WindowFromDC(hDC: HDC) -> HWND;
+}
+unsafe extern "C" {
+    pub fn WindowFromPoint(arg1: POINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn WinExec(arg1: LPCSTR, arg2: UINT) -> UINT;
+}
+unsafe extern "C" {
+    pub fn WinHelpA(arg1: HWND, arg2: LPCSTR, arg3: UINT, arg4: ULONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn WinHelpW(arg1: HWND, arg2: LPCWSTR, arg3: UINT, arg4: ULONG_PTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn wsprintfA(arg1: LPSTR, arg2: LPCSTR, ...) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wsprintfW(arg1: LPWSTR, arg2: LPCWSTR, ...) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wvsprintfA(arg1: LPSTR, arg2: LPCSTR, arglist: va_list) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn wvsprintfW(arg1: LPWSTR, arg2: LPCWSTR, arglist: va_list) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn AllowSetForegroundWindow(arg1: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn LockSetForegroundWindow(arg1: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetLayeredWindowAttributes(arg1: HWND, arg2: COLORREF, arg3: BYTE, arg4: DWORD) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UpdateLayeredWindow(
+        hWnd: HWND,
+        hdcDst: HDC,
+        pptDst: *mut POINT,
+        psize: *mut SIZE,
+        hdcSrc: HDC,
+        pptSrc: *mut POINT,
+        crKey: COLORREF,
+        pblend: *mut BLENDFUNCTION,
+        dwFlags: DWORD,
+    ) -> BOOL;
+}
+#[repr(C)]
+pub struct tagUPDATELAYEREDWINDOWINFO {
+    pub cbSize: DWORD,
+    pub hdcDst: HDC,
+    pub pptDst: *const POINT,
+    pub psize: *const SIZE,
+    pub hdcSrc: HDC,
+    pub pptSrc: *const POINT,
+    pub crKey: COLORREF,
+    pub pblend: *const BLENDFUNCTION,
+    pub dwFlags: DWORD,
+    pub prcDirty: *const RECT,
+}
+pub type UPDATELAYEREDWINDOWINFO = tagUPDATELAYEREDWINDOWINFO;
+pub type PUPDATELAYEREDWINDOWINFO = *mut tagUPDATELAYEREDWINDOWINFO;
+unsafe extern "C" {
+    pub fn UpdateLayeredWindowIndirect(arg1: HWND, arg2: *const UPDATELAYEREDWINDOWINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetLayeredWindowAttributes(
+        arg1: HWND,
+        arg2: *mut COLORREF,
+        arg3: *mut BYTE,
+        arg4: *mut DWORD,
+    ) -> BOOL;
+}
 pub type LPCBORDERWIDTHS = LPCRECT;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -7744,12 +23553,103 @@ pub struct IDropTargetVtbl {
 pub struct IDropTarget {
     pub lpVtbl: *mut IDropTargetVtbl,
 }
+unsafe extern "C" {
+    pub static mut IOleAutomationTypes_v1_0_c_ifspec: RPC_IF_HANDLE;
+}
+unsafe extern "C" {
+    pub static mut IOleAutomationTypes_v1_0_s_ifspec: RPC_IF_HANDLE;
+}
+pub type CURRENCY = CY;
 #[repr(C)]
 pub struct tagSAFEARRAYBOUND {
     pub cElements: ULONG,
     pub lLbound: LONG,
 }
 pub type SAFEARRAYBOUND = tagSAFEARRAYBOUND;
+pub type LPSAFEARRAYBOUND = *mut tagSAFEARRAYBOUND;
+pub type wireVARIANT = *mut _wireVARIANT;
+pub type wireBRECORD = *mut _wireBRECORD;
+#[repr(C)]
+pub struct _wireSAFEARR_BSTR {
+    pub Size: ULONG,
+    pub aBstr: *mut wireBSTR,
+}
+pub type SAFEARR_BSTR = _wireSAFEARR_BSTR;
+#[repr(C)]
+pub struct _wireSAFEARR_UNKNOWN {
+    pub Size: ULONG,
+    pub apUnknown: *mut *mut IUnknown,
+}
+pub type SAFEARR_UNKNOWN = _wireSAFEARR_UNKNOWN;
+#[repr(C)]
+pub struct _wireSAFEARR_DISPATCH {
+    pub Size: ULONG,
+    pub apDispatch: *mut *mut IDispatch,
+}
+pub type SAFEARR_DISPATCH = _wireSAFEARR_DISPATCH;
+#[repr(C)]
+pub struct _wireSAFEARR_VARIANT {
+    pub Size: ULONG,
+    pub aVariant: *mut wireVARIANT,
+}
+pub type SAFEARR_VARIANT = _wireSAFEARR_VARIANT;
+#[repr(C)]
+pub struct _wireSAFEARR_BRECORD {
+    pub Size: ULONG,
+    pub aRecord: *mut wireBRECORD,
+}
+pub type SAFEARR_BRECORD = _wireSAFEARR_BRECORD;
+#[repr(C)]
+pub struct _wireSAFEARR_HAVEIID {
+    pub Size: ULONG,
+    pub apUnknown: *mut *mut IUnknown,
+    pub iid: IID,
+}
+pub type SAFEARR_HAVEIID = _wireSAFEARR_HAVEIID;
+pub const tagSF_TYPE_SF_ERROR: tagSF_TYPE = 10;
+pub const tagSF_TYPE_SF_I1: tagSF_TYPE = 16;
+pub const tagSF_TYPE_SF_I2: tagSF_TYPE = 2;
+pub const tagSF_TYPE_SF_I4: tagSF_TYPE = 3;
+pub const tagSF_TYPE_SF_I8: tagSF_TYPE = 20;
+pub const tagSF_TYPE_SF_BSTR: tagSF_TYPE = 8;
+pub const tagSF_TYPE_SF_UNKNOWN: tagSF_TYPE = 13;
+pub const tagSF_TYPE_SF_DISPATCH: tagSF_TYPE = 9;
+pub const tagSF_TYPE_SF_VARIANT: tagSF_TYPE = 12;
+pub const tagSF_TYPE_SF_RECORD: tagSF_TYPE = 36;
+pub const tagSF_TYPE_SF_HAVEIID: tagSF_TYPE = 32781;
+pub type tagSF_TYPE = ::core::ffi::c_uint;
+pub use self::tagSF_TYPE as SF_TYPE;
+#[repr(C)]
+pub struct _wireSAFEARRAY_UNION {
+    pub sfType: ULONG,
+    pub u: _wireSAFEARRAY_UNION___WIDL_oaidl_generated_name_0000000C,
+}
+#[repr(C)]
+pub struct _wireSAFEARRAY_UNION___WIDL_oaidl_generated_name_0000000C {
+    pub BstrStr: __BindgenUnionField<SAFEARR_BSTR>,
+    pub UnknownStr: __BindgenUnionField<SAFEARR_UNKNOWN>,
+    pub DispatchStr: __BindgenUnionField<SAFEARR_DISPATCH>,
+    pub VariantStr: __BindgenUnionField<SAFEARR_VARIANT>,
+    pub RecordStr: __BindgenUnionField<SAFEARR_BRECORD>,
+    pub HaveIidStr: __BindgenUnionField<SAFEARR_HAVEIID>,
+    pub ByteStr: __BindgenUnionField<BYTE_SIZEDARR>,
+    pub WordStr: __BindgenUnionField<WORD_SIZEDARR>,
+    pub LongStr: __BindgenUnionField<DWORD_SIZEDARR>,
+    pub HyperStr: __BindgenUnionField<HYPER_SIZEDARR>,
+    pub bindgen_union_field: [u64; 4usize],
+}
+pub type SAFEARRAYUNION = _wireSAFEARRAY_UNION;
+#[repr(C)]
+pub struct _wireSAFEARRAY {
+    pub cDims: USHORT,
+    pub fFeatures: USHORT,
+    pub cbElements: ULONG,
+    pub cLocks: ULONG,
+    pub uArrayStructs: SAFEARRAYUNION,
+    pub rgsabound: [SAFEARRAYBOUND; 1usize],
+}
+pub type wireSAFEARRAY = *mut _wireSAFEARRAY;
+pub type wirePSAFEARRAY = *mut wireSAFEARRAY;
 #[repr(C)]
 pub struct tagSAFEARRAY {
     pub cDims: USHORT,
@@ -7760,6 +23660,7 @@ pub struct tagSAFEARRAY {
     pub rgsabound: [SAFEARRAYBOUND; 1usize],
 }
 pub type SAFEARRAY = tagSAFEARRAY;
+pub type LPSAFEARRAY = *mut SAFEARRAY;
 pub type VARIANT = tagVARIANT;
 #[repr(C)]
 pub struct tagVARIANT {
@@ -7833,7 +23734,70 @@ pub struct tagVARIANT__bindgen_ty_1___tagVARIANT__bindgen_ty_1___tagBRECORD {
     pub pvRecord: PVOID,
     pub pRecInfo: *mut IRecordInfo,
 }
+pub type LPVARIANT = *mut VARIANT;
 pub type VARIANTARG = VARIANT;
+pub type LPVARIANTARG = *mut VARIANTARG;
+#[repr(C)]
+pub struct _wireBRECORD {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub pRecInfo: *mut IRecordInfo,
+    pub pRecord: *mut byte,
+}
+#[repr(C)]
+pub struct _wireVARIANT {
+    pub clSize: DWORD,
+    pub rpcReserved: DWORD,
+    pub vt: USHORT,
+    pub wReserved1: USHORT,
+    pub wReserved2: USHORT,
+    pub wReserved3: USHORT,
+    pub __bindgen_anon_1: _wireVARIANT__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct _wireVARIANT__bindgen_ty_1 {
+    pub cVal: __BindgenUnionField<::core::ffi::c_schar>,
+    pub uiVal: __BindgenUnionField<USHORT>,
+    pub ulVal: __BindgenUnionField<ULONG>,
+    pub intVal: __BindgenUnionField<INT>,
+    pub uintVal: __BindgenUnionField<UINT>,
+    pub bVal: __BindgenUnionField<BYTE>,
+    pub iVal: __BindgenUnionField<SHORT>,
+    pub lVal: __BindgenUnionField<LONG>,
+    pub fltVal: __BindgenUnionField<FLOAT>,
+    pub dblVal: __BindgenUnionField<DOUBLE>,
+    pub boolVal: __BindgenUnionField<VARIANT_BOOL>,
+    pub scode: __BindgenUnionField<SCODE>,
+    pub date: __BindgenUnionField<DATE>,
+    pub bstrVal: __BindgenUnionField<wireBSTR>,
+    pub cyVal: __BindgenUnionField<CY>,
+    pub decVal: __BindgenUnionField<DECIMAL>,
+    pub punkVal: __BindgenUnionField<*mut IUnknown>,
+    pub pdispVal: __BindgenUnionField<*mut IDispatch>,
+    pub parray: __BindgenUnionField<wireSAFEARRAY>,
+    pub pcVal: __BindgenUnionField<*mut ::core::ffi::c_schar>,
+    pub puiVal: __BindgenUnionField<*mut USHORT>,
+    pub pulVal: __BindgenUnionField<*mut ULONG>,
+    pub pintVal: __BindgenUnionField<*mut INT>,
+    pub puintVal: __BindgenUnionField<*mut UINT>,
+    pub pbVal: __BindgenUnionField<*mut BYTE>,
+    pub piVal: __BindgenUnionField<*mut SHORT>,
+    pub plVal: __BindgenUnionField<*mut LONG>,
+    pub pfltVal: __BindgenUnionField<*mut FLOAT>,
+    pub pdblVal: __BindgenUnionField<*mut DOUBLE>,
+    pub pboolVal: __BindgenUnionField<*mut VARIANT_BOOL>,
+    pub pscode: __BindgenUnionField<*mut SCODE>,
+    pub pdate: __BindgenUnionField<*mut DATE>,
+    pub pbstrVal: __BindgenUnionField<*mut wireBSTR>,
+    pub pvarVal: __BindgenUnionField<*mut wireVARIANT>,
+    pub pcyVal: __BindgenUnionField<*mut CY>,
+    pub pdecVal: __BindgenUnionField<*mut DECIMAL>,
+    pub ppunkVal: __BindgenUnionField<*mut *mut IUnknown>,
+    pub ppdispVal: __BindgenUnionField<*mut *mut IDispatch>,
+    pub pparray: __BindgenUnionField<*mut wireSAFEARRAY>,
+    pub brecVal: __BindgenUnionField<wireBRECORD>,
+    pub bindgen_union_field: [u64; 2usize],
+}
 pub type DISPID = LONG;
 pub type HREFTYPE = DWORD;
 pub type MEMBERID = DISPID;
@@ -7867,11 +23831,13 @@ pub struct tagARRAYDESC {
     pub cDims: USHORT,
     pub rgbounds: [SAFEARRAYBOUND; 1usize],
 }
+pub type ARRAYDESC = tagARRAYDESC;
 #[repr(C)]
 pub struct tagPARAMDESCEX {
     pub cBytes: ULONG,
     pub varDefaultValue: VARIANTARG,
 }
+pub type PARAMDESCEX = tagPARAMDESCEX;
 pub type LPPARAMDESCEX = *mut tagPARAMDESCEX;
 #[repr(C)]
 pub struct tagPARAMDESC {
@@ -7879,12 +23845,14 @@ pub struct tagPARAMDESC {
     pub wParamFlags: USHORT,
 }
 pub type PARAMDESC = tagPARAMDESC;
+pub type LPPARAMDESC = *mut tagPARAMDESC;
 #[repr(C)]
 pub struct tagIDLDESC {
     pub dwReserved: ULONG_PTR,
     pub wIDLFlags: USHORT,
 }
 pub type IDLDESC = tagIDLDESC;
+pub type LPIDLDESC = *mut tagIDLDESC;
 #[repr(C)]
 pub struct tagELEMDESC {
     pub tdesc: TYPEDESC,
@@ -7897,6 +23865,7 @@ pub struct tagELEMDESC__bindgen_ty_1 {
     pub bindgen_union_field: [u64; 2usize],
 }
 pub type ELEMDESC = tagELEMDESC;
+pub type LPELEMDESC = *mut tagELEMDESC;
 #[repr(C)]
 pub struct tagTYPEATTR {
     pub guid: GUID,
@@ -7919,6 +23888,7 @@ pub struct tagTYPEATTR {
     pub idldescType: IDLDESC,
 }
 pub type TYPEATTR = tagTYPEATTR;
+pub type LPTYPEATTR = *mut tagTYPEATTR;
 #[repr(C)]
 pub struct tagDISPPARAMS {
     pub rgvarg: *mut VARIANTARG,
@@ -7941,6 +23911,7 @@ pub struct tagEXCEPINFO {
     pub scode: SCODE,
 }
 pub type EXCEPINFO = tagEXCEPINFO;
+pub type LPEXCEPINFO = *mut tagEXCEPINFO;
 pub const tagCALLCONV_CC_FASTCALL: tagCALLCONV = 0;
 pub const tagCALLCONV_CC_CDECL: tagCALLCONV = 1;
 pub const tagCALLCONV_CC_MSCPASCAL: tagCALLCONV = 2;
@@ -7983,6 +23954,7 @@ pub struct tagFUNCDESC {
     pub wFuncFlags: WORD,
 }
 pub type FUNCDESC = tagFUNCDESC;
+pub type LPFUNCDESC = *mut tagFUNCDESC;
 pub const tagVARKIND_VAR_PERINSTANCE: tagVARKIND = 0;
 pub const tagVARKIND_VAR_STATIC: tagVARKIND = 1;
 pub const tagVARKIND_VAR_CONST: tagVARKIND = 2;
@@ -8005,6 +23977,79 @@ pub struct tagVARDESC__bindgen_ty_1 {
     pub bindgen_union_field: u64,
 }
 pub type VARDESC = tagVARDESC;
+pub type LPVARDESC = *mut tagVARDESC;
+pub const tagTYPEFLAGS_TYPEFLAG_FAPPOBJECT: tagTYPEFLAGS = 1;
+pub const tagTYPEFLAGS_TYPEFLAG_FCANCREATE: tagTYPEFLAGS = 2;
+pub const tagTYPEFLAGS_TYPEFLAG_FLICENSED: tagTYPEFLAGS = 4;
+pub const tagTYPEFLAGS_TYPEFLAG_FPREDECLID: tagTYPEFLAGS = 8;
+pub const tagTYPEFLAGS_TYPEFLAG_FHIDDEN: tagTYPEFLAGS = 16;
+pub const tagTYPEFLAGS_TYPEFLAG_FCONTROL: tagTYPEFLAGS = 32;
+pub const tagTYPEFLAGS_TYPEFLAG_FDUAL: tagTYPEFLAGS = 64;
+pub const tagTYPEFLAGS_TYPEFLAG_FNONEXTENSIBLE: tagTYPEFLAGS = 128;
+pub const tagTYPEFLAGS_TYPEFLAG_FOLEAUTOMATION: tagTYPEFLAGS = 256;
+pub const tagTYPEFLAGS_TYPEFLAG_FRESTRICTED: tagTYPEFLAGS = 512;
+pub const tagTYPEFLAGS_TYPEFLAG_FAGGREGATABLE: tagTYPEFLAGS = 1024;
+pub const tagTYPEFLAGS_TYPEFLAG_FREPLACEABLE: tagTYPEFLAGS = 2048;
+pub const tagTYPEFLAGS_TYPEFLAG_FDISPATCHABLE: tagTYPEFLAGS = 4096;
+pub const tagTYPEFLAGS_TYPEFLAG_FREVERSEBIND: tagTYPEFLAGS = 8192;
+pub const tagTYPEFLAGS_TYPEFLAG_FPROXY: tagTYPEFLAGS = 16384;
+pub type tagTYPEFLAGS = ::core::ffi::c_uint;
+pub use self::tagTYPEFLAGS as TYPEFLAGS;
+pub const tagFUNCFLAGS_FUNCFLAG_FRESTRICTED: tagFUNCFLAGS = 1;
+pub const tagFUNCFLAGS_FUNCFLAG_FSOURCE: tagFUNCFLAGS = 2;
+pub const tagFUNCFLAGS_FUNCFLAG_FBINDABLE: tagFUNCFLAGS = 4;
+pub const tagFUNCFLAGS_FUNCFLAG_FREQUESTEDIT: tagFUNCFLAGS = 8;
+pub const tagFUNCFLAGS_FUNCFLAG_FDISPLAYBIND: tagFUNCFLAGS = 16;
+pub const tagFUNCFLAGS_FUNCFLAG_FDEFAULTBIND: tagFUNCFLAGS = 32;
+pub const tagFUNCFLAGS_FUNCFLAG_FHIDDEN: tagFUNCFLAGS = 64;
+pub const tagFUNCFLAGS_FUNCFLAG_FUSESGETLASTERROR: tagFUNCFLAGS = 128;
+pub const tagFUNCFLAGS_FUNCFLAG_FDEFAULTCOLLELEM: tagFUNCFLAGS = 256;
+pub const tagFUNCFLAGS_FUNCFLAG_FUIDEFAULT: tagFUNCFLAGS = 512;
+pub const tagFUNCFLAGS_FUNCFLAG_FNONBROWSABLE: tagFUNCFLAGS = 1024;
+pub const tagFUNCFLAGS_FUNCFLAG_FREPLACEABLE: tagFUNCFLAGS = 2048;
+pub const tagFUNCFLAGS_FUNCFLAG_FIMMEDIATEBIND: tagFUNCFLAGS = 4096;
+pub type tagFUNCFLAGS = ::core::ffi::c_uint;
+pub use self::tagFUNCFLAGS as FUNCFLAGS;
+pub const tagVARFLAGS_VARFLAG_FREADONLY: tagVARFLAGS = 1;
+pub const tagVARFLAGS_VARFLAG_FSOURCE: tagVARFLAGS = 2;
+pub const tagVARFLAGS_VARFLAG_FBINDABLE: tagVARFLAGS = 4;
+pub const tagVARFLAGS_VARFLAG_FREQUESTEDIT: tagVARFLAGS = 8;
+pub const tagVARFLAGS_VARFLAG_FDISPLAYBIND: tagVARFLAGS = 16;
+pub const tagVARFLAGS_VARFLAG_FDEFAULTBIND: tagVARFLAGS = 32;
+pub const tagVARFLAGS_VARFLAG_FHIDDEN: tagVARFLAGS = 64;
+pub const tagVARFLAGS_VARFLAG_FRESTRICTED: tagVARFLAGS = 128;
+pub const tagVARFLAGS_VARFLAG_FDEFAULTCOLLELEM: tagVARFLAGS = 256;
+pub const tagVARFLAGS_VARFLAG_FUIDEFAULT: tagVARFLAGS = 512;
+pub const tagVARFLAGS_VARFLAG_FNONBROWSABLE: tagVARFLAGS = 1024;
+pub const tagVARFLAGS_VARFLAG_FREPLACEABLE: tagVARFLAGS = 2048;
+pub const tagVARFLAGS_VARFLAG_FIMMEDIATEBIND: tagVARFLAGS = 4096;
+pub type tagVARFLAGS = ::core::ffi::c_uint;
+pub use self::tagVARFLAGS as VARFLAGS;
+#[repr(C)]
+pub struct tagCLEANLOCALSTORAGE {
+    pub pInterface: *mut IUnknown,
+    pub pStorage: PVOID,
+    pub flags: DWORD,
+}
+pub type CLEANLOCALSTORAGE = tagCLEANLOCALSTORAGE;
+#[repr(C)]
+pub struct tagCUSTDATAITEM {
+    pub guid: GUID,
+    pub varValue: VARIANTARG,
+}
+pub type CUSTDATAITEM = tagCUSTDATAITEM;
+pub type LPCUSTDATAITEM = *mut tagCUSTDATAITEM;
+#[repr(C)]
+pub struct tagCUSTDATA {
+    pub cCustData: DWORD,
+    pub prgCustData: LPCUSTDATAITEM,
+}
+pub type CUSTDATA = tagCUSTDATA;
+pub type LPCUSTDATA = *mut tagCUSTDATA;
+pub type LPDISPATCH = *mut IDispatch;
+unsafe extern "C" {
+    pub static IID_IDispatch: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IDispatchVtbl {
@@ -8057,6 +24102,129 @@ pub struct IDispatchVtbl {
 pub struct IDispatch {
     pub lpVtbl: *mut IDispatchVtbl,
 }
+unsafe extern "C" {
+    pub fn IDispatch_RemoteInvoke_Proxy(
+        This: *mut IDispatch,
+        dispIdMember: DISPID,
+        riid: *const IID,
+        lcid: LCID,
+        dwFlags: DWORD,
+        pDispParams: *mut DISPPARAMS,
+        pVarResult: *mut VARIANT,
+        pExcepInfo: *mut EXCEPINFO,
+        pArgErr: *mut UINT,
+        cVarRef: UINT,
+        rgVarRefIdx: *mut UINT,
+        rgVarRef: *mut VARIANTARG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDispatch_RemoteInvoke_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IDispatch_Invoke_Proxy(
+        This: *mut IDispatch,
+        dispIdMember: DISPID,
+        riid: *const IID,
+        lcid: LCID,
+        wFlags: WORD,
+        pDispParams: *mut DISPPARAMS,
+        pVarResult: *mut VARIANT,
+        pExcepInfo: *mut EXCEPINFO,
+        puArgErr: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IDispatch_Invoke_Stub(
+        This: *mut IDispatch,
+        dispIdMember: DISPID,
+        riid: *const IID,
+        lcid: LCID,
+        dwFlags: DWORD,
+        pDispParams: *mut DISPPARAMS,
+        pVarResult: *mut VARIANT,
+        pExcepInfo: *mut EXCEPINFO,
+        pArgErr: *mut UINT,
+        cVarRef: UINT,
+        rgVarRefIdx: *mut UINT,
+        rgVarRef: *mut VARIANTARG,
+    ) -> HRESULT;
+}
+pub type LPENUMVARIANT = *mut IEnumVARIANT;
+unsafe extern "C" {
+    pub static IID_IEnumVARIANT: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumVARIANTVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IEnumVARIANT,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> ULONG>,
+    pub Next: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IEnumVARIANT,
+            celt: ULONG,
+            rgVar: *mut VARIANT,
+            pCeltFetched: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Skip: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IEnumVARIANT, celt: ULONG) -> HRESULT,
+    >,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumVARIANT) -> HRESULT>,
+    pub Clone: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IEnumVARIANT, ppEnum: *mut *mut IEnumVARIANT) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumVARIANT {
+    pub lpVtbl: *mut IEnumVARIANTVtbl,
+}
+unsafe extern "C" {
+    pub fn IEnumVARIANT_RemoteNext_Proxy(
+        This: *mut IEnumVARIANT,
+        celt: ULONG,
+        rgVar: *mut VARIANT,
+        pCeltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumVARIANT_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IEnumVARIANT_Next_Proxy(
+        This: *mut IEnumVARIANT,
+        celt: ULONG,
+        rgVar: *mut VARIANT,
+        pCeltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IEnumVARIANT_Next_Stub(
+        This: *mut IEnumVARIANT,
+        celt: ULONG,
+        rgVar: *mut VARIANT,
+        pCeltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPTYPECOMP = *mut ITypeComp;
 pub const tagDESCKIND_DESCKIND_NONE: tagDESCKIND = 0;
 pub const tagDESCKIND_DESCKIND_FUNCDESC: tagDESCKIND = 1;
 pub const tagDESCKIND_DESCKIND_VARDESC: tagDESCKIND = 2;
@@ -8073,6 +24241,10 @@ pub union tagBINDPTR {
     pub lptcomp: *mut ITypeComp,
 }
 pub type BINDPTR = tagBINDPTR;
+pub type LPBINDPTR = *mut tagBINDPTR;
+unsafe extern "C" {
+    pub static IID_ITypeComp: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeCompVtbl {
@@ -8110,6 +24282,90 @@ pub struct ITypeCompVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeComp {
     pub lpVtbl: *mut ITypeCompVtbl,
+}
+unsafe extern "C" {
+    pub fn ITypeComp_RemoteBind_Proxy(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        wFlags: WORD,
+        ppTInfo: *mut *mut ITypeInfo,
+        pDescKind: *mut DESCKIND,
+        ppFuncDesc: *mut LPFUNCDESC,
+        ppVarDesc: *mut LPVARDESC,
+        ppTypeComp: *mut *mut ITypeComp,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeComp_RemoteBind_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeComp_RemoteBindType_Proxy(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeComp_RemoteBindType_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeComp_Bind_Proxy(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        wFlags: WORD,
+        ppTInfo: *mut *mut ITypeInfo,
+        pDescKind: *mut DESCKIND,
+        pBindPtr: *mut BINDPTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeComp_Bind_Stub(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        wFlags: WORD,
+        ppTInfo: *mut *mut ITypeInfo,
+        pDescKind: *mut DESCKIND,
+        ppFuncDesc: *mut LPFUNCDESC,
+        ppVarDesc: *mut LPVARDESC,
+        ppTypeComp: *mut *mut ITypeComp,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeComp_BindType_Proxy(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+        ppTComp: *mut *mut ITypeComp,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeComp_BindType_Stub(
+        This: *mut ITypeComp,
+        szName: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+    ) -> HRESULT;
+}
+pub type LPTYPEINFO = *mut ITypeInfo;
+unsafe extern "C" {
+    pub static IID_ITypeInfo: GUID;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8253,12 +24509,697 @@ pub struct ITypeInfoVtbl {
 pub struct ITypeInfo {
     pub lpVtbl: *mut ITypeInfoVtbl,
 }
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetTypeAttr_Proxy(
+        This: *mut ITypeInfo,
+        ppTypeAttr: *mut LPTYPEATTR,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetTypeAttr_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetFuncDesc_Proxy(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppFuncDesc: *mut LPFUNCDESC,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetFuncDesc_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetVarDesc_Proxy(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppVarDesc: *mut LPVARDESC,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetVarDesc_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetNames_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        rgBstrNames: *mut BSTR,
+        cMaxNames: UINT,
+        pcNames: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetNames_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalGetIDsOfNames_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalGetIDsOfNames_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalInvoke_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalInvoke_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetDocumentation_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        refPtrFlags: DWORD,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetDocumentation_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetDllEntry_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        invKind: INVOKEKIND,
+        refPtrFlags: DWORD,
+        pBstrDllName: *mut BSTR,
+        pBstrName: *mut BSTR,
+        pwOrdinal: *mut WORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetDllEntry_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalAddressOfMember_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalAddressOfMember_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteCreateInstance_Proxy(
+        This: *mut ITypeInfo,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteCreateInstance_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetContainingTypeLib_Proxy(
+        This: *mut ITypeInfo,
+        ppTLib: *mut *mut ITypeLib,
+        pIndex: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_RemoteGetContainingTypeLib_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseTypeAttr_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseTypeAttr_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseFuncDesc_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseFuncDesc_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseVarDesc_Proxy(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_LocalReleaseVarDesc_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetTypeAttr_Proxy(
+        This: *mut ITypeInfo,
+        ppTypeAttr: *mut *mut TYPEATTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetTypeAttr_Stub(
+        This: *mut ITypeInfo,
+        ppTypeAttr: *mut LPTYPEATTR,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetFuncDesc_Proxy(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppFuncDesc: *mut *mut FUNCDESC,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetFuncDesc_Stub(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppFuncDesc: *mut LPFUNCDESC,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetVarDesc_Proxy(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppVarDesc: *mut *mut VARDESC,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetVarDesc_Stub(
+        This: *mut ITypeInfo,
+        index: UINT,
+        ppVarDesc: *mut LPVARDESC,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetNames_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        rgBstrNames: *mut BSTR,
+        cMaxNames: UINT,
+        pcNames: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetNames_Stub(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        rgBstrNames: *mut BSTR,
+        cMaxNames: UINT,
+        pcNames: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetIDsOfNames_Proxy(
+        This: *mut ITypeInfo,
+        rgszNames: *mut LPOLESTR,
+        cNames: UINT,
+        pMemId: *mut MEMBERID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetIDsOfNames_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_Invoke_Proxy(
+        This: *mut ITypeInfo,
+        pvInstance: PVOID,
+        memid: MEMBERID,
+        wFlags: WORD,
+        pDispParams: *mut DISPPARAMS,
+        pVarResult: *mut VARIANT,
+        pExcepInfo: *mut EXCEPINFO,
+        puArgErr: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_Invoke_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetDocumentation_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetDocumentation_Stub(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        refPtrFlags: DWORD,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetDllEntry_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        invKind: INVOKEKIND,
+        pBstrDllName: *mut BSTR,
+        pBstrName: *mut BSTR,
+        pwOrdinal: *mut WORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetDllEntry_Stub(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        invKind: INVOKEKIND,
+        refPtrFlags: DWORD,
+        pBstrDllName: *mut BSTR,
+        pBstrName: *mut BSTR,
+        pwOrdinal: *mut WORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_AddressOfMember_Proxy(
+        This: *mut ITypeInfo,
+        memid: MEMBERID,
+        invKind: INVOKEKIND,
+        ppv: *mut PVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_AddressOfMember_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_CreateInstance_Proxy(
+        This: *mut ITypeInfo,
+        pUnkOuter: *mut IUnknown,
+        riid: *const IID,
+        ppvObj: *mut PVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_CreateInstance_Stub(
+        This: *mut ITypeInfo,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetContainingTypeLib_Proxy(
+        This: *mut ITypeInfo,
+        ppTLib: *mut *mut ITypeLib,
+        pIndex: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_GetContainingTypeLib_Stub(
+        This: *mut ITypeInfo,
+        ppTLib: *mut *mut ITypeLib,
+        pIndex: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseTypeAttr_Proxy(This: *mut ITypeInfo, pTypeAttr: *mut TYPEATTR);
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseTypeAttr_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseFuncDesc_Proxy(This: *mut ITypeInfo, pFuncDesc: *mut FUNCDESC);
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseFuncDesc_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseVarDesc_Proxy(This: *mut ITypeInfo, pVarDesc: *mut VARDESC);
+}
+unsafe extern "C" {
+    pub fn ITypeInfo_ReleaseVarDesc_Stub(This: *mut ITypeInfo) -> HRESULT;
+}
+pub type LPTYPEINFO2 = *mut ITypeInfo2;
+unsafe extern "C" {
+    pub static IID_ITypeInfo2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeInfo2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2) -> ULONG>,
+    pub GetTypeAttr: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT,
+    >,
+    pub GetTypeComp: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+    >,
+    pub GetFuncDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            ppFuncDesc: *mut *mut FUNCDESC,
+        ) -> HRESULT,
+    >,
+    pub GetVarDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            ppVarDesc: *mut *mut VARDESC,
+        ) -> HRESULT,
+    >,
+    pub GetNames: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            rgBstrNames: *mut BSTR,
+            cMaxNames: UINT,
+            pcNames: *mut UINT,
+        ) -> HRESULT,
+    >,
+    pub GetRefTypeOfImplType: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            pRefType: *mut HREFTYPE,
+        ) -> HRESULT,
+    >,
+    pub GetImplTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            pImplTypeFlags: *mut INT,
+        ) -> HRESULT,
+    >,
+    pub GetIDsOfNames: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            rgszNames: *mut LPOLESTR,
+            cNames: UINT,
+            pMemId: *mut MEMBERID,
+        ) -> HRESULT,
+    >,
+    pub Invoke: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            pvInstance: PVOID,
+            memid: MEMBERID,
+            wFlags: WORD,
+            pDispParams: *mut DISPPARAMS,
+            pVarResult: *mut VARIANT,
+            pExcepInfo: *mut EXCEPINFO,
+            puArgErr: *mut UINT,
+        ) -> HRESULT,
+    >,
+    pub GetDocumentation: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            pBstrName: *mut BSTR,
+            pBstrDocString: *mut BSTR,
+            pdwHelpContext: *mut DWORD,
+            pBstrHelpFile: *mut BSTR,
+        ) -> HRESULT,
+    >,
+    pub GetDllEntry: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            invKind: INVOKEKIND,
+            pBstrDllName: *mut BSTR,
+            pBstrName: *mut BSTR,
+            pwOrdinal: *mut WORD,
+        ) -> HRESULT,
+    >,
+    pub GetRefTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            hRefType: HREFTYPE,
+            ppTInfo: *mut *mut ITypeInfo,
+        ) -> HRESULT,
+    >,
+    pub AddressOfMember: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            invKind: INVOKEKIND,
+            ppv: *mut PVOID,
+        ) -> HRESULT,
+    >,
+    pub CreateInstance: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            pUnkOuter: *mut IUnknown,
+            riid: *const IID,
+            ppvObj: *mut PVOID,
+        ) -> HRESULT,
+    >,
+    pub GetMops: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            pBstrMops: *mut BSTR,
+        ) -> HRESULT,
+    >,
+    pub GetContainingTypeLib: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            ppTLib: *mut *mut ITypeLib,
+            pIndex: *mut UINT,
+        ) -> HRESULT,
+    >,
+    pub ReleaseTypeAttr: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeAttr: *mut TYPEATTR),
+    >,
+    pub ReleaseFuncDesc: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pFuncDesc: *mut FUNCDESC),
+    >,
+    pub ReleaseVarDesc:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeInfo2, pVarDesc: *mut VARDESC)>,
+    pub GetTypeKind: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeKind: *mut TYPEKIND) -> HRESULT,
+    >,
+    pub GetTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pTypeFlags: *mut ULONG) -> HRESULT,
+    >,
+    pub GetFuncIndexOfMemId: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            invKind: INVOKEKIND,
+            pFuncIndex: *mut UINT,
+        ) -> HRESULT,
+    >,
+    pub GetVarIndexOfMemId: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            pVarIndex: *mut UINT,
+        ) -> HRESULT,
+    >,
+    pub GetCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetFuncCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetParamCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            indexFunc: UINT,
+            indexParam: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetVarCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetImplTypeCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetDocumentation2: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            memid: MEMBERID,
+            lcid: LCID,
+            pbstrHelpString: *mut BSTR,
+            pdwHelpStringContext: *mut DWORD,
+            pbstrHelpStringDll: *mut BSTR,
+        ) -> HRESULT,
+    >,
+    pub GetAllCustData: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeInfo2, pCustData: *mut CUSTDATA) -> HRESULT,
+    >,
+    pub GetAllFuncCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            pCustData: *mut CUSTDATA,
+        ) -> HRESULT,
+    >,
+    pub GetAllParamCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            indexFunc: UINT,
+            indexParam: UINT,
+            pCustData: *mut CUSTDATA,
+        ) -> HRESULT,
+    >,
+    pub GetAllVarCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            pCustData: *mut CUSTDATA,
+        ) -> HRESULT,
+    >,
+    pub GetAllImplTypeCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeInfo2,
+            index: UINT,
+            pCustData: *mut CUSTDATA,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeInfo2 {
+    pub lpVtbl: *mut ITypeInfo2Vtbl,
+}
+unsafe extern "C" {
+    pub fn ITypeInfo2_RemoteGetDocumentation2_Proxy(
+        This: *mut ITypeInfo2,
+        memid: MEMBERID,
+        lcid: LCID,
+        refPtrFlags: DWORD,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo2_RemoteGetDocumentation2_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeInfo2_GetDocumentation2_Proxy(
+        This: *mut ITypeInfo2,
+        memid: MEMBERID,
+        lcid: LCID,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeInfo2_GetDocumentation2_Stub(
+        This: *mut ITypeInfo2,
+        memid: MEMBERID,
+        lcid: LCID,
+        refPtrFlags: DWORD,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+pub type LPTYPELIB = *mut ITypeLib;
 pub const tagSYSKIND_SYS_WIN16: tagSYSKIND = 0;
 pub const tagSYSKIND_SYS_WIN32: tagSYSKIND = 1;
 pub const tagSYSKIND_SYS_MAC: tagSYSKIND = 2;
 pub const tagSYSKIND_SYS_WIN64: tagSYSKIND = 3;
 pub type tagSYSKIND = ::core::ffi::c_uint;
 pub use self::tagSYSKIND as SYSKIND;
+pub const tagLIBFLAGS_LIBFLAG_FRESTRICTED: tagLIBFLAGS = 1;
+pub const tagLIBFLAGS_LIBFLAG_FCONTROL: tagLIBFLAGS = 2;
+pub const tagLIBFLAGS_LIBFLAG_FHIDDEN: tagLIBFLAGS = 4;
+pub const tagLIBFLAGS_LIBFLAG_FHASDISKIMAGE: tagLIBFLAGS = 8;
+pub type tagLIBFLAGS = ::core::ffi::c_uint;
+pub use self::tagLIBFLAGS as LIBFLAGS;
 #[repr(C)]
 pub struct tagTLIBATTR {
     pub guid: GUID,
@@ -8269,6 +25210,10 @@ pub struct tagTLIBATTR {
     pub wLibFlags: WORD,
 }
 pub type TLIBATTR = tagTLIBATTR;
+pub type LPTLIBATTR = *mut tagTLIBATTR;
+unsafe extern "C" {
+    pub static IID_ITypeLib: GUID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeLibVtbl {
@@ -8340,6 +25285,596 @@ pub struct ITypeLibVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct ITypeLib {
     pub lpVtbl: *mut ITypeLibVtbl,
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetTypeInfoCount_Proxy(
+        This: *mut ITypeLib,
+        pcTInfo: *mut UINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetTypeInfoCount_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetLibAttr_Proxy(
+        This: *mut ITypeLib,
+        ppTLibAttr: *mut LPTLIBATTR,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetLibAttr_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetDocumentation_Proxy(
+        This: *mut ITypeLib,
+        index: INT,
+        refPtrFlags: DWORD,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteGetDocumentation_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteIsName_Proxy(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        pfName: *mut BOOL,
+        pBstrLibName: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteIsName_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteFindName_Proxy(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+        rgMemId: *mut MEMBERID,
+        pcFound: *mut USHORT,
+        pBstrLibName: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_RemoteFindName_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_LocalReleaseTLibAttr_Proxy(This: *mut ITypeLib) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_LocalReleaseTLibAttr_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetTypeInfoCount_Proxy(This: *mut ITypeLib) -> UINT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetTypeInfoCount_Stub(This: *mut ITypeLib, pcTInfo: *mut UINT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetLibAttr_Proxy(
+        This: *mut ITypeLib,
+        ppTLibAttr: *mut *mut TLIBATTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetLibAttr_Stub(
+        This: *mut ITypeLib,
+        ppTLibAttr: *mut LPTLIBATTR,
+        pDummy: *mut CLEANLOCALSTORAGE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetDocumentation_Proxy(
+        This: *mut ITypeLib,
+        index: INT,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_GetDocumentation_Stub(
+        This: *mut ITypeLib,
+        index: INT,
+        refPtrFlags: DWORD,
+        pBstrName: *mut BSTR,
+        pBstrDocString: *mut BSTR,
+        pdwHelpContext: *mut DWORD,
+        pBstrHelpFile: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_IsName_Proxy(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        pfName: *mut BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_IsName_Stub(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        pfName: *mut BOOL,
+        pBstrLibName: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_FindName_Proxy(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+        rgMemId: *mut MEMBERID,
+        pcFound: *mut USHORT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_FindName_Stub(
+        This: *mut ITypeLib,
+        szNameBuf: LPOLESTR,
+        lHashVal: ULONG,
+        ppTInfo: *mut *mut ITypeInfo,
+        rgMemId: *mut MEMBERID,
+        pcFound: *mut USHORT,
+        pBstrLibName: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib_ReleaseTLibAttr_Proxy(This: *mut ITypeLib, pTLibAttr: *mut TLIBATTR);
+}
+unsafe extern "C" {
+    pub fn ITypeLib_ReleaseTLibAttr_Stub(This: *mut ITypeLib) -> HRESULT;
+}
+pub type LPTYPELIB2 = *mut ITypeLib2;
+unsafe extern "C" {
+    pub static IID_ITypeLib2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeLib2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> ULONG>,
+    pub GetTypeInfoCount:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeLib2) -> UINT>,
+    pub GetTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            index: UINT,
+            ppTInfo: *mut *mut ITypeInfo,
+        ) -> HRESULT,
+    >,
+    pub GetTypeInfoType: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeLib2, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT,
+    >,
+    pub GetTypeInfoOfGuid: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            guid: *const GUID,
+            ppTinfo: *mut *mut ITypeInfo,
+        ) -> HRESULT,
+    >,
+    pub GetLibAttr: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeLib2, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT,
+    >,
+    pub GetTypeComp: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeLib2, ppTComp: *mut *mut ITypeComp) -> HRESULT,
+    >,
+    pub GetDocumentation: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            index: INT,
+            pBstrName: *mut BSTR,
+            pBstrDocString: *mut BSTR,
+            pdwHelpContext: *mut DWORD,
+            pBstrHelpFile: *mut BSTR,
+        ) -> HRESULT,
+    >,
+    pub IsName: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            szNameBuf: LPOLESTR,
+            lHashVal: ULONG,
+            pfName: *mut BOOL,
+        ) -> HRESULT,
+    >,
+    pub FindName: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            szNameBuf: LPOLESTR,
+            lHashVal: ULONG,
+            ppTInfo: *mut *mut ITypeInfo,
+            rgMemId: *mut MEMBERID,
+            pcFound: *mut USHORT,
+        ) -> HRESULT,
+    >,
+    pub ReleaseTLibAttr: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeLib2, pTLibAttr: *mut TLIBATTR),
+    >,
+    pub GetCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub GetLibStatistics: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            pcUniqueNames: *mut ULONG,
+            pcchUniqueNames: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub GetDocumentation2: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeLib2,
+            index: INT,
+            lcid: LCID,
+            pbstrHelpString: *mut BSTR,
+            pdwHelpStringContext: *mut DWORD,
+            pbstrHelpStringDll: *mut BSTR,
+        ) -> HRESULT,
+    >,
+    pub GetAllCustData: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeLib2, pCustData: *mut CUSTDATA) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeLib2 {
+    pub lpVtbl: *mut ITypeLib2Vtbl,
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_RemoteGetLibStatistics_Proxy(
+        This: *mut ITypeLib2,
+        pcUniqueNames: *mut ULONG,
+        pcchUniqueNames: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_RemoteGetLibStatistics_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_RemoteGetDocumentation2_Proxy(
+        This: *mut ITypeLib2,
+        index: INT,
+        lcid: LCID,
+        refPtrFlags: DWORD,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_RemoteGetDocumentation2_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_GetLibStatistics_Proxy(
+        This: *mut ITypeLib2,
+        pcUniqueNames: *mut ULONG,
+        pcchUniqueNames: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_GetLibStatistics_Stub(
+        This: *mut ITypeLib2,
+        pcUniqueNames: *mut ULONG,
+        pcchUniqueNames: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_GetDocumentation2_Proxy(
+        This: *mut ITypeLib2,
+        index: INT,
+        lcid: LCID,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ITypeLib2_GetDocumentation2_Stub(
+        This: *mut ITypeLib2,
+        index: INT,
+        lcid: LCID,
+        refPtrFlags: DWORD,
+        pbstrHelpString: *mut BSTR,
+        pdwHelpStringContext: *mut DWORD,
+        pbstrHelpStringDll: *mut BSTR,
+    ) -> HRESULT;
+}
+pub type LPTYPECHANGEEVENTS = *mut ITypeChangeEvents;
+pub const tagCHANGEKIND_CHANGEKIND_ADDMEMBER: tagCHANGEKIND = 0;
+pub const tagCHANGEKIND_CHANGEKIND_DELETEMEMBER: tagCHANGEKIND = 1;
+pub const tagCHANGEKIND_CHANGEKIND_SETNAMES: tagCHANGEKIND = 2;
+pub const tagCHANGEKIND_CHANGEKIND_SETDOCUMENTATION: tagCHANGEKIND = 3;
+pub const tagCHANGEKIND_CHANGEKIND_GENERAL: tagCHANGEKIND = 4;
+pub const tagCHANGEKIND_CHANGEKIND_INVALIDATE: tagCHANGEKIND = 5;
+pub const tagCHANGEKIND_CHANGEKIND_CHANGEFAILED: tagCHANGEKIND = 6;
+pub const tagCHANGEKIND_CHANGEKIND_MAX: tagCHANGEKIND = 7;
+pub type tagCHANGEKIND = ::core::ffi::c_uint;
+pub use self::tagCHANGEKIND as CHANGEKIND;
+unsafe extern "C" {
+    pub static IID_ITypeChangeEvents: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeChangeEventsVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeChangeEvents,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeChangeEvents) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeChangeEvents) -> ULONG>,
+    pub RequestTypeChange: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeChangeEvents,
+            changeKind: CHANGEKIND,
+            pTInfoBefore: *mut ITypeInfo,
+            pStrName: LPOLESTR,
+            pfCancel: *mut INT,
+        ) -> HRESULT,
+    >,
+    pub AfterTypeChange: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeChangeEvents,
+            changeKind: CHANGEKIND,
+            pTInfoAfter: *mut ITypeInfo,
+            pStrName: LPOLESTR,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeChangeEvents {
+    pub lpVtbl: *mut ITypeChangeEventsVtbl,
+}
+pub type LPERRORINFO = *mut IErrorInfo;
+unsafe extern "C" {
+    pub static IID_IErrorInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IErrorInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IErrorInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorInfo) -> ULONG>,
+    pub GetGUID: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IErrorInfo, pGUID: *mut GUID) -> HRESULT,
+    >,
+    pub GetSource: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrSource: *mut BSTR) -> HRESULT,
+    >,
+    pub GetDescription: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrDescription: *mut BSTR) -> HRESULT,
+    >,
+    pub GetHelpFile: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IErrorInfo, pBstrHelpFile: *mut BSTR) -> HRESULT,
+    >,
+    pub GetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IErrorInfo, pdwHelpContext: *mut DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IErrorInfo {
+    pub lpVtbl: *mut IErrorInfoVtbl,
+}
+pub type LPCREATEERRORINFO = *mut ICreateErrorInfo;
+unsafe extern "C" {
+    pub static IID_ICreateErrorInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateErrorInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateErrorInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateErrorInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateErrorInfo) -> ULONG>,
+    pub SetGUID: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, rguid: *const GUID) -> HRESULT,
+    >,
+    pub SetSource: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szSource: LPOLESTR) -> HRESULT,
+    >,
+    pub SetDescription: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szDescription: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpFile: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, szHelpFile: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateErrorInfo, dwHelpContext: DWORD) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateErrorInfo {
+    pub lpVtbl: *mut ICreateErrorInfoVtbl,
+}
+pub type LPSUPPORTERRORINFO = *mut ISupportErrorInfo;
+unsafe extern "C" {
+    pub static IID_ISupportErrorInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISupportErrorInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ISupportErrorInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISupportErrorInfo) -> ULONG>,
+    pub Release:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ISupportErrorInfo) -> ULONG>,
+    pub InterfaceSupportsErrorInfo: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ISupportErrorInfo, riid: *const IID) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISupportErrorInfo {
+    pub lpVtbl: *mut ISupportErrorInfoVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITypeFactory: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeFactoryVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeFactory,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeFactory) -> ULONG>,
+    pub CreateFromTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeFactory,
+            pTypeInfo: *mut ITypeInfo,
+            riid: *const IID,
+            ppv: *mut *mut IUnknown,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeFactory {
+    pub lpVtbl: *mut ITypeFactoryVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITypeMarshal: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeMarshalVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeMarshal,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITypeMarshal) -> ULONG>,
+    pub Size: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeMarshal,
+            pvType: PVOID,
+            dwDestContext: DWORD,
+            pvDestContext: PVOID,
+            pSize: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Marshal: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeMarshal,
+            pvType: PVOID,
+            dwDestContext: DWORD,
+            pvDestContext: PVOID,
+            cbBufferLength: ULONG,
+            pBuffer: *mut BYTE,
+            pcbWritten: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Unmarshal: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ITypeMarshal,
+            pvType: PVOID,
+            dwFlags: DWORD,
+            cbBufferLength: ULONG,
+            pBuffer: *mut BYTE,
+            pcbRead: *mut ULONG,
+        ) -> HRESULT,
+    >,
+    pub Free: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ITypeMarshal, pvType: PVOID) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITypeMarshal {
+    pub lpVtbl: *mut ITypeMarshalVtbl,
+}
+pub type LPRECORDINFO = *mut IRecordInfo;
+unsafe extern "C" {
+    pub static IID_IRecordInfo: GUID;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8436,6 +25971,1000 @@ pub struct IRecordInfoVtbl {
 pub struct IRecordInfo {
     pub lpVtbl: *mut IRecordInfoVtbl,
 }
+pub type LPCREATETYPEINFO = *mut ICreateTypeInfo;
+unsafe extern "C" {
+    pub static IID_ICreateTypeInfo: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeInfoVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> ULONG>,
+    pub SetGuid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, guid: *const GUID) -> HRESULT,
+    >,
+    pub SetTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, uTypeFlags: UINT) -> HRESULT,
+    >,
+    pub SetDocString: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pStrDoc: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, dwHelpContext: DWORD) -> HRESULT,
+    >,
+    pub SetVersion: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            wMajorVerNum: WORD,
+            wMinorVerNum: WORD,
+        ) -> HRESULT,
+    >,
+    pub AddRefTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            pTInfo: *mut ITypeInfo,
+            phRefType: *mut HREFTYPE,
+        ) -> HRESULT,
+    >,
+    pub AddFuncDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            pFuncDesc: *mut FUNCDESC,
+        ) -> HRESULT,
+    >,
+    pub AddImplType: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            hRefType: HREFTYPE,
+        ) -> HRESULT,
+    >,
+    pub SetImplTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            implTypeFlags: INT,
+        ) -> HRESULT,
+    >,
+    pub SetAlignment: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, cbAlignment: WORD) -> HRESULT,
+    >,
+    pub SetSchema: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pStrSchema: LPOLESTR) -> HRESULT,
+    >,
+    pub AddVarDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            pVarDesc: *mut VARDESC,
+        ) -> HRESULT,
+    >,
+    pub SetFuncAndParamNames: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            rgszNames: *mut LPOLESTR,
+            cNames: UINT,
+        ) -> HRESULT,
+    >,
+    pub SetVarName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, index: UINT, szName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetTypeDescAlias: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pTDescAlias: *mut TYPEDESC) -> HRESULT,
+    >,
+    pub DefineFuncAsDllEntry: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            szDllName: LPOLESTR,
+            szProcName: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetFuncDocString: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            szDocString: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetVarDocString: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            szDocString: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetFuncHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            dwHelpContext: DWORD,
+        ) -> HRESULT,
+    >,
+    pub SetVarHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo,
+            index: UINT,
+            dwHelpContext: DWORD,
+        ) -> HRESULT,
+    >,
+    pub SetMops: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, index: UINT, bstrMops: BSTR) -> HRESULT,
+    >,
+    pub SetTypeIdldesc: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo, pIdlDesc: *mut IDLDESC) -> HRESULT,
+    >,
+    pub LayOut: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeInfo {
+    pub lpVtbl: *mut ICreateTypeInfoVtbl,
+}
+pub type LPCREATETYPEINFO2 = *mut ICreateTypeInfo2;
+unsafe extern "C" {
+    pub static IID_ICreateTypeInfo2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeInfo2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> ULONG>,
+    pub SetGuid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, guid: *const GUID) -> HRESULT,
+    >,
+    pub SetTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, uTypeFlags: UINT) -> HRESULT,
+    >,
+    pub SetDocString: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pStrDoc: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, dwHelpContext: DWORD) -> HRESULT,
+    >,
+    pub SetVersion: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            wMajorVerNum: WORD,
+            wMinorVerNum: WORD,
+        ) -> HRESULT,
+    >,
+    pub AddRefTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            pTInfo: *mut ITypeInfo,
+            phRefType: *mut HREFTYPE,
+        ) -> HRESULT,
+    >,
+    pub AddFuncDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            pFuncDesc: *mut FUNCDESC,
+        ) -> HRESULT,
+    >,
+    pub AddImplType: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            hRefType: HREFTYPE,
+        ) -> HRESULT,
+    >,
+    pub SetImplTypeFlags: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            implTypeFlags: INT,
+        ) -> HRESULT,
+    >,
+    pub SetAlignment: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, cbAlignment: WORD) -> HRESULT,
+    >,
+    pub SetSchema: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pStrSchema: LPOLESTR) -> HRESULT,
+    >,
+    pub AddVarDesc: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            pVarDesc: *mut VARDESC,
+        ) -> HRESULT,
+    >,
+    pub SetFuncAndParamNames: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            rgszNames: *mut LPOLESTR,
+            cNames: UINT,
+        ) -> HRESULT,
+    >,
+    pub SetVarName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT, szName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetTypeDescAlias: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pTDescAlias: *mut TYPEDESC) -> HRESULT,
+    >,
+    pub DefineFuncAsDllEntry: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            szDllName: LPOLESTR,
+            szProcName: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetFuncDocString: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            szDocString: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetVarDocString: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            szDocString: LPOLESTR,
+        ) -> HRESULT,
+    >,
+    pub SetFuncHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            dwHelpContext: DWORD,
+        ) -> HRESULT,
+    >,
+    pub SetVarHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            dwHelpContext: DWORD,
+        ) -> HRESULT,
+    >,
+    pub SetMops: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT, bstrMops: BSTR) -> HRESULT,
+    >,
+    pub SetTypeIdldesc: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, pIdlDesc: *mut IDLDESC) -> HRESULT,
+    >,
+    pub LayOut:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
+    pub DeleteFuncDesc: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+    >,
+    pub DeleteFuncDescByMemId: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            memid: MEMBERID,
+            invKind: INVOKEKIND,
+        ) -> HRESULT,
+    >,
+    pub DeleteVarDesc: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+    >,
+    pub DeleteVarDescByMemId: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, memid: MEMBERID) -> HRESULT,
+    >,
+    pub DeleteImplType: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, index: UINT) -> HRESULT,
+    >,
+    pub SetCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetFuncCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetParamCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            indexFunc: UINT,
+            indexParam: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetVarCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetImplTypeCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetHelpStringContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, dwHelpStringContext: ULONG) -> HRESULT,
+    >,
+    pub SetFuncHelpStringContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            dwHelpStringContext: ULONG,
+        ) -> HRESULT,
+    >,
+    pub SetVarHelpStringContext: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeInfo2,
+            index: UINT,
+            dwHelpStringContext: ULONG,
+        ) -> HRESULT,
+    >,
+    pub Invalidate:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeInfo2) -> HRESULT>,
+    pub SetName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeInfo2, szName: LPOLESTR) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeInfo2 {
+    pub lpVtbl: *mut ICreateTypeInfo2Vtbl,
+}
+pub type LPCREATETYPELIB = *mut ICreateTypeLib;
+unsafe extern "C" {
+    pub static IID_ICreateTypeLib: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeLibVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> ULONG>,
+    pub CreateTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib,
+            szName: LPOLESTR,
+            tkind: TYPEKIND,
+            ppCTInfo: *mut *mut ICreateTypeInfo,
+        ) -> HRESULT,
+    >,
+    pub SetName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetVersion: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib,
+            wMajorVerNum: WORD,
+            wMinorVerNum: WORD,
+        ) -> HRESULT,
+    >,
+    pub SetGuid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, guid: *const GUID) -> HRESULT,
+    >,
+    pub SetDocString: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szDoc: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpFileName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, szHelpFileName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, dwHelpContext: DWORD) -> HRESULT,
+    >,
+    pub SetLcid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, lcid: LCID) -> HRESULT,
+    >,
+    pub SetLibFlags: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib, uLibFlags: UINT) -> HRESULT,
+    >,
+    pub SaveAllChanges:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeLib {
+    pub lpVtbl: *mut ICreateTypeLibVtbl,
+}
+pub type LPCREATETYPELIB2 = *mut ICreateTypeLib2;
+unsafe extern "C" {
+    pub static IID_ICreateTypeLib2: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeLib2Vtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib2,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> ULONG>,
+    pub CreateTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib2,
+            szName: LPOLESTR,
+            tkind: TYPEKIND,
+            ppCTInfo: *mut *mut ICreateTypeInfo,
+        ) -> HRESULT,
+    >,
+    pub SetName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetVersion: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib2,
+            wMajorVerNum: WORD,
+            wMinorVerNum: WORD,
+        ) -> HRESULT,
+    >,
+    pub SetGuid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, guid: *const GUID) -> HRESULT,
+    >,
+    pub SetDocString: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szDoc: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpFileName: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szHelpFileName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetHelpContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, dwHelpContext: DWORD) -> HRESULT,
+    >,
+    pub SetLcid: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, lcid: LCID) -> HRESULT,
+    >,
+    pub SetLibFlags: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, uLibFlags: UINT) -> HRESULT,
+    >,
+    pub SaveAllChanges:
+        ::core::option::Option<unsafe extern "system" fn(This: *mut ICreateTypeLib2) -> HRESULT>,
+    pub DeleteTypeInfo: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szName: LPOLESTR) -> HRESULT,
+    >,
+    pub SetCustData: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut ICreateTypeLib2,
+            guid: *const GUID,
+            pVarVal: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+    pub SetHelpStringContext: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, dwHelpStringContext: ULONG) -> HRESULT,
+    >,
+    pub SetHelpStringDll: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut ICreateTypeLib2, szFileName: LPOLESTR) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICreateTypeLib2 {
+    pub lpVtbl: *mut ICreateTypeLib2Vtbl,
+}
+pub type LPERRORLOG = *mut IErrorLog;
+unsafe extern "C" {
+    pub static IID_IErrorLog: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IErrorLogVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IErrorLog,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
+    pub AddError: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IErrorLog,
+            pszPropName: LPCOLESTR,
+            pExcepInfo: *mut EXCEPINFO,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IErrorLog {
+    pub lpVtbl: *mut IErrorLogVtbl,
+}
+pub type LPPROPERTYBAG = *mut IPropertyBag;
+unsafe extern "C" {
+    pub static IID_IPropertyBag: GUID;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyBagVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPropertyBag,
+            riid: *const IID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub Read: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPropertyBag,
+            pszPropName: LPCOLESTR,
+            pVar: *mut VARIANT,
+            pErrorLog: *mut IErrorLog,
+        ) -> HRESULT,
+    >,
+    pub Write: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IPropertyBag,
+            pszPropName: LPCOLESTR,
+            pVar: *mut VARIANT,
+        ) -> HRESULT,
+    >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyBag {
+    pub lpVtbl: *mut IPropertyBagVtbl,
+}
+unsafe extern "C" {
+    pub fn IPropertyBag_RemoteRead_Proxy(
+        This: *mut IPropertyBag,
+        pszPropName: LPCOLESTR,
+        pVar: *mut VARIANT,
+        pErrorLog: *mut IErrorLog,
+        varType: DWORD,
+        pUnkObj: *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IPropertyBag_RemoteRead_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "C" {
+    pub fn IPropertyBag_Read_Proxy(
+        This: *mut IPropertyBag,
+        pszPropName: LPCOLESTR,
+        pVar: *mut VARIANT,
+        pErrorLog: *mut IErrorLog,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IPropertyBag_Read_Stub(
+        This: *mut IPropertyBag,
+        pszPropName: LPCOLESTR,
+        pVar: *mut VARIANT,
+        pErrorLog: *mut IErrorLog,
+        varType: DWORD,
+        pUnkObj: *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn VARIANT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut VARIANT) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn VARIANT_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut VARIANT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn VARIANT_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut VARIANT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn VARIANT_UserFree(arg1: *mut ULONG, arg2: *mut VARIANT);
+}
+unsafe extern "C" {
+    pub fn BSTR_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut BSTR) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn BSTR_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut BSTR,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn BSTR_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut BSTR,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn BSTR_UserFree(arg1: *mut ULONG, arg2: *mut BSTR);
+}
+unsafe extern "C" {
+    pub fn CLEANLOCALSTORAGE_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut CLEANLOCALSTORAGE,
+    ) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn CLEANLOCALSTORAGE_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLEANLOCALSTORAGE,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn CLEANLOCALSTORAGE_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLEANLOCALSTORAGE,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "C" {
+    pub fn CLEANLOCALSTORAGE_UserFree(arg1: *mut ULONG, arg2: *mut CLEANLOCALSTORAGE);
+}
+unsafe extern "C" {
+    pub fn RegisterDragDrop(arg1: HWND, arg2: LPDROPTARGET) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn RevokeDragDrop(arg1: HWND) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DoDragDrop(
+        arg1: LPDATAOBJECT,
+        arg2: LPDROPSOURCE,
+        arg3: DWORD,
+        arg4: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleLoadFromStream(
+        pStm: *mut IStream,
+        iidInterface: *const IID,
+        ppvObj: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSaveToStream(pPStm: *mut IPersistStream, pStm: *mut IStream) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateMenuDescriptor(
+        hmenuCombined: HMENU,
+        lpMenuWidths: LPOLEMENUGROUPWIDTHS,
+    ) -> HOLEMENU;
+}
+unsafe extern "C" {
+    pub fn OleDestroyMenuDescriptor(hmenuDescriptor: HOLEMENU) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSetMenuDescriptor(
+        hmenuDescriptor: HOLEMENU,
+        hwndFrame: HWND,
+        hwndActiveObject: HWND,
+        lpFrame: LPOLEINPLACEFRAME,
+        lpActiveObject: LPOLEINPLACEACTIVEOBJECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn WriteClassStg(pstg: *mut IStorage, rclsid: *const CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ReadClassStg(pstg: *mut IStorage, pclsid: *mut CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn WriteClassStm(pStm: *mut IStream, rclsid: *const CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ReadClassStm(pStm: *mut IStream, pclsid: *mut CLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSave(pPS: LPPERSISTSTORAGE, pStg: LPSTORAGE, fSameAsLoad: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleRegGetUserType(
+        clsid: *const CLSID,
+        dwFormOfType: DWORD,
+        pszUserType: *mut LPOLESTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleRegGetMiscStatus(
+        clsid: *const CLSID,
+        dwAspect: DWORD,
+        pdwStatus: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleRegEnumFormatEtc(
+        clsid: *const CLSID,
+        dwDirection: DWORD,
+        ppenumFormatetc: *mut LPENUMFORMATETC,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateStreamOnHGlobal(
+        hGlobal: HGLOBAL,
+        fDeleteOnRelease: BOOL,
+        ppstm: *mut LPSTREAM,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetHGlobalFromStream(pstm: LPSTREAM, phglobal: *mut HGLOBAL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleRegEnumVerbs(clsid: *const CLSID, ppenum: *mut LPENUMOLEVERB) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleIsRunning(pObject: LPOLEOBJECT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OleCreateLinkFromData(
+        pSrcDataObj: LPDATAOBJECT,
+        riid: *const IID,
+        renderopt: DWORD,
+        pFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSetContainedObject(pUnknown: LPUNKNOWN, fContained: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleNoteObjectVisible(pUnknown: LPUNKNOWN, fVisible: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleQueryLinkFromData(pSrcDataObject: *mut IDataObject) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleQueryCreateFromData(pSrcDataObject: LPDATAOBJECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleRun(pUnknown: LPUNKNOWN) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleDraw(
+        pUnknown: LPUNKNOWN,
+        dwAspect: DWORD,
+        hdcDraw: HDC,
+        lprcBounds: LPCRECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ReleaseStgMedium(arg1: LPSTGMEDIUM);
+}
+unsafe extern "C" {
+    pub fn OleGetClipboard(ppDataObj: *mut *mut IDataObject) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleIsCurrentClipboard(arg1: LPDATAOBJECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSetClipboard(arg1: LPDATAOBJECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateStaticFromData(
+        pSrcDataObj: LPDATAOBJECT,
+        iid: *const IID,
+        renderopt: DWORD,
+        pFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ReadFmtUserTypeStg(
+        pstg: LPSTORAGE,
+        pcf: *mut CLIPFORMAT,
+        lplpszUserType: *mut LPOLESTR,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleLoad(
+        pStg: LPSTORAGE,
+        riid: *const IID,
+        pClientSite: LPOLECLIENTSITE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetHGlobalFromILockBytes(plkbyt: LPLOCKBYTES, phglobal: *mut HGLOBAL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateILockBytesOnHGlobal(
+        hGlobal: HGLOBAL,
+        fDeleteOnRelease: BOOL,
+        pplkbyt: *mut LPLOCKBYTES,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleGetIconOfClass(
+        rclsid: *const CLSID,
+        lpszLabel: LPOLESTR,
+        fUseTypeAsLabel: BOOL,
+    ) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn OleGetIconOfFile(lpszPath: LPOLESTR, fUseFileAsLabel: BOOL) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn OleMetafilePictFromIconAndLabel(
+        hIcon: HICON,
+        lpszLabel: LPOLESTR,
+        lpszSourceFile: LPOLESTR,
+        iIconIndex: UINT,
+    ) -> HGLOBAL;
+}
+unsafe extern "C" {
+    pub fn OleLockRunning(pUnknown: LPUNKNOWN, fLock: BOOL, fLastUnlockCloses: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateFromFile(
+        rclsid: *const CLSID,
+        lpszFileName: LPCOLESTR,
+        riid: *const IID,
+        renderopt: DWORD,
+        lpFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateLink(
+        pmkLinkSrc: LPMONIKER,
+        riid: *const IID,
+        renderopt: DWORD,
+        lpFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreate(
+        rclsid: *const CLSID,
+        riid: *const IID,
+        renderopt: DWORD,
+        pFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleFlushClipboard() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetConvertStg(pStg: LPSTORAGE) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn SetConvertStg(pStg: LPSTORAGE, fConvert: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IsAccelerator(
+        hAccel: HACCEL,
+        cAccelEntries: ::core::ffi::c_int,
+        lpMsg: *mut tagMSG,
+        lpwCmd: *mut WORD,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OleCreateLinkToFile(
+        lpszFileName: LPCOLESTR,
+        riid: *const IID,
+        renderopt: DWORD,
+        lpFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleDuplicateData(hSrc: HANDLE, cfFormat: CLIPFORMAT, uiFlags: UINT) -> HANDLE;
+}
+unsafe extern "C" {
+    pub fn WriteFmtUserTypeStg(pstg: LPSTORAGE, cf: CLIPFORMAT, lpszUserType: LPOLESTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleTranslateAccelerator(
+        lpFrame: LPOLEINPLACEFRAME,
+        lpFrameInfo: LPOLEINPLACEFRAMEINFO,
+        lpmsg: *mut tagMSG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateFromData(
+        pSrcDataObj: LPDATAOBJECT,
+        riid: *const IID,
+        renderopt: DWORD,
+        pFormatEtc: LPFORMATETC,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateFromDataEx(
+        pSrcDataObj: LPDATAOBJECT,
+        riid: *const IID,
+        dwFlags: DWORD,
+        renderopt: DWORD,
+        num_formats: ULONG,
+        adv_flags: *mut DWORD,
+        fmts: LPFORMATETC,
+        sink: *mut IAdviseSink,
+        conns: *mut DWORD,
+        pClientSite: LPOLECLIENTSITE,
+        pStg: LPSTORAGE,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateDefaultHandler(
+        clsid: *const CLSID,
+        pUnkOuter: LPUNKNOWN,
+        riid: *const IID,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleCreateEmbeddingHelper(
+        clsid: *const CLSID,
+        pUnkOuter: LPUNKNOWN,
+        flags: DWORD,
+        pCF: *mut IClassFactory,
+        riid: *const IID,
+        ppvObj: *mut LPVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn CreateOleAdviseHolder(ppOAHolder: *mut LPOLEADVISEHOLDER) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleInitialize(pvReserved: LPVOID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleUninitialize();
+}
+unsafe extern "C" {
+    pub fn IsValidInterface(punk: LPUNKNOWN) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OleBuildVersion() -> DWORD;
+}
 pub type LPOLESTREAM = *mut _OLESTREAM;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -8455,6 +26984,25 @@ pub struct _OLESTREAM {
     pub lpstbl: LPOLESTREAMVTBL,
 }
 pub type OLESTREAM = _OLESTREAM;
+unsafe extern "C" {
+    pub fn OleConvertOLESTREAMToIStorage(
+        lpolestream: LPOLESTREAM,
+        pstg: LPSTORAGE,
+        ptd: *const DVTARGETDEVICE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleConvertIStorageToOLESTREAM(pstg: LPSTORAGE, lpolestream: LPOLESTREAM) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleDoAutoConvert(pStg: LPSTORAGE, pClsidNew: LPCLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleGetAutoConvert(clsidOld: *const CLSID, pClsidNew: LPCLSID) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn OleSetAutoConvert(clsidOld: *const CLSID, clsidNew: *const CLSID) -> HRESULT;
+}
 unsafe extern "C" {
     pub static CLSID_DsObjectPicker: GUID;
 }
@@ -8549,11 +27097,274 @@ pub struct IDsObjectPickerVtbl {
         ) -> HRESULT,
     >,
 }
+pub type INHERIT_FLAGS = ULONG;
+pub type PINHERIT_FLAGS = *mut ULONG;
+pub type ACCESS_RIGHTS = ULONG;
+pub type PACCESS_RIGHTS = *mut ULONG;
+pub const _ACCESS_MODE_NOT_USED_ACCESS: _ACCESS_MODE = 0;
+pub const _ACCESS_MODE_GRANT_ACCESS: _ACCESS_MODE = 1;
+pub const _ACCESS_MODE_SET_ACCESS: _ACCESS_MODE = 2;
+pub const _ACCESS_MODE_DENY_ACCESS: _ACCESS_MODE = 3;
+pub const _ACCESS_MODE_REVOKE_ACCESS: _ACCESS_MODE = 4;
+pub const _ACCESS_MODE_SET_AUDIT_SUCCESS: _ACCESS_MODE = 5;
+pub const _ACCESS_MODE_SET_AUDIT_FAILURE: _ACCESS_MODE = 6;
+pub type _ACCESS_MODE = ::core::ffi::c_uint;
+pub use self::_ACCESS_MODE as ACCESS_MODE;
+pub const _SE_OBJECT_TYPE_SE_UNKNOWN_OBJECT_TYPE: _SE_OBJECT_TYPE = 0;
+pub const _SE_OBJECT_TYPE_SE_FILE_OBJECT: _SE_OBJECT_TYPE = 1;
+pub const _SE_OBJECT_TYPE_SE_SERVICE: _SE_OBJECT_TYPE = 2;
+pub const _SE_OBJECT_TYPE_SE_PRINTER: _SE_OBJECT_TYPE = 3;
+pub const _SE_OBJECT_TYPE_SE_REGISTRY_KEY: _SE_OBJECT_TYPE = 4;
+pub const _SE_OBJECT_TYPE_SE_LMSHARE: _SE_OBJECT_TYPE = 5;
+pub const _SE_OBJECT_TYPE_SE_KERNEL_OBJECT: _SE_OBJECT_TYPE = 6;
+pub const _SE_OBJECT_TYPE_SE_WINDOW_OBJECT: _SE_OBJECT_TYPE = 7;
+pub const _SE_OBJECT_TYPE_SE_DS_OBJECT: _SE_OBJECT_TYPE = 8;
+pub const _SE_OBJECT_TYPE_SE_DS_OBJECT_ALL: _SE_OBJECT_TYPE = 9;
+pub const _SE_OBJECT_TYPE_SE_PROVIDER_DEFINED_OBJECT: _SE_OBJECT_TYPE = 10;
+pub const _SE_OBJECT_TYPE_SE_WMIGUID_OBJECT: _SE_OBJECT_TYPE = 11;
+pub const _SE_OBJECT_TYPE_SE_REGISTRY_WOW64_32KEY: _SE_OBJECT_TYPE = 12;
+pub const _SE_OBJECT_TYPE_SE_REGISTRY_WOW64_64KEY: _SE_OBJECT_TYPE = 13;
+pub type _SE_OBJECT_TYPE = ::core::ffi::c_uint;
+pub use self::_SE_OBJECT_TYPE as SE_OBJECT_TYPE;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_UNKNOWN: _TRUSTEE_TYPE = 0;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_USER: _TRUSTEE_TYPE = 1;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_GROUP: _TRUSTEE_TYPE = 2;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_DOMAIN: _TRUSTEE_TYPE = 3;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_ALIAS: _TRUSTEE_TYPE = 4;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_WELL_KNOWN_GROUP: _TRUSTEE_TYPE = 5;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_DELETED: _TRUSTEE_TYPE = 6;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_INVALID: _TRUSTEE_TYPE = 7;
+pub const _TRUSTEE_TYPE_TRUSTEE_IS_COMPUTER: _TRUSTEE_TYPE = 8;
+pub type _TRUSTEE_TYPE = ::core::ffi::c_uint;
+pub use self::_TRUSTEE_TYPE as TRUSTEE_TYPE;
+pub const _TRUSTEE_FORM_TRUSTEE_IS_SID: _TRUSTEE_FORM = 0;
+pub const _TRUSTEE_FORM_TRUSTEE_IS_NAME: _TRUSTEE_FORM = 1;
+pub const _TRUSTEE_FORM_TRUSTEE_BAD_FORM: _TRUSTEE_FORM = 2;
+pub const _TRUSTEE_FORM_TRUSTEE_IS_OBJECTS_AND_SID: _TRUSTEE_FORM = 3;
+pub const _TRUSTEE_FORM_TRUSTEE_IS_OBJECTS_AND_NAME: _TRUSTEE_FORM = 4;
+pub type _TRUSTEE_FORM = ::core::ffi::c_uint;
+pub use self::_TRUSTEE_FORM as TRUSTEE_FORM;
+pub const _MULTIPLE_TRUSTEE_OPERATION_NO_MULTIPLE_TRUSTEE: _MULTIPLE_TRUSTEE_OPERATION = 0;
+pub const _MULTIPLE_TRUSTEE_OPERATION_TRUSTEE_IS_IMPERSONATE: _MULTIPLE_TRUSTEE_OPERATION = 1;
+pub type _MULTIPLE_TRUSTEE_OPERATION = ::core::ffi::c_uint;
+pub use self::_MULTIPLE_TRUSTEE_OPERATION as MULTIPLE_TRUSTEE_OPERATION;
+#[repr(C)]
+pub struct _TRUSTEE_A {
+    pub pMultipleTrustee: *mut _TRUSTEE_A,
+    pub MultipleTrusteeOperation: MULTIPLE_TRUSTEE_OPERATION,
+    pub TrusteeForm: TRUSTEE_FORM,
+    pub TrusteeType: TRUSTEE_TYPE,
+    pub ptstrName: LPSTR,
+}
+pub type TRUSTEE_A = _TRUSTEE_A;
+pub type PTRUSTEE_A = *mut _TRUSTEE_A;
+pub type TRUSTEEA = _TRUSTEE_A;
+pub type PTRUSTEEA = *mut _TRUSTEE_A;
+#[repr(C)]
+pub struct _TRUSTEE_W {
+    pub pMultipleTrustee: *mut _TRUSTEE_W,
+    pub MultipleTrusteeOperation: MULTIPLE_TRUSTEE_OPERATION,
+    pub TrusteeForm: TRUSTEE_FORM,
+    pub TrusteeType: TRUSTEE_TYPE,
+    pub ptstrName: LPWSTR,
+}
+pub type TRUSTEE_W = _TRUSTEE_W;
+pub type PTRUSTEE_W = *mut _TRUSTEE_W;
+pub type TRUSTEEW = _TRUSTEE_W;
+pub type PTRUSTEEW = *mut _TRUSTEE_W;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_ENTRYA {
+    pub Trustee: TRUSTEE_A,
+    pub fAccessFlags: ULONG,
+    pub Access: ACCESS_RIGHTS,
+    pub ProvSpecificAccess: ACCESS_RIGHTS,
+    pub Inheritance: INHERIT_FLAGS,
+    pub lpInheritProperty: LPCSTR,
+}
+pub type ACTRL_ACCESS_ENTRYA = _ACTRL_ACCESS_ENTRYA;
+pub type PACTRL_ACCESS_ENTRYA = *mut _ACTRL_ACCESS_ENTRYA;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_ENTRYW {
+    pub Trustee: TRUSTEE_W,
+    pub fAccessFlags: ULONG,
+    pub Access: ACCESS_RIGHTS,
+    pub ProvSpecificAccess: ACCESS_RIGHTS,
+    pub Inheritance: INHERIT_FLAGS,
+    pub lpInheritProperty: LPCWSTR,
+}
+pub type ACTRL_ACCESS_ENTRYW = _ACTRL_ACCESS_ENTRYW;
+pub type PACTRL_ACCESS_ENTRYW = *mut _ACTRL_ACCESS_ENTRYW;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_ENTRY_LISTA {
+    pub cEntries: ULONG,
+    pub pAccessList: *mut ACTRL_ACCESS_ENTRYA,
+}
+pub type ACTRL_ACCESS_ENTRY_LISTA = _ACTRL_ACCESS_ENTRY_LISTA;
+pub type PACTRL_ACCESS_ENTRY_LISTA = *mut _ACTRL_ACCESS_ENTRY_LISTA;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_ENTRY_LISTW {
+    pub cEntries: ULONG,
+    pub pAccessList: *mut ACTRL_ACCESS_ENTRYW,
+}
+pub type ACTRL_ACCESS_ENTRY_LISTW = _ACTRL_ACCESS_ENTRY_LISTW;
+pub type PACTRL_ACCESS_ENTRY_LISTW = *mut _ACTRL_ACCESS_ENTRY_LISTW;
+#[repr(C)]
+pub struct _ACTRL_PROPERTY_ENTRYA {
+    pub lpProperty: LPCSTR,
+    pub pAccessEntryList: PACTRL_ACCESS_ENTRY_LISTA,
+    pub fListFlags: ULONG,
+}
+pub type ACTRL_PROPERTY_ENTRYA = _ACTRL_PROPERTY_ENTRYA;
+pub type PACTRL_PROPERTY_ENTRYA = *mut _ACTRL_PROPERTY_ENTRYA;
+#[repr(C)]
+pub struct _ACTRL_PROPERTY_ENTRYW {
+    pub lpProperty: LPCWSTR,
+    pub pAccessEntryList: PACTRL_ACCESS_ENTRY_LISTW,
+    pub fListFlags: ULONG,
+}
+pub type ACTRL_PROPERTY_ENTRYW = _ACTRL_PROPERTY_ENTRYW;
+pub type PACTRL_PROPERTY_ENTRYW = *mut _ACTRL_PROPERTY_ENTRYW;
+#[repr(C)]
+pub struct _ACTRL_ALISTA {
+    pub cEntries: ULONG,
+    pub pPropertyAccessList: PACTRL_PROPERTY_ENTRYA,
+}
+pub type ACTRL_ACCESSA = _ACTRL_ALISTA;
+pub type PACTRL_ACCESSA = *mut _ACTRL_ALISTA;
+pub type ACTRL_AUDITA = _ACTRL_ALISTA;
+pub type PACTRL_AUDITA = *mut _ACTRL_ALISTA;
+#[repr(C)]
+pub struct _ACTRL_ALISTW {
+    pub cEntries: ULONG,
+    pub pPropertyAccessList: PACTRL_PROPERTY_ENTRYW,
+}
+pub type ACTRL_ACCESSW = _ACTRL_ALISTW;
+pub type PACTRL_ACCESSW = *mut _ACTRL_ALISTW;
+pub type ACTRL_AUDITW = _ACTRL_ALISTW;
+pub type PACTRL_AUDITW = *mut _ACTRL_ALISTW;
+#[repr(C)]
+pub struct _TRUSTEE_ACCESSA {
+    pub lpProperty: LPSTR,
+    pub Access: ACCESS_RIGHTS,
+    pub fAccessFlags: ULONG,
+    pub fReturnedAccess: ULONG,
+}
+pub type TRUSTEE_ACCESSA = _TRUSTEE_ACCESSA;
+pub type PTRUSTEE_ACCESSA = *mut _TRUSTEE_ACCESSA;
+#[repr(C)]
+pub struct _TRUSTEE_ACCESSW {
+    pub lpProperty: LPWSTR,
+    pub Access: ACCESS_RIGHTS,
+    pub fAccessFlags: ULONG,
+    pub fReturnedAccess: ULONG,
+}
+pub type TRUSTEE_ACCESSW = _TRUSTEE_ACCESSW;
+pub type PTRUSTEE_ACCESSW = *mut _TRUSTEE_ACCESSW;
+#[repr(C)]
+pub struct _ACTRL_OVERLAPPED {
+    pub __bindgen_anon_1: _ACTRL_OVERLAPPED__bindgen_ty_1,
+    pub Reserved2: ULONG,
+    pub hEvent: HANDLE,
+}
+#[repr(C)]
+pub struct _ACTRL_OVERLAPPED__bindgen_ty_1 {
+    pub Provider: __BindgenUnionField<PVOID>,
+    pub Reserved1: __BindgenUnionField<ULONG>,
+    pub bindgen_union_field: u64,
+}
+pub type ACTRL_OVERLAPPED = _ACTRL_OVERLAPPED;
+pub type PACTRL_OVERLAPPED = *mut _ACTRL_OVERLAPPED;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_INFOA {
+    pub fAccessPermission: ULONG,
+    pub lpAccessPermissionName: LPSTR,
+}
+pub type ACTRL_ACCESS_INFOA = _ACTRL_ACCESS_INFOA;
+pub type PACTRL_ACCESS_INFOA = *mut _ACTRL_ACCESS_INFOA;
+#[repr(C)]
+pub struct _ACTRL_ACCESS_INFOW {
+    pub fAccessPermission: ULONG,
+    pub lpAccessPermissionName: LPWSTR,
+}
+pub type ACTRL_ACCESS_INFOW = _ACTRL_ACCESS_INFOW;
+pub type PACTRL_ACCESS_INFOW = *mut _ACTRL_ACCESS_INFOW;
+#[repr(C)]
+pub struct _ACTRL_CONTROL_INFOA {
+    pub lpControlId: LPSTR,
+    pub lpControlName: LPSTR,
+}
+pub type ACTRL_CONTROL_INFOA = _ACTRL_CONTROL_INFOA;
+pub type PACTRL_CONTROL_INFOA = *mut _ACTRL_CONTROL_INFOA;
+#[repr(C)]
+pub struct _ACTRL_CONTROL_INFOW {
+    pub lpControlId: LPWSTR,
+    pub lpControlName: LPWSTR,
+}
+pub type ACTRL_CONTROL_INFOW = _ACTRL_CONTROL_INFOW;
+pub type PACTRL_CONTROL_INFOW = *mut _ACTRL_CONTROL_INFOW;
+#[repr(C)]
+pub struct _EXPLICIT_ACCESS_A {
+    pub grfAccessPermissions: DWORD,
+    pub grfAccessMode: ACCESS_MODE,
+    pub grfInheritance: DWORD,
+    pub Trustee: TRUSTEE_A,
+}
+pub type EXPLICIT_ACCESS_A = _EXPLICIT_ACCESS_A;
+pub type PEXPLICIT_ACCESS_A = *mut _EXPLICIT_ACCESS_A;
+pub type EXPLICIT_ACCESSA = _EXPLICIT_ACCESS_A;
+pub type PEXPLICIT_ACCESSA = *mut _EXPLICIT_ACCESS_A;
+#[repr(C)]
+pub struct _EXPLICIT_ACCESS_W {
+    pub grfAccessPermissions: DWORD,
+    pub grfAccessMode: ACCESS_MODE,
+    pub grfInheritance: DWORD,
+    pub Trustee: TRUSTEE_W,
+}
+pub type EXPLICIT_ACCESS_W = _EXPLICIT_ACCESS_W;
+pub type PEXPLICIT_ACCESS_W = *mut _EXPLICIT_ACCESS_W;
+pub type EXPLICIT_ACCESSW = _EXPLICIT_ACCESS_W;
+pub type PEXPLICIT_ACCESSW = *mut _EXPLICIT_ACCESS_W;
+#[repr(C)]
+pub struct _OBJECTS_AND_SID {
+    pub ObjectsPresent: DWORD,
+    pub ObjectTypeGuid: GUID,
+    pub InheritedObjectTypeGuid: GUID,
+    pub pSid: *mut SID,
+}
+pub type OBJECTS_AND_SID = _OBJECTS_AND_SID;
+pub type POBJECTS_AND_SID = *mut _OBJECTS_AND_SID;
+#[repr(C)]
+pub struct _OBJECTS_AND_NAME_A {
+    pub ObjectsPresent: DWORD,
+    pub ObjectType: SE_OBJECT_TYPE,
+    pub ObjectTypeName: LPSTR,
+    pub InheritedObjectTypeName: LPSTR,
+    pub ptstrName: LPSTR,
+}
+pub type OBJECTS_AND_NAME_A = _OBJECTS_AND_NAME_A;
+pub type POBJECTS_AND_NAME_A = *mut _OBJECTS_AND_NAME_A;
+#[repr(C)]
+pub struct _OBJECTS_AND_NAME_W {
+    pub ObjectsPresent: DWORD,
+    pub ObjectType: SE_OBJECT_TYPE,
+    pub ObjectTypeName: LPWSTR,
+    pub InheritedObjectTypeName: LPWSTR,
+    pub ptstrName: LPWSTR,
+}
+pub type OBJECTS_AND_NAME_W = _OBJECTS_AND_NAME_W;
+pub type POBJECTS_AND_NAME_W = *mut _OBJECTS_AND_NAME_W;
+#[repr(C)]
+pub struct INHERITED_FROMA {
+    pub GenerationGap: LONG,
+    pub AncestorName: LPSTR,
+}
+pub type PINHERITED_FROMA = *mut INHERITED_FROMA;
 #[repr(C)]
 pub struct INHERITED_FROMW {
     pub GenerationGap: LONG,
     pub AncestorName: LPWSTR,
 }
+pub type PINHERITED_FROMW = *mut INHERITED_FROMW;
 #[repr(C)]
 pub struct _SI_OBJECT_INFO {
     pub dwFlags: DWORD,
@@ -8580,6 +27391,7 @@ pub struct _SI_INHERIT_TYPE {
     pub dwFlags: ULONG,
     pub pszName: LPCWSTR,
 }
+pub type SI_INHERIT_TYPE = _SI_INHERIT_TYPE;
 pub type PSI_INHERIT_TYPE = *mut _SI_INHERIT_TYPE;
 pub const _SI_PAGE_TYPE_SI_PAGE_PERM: _SI_PAGE_TYPE = 0;
 pub const _SI_PAGE_TYPE_SI_PAGE_ADVPERM: _SI_PAGE_TYPE = 1;
@@ -8587,7 +27399,65 @@ pub const _SI_PAGE_TYPE_SI_PAGE_AUDIT: _SI_PAGE_TYPE = 2;
 pub const _SI_PAGE_TYPE_SI_PAGE_OWNER: _SI_PAGE_TYPE = 3;
 pub type _SI_PAGE_TYPE = ::core::ffi::c_uint;
 pub use self::_SI_PAGE_TYPE as SI_PAGE_TYPE;
+#[repr(C)]
+pub struct _FN_OBJECT_MGR_FUNCTIONS {
+    pub Placeholder: ULONG,
+}
+pub type FN_OBJECT_MGR_FUNCTS = _FN_OBJECT_MGR_FUNCTIONS;
+pub type PFN_OBJECT_MGR_FUNCTS = *mut _FN_OBJECT_MGR_FUNCTIONS;
+pub const _PROG_INVOKE_SETTING_ProgressInvokeNever: _PROG_INVOKE_SETTING = 1;
+pub const _PROG_INVOKE_SETTING_ProgressInvokeEveryObject: _PROG_INVOKE_SETTING = 2;
+pub const _PROG_INVOKE_SETTING_ProgressInvokeOnError: _PROG_INVOKE_SETTING = 3;
+pub const _PROG_INVOKE_SETTING_ProgressCancelOperation: _PROG_INVOKE_SETTING = 4;
+pub const _PROG_INVOKE_SETTING_ProgressRetryOperation: _PROG_INVOKE_SETTING = 5;
+pub type _PROG_INVOKE_SETTING = ::core::ffi::c_uint;
+pub use self::_PROG_INVOKE_SETTING as PROG_INVOKE_SETTING;
+pub type PPROG_INVOKE_SETTING = *mut _PROG_INVOKE_SETTING;
+pub type FN_PROGRESSW = ::core::option::Option<
+    unsafe extern "system" fn(
+        pObjectName: LPWSTR,
+        Status: DWORD,
+        pInvokeSetting: PPROG_INVOKE_SETTING,
+        Args: PVOID,
+        SecuritySet: BOOL,
+    ),
+>;
+pub type FN_PROGRESSA = ::core::option::Option<
+    unsafe extern "system" fn(
+        pObjectName: LPSTR,
+        Status: DWORD,
+        pInvokeSetting: PPROG_INVOKE_SETTING,
+        Args: PVOID,
+        SecuritySet: BOOL,
+    ),
+>;
+pub type TRUSTEE_ = TRUSTEE_W;
+pub type PTRUSTEE_ = *mut TRUSTEE_W;
+pub type TRUSTEE = TRUSTEEW;
+pub type PTRUSTEE = *mut TRUSTEEW;
+pub type ACTRL_ACCESS = ACTRL_ACCESSW;
+pub type PACTRL_ACCESS = *mut ACTRL_ACCESSW;
+pub type ACTRL_ACCESS_ENTRY_LIST = ACTRL_ACCESS_ENTRY_LISTW;
+pub type PACTRL_ACCESS_ENTRY_LIST = *mut ACTRL_ACCESS_ENTRY_LISTW;
+pub type ACTRL_ACCESS_INFO = ACTRL_ACCESS_INFOW;
+pub type PACTRL_ACCESS_INFO = *mut ACTRL_ACCESS_INFOW;
+pub type ACTRL_ACCESS_ENTRY = ACTRL_ACCESS_ENTRYW;
+pub type PACTRL_ACCESS_ENTRY = *mut ACTRL_ACCESS_ENTRYW;
+pub type ACTRL_AUDIT = ACTRL_AUDITW;
+pub type PACTRL_AUDIT = *mut ACTRL_AUDITW;
+pub type ACTRL_CONTROL_INFO = ACTRL_CONTROL_INFOW;
+pub type PACTRL_CONTROL_INFO = *mut ACTRL_CONTROL_INFOW;
+pub type EXPLICIT_ACCESS_ = EXPLICIT_ACCESS_W;
+pub type PEXPLICIT_ACCESS_ = *mut EXPLICIT_ACCESS_W;
+pub type EXPLICIT_ACCESS = EXPLICIT_ACCESSW;
+pub type PEXPLICIT_ACCESS = *mut EXPLICIT_ACCESSW;
+pub type TRUSTEE_ACCESS = TRUSTEE_ACCESSW;
+pub type PTRUSTEE_ACCESS = *mut TRUSTEE_ACCESSW;
+pub type OBJECTS_AND_NAME_ = OBJECTS_AND_NAME_W;
+pub type POBJECTS_AND_NAME_ = *mut OBJECTS_AND_NAME_W;
+pub type INHERITED_FROM = INHERITED_FROMW;
 pub type PINHERITED_FROM = *mut INHERITED_FROMW;
+pub type FN_PROGRESS = FN_PROGRESSW;
 #[repr(C)]
 pub struct _PROPSHEETPAGEA {
     pub dwSize: DWORD,
@@ -8799,6 +27669,24 @@ pub struct _PSHNOTIFY {
 }
 pub type PSHNOTIFY = _PSHNOTIFY;
 pub type LPPSHNOTIFY = *mut _PSHNOTIFY;
+unsafe extern "C" {
+    pub fn CreatePropertySheetPageA(arg1: LPCPROPSHEETPAGEA) -> HPROPSHEETPAGE;
+}
+unsafe extern "C" {
+    pub fn CreatePropertySheetPageW(arg1: LPCPROPSHEETPAGEW) -> HPROPSHEETPAGE;
+}
+unsafe extern "C" {
+    pub fn DestroyPropertySheetPage(arg1: HPROPSHEETPAGE) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn PropertySheetA(arg1: LPCPROPSHEETHEADERA) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn PropertySheetW(arg1: LPCPROPSHEETHEADERW) -> INT_PTR;
+}
+unsafe extern "C" {
+    pub fn InitCommonControls();
+}
 #[repr(C)]
 pub struct tagINITCOMMONCONTROLSEX {
     pub dwSize: DWORD,
@@ -8806,6 +27694,9 @@ pub struct tagINITCOMMONCONTROLSEX {
 }
 pub type INITCOMMONCONTROLSEX = tagINITCOMMONCONTROLSEX;
 pub type LPINITCOMMONCONTROLSEX = *mut tagINITCOMMONCONTROLSEX;
+unsafe extern "C" {
+    pub fn InitCommonControlsEx(arg1: *const INITCOMMONCONTROLSEX) -> BOOL;
+}
 #[repr(C)]
 pub struct tagCOLORSCHEME {
     pub dwSize: DWORD,
@@ -8908,6 +27799,192 @@ pub struct _IMAGELISTDRAWPARAMS {
 }
 pub type IMAGELISTDRAWPARAMS = _IMAGELISTDRAWPARAMS;
 pub type LPIMAGELISTDRAWPARAMS = *mut _IMAGELISTDRAWPARAMS;
+unsafe extern "C" {
+    pub fn ImageList_Create(
+        cx: ::core::ffi::c_int,
+        cy: ::core::ffi::c_int,
+        flags: UINT,
+        cInitial: ::core::ffi::c_int,
+        cGrow: ::core::ffi::c_int,
+    ) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_GetImageCount(himl: HIMAGELIST) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ImageList_SetImageCount(himl: HIMAGELIST, uNewCount: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_Add(
+        himl: HIMAGELIST,
+        hbmImage: HBITMAP,
+        hbmMask: HBITMAP,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ImageList_ReplaceIcon(
+        himl: HIMAGELIST,
+        i: ::core::ffi::c_int,
+        hicon: HICON,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ImageList_SetBkColor(himl: HIMAGELIST, clrBk: COLORREF) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn ImageList_GetBkColor(himl: HIMAGELIST) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn ImageList_SetOverlayImage(
+        himl: HIMAGELIST,
+        iImage: ::core::ffi::c_int,
+        iOverlay: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn HIMAGELIST_QueryInterface(
+        arg1: HIMAGELIST,
+        arg2: *const IID,
+        arg3: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ImageList_Draw(
+        himl: HIMAGELIST,
+        i: ::core::ffi::c_int,
+        hdcDst: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        fStyle: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_Replace(
+        himl: HIMAGELIST,
+        i: ::core::ffi::c_int,
+        hbmImage: HBITMAP,
+        hbmMask: HBITMAP,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_AddMasked(
+        himl: HIMAGELIST,
+        hbmImage: HBITMAP,
+        crMask: COLORREF,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn ImageList_DrawEx(
+        himl: HIMAGELIST,
+        i: ::core::ffi::c_int,
+        hdcDst: HDC,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        dx: ::core::ffi::c_int,
+        dy: ::core::ffi::c_int,
+        rgbBk: COLORREF,
+        rgbFg: COLORREF,
+        fStyle: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_DrawIndirect(pimldp: *mut IMAGELISTDRAWPARAMS) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_Remove(himl: HIMAGELIST, i: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_GetIcon(himl: HIMAGELIST, i: ::core::ffi::c_int, flags: UINT) -> HICON;
+}
+unsafe extern "C" {
+    pub fn ImageList_LoadImageA(
+        hi: HINSTANCE,
+        lpbmp: LPCSTR,
+        cx: ::core::ffi::c_int,
+        cGrow: ::core::ffi::c_int,
+        crMask: COLORREF,
+        uType: UINT,
+        uFlags: UINT,
+    ) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_LoadImageW(
+        hi: HINSTANCE,
+        lpbmp: LPCWSTR,
+        cx: ::core::ffi::c_int,
+        cGrow: ::core::ffi::c_int,
+        crMask: COLORREF,
+        uType: UINT,
+        uFlags: UINT,
+    ) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_Copy(
+        himlDst: HIMAGELIST,
+        iDst: ::core::ffi::c_int,
+        himlSrc: HIMAGELIST,
+        iSrc: ::core::ffi::c_int,
+        uFlags: UINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_BeginDrag(
+        himlTrack: HIMAGELIST,
+        iTrack: ::core::ffi::c_int,
+        dxHotspot: ::core::ffi::c_int,
+        dyHotspot: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_EndDrag();
+}
+unsafe extern "C" {
+    pub fn ImageList_DragEnter(
+        hwndLock: HWND,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_DragLeave(hwndLock: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_DragMove(x: ::core::ffi::c_int, y: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_SetDragCursorImage(
+        himlDrag: HIMAGELIST,
+        iDrag: ::core::ffi::c_int,
+        dxHotspot: ::core::ffi::c_int,
+        dyHotspot: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_DragShowNolock(fShow: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_GetDragImage(ppt: *mut POINT, pptHotspot: *mut POINT) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_Read(pstm: LPSTREAM) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_Write(himl: HIMAGELIST, pstm: LPSTREAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_ReadEx(
+        dwFlags: DWORD,
+        pstm: LPSTREAM,
+        riid: *const IID,
+        ppv: *mut PVOID,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn ImageList_WriteEx(himl: HIMAGELIST, dwFlags: DWORD, pstm: LPSTREAM) -> HRESULT;
+}
 #[repr(C)]
 pub struct _IMAGEINFO {
     pub hbmImage: HBITMAP,
@@ -8918,6 +27995,40 @@ pub struct _IMAGEINFO {
 }
 pub type IMAGEINFO = _IMAGEINFO;
 pub type LPIMAGEINFO = *mut _IMAGEINFO;
+unsafe extern "C" {
+    pub fn ImageList_GetIconSize(
+        himl: HIMAGELIST,
+        cx: *mut ::core::ffi::c_int,
+        cy: *mut ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_SetIconSize(
+        himl: HIMAGELIST,
+        cx: ::core::ffi::c_int,
+        cy: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_GetImageInfo(
+        himl: HIMAGELIST,
+        i: ::core::ffi::c_int,
+        pImageInfo: *mut IMAGEINFO,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ImageList_Merge(
+        himl1: HIMAGELIST,
+        i1: ::core::ffi::c_int,
+        himl2: HIMAGELIST,
+        i2: ::core::ffi::c_int,
+        dx: ::core::ffi::c_int,
+        dy: ::core::ffi::c_int,
+    ) -> HIMAGELIST;
+}
+unsafe extern "C" {
+    pub fn ImageList_Duplicate(himl: HIMAGELIST) -> HIMAGELIST;
+}
 #[repr(C)]
 pub struct _HD_TEXTFILTERA {
     pub pszText: LPSTR,
@@ -9066,6 +28177,32 @@ pub struct _COLORMAP {
 }
 pub type COLORMAP = _COLORMAP;
 pub type LPCOLORMAP = *mut _COLORMAP;
+unsafe extern "C" {
+    pub fn CreateToolbarEx(
+        hwnd: HWND,
+        ws: DWORD,
+        wID: UINT,
+        nBitmaps: ::core::ffi::c_int,
+        hBMInst: HINSTANCE,
+        wBMID: UINT_PTR,
+        lpButtons: LPCTBBUTTON,
+        iNumButtons: ::core::ffi::c_int,
+        dxButton: ::core::ffi::c_int,
+        dyButton: ::core::ffi::c_int,
+        dxBitmap: ::core::ffi::c_int,
+        dyBitmap: ::core::ffi::c_int,
+        uStructSize: UINT,
+    ) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateMappedBitmap(
+        hInstance: HINSTANCE,
+        idBitmap: INT_PTR,
+        wFlags: UINT,
+        lpColorMap: LPCOLORMAP,
+        iNumMaps: ::core::ffi::c_int,
+    ) -> HBITMAP;
+}
 #[repr(C)]
 pub struct _NMTBCUSTOMDRAW {
     pub nmcd: NMCUSTOMDRAW,
@@ -9459,6 +28596,36 @@ pub struct tagNMTTDISPINFOW {
 }
 pub type NMTTDISPINFOW = tagNMTTDISPINFOW;
 pub type LPNMTTDISPINFOW = *mut tagNMTTDISPINFOW;
+unsafe extern "C" {
+    pub fn DrawStatusTextA(hDC: HDC, lprc: LPCRECT, pszText: LPCSTR, uFlags: UINT);
+}
+unsafe extern "C" {
+    pub fn DrawStatusTextW(hDC: HDC, lprc: LPCRECT, pszText: LPCWSTR, uFlags: UINT);
+}
+unsafe extern "C" {
+    pub fn CreateStatusWindowA(style: LONG, lpszText: LPCSTR, hwndParent: HWND, wID: UINT) -> HWND;
+}
+unsafe extern "C" {
+    pub fn CreateStatusWindowW(style: LONG, lpszText: LPCWSTR, hwndParent: HWND, wID: UINT)
+        -> HWND;
+}
+unsafe extern "C" {
+    pub fn MenuHelp(
+        uMsg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+        hMainMenu: HMENU,
+        hInst: HINSTANCE,
+        hwndStatus: HWND,
+        lpwIDs: *mut UINT,
+    );
+}
+unsafe extern "C" {
+    pub fn ShowHideMenuCtl(hWnd: HWND, uFlags: UINT_PTR, lpInfo: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetEffectiveClientRect(hWnd: HWND, lprc: LPRECT, lpInfo: *const INT);
+}
 #[repr(C)]
 pub struct tagDRAGLISTINFO {
     pub uNotification: UINT,
@@ -9467,6 +28634,15 @@ pub struct tagDRAGLISTINFO {
 }
 pub type DRAGLISTINFO = tagDRAGLISTINFO;
 pub type LPDRAGLISTINFO = *mut tagDRAGLISTINFO;
+unsafe extern "C" {
+    pub fn MakeDragList(hLB: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DrawInsert(handParent: HWND, hLB: HWND, nItem: ::core::ffi::c_int);
+}
+unsafe extern "C" {
+    pub fn LBItemFromPt(hLB: HWND, pt: POINT, bAutoScroll: BOOL) -> ::core::ffi::c_int;
+}
 #[repr(C)]
 pub struct _UDACCEL {
     pub nSec: UINT,
@@ -9474,6 +28650,22 @@ pub struct _UDACCEL {
 }
 pub type UDACCEL = _UDACCEL;
 pub type LPUDACCEL = *mut _UDACCEL;
+unsafe extern "C" {
+    pub fn CreateUpDownControl(
+        dwStyle: DWORD,
+        x: ::core::ffi::c_int,
+        y: ::core::ffi::c_int,
+        cx: ::core::ffi::c_int,
+        cy: ::core::ffi::c_int,
+        hParent: HWND,
+        nID: ::core::ffi::c_int,
+        hInst: HINSTANCE,
+        hBuddy: HWND,
+        nUpper: ::core::ffi::c_int,
+        nLower: ::core::ffi::c_int,
+        nPos: ::core::ffi::c_int,
+    ) -> HWND;
+}
 #[repr(C)]
 pub struct _NM_UPDOWN {
     pub hdr: NMHDR,
@@ -10365,6 +29557,12 @@ pub struct tagNMLINK {
 }
 pub type NMLINK = tagNMLINK;
 pub type PNMLINK = *mut tagNMLINK;
+unsafe extern "C" {
+    pub fn InitMUILanguage(uiLang: LANGID);
+}
+unsafe extern "C" {
+    pub fn GetMUILanguage() -> LANGID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DSA {
@@ -10383,12 +29581,63 @@ pub type PFNDSAENUMCALLBACK = ::core::option::Option<
         pData: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
+unsafe extern "C" {
+    pub fn DSA_Create(cbItem: ::core::ffi::c_int, cItemGrow: ::core::ffi::c_int) -> HDSA;
+}
+unsafe extern "C" {
+    pub fn DSA_Destroy(hdsa: HDSA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DSA_DestroyCallback(
+        hdsa: HDSA,
+        pfnCB: PFNDSAENUMCALLBACK,
+        pData: *mut ::core::ffi::c_void,
+    );
+}
+unsafe extern "C" {
+    pub fn DSA_EnumCallback(hdsa: HDSA, enumProc: PFNDSAENUMCALLBACK, lParam: LPVOID);
+}
+unsafe extern "C" {
+    pub fn DSA_GetItemPtr(hdsa: HDSA, i: ::core::ffi::c_int) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn DSA_DeleteAllItems(hdsa: HDSA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DSA_InsertItem(
+        hdsa: HDSA,
+        i: ::core::ffi::c_int,
+        pitem: *mut ::core::ffi::c_void,
+    ) -> ::core::ffi::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DPA {
     _unused: [u8; 0],
 }
 pub type HDPA = *mut _DPA;
+unsafe extern "C" {
+    pub fn DPA_Create(cItemGrow: ::core::ffi::c_int) -> HDPA;
+}
+unsafe extern "C" {
+    pub fn DPA_Destroy(hdpa: HDPA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DPA_DeletePtr(hdpa: HDPA, i: ::core::ffi::c_int) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn DPA_DeleteAllPtrs(hdpa: HDPA) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DPA_EnumCallback(hdpa: HDPA, pfnCB: PFNDPAENUMCALLBACK, pData: *mut ::core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn DPA_DestroyCallback(
+        hdpa: HDPA,
+        pfnCB: PFNDPAENUMCALLBACK,
+        pData: *mut ::core::ffi::c_void,
+    );
+}
 pub type PFNDPACOMPARE = ::core::option::Option<
     unsafe extern "system" fn(
         p1: *mut ::core::ffi::c_void,
@@ -10396,6 +29645,25 @@ pub type PFNDPACOMPARE = ::core::option::Option<
         lParam: LPARAM,
     ) -> ::core::ffi::c_int,
 >;
+unsafe extern "C" {
+    pub fn DPA_Sort(hdpa: HDPA, pfnCompare: PFNDPACOMPARE, lParam: LPARAM) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DPA_Search(
+        hdpa: HDPA,
+        pFind: *mut ::core::ffi::c_void,
+        iStart: ::core::ffi::c_int,
+        pfnCompare: PFNDPACOMPARE,
+        lParam: LPARAM,
+        options: UINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn Str_SetPtrA(ppsz: *mut LPSTR, psz: LPCSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn Str_SetPtrW(ppsz: *mut LPWSTR, psz: LPCWSTR) -> BOOL;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DPASTREAMINFO {
@@ -10426,6 +29694,108 @@ pub type PFNDPAMERGECONST = ::core::option::Option<
         arg4: LPARAM,
     ) -> *const ::core::ffi::c_void,
 >;
+unsafe extern "C" {
+    pub fn DPA_LoadStream(
+        phdpa: *mut HDPA,
+        pfn: PFNDPASTREAM,
+        pstream: *mut IStream,
+        pvInstData: *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DPA_SaveStream(
+        hdpa: HDPA,
+        pfn: PFNDPASTREAM,
+        pstream: *mut IStream,
+        pvInstData: *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DPA_Grow(pdpa: HDPA, cp: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DPA_InsertPtr(
+        hdpa: HDPA,
+        i: ::core::ffi::c_int,
+        p: *mut ::core::ffi::c_void,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn DPA_GetPtr(hdpa: HDPA, i: INT_PTR) -> PVOID;
+}
+unsafe extern "C" {
+    pub fn DPA_SetPtr(hdpa: HDPA, i: ::core::ffi::c_int, p: *mut ::core::ffi::c_void) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DPA_GetPtrIndex(hdpa: HDPA, p: *const ::core::ffi::c_void) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn _TrackMouseEvent(lpEventTrack: LPTRACKMOUSEEVENT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_EnableScrollBar(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_ShowScrollBar(arg1: HWND, code: ::core::ffi::c_int, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_GetScrollRange(
+        arg1: HWND,
+        code: ::core::ffi::c_int,
+        arg2: LPINT,
+        arg3: LPINT,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_GetScrollInfo(arg1: HWND, code: ::core::ffi::c_int, arg2: LPSCROLLINFO) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_GetScrollPos(arg1: HWND, code: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FlatSB_GetScrollProp(arg1: HWND, propIndex: ::core::ffi::c_int, arg2: LPINT) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_GetScrollPropPtr(
+        arg1: HWND,
+        propIndex: ::core::ffi::c_int,
+        arg2: PINT_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn FlatSB_SetScrollPos(
+        arg1: HWND,
+        code: ::core::ffi::c_int,
+        pos: ::core::ffi::c_int,
+        fRedraw: BOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FlatSB_SetScrollInfo(
+        arg1: HWND,
+        code: ::core::ffi::c_int,
+        arg2: LPSCROLLINFO,
+        fRedraw: BOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FlatSB_SetScrollRange(
+        arg1: HWND,
+        code: ::core::ffi::c_int,
+        min: ::core::ffi::c_int,
+        max: ::core::ffi::c_int,
+        fRedraw: BOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn FlatSB_SetScrollProp(arg1: HWND, index: UINT, newValue: INT_PTR, arg2: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn InitializeFlatSB(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn UninitializeFlatSB(arg1: HWND) -> HRESULT;
+}
 pub type SUBCLASSPROC = ::core::option::Option<
     unsafe extern "system" fn(
         hWnd: HWND,
@@ -10436,6 +29806,45 @@ pub type SUBCLASSPROC = ::core::option::Option<
         dwRefData: DWORD_PTR,
     ) -> LRESULT,
 >;
+unsafe extern "C" {
+    pub fn SetWindowSubclass(
+        hWnd: HWND,
+        pfnSubclass: SUBCLASSPROC,
+        uIdSubclass: UINT_PTR,
+        dwRefData: DWORD_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetWindowSubclass(
+        hWnd: HWND,
+        pfnSubclass: SUBCLASSPROC,
+        uIdSubclass: UINT_PTR,
+        pdwRefData: *mut DWORD_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn RemoveWindowSubclass(
+        hWnd: HWND,
+        pfnSubclass: SUBCLASSPROC,
+        uIdSubclass: UINT_PTR,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn DefSubclassProc(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawShadowText(
+        hdc: HDC,
+        pszText: LPCWSTR,
+        cch: UINT,
+        prc: *mut RECT,
+        dwFlags: DWORD,
+        crText: COLORREF,
+        crShadow: COLORREF,
+        ixOffset: ::core::ffi::c_int,
+        iyOffset: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
 pub const _TASKDIALOG_FLAGS_TDF_ENABLE_HYPERLINKS: _TASKDIALOG_FLAGS = 1;
 pub const _TASKDIALOG_FLAGS_TDF_USE_HICON_MAIN: _TASKDIALOG_FLAGS = 2;
 pub const _TASKDIALOG_FLAGS_TDF_USE_HICON_FOOTER: _TASKDIALOG_FLAGS = 4;
@@ -10559,6 +29968,14 @@ pub struct _TASKDIALOGCONFIG__bindgen_ty_2 {
     pub bindgen_union_field: [u8; 8usize],
 }
 pub type TASKDIALOGCONFIG = _TASKDIALOGCONFIG;
+unsafe extern "C" {
+    pub fn TaskDialogIndirect(
+        arg1: *const TASKDIALOGCONFIG,
+        arg2: *mut ::core::ffi::c_int,
+        arg3: *mut ::core::ffi::c_int,
+        arg4: *mut BOOL,
+    ) -> HRESULT;
+}
 unsafe extern "C" {
     pub static IID_ISecurityInformation: GUID;
 }
@@ -10863,6 +30280,52 @@ pub type PSIDREQCOMPLETIONPROC = ::core::option::Option<
         Context: PVOID,
     ),
 >;
+unsafe extern "C" {
+    pub fn ConvertSidToStringSidA(arg1: PSID, arg2: *mut LPSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertSidToStringSidW(arg1: PSID, arg2: *mut LPWSTR) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertStringSidToSidA(arg1: LPCSTR, arg2: *mut PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertStringSidToSidW(arg1: LPCWSTR, arg2: *mut PSID) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertStringSecurityDescriptorToSecurityDescriptorA(
+        arg1: LPCSTR,
+        arg2: DWORD,
+        arg3: *mut PSECURITY_DESCRIPTOR,
+        arg4: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: *mut PSECURITY_DESCRIPTOR,
+        arg4: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertSecurityDescriptorToStringSecurityDescriptorA(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: DWORD,
+        arg3: SECURITY_INFORMATION,
+        arg4: *mut LPSTR,
+        arg5: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn ConvertSecurityDescriptorToStringSecurityDescriptorW(
+        arg1: PSECURITY_DESCRIPTOR,
+        arg2: DWORD,
+        arg3: SECURITY_INFORMATION,
+        arg4: *mut LPWSTR,
+        arg5: PULONG,
+    ) -> BOOL;
+}
 pub type HPAINTBUFFER = HANDLE;
 pub type HTHEME = HANDLE;
 pub type HANIMATIONBUFFER = HANDLE;
@@ -10964,6 +30427,436 @@ pub struct _BP_ANIMATIONPARAMS {
 }
 pub type BP_ANIMATIONPARAMS = _BP_ANIMATIONPARAMS;
 pub type PBP_ANIMATIONPARAMS = *mut _BP_ANIMATIONPARAMS;
+unsafe extern "C" {
+    pub fn CloseThemeData(arg1: HTHEME) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeBackground(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: *const RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeBackgroundEx(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: *const DTBGOPTS,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeEdge(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: UINT,
+        arg7: UINT,
+        arg8: *mut RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeIcon(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: HIMAGELIST,
+        arg7: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeParentBackground(arg1: HWND, arg2: HDC, arg3: *mut RECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeText(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: LPCWSTR,
+        arg6: ::core::ffi::c_int,
+        arg7: DWORD,
+        arg8: DWORD,
+        arg9: *const RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn EnableThemeDialogTexture(arg1: HWND, arg2: DWORD) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn EnableTheming(arg1: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetCurrentThemeName(
+        arg1: LPWSTR,
+        arg2: ::core::ffi::c_int,
+        arg3: LPWSTR,
+        arg4: ::core::ffi::c_int,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeAppProperties() -> DWORD;
+}
+unsafe extern "C" {
+    pub fn GetThemeBackgroundContentRect(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: *mut RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeBackgroundExtent(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: *mut RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeBackgroundRegion(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *const RECT,
+        arg6: *mut HRGN,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeBool(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeColor(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut COLORREF,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeDocumentationProperty(
+        arg1: LPCWSTR,
+        arg2: LPCWSTR,
+        arg3: LPWSTR,
+        arg4: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeEnumValue(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeFilename(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeFont(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: *mut LOGFONTW,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeInt(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeIntList(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut INTLIST,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeMargins(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: *mut RECT,
+        arg7: *mut MARGINS,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeMetric(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: ::core::ffi::c_int,
+        arg6: *mut ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemePartSize(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut RECT,
+        arg6: THEMESIZE,
+        arg7: *mut SIZE,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemePosition(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut POINT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemePropertyOrigin(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut PROPERTYORIGIN,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeRect(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeString(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysBool(arg1: HTHEME, arg2: ::core::ffi::c_int) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysColor(arg1: HTHEME, arg2: ::core::ffi::c_int) -> COLORREF;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysColorBrush(arg1: HTHEME, arg2: ::core::ffi::c_int) -> HBRUSH;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysFont(arg1: HTHEME, arg2: ::core::ffi::c_int, arg3: *mut LOGFONTW) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysInt(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: *mut ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysSize(arg1: HTHEME, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn GetThemeSysString(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: LPWSTR,
+        arg4: ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeTextExtent(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: LPCWSTR,
+        arg6: ::core::ffi::c_int,
+        arg7: DWORD,
+        arg8: *const RECT,
+        arg9: *mut RECT,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetThemeTextMetrics(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: *mut TEXTMETRICW,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetWindowTheme(arg1: HWND) -> HTHEME;
+}
+unsafe extern "C" {
+    pub fn HitTestThemeBackground(
+        arg1: HTHEME,
+        arg2: HDC,
+        arg3: ::core::ffi::c_int,
+        arg4: ::core::ffi::c_int,
+        arg5: DWORD,
+        arg6: *const RECT,
+        arg7: HRGN,
+        arg8: POINT,
+        arg9: *mut WORD,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn IsAppThemed() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsThemeActive() -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsThemeBackgroundPartiallyTransparent(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsThemeDialogTextureEnabled(arg1: HWND) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn IsThemePartDefined(
+        arg1: HTHEME,
+        arg2: ::core::ffi::c_int,
+        arg3: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn OpenThemeData(arg1: HWND, arg2: LPCWSTR) -> HTHEME;
+}
+unsafe extern "C" {
+    pub fn OpenThemeDataEx(arg1: HWND, arg2: LPCWSTR, arg3: DWORD) -> HTHEME;
+}
+unsafe extern "C" {
+    pub fn SetThemeAppProperties(arg1: DWORD);
+}
+unsafe extern "C" {
+    pub fn SetWindowTheme(arg1: HWND, arg2: LPCWSTR, arg3: LPCWSTR) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn DrawThemeTextEx(
+        hTheme: HTHEME,
+        hdc: HDC,
+        iPartId: ::core::ffi::c_int,
+        iStateId: ::core::ffi::c_int,
+        pszText: LPCWSTR,
+        iCharCount: ::core::ffi::c_int,
+        dwTextFlags: DWORD,
+        pRect: LPRECT,
+        options: *const DTTOPTS,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintInit() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintUnInit() -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BeginBufferedPaint(
+        arg1: HDC,
+        arg2: *const RECT,
+        arg3: BP_BUFFERFORMAT,
+        arg4: *mut BP_PAINTPARAMS,
+        arg5: *mut HDC,
+    ) -> HPAINTBUFFER;
+}
+unsafe extern "C" {
+    pub fn EndBufferedPaint(arg1: HPAINTBUFFER, arg2: BOOL) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintClear(arg1: HPAINTBUFFER, arg2: *const RECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintSetAlpha(arg1: HPAINTBUFFER, arg2: *const RECT, arg3: BYTE) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetBufferedPaintBits(
+        arg1: HPAINTBUFFER,
+        arg2: *mut *mut RGBQUAD,
+        arg3: *mut ::core::ffi::c_int,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn GetBufferedPaintDC(arg1: HPAINTBUFFER) -> HDC;
+}
+unsafe extern "C" {
+    pub fn GetBufferedPaintTargetDC(arg1: HPAINTBUFFER) -> HDC;
+}
+unsafe extern "C" {
+    pub fn GetBufferedPaintTargetRect(arg1: HPAINTBUFFER, prc: *mut RECT) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn BeginBufferedAnimation(
+        arg1: HWND,
+        arg2: HDC,
+        arg3: *const RECT,
+        arg4: BP_BUFFERFORMAT,
+        arg5: *mut BP_PAINTPARAMS,
+        arg6: *mut BP_ANIMATIONPARAMS,
+        arg7: *mut HDC,
+        arg8: *mut HDC,
+    ) -> HANIMATIONBUFFER;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintRenderAnimation(arg1: HWND, arg2: HDC) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn BufferedPaintStopAllAnimations(arg1: HWND) -> HRESULT;
+}
+unsafe extern "C" {
+    pub fn EndBufferedAnimation(arg1: HANIMATIONBUFFER, arg2: BOOL) -> HRESULT;
+}
 pub const BGTYPE_BT_IMAGEFILE: BGTYPE = 0;
 pub const BGTYPE_BT_BORDERFILL: BGTYPE = 1;
 pub const BGTYPE_BT_NONE: BGTYPE = 2;
@@ -12585,6 +32478,451 @@ pub struct _TRUSTED_DOMAIN_FULL_INFORMATION {
 }
 pub type TRUSTED_DOMAIN_FULL_INFORMATION = _TRUSTED_DOMAIN_FULL_INFORMATION;
 pub type PTRUSTED_DOMAIN_FULL_INFORMATION = *mut _TRUSTED_DOMAIN_FULL_INFORMATION;
+unsafe extern "C" {
+    pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
+}
+unsafe extern "C" {
+    pub fn SystemFunction040(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn SystemFunction041(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaAddAccountRights(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: PLSA_UNICODE_STRING,
+        arg4: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaAddPrivilegesToAccount(arg1: LSA_HANDLE, arg2: PPRIVILEGE_SET) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaCallAuthenticationPackage(
+        arg1: HANDLE,
+        arg2: ULONG,
+        arg3: PVOID,
+        arg4: ULONG,
+        arg5: *mut PVOID,
+        arg6: PULONG,
+        arg7: PNTSTATUS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaClearAuditLog(arg1: LSA_HANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaClose(arg1: LSA_HANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaConnectUntrusted(arg1: PHANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaCreateAccount(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaCreateSecret(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaCreateTrustedDomain(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_TRUST_INFORMATION,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaCreateTrustedDomainEx(
+        arg1: LSA_HANDLE,
+        arg2: PTRUSTED_DOMAIN_INFORMATION_EX,
+        arg3: PTRUSTED_DOMAIN_AUTH_INFORMATION,
+        arg4: ACCESS_MASK,
+        arg5: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaDelete(arg1: LSA_HANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaDeleteTrustedDomain(arg1: LSA_HANDLE, arg2: PSID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaDeregisterLogonProcess(arg1: HANDLE) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateAccountRights(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: *mut PLSA_UNICODE_STRING,
+        arg4: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateAccounts(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_ENUMERATION_HANDLE,
+        arg3: *mut PVOID,
+        arg4: ULONG,
+        arg5: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateAccountsWithUserRight(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: *mut PVOID,
+        arg4: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateLogonSessions(arg1: PULONG, arg2: *mut PLUID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumeratePrivileges(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_ENUMERATION_HANDLE,
+        arg3: *mut PVOID,
+        arg4: ULONG,
+        arg5: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumeratePrivilegesOfAccount(arg1: LSA_HANDLE, arg2: *mut PPRIVILEGE_SET)
+        -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateTrustedDomains(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_ENUMERATION_HANDLE,
+        arg3: *mut PVOID,
+        arg4: ULONG,
+        arg5: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaEnumerateTrustedDomainsEx(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_ENUMERATION_HANDLE,
+        arg3: *mut PVOID,
+        arg4: ULONG,
+        arg5: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaFreeMemory(arg1: PVOID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaFreeReturnBuffer(arg1: PVOID) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaGetLogonSessionData(arg1: PLUID, arg2: *mut PSECURITY_LOGON_SESSION_DATA)
+        -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaGetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaGetRemoteUserName(
+        arg1: PLSA_UNICODE_STRING,
+        arg2: *mut PLSA_UNICODE_STRING,
+        arg3: *mut PLSA_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaGetSystemAccessAccount(arg1: LSA_HANDLE, arg2: PULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaGetUserName(arg1: *mut PUNICODE_STRING, arg2: *mut PUNICODE_STRING) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLogonUser(
+        arg1: HANDLE,
+        arg2: PLSA_STRING,
+        arg3: SECURITY_LOGON_TYPE,
+        arg4: ULONG,
+        arg5: PVOID,
+        arg6: ULONG,
+        arg7: PTOKEN_GROUPS,
+        arg8: PTOKEN_SOURCE,
+        arg9: *mut PVOID,
+        arg10: PULONG,
+        arg11: PLUID,
+        arg12: PHANDLE,
+        arg13: PQUOTA_LIMITS,
+        arg14: PNTSTATUS,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupAuthenticationPackage(
+        arg1: HANDLE,
+        arg2: PLSA_STRING,
+        arg3: PULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupNames(
+        arg1: LSA_HANDLE,
+        arg2: ULONG,
+        arg3: PLSA_UNICODE_STRING,
+        arg4: *mut PLSA_REFERENCED_DOMAIN_LIST,
+        arg5: *mut PLSA_TRANSLATED_SID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupNames2(
+        arg1: LSA_HANDLE,
+        arg2: ULONG,
+        arg3: ULONG,
+        arg4: PLSA_UNICODE_STRING,
+        arg5: *mut PLSA_REFERENCED_DOMAIN_LIST,
+        arg6: *mut PLSA_TRANSLATED_SID2,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupPrivilegeDisplayName(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: *mut PLSA_UNICODE_STRING,
+        arg4: PUSHORT,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupPrivilegeName(
+        arg1: LSA_HANDLE,
+        arg2: PLUID,
+        arg3: *mut PLSA_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupPrivilegeValue(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: PLUID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaLookupSids(
+        arg1: LSA_HANDLE,
+        arg2: ULONG,
+        arg3: *mut PSID,
+        arg4: *mut PLSA_REFERENCED_DOMAIN_LIST,
+        arg5: *mut PLSA_TRANSLATED_NAME,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaNtStatusToWinError(arg1: NTSTATUS) -> ULONG;
+}
+unsafe extern "C" {
+    pub fn LsaOpenAccount(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaOpenPolicy(
+        arg1: PLSA_UNICODE_STRING,
+        arg2: PLSA_OBJECT_ATTRIBUTES,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaOpenPolicySce(
+        arg1: PLSA_UNICODE_STRING,
+        arg2: PLSA_OBJECT_ATTRIBUTES,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaOpenSecret(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQuerySecurityObject(
+        arg1: LSA_HANDLE,
+        arg2: SECURITY_INFORMATION,
+        arg3: *mut PSECURITY_DESCRIPTOR,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaOpenTrustedDomain(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaOpenTrustedDomainByName(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: ACCESS_MASK,
+        arg4: PLSA_HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQueryDomainInformationPolicy(
+        arg1: LSA_HANDLE,
+        arg2: POLICY_DOMAIN_INFORMATION_CLASS,
+        arg3: *mut PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQueryInformationPolicy(
+        arg1: LSA_HANDLE,
+        arg2: POLICY_INFORMATION_CLASS,
+        arg3: *mut PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQuerySecret(
+        arg1: LSA_HANDLE,
+        arg2: *mut PLSA_UNICODE_STRING,
+        arg3: PLARGE_INTEGER,
+        arg4: *mut PLSA_UNICODE_STRING,
+        arg5: PLARGE_INTEGER,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQueryTrustedDomainInfo(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: TRUSTED_INFORMATION_CLASS,
+        arg4: *mut PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaQueryTrustedDomainInfoByName(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: TRUSTED_INFORMATION_CLASS,
+        arg4: *mut PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaRegisterLogonProcess(
+        arg1: PLSA_STRING,
+        arg2: PHANDLE,
+        arg3: PLSA_OPERATIONAL_MODE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaRegisterPolicyChangeNotification(
+        arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
+        arg2: HANDLE,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaRemoveAccountRights(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: BOOLEAN,
+        arg4: PLSA_UNICODE_STRING,
+        arg5: ULONG,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaRemovePrivilegesFromAccount(
+        arg1: LSA_HANDLE,
+        arg2: BOOLEAN,
+        arg3: PPRIVILEGE_SET,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaRetrievePrivateData(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: *mut PLSA_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetDomainInformationPolicy(
+        arg1: LSA_HANDLE,
+        arg2: POLICY_DOMAIN_INFORMATION_CLASS,
+        arg3: PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetInformationPolicy(
+        arg1: LSA_HANDLE,
+        arg2: POLICY_INFORMATION_CLASS,
+        arg3: PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetInformationTrustedDomain(
+        arg1: LSA_HANDLE,
+        arg2: TRUSTED_INFORMATION_CLASS,
+        arg3: PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetSecret(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: PLSA_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetSecurityObject(
+        arg1: LSA_HANDLE,
+        arg2: SECURITY_INFORMATION,
+        arg3: PSECURITY_DESCRIPTOR,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetSystemAccessAccount(arg1: LSA_HANDLE, arg2: ULONG) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetTrustedDomainInformation(
+        arg1: LSA_HANDLE,
+        arg2: PSID,
+        arg3: TRUSTED_INFORMATION_CLASS,
+        arg4: PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaSetTrustedDomainInfoByName(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: TRUSTED_INFORMATION_CLASS,
+        arg4: PVOID,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaStorePrivateData(
+        arg1: LSA_HANDLE,
+        arg2: PLSA_UNICODE_STRING,
+        arg3: PLSA_UNICODE_STRING,
+    ) -> NTSTATUS;
+}
+unsafe extern "C" {
+    pub fn LsaUnregisterPolicyChangeNotification(
+        arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
+        arg2: HANDLE,
+    ) -> NTSTATUS;
+}
 pub type PSAM_PASSWORD_NOTIFICATION_ROUTINE = ::core::option::Option<
     unsafe extern "system" fn(arg1: PUNICODE_STRING, arg2: ULONG, arg3: PUNICODE_STRING) -> NTSTATUS,
 >;
