@@ -168,9 +168,9 @@ pub unsafe extern "system" fn AuthzOpenObjectAudit(
 
 #[no_mangle]
 pub unsafe extern "system" fn AuthzRegisterSecurityEventSource(
-    dwFlags: PDWORD,
+    dwFlags: DWORD,
     szEventSourceName: PCWSTR,
-    phEventProvider: LPVOID,
+    phEventProvider: PAUTHZ_SECURITY_EVENT_PROVIDER_HANDLE,
 ) -> BOOL {
     UNIMPLEMENTED!();
     return FALSE;
@@ -208,7 +208,7 @@ pub unsafe extern "system" fn AuthzReportSecurityEventFromParams(
 
 #[no_mangle]
 pub unsafe extern "system" fn AuthzUninstallSecurityEventSource(
-    dwFlags: PDWORD,
+    dwFlags: DWORD,
     szEventSourceName: PWSTR,
 ) -> BOOL {
     UNIMPLEMENTED!();

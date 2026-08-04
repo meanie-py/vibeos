@@ -2042,6 +2042,38 @@ alongside it had written `let Ret = AccRewriteGetHandleRights(…)` INSIDE the `
 the outer `Ret`, so the function would have returned the open result instead of the query's,
 silently, on the success path. `--retry-rejects` with the audit finding fed back fixed it.
 
+### A bindgen enum member's BARE name is missing even when its header IS allowlisted
+
+**Symptom.** `verify_match_consts` reports `[HIGH] <Name> -- not defined in-file and not defined
+anywhere in this crate's dependency closure -> silent catch-all binding [+followed-by-arms:
+unreachable smell]`. The crate compiles. The `match` has one live arm and the rest are dead.
+
+**Cause.** bindgen emits a C enumerator as `pub const <TAG>_<MEMBER>: <TAG> = n;`. The bare
+`<MEMBER>` the C `switch`es on is not in the island at all, and an unresolved name in a Rust
+`match` arm is not an error — it is a fresh binding that matches EVERYTHING. `profile_derive`
+does not catch this: its `SWITCH_CONST_HEADER_ADDED` asks whether the constant's owning HEADER
+is allowlisted, which for an enumerator is necessary and not sufficient. On ntmarta it reported
+one finding out of seventeen; on authz, zero out of seven — and all seven of authz's were
+`case` labels in `AuthzGetInformationFromContext`, so every information class would have taken
+the first arm.
+
+**Fix.** Alias each one in the crate prelude, never re-declare with a literal:
+`pub const DENY_ACCESS: _ACCESS_MODE = _ACCESS_MODE_DENY_ACCESS;`
+
+**Check it BEFORE paying, and make the check multi-line.** Walk the generated island for
+`pub const <TAG>_<X>: <TAG> = n;`, intersect the bare `<X>` with the identifiers the `.c` uses,
+and subtract anything the island already defines bare. The trap is in the scan itself: bindgen
+WRAPS the declaration when the name is long —
+
+```rust
+pub const _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoPrivileges:
+    _AUTHZ_CONTEXT_INFORMATION_CLASS = 4;
+```
+
+— so a single-line regex reports a confident **zero findings** for exactly the module that
+needs it most. That is how authz's seven got past a hand-rolled check and had to be caught by
+`verify_match_consts` at build time. Use `re.DOTALL` and allow `\s*` after the colon.
+
 ### A deferral note outlives the premise that justified it
 `ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
 *"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this

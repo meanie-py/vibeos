@@ -101,3 +101,28 @@ extern "system" {
 // crate-wide without a cast at each of the 31 sites.
 pub const TRUE: BOOL = 1;
 pub const FALSE: BOOL = 0;
+
+// ================= enum member aliases ========================================================
+// bindgen prefixes a C enum's members with the enum's tag, so the bare spelling the C uses is
+// absent from the island. Alias, never re-declare: a literal here could drift from the island's
+// value silently.
+//
+// ALL SEVEN are `case` labels in clictx.c's AuthzGetInformationFromContext switch, which makes
+// this a CORRECTNESS property, not a convenience — an unresolved name in a `match` arm is not an
+// error, it is a fresh binding that matches EVERYTHING, so the first arm would have swallowed
+// every information class and the rest would be dead (§9.112, which has already shipped a
+// BUGCHECK 0x1E). `verify_match_consts` caught it at build time and named three of them.
+pub const AuthzContextInfoUserSid: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoUserSid;
+pub const AuthzContextInfoGroupsSids: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoGroupsSids;
+pub const AuthzContextInfoRestrictedSids: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoRestrictedSids;
+pub const AuthzContextInfoPrivileges: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoPrivileges;
+pub const AuthzContextInfoExpirationTime: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoExpirationTime;
+pub const AuthzContextInfoServerContext: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoServerContext;
+pub const AuthzContextInfoIdentifier: _AUTHZ_CONTEXT_INFORMATION_CLASS =
+    _AUTHZ_CONTEXT_INFORMATION_CLASS_AuthzContextInfoIdentifier;
