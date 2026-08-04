@@ -495,6 +495,45 @@ def _in_match_pattern(masked: bytes, end: int) -> bool:
     return False
 
 
+def _in_macro_definition(masked: bytes, start: int) -> bool:
+    """True when ``start`` lies inside a ``macro_rules!`` body.
+
+    rustc reports a type error arising inside a macro EXPANSION against the macro's
+    DEFINITION span, not the call site. So a repair keyed on that span edits the macro body,
+    which (a) is never the right fix -- the offending value came from the caller -- and (b)
+    does not converge: the next pass sees the same error, wraps the body again, and the cast
+    stack grows once per pass forever.
+
+    That is not hypothetical. `msvcrt-crt-rust`'s `ARRAY_SIZE!` is `($a).len()`, and one
+    caller passing it where an `i32` was wanted drove six passes of
+    `(((((($a).len()) as i32) as usize) as i32) as usize) as i32` -- corrupting a macro used
+    by every translated module in the crate, to fix one call site that was never touched.
+
+    Declining is the whole fix: the same error re-surfaces at the caller on the next run
+    once a human writes the cast there, which is where it belongs.
+    """
+    idx = masked.rfind(b"macro_rules!", 0, start)
+    if idx < 0:
+        return False
+    # Bound the macro's BODY exactly, rather than counting every bracket after the keyword:
+    # the arm list `($a:expr) => { ... }` is full of parens, and a caller further down the
+    # file sits inside its own `fn ... {`, so a naive running depth reports "still inside"
+    # for the whole rest of the file. Track the outer BRACE only, from its open to its match.
+    open_at = masked.find(b"{", idx)
+    if open_at < 0 or open_at > start:
+        return False
+    depth = 0
+    for pos in range(open_at, len(masked)):
+        byte = masked[pos : pos + 1]
+        if byte == b"{":
+            depth += 1
+        elif byte == b"}":
+            depth -= 1
+            if depth == 0:
+                return open_at < start < pos
+    return open_at < start  # unterminated body: treat the tail as inside
+
+
 def _after_enclosing_group(masked: bytes, end: int) -> int:
     """Byte just past the innermost bracket group that encloses ``end``, else ``end``."""
     depth = 0
@@ -785,6 +824,12 @@ def _numeric_cast_rule(
             # "arguments to this function are incorrect" shape), not a value to cast.
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
             continue
+        if _in_macro_definition(masked, start):
+            # Guard: rustc blames a macro's DEFINITION for a type error in its expansion, so
+            # repairing that span edits the macro body -- wrong fix, and it re-fires every
+            # pass because the caller never changes. See _in_macro_definition.
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
         if _in_match_pattern(masked, end):
             # Guard: a cast is an expression, and Rust forbids expressions in patterns. The
             # type disagreement is real, but it has to be resolved where the constant is
@@ -864,6 +909,11 @@ def _pointer_cast_rule(
         masked = _mask_lexical(data)
         if _next_code_byte(masked, end) == b"(":
             decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_macro_definition(masked, start):
+            # Same reason as the numeric rule: a macro-expansion error is reported against
+            # the DEFINITION, and repairing there edits a body shared by every caller.
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
             continue
         if _in_match_pattern(masked, end):
             decline("match_pattern", data[start:end].decode("utf-8", "replace"))
