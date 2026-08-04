@@ -383,7 +383,7 @@ def cmd_hybrid_closure(args):
     build_dir, link_root, archive = hybrid_closure.resolve_paths(REACTOS_ROOT, args)
     try:
         report = hybrid_closure.measure(
-            REACTOS_ROOT, args.tu, build_dir, link_root, archive, args.arch
+            REACTOS_ROOT, args.tu, build_dir, link_root, archive, args.arch, args.target_dir
         )
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

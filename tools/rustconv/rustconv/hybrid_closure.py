@@ -150,6 +150,36 @@ def _find_obj(link_root: Path, tu: Path) -> Path | None:
     return None
 
 
+class AlreadyFlippedError(RuntimeError):
+    """The TU is no longer in any CMake source list, so its `.obj` is a leftover."""
+
+
+def cmake_lists_under(repo: Path, target_dir: str) -> list[Path]:
+    root = repo / target_dir
+    return sorted(root.rglob("CMakeLists.txt")) if root.is_dir() else []
+
+
+def is_live_in_cmake(repo: Path, tu: str, target_dir: str) -> bool:
+    """Is `tu` still an UNCOMMENTED entry in some CMakeLists under `target_dir`?
+
+    ninja does not delete the object of a source you remove from a list, so a flipped TU keeps
+    a stale `.obj` on disk indefinitely. Measuring against that reports a TU that already left
+    the build as though it were still live, with a full set of consumers -- the exact opposite
+    of the answer. Ask CMake, not the object tree.
+    """
+    name = Path(tu).name
+    for cml in cmake_lists_under(repo, target_dir):
+        for raw in cml.read_text(errors="replace").splitlines():
+            line = raw.strip()
+            if line.startswith("#"):
+                continue
+            # Match the path as written in the list, not a bare substring: `CNetFolder.cpp`
+            # must not be satisfied by a comment mentioning `folders/CNetFolder.cpp`.
+            if line.split("#", 1)[0].strip().endswith(name):
+                return True
+    return False
+
+
 def measure(
     repo: Path,
     tu: str,
@@ -157,6 +187,7 @@ def measure(
     link_root: Path,
     rust_archive: Path | None,
     arch: str,
+    target_dir: str = "",
 ) -> ClosureReport:
     nm_bin = repo / LLVM_NM_REL
     if not nm_bin.exists():
@@ -166,6 +197,14 @@ def measure(
     if not link_root.is_dir():
         raise FileNotFoundError(
             f"object tree not found: {link_root}\nfix: ./vibeos-cli build --arch {arch}"
+        )
+
+    if target_dir and not is_live_in_cmake(repo, tu, target_dir):
+        raise AlreadyFlippedError(
+            f"{tu} is not an uncommented entry in any CMakeLists under {target_dir}.\n"
+            f"It has already left the build, so there is no closure to measure -- any .obj\n"
+            f"still on disk is a leftover ninja does not clean up, and measuring it would\n"
+            f"report the TU as live with a full set of consumers."
         )
 
     tu_path = Path(tu)
@@ -274,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path(__file__).resolve().parents[3]
     build_dir, link_root, archive = resolve_paths(repo, args)
     try:
-        report = measure(repo, args.tu, build_dir, link_root, archive, args.arch)
+        report = measure(repo, args.tu, build_dir, link_root, archive, args.arch, args.target_dir)
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
