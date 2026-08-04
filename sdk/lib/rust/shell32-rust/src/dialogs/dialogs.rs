@@ -111,6 +111,22 @@ pub const RT_GROUP_ICON: LPCWSTR = 14 as LPCWSTR;
 pub const IDC_HAND: LPCWSTR = 32649 as LPCWSTR;
 pub const CW_USEDEFAULT: INT = 0x8000_0000u32 as INT;
 
+// bindgen spells a callback's ABI as the RESOLVED convention for the target, so the same
+// pointer is `extern "stdcall"` on i686 and `extern "C"` on amd64/arm64. Our definitions say
+// `extern "system"`, which IS that convention on each of those targets -- but Rust keeps the
+// two spellings as distinct nominal types on fn pointers, so a plain `as` cast is rejected as
+// non-primitive and a transmute has to name whichever one the target actually uses. Hardcoding
+// `stdcall` compiles on i386 and fails everywhere else.
+#[cfg(target_arch = "x86")]
+type BindgenDlgProc = unsafe extern "stdcall" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
+#[cfg(not(target_arch = "x86"))]
+type BindgenDlgProc = unsafe extern "C" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
+
+#[cfg(target_arch = "x86")]
+type BindgenEnumResNameProc = unsafe extern "stdcall" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL;
+#[cfg(not(target_arch = "x86"))]
+type BindgenEnumResNameProc = unsafe extern "C" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL;
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct RUNFILEDLGPARAMS {
@@ -211,7 +227,7 @@ pub unsafe extern "system" fn EnumPickIconResourceProc(
 }
 unsafe extern "C" fn DestroyIconList(hDlgCtrl: HWND, pIconContext: PPICK_ICON_CONTEXT) {
     let count = SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0);
-    if count == LB_ERR {
+    if count == LB_ERR as LRESULT {
         return;
     }
     for index in 0..count {
@@ -284,7 +300,7 @@ unsafe extern "C" fn DoLoadIcons(hwndDlg: HWND, pIconContext: PPICK_ICON_CONTEXT
                 // size, same actual calling convention, only the type-level ABI label differs.
                 Some(core::mem::transmute::<
                     unsafe extern "system" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL,
-                    unsafe extern "stdcall" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL,
+                    BindgenEnumResNameProc,
                 >(EnumPickIconResourceProc)),
                 pIconContext as LPARAM,
             );
@@ -384,7 +400,7 @@ pub unsafe extern "system" fn PickIconProc(
             }
 
             SHAutoComplete(GetDlgItem(hwndDlg, IDC_EDIT_PATH as INT), SHACF_DEFAULT);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_DESTROY => {
@@ -463,7 +479,7 @@ pub unsafe extern "system" fn PickIconProc(
         WM_MEASUREITEM => {
             lpmis = lParam as LPMEASUREITEMSTRUCT;
             (*lpmis).itemHeight = CY_ITEM!() as u32;
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_DRAWITEM => 'case_drawitem: {
@@ -489,13 +505,13 @@ pub unsafe extern "system" fn PickIconProc(
                 }
                 _ => {}
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         _ => {}
     }
 
-    FALSE
+    FALSE as INT_PTR
 }
 
 #[no_mangle]
@@ -506,7 +522,7 @@ pub unsafe extern "system" fn PickIconDlg(
     lpdwIconIndex: *mut i32,
 ) -> i32 {
     let _com_init = CCoInit::new();
-    let mut res: i32;
+    let mut res: INT_PTR;
     let mut sz_expanded_path: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
 
     let mut icon_context: PICK_ICON_CONTEXT = core::mem::zeroed();
@@ -546,7 +562,7 @@ pub unsafe extern "system" fn PickIconDlg(
         // different nominal fn-pointer types to the type checker.
         Some(core::mem::transmute::<
             unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
-            unsafe extern "stdcall" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
+            BindgenDlgProc,
         >(PickIconProc)),
         &mut icon_context as *mut PICK_ICON_CONTEXT as LPARAM,
     );
@@ -556,7 +572,7 @@ pub unsafe extern "system" fn PickIconDlg(
         *lpdwIconIndex = icon_context.Index;
     }
 
-    res
+    res as BOOL
 }
 
 #[no_mangle]
@@ -584,7 +600,7 @@ pub unsafe extern "system" fn RunFileDlg(
         // one ABI on i686 but two nominal fn-pointer types.
         Some(core::mem::transmute::<
             unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
-            unsafe extern "stdcall" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
+            BindgenDlgProc,
         >(RunDlgProc)),
         &raw const rfdp as LPARAM,
     );
@@ -598,7 +614,7 @@ unsafe extern "C" fn RunDlg_GetParentDir(cmdline: *const u16) -> *mut u16 {
     let heap_handle = GetProcessHeap();
     let len = strlenW(cmdline);
     let alloc_size = (len.wrapping_add(5 as usize)) * core::mem::size_of::<u16>();
-    result = HeapAlloc(heap_handle, 0, alloc_size as u32) as *mut u16;
+    result = HeapAlloc(heap_handle, 0, alloc_size as SIZE_T) as *mut u16;
     if result.is_null() {
         return core::ptr::null_mut();
     }
@@ -651,7 +667,7 @@ unsafe extern "C" fn EnableOkButtonFromEditContents(hwnd: HWND) {
         let psz: PWCHAR = HeapAlloc(
             GetProcessHeap(),
             0,
-            ((length as usize + 1 as usize) * core::mem::size_of::<WCHAR>()) as u32,
+            ((length as usize + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as PWCHAR;
         if !psz.is_null() {
             GetWindowTextW(edit, psz, length + 1);
@@ -912,7 +928,7 @@ pub unsafe extern "system" fn OwnerDrawButtonSubclass(
             SendMessageW(
                 GetParent(hButton),
                 DM_SETDEFID,
-                IDCANCEL,
+                IDCANCEL as WPARAM,
                 0,
             );
         }
@@ -980,7 +996,7 @@ pub unsafe extern "C" fn CreateToolTipForButtons(controlID: i32, detailID: i32, 
     SendMessageW(
         hwndTip,
         TTM_SETTITLEW,
-        TTI_NONE,
+        TTI_NONE as WPARAM,
         szBuffer.as_mut_ptr() as LPARAM,
     );
     SendMessageW(
@@ -1113,7 +1129,7 @@ unsafe extern "C" fn FancyLogoffOnInit(hwnd: HWND, pContext: PLOGOFF_DLG_CONTEXT
         IDC_LOG_OFF_TEXT_STATIC as INT,
         WM_SETFONT,
         (*pContext).hfFont as WPARAM,
-        TRUE,
+        TRUE as LPARAM,
     );
     (*pContext).hBrush = CreateSolidBrush(DARK_GREY_COLOR);
     (*pContext).hImageStrip = LoadBitmapW(
@@ -1156,22 +1172,22 @@ pub unsafe extern "system" fn LogOffDialogProc(
             if (*pContext).bFriendlyUI != 0i32 {
                 FancyLogoffOnInit(hwnd, pContext);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_DESTROY => {
             if (*pContext).bFriendlyUI != 0i32 {
                 EndFriendlyDialog(hwnd, pContext);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_ACTIVATE => {
-            if u32::from(LOWORD(wParam)) == WA_INACTIVE {
+            if LOWORD(wParam as DWORD) as UINT == WA_INACTIVE {
                 if (*pContext).bCloseDlg == 0i32 {
                     (*pContext).bCloseDlg = TRUE;
                     EndDialog(hwnd, IDCANCEL as INT_PTR);
                 }
             }
-            return FALSE;
+            return FALSE as INT_PTR;
         }
         WM_CLOSE => {
             (*pContext).bCloseDlg = TRUE;
@@ -1205,12 +1221,12 @@ pub unsafe extern "system" fn LogOffDialogProc(
                 }
                 _ => {}
             }
-            return FALSE;
+            return FALSE as INT_PTR;
         }
         WM_DRAWITEM => {
             match (*pdis).CtlID {
                 IDC_LOG_OFF_BUTTON | IDC_SWITCH_USER_BUTTON => {
-                    return DrawIconOnOwnerDrawnButtons(pdis, pContext);
+                    return DrawIconOnOwnerDrawnButtons(pdis, pContext) as INT_PTR;
                 }
                 _ => {}
             }
@@ -1218,7 +1234,7 @@ pub unsafe extern "system" fn LogOffDialogProc(
         _ => {}
     }
 
-    FALSE
+    FALSE as INT_PTR
 }
 
 #[no_mangle]
@@ -1246,7 +1262,7 @@ pub unsafe extern "system" fn LogoffWindowsDialog(hWndOwner: HWND) -> c_int {
         // is `transmute` rather than `as`.
         Some(core::mem::transmute::<
             unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
-            unsafe extern "stdcall" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR,
+            BindgenDlgProc,
         >(LogOffDialogProc)),
         core::ptr::addr_of_mut!(Context) as LPARAM,
     );
@@ -1818,7 +1834,7 @@ pub unsafe extern "system" fn RunDlgProc(
             SHAutoComplete(hwndEdit, SHACF_FILESYSTEM | SHACF_FILESYS_ONLY | SHACF_URLALL);
 
             SetFocus(hwndCombo);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         WM_DESTROY => {
@@ -1844,7 +1860,7 @@ pub unsafe extern "system" fn RunDlgProc(
                     ic = GetWindowTextLengthW(htxt);
                     if ic == 0 {
                         EndDialog(hwnd, IDCANCEL as INT_PTR);
-                        return TRUE;
+                        return TRUE as INT_PTR;
                     }
 
                     // Allocate a new MRU entry, we need to add two characters
@@ -1856,7 +1872,7 @@ pub unsafe extern "system" fn RunDlgProc(
                     ) as PWCHAR;
                     if psz.is_null() {
                         EndDialog(hwnd, IDCANCEL as INT_PTR);
-                        return TRUE;
+                        return TRUE as INT_PTR;
                     }
 
                     GetWindowTextW(htxt, psz, ic + 1);
@@ -1875,7 +1891,7 @@ pub unsafe extern "system" fn RunDlgProc(
                         if pszExpanded.is_null() {
                             HeapFree(GetProcessHeap(), 0, psz.cast());
                             EndDialog(hwnd, IDCANCEL as INT_PTR);
-                            return TRUE;
+                            return TRUE as INT_PTR;
                         }
                         ExpandEnvironmentStringsW(psz, pszExpanded, cchExpand);
                         StrTrimW(pszExpanded, CPP_COM_WSTR_731D7EC48EEF.as_ptr());
@@ -1979,12 +1995,12 @@ pub unsafe extern "system" fn RunDlgProc(
                     if psz != pszExpanded {
                         HeapFree(GetProcessHeap(), 0, pszExpanded.cast());
                     }
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwnd, IDCANCEL as INT_PTR);
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
 
                 IDC_RUNDLG_BROWSE => {
@@ -2054,7 +2070,7 @@ pub unsafe extern "system" fn RunDlgProc(
                             core::ptr::null(),
                             MB_OK | MB_ICONERROR,
                         );
-                        return TRUE;
+                        return TRUE as INT_PTR;
                     }
 
                     if let Some(ofn_fn) = ofnProc {
@@ -2074,7 +2090,7 @@ pub unsafe extern "system" fn RunDlgProc(
 
                     FreeLibrary(hComdlg);
 
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
 
                 IDC_RUNDLG_EDITPATH => {
@@ -2091,18 +2107,18 @@ pub unsafe extern "system" fn RunDlgProc(
                             lParam,
                         );
                     }
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
 
                 _ => {}
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
 
         _ => {}
     }
 
-    FALSE
+    FALSE as INT_PTR
 }
 
 
@@ -3635,7 +3651,7 @@ pub unsafe extern "system" fn RunDlgProc(
 //             {
 //                 case IDC_LOG_OFF_BUTTON:
 //                 case IDC_SWITCH_USER_BUTTON:
-//                     return DrawIconOnOwnerDrawnButtons(pdis, pContext);
+//                     return DrawIconOnOwnerDrawnButtons(pdis, pContext) as INT_PTR;
 //             }
 //         }
 //         break;
