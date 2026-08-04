@@ -3718,11 +3718,19 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   follow the call sites, not the stub. Symbols nothing references cannot drag the C object in,
   so they need no Rust definition; check with `llvm-nm --undefined-only` across the module's
   objects plus the `.spec` rather than assuming.
-- **A `__stdcall` export cannot be spelled with `#[no_mangle]` on i386.** PE decorates it
-  `_name@<arg bytes>`; `#[no_mangle]` emits the name verbatim and drops BOTH halves, landing on
-  a symbol nothing imports — the same silent no-op as the rename above. `#[export_name =
-  "_name@N"]` is the only way. Note the doubled underscore when the C name already starts with
-  one (`__adj_fdiv_m16i@4`), and that a `short` parameter still takes a full 4-byte slot.
+- **`#[export_name]` STACKS with i386 stdcall decoration, it does not replace it.** Give the
+  UNDECORATED C name and declare the fn `extern "stdcall"`; rustc prepends the `_` and appends
+  the `@<arg bytes>` itself. Writing the decorated name is the intuitive move and produces
+  `___adj_fdiv_m16i@4@4` — an underscore and an `@4` too many, so the symbol binds to nothing
+  and the flip is a silent no-op, exactly the failure the attribute gets reached for to avoid.
+  (`#[no_mangle]` is not the escape either: on a *function* it emits the name verbatim and
+  drops both halves. On a *static* it is right — no stdcall to decorate, and the leading
+  underscore is still applied, which is what `MSVCRT__adjust_fdiv` needs to satisfy its
+  `.spec` export.) Note also that a `short` parameter still takes a full 4-byte slot.
+  **None of this is visible to `cargo check`, which never codegens** — an `#[export_name]`
+  never becomes a symbol and a `global_asm!` block is never assembled, so only a real
+  `cargo build` plus `llvm-nm` over the archive can tell you. That is what the `cohab:<arch>`
+  gate stage automates.
 - **Full coverage is the flip's PRECONDITION, not a nicety.** Leave one *referenced* symbol
   undefined and lld pulls the C object to satisfy it — and that object also defines every other
   symbol in the TU, so the flip collapses into duplicate definitions (or, with
@@ -3738,7 +3746,12 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   refuses a stale archive rather than judging one — run against archives three days old it
   produced 669 findings claiming errno.c, file.c and time.c were barely flipped at all, and a
   wrong verdict is indistinguishable from a right one at a glance. It therefore needs a build,
-  so it is a post-build stage and not a `vibeos-cli check` lint.
+  so it is a post-build stage and not a `vibeos-cli check` lint: `gate` launches `cohab:<arch>`
+  the moment that arch's build lands, classifies a gap `COHAB_FAIL`, and blocks the push stamp.
+  It runs only when both `--no-lint` and `--no-build` are unset — it can judge only artifacts
+  that run produced. Its own controls are `tools/test_verify_cohab_coverage.py`: it cannot join
+  `test_scanner_controls.py` (which drives source-only `check` lints from fixture dirs), and a
+  gate stage whose healthy output is `0 findings` needs an oracle like any other.
 - **Verify a flip with `llvm-nm libX.a`** — a stub-only archive has 0–1 `T` symbols (just the
   cohab stub). Audit **all** `static_libs` C archives on arm64 with `llvm-nm | grep -c ' T '`
   before trusting a flip.

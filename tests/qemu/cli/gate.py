@@ -60,6 +60,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -383,6 +384,52 @@ def _lint_once(repo: Path, arch: str, root: Path) -> dict:
     }
 
 
+def _cohab_once(repo: Path, arch: str, root: Path) -> dict:
+    """Run `tools/verify_cohab_coverage.py` for one built arch.
+
+    This lives here rather than in `check --strict` for one reason: it reads OBJECT FILES.
+    `check` is source-only by contract and runs with no build at all, and the whole point of
+    this verifier is that the source cannot answer the question — a cohab flip is correct only
+    if the symbols the Rust actually EMITS match the ones the C object actually EXPORTS, after
+    every `-D`, `#ifdef` and ABI decoration. So it launches with the arch's smoke, the moment
+    that arch's build lands.
+
+    It exists because `cargo check` never codegens: `global_asm!` is never assembled and
+    `#[export_name]` never becomes a symbol, so a whole class of flip bug is invisible to every
+    gate stage that ran before this one. Eight msvcrt stdcall stubs shipped as
+    `___adj_fdiv_m16i@4@4` — `#[export_name]` STACKS with i386 PE decoration rather than
+    replacing it — and three more symbols were defined under names nothing imports. All of it
+    built, linked and booted green: the Rust exported symbols nobody asked for, the C bodies
+    stayed live, and the "flip" was a no-op nothing could see.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    script = repo / "tools" / "verify_cohab_coverage.py"
+    cmd = [sys.executable, str(script), "--arch", arch, "--check"]
+    t0 = time.monotonic()
+    proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True)
+    dt = time.monotonic() - t0
+    console = (proc.stdout or "") + (("\n--- stderr ---\n" + proc.stderr) if proc.stderr else "")
+    try:
+        (root / "cohab-console.log").write_text(console)
+    except OSError:
+        pass
+    # Findings go to stdout one per line; the coverage tally and every hard-fail
+    # (stale archive, missing build dir) go to stderr. Prefer a finding, fall back
+    # to the last words so a refusal-to-judge never reports a bare "exit 1".
+    salient = next((ln.strip() for ln in (proc.stdout or "").splitlines() if ".rs:" in ln), "")
+    if not salient and proc.returncode:
+        salient = (
+            f"exit {proc.returncode}: {_last_words(console)}  (full: {root / 'cohab-console.log'})"
+        )
+    return {
+        "arch": arch,
+        "ok": proc.returncode == 0,
+        "seconds": dt,
+        "salient": salient,
+        "exit": proc.returncode,
+    }
+
+
 def _tooling_once(repo: Path, root: Path) -> dict:
     """Run `vibeos-cli check-tooling` once for the whole gate.
 
@@ -635,8 +682,10 @@ def gate(args, repo: Path) -> int:
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
     results: dict[str, dict] = {}
     lint_ok: dict[str, bool] = {}
+    cohab_ok: dict[str, bool] = {}
     fut: dict = {}
     lfut: dict = {}
+    cfut: dict = {}
     tooling_ok = True
     tfut: dict = {}
     difftest_ok = True
@@ -680,6 +729,14 @@ def gate(args, repo: Path) -> int:
                 fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"
             if do_lint:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
+            # Post-build by necessity: this one reads the arch's OBJECTS, which is exactly
+            # why `check --strict` (source-only, no build) cannot host it. It therefore
+            # needs BOTH opt-ins: it is static verification like the lint (--no-lint means
+            # "skip that"), and it can only judge artifacts this run produced — the verifier
+            # refuses an archive older than the tree, so under --no-build a stale carry-over
+            # would read as a red instead of the "nothing was rebuilt" it actually is.
+            if do_lint and do_build:
+                cfut[ex.submit(_cohab_once, repo, arch, gate_root / f"cohab-{arch}")] = arch
 
         if do_build:
             # Submit every arch's build at once and let the host broker decide how many
@@ -759,6 +816,26 @@ def gate(args, repo: Path) -> int:
                 if not r["ok"] and not run.classification:
                     run.classification = "LINT_FAIL"
 
+        def _collect_cohab() -> None:
+            for f in cf.as_completed(cfut):
+                r = f.result()
+                cohab_ok[r["arch"]] = r["ok"]
+                run.add(
+                    Stage(
+                        f"cohab:{r['arch']}",
+                        seconds=r["seconds"],
+                        status="ok" if r["ok"] else "fail",
+                        detail="flipped modules fully covered"
+                        if r["ok"]
+                        else f"cohab coverage gap (exit {r['exit']})",
+                        salient=[]
+                        if r["ok"]
+                        else [r["salient"] or f"verify_cohab_coverage --arch {r['arch']} failed"],
+                    )
+                )
+                if not r["ok"] and not run.classification:
+                    run.classification = "COHAB_FAIL"
+
         def _collect_tooling() -> None:
             nonlocal tooling_ok
             for f in cf.as_completed(tfut):
@@ -800,6 +877,7 @@ def gate(args, repo: Path) -> int:
         _collect_tooling()  # concurrent with the in-flight smokes
         _collect_difftest()  # concurrent with the in-flight smokes
         _collect_lints()  # concurrent with the in-flight smokes
+        _collect_cohab()  # concurrent with the in-flight smokes
         for f in cf.as_completed(fut):
             r = f.result()
             results[r["arch"]] = r
@@ -878,6 +956,11 @@ def gate(args, repo: Path) -> int:
         # the results check above), so default True there and let those paths gate
         # on their own condition.
         and all(lint_ok.get(a, True) for a in requested)
+        # Same per-arch contract as lint_ok, and defaulting True for the same reasons
+        # (--no-lint/--no-build, or an arch that never built). A cohab gap means a module's
+        # Rust is not actually the thing that links — the build is green and the port is
+        # a no-op — so it must not mint a push credential.
+        and all(cohab_ok.get(a, True) for a in requested)
         # check-tooling is arch-independent and runs once; it defaults True under
         # --no-lint, matching how lint_ok defaults above.
         and tooling_ok

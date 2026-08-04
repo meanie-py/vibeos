@@ -281,6 +281,19 @@ def main() -> int:
         f"{pairs} family/arch pair(s) compared against their C objects",
         file=sys.stderr,
     )
+    if args.check and not pairs:
+        # As a gate stage, "I compared nothing" must not read as "I found nothing". Rename
+        # a build directory, move msvcrt_static's obj dir, add an arch whose layout differs
+        # — and every one of those silently retires this check while still printing green,
+        # forever, with no one to notice. Refusing here is what makes the green mean
+        # something (same reason _require_fresh refuses a stale archive).
+        print(
+            "verify_cohab_coverage: --check with 0 pairs compared — the build layout moved "
+            "or no arch was built, so this run proves nothing.\n"
+            "  fix: ./vibeos-cli build --arch i386",
+            file=sys.stderr,
+        )
+        return 1
     return 1 if (findings and args.check) else 0
 
 
