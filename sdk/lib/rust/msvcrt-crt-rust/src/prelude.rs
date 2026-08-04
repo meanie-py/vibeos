@@ -182,6 +182,47 @@ macro_rules! ARRAYSIZE {
     };
 }
 
+/// `wstr!("text")` — a C `L"text"` literal, as a NUL-terminated `*const wchar_t`.
+///
+/// A wide literal reaches Rust as a hand-interleaved byte string (`b"P\0A\0T\0H\0\0\0"`),
+/// and there are four documented ways to get that wrong, every one of which this repo has
+/// actually shipped and `tools/scan_wide_literals.py` now grades: a plain ASCII byte string
+/// cast straight to `*const wchar_t` (reads two source chars per u16 and runs off the end
+/// because one NUL byte is only half a terminator); one terminator byte instead of two; an
+/// odd total length; and an interior u16 NUL from interleaving an already-interleaved
+/// literal a second time. All four exist for the same reason — a human typed the encoding
+/// and nothing checked it.
+///
+/// So don't type it. This builds the array at compile time from the readable spelling, and
+/// the terminator is structural (`N = len + 1`) rather than remembered. ASCII-only by
+/// assertion, which is not a limitation in practice: every wide literal in msvcrt's C is
+/// ASCII, and a genuinely non-ASCII one needs a real UTF-16 encoder rather than a widening
+/// cast, so failing the build is the honest answer.
+///
+/// Existing interleaved literals are left alone — they were audited by the scanner and
+/// churning them would be diff noise — but new ones should use this.
+#[macro_export]
+macro_rules! wstr {
+    ($s:literal) => {{
+        const N: usize = $s.len() + 1;
+        static W: [u16; N] = {
+            let b = $s.as_bytes();
+            let mut w = [0u16; N];
+            let mut i = 0;
+            while i < b.len() {
+                assert!(
+                    b[i] < 0x80,
+                    "wstr!: non-ASCII byte needs a real UTF-16 encoder, not a widening cast"
+                );
+                w[i] = b[i] as u16;
+                i += 1;
+            }
+            w
+        };
+        W.as_ptr()
+    }};
+}
+
 #[macro_export]
 macro_rules! LOBYTE {
     ($w:expr $(,)?) => {
@@ -211,7 +252,7 @@ macro_rules! min {
 
 pub use crate::{
     ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR,
-    MSVCRT_INVALID_PMT, min,
+    FIELD_OFFSET, LANGIDFROMLCID, MAKELANGID, MAKELCID, MSVCRT_INVALID_PMT, min, wstr,
 };
 
 // ── the CRT (cdecl) ────────────────────────────────────────────────────────────────────────
@@ -369,7 +410,48 @@ extern "C" {
 
     // msvcrt.h:229 — `extern _locale_t MSVCRT_locale;`
     pub static mut MSVCRT_locale: _locale_t;
+
+    // data.c:59/:61 — two scalars, still C. Declared here rather than derived because
+    // there is no layout question to get wrong: `MSVCRT_app_type` is the 0/1/2 console-vs-GUI
+    // discriminator that exit.c's three error paths branch on to decide message box vs
+    // stderr, and `MSVCRT__wpgmptr` is the program path DoMessageBoxW prints.
+    pub static mut MSVCRT_app_type: c_int;
+    pub static mut MSVCRT__wpgmptr: *mut WCHAR;
+
+    // <stdlib.h>/<signal.h>/<stdio.h> siblings that are still C. `raise` and `mbstowcs`
+    // have no Rust definition to check against; `_snwprintf` and `fwprintf` are variadic,
+    // which is legal to DECLARE on stable (only defining one needs nightly).
+    pub fn raise(sig: c_int) -> c_int;
+    pub fn mbstowcs(wcstr: *mut WCHAR, mbstr: *const c_char, count: usize) -> usize;
+    pub fn _snwprintf(buf: *mut WCHAR, count: usize, format: *const WCHAR, ...) -> c_int;
+    pub fn fwprintf(file: *mut FILE, format: *const WCHAR, ...) -> c_int;
+
+    // ctype.c's exported table, still C. locale.c points `locinfo->pctype` at
+    // `MSVCRT__ctype + 1` — the +1 is the EOF slot at index 0, which is why the array is
+    // 257 wide and not 256.
+    pub static mut MSVCRT__ctype: [WORD; 257];
+
+    // NO `swprintf` here, deliberately. `corecrt_wstdio.h:387` makes it a `static inline`
+    // forwarding to `_vsnwprintf`, and `llvm-nm --undefined-only locale.c.obj` confirms the
+    // object imports `__vsnwprintf` and no `swprintf` whatsoever. Declaring the EXPORTED
+    // `swprintf` would have been the one-slot-off bug this file exists to prevent:
+    // msvcrt.spec:1466 implements that export with `_swprintf`, the NON-conforming 2-argument
+    // form, so a 3-argument call would land the format string in the count slot. Call sites
+    // use `_snwprintf` — the variadic twin of the `_vsnwprintf` the inline actually calls.
+
+    // console.c's own `_cprintf`, which `_amsg_exit` calls. It is NOT in console.rs — it is
+    // a WINAPIV `...` entry point and lives in rust_console_varargs_shim.c, so exit.rs
+    // reaches it the same way any other TU would.
+    pub fn _cprintf(format: *const c_char, ...) -> c_int;
 }
+
+/// `RtlGenRandom` — misc.c's `rand_s` entropy source, and the name is the point.
+///
+/// ntsecapi.h defines it as a macro over `SystemFunction036`, so that is the symbol the
+/// island carries and the only one that actually links; re-exporting it here under the
+/// documented spelling keeps the translated body reading like the C it came from without
+/// anyone hand-writing an `extern` block for a stdcall function returning `BOOLEAN`.
+pub use msvcrt_sys::SystemFunction036 as RtlGenRandom;
 
 // ── Win32 (stdcall on i386, cdecl elsewhere — that is exactly `extern "system"`) ────────────
 // From `sdk/include/psdk/winnls.h`. Getting the convention wrong here is the project's #1
@@ -441,6 +523,82 @@ extern "system" {
 pub unsafe fn InterlockedIncrement(addend: *mut c_int) -> c_int {
     use core::sync::atomic::{AtomicI32, Ordering};
     (*(addend as *const AtomicI32)).fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// The other two of the family locale.c uses, for the same reason and by the same route:
+/// `InterlockedDecrement` and `InterlockedCompareExchange` are `__INTRIN_INLINE` in
+/// `vcruntime/mingw32/intrin_x86.h`, so they have no symbol to import — allowlisting them in
+/// the bindgen island emits nothing at all, silently, and an `extern` block would link
+/// against a name that does not exist. Both return the value AFTER the operation / the value
+/// BEFORE the exchange, matching the Win32 contract rather than the raw atomic return.
+#[inline]
+#[allow(non_snake_case)]
+pub unsafe fn InterlockedDecrement(addend: *mut c_int) -> c_int {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (*(addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
+}
+
+#[inline]
+#[allow(non_snake_case)]
+pub unsafe fn InterlockedCompareExchange(
+    dest: *mut c_int,
+    exchange: c_int,
+    comperand: c_int,
+) -> c_int {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    // Win32 returns the INITIAL value either way, which is exactly what the Err arm of
+    // `compare_exchange` carries — so both arms unwrap to the same thing.
+    match (*(dest as *const AtomicI32)).compare_exchange(
+        comperand,
+        exchange,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(prev) => prev,
+        Err(prev) => prev,
+    }
+}
+
+/// `ntbasedef.h:939/947` and `:110` — three macros, so no symbol for bindgen to snapshot.
+///
+/// `FIELD_OFFSET` is `__builtin_offsetof`, which is `core::mem::offset_of!` here and NOT
+/// hand-computed arithmetic: `tools/scan_magic_offsets.py` forbids the latter outright, and
+/// this repo has lost multi-hour hunts to exactly one wrong literal offset.
+#[macro_export]
+macro_rules! FIELD_OFFSET {
+    ($t:ty, $f:ident $(,)?) => {
+        core::mem::offset_of!($t, $f) as i32
+    };
+}
+
+/// `#define MAKELANGID(p, s) ((((USHORT)(s)) << 10) | (USHORT)(p))`
+#[macro_export]
+macro_rules! MAKELANGID {
+    ($p:expr, $s:expr $(,)?) => {
+        (((($s) as u16) << 10) | (($p) as u16))
+    };
+}
+
+/// `ntbasedef.h:942` — `#define MAKELCID(lgid, srtid) ((ULONG)((((ULONG)((USHORT)(srtid))) << 16) | ((ULONG)((USHORT)(lgid)))))`
+///
+/// Spelled as a macro over the DERIVED `LANG_*`/`SORT_*` constants rather than left to a
+/// literal, because locale.c's one use of it produced a wrong literal: `cloc_time_data.lcid`
+/// arrived as `0x0409`, which is `MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US)` — a real and
+/// very plausible LCID, but not this one. `MAKELCID(LANG_ENGLISH, SORT_DEFAULT)` is `0x0009`,
+/// the neutral English locale.
+#[macro_export]
+macro_rules! MAKELCID {
+    ($lgid:expr, $srtid:expr $(,)?) => {
+        (((($srtid) as u16 as u32) << 16) | (($lgid) as u16 as u32))
+    };
+}
+
+/// `#define LANGIDFROMLCID(lcid) ((USHORT)(lcid))`
+#[macro_export]
+macro_rules! LANGIDFROMLCID {
+    ($lcid:expr $(,)?) => {
+        (($lcid) as u16)
+    };
 }
 
 // ══ file.c — the stream layer ══════════════════════════════════════════════════════════════

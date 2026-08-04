@@ -27,11 +27,10 @@ extern "C" {
     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
 }
 
-// TODO(hoist): belongs in prelude.rs beside `malloc`/`free` — msvcrt's own `_exit`
-// (dll/win32/msvcrt/exit.c, still C) is exported `__declspec(noreturn) void _exit(int)`.
-extern "C" {
-    fn _exit(status: i32) -> !;
-}
+// `_exit` now comes from prelude.rs (which declares it `-> !` from stdlib.h:229), so the
+// local `extern` block that used to sit here is gone — closing this file's TODO(hoist) for
+// it. exit.c is no longer "still C" either: `msvcrt/exit.rs` defines it, diverging, and the
+// two agree.
 
 // TODO(hoist): prelude.rs defines `uintptr_t` (prelude.rs:37) but not `intptr_t`, its
 // signed twin, which every export in this file returns.

@@ -74,6 +74,43 @@ pub mod environ;
 #[cfg(feature = "dir-environ")]
 pub mod dir;
 
+// console.c (29 of 29 exports), misc.c (17 of 17) and exit.c (18 of 18), all whole-file.
+//
+// console.c owns the `_cputs`/`_getch`/`_cscanf`/`_cprintf` conio surface plus the two lazily
+// opened CONIN$/CONOUT$ handles, and those handles are the reason it is whole-file: every
+// entry point reaches the same pair through `msvcrt_input_console`/`msvcrt_output_console`.
+//
+// exit.c carries `_aexit_rtn` — an exported writable function pointer, NOT a file-static, which
+// is recorded at its definition because the translation got that wrong and only the object's
+// symbol table said so.
+//
+// All three needed their C `#define LOCK_x _lock(N)` spelled as a `macro_rules!` rather than a
+// helper `fn`, per the standing rule about out-of-line no-ops uncloaking ABI mismatches. Doing
+// that is also what exposed exit.c's `_EXIT_LOCK1` arriving as 8 (`_CONIO_LOCK`) instead of 13.
+#[cfg(feature = "conio-exit")]
+pub mod console;
+#[cfg(feature = "conio-exit")]
+pub mod exit;
+pub mod misc;
+
+// locale.c: 29 exports plus the eight globals it OWNS — `MSVCRT_locale`, `MSVCRT__pctype`,
+// `MSVCRT___lc_codepage`, `MSVCRT___lc_collate_cp`, `MSVCRT___lc_handle`,
+// `MSVCRT___mb_cur_max`, `initial_locale` and `cloc_time_data`. Whole-file for the reason
+// errno.c, time.c and environ.c are: those globals plus the `cloc_static_locinfo`/
+// `cloc_time_data` C-locale singletons are ONE contract, published by `update_thread_locale`
+// and read by every other file in the CRT through `get_locinfo`/`get_mbcinfo`. Half of them
+// C and half Rust is not a subset of either behaviour.
+//
+// This is the file the rest of msvcrt leans on hardest: mbcs.c, time.c, string.c and the
+// printf engine all reach `get_locinfo()->pctype` and the case-mapping tables, which is why
+// `msvcrt-sys` derives `threadlocaleinfostruct`'s layout rather than transcribing it.
+//
+// Behind the `locale` DEFAULT feature, which the host harness drops: it defines eight of
+// these symbols itself as its NLS oracle (see this crate's Cargo.toml). Every build that
+// produces msvcrt.dll has the feature on.
+#[cfg(feature = "locale")]
+pub mod locale;
+
 // math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
 // `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
 // so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are

@@ -397,6 +397,46 @@ void WINAPI Sleep(DWORD ms)
     nanosleep(&ts, NULL);
 }
 
+/* The four misc.c needs.  misc.c is worth linking into this harness rather than gating out
+ * (unlike console.c/exit.c, see msvcrt-crt-rust/Cargo.toml `conio-exit`) because qsort,
+ * bsearch, _lsearch and rand are pure algorithms with real oracles.  These four stubs are
+ * the whole price, and each one is deliberately inert: nothing in misc.c's gradeable surface
+ * observes them, so the cheapest correct body is the one that cannot perturb a row. */
+void WINAPI Beep(DWORD freq, DWORD duration)
+{
+    (void)freq; (void)duration;   /* _beep is a passthrough; no oracle, no side effect */
+}
+
+void WINAPI DebugBreak(void)
+{
+    /* chkesp_fail's only statement.  Must NOT raise(SIGTRAP): under the test runner that
+     * kills the process, and chkesp_fail is reachable from a row that merely checks it
+     * links. */
+}
+
+BOOLEAN WINAPI RtlGenRandom(void *buf, ULONG len)
+{
+    /* rand_s's entropy source.  Deterministic on purpose — a difftest row wants a
+     * reproducible byte pattern, and rand_s's contract under test is its errno/return
+     * behaviour on a NULL pointer, not the quality of the bytes. */
+    memset(buf, 0x5A, len);
+    return TRUE;
+}
+
+BOOL WINAPI VirtualProtect(void *addr, ULONG_PTR size, DWORD prot, DWORD *old)
+{
+    /* _resetstkoflw returns this verbatim.  There is no guard page to re-arm on the host,
+     * and reporting failure would make the one observable thing about it wrong.
+     *
+     * `ULONG_PTR`, not `SIZE_T`: this shim's type vocabulary (refstub/msvcrt_file_types.h)
+     * has the former and not the latter, and they are the same width.  `*old` gets the
+     * numeric PAGE_READWRITE rather than the name for the same reason — and nothing reads
+     * it: `_resetstkoflw` passes a scratch local and returns only the BOOL. */
+    (void)addr; (void)size; (void)prot;
+    if (old) *old = 0x04;   /* PAGE_READWRITE */
+    return TRUE;
+}
+
 void WINAPI GetStartupInfoA(STARTUPINFOA *si)
 {
     memset(si, 0, sizeof(*si));
