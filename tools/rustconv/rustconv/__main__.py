@@ -3420,6 +3420,7 @@ def cmd_translate(args):
                     target=rustconv_target,
                     c_source_path=c_file,
                     selector=selector,
+                    assembled_fns={dep.name for dep in sorted_deps},
                 )
             except AssemblyClobberError as exc:
                 print(f"\n\u26d4 {exc}", file=sys.stderr)

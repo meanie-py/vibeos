@@ -15,6 +15,7 @@ import pytest
 from rustconv.assembler import (
     ASSEMBLY_MARKER,
     AssemblyClobberError,
+    _c_source_for_slice,
     _guard_assembly_target,
 )
 
@@ -69,3 +70,66 @@ def test_no_selector_disables_the_guard(tmp_path):
     """Targets that do not pass a selector keep their old behaviour rather than half-guarding."""
     p = _write(tmp_path, "CNetFolder.rs", "class:CNetFolderEnum")
     _guard_assembly_target(p, "")
+
+
+# ── the embedded C block is a LINT ORACLE, not decoration ──────────────────────────────────
+
+
+class _Fn:
+    def __init__(self, name, line_start, line_end, cpp_class=None):
+        self.name = name
+        self.line_start = line_start
+        self.line_end = line_end
+        self.cpp_class = cpp_class
+
+
+class _Scan:
+    def __init__(self, functions):
+        self.functions = functions
+
+
+C_SRC = "\n".join(
+    [
+        "#include <precomp.h>",  # 1  file scope
+        "static int g_state;",  # 2  file scope
+        "void kept(void) {",  # 3
+        "    x &= ~KEPT_FLAG;",  # 4
+        "}",  # 5
+        "void owned_elsewhere(void) {",  # 6
+        "    rgfInOut &= ~SFGAO_VALIDATE;",  # 7
+        "}",  # 8
+    ]
+)
+SCAN = _Scan([_Fn("kept", 3, 5), _Fn("owned_elsewhere", 6, 8)])
+
+
+def test_partial_slice_drops_c_owned_by_a_sibling_module():
+    """This is the bug: CNetFolder.rs was reported as DROPPING a mask living in net_folder.rs."""
+    out, elided = _c_source_for_slice(C_SRC, SCAN, {"kept"}, "free-functions")
+    assert "KEPT_FLAG" in out
+    assert "SFGAO_VALIDATE" not in out
+    assert elided == 3
+    # File scope belongs to every slice -- dropping it would lose the includes and statics.
+    assert "#include <precomp.h>" in out
+    assert "static int g_state;" in out
+
+
+def test_whole_tu_embeds_everything():
+    out, elided = _c_source_for_slice(C_SRC, SCAN, {"kept", "owned_elsewhere"}, "whole-tu")
+    assert out == C_SRC
+    assert elided == 0
+
+
+def test_a_cpp_method_worker_is_matched_by_its_prefixed_name():
+    scan = _Scan([_Fn("Method", 3, 5, cpp_class="CFoo"), _Fn("owned_elsewhere", 6, 8)])
+    out, elided = _c_source_for_slice(C_SRC, scan, {"CFoo_Method"}, "class:CFoo")
+    assert "KEPT_FLAG" in out
+    assert "SFGAO_VALIDATE" not in out
+    assert elided == 3
+
+
+def test_no_match_falls_back_to_the_whole_source():
+    """Eliding everything would be worse than eliding nothing -- degrade to today's behaviour."""
+    out, elided = _c_source_for_slice(C_SRC, SCAN, {"not_a_function_here"}, "free-functions")
+    assert out == C_SRC
+    assert elided == 0

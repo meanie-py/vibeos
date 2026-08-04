@@ -159,7 +159,10 @@ pub const DARK_GREY_COLOR: u32 = 16053492;
 pub const LIGHT_GREY_COLOR: u32 = 2500134;
 pub const CX_BITMAP: u32 = 33;
 pub const CY_BITMAP: u32 = 33;
-pub const NUMBER_OF_BUTTONS: u32 = 2;
+// dialogs.cpp:1106 `#define NUMBER_OF_BUTTONS 2`. Prefixed because the NAME is not unique
+// across crates: msgina-rust/src/shutdown.rs carries its own, worth 4. Both are faithful to
+// their own source, so the collision is in the naming, not in either value.
+pub const SHELL_LOGOFF_NUMBER_OF_BUTTONS: u32 = 2;
 pub const BUTTON_SWITCH_USER: u32 = 0;
 pub const BUTTON_SWITCH_USER_PRESSED: u32 = 33;
 pub const BUTTON_SWITCH_USER_FOCUSED: u32 = 66;
@@ -993,7 +996,7 @@ pub unsafe extern "C" fn EndFriendlyDialog(hwnd: HWND, pContext: PLOGOFF_DLG_CON
     DeleteObject((*pContext).hImageStrip as *mut c_void);
     DeleteObject((*pContext).hfFont as *mut c_void);
 
-    for i in 0..NUMBER_OF_BUTTONS {
+    for i in 0..SHELL_LOGOFF_NUMBER_OF_BUTTONS {
         SetWindowLongPtr(
             GetDlgItem(hwnd, (IDC_LOG_OFF_BUTTON + i) as INT),
             GWLP_WNDPROC,
@@ -1122,7 +1125,7 @@ unsafe extern "C" fn FancyLogoffOnInit(hwnd: HWND, pContext: PLOGOFF_DLG_CONTEXT
         GWLP_WNDPROC,
     ));
 
-    for i in (0 as i32)..(NUMBER_OF_BUTTONS as i32) {
+    for i in (0 as i32)..(SHELL_LOGOFF_NUMBER_OF_BUTTONS as i32) {
         (*pContext).bIsButtonHot[i as usize] = FALSE;
         {
             let btn = GetDlgItem(hwnd, IDC_LOG_OFF_BUTTON as i32 + i);

@@ -24,7 +24,6 @@
       "dll/win32/shell32/dialogs/filedefext.cpp",
       "dll/win32/shell32/folders/CDesktopFolder.cpp",
       "dll/win32/shell32/folders/CDrivesFolder.cpp",
-      "dll/win32/shell32/folders/CNetFolder.cpp",
       "dll/win32/shell32/folders/CControlPanelFolder.cpp",
       "dll/win32/shell32/folders/CRecycleBin.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
@@ -81,6 +80,7 @@
       "dll/win32/shell32/systray.cpp"
     ],
     "hybrid": [
+      "dll/win32/shell32/folders/CNetFolder.cpp",
       "dll/win32/shell32/CDropTargetHelper.cpp",
       "dll/win32/shell32/CActiveDesktop.cpp",
       "dll/win32/shell32/droptargets/CexeDropHandler.cpp",

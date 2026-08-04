@@ -174,6 +174,15 @@ pub mod dialogs_dialogs;
 #[path = "shell32/CDefViewDual.rs"]
 pub mod def_view_dual;
 
+// The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
+// these two are the retained closure that kept the .cpp compiled — its free helpers and
+// `*_RustBridge` entry points, and the CNetFolderEnum enumerator. Two files because one TU
+// needs two rustconv runs (--free-functions and --cpp-com) and each assembles its own output.
+#[path = "folders/CNetFolder.rs"]
+pub mod net_folder_tu;
+#[path = "folders/CNetFolderEnum.rs"]
+pub mod net_folder_enum;
+
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

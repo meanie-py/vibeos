@@ -2054,6 +2054,22 @@ Four things that cost precision, all of them found by being wrong first:
   `if (SUCCEEDED(hr)) { ERR("Got CLSID override for '%S'\n", Tmp); }` into `if hr >= 0 { }` — a
   branch that computes a condition and does nothing, which is what a lost print looks like from
   the outside.
+- **The mirror image: a PARTIAL-slice assembly makes every C-vs-Rust pairing lint over-report.**
+  Same oracle, opposite failure. rustconv embeds the **whole** TU's C source as trailing comments
+  no matter how narrow the run was, so a `--free-functions` or `--cpp-com --class X` assembly
+  carries C whose Rust lives in a *sibling* module. `scan_mask_drift` then reports those as
+  DROPPED even though the flag-clear is present and correct next door — three such rows appeared
+  the moment `folders/CControlPanelFolder.cpp` and `folders/CDesktopFolder.cpp` were assembled
+  (`rgfInOut &= ~SFGAO_VALIDATE`, `grfMode &= ~STGM_CREATE`, `pcsFlags &= ~SHCOLSTATE_ONBYDEFAULT`),
+  and all three are live in `control_panel_folder.rs:1067` and `desktop_folder.rs:1621`. Check the
+  sibling module before believing a DROPPED row on a file whose first line is
+  `// rustconv-assembly: free-functions` or `class:...`. A whole-TU assembly has no such gap,
+  because its embedded C and its Rust cover the same set.
+- **Two TUs' anonymous enums can collide in `scan_const_contradictions`.** `IDC_PROPERTIES` is
+  `2` in `CRecycleBin.cpp`'s `enum { IDC_EMPTYRECYCLEBIN = 1, IDC_PROPERTIES }` and `0` in
+  `CNetFolder.cpp`'s `enum { IDC_PROPERTIES }`. Both translations are faithful; the name is simply
+  not crate-unique. Prefix the newer one and keep the C spelling in a comment — do not "reconcile"
+  the values, which would corrupt one of the two menus.
 
 **And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
 `_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash

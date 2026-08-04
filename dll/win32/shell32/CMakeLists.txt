@@ -95,9 +95,12 @@ list(APPEND SOURCE
     # folders/CPrinterFolder.cpp — CPrinterFolder, CPrintersEnum, and retained
     # printer icon/PIDL helpers are Rust-owned.
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
-    # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
-    # retains network enumeration, context-menu callbacks, and explicit bridges.
-    folders/CNetFolder.cpp
+    # folders/CNetFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+    # activated class was already shell32-rust/src/net_folder.rs; its retained closure, measured
+    # against the real link by `rustconv hybrid-closure`, was 7 *_RustBridge entry points and
+    # nothing else — no C++-mangled symbol at all. Those are now
+    # shell32-rust/src/folders/CNetFolder.rs, and the file-local CNetFolderEnum enumerator is
+    # shell32-rust/src/folders/CNetFolderEnum.rs.
     # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp
     folders/CRecycleBin.cpp
