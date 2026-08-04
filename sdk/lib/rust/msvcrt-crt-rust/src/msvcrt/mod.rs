@@ -42,6 +42,21 @@ pub mod mbcs;
 // authority on that, not the source's apparent shape.
 pub mod time;
 
+// environ.c: 11 of 11 exports. Whole-file for the same reason errno.c and time.c are — the
+// four environment blocks (`MSVCRT__environ`/`__winitenv`/`_wenviron`/`__initenv`) are ONE
+// contract, built by `env_init` and rewritten in place by every `_putenv`/`_wputenv`. A
+// partial flip would leave some readers on the C's copy of that state.
+//
+// It needs no `stdio` gate: nothing here stands on file.c's fd table. The eight file-static
+// helpers (`env_get_index`, `env_set`, `putenv_helper`, …) stay private, exactly as in the C,
+// so the object's 11 GLOBAL symbols are the whole cohab obligation and all 11 are defined.
+pub mod environ;
+// dir.c: 48 of 48 exports. The directory/path surface — `_findfirst*`/`_findnext*` (all four
+// time-width variants), `_chdir`/`_getcwd`/`_getdcwd`, `_mkdir`/`_rmdir`, the
+// `_makepath`/`_splitpath`/`_fullpath` path algebra, and `_searchenv*`. It stands on Win32
+// `FindFirstFileW` and on environ.c's blocks (`_searchenv` reads `getenv`), not on file.c's
+// fd table, so it needs no `stdio` gate.
+pub mod dir;
 // math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
 // `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
 // so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are

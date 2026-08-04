@@ -35,6 +35,10 @@ pub use msvcrt_sys::*;
 pub type size_t = usize;
 pub type WORD = u16;
 pub type uintptr_t = usize;
+/// The signed twin of `uintptr_t`, and the return type of every `_exec*`/`_spawn*` export in
+/// process.c and of `_findfirst*` in dir.c. bindgen emits no alias for the same reason it emits
+/// none for `size_t` — it renders every USE as the concrete width.
+pub type intptr_t = isize;
 
 // ── constants bindgen would not fold ───────────────────────────────────────────────────────
 // Each is a macro, so it has no symbol for bindgen to snapshot; the value is the header's.
@@ -48,6 +52,45 @@ pub const _NLSCMPERROR: c_int = 0x7fff_ffff;
 pub const _TRUNCATE: size_t = size_t::MAX;
 /// `mtdll.h`: `#define _MB_CP_LOCK 25`.
 pub const _MB_CP_LOCK: c_int = 25;
+
+// ── dir.c's find-data aliases ──────────────────────────────────────────────────────────────
+//
+// `dll/win32/msvcrt/include/corecrt_io.h:12-19` and corecrt_wio.h:14-21 select these with the
+// PREPROCESSOR, so bindgen has no typedef to emit — a `#define` leaves no type behind:
+//
+//     #if defined(_USE_32BIT_TIME_T)
+//     # define _finddata_t     _finddata32_t
+//     # define _finddatai64_t  _finddata32i64_t
+//     #else
+//     # define _finddata_t     _finddata64i32_t
+//     # define _finddatai64_t  _finddata64_t
+//     #endif
+//
+// The build DEFINES `_USE_32BIT_TIME_T` — read out of its own compile_commands.json entry for
+// dir.c, not assumed. That is worth stating because the `#else` reads like the modern default
+// and is the arm you would pick by eye: taking it would give `_findfirst` a struct whose
+// `time_create`/`time_access`/`time_write` are 64-bit while its caller passes 32-bit ones, so
+// every timestamp AND the `size` field behind them come back garbage, with nothing failing to
+// compile. Re-derive these four if the module's flags ever change.
+pub type _finddata_t = _finddata32_t;
+pub type _finddatai64_t = _finddata32i64_t;
+pub type _wfinddata_t = _wfinddata32_t;
+pub type _wfinddatai64_t = _wfinddata32i64_t;
+/// `dll/win32/msvcrt/mtdll.h:36`: `#define _ENV_LOCK 12`. environ.c takes it around every
+/// mutation of the four environment blocks. Transcribed from the module's OWN mtdll.h, which
+/// is the header environ.c includes — the lock NUMBERS differ between crt and ucrt copies, and
+/// a wrong one does not fail to compile, it serializes against the wrong lock.
+pub const _ENV_LOCK: c_int = 12;
+
+/// `winbase.h:3562` — `#define GetEnvironmentStringsA GetEnvironmentStrings`.
+///
+/// The ANSI entry point is the ONLY one of the A/W pair whose exported symbol carries no
+/// suffix, and the alias is a `#define`, so bindgen has nothing to emit for the `A` spelling
+/// even with the header allowlisted. Confirmed against the object rather than the header
+/// alone: `llvm-nm --undefined-only environ.c.obj` imports `_GetEnvironmentStrings@0`. A
+/// hand-written `extern "system" { fn GetEnvironmentStringsA(); }` would compile, link
+/// against nothing, and fail only at load.
+pub use msvcrt_sys::GetEnvironmentStrings as GetEnvironmentStringsA;
 /// `include/wctype.h`: `#define WEOF (wint_t)(0xFFFF)`.
 pub const WEOF: wint_t = 0xFFFF;
 
@@ -117,6 +160,28 @@ macro_rules! MSVCRT_CHECK_PMT {
 /// use, and `mbcs.c` relies on that promotion (`(HIBYTE(c) - 0x21)/2 + 0x81) << 8` would
 /// wrap at 8 bits otherwise). Masking to `0xff` first makes the `DWORD_PTR` width — 32-bit
 /// on i386, 64-bit on amd64/arm64 — unobservable, so one spelling is right on all three.
+/// `ARRAY_SIZE(a)` / `ARRAYSIZE(a)` — the element count of an ARRAY.
+///
+/// The module's CMakeLists carries `-DARRAY_SIZE=_countof`, i.e. `sizeof(a)/sizeof(a[0])`,
+/// and winnt.h's `ARRAYSIZE` is the same thing. Both are spelled here as `.len()` on the
+/// array itself, which is not merely a translation but a repair: in C the macro accepts a
+/// DECAYED POINTER and quietly answers `sizeof(ptr)/sizeof(*ptr)` — 2 for a `wchar_t*` on
+/// i386, 4 on amd64 — with nothing to diagnose. Requiring an array makes that a compile
+/// error here. dir.c's translation arrived with three such sites (`ARRAY_SIZE(x.as_ptr())`,
+/// `ARRAY_SIZE(x.as_mut_ptr())`); this is what caught them.
+#[macro_export]
+macro_rules! ARRAY_SIZE {
+    ($a:expr) => {
+        ($a).len()
+    };
+}
+#[macro_export]
+macro_rules! ARRAYSIZE {
+    ($a:expr) => {
+        ($a).len()
+    };
+}
+
 #[macro_export]
 macro_rules! LOBYTE {
     ($w:expr $(,)?) => {
@@ -144,7 +209,10 @@ macro_rules! min {
     };
 }
 
-pub use crate::{HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR, MSVCRT_INVALID_PMT, min};
+pub use crate::{
+    ARRAYSIZE, ARRAY_SIZE, HIBYTE, LOBYTE, MSVCRT_CHECK_PMT, MSVCRT_CHECK_PMT_ERR,
+    MSVCRT_INVALID_PMT, min,
+};
 
 // ── the CRT (cdecl) ────────────────────────────────────────────────────────────────────────
 // From `dll/win32/msvcrt/include/{string,stdlib,ctype,corecrt_malloc,corecrt_wstring,
@@ -164,6 +232,13 @@ extern "C" {
     // include/corecrt_malloc.h:31 / :46
     pub fn malloc(size: size_t) -> *mut c_void;
     pub fn free(ptr: *mut c_void);
+    // include/corecrt_malloc.h — msvcrt.spec:1413 `@ cdecl realloc(ptr long)`. environ.c
+    // grows `_environ` in place with it; process.c's `msvcrt_valisttos` doubles its buffer.
+    pub fn realloc(ptr: *mut c_void, size: size_t) -> *mut c_void;
+    // include/stdlib.h — msvcrt.spec:432 `@ cdecl _exit(long)`. Diverging returns `!`: the C
+    // is `__declspec(noreturn)`, and typing it that way is what lets the translated
+    // `_wexecve` family end a branch without inventing a return value.
+    pub fn _exit(status: c_int) -> !;
 
     // include/corecrt_wstring.h — NEVER hand-write these in Rust; LLVM folds a byte-copy
     // loop back into a call to the function itself (AGENTS.md). This crate defines them
@@ -171,6 +246,49 @@ extern "C" {
     pub fn memset(dst: *mut c_void, c: c_int, n: size_t) -> *mut c_void;
     pub fn memcpy(dst: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
     pub fn memcmp(a: *const c_void, b: *const c_void, n: size_t) -> c_int;
+    pub fn memmove(dst: *mut c_void, src: *const c_void, n: size_t) -> *mut c_void;
+
+    // string.h's POSIX ("oldnames") spellings. environ.c and dir.c call these BARE, and the
+    // object settles what that means: `llvm-nm --undefined-only environ.c.obj` lists
+    // `__strdup`/`__wcsdup`/`__strnicmp`/`__wcsnicmp` — i.e. the compiler resolved every one
+    // to the UNDERSCORED msvcrt export, and msvcrt.spec has no un-prefixed twin for any of
+    // them. `#[link_name]` reproduces exactly what the header's alias declaration does, which
+    // keeps the translated call sites spelled the way the C spells them.
+    #[link_name = "_strdup"]
+    pub fn strdup(s: *const c_char) -> *mut c_char;
+    #[link_name = "_wcsdup"]
+    pub fn wcsdup(s: *const wchar_t) -> *mut wchar_t;
+    #[link_name = "_strnicmp"]
+    pub fn strnicmp(a: *const c_char, b: *const c_char, n: size_t) -> c_int;
+    #[link_name = "_wcsnicmp"]
+    pub fn wcsnicmp(a: *const wchar_t, b: *const wchar_t, n: size_t) -> c_int;
+
+    // io.h — msvcrt.spec:304. dir.c's `_searchenv` probes each candidate path with it.
+    pub fn _access(path: *const c_char, mode: c_int) -> c_int;
+    // mbctype.h — msvcrt.spec:592. dir.c's path splitters use it to skip a lead byte.
+    pub fn _ismbblead(c: c_uint) -> c_int;
+    // wctype.h — msvcrt.spec:1484. dir.c upper-cases the drive letter with it.
+    pub fn towupper(c: wint_t) -> wint_t;
+}
+
+// ── data.c's four environment blocks ───────────────────────────────────────────────────────
+//
+// data.c is still C and DEFINES all four (`char **MSVCRT__environ = NULL;` at data.c:55-58);
+// msvcrt.h:245-248 declares them `extern`. environ.c builds them in `env_init` and every
+// `_putenv`/`_wputenv` rewrites them in place, which is precisely why environ.c is a
+// whole-file flip: they are one contract, not four variables.
+//
+// These are the C symbol names verbatim — `llvm-nm --undefined-only environ.c.obj` lists
+// `_MSVCRT___initenv` and friends, so the `MSVCRT_` prefix is part of the symbol and not a
+// Wine-ism the ReactOS build strips.
+extern "C" {
+    pub static mut MSVCRT__environ: *mut *mut c_char;
+    pub static mut MSVCRT__wenviron: *mut *mut wchar_t;
+    pub static mut MSVCRT___initenv: *mut *mut c_char;
+    pub static mut MSVCRT___winitenv: *mut *mut wchar_t;
+}
+
+extern "C" {
 
     // include/stdlib.h:191 — time.c's `_tzset` reads the TZ variable through it.
     pub fn getenv(name: *const c_char) -> *mut c_char;
@@ -382,6 +500,31 @@ extern "C" {
 #[inline]
 fn get_aw_cp() -> UINT {
     CP_ACP
+}
+
+/// `msvcrt.h:430` — `static inline int convert_acp_utf8_to_wcs(const char*, wchar_t*, int)`.
+/// Carried rather than imported for the same reason as its callers above: `static inline` has
+/// no symbol. Note the asymmetry with its twin below, which is in the C and is easy to
+/// "tidy" away — this direction passes `MB_PRECOMPOSED`, the other passes 0.
+#[inline]
+pub unsafe fn convert_acp_utf8_to_wcs(str_: *const c_char, wstr: *mut wchar_t, len: c_int) -> c_int {
+    MultiByteToWideChar(get_aw_cp(), MB_PRECOMPOSED, str_, -1, wstr, len)
+}
+
+/// `msvcrt.h:435` — `static inline int convert_wcs_to_acp_utf8(const wchar_t*, char*, int)`.
+/// dir.c's `_getdcwd`/`_fullpath`/`_searchenv` narrow their wide results through it.
+#[inline]
+pub unsafe fn convert_wcs_to_acp_utf8(wstr: *const wchar_t, str_: *mut c_char, len: c_int) -> c_int {
+    WideCharToMultiByte(
+        get_aw_cp(),
+        0,
+        wstr,
+        -1,
+        str_,
+        len,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    )
 }
 
 /// `msvcrt.h:440` — `static inline wchar_t* wstrdupa_utf8(const char *str)`.
