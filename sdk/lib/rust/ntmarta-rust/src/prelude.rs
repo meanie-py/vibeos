@@ -290,3 +290,32 @@ extern "system" {
 #[macro_export]
 macro_rules! RtlGetProcessHeap { () => { (*NtCurrentPeb()).ProcessHeap }; }
 pub use crate::RtlGetProcessHeap;
+
+// A wide string literal, NUL-terminated, with one stable address for the program's life.
+// `static` and not `const`: a const is inlined at each use site, so `.as_ptr()` would hand the
+// callee the address of a temporary. ASCII-only by construction, so a non-ASCII literal fails
+// at COMPILE time instead of silently truncating.
+//
+// This is the fix for the byte-string-as-wide-pointer class, and ntmarta had seven — all
+// hand-encoded UTF-16 behind a `b"..."`, which has ALIGNMENT 1 (field manual: an odd address
+// is an amd64-only 0x1E STATUS_DATATYPE_MISALIGNMENT), and two of which carried only a HALF
+// terminator: `b"C\0U\0R\0R\0E\0N\0T\0_\0U\0S\0E\0R\0\0"` is 25 bytes, i.e. 12 characters
+// plus ONE stray NUL byte, so `wcscmp` read past the literal into whatever followed it.
+#[macro_export]
+macro_rules! w {
+    ($s:expr) => {{
+        const INPUT: &[u8] = $s.as_bytes();
+        static OUT: [u16; INPUT.len() + 1] = {
+            let mut out = [0u16; INPUT.len() + 1];
+            let mut i = 0;
+            while i < INPUT.len() {
+                assert!(INPUT[i] < 0x80, "w!() takes ASCII literals only");
+                out[i] = INPUT[i] as u16;
+                i += 1;
+            }
+            out // trailing element stays 0 => NUL-terminated
+        };
+        OUT.as_ptr()
+    }};
+}
+pub use crate::w;

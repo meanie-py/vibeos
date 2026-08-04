@@ -472,7 +472,7 @@ unsafe extern "C" fn AccpGetTrusteeSid(
                 Ret = ERROR_INVALID_PARAMETER;
             } else {
                 TrusteeName = AccpGetTrusteeName(Trustee);
-                if wcscmp(TrusteeName, b"C\0U\0R\0R\0E\0N\0T\0_\0U\0S\0E\0R\0\0".as_ptr() as LPCWSTR) == 0 {
+                if wcscmp(TrusteeName, w!("CURRENT_USER") as LPCWSTR) == 0 {
                     Ret = AccpLookupCurrentUser(ppSid);
                     if Ret == ERROR_SUCCESS {
                         *Allocated = TRUE;
@@ -499,7 +499,7 @@ unsafe extern "C" fn AccpGetTrusteeSid(
 
         TRUSTEE_IS_NAME => {
             TrusteeName = AccpGetTrusteeName(Trustee);
-            if wcscmp(TrusteeName, b"C\0U\0R\0R\0E\0N\0T\0_\0U\0S\0E\0R\0\0".as_ptr() as LPCWSTR) == 0 {
+            if wcscmp(TrusteeName, w!("CURRENT_USER") as LPCWSTR) == 0 {
                 Ret = AccpLookupCurrentUser(ppSid);
                 if Ret == ERROR_SUCCESS {
                     *Allocated = TRUE;
@@ -878,23 +878,23 @@ unsafe extern "C" fn AccpOpenNamedObject(
             let AccRegRootKeys: [AccRegRootKey; 5] = [
                 AccRegRootKey {
                     hRootKey: HKEY_CLASSES_ROOT,
-                    szRootKey: b"C\0L\0A\0S\0S\0E\0S\0_\0R\0O\0O\0T\0\0\0".as_ptr() as LPCWSTR,
+                    szRootKey: w!("CLASSES_ROOT") as LPCWSTR,
                 },
                 AccRegRootKey {
                     hRootKey: HKEY_CURRENT_USER,
-                    szRootKey: b"C\0U\0R\0R\0E\0N\0T\0_\0U\0S\0E\0R\0\0\0".as_ptr() as LPCWSTR,
+                    szRootKey: w!("CURRENT_USER") as LPCWSTR,
                 },
                 AccRegRootKey {
                     hRootKey: HKEY_LOCAL_MACHINE,
-                    szRootKey: b"M\0A\0C\0H\0I\0N\0E\0\0\0".as_ptr() as LPCWSTR,
+                    szRootKey: w!("MACHINE") as LPCWSTR,
                 },
                 AccRegRootKey {
                     hRootKey: HKEY_USERS,
-                    szRootKey: b"U\0S\0E\0R\0S\0\0\0".as_ptr() as LPCWSTR,
+                    szRootKey: w!("USERS") as LPCWSTR,
                 },
                 AccRegRootKey {
                     hRootKey: HKEY_CURRENT_CONFIG,
-                    szRootKey: b"C\0O\0N\0F\0I\0G\0\0\0".as_ptr() as LPCWSTR,
+                    szRootKey: w!("CONFIG") as LPCWSTR,
                 },
             ];
 
