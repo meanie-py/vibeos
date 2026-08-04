@@ -45,10 +45,15 @@ list(APPEND SOURCE
     # SH_FormatByteSize forwarder MOVED to dialogs/filedefext.cpp — the TU that owns the
     # function it forwards to — rather than being published from Rust, which would have made
     # its body a call to itself.
-    # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
-    # the shared SH_FormatByteSize/SH_FormatFileSizeWithBytes helpers and source-local
-    # C++ helper symbols used by the Rust module; its class bodies are never activated.
-    dialogs/filedefext.cpp
+    # dialogs/filedefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+    # CFileDefExt and CFileVersionInfo classes were already shell32-rust/src/dialogs/filedefext.rs,
+    # and the free helpers this file retained are now shell32-rust/src/dialogs/filedefext_tu.rs.
+    # Its retained closure was 10 symbols, all `_RustBridge` free functions the Rust now publishes
+    # — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
+    # leaves with this file. Three C++ edits came with it: PathIsDotOrDotDotW, SHELL_DisplayNameOf
+    # and SHELL32_GetDllFromRundll32CommandLine are EXTERN_C in precomp.h now, because the
+    # C-linkage forwarders that used to reach those C++ functions lived HERE and went away with
+    # the file; that is the same fix already documented for the DataObject_GetHIDACount group.
     dialogs/filetypes.cpp
     # dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
     # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in

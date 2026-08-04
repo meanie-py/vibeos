@@ -143,6 +143,52 @@ def _link_objects(link_root: Path) -> list[Path]:
     return sorted(link_root.rglob("*.obj"))
 
 
+SOURCE_SUFFIXES = (".c", ".cpp", ".cc", ".cxx")
+
+
+def _live_source_names(repo: Path, target_dir: str) -> set[str]:
+    """Basenames of every source CMake still compiles under `target_dir`."""
+    live: set[str] = set()
+    for cml in cmake_lists_under(repo, target_dir):
+        for raw in cml.read_text(errors="replace").splitlines():
+            line = raw.strip()
+            if line.startswith("#"):
+                continue
+            entry = line.split("#", 1)[0].strip()
+            if entry.endswith(SOURCE_SUFFIXES):
+                live.add(Path(entry).name)
+    return live
+
+
+def _stale_object_predicate(repo: Path, target_dir: str):
+    """A test for "this .obj is the leftover of a TU that already left the build".
+
+    ninja never deletes the object of a source you remove from a list, so every flipped TU
+    keeps a stale `.obj` under the link root forever. Counting those as consumers invents
+    phantom demand: `SH_FormatByteSize` read as still-needed-by `drvdefext.cpp.obj` months
+    after drvdefext.cpp became Rust, which makes the next flip look harder than it is.
+
+    Conservative by construction -- an object is dropped only when its source can be PROVEN
+    flipped: it lives under this target dir and appears in no live list. An object whose
+    source is not under `target_dir` belongs to another target and is always kept, because
+    understating the closure is the dangerous direction (it reads as "free to leave" right
+    up until the link fails).
+    """
+    root = repo / target_dir
+    if not target_dir or not root.is_dir():
+        return lambda _obj: False
+    on_disk = {p.name for p in root.rglob("*") if p.suffix in SOURCE_SUFFIXES}
+    live = _live_source_names(repo, target_dir)
+
+    def is_stale(obj: Path) -> bool:
+        if not obj.name.endswith(".obj"):
+            return False  # not an object; nothing to conclude, so keep it
+        src = obj.name[: -len(".obj")]
+        return src in on_disk and src not in live
+
+    return is_stale
+
+
 def _find_obj(link_root: Path, tu: Path) -> Path | None:
     want = f"{tu.name}.obj"
     for cand in link_root.rglob(want):
@@ -226,7 +272,8 @@ def measure(
     # Undefined side: every other object in the link, plus the Rust archive. A Rust
     # body calling back into a C++ helper is exactly the edge that keeps the .cpp alive,
     # so omitting the archive would understate the closure.
-    others = [p for p in _link_objects(link_root) if p != obj]
+    is_stale = _stale_object_predicate(repo, target_dir)
+    others = [p for p in _link_objects(link_root) if p != obj and not is_stale(p)]
     needed_by: dict[str, list[str]] = {}
     for other in others:
         try:

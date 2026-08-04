@@ -190,6 +190,12 @@ pub mod net_folder_enum;
 // is published from Rust.
 #[path = "dialogs/drvdefext_tu.rs"]
 pub mod drv_def_ext_tu;
+// filedefext.cpp needed no paired class slice: CFileDefExt and CFileVersionInfo were already
+// `dialogs/filedefext.rs`, and its whole retained closure is free-function `_RustBridge`
+// entries. SH_FormatByteSize_RustBridge moves here from the .cpp, which is why the two must
+// land together.
+#[path = "dialogs/filedefext_tu.rs"]
+pub mod file_def_ext_tu;
 #[path = "folders/CDesktopFolder.rs"]
 pub mod desktop_folder_tu;
 #[path = "folders/CDesktopFolderEnum.rs"]

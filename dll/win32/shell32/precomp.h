@@ -284,7 +284,11 @@ SHELL_GetUIObjectOfAbsoluteItem(
     _In_ PCIDLIST_ABSOLUTE pidl,
     _In_ REFIID riid, _Out_ void **ppvObj);
 
-HRESULT
+// EXTERN_C for the same reason as DataObject_GetHIDACount below: dialogs/filedefext.cpp is now
+// Rust, and the C-linkage forwarder it used to publish for this function went with it. Giving
+// the definition C linkage lets the Rust call it directly instead of needing a new forwarder in
+// utils.cpp, which is where it lives.
+EXTERN_C HRESULT
 SHELL_DisplayNameOf(
     _In_opt_ IShellFolder *psf,
     _In_ LPCITEMIDLIST pidl,
@@ -318,10 +322,10 @@ BindCtx_RegisterObjectParam(
     _In_opt_ IUnknown *punk,
     _Out_ LPBC *ppbc);
 
-BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
+EXTERN_C BOOL PathIsDotOrDotDotW(_In_ LPCWSTR pszPath);
 EXTERN_C BOOL PathIsValidElement(_In_ LPCWSTR pszPath);
 BOOL PathIsDosDevice(_In_ LPCWSTR pszName);
-HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
+EXTERN_C HRESULT SHELL32_GetDllFromRundll32CommandLine(LPCWSTR pszCmd, LPWSTR pszOut, SIZE_T cchMax);
 HRESULT SHILAppend(_Inout_ LPITEMIDLIST pidl, _Inout_ LPITEMIDLIST *ppidl);
 
 // EXTERN_C because these four are defined in Rust (shell32-rust/src/shell32/shldataobject.rs).
