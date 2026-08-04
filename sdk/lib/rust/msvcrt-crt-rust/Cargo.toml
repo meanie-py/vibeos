@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data"]
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
@@ -147,6 +147,18 @@ conio-exit = []
 # locale.c's own 29 exports cannot be graded there; that is the same limitation file.c,
 # process.c, dir.c and environ.c already carry, recorded rather than papered over.
 locale = []
+
+# data.c (57 globals — the CRT's process-wide state and the `__p__*` accessor family).
+# Default ON, dropped by the host harness, and it IMPLIES `dir-environ` because
+# `msvcrt_init_args` calls environ.c's `env_init`: enabling data without environ would be an
+# undefined symbol, so the feature graph states the dependency instead of leaving it to a
+# link error nobody sees until the DLL is built.
+#
+# Two of data.c's exports are harness-owned: `fileimpl.c` defines `_get_fmode` and
+# `msvcrt_wstrdupa` (both are in msvcrt-sys's allowlist as "CRT siblings file.c calls that
+# are still C"), so linking data.rs beside them is two duplicate symbols. Same shape as
+# `dir-environ`'s `_getdrive`/`_wgetenv`.
+data = ["dir-environ"]
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
