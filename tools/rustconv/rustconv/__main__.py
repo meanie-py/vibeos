@@ -38,7 +38,7 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
-from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
+from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
@@ -3402,15 +3402,28 @@ def cmd_translate(args):
                 output_tokens=total_out,
                 success=True,
             )
-            out_path = assemble_file(
-                fake_result,
-                subsystem,
-                scan.raw_source,
-                exports=file_res.exports,
-                scan=scan,
-                target=rustconv_target,
-                c_source_path=c_file,
-            )
+            # Name the SLICE of the TU this run covers, so a second run over the same TU
+            # (another class, or the free functions) cannot silently overwrite this file.
+            if getattr(args, "cpp_com", False) and getattr(args, "class_name", None):
+                selector = f"class:{args.class_name}"
+            elif getattr(args, "free_functions", False):
+                selector = "free-functions"
+            else:
+                selector = "whole-tu"
+            try:
+                out_path = assemble_file(
+                    fake_result,
+                    subsystem,
+                    scan.raw_source,
+                    exports=file_res.exports,
+                    scan=scan,
+                    target=rustconv_target,
+                    c_source_path=c_file,
+                    selector=selector,
+                )
+            except AssemblyClobberError as exc:
+                print(f"\n\u26d4 {exc}", file=sys.stderr)
+                sys.exit(1)
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
         # Respect the cost cap across files too, not just within one file.

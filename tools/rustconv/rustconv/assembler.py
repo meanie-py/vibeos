@@ -19,6 +19,33 @@ if TYPE_CHECKING:
     from .scanner import ScanResult
     from .spec_parser import SpecEntry
 
+# First line of an assembled file, naming WHICH slice of the TU produced it. One C++ TU often
+# needs several runs -- `--free-functions` for its free helpers, `--cpp-com --class X` per class
+# -- and every one of them derives the same output path from the TU's stem. Without this marker
+# the second run silently overwrites the first, which looks like a successful assembly and is
+# only noticed later when the symbols it wrote are missing.
+ASSEMBLY_MARKER = "// rustconv-assembly: "
+
+
+class AssemblyClobberError(RuntimeError):
+    """Raised when a run would overwrite an assembly produced by a DIFFERENT slice of the TU."""
+
+
+def _guard_assembly_target(out_path: Path, selector: str) -> None:
+    if not selector or not out_path.exists():
+        return
+    first = out_path.read_text(errors="replace").split("\n", 1)[0]
+    if not first.startswith(ASSEMBLY_MARKER):
+        return
+    prior = first[len(ASSEMBLY_MARKER) :].strip()
+    if prior == selector:
+        return
+    raise AssemblyClobberError(
+        f"{out_path} was assembled from `{prior}`, but this run is `{selector}`.\n"
+        f"Both derive their path from the same TU, so writing would DISCARD the other slice.\n"
+        f"fix: pass `-o <path>` to give this run its own file."
+    )
+
 
 def assemble_file(
     result: TranslationResult,
@@ -29,6 +56,7 @@ def assemble_file(
     scan: ScanResult | None = None,
     target: Target | None = None,
     c_source_path: Path | None = None,
+    selector: str = "",
 ) -> Path:
     """Write a single translation result into the crate structure.
 
@@ -70,6 +98,7 @@ def assemble_file(
     sub_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = sub_dir / f"{stem}.rs"
+    _guard_assembly_target(out_path, selector)
 
     # Post-process the Rust code
     rust_code = postprocess(
@@ -123,7 +152,10 @@ def assemble_file(
             )
 
     # Build the file content with C source as trailing comments
-    content_parts = [rust_code.rstrip()]
+    content_parts = []
+    if selector:
+        content_parts.append(f"{ASSEMBLY_MARKER}{selector}")
+    content_parts.append(rust_code.rstrip())
     content_parts.append("")
     content_parts.append("")
     content_parts.append("// " + "=" * 76)
