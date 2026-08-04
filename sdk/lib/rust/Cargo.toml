@@ -80,6 +80,7 @@ members = [
     "wldap32-rust",
     # Tier-3 batch D, the security/auth cluster. All plain C, no COM substrate.
     "ntmarta-rust",
+    "authz-rust",
     # Network-configuration COM server (the "Network Connections" installer/property sheets).
     # C-style COM: every vtable method is a plain `extern "C"` fn, so the whole 11-TU module
     # translates as plain C — no C++ substrate.
