@@ -586,7 +586,7 @@ pub unsafe extern "C" fn CreateNotificationObject(
     let mut ClassGUID: CLSID = core::mem::zeroed();
     let mut InstanceGUID: CLSID = core::mem::zeroed();
 
-    wcscpy(szName.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Control\\Network\\\0".as_ptr() as LPCWSTR);
+    wcscpy(szName.as_mut_ptr(), b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0\0\0".as_ptr() as LPCWSTR);
 
     hr = INetCfgComponent_GetClassGuid(iface, &mut ClassGUID);
     if hr < 0 {
@@ -600,7 +600,7 @@ pub unsafe extern "C" fn CreateNotificationObject(
 
     wcscat(szName.as_mut_ptr(), pStr);
     CoTaskMemFree(pStr);
-    wcscat(szName.as_mut_ptr(), b"\\\0".as_ptr() as LPCWSTR);
+    wcscat(szName.as_mut_ptr(), b"\\\0\0\0".as_ptr() as LPCWSTR);
 
     hr = INetCfgComponent_GetInstanceGuid(iface, &mut InstanceGUID);
     if hr < 0 {
@@ -615,14 +615,14 @@ pub unsafe extern "C" fn CreateNotificationObject(
     wcscat(szName.as_mut_ptr(), pStr);
     CoTaskMemFree(pStr);
 
-    wcscat(szName.as_mut_ptr(), b"\\NDI\0".as_ptr() as LPCWSTR);
+    wcscat(szName.as_mut_ptr(), b"\\\0N\0D\0I\0\0\0".as_ptr() as LPCWSTR);
 
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szName.as_ptr(), 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
         return E_FAIL;
     }
 
     dwSize = core::mem::size_of_val(&szName) as u32;
-    lRet = RegQueryValueExW(hKey, b"ClsID\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szName.as_mut_ptr() as LPBYTE, &mut dwSize);
+    lRet = RegQueryValueExW(hKey, b"C\0l\0s\0I\0D\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szName.as_mut_ptr() as LPBYTE, &mut dwSize);
     RegCloseKey(hKey);
 
     if lRet != ERROR_SUCCESS && dwType != REG_SZ {

@@ -144,7 +144,7 @@ pub unsafe extern "system" fn INetCfgLock_fnIsWriteLocked(
     let mut dwType: u32 = 0;
     let mut hr: HRESULT;
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"SYSTEM\\CurrentControlSet\\Control\\Network\\NetCfgLockHolder\0".as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0N\0e\0t\0C\0f\0g\0L\0o\0c\0k\0H\0o\0l\0d\0e\0r\0\0\0".as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
         return S_FALSE;
     }
 
@@ -215,14 +215,14 @@ pub unsafe extern "C" fn ReadBindingString(
         return S_OK;
     }
 
-    wcscpy(szBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Services\\\0".as_ptr() as LPCWSTR);
+    wcscpy(szBuffer.as_mut_ptr(), b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0\0".as_ptr() as LPCWSTR);
     wcscat(szBuffer.as_mut_ptr(), (*Item).szBindName);
-    wcscat(szBuffer.as_mut_ptr(), b"\\Linkage\0".as_ptr() as LPCWSTR);
+    wcscat(szBuffer.as_mut_ptr(), b"\\\0L\0i\0n\0k\0a\0g\0e\0\0\0".as_ptr() as LPCWSTR);
 
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) == ERROR_SUCCESS
     {
         dwSize = 0;
-        RegQueryValueExW(hKey, b"Bind\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::null_mut(), &mut dwSize);
+        RegQueryValueExW(hKey, b"B\0i\0n\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::null_mut(), &mut dwSize);
 
         if dwSize != 0
         {
@@ -231,7 +231,7 @@ pub unsafe extern "C" fn ReadBindingString(
                 return E_OUTOFMEMORY;
             }
 
-            RegQueryValueExW(hKey, b"Bind\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, (*Item).pszBinding as LPBYTE, &mut dwSize);
+            RegQueryValueExW(hKey, b"B\0i\0n\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, (*Item).pszBinding as LPBYTE, &mut dwSize);
         }
 
         RegCloseKey(hKey);
@@ -639,7 +639,7 @@ pub unsafe extern "C" fn ApplyOrCancelChanges(
                     {
                         swprintf(
                             szName.as_mut_ptr(),
-                            b"SYSTEM\\CurrentControlSet\\Control\\Network\\%s\0".as_ptr() as LPCWSTR,
+                            b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0%\0s\0\0\0".as_ptr() as LPCWSTR,
                             pszGuid,
                         );
                         CoTaskMemFree(pszGuid as LPVOID);

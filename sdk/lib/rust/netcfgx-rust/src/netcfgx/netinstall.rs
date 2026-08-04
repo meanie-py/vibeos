@@ -37,9 +37,9 @@ unsafe extern "C" fn InstallInfSections(
         ret = FALSE;
     } else {
         if Buffer[wcslen(Buffer.as_ptr()) as usize - 1] != '\\' as u16 {
-            wcscat(Buffer.as_mut_ptr(), b"\\\0".as_ptr() as *const u16);
+            wcscat(Buffer.as_mut_ptr(), b"\\\0\0\0".as_ptr() as *const u16);
         }
-        wcscat(Buffer.as_mut_ptr(), b"I\0n\0f\0\\\0\0".as_ptr() as *const u16);
+        wcscat(Buffer.as_mut_ptr(), b"I\0n\0f\0\\\0\0\0".as_ptr() as *const u16);
         wcscat(Buffer.as_mut_ptr(), InfFile);
 
         hInf = SetupOpenInfFileW(Buffer.as_ptr(), core::ptr::null_mut(), INF_STYLE_WIN4, core::ptr::null_mut());
@@ -67,7 +67,7 @@ unsafe extern "C" fn InstallInfSections(
                     ret = FALSE;
                 } else {
                     wcscpy(Buffer.as_mut_ptr(), InfSection);
-                    wcscat(Buffer.as_mut_ptr(), b".\0S\0e\0r\0v\0i\0c\0e\0s\0\0".as_ptr() as *const u16);
+                    wcscat(Buffer.as_mut_ptr(), b".\0S\0e\0r\0v\0i\0c\0e\0s\0\0\0".as_ptr() as *const u16);
 
                     ret = SetupInstallServicesFromInfSectionW(hInf, Buffer.as_ptr(), 0);
                     if ret == FALSE {
@@ -102,9 +102,9 @@ unsafe extern "C" fn CreateInstanceKey(
 
     *pInstanceKey = core::ptr::null_mut();
 
-    wcscpy(szKeyBuffer.as_mut_ptr(), b"SYSTEM\\CurrentControlSet\\Control\\Network\\\0".as_ptr() as LPCWSTR);
+    wcscpy(szKeyBuffer.as_mut_ptr(), b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0\0\0".as_ptr() as LPCWSTR);
     wcscat(szKeyBuffer.as_mut_ptr(), (*pComponentInfo).pszClassGuid);
-    wcscat(szKeyBuffer.as_mut_ptr(), b"\\{\0".as_ptr() as LPCWSTR);
+    wcscat(szKeyBuffer.as_mut_ptr(), b"\\\0{\0\0\0".as_ptr() as LPCWSTR);
 
     RpcStatus = UuidCreate(&mut Uuid);
     if RpcStatus != RPC_S_OK && RpcStatus != RPC_S_UUID_LOCAL_ONLY {
@@ -117,7 +117,7 @@ unsafe extern "C" fn CreateInstanceKey(
     }
 
     wcscat(szKeyBuffer.as_mut_ptr(), UuidString);
-    wcscat(szKeyBuffer.as_mut_ptr(), b"}\0".as_ptr() as LPCWSTR);
+    wcscat(szKeyBuffer.as_mut_ptr(), b"}\0\0\0".as_ptr() as LPCWSTR);
 
     RpcStringFreeW(&mut UuidString);
 
@@ -138,7 +138,7 @@ unsafe extern "C" fn CreateInstanceKey(
 
     rc = RegSetValueExW(
         hInstanceKey,
-        b"Characteristics\0".as_ptr() as LPCWSTR,
+        b"C\0h\0a\0r\0a\0c\0t\0e\0r\0i\0s\0t\0i\0c\0s\0\0\0".as_ptr() as LPCWSTR,
         0,
         REG_DWORD,
         core::ptr::addr_of_mut!((*pComponentInfo).dwCharacteristics) as LPBYTE,
@@ -151,7 +151,7 @@ unsafe extern "C" fn CreateInstanceKey(
 
     rc = RegSetValueExW(
         hInstanceKey,
-        b"ComponentId\0".as_ptr() as LPCWSTR,
+        b"C\0o\0m\0p\0o\0n\0e\0n\0t\0I\0d\0\0\0".as_ptr() as LPCWSTR,
         0,
         REG_SZ,
         (*pComponentInfo).pszComponentId as LPBYTE,
@@ -164,7 +164,7 @@ unsafe extern "C" fn CreateInstanceKey(
 
     rc = RegSetValueExW(
         hInstanceKey,
-        b"Description\0".as_ptr() as LPCWSTR,
+        b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR,
         0,
         REG_SZ,
         (*pComponentInfo).pszDescription as LPBYTE,
@@ -177,7 +177,7 @@ unsafe extern "C" fn CreateInstanceKey(
 
     rc = RegSetValueExW(
         hInstanceKey,
-        b"InfPath\0".as_ptr() as LPCWSTR,
+        b"I\0n\0f\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
         0,
         REG_SZ,
         (*pComponentInfo).pszInfPath as LPBYTE,
@@ -190,7 +190,7 @@ unsafe extern "C" fn CreateInstanceKey(
 
     rc = RegSetValueExW(
         hInstanceKey,
-        b"InfSection\0".as_ptr() as LPCWSTR,
+        b"I\0n\0f\0S\0e\0c\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR,
         0,
         REG_SZ,
         (*pComponentInfo).pszInfSection as LPBYTE,
@@ -405,10 +405,10 @@ unsafe extern "C" fn ScanForInfFile(
     let mut bFound = FALSE;
 
     GetWindowsDirectoryW(szInfPath.as_mut_ptr(), MAX_PATH);
-    wcscat(szInfPath.as_mut_ptr(), b"\\inf\0".as_ptr() as LPCWSTR);
+    wcscat(szInfPath.as_mut_ptr(), b"\\\0i\0n\0f\0\0\0".as_ptr() as LPCWSTR);
 
     wcscpy(szPathBuffer.as_mut_ptr(), szInfPath.as_ptr());
-    wcscat(szPathBuffer.as_mut_ptr(), b"\\*.inf\0".as_ptr() as LPCWSTR);
+    wcscat(szPathBuffer.as_mut_ptr(), b"\\\0*\0.\0i\0n\0f\0\0\0".as_ptr() as LPCWSTR);
 
     hFindFile = FindFirstFileW(szPathBuffer.as_ptr(), &mut fdw);
     if hFindFile == INVALID_HANDLE_VALUE {
@@ -422,13 +422,13 @@ unsafe extern "C" fn ScanForInfFile(
         // match `.` or `..` -- and repairing an upstream bug inside a translation is how
         // a divergence ships. Three paid samplings all "fixed" it by calling FindNextFileW
         // on this path; the call seal caught every one.
-        if wcscmp(fdw.cFileName.as_ptr(), b".\0".as_ptr() as LPCWSTR) == 0 ||
-           wcscmp(fdw.cFileName.as_ptr(), b"..\0".as_ptr() as LPCWSTR) == 0 {
+        if wcscmp(fdw.cFileName.as_ptr(), b".\0\0\0".as_ptr() as LPCWSTR) == 0 ||
+           wcscmp(fdw.cFileName.as_ptr(), b".\0.\0\0\0".as_ptr() as LPCWSTR) == 0 {
             continue;
         }
 
         wcscpy(szFullInfName.as_mut_ptr(), szInfPath.as_ptr());
-        wcscat(szFullInfName.as_mut_ptr(), b"\\\0".as_ptr() as LPCWSTR);
+        wcscat(szFullInfName.as_mut_ptr(), b"\\\0\0\0".as_ptr() as LPCWSTR);
         wcscat(szFullInfName.as_mut_ptr(), fdw.cFileName.as_ptr());
 
         if CheckInfFile(szFullInfName.as_mut_ptr(), pszComponentId, pComponentInfo) != 0 {
@@ -535,7 +535,7 @@ unsafe extern "C" fn StartNetworkServices(
     pServiceSection = HeapAlloc(
         GetProcessHeap(),
         0,
-        (wcslen((*pComponentInfo).pszInfSection) + wcslen(b".Service\0".as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>(),
+        (wcslen((*pComponentInfo).pszInfSection) + wcslen(b".\0S\0e\0r\0v\0i\0c\0e\0\0\0".as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>(),
     ) as PWSTR;
     if pServiceSection == core::ptr::null_mut() {
         'done: loop {
@@ -556,12 +556,12 @@ unsafe extern "C" fn StartNetworkServices(
     }
 
     wcscpy(pServiceSection, (*pComponentInfo).pszInfSection);
-    wcscat(pServiceSection, b".Service\0".as_ptr() as LPCWSTR);
+    wcscat(pServiceSection, b".\0S\0e\0r\0v\0i\0c\0e\0\0\0".as_ptr() as LPCWSTR);
 
     if SetupFindFirstLineW(
         hInf,
         pServiceSection,
-        b"AddService\0".as_ptr() as LPCWSTR,
+        b"A\0d\0d\0S\0e\0r\0v\0i\0c\0e\0\0\0".as_ptr() as LPCWSTR,
         &mut Context,
     ) == 0
     {

@@ -269,6 +269,57 @@ def scan_byte_casts(text: str, rel) -> list[str]:
                 f"{rel}:{line}: {shown} is 8-bit text cast to a u16 pointer — every second "
                 f"byte must be 0 for ASCII UTF-16LE, none is"
             )
+        elif any(raw[i] == 0 and raw[i + 1] == 0 for i in range(0, len(raw) - 2, 2)):
+            # An INTERIOR u16 NUL truncates the string there. The three checks above are each
+            # necessary and none is sufficient: this literal is even-length, properly
+            # terminated, and correctly interleaved — and still wrong. It is how a
+            # DOUBLE-interleaved literal reads (`I\0\0\0n\0\0\0…` decodes to just "I"), which
+            # is what a repair script produces when it treats an already-UTF-16 literal as
+            # 8-bit text and interleaves it again.
+            #
+            # A REG_MULTI_SZ legitimately holds interior NULs and ends with two u16 NULs, so
+            # an exemption for that shape looks obviously right. It is not: the tree has ZERO
+            # multi-sz byte-cast literals and THREE double-interleaved ones (mswsock's stub
+            # OutputDebugStringW messages, two of which end in four zero bytes and would have
+            # been exempted). Designing around the hypothetical would have hidden every real
+            # instance. If a genuine multi-sz ever appears it gets flagged and handled then.
+            findings.append(
+                f"{rel}:{line}: {shown} has an INTERIOR u16 NUL — the string ends there; a "
+                f"double-interleaved literal decodes to its first character"
+            )
+    return findings
+
+
+_ANY_BYTESTR = re.compile(r'b"((?:[^"\\]|\\.)*)"')
+
+
+def scan_source_text_leak(text: str, rel) -> list[str]:
+    """Reject a byte literal that swallowed the C source spelling `L"..."` instead of its value.
+
+    netcfgx's tcpipconf_notify.c has `swprintf(szBuffer, L"%u", Gw.Metric)`; the translation
+    came back as `b"L\\"%u\\"\\0"`, so the format string at runtime is the six characters
+    `L"%u"` — the `L` and both quotes are DATA. The list column then renders `L"12"` instead
+    of `12`, and no compiler anywhere objects.
+
+    Deliberately independent of the cast: those two sites are `as *const _`, which the
+    byte-cast rule above cannot match because `_` names no width. The check needs no type
+    information at all — a literal whose bytes start with `L"` and end with `"` is the source
+    text, not the string. That is the whole reason this is worth a rule: the encoding rules
+    are blind here (the bytes are *consistently* 8-bit, just 8-bit of the wrong text), and a
+    reviewer diffing against the C reads past `L"%u"` because it looks exactly like the C.
+    """
+    findings = []
+    for m in _ANY_BYTESTR.finditer(_strip_line_comments(text)):
+        raw = _decode_byte_string(m.group(1))
+        if raw is None:
+            continue
+        body = raw.rstrip(b"\0")
+        if len(body) >= 3 and body.startswith(b'L"') and body.endswith(b'"'):
+            line = text[: m.start()].count("\n") + 1
+            findings.append(
+                f'{rel}:{line}: {m.group(0)} carries the C SOURCE TEXT `L"..."`, not the '
+                f"string — the `L` and both quotes are data at runtime"
+            )
     return findings
 
 
@@ -304,7 +355,8 @@ def scan_file(path: Path) -> tuple[list[str], int, int]:
         rel_path = path.relative_to(ROOT)
     except ValueError:
         rel_path = path
-    findings, seen, compared = scan_byte_casts(text, rel_path), 0, 0
+    findings = scan_byte_casts(text, rel_path) + scan_source_text_leak(text, rel_path)
+    seen = compared = 0
     for m in _DECL.finditer(text):
         name, declared = m.group(1), int(m.group(2))
         body = _array_body(text, m.end() - 1)

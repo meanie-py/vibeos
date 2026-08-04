@@ -946,7 +946,7 @@ pub unsafe extern "system" fn TcpipAdvGwDlg(
                 if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_CHECKED {
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), FALSE);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), FALSE);
-                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, b"\0".as_ptr() as LPARAM);
+                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, b"\0\0".as_ptr() as LPARAM);
                 } else {
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), TRUE);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), TRUE);
@@ -1533,7 +1533,7 @@ pub unsafe extern "system" fn TcpipAdvancedIpDlg(
                     li.iItem = SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
                     if li.iItem >= 0 {
                         if Gw.Metric != 0 {
-                            swprintf(szBuffer.as_mut_ptr(), b"L\"%u\"\0".as_ptr() as *const _, Gw.Metric);
+                            swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
                             li.iSubItem = 1;
                             li.pszText = szBuffer.as_mut_ptr();
                             SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
@@ -1563,7 +1563,7 @@ pub unsafe extern "system" fn TcpipAdvancedIpDlg(
                             li.pszText = Gw.szIP.as_mut_ptr();
                             SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
                             if Gw.Metric != 0 {
-                                swprintf(szBuffer.as_mut_ptr(), b"L\"%u\"\0".as_ptr() as *const _, Gw.Metric);
+                                swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
                                 li.iSubItem = 1;
                                 li.pszText = szBuffer.as_mut_ptr();
                                 SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);

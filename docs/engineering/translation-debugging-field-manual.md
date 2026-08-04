@@ -910,6 +910,25 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   class, sat behind those two spellings. Also strip `//` comments first: several crates carry
   a comment quoting the bad form verbatim while *fixing* it, and matching inside one turns a
   fix into a finding.
+  **(d) an INTERIOR `u16` NUL** — even length, proper terminator, correctly interleaved, and
+  still truncated at the first zero code unit. This is what a *repair* produces: re-encoding a
+  literal that was already UTF-16 but odd-length as if it were 8-bit interleaves it a second
+  time, so `b"I\0n\0f\0\\\0\0"` becomes `b"I\0\0\0n\0\0\0…"` and decodes to `"I"`. It is not
+  hypothetical in either direction — a fixup script wrote exactly that (with RAW NUL bytes,
+  which made git call the file binary), and three shipped instances were already sitting in
+  mswsock's stub `OutputDebugStringW` messages. **Do not exempt the REG_MULTI_SZ shape** even
+  though multi-sz genuinely holds interior NULs and ends with two `u16` NULs: the tree has
+  zero multi-sz byte-cast literals and three double-interleaved ones, two of which end in four
+  zero bytes, so that exemption hides every real instance to protect a case that never occurs.
+  Measure the corpus before writing an exemption.
+- **A byte literal can carry the C SOURCE SPELLING instead of the string.** netcfgx's
+  `swprintf(szBuffer, L"%u", Gw.Metric)` came back as `b"L\"%u\"\0"`, so the format string at
+  runtime is the six characters `L"%u"` — the `L` and both quotes are data, and the list column
+  renders `L"12"`. Every encoding rule is blind to it (the bytes are consistently 8-bit, just
+  8-bit of the wrong text) and so is a reviewer diffing against the C, because `L"%u"` is
+  exactly what the C says. `scan_wide_literals` checks it lexically — bytes starting `L"` and
+  ending `"` — with no type information, which is what lets it cover the `as *const _` sites
+  the cast-based rules cannot match at all.
 - **Reading each flagged site against its C is what finds the SECOND bug.** Burning the class
   down by hand across 15 crates turned up three defects that were not encoding at all:
   netcfgx built device names from `L"\\Device"` where the C has `L"\\Device\\"` (dropped

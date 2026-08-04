@@ -204,7 +204,7 @@ pub unsafe extern "system" fn WSARecvEx(
 ) -> i32 {
 
     OutputDebugStringW(
-        b"w\0\0\03\0\0\02\0\0\0s\0\0\0o\0\0\0c\0\0\0k\0\0\0 \0\0\0W\0\0\0S\0\0\0A\0\0\0R\0\0\0e\0\0\0c\0\0\0v\0\0\0E\0\0\0x\0\0\0 \0\0\0s\0\0\0t\0\0\0u\0\0\0b\0\0\0 \0\0\0c\0\0\0a\0\0\0l\0\0\0l\0\0\0e\0\0\0d\0\0\0\n\0\0\0\0\0\0\0".as_ptr() as *const u16,
+        b"w\x003\x002\0s\0o\0c\0k\0 \0W\0S\0A\0R\0e\0c\0v\0E\0x\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16,
     );
     SOCKET_ERROR
 }
@@ -253,7 +253,7 @@ pub unsafe extern "system" fn rcmd(
     Fd2p: *mut i32,
 ) -> usize {
 
-    OutputDebugStringW(b"w\0\x003\0\x002\0\x00s\0\x00o\0\x00c\0\x00k\0\x00 \0\x00r\0\x00c\0\x00m\0\x00d\0\x00 \0\x00s\0\x00t\0\x00u\0\x00b\0\x00 \0\x00c\0\x00a\0\x00l\0\x00l\0\x00e\0\x00d\0\x00\n\0\x00\0\0\x00".as_ptr() as *const u16);
+    OutputDebugStringW(b"w\x003\x002\0s\0o\0c\0k\0 \0r\0c\0m\0d\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16);
 
     return INVALID_SOCKET as usize;
 }
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn rexec(
 ) -> SOCKET {
 
     OutputDebugStringW(
-        b"w\0003\x002\0s\0o\0c\0k\0 \0r\0e\0x\0e\0c\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        b"w\x003\x002\0s\0o\0c\0k\0 \0r\0e\0x\0e\0c\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
     );
     return INVALID_SOCKET;
 }
