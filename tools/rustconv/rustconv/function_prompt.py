@@ -383,7 +383,14 @@ def _format_export_info(func: FunctionDep, spec_exports: dict) -> str:
 
     entry = spec_exports[func.name]
     conv = rust_calling_convention(entry)
-    fwd = f" (forwards to {entry.forward_target})" if entry.forward_target else ""
+    # A DOTTED target forwards at another DLL; a BARE one renames the symbol WE must define.
+    # They read the same in the .spec and mean opposite things to the translator.
+    if entry.forward_target:
+        fwd = f" (forwards to {entry.forward_target})"
+    elif entry.impl_symbol:
+        fwd = f" (must be defined as the symbol `{entry.impl_symbol}`)"
+    else:
+        fwd = ""
     arch = f" [arch: {','.join(entry.arch_filter)}]" if entry.arch_filter else ""
 
     parts = []

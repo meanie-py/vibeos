@@ -67,6 +67,12 @@ const MmMediumSystem: MM_SYSTEMSIZE = 1;
 const MmLargeSystem: MM_SYSTEMSIZE = 2;
 
 const ReadAhead: u8 = 1;
+// KSPIN_LOCK_QUEUE_NUMBER values. Spelled out because the translation shipped bare
+// integer literals here and they were the WRONG ones: 17 (LockQueueTimerTableLock)
+// for the master lock and 6 (LockQueueNonPagedPoolLock) for the work-queue lock,
+// so Cc took KiTimerTableLock[0] where the C takes CcMasterSpinLock. Never pass a
+// literal to Ke*QueuedSpinLock.
+const LockQueueMasterLock: i32 = 0x00000005;
 
 #[no_mangle]
 pub static mut CcPfEnablePrefetcher: BOOLEAN = 0;
@@ -324,7 +330,7 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
     let FileObject = opaque_ptr(FileObject);
     let shared_cache_map = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PROS_SHARED_CACHE_MAP;
 
-    let old_irql = KeAcquireQueuedSpinLock(17u32);
+    let old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
 
     if DisableReadAhead != 0 {
         SetFlag(
@@ -350,7 +356,7 @@ pub unsafe extern "system" fn CcSetAdditionalCacheAttributes(
         );
     }
 
-    KeReleaseQueuedSpinLock(17u32, old_irql);
+    KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
 }
 
 #[no_mangle]

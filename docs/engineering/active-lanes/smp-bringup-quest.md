@@ -1833,3 +1833,120 @@ closed, so some path still leaks.
 **Flip status: unchanged, `DefaultOS=` still selects UP.** amd64 and arm64 collapse cleanly
 modulo the two enumerated rows; i386 does not until the leaked lock word is understood, and it
 is the same shape as the two open MP blockers (#39's silent stall, #43's `0xE3`).
+
+## i386's "one real defect" was the HAL: halmp.dll had no spinlocks at all (2026-08-02)
+
+The i386 `KeSpinLock` delta is closed, and it was bigger than the row. **`hal-rust`'s x86
+`kx_acquire_spinlock` / `kx_release_spinlock` were unconditional compiler fences** — the UP arm
+of `spinlock.h` frozen into the source, under a module docstring that said so out loud:
+*"We're a UP-only build."* True when written; false since the halmp.dll twin landed, because
+`hal-cargo` and `halmp-cargo` now build that same crate one `smp` feature apart and neither
+funnel looked at the feature.
+
+They were also wrong on the **UP** HAL, which is why this is not merely an MP bug.
+`KxReleaseSpinLock` clears the lock under `CONFIG_SMP || KI_TRACK_SPINLOCK_OWNER`, and
+`KI_TRACK_SPINLOCK_OWNER` is plain `#if DBG` — the C half stamps and clears the owner on every
+checked build. So ntoskrnl stamped locks the HAL never cleared, exactly the failure
+`spinlock.h`'s own comment predicts: *"the two MUST agree, or a lock stamped by one side is
+never cleared by the other."*
+
+Past the test row: on i386 the whole `Ke*SpinLock*` / `Ke*QueuedSpinLock*` surface is a **HAL**
+export (`hal.spec`, `-arch=i386,arm,arm64`), so halmp.dll has been giving `--smp 2` no mutual
+exclusion beyond the IRQL raise. That is not a conformance nit; it is the MP kernel's locking.
+
+**What actually named the layer was the cross-arch comparison.** i386 UP `KeSpinLock` sat at
+`710/75` where amd64 and arm64 both sat at `321/2` — and amd64 is precisely the arch that takes
+these from `ntoskrnl.spec` (`-arch=x86_64`) instead of the HAL. One outlier row, one
+spec file, and the layer falls out. Worth doing before theorising about the failures themselves.
+
+### Correcting the previous entry's mechanism
+
+The section above inferred that the 5 `TryAcquire returned FALSE` failures were the same locks
+as the 5 `expected 0` ones at `:336`. They are not. Ordering the serial by `Test SpinLock run`
+separates them cleanly: the `:336` dirt is runs 2/5/8/14/20, and the try-acquire failures are
+runs **22–26**, a contiguous block that is the two `CheckQueue` rows (`LockQueuePfnLock`).
+Those call `KeTryToAcquireQueuedSpinLock`, which funnels into ntoskrnl's real interlocked
+`KeTryToAcquireSpinLockAtDpcLevel` and pairs it with the HAL's no-op `KeReleaseQueuedSpinLock`
+— so run 21 acquired the PFN lock once and every later attempt failed forever. Same root, but
+"the lock is left dirty by release" was the wrong sentence: the *reason* the pairing is
+mismatched is that the two halves come from different modules, and only one of them was
+translated with the flavour axis intact. `cfdff72b41d` was not wrong about its own path.
+
+### Result
+
+One implementation now, not two: both HAL funnels call
+`ntkrnl_sys::inline::ke::Kx{Acquire,Release}SpinLock`, with `hal-rust/smp` forwarding to
+`ntkrnl-sys/smp`. FreeLDR's mini-HAL keeps the bare fence — there is no KPCR to read
+`KeGetCurrentThread()` from pre-kernel, and it is single-threaded by construction.
+
+| i386 `KeSpinLock` | before | after |
+|---|---|---|
+| UP kernel   | 710 / 75 | **753 / 32** |
+| MP kernel   | 706 / 79 | **754 / 31** |
+
+Deterministic: `--smp 1` and both `--smp 2` rounds all read `754/31`. Both rows re-seeded with
+`--write-baseline --only KeSpinLock`, so no bistable row got re-rolled in the process.
+
+The 31/32 residual are two *other* upstream shapes, present on both kernels and so not collapse
+blockers: the queued-spinlock HACK (`KeAcquireInStackQueuedSpinLock` sets no `LQ_WAIT` bit, and
+the lock word carries the owner stamp where a real queued lock carries the queue-handle
+pointer), plus one try-acquire that sets bit 0 without stamping the owner — the latter is task
+#47, `KeTryToAcquireSpinLockAtDpcLevel` gating its stamp on cargo's `debug_assertions` instead
+of `feature = "dbg"`, and it is the entire remaining MP-vs-UP difference in this test.
+
+**The i386 collapse now holds on the same terms as amd64 and arm64.** `--smp 1` flags exactly
+three rows: `IoInterrupt` and `KeEvent` (both enumerated MP-conditional, unchanged) and
+`IoDeviceObject`, which is the known bistable one — re-confirmed directly this session by two
+back-to-back `--smp 2` rounds on identical media reading `185/4` then `184/5`, the extra
+failure being `IoDeviceObject_drv.c:300`.
+
+**Flip status: still unchanged, `DefaultOS=` selects UP.** The collapse criterion is met on all
+three arches now, but #39 (arm64 `--smp 1` stall) and #43 (`0xE3`) are still open, and #46 says
+arm64's HAL has the same no-exclusion hole i386 just had — self-consistent, so no kmtest row
+catches it, but halmp.dll on arm64 is in the state halmp.dll on i386 was in this morning. The
+default should not move onto a HAL whose locks are decorative.
+
+## The two surviving `--smp 1` rows are now PROVEN enumerated, not just asserted (2026-08-02)
+
+With i386's `KeSpinLock` fixed, all three arches reduce to the same residual, and it is the
+same two rows everywhere:
+
+| row | i386 | amd64 | arm64 |
+|---|---|---|---|
+| `IoInterrupt` fail | 0 → 306 | 0 → 156 | 2 → 158 |
+| `KeEvent` pass | −132 | −132 | −132 |
+
+(i386 additionally shows `IoDeviceObject`, which is the bistable row, not an MP delta.)
+
+Both had been *called* MP-conditional. Neither had been demonstrated. They are now.
+
+**`KeEvent` is the test declining to run, and the arithmetic closes exactly.** `KeEvent.c:83`
+guards a block behind `!KmtIsMultiProcessorBuild`, with upstream's own reason on the line above:
+`KeSetEvent(..., Wait=TRUE)` and `KePulseEvent(..., Wait=TRUE)` leave the dispatcher lock held,
+which is only legal to exercise on UP. The block is two `CheckEvent`s plus four scalar checks;
+`CheckEvent` with `ThreadCount=0` is 9 assertions, so 22 per call. `TestEventFunctional` is
+called twice per IRQL over `{PASSIVE, APC, DISPATCH}` = 6 calls. 6 × 22 = **132**, and the
+failure count does not move. This row can never be driven to zero — it is not our kernel being
+wrong, it is the suite refusing a UP-only experiment on any MP kernel, real Windows included.
+
+**`IoInterrupt` is upstream ReactOS diverging from Windows, not vibeos diverging from ReactOS.**
+`CheckSpinLock` asserts a held lock reads *exactly* 1 on an MP build and merely non-zero on a UP
+checked build. That is correct Windows semantics: on MP the word IS the lock. ReactOS stamps
+`KeGetCurrentThread() | 1` into it under a plain `#if DBG`
+(`ntoskrnl/include/internal/spinlock.h`, `KI_TRACK_SPINLOCK_OWNER`) with no `CONFIG_SMP` term,
+so an MP checked build fails this assertion upstream too. Benign for exclusion — bit 0 is set
+either way and release is an unconditional clear.
+
+Fixing `IoInterrupt` therefore means the owed item: keep the word at exactly 1 on MP and track
+the owner out of band. Scoping that turned up a hazard worth recording before anyone tries it.
+A per-CPU held-lock table is the obvious shape, and it is **wrong here**, because it is only
+sound if every acquire path releases through the same funnel. `KeTryToAcquireSpinLockAtDpcLevel`
+(#47) and the queued-lock HACK both set bit 0 without going through `KxAcquireSpinLock`, so the
+table leaks entries, and a leaked entry is a *false* `SPIN_LOCK_ALREADY_OWNED` bugcheck on three
+boot paths. The instrument the stamp currently feeds is better replaced by a **bounded spin** —
+it needs no bookkeeping, cannot desynchronise, and catches inter-CPU deadlock cycles that an
+owner check structurally cannot see. That is its own change with its own soak, deliberately not
+folded into the i386 fix.
+
+**Collapse status: the criterion is met on all three arches** — zero unexplained deltas, with
+both survivors now mechanically accounted for rather than taken on trust.

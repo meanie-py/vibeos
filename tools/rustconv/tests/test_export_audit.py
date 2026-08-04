@@ -75,6 +75,48 @@ def test_stub_extern_and_forward_need_no_implementation(tmp_path):
     assert spec["CoRealThing"].needs_implementation
 
 
+def test_a_bare_target_is_a_local_rename_not_a_forward(tmp_path):
+    """Only a DOT makes a target a forward (spec2def.c:691). A bare one renames the symbol
+    the linker looks for, and calling it "forwarded" hid 7 genuinely-missing wldap32
+    exports behind a green audit."""
+    spec = parse_spec(
+        _write(
+            tmp_path,
+            "x.spec",
+            "310 varargs ber_printf(ptr str) WLDAP32_ber_printf\n"
+            "@ stdcall CoFileTimeNow(ptr) kernel32.FileTimeNow\n",
+        )
+    )
+    e = spec["ber_printf"]
+    assert not e.is_forwarded
+    assert e.forward_target is None
+    assert e.impl_symbol == "WLDAP32_ber_printf"
+    assert e.symbol == "WLDAP32_ber_printf"  # what the linker wants
+    assert e.needs_implementation
+    assert spec["CoFileTimeNow"].symbol == "CoFileTimeNow"  # forwards keep their own name
+
+
+def test_version_excluded_entries_need_no_implementation(tmp_path):
+    """We spec2def at DLL_EXPORT_VERSION 0x502 (config.cmake:87), so a `0x600+` row is not
+    in the .def at all. Auditing them invented 23 phantom MISSING exports on ws2_32 --
+    the entire `Wah*` family -- in a module that is fully flipped and links."""
+    spec = parse_spec(
+        _write(
+            tmp_path,
+            "x.spec",
+            "@ stdcall -version=0x600+ WahCloseApcHelper(long)\n"
+            "@ stdcall -version=0x501-0x502 OldThing(long)\n"
+            "@ stdcall -version=0x400,0x600+ EitherEnd(long)\n"
+            "@ stdcall Always(long)\n",
+        )
+    )
+    assert not spec["WahCloseApcHelper"].in_version
+    assert not spec["WahCloseApcHelper"].needs_implementation
+    assert spec["OldThing"].needs_implementation  # 0x502 is the range's top end
+    assert not spec["EitherEnd"].needs_implementation  # 0x502 falls in neither part
+    assert spec["Always"].needs_implementation
+
+
 def test_trailing_comment_does_not_drop_the_entry(tmp_path):
     # ntoskrnl.spec really has these two; the old regex silently dropped both.
     spec = parse_spec(

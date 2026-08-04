@@ -11,6 +11,15 @@
 #ifndef _CFSFOLDER_H_
 #define _CFSFOLDER_H_
 
+/* The C entry points folders/CFSFolder.cpp used to publish. They are Rust-defined now
+ * (shell32-rust/src/cfs_folder_tu.rs); WINAPI here because the Rust side declares them
+ * `extern "system"`, and a silent stdcall/cdecl disagreement is a stack corruption on i386. */
+EXTERN_C HRESULT WINAPI CFSFolder_GetFSColumnDetails_RustBridge(UINT iColumn, SHELLDETAILS *sd);
+EXTERN_C HRESULT WINAPI CFSFolder_GetDefaultFSColumnState_RustBridge(UINT iColumn, SHCOLSTATEF *csFlags);
+EXTERN_C HRESULT WINAPI CFSFolder_FormatDateTime_RustBridge(const FILETIME *ft, LPWSTR Buf, UINT cchBuf);
+EXTERN_C HRESULT WINAPI CFSFolder_FormatSize_RustBridge(UINT64 size, LPWSTR Buf, UINT cchBuf);
+EXTERN_C HRESULT WINAPI CFSFolder_CompareSortFoldersFirst_RustBridge(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2);
+
 class CFSFolder :
     public CComCoClass<CFSFolder, &CLSID_ShellFSFolder>,
     public CComObjectRootEx<CComMultiThreadModelNoCS>,
@@ -123,12 +132,33 @@ class CFSFolder :
         HRESULT WINAPI GetCustomViewInfo(ULONG unknown, SFVM_CUSTOMVIEWINFO_DATA *data);
 
     public:
-        // Helper functions shared with CDesktopFolder
-        static HRESULT GetFSColumnDetails(UINT iColumn, SHELLDETAILS &sd);
-        static HRESULT GetDefaultFSColumnState(UINT iColumn, SHCOLSTATEF &csFlags);
-        static HRESULT FormatDateTime(const FILETIME &ft, LPWSTR Buf, UINT cchBuf);
-        static HRESULT FormatSize(UINT64 size, LPWSTR Buf, UINT cchBuf);
-        static HRESULT CompareSortFoldersFirst(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2);
+        // Helper functions shared with CDesktopFolder and CRecycleBin.
+        //
+        // The implementations live in Rust now (shell32-rust/src/cfs_folder.rs), reached through
+        // the C entry points folders/CFSFolder.cpp used to publish. They stay declared here as
+        // inline forwarders rather than as out-of-line statics because a C++ static MEMBER has no
+        // EXTERN_C spelling — one name, one class scope — so there is no way to make the mangled
+        // name a Rust `#[no_mangle]` can satisfy. CompareUiStrings below was already this shape.
+        static HRESULT GetFSColumnDetails(UINT iColumn, SHELLDETAILS &sd)
+        {
+            return CFSFolder_GetFSColumnDetails_RustBridge(iColumn, &sd);
+        }
+        static HRESULT GetDefaultFSColumnState(UINT iColumn, SHCOLSTATEF &csFlags)
+        {
+            return CFSFolder_GetDefaultFSColumnState_RustBridge(iColumn, &csFlags);
+        }
+        static HRESULT FormatDateTime(const FILETIME &ft, LPWSTR Buf, UINT cchBuf)
+        {
+            return CFSFolder_FormatDateTime_RustBridge(&ft, Buf, cchBuf);
+        }
+        static HRESULT FormatSize(UINT64 size, LPWSTR Buf, UINT cchBuf)
+        {
+            return CFSFolder_FormatSize_RustBridge(size, Buf, cchBuf);
+        }
+        static HRESULT CompareSortFoldersFirst(LPCITEMIDLIST pidl1, LPCITEMIDLIST pidl2)
+        {
+            return CFSFolder_CompareSortFoldersFirst_RustBridge(pidl1, pidl2);
+        }
         static inline int CompareUiStrings(LPCWSTR a, LPCWSTR b, LPARAM lParam = 0)
         {
             if (lParam & SHCIDS_CANONICALONLY)

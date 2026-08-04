@@ -42,6 +42,10 @@ extern "C" {
     pub fn sprintf(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
     pub fn wcslen(s: *const u16) -> usize;
     pub fn wcscpy(dst: *mut u16, src: *const u16) -> *mut u16;
+    // init.c's split_hostnames walks a hostname list with it. Real msvcrt `isspace` takes an
+    // `int`, and the argument must be zero-extended from the `char` — a negative value other
+    // than EOF is undefined behaviour there. Callers pass `*p as u8 as c_int`.
+    pub fn isspace(c: c_int) -> c_int;
 }
 #[inline(always)]
 pub unsafe fn strlenW(s: *const u16) -> usize {

@@ -108,6 +108,181 @@ pub unsafe extern "C" fn ldap_value_freeW(vals: *mut PWCHAR) -> ULONG {
 }
 
 
+#[no_mangle]
+pub unsafe extern "C" fn ldap_get_values_lenW(
+    ld: *mut WLDAP32_LDAP,
+    message: *mut WLDAP32_LDAPMessage,
+    attr: PWCHAR,
+) -> *mut *mut WLDAP32_berval {
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut attrU: *mut i8 = core::ptr::null_mut();
+        let ret: *mut *mut berval;
+
+        if ld.is_null() || message.is_null() || attr.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        attrU = strWtoU(attr);
+        if attrU.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        ret = ldap_get_values_len(ld, message, attrU);
+
+        strfreeU(attrU);
+        return ret as *mut *mut WLDAP32_berval;
+    }
+    #[cfg(not(feature = "have_ldap"))]
+    {
+        return core::ptr::null_mut();
+    }
+}
+
+#[cfg(feature = "have_ldap")]
+unsafe fn bv2str_array(bv: *mut *mut berval) -> *mut *mut i8 {
+    let mut len: u32 = 0;
+    let mut i: u32 = 0;
+    let mut p: *mut *mut berval = bv;
+    let mut str: *mut *mut i8;
+
+    while !(*p).is_null() {
+        len = len.wrapping_add(1);
+        p = p.offset(1);
+    }
+    str = heap_alloc((len.wrapping_add(1) as usize).wrapping_mul(core::mem::size_of::<*mut i8>())) as *mut *mut i8;
+    if str.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    p = bv;
+    while !(*p).is_null() {
+        *str.offset(i as isize) = bv2str(*p);
+        if (*str.offset(i as isize)).is_null() {
+            while i > 0 {
+                i = i.wrapping_sub(1);
+                heap_free(*str.offset(i as isize) as *mut core::ffi::c_void);
+            }
+            heap_free(str as *mut core::ffi::c_void);
+            return core::ptr::null_mut();
+        }
+        i = i.wrapping_add(1);
+        p = p.offset(1);
+    }
+    *str.offset(i as isize) = core::ptr::null_mut();
+    str
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ldap_get_values_lenA(
+    ld: *mut WLDAP32_LDAP,
+    message: *mut WLDAP32_LDAPMessage,
+    attr: PCHAR,
+) -> *mut *mut WLDAP32_berval {
+    let mut attrW: PWCHAR = core::ptr::null_mut();
+    let ret: *mut *mut WLDAP32_berval;
+
+    if ld.is_null() || message.is_null() || attr.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    attrW = strAtoW(attr);
+    if attrW.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    ret = ldap_get_values_lenW(ld, message, attrW);
+
+    strfreeW(attrW);
+    return ret;
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_valuesW(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    attr: PWCHAR,
+) -> *mut PWCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_get_valuesW(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    attr: PWCHAR,
+) -> *mut PWCHAR {
+    let mut ret: *mut PWCHAR = core::ptr::null_mut();
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut attrU: *mut i8 = core::ptr::null_mut();
+        let retU: *mut *mut i8;
+        let bv: *mut *mut berval;
+
+        if ld.is_null() || entry.is_null() || attr.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        attrU = strWtoU(attr);
+        if attrU.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        bv = ldap_get_values_len(ld, entry, attrU);
+
+        retU = bv2str_array(bv);
+        ret = strarrayUtoW(retU);
+
+        ldap_value_free_len(bv);
+        strarrayfreeU(retU);
+        strfreeU(attrU);
+    }
+    ret
+}
+
+#[no_mangle]
+#[cfg(not(feature = "have_ldap"))]
+pub unsafe extern "C" fn ldap_get_valuesA(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    attr: PCHAR,
+) -> *mut PCHAR {
+    core::ptr::null_mut()
+}
+
+#[cfg(feature = "have_ldap")]
+#[no_mangle]
+pub unsafe extern "C" fn ldap_get_valuesA(
+    ld: *mut WLDAP32_LDAP,
+    entry: *mut WLDAP32_LDAPMessage,
+    attr: PCHAR,
+) -> *mut PCHAR {
+    let mut ret: *mut PCHAR = core::ptr::null_mut();
+    #[cfg(feature = "have_ldap")]
+    {
+        let mut attrW: PWCHAR = core::ptr::null_mut();
+        let retW: *mut PWCHAR;
+
+        if ld.is_null() || entry.is_null() || attr.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        attrW = strAtoW(attr);
+        if attrW.is_null() {
+            return core::ptr::null_mut();
+        }
+
+        retW = ldap_get_valuesW(ld, entry, attrW);
+
+        ret = strarrayWtoA(retW);
+        ldap_value_freeW(retW);
+        strfreeW(attrW);
+    }
+    ret
+}
+
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

@@ -2,8 +2,15 @@
 //!
 //! These are intentionally minimal. They preserve the C stub behavior used by
 //! the current QEMU ARM64 boot path: enough HAL surface to link, basic IRQL
-//! bookkeeping, software APC dispatch, UP spinlock/fast-mutex helpers, port
+//! bookkeeping, software APC dispatch, spinlock/fast-mutex helpers, port
 //! MMIO shims, and the ARM64 virtual counter performance clock.
+//!
+//! "Minimal" stopped being free once `halmp.dll` shipped: this file is built
+//! twice, one `smp` feature apart, so a stub that was adequate for a UP boot is
+//! now also the MP implementation. The spinlock helpers below were exactly that
+//! and had to be made real. Prefer a `#[cfg(feature = "smp")]` over a comment
+//! asserting what the build is — see the i386 twin of that mistake in the field
+//! manual, under carrying a build-configuration `#ifdef` into the Rust.
 
 #![cfg(target_arch = "aarch64")]
 #![allow(unused_variables)]
@@ -1129,11 +1136,34 @@ pub unsafe extern "system" fn HalEndSystemInterrupt(
     unsafe { KfLowerIrql(Irql) }
 }
 
+// ---------------------------------------------------------------------------
+// Spinlocks.
+//
+// hal.spec exports the whole `Ke*SpinLock*` surface `-arch=i386,arm,arm64`, so
+// on ARM64 — exactly as on i386, and unlike amd64, which takes them from
+// ntoskrnl.spec — THESE functions are the kernel's spinlocks. Every one of them
+// used to be a plain store: no interlocked op, no spin, no barrier. That is a
+// correct UP implementation and a non-implementation on MP, where two CPUs both
+// "acquire" and both proceed. It went unnoticed because it is SELF-CONSISTENT —
+// nothing stamps a lock that nothing else clears — so no kmtest row and no
+// ratchet delta could see it, unlike the i386 twin of this bug, which was loud
+// precisely because the HAL and the kernel disagreed.
+//
+// Both halves now funnel into ntkrnl_sys::inline::ke, the same code ntoskrnl
+// uses, so the kernel and HAL halves of a lock cannot diverge and the `smp`
+// feature reaches them (hal-rust/smp -> ntkrnl-sys/smp). On the UP HAL this is
+// behaviour-preserving: `dbg` is in ntkrnl-sys's default feature set, so
+// acquire still writes `KeGetCurrentThread() | 1` and release still clears —
+// the same values as the plain stores, now with the barriers.
+//
+// The null guard is kept. A NULL spinlock is a caller bug, but tolerating it is
+// this port's existing behaviour and changing that belongs in its own commit,
+// not smuggled in under a locking fix.
 #[inline]
 unsafe fn halp_acquire_spin_lock_dbg(spin_lock: ddk::PKSPIN_LOCK) {
     unsafe {
         if !spin_lock.is_null() {
-            *spin_lock = (ddk::KeGetCurrentThread() as ddk::ULONG_PTR) | 1;
+            ntkrnl_sys::inline::ke::KxAcquireSpinLock(spin_lock as *mut _);
         }
     }
 }
@@ -1142,8 +1172,24 @@ unsafe fn halp_acquire_spin_lock_dbg(spin_lock: ddk::PKSPIN_LOCK) {
 unsafe fn halp_release_spin_lock_dbg(spin_lock: ddk::PKSPIN_LOCK) {
     unsafe {
         if !spin_lock.is_null() {
-            *spin_lock = 0;
+            ntkrnl_sys::inline::ke::KxReleaseSpinLock(spin_lock as *mut _);
         }
+    }
+}
+
+/// Pull `KPRCB.LockQueue[N].Lock` for the by-number queued-spinlock functions.
+/// The HACK is upstream's — a real queued lock walks a per-CPU queue — and this
+/// mirrors `hal-rust/src/x86/spinlock.rs::queue_lock` so the two arches resolve
+/// the same lock the same way.
+///
+/// Before this existed the by-number surface raised IRQL and returned, ignoring
+/// `Number` entirely, which left `LockQueuePfnLock` and friends with no
+/// cross-CPU protection at all on `halmp`.
+#[inline(always)]
+unsafe fn queue_lock(number: ddk::KSPIN_LOCK_QUEUE_NUMBER) -> ddk::PKSPIN_LOCK {
+    unsafe {
+        let prcb = ntkrnl_sys::inline::ke::KeGetCurrentPrcb();
+        (*prcb).LockQueue[number as usize].Lock
     }
 }
 
@@ -1193,6 +1239,7 @@ pub unsafe extern "system" fn KeAcquireInStackQueuedSpinLock(
     LockHandle: ddk::PKLOCK_QUEUE_HANDLE,
 ) {
     unsafe {
+        (*LockHandle).LockQueue.Next = core::ptr::null_mut();
         (*LockHandle).OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
         (*LockHandle).LockQueue.Lock = SpinLock;
         halp_acquire_spin_lock_dbg(SpinLock);
@@ -1205,6 +1252,7 @@ pub unsafe extern "system" fn KeAcquireInStackQueuedSpinLockRaiseToSynch(
     LockHandle: ddk::PKLOCK_QUEUE_HANDLE,
 ) {
     unsafe {
+        (*LockHandle).LockQueue.Next = core::ptr::null_mut();
         (*LockHandle).OldIrql = KfRaiseIrql(SYNCH_LEVEL);
         (*LockHandle).LockQueue.Lock = SpinLock;
         halp_acquire_spin_lock_dbg(SpinLock);
@@ -1223,14 +1271,22 @@ pub unsafe extern "system" fn KeReleaseInStackQueuedSpinLock(LockHandle: ddk::PK
 pub unsafe extern "system" fn KeAcquireQueuedSpinLock(
     Number: ddk::KSPIN_LOCK_QUEUE_NUMBER,
 ) -> ddk::KIRQL {
-    unsafe { KfRaiseIrql(DISPATCH_LEVEL) }
+    unsafe {
+        let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+        halp_acquire_spin_lock_dbg(queue_lock(Number));
+        OldIrql
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KeAcquireQueuedSpinLockRaiseToSynch(
     LockNumber: ddk::KSPIN_LOCK_QUEUE_NUMBER,
 ) -> ddk::KIRQL {
-    unsafe { KfRaiseIrql(SYNCH_LEVEL) }
+    unsafe {
+        let OldIrql = KfRaiseIrql(SYNCH_LEVEL);
+        halp_acquire_spin_lock_dbg(queue_lock(LockNumber));
+        OldIrql
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1238,18 +1294,26 @@ pub unsafe extern "system" fn KeReleaseQueuedSpinLock(
     Number: ddk::KSPIN_LOCK_QUEUE_NUMBER,
     OldIrql: ddk::KIRQL,
 ) {
-    unsafe { KfLowerIrql(OldIrql) }
+    unsafe {
+        halp_release_spin_lock_dbg(queue_lock(Number));
+        KfLowerIrql(OldIrql);
+    }
 }
 
+// The Try* pair raises IRQL even when the acquire fails — kmtest asserts that,
+// and the x86 twin mirrors it too. Delegating to ntoskrnl's
+// KeTryToAcquireSpinLockAtDpcLevel keeps one try-acquire implementation across
+// kernel and HAL, the same reason the blocking pair funnels into ntkrnl-sys.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLock(
     Number: ddk::KSPIN_LOCK_QUEUE_NUMBER,
     OldIrql: ddk::PKIRQL,
 ) -> ddk::LOGICAL {
     unsafe {
+        let lock = queue_lock(Number);
         *OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+        ddk::KeTryToAcquireSpinLockAtDpcLevel(lock) as ddk::LOGICAL
     }
-    1
 }
 
 #[unsafe(no_mangle)]
@@ -1258,9 +1322,10 @@ pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
     OldIrql: ddk::PKIRQL,
 ) -> ddk::BOOLEAN {
     unsafe {
+        let lock = queue_lock(LockNumber);
         *OldIrql = KfRaiseIrql(SYNCH_LEVEL);
+        ddk::KeTryToAcquireSpinLockAtDpcLevel(lock)
     }
-    TRUE
 }
 
 #[unsafe(no_mangle)]

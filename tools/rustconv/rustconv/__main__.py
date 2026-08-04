@@ -595,24 +595,27 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
                     )
                 for item in trivial if survivors else trivial[1:]:
                     scan.functions.remove(item)
-        # Collision guard: a derived method body hiding a base body of the same
-        # (name, arity, kind) cannot be flattened into one class.
+        # A derived method body hiding a base body of the same (name, arity, kind)
+        # cannot keep that name once both are flattened into one class — but it is
+        # an ordinary C++ override, not a shape we have to refuse. Give the BASE
+        # body its own qualified worker, exactly as the dtor branch above does with
+        # `_base_dtor`, so the shared implementation is translated ONCE and the
+        # override can call it instead of the model re-deriving the base by hand.
+        # (Silently duplicating a shared concrete base into the derived translation
+        # is a known way to fork behaviour — CObjectWithSiteBase::SetSite is six
+        # lines of refcount swap that every site-aware class in the tail inherits.)
         derived_keys = {
             (item.name, len(item.params), item.is_ctor, item.is_dtor)
             for item in scan.functions
             if item.cpp_class == class_name
         }
-        clash = sorted(
-            item.name
-            for item in scan.functions
-            if item.cpp_class in local_bases
-            and not (item.is_ctor or item.is_dtor)
-            and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
-        )
-        if clash:
-            raise CppComError(
-                f"{class_name}: derived method body hides same-arity base body: " + ", ".join(clash)
-            )
+        for item in scan.functions:
+            if (
+                item.cpp_class in local_bases
+                and not (item.is_ctor or item.is_dtor)
+                and (item.name, len(item.params), item.is_ctor, item.is_dtor) in derived_keys
+            ):
+                item.name = f"{item.cpp_class}_base_{item.name}"
         for item in scan.functions:
             if item.cpp_class in local_bases:
                 item.cpp_class = class_name
@@ -669,13 +672,19 @@ def _audit_paid_body(
     caller banks: the cache must hold what was ACCEPTED, not the raw reply.
     """
     if not cpp_com_mode:
-        # Sealing is language-neutral; unsealing must be too.
+        # Sealing is language-neutral; unsealing must be too. EXACTLY ONCE: this used to
+        # unseal, then unseal the unsealed text again. The second pass sees no tokens, so
+        # every one reads as missing, and it only ever passed because the by-name recovery
+        # inside `unseal_calls` re-sealed them from the names the FIRST pass had just
+        # restored. That accident rejected four netcfgx bodies the first pass accepted and
+        # cost two re-samplings of five TUs. See `_arity_disagreements` for the real check
+        # that replaced what the second pass was catching by luck.
         result.rust_code = _unseal_worker(
             dep, result.rust_code, fact_seals, call_seals, strict=strict
         )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
-        return _unseal_plain_c(dep, result.rust_code, fact_seals, call_seals, strict=strict)
+        return result.rust_code
     result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     findings = audit_worker_body(dep.body_text, result.rust_code, f"{dep.name}_body", signature)
@@ -684,6 +693,67 @@ def _audit_paid_body(
             f"{dep.name}: paid body failed deterministic audit:\n  - " + "\n  - ".join(findings)
         )
     return result.rust_code
+
+
+def _adopt_rejected(
+    dep, cache, fact_seals, call_seals, cpp_com_mode: bool, func_idx, contract, sealed
+) -> str | None:
+    """A stored REJECTED reply for ``dep``, IF it passes today's audit. Else None.
+
+    A reject cost an API call, so it is paid artifact under the same rule as an accepted
+    one, and the reasons it stops being a reject are ordinary: a seal defect gets fixed
+    (this file's double-unseal alone rejected four netcfgx bodies that were never wrong),
+    or a human repairs by hand the one line the model would not — netcfgx's
+    `ScanForInfFile` refused three samplings to reproduce the C's `continue` past its own
+    `FindNextFileW`, and the rest of that body is correct. Paying twice for a body already
+    on disk is waste, not caution.
+
+    The audit is the whole gate and it is the SAME audit, so nothing is laundered: a reply
+    that still damages the envelope is still refused, silently, and the caller pays.
+    Skipped for cpp_com, whose acceptance also runs the worker-boundary normalizations.
+    """
+    if cpp_com_mode:
+        return None
+    rejected = cache.get_rejected(dep.name)
+    if rejected is None:
+        return None
+    try:
+        body = _unseal_worker(dep, rejected, fact_seals, call_seals)
+    except CppComError:
+        return None
+    # Banked under this run's contract and seal set, exactly as a paid acceptance is —
+    # otherwise the next run misses and buys the same body a third time.
+    cache.put(dep.name, dep.body_text, body, contract, sealed)
+    print(f"  [{func_idx}] {dep.name} ADOPTED a stored reject — passes the audit now ($0)")
+    return body
+
+
+def _reject_correction(error: "CppComError | None") -> str:
+    """What to append to a worker prompt when its previous attempt was REJECTED.
+
+    Re-rolling the IDENTICAL prompt only fixes a reject that was sampling noise, and the
+    ones that survive to a second attempt mostly are not. netcfgx's `ScanForInfFile`
+    duplicated the same call token in two independent samplings because the C `continue`s
+    straight past its own `FindNextFileW` — an infinite loop the model will not write —
+    and `CreateInstanceKey` dropped the `if (ret == FALSE)` guard both times by inlining
+    the `goto done` tail per path. Nothing about a blind re-roll moves either. The audit
+    already knows exactly what broke, so tell the model instead of hoping.
+
+    The faithfulness clause is the load-bearing half: every one of these rejects is the
+    model IMPROVING on the C, and without it a correction just invites a different
+    improvement.
+    """
+    if error is None:
+        return ""
+    return (
+        "\n\n## Your previous attempt was REJECTED\n"
+        f"{error}\n\n"
+        "Translate the function again and fix exactly that. The envelope is not advice: a "
+        "token stands for one C occurrence. The C is authoritative even where it looks "
+        "wrong — if it loops forever, leaks, or tests a value that cannot change, "
+        "reproduce that. Do not repair the C, and do not restructure the body to make the "
+        "finding go away."
+    )
 
 
 def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = True) -> str:
@@ -697,6 +767,13 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = Tru
     2026-07-24 and no paid plain-C run had used it yet (all 5,170 ledger entries
     with seal_facts=True are shell32), while AGENTS.md tells every plain-C
     translation to "always pass both".
+
+    THE one unseal for both dialects. A separate plain-C copy existed alongside this
+    and every plain-C caller ran both, in sequence, over the same text — see
+    `_audit_paid_body`. It is not the shell32 boundary that is shared here
+    (`normalize_worker_body` / `normalize_worker_semantics` reshape a COM worker onto a
+    fixed signature and mean nothing for a free function); only the unseal itself is,
+    and it always was.
     """
     rust = scrub_comment_token_echoes(rust)
     # Sealed tokens the model omitted that live only in code the build never executes
@@ -738,42 +815,6 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     rust = _unseal_worker(dep, rust, fact_seals, call_seals)
     rust = normalize_worker_body(rust, signature)
     return normalize_worker_semantics(dep.body_text, rust)
-
-
-def _unseal_plain_c(dep, rust: str, fact_seals, call_seals, *, strict: bool = True) -> str:
-    """Restore sealed constants and callees in a PLAIN-C model response.
-
-    Sealing is only half a mechanism. It hides every constant and callee behind an opaque
-    `__RUSTCONV_FACT_nnnn__` / `__RUSTCONV_CALL_nnnn__` token during the paid call so a
-    dropped or invented one fails loudly instead of silently; unsealing is what puts the
-    real names back. Until this existed, both `unseal_facts` and `unseal_calls` had exactly
-    one caller and it was gated on shell32 — so `--seal-facts --seal-calls` on plain C
-    assembled a file full of tokens that cannot compile. mbcs.c came out 902 tokens deep,
-    while AGENTS.md tells every agent to always pass both flags on a plain-C module.
-
-    Deliberately NOT the shell32 boundary: `normalize_worker_body` /
-    `normalize_worker_semantics` reshape a C++ COM worker onto a fixed signature and mean
-    nothing for a free function. Only the unseal itself is shared.
-
-    Raising is correct on an unresolvable token. That is precisely the event sealing exists
-    to surface, and a token shipped into the tree is a compile error at best and a silently
-    wrong constant at worst.
-    """
-    rust = scrub_comment_token_echoes(rust)
-    ignored_envelope: list[str] = []
-    try:
-        calls = call_seals.get(dep.name)
-        if calls is not None:
-            rust = unseal_calls(rust, calls)
-        facts = fact_seals.get(dep.name)
-        if facts is not None:
-            rust = unseal_facts(rust, facts, ignored_envelope=ignored_envelope, strict=strict)
-    except (CallSealError, FactSealError) as error:
-        raise CppComError(f"{dep.name}: {error}") from error
-    for note in ignored_envelope:
-        UNVERIFIED_CONSTANT_BODIES.append(f"{dep.name}: {note}")
-        print(f"    [{dep.name}] ACCEPTED UNVERIFIED: {note}", file=sys.stderr)
-    return rust
 
 
 def cmd_candidate_check(args):
@@ -2699,15 +2740,11 @@ def cmd_translate(args):
                             hit = None
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
-                    if hit is not None and rustconv_target.name != "shell32":
-                        try:
-                            hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
-                        except CppComError as error:
-                            print(
-                                f"  [{func_idx}] {dep.name} CACHE REJECTED: {error}",
-                                file=sys.stderr,
-                            )
-                            hit = None
+                    # No unseal on a cache hit. What is banked is the ACCEPTED text, already
+                    # unsealed (`_audit_paid_body` mutates `rust_code` before `cache.put`),
+                    # and `ResponseCache.get` refuses any entry that still holds a token —
+                    # so re-running the closed-envelope check here judged token-free Rust
+                    # and could only false-reject, sending banked work back to be re-paid.
                     if hit is not None:
                         translated[dep.name] = hit
                         resumed += 1
@@ -2789,13 +2826,6 @@ def cmd_translate(args):
                         continue  # skipped after cost cap
                     if r.success:
                         try:
-                            if not cpp_com_mode:
-                                # Sealing is language-neutral; unsealing must be too.
-                                r.rust_code = _unseal_worker(
-                                    dp, r.rust_code, fact_seals, call_seals
-                                )
-                                if is_cpp_source:
-                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
                             if cpp_com_mode:
                                 r.rust_code = _normalize_unseal_cpp_worker(
                                     dp, r.rust_code, fact_seals, call_seals
@@ -2816,9 +2846,15 @@ def cmd_translate(args):
                                         f"{dp.name}: paid body failed deterministic audit:\n  - "
                                         + "\n  - ".join(findings)
                                     )
-                                body = r.rust_code
                             else:
-                                body = _unseal_plain_c(dp, r.rust_code, fact_seals, call_seals)
+                                # Sealing is language-neutral; unsealing must be too — and
+                                # exactly once, for the reason in `_audit_paid_body`.
+                                r.rust_code = _unseal_worker(
+                                    dp, r.rust_code, fact_seals, call_seals
+                                )
+                                if is_cpp_source:
+                                    r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
+                            body = r.rust_code
                         except CppComError as error:
                             _record_outcome(
                                 dp,
@@ -2954,15 +2990,18 @@ def cmd_translate(args):
                         hit = None
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
-                if hit is not None and rustconv_target.name != "shell32":
-                    try:
-                        hit = _unseal_plain_c(dep, hit, fact_seals, call_seals)
-                    except CppComError as error:
-                        # The CACHED reply damaged the seal envelope. Reject the entry and
-                        # fall through to paying for it again -- shipping a body with a
-                        # dropped constant is the outcome sealing exists to prevent.
-                        print(f"CACHE REJECTED: {error}", file=sys.stderr)
-                        hit = None
+                # No unseal on a cache hit — see the same site on the parallel path.
+                if hit is None:
+                    hit = _adopt_rejected(
+                        dep,
+                        cache,
+                        fact_seals,
+                        call_seals,
+                        cpp_com_mode,
+                        func_idx,
+                        deterministic_contracts.get(dep.name, ""),
+                        sealed_names.get(dep.name),
+                    )
                 if hit is not None:
                     translated[dep.name] = hit
                     resumed += 1
@@ -3012,10 +3051,11 @@ def cmd_translate(args):
                 if archive is not None:
                     sink = ResponseSink(archive.stream_path(func_idx, dep.name))
                 started = time.monotonic()
+                attempt_prompt = user_prompt + _reject_correction(reject_error)
                 try:
                     if use_claude:
                         result = submit_single(
-                            user_prompt,
+                            attempt_prompt,
                             model=model,
                             system_prompt=system_prompt,
                             file_context=file_context,
@@ -3023,7 +3063,9 @@ def cmd_translate(args):
                         )
                     else:
                         prefix = "\n\n---\n\n".join(p for p in (system_prompt, file_context) if p)
-                        full = (prefix + "\n\n---\n\n" + user_prompt) if prefix else user_prompt
+                        full = (
+                            (prefix + "\n\n---\n\n" + attempt_prompt) if prefix else attempt_prompt
+                        )
                         result = submit_single(full, model=model, sink=sink)
                 finally:
                     if sink is not None:

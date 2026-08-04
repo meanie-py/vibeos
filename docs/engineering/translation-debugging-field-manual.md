@@ -1173,6 +1173,20 @@ problem** — `extern "C"` changes linkage and mangling, not the type system, so
 `EXTERN_C HRESULT F(REFIID riid)` is legal and yields an unmangled symbol. Believing otherwise
 deferred this flip once; a 5-line compile test settles it in a minute.
 
+**A C++ static MEMBER has no `EXTERN_C` spelling either — forward it in the header instead.**
+Symptom: the same flip-links-but-mangled failure as above, except the undefined names are
+`__ZN9CFSFolder10FormatSizeEyPwj` and friends — class-qualified. Cause: `extern "C"` is not
+applicable to a member function; the name lives in class scope, so there is no unmangled
+spelling for a Rust `#[no_mangle]` to satisfy. Fix: turn the declaration into an **inline
+forwarder to the C entry point the TU already published**, right there in the class body, and
+change nothing at the call sites — `static HRESULT FormatSize(UINT64 s, LPWSTR b, UINT c)
+{ return CFSFolder_FormatSize_RustBridge(s, b, c); }`. Five of `CFSFolder.cpp`'s seven mangled
+symbols went that way; `CFSFolder.h` already had one static of exactly this shape
+(`CompareUiStrings`), which is the hint that the pattern is idiomatic here rather than a hack.
+It also adds no bridge — the forwarders reuse the ones the TU was already exporting, so the
+ledger count still only goes down. The other two of the seven were free functions and took the
+ordinary `EXTERN_C`-in-the-header route.
+
 **Count the RUST callers of a C++ overload too, not just the C++ ones.** Symptom: an overload
 rename passes `grep` over `*.cpp` and still breaks. Cause: already-translated siblings call the
 overload through a generated `Shell32Rust*` trampoline (rustconv emits one precisely because
@@ -1732,6 +1746,42 @@ of them were **ours**, not the model's:
   C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
   judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
   `seal_calls` already made about the callee name in that identical `extern` construct.
+- **A DIRECTIVE is not code, and an array PARAMETER's bound is not a value** (found on shell32
+  `changenotify.cpp`, 8 rejected paid attempts across two functions). Three new shapes of the same
+  unsatisfiable-envelope class, all now handled by `lex_mask.directive_spans` + `fact_seal.
+  _signature_array_bound_spans`. `DumpEvent` defines `DUMPEV(x)` **inside its own body**, pastes
+  `SHCNE_##x`, and `#undef`s it at the end; that sealed as `#define __RUSTCONV_CALL_0000__(x)`,
+  `__RUSTCONV_FACT_0001__##x` and `#undef __RUSTCONV_FACT_0003__` — a macro DEFINITION name
+  demanded back "as the called function identifier in executable Rust", and one half of a token
+  paste demanded back as a value. Nothing inside a `#`-directive can be sealed. Separately,
+  `DoGetAliasPIDLs(LPITEMIDLIST apidls[2], ...)` sealed the `2`: a C array parameter **decays to a
+  pointer**, so the Rust signature has nowhere to put it. Scope that exclusion to the parameter
+  list, *not* "everything before the first brace" — `int a[2] = {0, 1};` has its first brace at the
+  INITIALIZER, and the loose rule silently stopped sealing a real local's bound (caught only by an
+  existing zero-init test).
+  **The macro-authority blind spot behind it:** `-E -dM` dumps only macros **still defined when
+  preprocessing ends**, so a `#define`/`#undef` pair inside a TU is invisible to it and its
+  invocations get sealed as runtime calls. `function_like_macros` now also scans the TU's own text.
+  Residual, deliberately left: an ALL_CAPS **argument** to a function-like macro that pastes it
+  (`DUMPEV(INTERRUPT)` → `SHCNE_##x`) is still fact-sealed, and restores to `INTERRUPT` when the
+  Rust needs `SHCNE_INTERRUPT`. Closing it means threading the macro set into `fact_seal`; until
+  then such a function fails LOUDLY, which is the correct behaviour, not a silent wrong answer.
+  Diagnosis rule that saves the money: **when a worker is rejected twice for the same token, read
+  the sealed prompt (`--dry-run --prompt --fn NAME`, free) before paying for a third attempt.**
+  Four retries is the tool telling you the envelope is impossible, not the model being weak.
+  **Two more members of the family, both from `folders/CFSFolder.cpp`.** A C++ **default argument**
+  sealed as a value: `BOOL AllowFolder = __RUSTCONV_FACT_0000__` (`ExtensionFromPidl`, 3 rejects).
+  Rust has no default arguments, so the token has nowhere to go — same helper as the array bound,
+  since both are values living only in declarator syntax; guard the comparison operators while you
+  are there, or `==`/`!=` opens a default-argument span and swallows the rest of the list. And a
+  macro the body ITSELF defines: `_AddFindResult` opens with
+  `#define SUPER_HIDDEN (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)`, and cpp_com's body audit
+  rejected the worker for `const`-defining it "instead of using substrate" — but no island can
+  carry a function-local macro, so defining it *is* the translation. Exempt what the body
+  `#define`s; the operands stay sealed and the dropped-constant check still demands the name.
+  Generalisation worth carrying: **every one of these four is the audit demanding something that
+  cannot exist.** If a rejection names a token whose only home is C declarator syntax or a
+  TU-local directive, suspect the envelope before the model.
 - **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
   walks raw C, so it also seals tokens in code the compiler emits but the build never enters, and
   then DEMANDS them of a translation that is right to omit them. Two flavours, one class:
@@ -1842,6 +1892,75 @@ all three bugs above.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A "stuck sampler" is almost always a harness bug wearing the model's clothes
+
+**Symptom.** A TU will not assemble. One or two functions in it fail the deterministic audit
+with the *same finding every time*, across independent samplings, while every other function
+in the file passes. The natural read — "sampling noise on the biggest bodies, needs a
+different approach" — is what parked netcfgx at 6 of 11 TUs for a week. Four separate causes
+hid behind that one symptom, and three were ours.
+
+**Cause 1: the audit ran twice.** `_audit_paid_body` unsealed the plain-C reply and then
+unsealed the *unsealed* text again. The second pass sees no tokens, so every token reads as
+missing; it passed at all only because `unseal_calls`'s by-name recovery re-sealed them from
+the names the first pass had just restored. Any body where that round trip is not exact — a
+`switch` fallthrough tail spelled twice for one C occurrence, a `goto` tail written by name —
+was ACCEPTED by the first pass and REJECTED by the second. Cache hits ran it too, over banked
+text that is unsealed by construction, so a false reject there sent already-paid work back to
+be bought again.
+
+**Cause 2: a SHIFTED envelope passes every count-based check.** A function-like macro gets no
+call token, by design — there is no 1:1 Rust call to carry one. A model that assumes every call
+it writes needs a token spends CALL_0000 on the macro, and every later token slides one call to
+the left. The token count is still right, each appears exactly once, none is invented; only the
+last one runs out, and the by-name recovery rescues even that. Unsealing then restores the
+WRONG NAME at every slid site — netcfgx's `ApplyOrCancelChanges` came back calling
+`CoTaskMemFree` with `swprintf`'s three arguments. Fix: compare the ARGUMENT COUNT at each
+token's C site and its Rust site. A permutation cannot preserve arity except by coincidence,
+and the check found 0 disagreements across 164 already-accepted bodies. Skip the sites where
+the counts are not comparable — a C argument mentioning a macro (`IID_PPV_ARG` is one C
+argument and two Rust ones), a turbofish, and rustfmt's trailing comma, which reads a
+six-argument call spread over seven lines as seven.
+
+**Cause 3: the retry re-sent the identical prompt.** That is a re-roll, not a repair, and the
+rejects that survive to a second attempt are systematic rather than noisy: the model is
+IMPROVING on the C. `ScanForInfFile` refused three samplings to reproduce a `continue` that
+skips its own `FindNextFileW`; `CreateInstanceKey` hoisted the `goto done` tail per path and
+lost the `if (ret == FALSE)` guard with it. Feed the audit finding into the retry, and say that
+the C is authoritative *even where it is wrong* — if it loops forever or leaks, reproduce it.
+That converted one of the two immediately.
+
+**Cause 4 (not a seal bug at all): the scanner refused the file.** See the `STDAPI` entry below.
+
+**The rule.** When one function fails the same way twice, stop sampling and read the finding.
+Replay the stored `__rejected__` reply through the audit by hand; if it passes now, the harness
+moved and the body was never wrong. `translate` does this automatically — a reject is paid
+artifact, and it is re-audited before that function is bought again.
+
+### A convention macro that also carries the RETURN TYPE deletes the function
+
+**Symptom.** `rustconv translate` refuses a TU: *"N SPEC-EXPORTED function(s) are in the
+unextractable set — this is a scanner parse failure, not a macro artifact."* Or, worse, no
+complaint at all and the function is simply absent from the plan.
+
+**Cause.** The scanner normalizes every calling-convention alias tree-sitter cannot parse to
+the raw `__stdcall` keyword. That is right for `WSAAPI`, and wrong for the family that expands
+to more than a convention: `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE`, so normalizing it
+leaves `__stdcall DllRegisterServer(void)` — a definition with no type, which is not a
+function_definition. netcfgx.c lost `DllGetClassObject`, `DllRegisterServer` and
+`DllUnregisterServer`, all three `.spec`-exported. Same class as the `TYPE * CDECL fn()` drop
+(`0b2d3521e0a`) that cost msvcrt 15 exports: a convention keyword taken for the whole
+decoration.
+
+**Fix.** `conventions.KW_EXPANSION` holds the eleven aliases that are really
+`[linkage] <TYPE> <conv>`, valued with the header's own expansion verbatim and resolved by
+fixpoint (`WINOLEAPI` → `STDAPI` → `EXTERN_C HRESULT STDAPICALLTYPE`), so the existing
+`EXTERN_C` and alias passes finish the job. Adding one is cache-safe *only* while the function
+it rescues was being dropped: a body that already extracts is already banked under its current
+text, and rewriting its signature re-bills it. `STDAPI_(t)` / `STDMETHODIMP_(t)` are still
+open for that reason — they extract today with an EMPTY return type, and all 51 uses are C++
+COM methods whose signatures come from the interface anyway.
+
 ### A deferral note outlives the premise that justified it
 `ARM3/virtual.rs` skipped an ARM64-only block of `NtAllocateVirtualMemory` and said so:
 *"Skipped in this Rust port — arm64 boot currently fails before user-mode allocation, so this
@@ -1926,6 +2045,61 @@ definition in force by POSITION, not keep a name→body map.
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
 cannot be invented — which is the whole defence, given `EDEADLK` is 36 in msvcrt and 35 in glibc.
+
+### The export audit that was supposed to catch the shrunken plan was itself blind
+
+**Symptom.** A module translates, `cargo check`s clean on all three arches, passes `check`, and
+is **missing 22 of its exports**. `export_audit.py` — the tool whose whole job is "does the Rust
+actually define what the `.spec` exports?" — reported 15 of them and called the other 7
+*forwarded, no implementation needed*. Nothing else can see it: the crate is not flipped, so no
+linker ever reads it, and a function that was never translated looks exactly like a function that
+was never there.
+
+**Cause — two independent holes, both in reading the `.spec`.**
+
+1. **A bare trailing target is a LOCAL RENAME, not a forward.** Only a dot makes it a forward, and
+   that is literally how spec2def decides (`fIsExternal = !!ScanToken(strTarget, '.')`,
+   spec2def.c:691). `kernel32.FileTimeNow` means another DLL supplies the symbol; a bare
+   `WLDAP32_ber_alloc_t` means *this* module must define it under that name. Treating both as
+   forwards skipped every Wine-style renamed export — and ntoskrnl's
+   `@ fastcall ExAcquireRundownProtection(ptr) ExfAcquireRundownProtection` rows are the same shape,
+   so the kernel's audit had the same blind spot.
+2. **`-version=` rows are not in the `.def` at all.** We spec2def at `DLL_EXPORT_VERSION 0x502`
+   (`sdk/cmake/config.cmake:87`) and spec2def emits an entry only if that falls inside the range
+   (spec2def.c:1155). Auditing them the other way invented 23 phantom MISSING exports on ws2_32
+   alone — the entire `Wah*` family — in a module that is fully flipped and links. **Phantom
+   findings are not harmless**: a tool that cries wolf on a shipping module is a tool you stop
+   believing, which is why 22 real wldap32 misses sat next to them unnoticed.
+
+Fixing both: 1388→1326 on ntdll, 72→2 on kernel32, 23→0 on ws2_32 — and the wldap32 gap became
+visible. `SpecEntry` now carries `impl_symbol` and `in_version`, and `symbol` is what the linker
+will actually look for.
+
+**Fix.** Run `python -m rustconv.export_audit <module>.spec <crate>/src` **before** the cohab
+flip, not after — pre-flip is the only window where nothing else can catch it. Once a module is
+flipped, the link is a perfect oracle and the audit is redundant; while it is unflipped, the audit
+is the *only* oracle.
+
+**Corollary, and it bounded the blast radius to one module.** A FLIPPED crate is covered by two
+oracles working together: `cargo check` proves every *static* the surviving code calls, and the
+link proves every *export*. A dropped function is therefore only invisible in a crate that is
+translated and **not yet flipped**. Sweeping all 174 `*-rust` crates after this fix: 100 are
+flipped and thus already proven, and of the unflipped ones the only module this lane had
+translated was netcfgx — audited at **0 real misses** across its 6 translated TUs. wldap32 was
+exposed for exactly one reason: it was the single module sitting translated-but-unflipped while a
+scanner fix landed underneath it. **The gap between translating a module and flipping it is where
+silent drops live — so close it quickly, and audit before you do.** (Beware a crude sweep here:
+`modules/rostests/winetests/<mod>/` shares the module's directory name and will report hundreds of
+test-harness functions as missing, and an unparsed macro position surfaces as a "function" named
+`NTAPI`/`Contxt`/`if`. Both are noise, and both drown the real finding.) The general shape: **an audit's exclusion list is where its blindness
+lives.** Every "this one needs no implementation" branch is a place a real miss can hide, so each
+one has to be justified against what the build tool actually does, not against what the syntax
+looks like.
+
+**The upstream cause of the missing 22 was `TYPE * CDECL fn()`** — the scanner position
+tree-sitter cannot parse in any spelling, fixed in `0b2d3521e0a` after wldap32 was translated
+against the older scanner. Every one of the 22 returns a pointer; not one non-pointer function was
+lost. **When a drop set shares a signature feature, the parser is the suspect, not the model.**
 
 ### A C++ `struct` used as a NAMESPACE falls between both C++ modes, and one skips it silently
 **Symptom.** `rustconv translate --free-functions <tu>.cpp` reports its plan cheerfully and buys
@@ -2046,6 +2220,30 @@ Four things that cost precision, all of them found by being wrong first:
   reports them as `NOOP` and treats their callers as silent. Note the C-side equivalent is
   invisible from a Rust scanner and must be grepped separately —
   `dll/win32/{cabinet,mlang}/rust_cohab_stub.c` define no-op `ERR`/`FIXME`.
+- **Both spellings of a channel must score, or the lint cannot be satisfied.** `ERR` was in
+  `ALWAYS_ON` (so an `ERR(...)` in the C counted) but only the bare-call form was recognised on
+  the Rust side — never the `ERR!(...)` macro that every wine-derived crate actually uses. Its
+  sibling `FIXME` was covered in both forms. So a function whose only diagnostic is ERR stayed
+  flagged no matter how faithfully it was restored, which is noise, not silence. Fixed by adding
+  `err` to `LIVE_PRINT_NAMES` (+3/-75 on the baseline; the 3 are `[ALL]`→`[PARTIAL]`
+  reclassifications, not new debt). Corollary when reading a finding on a **usermode** crate:
+  shell32-rust's `TRACE!`/`ERR!`/`WARN!`/`FIXME!` are all no-op `macro_rules!` in `lib.rs`, so the
+  call sites score as live while emitting nothing. That is not the `[§9.65]` trap (they are
+  macros, not out-of-line fns) but the diagnostics are still dark, and the scanner cannot see a
+  cross-file no-op macro the way it sees a file-local no-op `fn`. Giving that crate a real wine
+  debug sink is owed.
+- **A WHOLE-TU flip is invisible to this scanner, so audit those by hand.** It pairs a
+  *commented-out C function* against the live Rust of the same name — which is the per-function
+  cohab shape. Remove a `.cpp` from a CMake source list instead and the C source stays on disk
+  uncommented, so nothing pairs and the finding count does not move. `folders/CFSFolder.cpp` had
+  **18 always-on `ERR`/`FIXME` sites and its three Rust modules had 3**; the scanner reported
+  nothing. The cheap manual check when you flip a TU is
+  `grep -cE '\b(ERR|FIXME)\(' <tu>.cpp` against `grep -cE '\b(ERR|FIXME)!\(' <modules>.rs`,
+  remembering to discount any site inside `#if 0`. The tell that a diagnostic was the *whole*
+  body of a branch is an **empty `if`**: CFSFolder's `_AddFindResult` translated
+  `if (SUCCEEDED(hr)) { ERR("Got CLSID override for '%S'\n", Tmp); }` into `if hr >= 0 { }` — a
+  branch that computes a condition and does nothing, which is what a lost print looks like from
+  the outside.
 
 **And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
 `_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash
@@ -2091,6 +2289,42 @@ Declare every feature in `Cargo.toml`, and prefer the semantic alias over a bind
 in FFI signatures (`heap_alloc(len: usize)`, not `SIZE_T`) — `crate-repair` will otherwise have
 to bake `as u32` on i386 and `as u64` on amd64/arm64 for the same expression, and rightly
 refuses.
+
+**Variant: the resolved-away arm was a BUILD FLAVOUR, and the flavour later changed.** Same
+class, but it compiles and boots, so nothing points at it for months. `hal/halx86/generic/
+spinlock.c` opens with `/* This file is compiled twice. Once for UP and once for MP */`; the
+Rust took the UP arm of `KxAcquireSpinLock`/`KxReleaseSpinLock` (a bare compiler fence) as
+unconditional, and wrote a module docstring saying so — *"We're a UP-only build"*. True when
+written. Then the halmp.dll twin landed and one crate started building both flavours, one
+cargo feature apart, with neither funnel looking at the feature. **A docstring recording an
+assumption is not a safeguard against the assumption changing — it is the bug's alibi.** Two
+tells worth grepping for: a C comment that the file is compiled more than once, and a
+translated file that names a build flavour in prose instead of in a `cfg`.
+
+The damage was doubled by resolving away a *second* axis in the same expression:
+`KxReleaseSpinLock` clears the lock under `CONFIG_SMP || KI_TRACK_SPINLOCK_OWNER`, and
+`KI_TRACK_SPINLOCK_OWNER` is plain `#if DBG` — so the C clears on every checked build, UP
+included. Dropping both arms left the *kernel* half stamping owners that the *HAL* half never
+cleared. On MP that paired a real interlocked `KeTryToAcquireSpinLockAtDpcLevel` with a
+release that did nothing: the i386 PFN queued lock could be try-acquired exactly once per
+boot and failed forever after. Beyond the test row, halmp.dll's whole i386 `Ke*SpinLock*`
+export surface — the HAL owns it there, per `hal.spec` `-arch=i386,arm,arm64` — offered no
+mutual exclusion at all beyond the IRQL raise.
+
+**Fix.** Delete the copy rather than repair it: both HAL funnels now call
+`ntkrnl_sys::inline::ke::Kx{Acquire,Release}SpinLock`, the same code ntoskrnl-rust uses, with
+`hal-rust/smp` forwarding to `ntkrnl-sys/smp`. `spinlock.h` had already written the rule down
+— *"the two MUST agree, or a lock stamped by one side is never cleared by the other"* — which
+a second implementation cannot enforce and a shared one cannot violate. i386 kmtest
+`KeSpinLock` went 710/75 → 753/32 on UP and 706/79 → 754/31 on MP.
+
+Two diagnostics that generalise. **Compare the same row across arches before theorising**: i386
+sat at 710/75 where amd64 and arm64 were 321/2, and amd64 is exactly the arch that gets these
+from `ntoskrnl.spec` instead of the HAL — the outlier named the layer. And **a ratchet compares
+numbers, not reasons**: the pre-fix UP and MP runs both banked 306 IoInterrupt failures, so the
+row looked stable, but UP was failing `ok_eq_bool(*Lock != 0, TRUE)` and MP was failing
+`ok_eq_ulongptr(*Lock, 1)` — identical counts, different causes. Diff the failure TEXT, not the
+tallies.
 
 ### A `#include`-built table has a different ROW SET under the wrong preprocessor config
 The C does `static const T tbl[] = { #include "Data.h" };` where the rows are `#if`-guarded on
@@ -2912,6 +3146,20 @@ exactly the one test that happened to compare all three fields. Ten of eleven si
 green by a suite that never looked at the field carrying the bug. **Compare the whole
 out-parameter, or write down which field you dropped and why.** Pointer values legitimately
 differ between the two sides, but `is_null()` does not — grade the property, not the address.
+
+**The same rule governs RUNTIME tripwires, and there the blind spot is reachability: an
+instrument only observes the call paths that reach the function it lives in.** A per-arch
+reimplementation of a shared helper silently exempts its entire arch, and the clean rounds that
+follow read as evidence when they were never a test. The `SPIN_LOCK_ALREADY_OWNED` self-deadlock
+tripwire lives in `ntkrnl-sys` `KxAcquireSpinLock`; arm64's HAL had its own plain-store spinlock
+helpers and never called it, and `hal.spec` exports the whole `Ke*SpinLock*` surface
+`-arch=i386,arm,arm64` — so on arm64 every driver call site and every caller using the export
+rather than the inline was invisible to it. A 20-round soak was recorded as "a weak negative for
+the spinlock hypothesis"; it constrained almost nothing, because the detector was not installed
+on the surface under suspicion. **Before crediting a negative from an instrument, grep for every
+implementation of the function it lives in — per arch AND per build flavour — and confirm the
+suspect path actually reaches it.** A tripwire in a shared funnel is only as broad as the set of
+callers that genuinely funnel.
 
 And after fixing anything a harness caught, **re-break one site deliberately and confirm the
 suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
@@ -4233,6 +4481,15 @@ callee writes back (inert only because both pointers are re-read from the array 
 and iomgr dropped `MiResolveImageReferences`' `LoadedImports`. `grep -rn "&mut ([A-Za-z_][A-Za-z0-9_.]* as "`
 found all four across the workspace and is worth re-running — the shape is rare enough to
 eyeball and dangerous enough to be worth a scanner.
+**Same lost write, one layer out: a C++ `&` out-parameter DEREFERENCED at a C ABI shim.** The
+bridge generated for `CFSFolder::GetFSColumnDetails(UINT, SHELLDETAILS &)` was
+`f(iColumn, *sd)` — take the caller's pointer, dereference it, pass the value. That type-checks
+(`SHELLDETAILS` is `Copy`), and it throws away everything the callee fills in, so
+`CDesktopFolder` read an uninitialised column. `GetDefaultFSColumnState(UINT, SHCOLSTATEF &)`
+had it too. Fix: reborrow, `f(iColumn, &mut *sd)`. **Any `&` parameter crossing a hand-written
+or generated C shim is this hazard**, and it is invisible from the Rust side — the callee is
+correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
+an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing

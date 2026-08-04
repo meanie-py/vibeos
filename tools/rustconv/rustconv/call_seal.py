@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 
 from .dead_regions import dead_region_spans, in_dead_region
-from .lex_mask import comment_spans, mask_code
+from .lex_mask import comment_spans, directive_spans, mask_code
 
 
 class CallSealError(RuntimeError):
@@ -21,12 +21,20 @@ class SealedCall:
     # DUMMY_PSEH `RpcExcept` handler. Defaults False so anything not proven dead stays
     # required. See dead_regions.py.
     dead: bool = False
+    # Top-level arguments at the C call site, or None where counting them cannot be
+    # trusted. The Rust site must agree -- see `_argument_count` for why that is the
+    # oracle that catches a SHIFTED envelope, which token accounting alone cannot.
+    argc: int | None = None
 
 
 @dataclass(frozen=True)
 class SealedCalls:
     text: str
     calls: tuple[SealedCall, ...]
+    # Function-like macros this body calls. They get no token (see `seal_calls`), and
+    # the envelope has to SAY so by name: a model that assumes every call it emits
+    # needs a token numbers the macro too and shifts every real call by one.
+    macros: tuple[str, ...] = ()
 
 
 _PLACEHOLDER_RE = re.compile(r"\b__RUSTCONV_CALL_[0-9]{4}__\b")
@@ -48,6 +56,10 @@ _EXCLUDED = {
     "sizeof",
     "_countof",
 }
+# Never worth naming in the envelope's "these have no token" list: `sizeof` is a C
+# KEYWORD, and the debug macros are stripped from the body before sealing, so the model
+# never sees either as a call it might try to tokenize.
+_NEVER_DISCLOSED = {"sizeof", "TRACE", "WARN", "ERR", "FIXME", "MESSAGE"}
 _PURE_REUSABLE_CALLS = {"strlen", "wcslen"}
 _ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
 
@@ -106,6 +118,49 @@ def extern_declaration_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+_IDENT_RE = re.compile(r"\b[A-Za-z_]\w*\b")
+
+
+def _argument_count(masked: str, name_end: int) -> tuple[int, str] | None:
+    """Top-level argument count and argument text of the call starting at ``name_end``.
+
+    None when the parens do not balance inside ``masked`` -- an unparseable site is
+    never a finding, only a skip.
+
+    This is the oracle for a SHIFTED envelope, which nothing else can see. When a model
+    consumes a token for an untokenized macro call, every later token slides onto the
+    PREVIOUS call's site: the count of tokens is still right, each appears exactly once,
+    and the last one runs out -- whereupon the by-name recovery below rescues it and the
+    audit passes. `ApplyOrCancelChanges` shipped that way, restoring `swprintf`'s name
+    onto `StringFromCLSID`'s site and `CoTaskMemFree`'s onto `swprintf`'s. Arity catches
+    it on the first slid site, because a shift only lines up by coincidence.
+    """
+    opening = masked.find("(", name_end)
+    if opening < 0 or masked[name_end:opening].strip():
+        return None
+    depth = 0
+    segments: list[str] = []
+    segment_start = opening + 1
+    for pos in range(opening, len(masked)):
+        ch = masked[pos]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                segments.append(masked[segment_start:pos])
+                # rustfmt puts a trailing comma on every multi-line call, and a
+                # six-argument `RegQueryValueExW` written across seven lines counted as
+                # seven arguments. That is not an argument; it is a line ending.
+                while segments and not segments[-1].strip():
+                    segments.pop()
+                return len(segments), masked[opening + 1 : pos]
+        elif depth == 1 and ch == ",":
+            segments.append(masked[segment_start:pos])
+            segment_start = pos + 1
+    return None
+
+
 def seal_calls(
     text: str,
     required_calls: set[str],
@@ -118,15 +173,33 @@ def seal_calls(
     to carry the token, so sealing one makes the envelope unsatisfiable while
     protecting nothing — the macro's name is not in the output to begin with.
     """
-    required = required_calls - _EXCLUDED - function_like_macros
+    untokenized = _EXCLUDED | function_like_macros
+    required = required_calls - untokenized
     if not required:
         return SealedCalls(text, ())
     masked = _code_mask(text)
     body_start = masked.find("{")
+    # `sizeof` is a KEYWORD and the debug macros are stripped from the body before
+    # sealing, so neither is a name the model can be confused by. Everything else that
+    # occurs here is one the envelope must disclaim by name.
+    named_macros = sorted(
+        {
+            match.group(1)
+            for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked)
+            if match.group(1) in untokenized
+            and match.start(1) > body_start
+            and match.group(1) not in _NEVER_DISCLOSED
+        }
+    )
+    # A `#define NAME(x)` in the body is a DEFINITION, not a call occurrence, and its name is
+    # not a runtime callee at all. See lex_mask.directive_spans.
+    directive = directive_spans(text)
     spans = []
     for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", masked):
         name = match.group(1)
         if match.start(1) <= body_start or name not in required:
+            continue
+        if directive[match.start(1)]:
             continue
         # C++ direct initialization looks call-like to a lexical scanner:
         # ``CComHeapPtr<ITEMIDLIST> pidl(factory())``. The declarator name is
@@ -151,10 +224,21 @@ def seal_calls(
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_CALL_{index:04d}__"
-        calls.append(SealedCall(placeholder, original, in_dead_region(dead_spans, start, end)))
+        counted = _argument_count(masked, end)
+        # A macro in ARGUMENT position is the one case where C and Rust legitimately
+        # disagree on the count: shell32's `IID_PPV_ARG(IProgressDialog, &ppv)` is one C
+        # argument and two Rust ones. Don't count those sites at all.
+        argc = (
+            None
+            if counted is None or any(i in untokenized for i in _IDENT_RE.findall(counted[1]))
+            else counted[0]
+        )
+        calls.append(
+            SealedCall(placeholder, original, in_dead_region(dead_spans, start, end), argc)
+        )
         result = result[:start] + placeholder + result[end:]
     calls.reverse()
-    return SealedCalls(result, tuple(calls))
+    return SealedCalls(result, tuple(calls), tuple(named_macros))
 
 
 _GOTO_RE = re.compile(r"\bgoto\s+([A-Za-z_]\w*)\s*;")
@@ -269,8 +353,51 @@ def call_contract(sealed: SealedCalls) -> str:
         # than let the model deduce it.
         "A call that appears only inside a function-like macro has NO token: translate it "
         "as an ordinary named call and do not consume or invent a token for it.\n"
-        f"Call tokens ({len(sealed.calls)}): {tokens}\n"
+        # The generic sentence above was not enough on its own: netcfgx's
+        # `ReadParameterValue` invented three tokens and `ApplyOrCancelChanges` shifted
+        # its whole envelope by one, both because the untokenized names sat INTERLEAVED
+        # with tokenized ones and the model could not tell which was which. Naming them
+        # is free and leaves nothing to infer.
+        + (
+            "The following identifiers in this body are function-like macros, not sealed "
+            f"callees: {', '.join(sealed.macros)}. They deliberately have no token — write "
+            "each as an ordinary named call and do not shift the numbering to cover one.\n"
+            if sealed.macros
+            else ""
+        )
+        + f"Call tokens ({len(sealed.calls)}): {tokens}\n"
     )
+
+
+def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
+    """Tokens whose Rust call site takes a different number of arguments than the C one.
+
+    A shifted envelope passes every other check in this file — right token count, each
+    used once, none invented — because the shift is a permutation, not a loss. What it
+    cannot preserve is the ARGUMENTS: slide `swprintf`'s token onto `StringFromCLSID`'s
+    site and it now wraps two arguments where the C had three.
+
+    Skipped rather than judged wherever the count is not a fair comparison: a C site
+    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`), an
+    unbalanced Rust site, and a turbofish, whose `::<A, B>` commas sit at the same depth
+    as real arguments. A token that appears more than once — the `goto` replication
+    region — needs only ONE occurrence to agree, since the copies are the same call.
+    """
+    findings = []
+    for call in sealed.calls:
+        if call.argc is None:
+            continue
+        counts = [
+            counted
+            for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", exec_mask)
+            if (counted := _argument_count(exec_mask, match.end())) is not None
+            and "::<" not in counted[1]
+        ]
+        if not counts or any(count == call.argc for count, _ in counts):
+            continue
+        got = "/".join(str(count) for count, _ in counts)
+        findings.append(f"{call.placeholder}={call.original} wants {call.argc}, got {got}")
+    return findings
 
 
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
@@ -453,6 +580,9 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
         findings.append("not exactly once: " + ", ".join(duplicates))
     if unknown:
         findings.append("invented: " + ", ".join(unknown))
+    shifted = _arity_disagreements(exec_text, sealed)
+    if shifted:
+        findings.append("wrong call site (argument count): " + ", ".join(shifted))
     if findings:
         raise CallSealError(
             "model damaged deterministic call envelope (" + "; ".join(findings) + ")"
