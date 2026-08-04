@@ -78,6 +78,10 @@ members = [
     # LDAP client. Two bindgen islands (`types` for the 19 winldap_private.h TUs,
     # `types_1` for ber.c's <winldap.h>) — see the CMakeLists for why they cannot merge.
     "wldap32-rust",
+    # Network-configuration COM server (the "Network Connections" installer/property sheets).
+    # C-style COM: every vtable method is a plain `extern "C"` fn, so the whole 11-TU module
+    # translates as plain C — no C++ substrate.
+    "netcfgx-rust",
     "access",
     "avltable",
     "bitmap",

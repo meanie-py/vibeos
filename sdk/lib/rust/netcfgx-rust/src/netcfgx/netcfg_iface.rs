@@ -2,13 +2,9 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub const KEY_READ: u32 = KEY_READ;
-pub const KEY_WRITE: u32 = KEY_WRITE;
-pub const REG_SZ: u32 = REG_SZ;
-pub const REG_DWORD: u32 = REG_DWORD;
-pub const ERROR_SUCCESS: u32 = ERROR_SUCCESS;
-pub const WAIT_OBJECT_0: u32 = WAIT_OBJECT_0;
-pub const WAIT_TIMEOUT: u32 = WAIT_TIMEOUT;
+// (The translation also re-declared KEY_READ/KEY_WRITE/REG_SZ/REG_DWORD/ERROR_SUCCESS/
+// WAIT_OBJECT_0/WAIT_TIMEOUT as `pub const X: u32 = X;` — self-referential, and the
+// island already carries all seven. Dropped.)
 unsafe extern "C" fn impl_from_INetCfgLock(iface: *mut INetCfgLock) -> *mut INetCfgImpl {
     (iface as *mut u8).offset(-(FIELD_OFFSET!(INetCfgImpl, lpVtblLock) as isize)) as *mut INetCfgImpl
 }
@@ -53,7 +49,7 @@ pub unsafe extern "system" fn INetCfgLock_fnAcquireWriteLock(
     let This = impl_from_INetCfgLock(iface);
 
     if (*This).bInitialized != 0 {
-        return NETCFG_E_ALREADY_INITIALIZED;
+        return (NETCFG_E_ALREADY_INITIALIZED) as i32;
     }
 
     dwResult = WaitForSingleObject((*This).hMutex, cmsTimeout);
@@ -61,11 +57,11 @@ pub unsafe extern "system" fn INetCfgLock_fnAcquireWriteLock(
         if !ppszwClientDescription.is_null() {
             if RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
-                b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0N\0e\0t\0C\0f\0g\0L\0o\0c\0k\0H\0o\0l\0d\0e\0r\0\0\0".as_ptr() as LPCWSTR,
+                w!("SYSTEM\\CurrentControlSet\\Control\\Network\\NetCfgLockHolder") as LPCWSTR,
                 0,
                 KEY_READ,
                 &mut hKey,
-            ) == ERROR_SUCCESS
+            ) == (ERROR_SUCCESS) as i32
             {
                 dwResult = core::mem::size_of_val(&szValue) as u32;
                 if RegQueryValueExW(
@@ -75,11 +71,10 @@ pub unsafe extern "system" fn INetCfgLock_fnAcquireWriteLock(
                     core::ptr::null_mut(),
                     szValue.as_mut_ptr() as LPBYTE,
                     &mut dwResult,
-                ) == ERROR_SUCCESS
+                ) == (ERROR_SUCCESS) as i32
                 {
                     szValue[(core::mem::size_of_val(&szValue) / core::mem::size_of::<u16>()) - 1] = 0;
-                    *ppszwClientDescription = CoTaskMemAlloc(
-                        (wcslen(szValue.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+                    *ppszwClientDescription = CoTaskMemAlloc(((wcslen(szValue.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
                     ) as LPWSTR;
                     if !(*ppszwClientDescription).is_null() {
                         wcscpy(*ppszwClientDescription, szValue.as_ptr());
@@ -92,23 +87,23 @@ pub unsafe extern "system" fn INetCfgLock_fnAcquireWriteLock(
     } else if dwResult == WAIT_OBJECT_0 {
         if RegCreateKeyExW(
             HKEY_LOCAL_MACHINE,
-            b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0N\0e\0t\0C\0f\0g\0L\0o\0c\0k\0H\0o\0l\0d\0e\0r\0\0\0".as_ptr() as LPCWSTR,
+            w!("SYSTEM\\CurrentControlSet\\Control\\Network\\NetCfgLockHolder") as LPCWSTR,
             0,
-            core::ptr::null(),
+            core::ptr::null_mut(),
             0,
             KEY_WRITE,
             core::ptr::null_mut(),
             &mut hKey,
             core::ptr::null_mut(),
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             RegSetValueExW(
                 hKey,
                 core::ptr::null(),
                 0,
-                REG_SZ,
+                REG_SZ as DWORD,
                 pszwClientDescription as LPBYTE,
-                (wcslen(pszwClientDescription) + 1) * core::mem::size_of::<u16>() as u32,
+                ((wcslen(pszwClientDescription) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
             );
             RegCloseKey(hKey);
         }
@@ -124,7 +119,7 @@ pub unsafe extern "system" fn INetCfgLock_fnReleaseWriteLock(
     let This = impl_from_INetCfgLock(iface);
 
     if (*This).bInitialized != 0 {
-        return NETCFG_E_ALREADY_INITIALIZED;
+        return (NETCFG_E_ALREADY_INITIALIZED) as i32;
     }
 
     if ReleaseMutex((*This).hMutex) != 0 {
@@ -140,19 +135,19 @@ pub unsafe extern "system" fn INetCfgLock_fnIsWriteLocked(
 ) -> HRESULT {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut szValue: [u16; 100] = [0; 100];
-    let mut dwSize: u32;
+    let mut dwSize: u32 = 0;
     let mut dwType: u32 = 0;
     let mut hr: HRESULT;
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0N\0e\0t\0C\0f\0g\0L\0o\0c\0k\0H\0o\0l\0d\0e\0r\0\0\0".as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Control\\Network\\NetCfgLockHolder") as LPCWSTR, 0, KEY_READ, &mut hKey) != (ERROR_SUCCESS) as i32 {
         return S_FALSE;
     }
 
     dwSize = core::mem::size_of_val(&szValue) as u32;
-    if RegQueryValueExW(hKey, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS && dwType == REG_SZ {
+    if RegQueryValueExW(hKey, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 && dwType == REG_SZ as DWORD {
         hr = S_OK;
         szValue[(core::mem::size_of_val(&szValue) / core::mem::size_of::<u16>()) - 1] = 0;
-        *ppszwClientDescription = CoTaskMemAlloc((wcslen(szValue.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        *ppszwClientDescription = CoTaskMemAlloc(((wcslen(szValue.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if !(*ppszwClientDescription).is_null() {
             wcscpy(*ppszwClientDescription, szValue.as_ptr());
         } else {
@@ -215,23 +210,23 @@ pub unsafe extern "C" fn ReadBindingString(
         return S_OK;
     }
 
-    wcscpy(szBuffer.as_mut_ptr(), b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0\0\0".as_ptr() as LPCWSTR);
+    wcscpy(szBuffer.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Services\\") as LPCWSTR);
     wcscat(szBuffer.as_mut_ptr(), (*Item).szBindName);
-    wcscat(szBuffer.as_mut_ptr(), b"\\\0L\0i\0n\0k\0a\0g\0e\0\0\0".as_ptr() as LPCWSTR);
+    wcscat(szBuffer.as_mut_ptr(), w!("\\Linkage") as LPCWSTR);
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) == ERROR_SUCCESS
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32
     {
         dwSize = 0;
-        RegQueryValueExW(hKey, b"B\0i\0n\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::null_mut(), &mut dwSize);
+        RegQueryValueExW(hKey, w!("Bind") as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::null_mut(), &mut dwSize);
 
         if dwSize != 0
         {
-            (*Item).pszBinding = CoTaskMemAlloc(dwSize as usize) as LPWSTR;
+            (*Item).pszBinding = CoTaskMemAlloc((dwSize as usize) as SIZE_T) as LPWSTR;
             if (*Item).pszBinding.is_null() {
                 return E_OUTOFMEMORY;
             }
 
-            RegQueryValueExW(hKey, b"B\0i\0n\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, (*Item).pszBinding as LPBYTE, &mut dwSize);
+            RegQueryValueExW(hKey, w!("Bind") as LPCWSTR, core::ptr::null_mut(), &mut dwType, (*Item).pszBinding as LPBYTE, &mut dwSize);
         }
 
         RegCloseKey(hKey);
@@ -242,8 +237,8 @@ pub unsafe extern "C" fn ReadBindingString(
 #[no_mangle]
 pub unsafe extern "C" fn EnumClientServiceProtocol(hKey: HKEY, pGuid: *const GUID, pHead: *mut *mut NetCfgComponentItem) -> HRESULT {
     let mut dwIndex: u32 = 0;
-    let mut dwSize: u32;
-    let mut dwType: u32;
+    let mut dwSize: u32 = 0;
+    let mut dwType: u32 = 0;
     let mut szName: [u16; 100] = [0; 100];
     let mut szText: [u16; 100] = [0; 100];
     let mut hSubKey: HKEY = core::ptr::null_mut();
@@ -256,31 +251,31 @@ pub unsafe extern "C" fn EnumClientServiceProtocol(hKey: HKEY, pGuid: *const GUI
         szText[0] = 0u16;
 
         dwSize = (core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) as u32;
-        if RegEnumKeyExW(hKey, dwIndex, szName.as_mut_ptr(), &mut dwSize, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()) == ERROR_SUCCESS {
+        if RegEnumKeyExW(hKey, dwIndex, szName.as_mut_ptr(), &mut dwSize, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
             dwIndex += 1;
-            pCurrent = CoTaskMemAlloc(core::mem::size_of::<NetCfgComponentItem>()) as *mut NetCfgComponentItem;
+            pCurrent = CoTaskMemAlloc((core::mem::size_of::<NetCfgComponentItem>()) as SIZE_T) as *mut NetCfgComponentItem;
             if pCurrent.is_null() {
                 return E_OUTOFMEMORY;
             }
 
-            ZeroMemory(pCurrent as LPVOID, core::mem::size_of::<NetCfgComponentItem>());
-            CopyMemory(core::ptr::addr_of_mut!((*pCurrent).ClassGUID) as LPVOID, pGuid as LPVOID, core::mem::size_of::<GUID>());
+            ZeroMemory!(pCurrent as LPVOID, core::mem::size_of::<NetCfgComponentItem>());
+            CopyMemory!(core::ptr::addr_of_mut!((*pCurrent).ClassGUID) as LPVOID, pGuid as LPVOID, core::mem::size_of::<GUID>());
 
             if CLSIDFromString(szName.as_ptr(), core::ptr::addr_of_mut!((*pCurrent).InstanceId)) < 0 {
             }
-            if RegOpenKeyExW(hKey, szName.as_ptr(), 0, KEY_READ, &mut hSubKey) == ERROR_SUCCESS {
+            if RegOpenKeyExW(hKey, szName.as_ptr(), 0, KEY_READ, &mut hSubKey) == (ERROR_SUCCESS) as i32 {
                 dwSize = core::mem::size_of::<u32>() as u32;
 
-                RegQueryValueExW(hSubKey, b"C\0h\0a\0r\0a\0c\0t\0e\0r\0i\0s\0t\0i\0c\0s\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::addr_of_mut!((*pCurrent).dwCharacteristics) as LPBYTE, &mut dwSize);
-                if dwType != REG_DWORD {
+                RegQueryValueExW(hSubKey, w!("Characteristics") as LPCWSTR, core::ptr::null_mut(), &mut dwType, core::ptr::addr_of_mut!((*pCurrent).dwCharacteristics) as LPBYTE, &mut dwSize);
+                if dwType != REG_DWORD as DWORD {
                     (*pCurrent).dwCharacteristics = 0;
                 }
 
                 dwSize = core::mem::size_of_val(&szText) as u32;
-                if RegQueryValueExW(hSubKey, b"C\0o\0m\0p\0o\0n\0e\0n\0t\0I\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-                    if dwType == REG_SZ {
+                if RegQueryValueExW(hSubKey, w!("ComponentId") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+                    if dwType == REG_SZ as DWORD {
                         szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0u16;
-                        (*pCurrent).szId = CoTaskMemAlloc((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+                        (*pCurrent).szId = CoTaskMemAlloc(((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                         if !(*pCurrent).szId.is_null() {
                             wcscpy((*pCurrent).szId, szText.as_ptr());
                         }
@@ -288,22 +283,22 @@ pub unsafe extern "C" fn EnumClientServiceProtocol(hKey: HKEY, pGuid: *const GUI
                 }
 
                 dwSize = core::mem::size_of_val(&szText) as u32;
-                if RegQueryValueExW(hSubKey, b"D\0e\0s\0c\0r\0i\0p\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-                    if dwType == REG_SZ {
+                if RegQueryValueExW(hSubKey, w!("Description") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+                    if dwType == REG_SZ as DWORD {
                         szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0u16;
-                        (*pCurrent).szDisplayName = CoTaskMemAlloc((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+                        (*pCurrent).szDisplayName = CoTaskMemAlloc(((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                         if !(*pCurrent).szDisplayName.is_null() {
                             wcscpy((*pCurrent).szDisplayName, szText.as_ptr());
                         }
                     }
                 }
 
-                if RegOpenKeyExW(hSubKey, b"N\0D\0I\0\0\0".as_ptr() as LPCWSTR, 0, KEY_READ, &mut hNDIKey) == ERROR_SUCCESS {
+                if RegOpenKeyExW(hSubKey, w!("NDI") as LPCWSTR, 0, KEY_READ, &mut hNDIKey) == (ERROR_SUCCESS) as i32 {
                     dwSize = core::mem::size_of_val(&szText) as u32;
-                    if RegQueryValueExW(hNDIKey, b"H\0e\0l\0p\0T\0e\0x\0t\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-                        if dwType == REG_SZ {
+                    if RegQueryValueExW(hNDIKey, w!("HelpText") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+                        if dwType == REG_SZ as DWORD {
                             szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0u16;
-                            (*pCurrent).szHelpText = CoTaskMemAlloc((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+                            (*pCurrent).szHelpText = CoTaskMemAlloc(((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                             if !(*pCurrent).szHelpText.is_null() {
                                 wcscpy((*pCurrent).szHelpText, szText.as_ptr());
                             }
@@ -311,10 +306,10 @@ pub unsafe extern "C" fn EnumClientServiceProtocol(hKey: HKEY, pGuid: *const GUI
                     }
 
                     dwSize = core::mem::size_of_val(&szText) as u32;
-                    if RegQueryValueExW(hNDIKey, b"S\0e\0r\0v\0i\0c\0e\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-                        if dwType == REG_SZ {
+                    if RegQueryValueExW(hNDIKey, w!("Service") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szText.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+                        if dwType == REG_SZ as DWORD {
                             szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0u16;
-                            (*pCurrent).szBindName = CoTaskMemAlloc((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+                            (*pCurrent).szBindName = CoTaskMemAlloc(((wcslen(szText.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                             if !(*pCurrent).szBindName.is_null() {
                                 wcscpy((*pCurrent).szBindName, szText.as_ptr());
                             }
@@ -338,7 +333,7 @@ pub unsafe extern "C" fn EnumClientServiceProtocol(hKey: HKEY, pGuid: *const GUI
             break;
         }
 
-        if !TRUE {
+        if TRUE == 0 {
             break;
         }
     }
@@ -354,10 +349,10 @@ pub unsafe extern "C" fn EnumerateNetworkComponent(
     let mut szName: [u16; 150] = [0; 150];
 
     let mut hr: HRESULT = StringFromCLSID(pGuid, &mut pszGuid);
-    if ((hr) >= 0) >= 0 {
+    if (hr) >= 0 {
         swprintf(
             szName.as_mut_ptr(),
-            "SYSTEM\\CurrentControlSet\\Control\\Network\\%s\0".encode_utf16().collect::<Vec<_>>().as_ptr(),
+            w!("SYSTEM\\CurrentControlSet\\Control\\Network\\%s"),
             pszGuid,
         );
         if RegOpenKeyExW(
@@ -366,7 +361,7 @@ pub unsafe extern "C" fn EnumerateNetworkComponent(
             0,
             KEY_READ,
             &mut hKey,
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             hr = EnumClientServiceProtocol(hKey, pGuid, pHead);
             RegCloseKey(hKey);
@@ -377,32 +372,32 @@ pub unsafe extern "C" fn EnumerateNetworkComponent(
 }
 #[no_mangle]
 pub unsafe extern "C" fn EnumerateNetworkAdapter(pHead: *mut *mut NetCfgComponentItem) -> HRESULT {
-    let mut dwSize: u32;
+    let mut dwSize: u32 = 0;
     let mut dwIndex: u32;
     let hInfo: HDEVINFO;
     let mut DevInfo: SP_DEVINFO_DATA = core::mem::zeroed();
-    let mut hKey: HKEY;
+    let mut hKey: HKEY = core::ptr::null_mut();
     let mut szNetCfg: [u16; 50] = [0; 50];
-    let mut szAdapterNetCfg: [u16; MAX_DEVICE_ID_LEN] = [0; MAX_DEVICE_ID_LEN];
+    let mut szAdapterNetCfg: [u16; (MAX_DEVICE_ID_LEN) as usize] = [0; (MAX_DEVICE_ID_LEN) as usize];
     let mut szDetail: [u16; 200] = [0; 200];
     let mut szName: [u16; 130] = [0; 130];
     let mut pLast: *mut NetCfgComponentItem = core::ptr::null_mut();
     let mut pCurrent: *mut NetCfgComponentItem;
 
-    let temp_detail = b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0C\0l\0a\0s\0s\0\\\0\0\0";
-    core::ptr::copy_nonoverlapping(temp_detail.as_ptr() as *const u16, szDetail.as_mut_ptr(), temp_detail.len() / 2);
+    let temp_detail = wsz!("SYSTEM\\CurrentControlSet\\Control\\Class\\");
+    core::ptr::copy_nonoverlapping(temp_detail.as_ptr(), szDetail.as_mut_ptr(), temp_detail.len());
 
-    let temp_name = b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0{\04\0D\03\06\0E\09\07\02\0-\0E\03\02\05\0-\01\01\0C\0E\0-\0B\0F\0C\01\0-\00\08\00\00\02\0B\0E\01\00\03\01\08\0}\0\\\0\0\0";
-    core::ptr::copy_nonoverlapping(temp_name.as_ptr() as *const u16, szName.as_mut_ptr(), temp_name.len() / 2);
+    let temp_name = wsz!("SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
+    core::ptr::copy_nonoverlapping(temp_name.as_ptr(), szName.as_mut_ptr(), temp_name.len());
 
-    hInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_NET, core::ptr::null_mut(), core::ptr::null_mut(), DIGCF_PRESENT);
+    hInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_NET, core::ptr::null_mut(), core::ptr::null_mut(), (DIGCF_PRESENT) as u32);
     if hInfo.is_null() {
         return E_FAIL;
     }
 
     dwIndex = 0;
     loop {
-        ZeroMemory(&mut DevInfo as *mut _ as LPVOID, core::mem::size_of::<SP_DEVINFO_DATA>());
+        ZeroMemory!(&mut DevInfo as *mut _ as LPVOID, core::mem::size_of::<SP_DEVINFO_DATA>());
         DevInfo.cbSize = core::mem::size_of::<SP_DEVINFO_DATA>() as u32;
 
         if SetupDiEnumDeviceInfo(hInfo, dwIndex, &mut DevInfo) == 0 {
@@ -411,45 +406,45 @@ pub unsafe extern "C" fn EnumerateNetworkAdapter(pHead: *mut *mut NetCfgComponen
         }
         dwIndex += 1;
 
-        if SetupDiGetDeviceRegistryPropertyW(hInfo, &mut DevInfo, SPDRP_DRIVER, core::ptr::null_mut(), szDetail.as_mut_ptr().offset(39 as isize) as LPBYTE, (core::mem::size_of_val(&szDetail) / core::mem::size_of::<u16>() - 40) as u32, &mut dwSize) == 0 {
+        if SetupDiGetDeviceRegistryPropertyW(hInfo, &mut DevInfo, (SPDRP_DRIVER) as u32, core::ptr::null_mut(), szDetail.as_mut_ptr().offset(39 as isize) as LPBYTE, (core::mem::size_of_val(&szDetail) / core::mem::size_of::<u16>() - 40) as u32, &mut dwSize) == 0 {
             break;
         }
 
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szDetail.as_ptr(), 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szDetail.as_ptr(), 0, KEY_READ, &mut hKey) != (ERROR_SUCCESS) as i32 {
             break;
         }
 
         dwSize = core::mem::size_of_val(&szNetCfg) as u32;
-        if RegQueryValueExW(hKey, b"N\0e\0t\0C\0f\0g\0I\0n\0s\0t\0a\0n\0c\0e\0I\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) != ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, w!("NetCfgInstanceId") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) != (ERROR_SUCCESS) as i32 {
             RegCloseKey(hKey);
             break;
         }
 
-        pCurrent = CoTaskMemAlloc(core::mem::size_of::<NetCfgComponentItem>()) as *mut NetCfgComponentItem;
+        pCurrent = CoTaskMemAlloc((core::mem::size_of::<NetCfgComponentItem>()) as SIZE_T) as *mut NetCfgComponentItem;
         if pCurrent.is_null() {
             break;
         }
 
-        ZeroMemory(pCurrent as LPVOID, core::mem::size_of::<NetCfgComponentItem>());
-        CopyMemory(core::ptr::addr_of_mut!((*pCurrent).ClassGUID) as LPVOID, &GUID_DEVCLASS_NET as *const _ as *const core::ffi::c_void, core::mem::size_of::<GUID>());
+        ZeroMemory!(pCurrent as LPVOID, core::mem::size_of::<NetCfgComponentItem>());
+        CopyMemory!(core::ptr::addr_of_mut!((*pCurrent).ClassGUID) as LPVOID, &GUID_DEVCLASS_NET as *const _ as *const core::ffi::c_void, core::mem::size_of::<GUID>());
         CLSIDFromString(szNetCfg.as_ptr(), core::ptr::addr_of_mut!((*pCurrent).InstanceId));
 
-        (*pCurrent).szBindName = CoTaskMemAlloc((wcslen(szNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        (*pCurrent).szBindName = CoTaskMemAlloc(((wcslen(szNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if !(*pCurrent).szBindName.is_null() {
             wcscpy((*pCurrent).szBindName, szNetCfg.as_ptr());
         }
 
         dwSize = core::mem::size_of_val(&szAdapterNetCfg) as u32;
-        if RegQueryValueExW(hKey, b"C\0o\0m\0p\0o\0n\0e\0n\0t\0I\0d\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-            (*pCurrent).szId = CoTaskMemAlloc((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        if RegQueryValueExW(hKey, w!("ComponentId") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+            (*pCurrent).szId = CoTaskMemAlloc(((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
             if !(*pCurrent).szId.is_null() {
                 wcscpy((*pCurrent).szId, szAdapterNetCfg.as_ptr());
             }
         }
 
         dwSize = core::mem::size_of_val(&szAdapterNetCfg) as u32;
-        if RegQueryValueExW(hKey, b"D\0r\0i\0v\0e\0r\0D\0e\0s\0c\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-            (*pCurrent).szDisplayName = CoTaskMemAlloc((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+        if RegQueryValueExW(hKey, w!("DriverDesc") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+            (*pCurrent).szDisplayName = CoTaskMemAlloc(((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
             if !(*pCurrent).szDisplayName.is_null() {
                 wcscpy((*pCurrent).szDisplayName, szAdapterNetCfg.as_ptr());
             }
@@ -458,12 +453,12 @@ pub unsafe extern "C" fn EnumerateNetworkAdapter(pHead: *mut *mut NetCfgComponen
         RegCloseKey(hKey);
 
         wcscpy(szName.as_mut_ptr().offset(80 as isize), szNetCfg.as_ptr());
-        wcscpy(szName.as_mut_ptr().offset(118 as isize), b"\\\0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0\0\0".as_ptr() as LPCWSTR);
+        wcscpy(szName.as_mut_ptr().offset(118 as isize), w!("\\Connection") as LPCWSTR);
 
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szName.as_ptr(), 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szName.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
             dwSize = core::mem::size_of_val(&szAdapterNetCfg) as u32;
-            if RegQueryValueExW(hKey, b"P\0n\0p\0I\0n\0s\0t\0a\0n\0c\0e\0I\0D\0\0\0".as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
-                (*pCurrent).szNodeId = CoTaskMemAlloc((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+            if RegQueryValueExW(hKey, w!("PnpInstanceID") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), szAdapterNetCfg.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
+                (*pCurrent).szNodeId = CoTaskMemAlloc(((wcslen(szAdapterNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                 if !(*pCurrent).szNodeId.is_null() {
                     wcscpy((*pCurrent).szNodeId, szAdapterNetCfg.as_ptr());
                 }
@@ -471,9 +466,9 @@ pub unsafe extern "C" fn EnumerateNetworkAdapter(pHead: *mut *mut NetCfgComponen
             RegCloseKey(hKey);
         }
 
-        if SetupDiGetDeviceRegistryPropertyW(hInfo, &mut DevInfo, SPDRP_DEVICEDESC, core::ptr::null_mut(), szNetCfg.as_mut_ptr() as PBYTE, (core::mem::size_of_val(&szNetCfg) / core::mem::size_of::<u16>()) as u32, &mut dwSize) != 0 {
+        if SetupDiGetDeviceRegistryPropertyW(hInfo, &mut DevInfo, (SPDRP_DEVICEDESC) as u32, core::ptr::null_mut(), szNetCfg.as_mut_ptr() as PBYTE, (core::mem::size_of_val(&szNetCfg) / core::mem::size_of::<u16>()) as u32, &mut dwSize) != 0 {
             szNetCfg[(core::mem::size_of_val(&szNetCfg) / core::mem::size_of::<u16>()) - 1] = 0;
-            (*pCurrent).szDisplayName = CoTaskMemAlloc((wcslen(szNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as LPWSTR;
+            (*pCurrent).szDisplayName = CoTaskMemAlloc(((wcslen(szNetCfg.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
             if !(*pCurrent).szDisplayName.is_null() {
                 wcscpy((*pCurrent).szDisplayName, szNetCfg.as_ptr());
             }
@@ -526,35 +521,35 @@ pub unsafe extern "system" fn INetCfg_fnQueryInterface(
     let This = iface as *mut INetCfgImpl;
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_INetCfg) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_INetCfg)
     {
         *ppvObj = This as LPVOID;
         INetCfg_AddRef(iface);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgLock) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgLock)
     {
         if (*This).bInitialized != 0
         {
-            return NETCFG_E_ALREADY_INITIALIZED;
+            return (NETCFG_E_ALREADY_INITIALIZED) as i32;
         }
 
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblLock) as LPVOID;
         (*This).hMutex = CreateMutexW(
             core::ptr::null_mut(),
-            FALSE,
-            "N\0e\0t\0C\0f\0g\0L\0o\0c\0k\0\0\0".as_ptr() as LPCWSTR,
+            (FALSE) as i32,
+            w!("NetCfgLock") as LPCWSTR,
         );
 
         INetCfgLock_AddRef(iface);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgPnpReconfigCallback) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgPnpReconfigCallback)
     {
         if (*This).bInitialized != 0
         {
-            return NETCFG_E_ALREADY_INITIALIZED;
+            return (NETCFG_E_ALREADY_INITIALIZED) as i32;
         }
 
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblPnpReconfigCallback) as LPVOID;
@@ -571,7 +566,7 @@ pub unsafe extern "system" fn INetCfg_fnAddRef(
     let This = iface as *mut INetCfgImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return (refCount) as u32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn INetCfg_fnRelease(iface: *mut INetCfg) -> ULONG {
@@ -581,18 +576,18 @@ pub unsafe extern "system" fn INetCfg_fnRelease(iface: *mut INetCfg) -> ULONG {
     if refCount == 0 {
         CoTaskMemFree(This as LPVOID);
     }
-    return refCount;
+    return (refCount) as u32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn INetCfg_fnInitialize(
     iface: *mut INetCfg,
     pReserved: PVOID,
 ) -> HRESULT {
-    let hr: HRESULT;
+    let mut hr: HRESULT;
     let This = iface as *mut INetCfgImpl;
 
     if (*This).bInitialized != 0 {
-        return NETCFG_E_ALREADY_INITIALIZED;
+        return (NETCFG_E_ALREADY_INITIALIZED) as i32;
     }
 
     hr = EnumerateNetworkAdapter(core::ptr::addr_of_mut!((*This).pNet));
@@ -615,7 +610,7 @@ pub unsafe extern "system" fn INetCfg_fnInitialize(
         return hr;
     }
 
-    (*This).bInitialized = TRUE;
+    (*This).bInitialized = (TRUE) as i32;
     S_OK
 }
 #[no_mangle]
@@ -630,7 +625,7 @@ pub unsafe extern "C" fn ApplyOrCancelChanges(
 
     while !pHead.is_null() {
         if (*pHead).bChanged != 0 {
-            if IsEqualGUID(lpClassGUID, &GUID_DEVCLASS_NET) != 0 {
+            if IsEqualGUID!(lpClassGUID, &GUID_DEVCLASS_NET) {
                 if bApply != 0 {
                     if StringFromCLSID(
                         core::ptr::addr_of_mut!((*pHead).InstanceId),
@@ -639,7 +634,7 @@ pub unsafe extern "C" fn ApplyOrCancelChanges(
                     {
                         swprintf(
                             szName.as_mut_ptr(),
-                            b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0%\0s\0\0\0".as_ptr() as LPCWSTR,
+                            w!("SYSTEM\\CurrentControlSet\\Control\\Network\\%s") as LPCWSTR,
                             pszGuid,
                         );
                         CoTaskMemFree(pszGuid as LPVOID);
@@ -650,15 +645,15 @@ pub unsafe extern "C" fn ApplyOrCancelChanges(
                             0,
                             KEY_READ,
                             &mut hKey,
-                        ) == ERROR_SUCCESS
+                        ) == (ERROR_SUCCESS) as i32
                         {
                             RegSetValueExW(
                                 hKey,
                                 core::ptr::null(),
                                 0,
-                                REG_SZ,
-                                (*pHead).szDisplayName.as_ptr() as LPBYTE,
-                                (wcslen((*pHead).szDisplayName.as_ptr())
+                                REG_SZ as DWORD,
+                                (*pHead).szDisplayName as LPBYTE,
+                                (wcslen((*pHead).szDisplayName)
                                     + 1) as u32
                                     * core::mem::size_of::<u16>() as u32,
                             );
@@ -679,12 +674,12 @@ pub unsafe extern "C" fn ApplyOrCancelChanges(
 }
 #[no_mangle]
 pub unsafe extern "C" fn FreeComponentItem(pItem: *mut NetCfgComponentItem) {
-    CoTaskMemFree((*pItem).szDisplayName);
-    CoTaskMemFree((*pItem).szHelpText);
-    CoTaskMemFree((*pItem).szId);
-    CoTaskMemFree((*pItem).szBindName);
-    CoTaskMemFree((*pItem).szNodeId);
-    CoTaskMemFree((*pItem).pszBinding);
+    CoTaskMemFree(((*pItem).szDisplayName).cast());
+    CoTaskMemFree(((*pItem).szHelpText).cast());
+    CoTaskMemFree(((*pItem).szId).cast());
+    CoTaskMemFree(((*pItem).szBindName).cast());
+    CoTaskMemFree(((*pItem).szNodeId).cast());
+    CoTaskMemFree(((*pItem).pszBinding).cast());
     CoTaskMemFree(pItem as LPVOID);
 }
 #[no_mangle]
@@ -695,7 +690,7 @@ pub unsafe extern "system" fn INetCfg_fnUninitialize(
     let mut pItem: *mut NetCfgComponentItem;
 
     if (*This).bInitialized == 0 {
-        return NETCFG_E_NOT_INITIALIZED;
+        return (NETCFG_E_NOT_INITIALIZED) as i32;
     }
 
     while (*This).pService != core::ptr::null_mut() {
@@ -722,7 +717,7 @@ pub unsafe extern "system" fn INetCfg_fnUninitialize(
         FreeComponentItem(pItem);
     }
 
-    (*This).bInitialized = FALSE;
+    (*This).bInitialized = (FALSE) as i32;
 
     return S_OK;
 }
@@ -733,14 +728,14 @@ pub unsafe extern "system" fn INetCfg_fnApply(
 ) -> HRESULT {
     let This = iface as *mut INetCfgImpl;
 
-    if (*This).bInitialized == NETCFG_E_NOT_INITIALIZED {
-        return NETCFG_E_NOT_INITIALIZED;
+    if (*This).bInitialized == (NETCFG_E_NOT_INITIALIZED) as i32 {
+        return (NETCFG_E_NOT_INITIALIZED) as i32;
     }
 
-    ApplyOrCancelChanges((*This).pNet, &GUID_DEVCLASS_NET, TRUE);
-    ApplyOrCancelChanges((*This).pClient, &GUID_DEVCLASS_NETCLIENT, TRUE);
-    ApplyOrCancelChanges((*This).pService, &GUID_DEVCLASS_NETSERVICE, TRUE);
-    ApplyOrCancelChanges((*This).pProtocol, &GUID_DEVCLASS_NETTRANS, TRUE);
+    ApplyOrCancelChanges((*This).pNet, &GUID_DEVCLASS_NET, (TRUE) as u8);
+    ApplyOrCancelChanges((*This).pClient, &GUID_DEVCLASS_NETCLIENT, (TRUE) as u8);
+    ApplyOrCancelChanges((*This).pService, &GUID_DEVCLASS_NETSERVICE, (TRUE) as u8);
+    ApplyOrCancelChanges((*This).pProtocol, &GUID_DEVCLASS_NETTRANS, (TRUE) as u8);
 
     S_OK
 }
@@ -751,12 +746,12 @@ pub unsafe extern "system" fn INetCfg_fnCancel(
     let This = iface as *mut INetCfgImpl;
 
     if (*This).bInitialized == 0 {
-        return NETCFG_E_NOT_INITIALIZED;
+        return (NETCFG_E_NOT_INITIALIZED) as i32;
     }
 
-    ApplyOrCancelChanges((*This).pClient, &GUID_DEVCLASS_NETCLIENT, FALSE);
-    ApplyOrCancelChanges((*This).pService, &GUID_DEVCLASS_NETSERVICE, FALSE);
-    ApplyOrCancelChanges((*This).pProtocol, &GUID_DEVCLASS_NETTRANS, FALSE);
+    ApplyOrCancelChanges((*This).pClient, &GUID_DEVCLASS_NETCLIENT, (FALSE) as u8);
+    ApplyOrCancelChanges((*This).pService, &GUID_DEVCLASS_NETSERVICE, (FALSE) as u8);
+    ApplyOrCancelChanges((*This).pProtocol, &GUID_DEVCLASS_NETTRANS, (FALSE) as u8);
 
     return S_OK;
 }
@@ -769,10 +764,10 @@ pub unsafe extern "system" fn INetCfg_fnEnumComponents(
     let This = iface as *mut INetCfgImpl;
 
     if (*This).bInitialized == 0 {
-        return NETCFG_E_NOT_INITIALIZED;
+        return (NETCFG_E_NOT_INITIALIZED) as i32;
     }
 
-    if IsEqualGUID(&GUID_DEVCLASS_NET, pguidClass) != 0 {
+    if IsEqualGUID!(&GUID_DEVCLASS_NET, pguidClass) {
         return IEnumNetCfgComponent_Constructor(
             core::ptr::null_mut(),
             &IID_IEnumNetCfgComponent,
@@ -780,7 +775,7 @@ pub unsafe extern "system" fn INetCfg_fnEnumComponents(
             (*This).pNet,
             iface,
         );
-    } else if IsEqualGUID(&GUID_DEVCLASS_NETCLIENT, pguidClass) != 0 {
+    } else if IsEqualGUID!(&GUID_DEVCLASS_NETCLIENT, pguidClass) {
         return IEnumNetCfgComponent_Constructor(
             core::ptr::null_mut(),
             &IID_IEnumNetCfgComponent,
@@ -788,7 +783,7 @@ pub unsafe extern "system" fn INetCfg_fnEnumComponents(
             (*This).pClient,
             iface,
         );
-    } else if IsEqualGUID(&GUID_DEVCLASS_NETSERVICE, pguidClass) != 0 {
+    } else if IsEqualGUID!(&GUID_DEVCLASS_NETSERVICE, pguidClass) {
         return IEnumNetCfgComponent_Constructor(
             core::ptr::null_mut(),
             &IID_IEnumNetCfgComponent,
@@ -796,7 +791,7 @@ pub unsafe extern "system" fn INetCfg_fnEnumComponents(
             (*This).pService,
             iface,
         );
-    } else if IsEqualGUID(&GUID_DEVCLASS_NETTRANS, pguidClass) != 0 {
+    } else if IsEqualGUID!(&GUID_DEVCLASS_NETTRANS, pguidClass) {
         return IEnumNetCfgComponent_Constructor(
             core::ptr::null_mut(),
             &IID_IEnumNetCfgComponent,
@@ -818,7 +813,7 @@ pub unsafe extern "system" fn INetCfg_fnFindComponent(
     let This = iface as *mut INetCfgImpl;
 
     if (*This).bInitialized == 0 {
-        return NETCFG_E_NOT_INITIALIZED;
+        return (NETCFG_E_NOT_INITIALIZED) as i32;
     }
 
     hr = FindNetworkComponent((*This).pClient, pszwComponentId, pComponent, iface);
@@ -849,7 +844,7 @@ pub unsafe extern "system" fn INetCfg_fnQueryNetCfgClass(
     // check that reads a crate no compiler has read.
     ppvObject: *mut LPVOID,
 ) -> HRESULT {
-    INetCfgClass_Constructor(iface as *mut IUnknown, riid, ppvObject, pguidClass, iface as *mut INetCfg)
+    INetCfgClass_Constructor(iface as *mut IUnknown, riid, ppvObject, pguidClass, iface as *mut INetCfg as *mut _)
 }
 
 #[no_mangle]
@@ -864,7 +859,7 @@ pub unsafe extern "system" fn INetCfg_Constructor(
         return E_POINTER;
     }
 
-    This = CoTaskMemAlloc(core::mem::size_of::<INetCfgImpl>()) as *mut INetCfgImpl;
+    This = CoTaskMemAlloc((core::mem::size_of::<INetCfgImpl>()) as SIZE_T) as *mut INetCfgImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -874,7 +869,7 @@ pub unsafe extern "system" fn INetCfg_Constructor(
     (*This).lpVtblLock = &vt_NetCfgLock as *const INetCfgLockVtbl as *const INetCfgLock;
     (*This).lpVtblPnpReconfigCallback = &vt_NetCfgPnpReconfigCallback as *const INetCfgPnpReconfigCallbackVtbl as *const INetCfgPnpReconfigCallback;
     (*This).hMutex = core::ptr::null_mut();
-    (*This).bInitialized = FALSE;
+    (*This).bInitialized = (FALSE) as i32;
     (*This).pNet = core::ptr::null_mut();
     (*This).pClient = core::ptr::null_mut();
     (*This).pService = core::ptr::null_mut();

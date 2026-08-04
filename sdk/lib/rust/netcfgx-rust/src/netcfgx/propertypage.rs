@@ -14,6 +14,9 @@ pub enum _PARAM_TYPE {
     ENUM_TYPE = 6,
 }
 pub use _PARAM_TYPE as PARAM_TYPE;
+// The C enum's members are unqualified names in every TU that sees the typedef;
+// a Rust enum scopes them to the type, so re-export them to match the C.
+pub use _PARAM_TYPE::*;
 pub type PPARAM_TYPE = *mut PARAM_TYPE;
 
 #[repr(C)]
@@ -50,12 +53,14 @@ pub union _PARAMETER__bindgen_ty_1 {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct _PARAMETER__bindgen_ty_1__bindgen_ty_1 {
     pub lMin: LONG,
     pub lMax: LONG,
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct _PARAMETER__bindgen_ty_1__bindgen_ty_2 {
     pub dwMin: DWORD,
     pub dwMax: DWORD,
@@ -132,16 +137,16 @@ unsafe extern "C" fn GetStringValue(
 
     RegQueryValueExW(hKey, pValueName, core::ptr::null_mut(), &mut dwRegType, core::ptr::null_mut(), &mut dwLength);
 
-    if dwLength == 0 || dwRegType != REG_SZ {
+    if dwLength == 0 || dwRegType != (REG_SZ) as u32 {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    pBuffer = HeapAlloc(GetProcessHeap(), 0, dwLength + core::mem::size_of::<u16>() as u32) as PWSTR;
+    pBuffer = HeapAlloc(GetProcessHeap(), 0, (dwLength + core::mem::size_of::<u16>() as u32) as SIZE_T) as PWSTR;
     if pBuffer.is_null() {
         return ERROR_NOT_ENOUGH_MEMORY;
     }
 
-    dwError = RegQueryValueExW(hKey, pValueName, core::ptr::null_mut(), core::ptr::null_mut(), pBuffer as LPBYTE, &mut dwLength);
+    dwError = (RegQueryValueExW(hKey, pValueName, core::ptr::null_mut(), core::ptr::null_mut(), pBuffer as LPBYTE, &mut dwLength)) as u32;
     if dwError != ERROR_SUCCESS {
         HeapFree(GetProcessHeap(), 0, pBuffer as *mut _);
         return dwError;
@@ -178,11 +183,11 @@ unsafe extern "C" fn GetBooleanValue(
         &mut dwLength,
     );
 
-    if dwRegType == REG_SZ && dwLength >= core::mem::size_of::<u16>() as DWORD {
+    if dwRegType == (REG_SZ) as u32 && dwLength >= core::mem::size_of::<u16>() as DWORD {
         if szBuffer[0] == 0x0030 {
-            *pValue = FALSE;
+            *pValue = (FALSE) as i32;
         } else {
-            *pValue = TRUE;
+            *pValue = (TRUE) as i32;
         }
     }
 
@@ -210,7 +215,7 @@ unsafe extern "C" fn GetIntValue(
         &mut dwLength,
     );
 
-    if dwRegType == REG_SZ && dwLength >= core::mem::size_of::<u16>() as DWORD {
+    if dwRegType == (REG_SZ) as u32 && dwLength >= core::mem::size_of::<u16>() as DWORD {
         *pValue = _wtoi(szBuffer.as_ptr());
     }
 
@@ -237,7 +242,7 @@ unsafe extern "C" fn GetLongValue(
         &mut dwLength,
     );
 
-    if dwRegType == REG_SZ && dwLength >= core::mem::size_of::<u16>() as u32 {
+    if dwRegType == (REG_SZ) as u32 && dwLength >= core::mem::size_of::<u16>() as u32 {
         *pValue = wcstol(szBuffer.as_ptr(), &mut ptr, 10);
         if *pValue == 0 && !ptr.is_null() {
             *pValue = lDefault;
@@ -269,7 +274,7 @@ unsafe extern "C" fn GetDWordValue(
         &mut dwLength,
     );
 
-    if dwRegType == REG_SZ && dwLength >= core::mem::size_of::<u16>() as DWORD {
+    if dwRegType == (REG_SZ) as u32 && dwLength >= core::mem::size_of::<u16>() as DWORD {
         *pValue = wcstoul(szBuffer.as_ptr(), &mut ptr, 10);
         if *pValue == 0 && !ptr.is_null() {
             *pValue = dwDefault;
@@ -294,18 +299,18 @@ unsafe extern "C" fn GetEnumOptions(
     let mut i: DWORD;
     let mut dwError: DWORD;
 
-    dwError = RegOpenKeyExW(
+    dwError = (RegOpenKeyExW(
         hKey,
-        b"e\0n\0u\0m\0\0\0".as_ptr() as PWSTR,
+        w!("enum") as PWSTR,
         0,
         KEY_READ,
         &mut hEnumKey,
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         return dwError;
     }
 
-    dwError = RegQueryInfoKeyW(
+    dwError = (RegQueryInfoKeyW(
         hEnumKey,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -318,7 +323,7 @@ unsafe extern "C" fn GetEnumOptions(
         &mut dwMaxValueLen,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         'done: loop {
             if !pOptions.is_null() {
@@ -345,7 +350,7 @@ unsafe extern "C" fn GetEnumOptions(
     pOptions = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        dwValues.wrapping_mul(core::mem::size_of::<ENUM_OPTION>() as DWORD),
+        (dwValues.wrapping_mul(core::mem::size_of::<ENUM_OPTION>() as DWORD)) as SIZE_T,
     ) as *mut ENUM_OPTION;
     if pOptions.is_null() {
         dwError = ERROR_OUTOFMEMORY;
@@ -377,7 +382,7 @@ unsafe extern "C" fn GetEnumOptions(
         (*pOptions.add(i as usize)).pszValue = HeapAlloc(
             GetProcessHeap(),
             0,
-            dwValueNameLength.wrapping_mul(core::mem::size_of::<u16>() as DWORD),
+            (dwValueNameLength.wrapping_mul(core::mem::size_of::<u16>() as DWORD)) as SIZE_T,
         ) as PWSTR;
         if (*pOptions.add(i as usize)).pszValue.is_null() {
             dwError = ERROR_OUTOFMEMORY;
@@ -407,7 +412,7 @@ unsafe extern "C" fn GetEnumOptions(
         (*pOptions.add(i as usize)).pszName = HeapAlloc(
             GetProcessHeap(),
             0,
-            dwValueLength,
+            (dwValueLength) as SIZE_T,
         ) as PWSTR;
         if (*pOptions.add(i as usize)).pszName.is_null() {
             dwError = ERROR_OUTOFMEMORY;
@@ -433,7 +438,7 @@ unsafe extern "C" fn GetEnumOptions(
             return dwError;
         }
 
-        dwError = RegEnumValueW(
+        dwError = (RegEnumValueW(
             hEnumKey,
             i,
             (*pOptions.add(i as usize)).pszValue,
@@ -442,7 +447,7 @@ unsafe extern "C" fn GetEnumOptions(
             core::ptr::null_mut(),
             (*pOptions.add(i as usize)).pszName as LPBYTE,
             &mut dwValueLength,
-        );
+        )) as u32;
         if dwError == ERROR_NO_MORE_ITEMS {
             dwError = ERROR_SUCCESS;
             'done: loop {
@@ -543,9 +548,9 @@ unsafe extern "C" fn BuildParameterArray(
     DeviceInfoData: PSP_DEVINFO_DATA,
     ParameterArray: *mut PPARAMETER_ARRAY,
 ) -> BOOL {
-    let mut hDriverKey: HKEY = INVALID_HANDLE_VALUE;
-    let mut hParamsKey: HKEY = INVALID_HANDLE_VALUE;
-    let mut hParamKey: HKEY;
+    let mut hDriverKey: HKEY = (INVALID_HANDLE_VALUE).cast();
+    let mut hParamsKey: HKEY = (INVALID_HANDLE_VALUE).cast();
+    let mut hParamKey: HKEY = core::ptr::null_mut();
     let mut ParamArray: PPARAMETER_ARRAY = core::ptr::null_mut();
     let mut dwSubKeys: DWORD = 0;
     let mut dwMaxSubKeyLen: DWORD = 0;
@@ -553,40 +558,42 @@ unsafe extern "C" fn BuildParameterArray(
     let mut dwIndex: DWORD;
     let mut pszType: PWSTR = core::ptr::null_mut();
     let mut lError: i32;
-    let mut lDefaultMin: i32;
-    let mut lDefaultMax: i32;
-    let mut dwDefaultMin: DWORD;
-    let mut dwDefaultMax: DWORD;
-    let mut ret: BOOL = FALSE;
+    // The C declares these uninitialised and assigns in every arm of the Type switch;
+    // Rust cannot see that the arms are exhaustive over the reachable values.
+    let mut lDefaultMin: i32 = 0;
+    let mut lDefaultMax: i32 = 0;
+    let mut dwDefaultMin: DWORD = 0;
+    let mut dwDefaultMax: DWORD = 0;
+    let mut ret: BOOL = (FALSE) as i32;
 
     hDriverKey = SetupDiOpenDevRegKey(
         DeviceInfoSet,
         DeviceInfoData,
-        DICS_FLAG_GLOBAL,
+        (DICS_FLAG_GLOBAL) as u32,
         0,
-        DIREG_DRV,
+        (DIREG_DRV) as u32,
         KEY_READ,
     );
-    if hDriverKey == INVALID_HANDLE_VALUE {
-        return FALSE;
+    if hDriverKey == (INVALID_HANDLE_VALUE).cast() {
+        return (FALSE) as i32;
     }
 
     lError = RegOpenKeyExW(
         hDriverKey,
-        b"N\0d\0i\0\\\0P\0a\0r\0a\0m\0s\0\0\0".as_ptr() as PWSTR,
+        w!("Ndi\\Params") as PWSTR,
         0,
         KEY_READ,
         &mut hParamsKey,
     );
-    if lError != ERROR_SUCCESS {
-        ret = FALSE;
-        if ret == FALSE && !ParamArray.is_null() {
+    if lError != (ERROR_SUCCESS) as i32 {
+        ret = (FALSE) as i32;
+        if ret == (FALSE) as i32 && !ParamArray.is_null() {
             FreeParameterArray(ParamArray);
         }
-        if hParamsKey != INVALID_HANDLE_VALUE {
+        if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hParamsKey);
         }
-        if hDriverKey != INVALID_HANDLE_VALUE {
+        if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hDriverKey);
         }
         return ret;
@@ -606,29 +613,29 @@ unsafe extern "C" fn BuildParameterArray(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
-    if lError != ERROR_SUCCESS {
-        ret = FALSE;
-        if ret == FALSE && !ParamArray.is_null() {
+    if lError != (ERROR_SUCCESS) as i32 {
+        ret = (FALSE) as i32;
+        if ret == (FALSE) as i32 && !ParamArray.is_null() {
             FreeParameterArray(ParamArray);
         }
-        if hParamsKey != INVALID_HANDLE_VALUE {
+        if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hParamsKey);
         }
-        if hDriverKey != INVALID_HANDLE_VALUE {
+        if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hDriverKey);
         }
         return ret;
     }
 
     if dwSubKeys == 0 {
-        ret = FALSE;
-        if ret == FALSE && !ParamArray.is_null() {
+        ret = (FALSE) as i32;
+        if ret == (FALSE) as i32 && !ParamArray.is_null() {
             FreeParameterArray(ParamArray);
         }
-        if hParamsKey != INVALID_HANDLE_VALUE {
+        if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hParamsKey);
         }
-        if hDriverKey != INVALID_HANDLE_VALUE {
+        if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hDriverKey);
         }
         return ret;
@@ -636,18 +643,17 @@ unsafe extern "C" fn BuildParameterArray(
 
     ParamArray = HeapAlloc(
         GetProcessHeap(),
-        HEAP_ZERO_MEMORY,
-        core::mem::size_of::<PARAMETER_ARRAY>() + (dwSubKeys as usize * core::mem::size_of::<PARAMETER>()),
+        HEAP_ZERO_MEMORY,(core::mem::size_of::<PARAMETER_ARRAY>() + (dwSubKeys as usize * core::mem::size_of::<PARAMETER>())) as SIZE_T,
     ) as PPARAMETER_ARRAY;
     if ParamArray.is_null() {
-        ret = FALSE;
-        if ret == FALSE && !ParamArray.is_null() {
+        ret = (FALSE) as i32;
+        if ret == (FALSE) as i32 && !ParamArray.is_null() {
             FreeParameterArray(ParamArray);
         }
-        if hParamsKey != INVALID_HANDLE_VALUE {
+        if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hParamsKey);
         }
-        if hDriverKey != INVALID_HANDLE_VALUE {
+        if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
             RegCloseKey(hDriverKey);
         }
         return ret;
@@ -663,18 +669,17 @@ unsafe extern "C" fn BuildParameterArray(
     while dwIndex < dwSubKeys {
         (*ParamArray).Array[dwIndex as usize].pszName = HeapAlloc(
             GetProcessHeap(),
-            0,
-            dwMaxSubKeyLen as usize * core::mem::size_of::<u16>(),
+            0,(dwMaxSubKeyLen as usize * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         if (*ParamArray).Array[dwIndex as usize].pszName.is_null() {
-            ret = FALSE;
-            if ret == FALSE && !ParamArray.is_null() {
+            ret = (FALSE) as i32;
+            if ret == (FALSE) as i32 && !ParamArray.is_null() {
                 FreeParameterArray(ParamArray);
             }
-            if hParamsKey != INVALID_HANDLE_VALUE {
+            if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hParamsKey);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             return ret;
@@ -691,7 +696,7 @@ unsafe extern "C" fn BuildParameterArray(
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         );
-        if lError != ERROR_SUCCESS {
+        if lError != (ERROR_SUCCESS) as i32 {
             break;
         }
 
@@ -702,32 +707,32 @@ unsafe extern "C" fn BuildParameterArray(
             KEY_READ,
             &mut hParamKey,
         );
-        if lError == ERROR_SUCCESS {
+        if lError == (ERROR_SUCCESS) as i32 {
             GetStringValue(
                 hParamKey,
-                b"P\0a\0r\0a\0m\0D\0e\0s\0c\0\0\0".as_ptr() as PWSTR,
+                w!("ParamDesc") as PWSTR,
                 &mut (*ParamArray).Array[dwIndex as usize].pszDescription,
                 core::ptr::null_mut(),
             );
 
             GetStringValue(
                 hParamKey,
-                b"T\0y\0p\0e\0\0\0".as_ptr() as PWSTR,
+                w!("Type") as PWSTR,
                 &mut pszType,
                 core::ptr::null_mut(),
             );
             if !pszType.is_null() {
-                if _wcsicmp(pszType, b"i\0n\0t\0\0\0".as_ptr() as PWSTR) == 0 {
+                if _wcsicmp(pszType, w!("int") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = INT_TYPE;
-                } else if _wcsicmp(pszType, b"l\0o\0n\0g\0\0\0".as_ptr() as PWSTR) == 0 {
+                } else if _wcsicmp(pszType, w!("long") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = LONG_TYPE;
-                } else if _wcsicmp(pszType, b"w\0o\0r\0d\0\0\0".as_ptr() as PWSTR) == 0 {
+                } else if _wcsicmp(pszType, w!("word") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = WORD_TYPE;
-                } else if _wcsicmp(pszType, b"d\0w\0o\0r\0d\0\0\0".as_ptr() as PWSTR) == 0 {
+                } else if _wcsicmp(pszType, w!("dword") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = DWORD_TYPE;
-                } else if _wcsicmp(pszType, b"e\0d\0i\0t\0\0\0".as_ptr() as PWSTR) == 0 {
+                } else if _wcsicmp(pszType, w!("edit") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = EDIT_TYPE;
-                } else if _wcsicmp(pszType, b"e\0n\0u\0m\0\0\0".as_ptr() as PWSTR) == 0 {
+                } else if _wcsicmp(pszType, w!("enum") as PWSTR) == 0 {
                     (*ParamArray).Array[dwIndex as usize].Type = ENUM_TYPE;
                 } else {
                     (*ParamArray).Array[dwIndex as usize].Type = NO_TYPE;
@@ -739,15 +744,15 @@ unsafe extern "C" fn BuildParameterArray(
 
             GetStringValue(
                 hParamKey,
-                b"D\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as PWSTR,
+                w!("Default") as PWSTR,
                 &mut (*ParamArray).Array[dwIndex as usize].pszDefault,
                 core::ptr::null_mut(),
             );
 
             GetBooleanValue(
                 hParamKey,
-                b"O\0p\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as PWSTR,
-                FALSE,
+                w!("Optional") as PWSTR,
+                (FALSE) as i32,
                 &mut (*ParamArray).Array[dwIndex as usize].bOptional,
             );
 
@@ -757,17 +762,17 @@ unsafe extern "C" fn BuildParameterArray(
                 || (*ParamArray).Array[dwIndex as usize].Type == DWORD_TYPE
             {
                 if (*ParamArray).Array[dwIndex as usize].Type == INT_TYPE {
-                    lDefaultMin = -32768L;
-                    lDefaultMax = 32767L;
+                    lDefaultMin = -32768;
+                    lDefaultMax = 32767;
                 } else if (*ParamArray).Array[dwIndex as usize].Type == LONG_TYPE {
-                    lDefaultMin = (-2147483647L - 1);
-                    lDefaultMax = 2147483647L;
+                    lDefaultMin = (-2147483647 - 1);
+                    lDefaultMax = 2147483647;
                 } else if (*ParamArray).Array[dwIndex as usize].Type == WORD_TYPE {
-                    dwDefaultMin = 0UL;
-                    dwDefaultMax = 65535UL;
+                    dwDefaultMin = 0;
+                    dwDefaultMax = 65535;
                 } else if (*ParamArray).Array[dwIndex as usize].Type == DWORD_TYPE {
-                    dwDefaultMin = 0UL;
-                    dwDefaultMax = 4294967295UL;
+                    dwDefaultMin = 0;
+                    dwDefaultMax = 4294967295;
                 }
 
                 if (*ParamArray).Array[dwIndex as usize].Type == INT_TYPE
@@ -775,14 +780,14 @@ unsafe extern "C" fn BuildParameterArray(
                 {
                     GetLongValue(
                         hParamKey,
-                        b"M\0i\0n\0\0\0".as_ptr() as PWSTR,
+                        w!("Min") as PWSTR,
                         lDefaultMin,
                         &mut (*ParamArray).Array[dwIndex as usize].u.l.lMin,
                     );
 
                     GetLongValue(
                         hParamKey,
-                        b"M\0a\0x\0\0\0".as_ptr() as PWSTR,
+                        w!("Max") as PWSTR,
                         lDefaultMax,
                         &mut (*ParamArray).Array[dwIndex as usize].u.l.lMax,
                     );
@@ -791,14 +796,14 @@ unsafe extern "C" fn BuildParameterArray(
                 {
                     GetDWordValue(
                         hParamKey,
-                        b"M\0i\0n\0\0\0".as_ptr() as PWSTR,
+                        w!("Min") as PWSTR,
                         dwDefaultMin,
                         &mut (*ParamArray).Array[dwIndex as usize].u.dw.dwMin,
                     );
 
                     GetDWordValue(
                         hParamKey,
-                        b"M\0a\0x\0\0\0".as_ptr() as PWSTR,
+                        w!("Max") as PWSTR,
                         dwDefaultMax,
                         &mut (*ParamArray).Array[dwIndex as usize].u.dw.dwMax,
                     );
@@ -806,28 +811,28 @@ unsafe extern "C" fn BuildParameterArray(
 
                 GetIntValue(
                     hParamKey,
-                    b"B\0a\0s\0e\0\0\0".as_ptr() as PWSTR,
+                    w!("Base") as PWSTR,
                     10,
                     &mut (*ParamArray).Array[dwIndex as usize].iBase,
                 );
 
                 GetIntValue(
                     hParamKey,
-                    b"S\0t\0e\0p\0\0\0".as_ptr() as PWSTR,
+                    w!("Step") as PWSTR,
                     1,
                     &mut (*ParamArray).Array[dwIndex as usize].iStep,
                 );
             } else if (*ParamArray).Array[dwIndex as usize].Type == EDIT_TYPE {
                 GetBooleanValue(
                     hParamKey,
-                    b"U\0p\0p\0e\0r\0C\0a\0s\0e\0\0\0".as_ptr() as PWSTR,
-                    FALSE,
+                    w!("UpperCase") as PWSTR,
+                    (FALSE) as i32,
                     &mut (*ParamArray).Array[dwIndex as usize].bUpperCase,
                 );
 
                 GetIntValue(
                     hParamKey,
-                    b"T\0e\0x\0t\0L\0i\0m\0i\0t\0\0\0".as_ptr() as PWSTR,
+                    w!("TextLimit") as PWSTR,
                     0,
                     &mut (*ParamArray).Array[dwIndex as usize].iTextLimit,
                 );
@@ -841,29 +846,29 @@ unsafe extern "C" fn BuildParameterArray(
             RegCloseKey(hParamKey);
         }
 
-        lError = GetStringValue(
+        lError = (GetStringValue(
             hDriverKey,
             (*ParamArray).Array[dwIndex as usize].pszName,
             &mut (*ParamArray).Array[dwIndex as usize].pszValue,
             &mut (*ParamArray).Array[dwIndex as usize].cchValueLength,
-        );
-        if (lError == ERROR_SUCCESS) || (!(*ParamArray).Array[dwIndex as usize].pszDefault.is_null()) {
-            (*ParamArray).Array[dwIndex as usize].bPresent = TRUE;
+        )) as i32;
+        if (lError == (ERROR_SUCCESS) as i32) || (!(*ParamArray).Array[dwIndex as usize].pszDefault.is_null()) {
+            (*ParamArray).Array[dwIndex as usize].bPresent = (TRUE) as i32;
         }
 
         dwIndex += 1;
     }
 
     *ParameterArray = ParamArray;
-    ret = TRUE;
+    ret = (TRUE) as i32;
 
-    if ret == FALSE && !ParamArray.is_null() {
+    if ret == (FALSE) as i32 && !ParamArray.is_null() {
         FreeParameterArray(ParamArray);
     }
-    if hParamsKey != INVALID_HANDLE_VALUE {
+    if hParamsKey != (INVALID_HANDLE_VALUE).cast() {
         RegCloseKey(hParamsKey);
     }
-    if hDriverKey != INVALID_HANDLE_VALUE {
+    if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
         RegCloseKey(hDriverKey);
     }
 
@@ -877,15 +882,15 @@ unsafe extern "C" fn ReadParameterValue(
     let mut iLength: INT;
 
     if (*pParam).Type == ENUM_TYPE {
-        iIndex = ComboBox_GetCurSel(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST));
+        iIndex = ComboBox_GetCurSel!(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST));
         if iIndex != CB_ERR && iIndex < (*pParam).dwEnumOptions as INT {
-            iLength = wcslen((*(*pParam).pEnumOptions.offset(iIndex as isize)).pszValue);
+            iLength = (wcslen((*(*pParam).pEnumOptions.offset(iIndex as isize)).pszValue)) as i32;
             if iLength > (*pParam).cchValueLength as INT {
                 if (*pParam).pszValue != core::ptr::null_mut() {
                     HeapFree(GetProcessHeap(), 0, (*pParam).pszValue as *mut core::ffi::c_void);
                 }
 
-                (*pParam).pszValue = HeapAlloc(GetProcessHeap(), 0, (iLength + 1) as usize * core::mem::size_of::<u16>()) as PWSTR;
+                (*pParam).pszValue = HeapAlloc(GetProcessHeap(), 0,((iLength + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
             }
 
             if (*pParam).pszValue != core::ptr::null_mut() {
@@ -894,17 +899,17 @@ unsafe extern "C" fn ReadParameterValue(
             }
         }
     } else {
-        iLength = Edit_GetTextLength(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT));
+        iLength = Edit_GetTextLength!(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT));
         if iLength > (*pParam).cchValueLength as INT {
             if (*pParam).pszValue != core::ptr::null_mut() {
                 HeapFree(GetProcessHeap(), 0, (*pParam).pszValue as *mut core::ffi::c_void);
             }
 
-            (*pParam).pszValue = HeapAlloc(GetProcessHeap(), 0, (iLength + 1) as usize * core::mem::size_of::<u16>()) as PWSTR;
+            (*pParam).pszValue = HeapAlloc(GetProcessHeap(), 0,((iLength + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
         }
 
         if (*pParam).pszValue != core::ptr::null_mut() {
-            Edit_GetText(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT),
+            Edit_GetText!(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT),
                          (*pParam).pszValue,
                          iLength + 1);
             (*pParam).cchValueLength = iLength as DWORD;
@@ -927,12 +932,12 @@ unsafe extern "C" fn WriteParameterArray(
     hDriverKey = SetupDiOpenDevRegKey(
         (*ParamArray).DeviceInfoSet,
         (*ParamArray).DeviceInfoData,
-        DICS_FLAG_GLOBAL,
+        (DICS_FLAG_GLOBAL) as u32,
         0,
-        DIREG_DRV,
+        (DIREG_DRV) as u32,
         KEY_WRITE,
     );
-    if hDriverKey == INVALID_HANDLE_VALUE {
+    if hDriverKey == (INVALID_HANDLE_VALUE).cast() {
         return;
     }
 
@@ -949,9 +954,9 @@ unsafe extern "C" fn WriteParameterArray(
                 hDriverKey,
                 (*Param).pszName,
                 0,
-                REG_SZ,
+                (REG_SZ) as u32,
                 (*Param).pszValue as LPBYTE,
-                (wcslen((*Param).pszValue) + 1) * core::mem::size_of::<u16>() as u32,
+                ((wcslen((*Param).pszValue) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32,
             );
         } else {
             RegDeleteValueW(hDriverKey, (*Param).pszName);
@@ -962,14 +967,14 @@ unsafe extern "C" fn WriteParameterArray(
 
     RegCloseKey(hDriverKey);
 
-    InstallParams.cbSize = core::mem::size_of_val(&SP_DEVINSTALL_PARAMS_W) as u32;
+    InstallParams.cbSize = core::mem::size_of::<SP_DEVINSTALL_PARAMS_W>() as u32;
     if SetupDiGetDeviceInstallParamsW(
         (*ParamArray).DeviceInfoSet,
         (*ParamArray).DeviceInfoData,
         &mut InstallParams,
     ) != 0
     {
-        InstallParams.FlagsEx |= DI_FLAGSEX_PROPCHANGE_PENDING;
+        InstallParams.FlagsEx |= (DI_FLAGSEX_PROPCHANGE_PENDING) as u32;
 
         SetupDiSetDeviceInstallParamsW(
             (*ParamArray).DeviceInfoSet,
@@ -987,96 +992,100 @@ unsafe extern "C" fn DisplayParameter(
     let mut idx: i32;
     let mut i: u32;
 
-    ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_PRESENT), if (*Parameter).bOptional != 0 { SW_SHOW } else { SW_HIDE });
-    ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_NOT_PRESENT), if (*Parameter).bOptional != 0 { SW_SHOW } else { SW_HIDE });
+    ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_PRESENT), if (*Parameter).bOptional != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
+    ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_NOT_PRESENT), if (*Parameter).bOptional != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
     if (*Parameter).bOptional != 0 {
         if (*Parameter).bPresent != 0 {
-            Button_SetCheck(GetDlgItem(hwnd, IDC_PROPERTY_PRESENT), BST_CHECKED);
+            Button_SetCheck!(GetDlgItem(hwnd, IDC_PROPERTY_PRESENT), BST_CHECKED);
         } else {
-            Button_SetCheck(GetDlgItem(hwnd, IDC_PROPERTY_NOT_PRESENT), BST_CHECKED);
+            Button_SetCheck!(GetDlgItem(hwnd, IDC_PROPERTY_NOT_PRESENT), BST_CHECKED);
         }
     }
 
     match (*Parameter).Type {
         INT_TYPE | LONG_TYPE | WORD_TYPE | DWORD_TYPE => {
-            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), SW_HIDE);
+            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), (SW_HIDE) as i32);
 
             hwndControl = GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN);
 
             if (*Parameter).Type != DWORD_TYPE {
                 EnableWindow(hwndControl, (*Parameter).bPresent);
-                ShowWindow(hwndControl, SW_SHOW);
+                ShowWindow(hwndControl, (SW_SHOW) as i32);
             }
 
             if (*Parameter).Type == WORD_TYPE || (*Parameter).Type == DWORD_TYPE {
-                SendMessage(hwndControl, UDM_SETBASE, (*Parameter).iBase, 0);
+                SendMessage(hwndControl, (UDM_SETBASE) as u32, (*Parameter).iBase as WPARAM, 0);
             } else {
-                SendMessage(hwndControl, UDM_SETBASE, 10, 0);
+                SendMessage(hwndControl, (UDM_SETBASE) as u32, 10, 0);
             }
 
             if (*Parameter).Type == INT_TYPE || (*Parameter).Type == LONG_TYPE {
-                SendMessage(hwndControl, UDM_SETRANGE32, (*Parameter).u.l.lMin, (*Parameter).u.l.lMax);
+                SendMessage(hwndControl, (UDM_SETRANGE32) as u32, ((*Parameter).u.l.lMin) as SIZE_T, ((*Parameter).u.l.lMax) as LRESULT);
             } else if (*Parameter).Type == WORD_TYPE {
-                SendMessage(hwndControl, UDM_SETRANGE32, (*Parameter).u.dw.dwMin as i32, (*Parameter).u.dw.dwMax as i32);
+                SendMessage(hwndControl, (UDM_SETRANGE32) as u32, ((*Parameter).u.dw.dwMin as i32) as SIZE_T, ((*Parameter).u.dw.dwMax as i32) as LRESULT);
             }
 
             hwndControl = GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT);
             EnableWindow(hwndControl, (*Parameter).bPresent);
-            ShowWindow(hwndControl, SW_SHOW);
+            ShowWindow(hwndControl, (SW_SHOW) as i32);
 
-            Style = GetWindowLongPtr(hwndControl, GWL_STYLE);
-            Style |= ES_NUMBER;
-            SetWindowLongPtr(hwndControl, GWL_STYLE, Style);
+            Style = (GetWindowLongPtr(hwndControl, GWL_STYLE)) as isize;
+            Style |= (ES_NUMBER) as isize;
+            SetWindowLongPtr(hwndControl, GWL_STYLE, Style as LONG_PTR);
 
-            Edit_LimitText(hwndControl, 0);
+            Edit_LimitText!(hwndControl, 0);
 
             if !(*Parameter).pszValue.is_null() {
-                Edit_SetText(hwndControl, (*Parameter).pszValue);
+                Edit_SetText!(hwndControl, (*Parameter).pszValue);
             } else if !(*Parameter).pszDefault.is_null() {
-                Edit_SetText(hwndControl, (*Parameter).pszDefault);
+                Edit_SetText!(hwndControl, (*Parameter).pszDefault);
             }
         }
 
         EDIT_TYPE => {
-            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), SW_HIDE);
-            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), SW_HIDE);
+            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), (SW_HIDE) as i32);
+            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), (SW_HIDE) as i32);
 
             hwndControl = GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT);
             EnableWindow(hwndControl, (*Parameter).bPresent);
-            ShowWindow(hwndControl, SW_SHOW);
+            ShowWindow(hwndControl, (SW_SHOW) as i32);
 
-            Style = GetWindowLongPtr(hwndControl, GWL_STYLE);
-            Style &= !ES_NUMBER;
+            Style = (GetWindowLongPtr(hwndControl, GWL_STYLE)) as isize;
+            // Invert AFTER widening. `(!ES_NUMBER) as isize` complements the u32 first,
+            // so the result ZERO-extends on the 64-bit targets and the mask clears every
+            // bit above 31 as well. The C complements an `int` and sign-extends, which
+            // leaves the upper half of the LONG_PTR alone. (scan_mask_drift caught this.)
+            Style &= !(ES_NUMBER as isize);
             if (*Parameter).bUpperCase != 0 {
-                Style |= ES_UPPERCASE;
+                Style |= (ES_UPPERCASE) as isize;
             } else {
-                Style &= !ES_UPPERCASE;
+                Style &= !(ES_UPPERCASE as isize);
             }
-            SetWindowLongPtr(hwndControl, GWL_STYLE, Style);
+            SetWindowLongPtr(hwndControl, GWL_STYLE, Style as LONG_PTR);
 
-            Edit_LimitText(hwndControl, (*Parameter).iTextLimit);
+            Edit_LimitText!(hwndControl, (*Parameter).iTextLimit);
 
             if !(*Parameter).pszValue.is_null() {
-                Edit_SetText(hwndControl, (*Parameter).pszValue);
+                Edit_SetText!(hwndControl, (*Parameter).pszValue);
             } else if !(*Parameter).pszDefault.is_null() {
-                Edit_SetText(hwndControl, (*Parameter).pszDefault);
+                Edit_SetText!(hwndControl, (*Parameter).pszDefault);
             }
         }
 
         ENUM_TYPE => {
-            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), SW_HIDE);
-            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), SW_HIDE);
+            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), (SW_HIDE) as i32);
+            ShowWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), (SW_HIDE) as i32);
 
             hwndControl = GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST);
             EnableWindow(hwndControl, (*Parameter).bPresent);
-            ShowWindow(hwndControl, SW_SHOW);
+            ShowWindow(hwndControl, (SW_SHOW) as i32);
 
-            ComboBox_ResetContent(hwndControl);
+            ComboBox_ResetContent!(hwndControl);
 
             if !(*Parameter).pEnumOptions.is_null() && (*Parameter).dwEnumOptions != 0 {
                 i = 0;
                 while i < (*Parameter).dwEnumOptions {
-                    ComboBox_AddString(hwndControl, (*(*Parameter).pEnumOptions.offset(i as isize)).pszName);
+                    ComboBox_AddString!(hwndControl, (*(*Parameter).pEnumOptions.offset(i as isize)).pszName);
                     i += 1;
                 }
             }
@@ -1084,12 +1093,12 @@ unsafe extern "C" fn DisplayParameter(
             if !(*Parameter).pszValue.is_null() {
                 idx = FindEnumOption(Parameter, (*Parameter).pszValue);
                 if idx != CB_ERR {
-                    ComboBox_SetCurSel(hwndControl, idx);
+                    ComboBox_SetCurSel!(hwndControl, idx);
                 }
             } else if !(*Parameter).pszDefault.is_null() {
                 idx = FindEnumOption(Parameter, (*Parameter).pszDefault);
                 if idx != CB_ERR {
-                    ComboBox_SetCurSel(hwndControl, idx);
+                    ComboBox_SetCurSel!(hwndControl, idx);
                 }
             }
         }
@@ -1104,13 +1113,13 @@ unsafe extern "C" fn OnInitDialog(
 ) -> BOOL {
     let pParamArray: PPARAMETER_ARRAY;
     let hwndControl: HWND;
-    let pszText: PWSTR;
+    let mut pszText: PWSTR;
     let mut i: DWORD;
     let idx: INT;
 
     pParamArray = (*(lParam as *mut PROPSHEETPAGEW)).lParam as PPARAMETER_ARRAY;
     if pParamArray == core::ptr::null_mut() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     SetWindowLongPtr(hwnd, DWLP_USER, pParamArray as LONG_PTR);
@@ -1125,21 +1134,21 @@ unsafe extern "C" fn OnInitDialog(
                 pszText = (*pParamArray).Array[i as usize].pszName;
             }
 
-            let idx = ListBox_AddString(hwndControl, pszText);
+            let idx = ListBox_AddString!(hwndControl, pszText);
             if idx != LB_ERR {
-                ListBox_SetItemData(hwndControl, idx, core::ptr::addr_of_mut!((*pParamArray).Array[i as usize]) as LPARAM);
+                ListBox_SetItemData!(hwndControl, idx, core::ptr::addr_of_mut!((*pParamArray).Array[i as usize]) as LPARAM);
             }
             i = i + 1;
         }
 
         if (*pParamArray).dwCount > 0 {
-            ListBox_SetCurSel(hwndControl, 0);
-            (*pParamArray).pCurrentParam = ListBox_GetItemData(hwndControl, 0) as PPARAMETER;
+            ListBox_SetCurSel!(hwndControl, 0);
+            (*pParamArray).pCurrentParam = ListBox_GetItemData!(hwndControl, 0) as PPARAMETER;
             DisplayParameter(hwnd, (*pParamArray).pCurrentParam);
         }
     }
 
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn OnCommand(
     hwnd: HWND,
@@ -1154,26 +1163,26 @@ unsafe extern "C" fn OnCommand(
         return;
     }
 
-    if (LOWORD(wParam) == IDC_PROPERTY_NAME) && (HIWORD(wParam) == LBN_SELCHANGE) {
+    if (LOWORD!(wParam) == (IDC_PROPERTY_NAME) as u16) && (HIWORD!(wParam) == (LBN_SELCHANGE) as u16) {
         if !(*pParamArray).pCurrentParam.is_null() {
             ReadParameterValue(hwnd, (*pParamArray).pCurrentParam);
         }
 
-        iIndex = ListBox_GetCurSel(lParam as HWND);
+        iIndex = ListBox_GetCurSel!(lParam as HWND);
         if iIndex != LB_ERR && (iIndex as DWORD) < (*pParamArray).dwCount {
-            (*pParamArray).pCurrentParam = ListBox_GetItemData(lParam as HWND, iIndex) as *mut PARAMETER;
+            (*pParamArray).pCurrentParam = ListBox_GetItemData!(lParam as HWND, iIndex) as *mut PARAMETER;
             DisplayParameter(hwnd, (*pParamArray).pCurrentParam);
         }
-    } else if (LOWORD(wParam) == IDC_PROPERTY_PRESENT) && (HIWORD(wParam) == BN_CLICKED) {
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), TRUE);
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), TRUE);
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), TRUE);
-        (*(*pParamArray).pCurrentParam).bPresent = TRUE;
-    } else if (LOWORD(wParam) == IDC_PROPERTY_NOT_PRESENT) && (HIWORD(wParam) == BN_CLICKED) {
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), FALSE);
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), FALSE);
-        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), FALSE);
-        (*(*pParamArray).pCurrentParam).bPresent = FALSE;
+    } else if (LOWORD!(wParam) == (IDC_PROPERTY_PRESENT) as u16) && (HIWORD!(wParam) == (BN_CLICKED) as u16) {
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), (TRUE) as i32);
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), (TRUE) as i32);
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), (TRUE) as i32);
+        (*(*pParamArray).pCurrentParam).bPresent = (TRUE) as i32;
+    } else if (LOWORD!(wParam) == (IDC_PROPERTY_NOT_PRESENT) as u16) && (HIWORD!(wParam) == (BN_CLICKED) as u16) {
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_EDIT), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_UPDN), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwnd, IDC_PROPERTY_VALUE_LIST), (FALSE) as i32);
+        (*(*pParamArray).pCurrentParam).bPresent = (FALSE) as i32;
     }
 }
 unsafe extern "C" fn OnNotify(
@@ -1212,7 +1221,7 @@ unsafe extern "C" fn OnDestroy(
     SetWindowLongPtr(hwnd, DWLP_USER, 0 as LONG_PTR);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NetPropertyPageDlgProc(
+unsafe extern "system" fn NetPropertyPageDlgProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1242,7 +1251,7 @@ unsafe extern "stdcall" fn NetPropertyPageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NetPropertyPageDlgProc(
+unsafe extern "system" fn NetPropertyPageDlgProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1250,7 +1259,7 @@ unsafe extern "C" fn NetPropertyPageDlgProc(
 ) -> INT_PTR {
     match uMsg {
         WM_INITDIALOG => {
-            return OnInitDialog(hwnd, wParam, lParam);
+            return (OnInitDialog(hwnd, wParam, lParam)) as LRESULT;
         }
 
         WM_COMMAND => {
@@ -1268,7 +1277,7 @@ unsafe extern "C" fn NetPropertyPageDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as LRESULT
 }
 
 #[no_mangle]
@@ -1287,21 +1296,21 @@ pub unsafe extern "system" fn NetPropPageProvider(
         &mut ParameterArray,
     ) == 0
     {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
-    if (*lpPropSheetPageRequest).PageRequested == SPPSR_ENUM_ADV_DEVICE_PROPERTIES {
-        PropSheetPage.dwSize = PROPSHEETPAGEW;
+    if (*lpPropSheetPageRequest).PageRequested == (SPPSR_ENUM_ADV_DEVICE_PROPERTIES) as u32 {
+        PropSheetPage.dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;
         PropSheetPage.dwFlags = 0;
         PropSheetPage.hInstance = netcfgx_hInstance;
-        PropSheetPage.u.pszTemplate = MAKEINTRESOURCE(IDD_NET_PROPERTY_DLG);
+        *PropSheetPage.u.pszTemplate.as_mut() = MAKEINTRESOURCE!(IDD_NET_PROPERTY_DLG) as *const u16;
         PropSheetPage.pfnDlgProc = Some(NetPropertyPageDlgProc);
         PropSheetPage.lParam = ParameterArray as LPARAM;
         PropSheetPage.pfnCallback = None;
 
         hPropSheetPage = CreatePropertySheetPageW(&mut PropSheetPage);
         if hPropSheetPage.is_null() {
-            return FALSE;
+            return (FALSE) as i32;
         }
 
         // bindgen renders a C function-pointer parameter as `Option<fn>`; the C calls it
@@ -1310,11 +1319,11 @@ pub unsafe extern "system" fn NetPropPageProvider(
         // the same objection crate-repair raises to rustc's `.try_into().unwrap()` fix-it.
         if lpfnAddPropSheetPageProc.unwrap_unchecked()(hPropSheetPage, lParam) == 0 {
             DestroyPropertySheetPage(hPropSheetPage);
-            return FALSE;
+            return (FALSE) as i32;
         }
     }
 
-    TRUE
+    (TRUE) as i32
 }
 
 

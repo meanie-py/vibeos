@@ -1,153 +1,5 @@
 use crate::prelude::*;
 use core::ffi::c_void;
-
-// L"Characteristics"
-static REG_CHARACTERISTICS: [u16; 16] = [
-    b'C' as u16, b'h' as u16, b'a' as u16, b'r' as u16, b'a' as u16, b'c' as u16, b't' as u16,
-    b'e' as u16, b'r' as u16, b'i' as u16, b's' as u16, b't' as u16, b'i' as u16, b'c' as u16,
-    b's' as u16, 0,
-];
-// L"Bind"
-static REG_BIND: [u16; 5] = [
-    b'B' as u16, b'i' as u16, b'n' as u16, b'd' as u16, 0,
-];
-// L"Export"
-static REG_EXPORT: [u16; 7] = [
-    b'E' as u16, b'x' as u16, b'p' as u16, b'o' as u16, b'r' as u16, b't' as u16, 0,
-];
-// L"RootDevice"
-static REG_ROOT_DEVICE: [u16; 11] = [
-    b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'D' as u16, b'e' as u16, b'v' as u16,
-    b'i' as u16, b'c' as u16, b'e' as u16, 0,
-];
-// L"Name"
-static REG_NAME: [u16; 5] = [
-    b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0,
-];
-// L"SubnetMask"
-static REG_SUBNET_MASK: [u16; 11] = [
-    b'S' as u16, b'u' as u16, b'b' as u16, b'n' as u16, b'e' as u16, b't' as u16, b'M' as u16,
-    b'a' as u16, b's' as u16, b'k' as u16, 0,
-];
-// L"UpperBind"
-static REG_UPPER_BIND: [u16; 10] = [
-    b'U' as u16, b'p' as u16, b'p' as u16, b'e' as u16, b'r' as u16, b'B' as u16, b'i' as u16,
-    b'n' as u16, b'd' as u16, 0,
-];
-// L"Tcpip"
-static REG_TCPIP_VALUE: [u16; 6] = [
-    b'T' as u16, b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, 0,
-];
-// L"\\Device\\Tcpip_"
-static DEVICE_TCPIP_PREFIX: [u16; 15] = [
-    b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16,
-    b'\\' as u16, b'T' as u16, b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'_' as u16,
-    0,
-];
-// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces"
-static TCPIP_INTERFACES_KEY: [u16; 62] = [
-    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
-    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
-    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
-    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'P' as u16, b'a' as u16,
-    b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, b'\\' as u16, b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16,
-    b'f' as u16, b'a' as u16, b'c' as u16, b'e' as u16, b's' as u16, 0,
-];
-// L"Connection"
-static REG_CONNECTION: [u16; 11] = [
-    b'C' as u16, b'o' as u16, b'n' as u16, b'n' as u16, b'e' as u16, b'c' as u16, b't' as u16,
-    b'i' as u16, b'o' as u16, b'n' as u16, 0,
-];
-// L"EnableDHCP"
-static REG_ENABLE_DHCP2: [u16; 11] = [
-    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'D' as u16,
-    b'H' as u16, b'C' as u16, b'P' as u16, 0,
-];
-// L"BusType"
-static REG_BUS_TYPE: [u16; 8] = [
-    b'B' as u16, b'u' as u16, b's' as u16, b'T' as u16, b'y' as u16, b'p' as u16, b'e' as u16,
-    0,
-];
-// L"Linkage"
-static REG_LINKAGE: [u16; 8] = [
-    b'L' as u16, b'i' as u16, b'n' as u16, b'k' as u16, b'a' as u16, b'g' as u16, b'e' as u16,
-    0,
-];
-// L"DefaultGateway"
-static REG_DEFAULT_GATEWAY: [u16; 15] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b'G' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'w' as u16, b'a' as u16, b'y' as u16,
-    0,
-];
-// L"IPAddress"
-static REG_IP_ADDRESS: [u16; 10] = [
-    b'I' as u16, b'P' as u16, b'A' as u16, b'd' as u16, b'd' as u16, b'r' as u16, b'e' as u16,
-    b's' as u16, b's' as u16, 0,
-];
-// L"\\Device\\"
-static DEVICE_PREFIX: [u16; 9] = [
-    b'\\' as u16, b'D' as u16, b'e' as u16, b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16,
-    b'\\' as u16, 0,
-];
-// L"ComponentId"
-static REG_COMPONENT_ID: [u16; 12] = [
-    b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'o' as u16, b'n' as u16, b'e' as u16,
-    b'n' as u16, b't' as u16, b'I' as u16, b'd' as u16, 0,
-];
-// L"Route"
-static REG_ROUTE: [u16; 6] = [
-    b'R' as u16, b'o' as u16, b'u' as u16, b't' as u16, b'e' as u16, 0,
-];
-// L"PnpInstanceID"
-static REG_PNP_INSTANCE_ID: [u16; 14] = [
-    b'P' as u16, b'n' as u16, b'p' as u16, b'I' as u16, b'n' as u16, b's' as u16, b't' as u16,
-    b'a' as u16, b'n' as u16, b'c' as u16, b'e' as u16, b'I' as u16, b'D' as u16, 0,
-];
-// L"0.0.0.0"
-static REG_ZERO_IP: [u16; 8] = [
-    b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16,
-    0,
-];
-// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Linkage"
-static TCPIP_LINKAGE_KEY: [u16; 48] = [
-    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
-    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
-    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
-    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'L' as u16, b'i' as u16,
-    b'n' as u16, b'k' as u16, b'a' as u16, b'g' as u16, b'e' as u16, 0,
-];
-// L"ShowIcon"
-static REG_SHOW_ICON: [u16; 9] = [
-    b'S' as u16, b'h' as u16, b'o' as u16, b'w' as u16, b'I' as u16, b'c' as u16, b'o' as u16,
-    b'n' as u16, 0,
-];
-// L"SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}"
-static NETWORK_CLASS_KEY: [u16; 80] = [
-    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
-    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'C' as u16, b'o' as u16, b'n' as u16,
-    b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'\\' as u16, b'N' as u16, b'e' as u16,
-    b't' as u16, b'w' as u16, b'o' as u16, b'r' as u16, b'k' as u16, b'\\' as u16, b'{' as u16,
-    b'4' as u16, b'D' as u16, b'3' as u16, b'6' as u16, b'E' as u16, b'9' as u16, b'7' as u16,
-    b'2' as u16, b'-' as u16, b'E' as u16, b'3' as u16, b'2' as u16, b'5' as u16, b'-' as u16,
-    b'1' as u16, b'1' as u16, b'C' as u16, b'E' as u16, b'-' as u16, b'B' as u16, b'F' as u16,
-    b'C' as u16, b'1' as u16, b'-' as u16, b'0' as u16, b'8' as u16, b'0' as u16, b'0' as u16,
-    b'2' as u16, b'B' as u16, b'E' as u16, b'1' as u16, b'0' as u16, b'3' as u16, b'1' as u16,
-    b'8' as u16, b'}' as u16, 0,
-];
-// L"NetCfgInstanceId"
-static REG_NET_CFG_INSTANCE_ID: [u16; 17] = [
-    b'N' as u16, b'e' as u16, b't' as u16, b'C' as u16, b'f' as u16, b'g' as u16, b'I' as u16,
-    b'n' as u16, b's' as u16, b't' as u16, b'a' as u16, b'n' as u16, b'c' as u16, b'e' as u16,
-    b'I' as u16, b'd' as u16, 0,
-];
-
 unsafe extern "C" fn AppendStringToMultiSZ(
     hKey: HKEY,
     ValueName: PCWSTR,
@@ -168,26 +20,26 @@ unsafe extern "C" fn AppendStringToMultiSZ(
         core::ptr::null_mut(),
         &mut dwRequired,
     );
-    if rc != ERROR_FILE_NOT_FOUND {
-        if rc != ERROR_SUCCESS {
+    if rc != (ERROR_FILE_NOT_FOUND) as i32 {
+        if rc != (ERROR_SUCCESS) as i32 {
             '__cleanup: {
                 HeapFree(GetProcessHeap(), 0, Buffer as *mut _);
                 return rc;
             }
         }
-        if dwRegType != REG_MULTI_SZ {
-            rc = ERROR_GEN_FAILURE;
+        if dwRegType != (REG_MULTI_SZ) as u32 {
+            rc = (ERROR_GEN_FAILURE) as i32;
             '__cleanup: {
                 HeapFree(GetProcessHeap(), 0, Buffer as *mut _);
                 return rc;
             }
         }
 
-        dwTmp = dwRequired + wcslen(ValueToAppend) * core::mem::size_of::<u16>() as u32 + core::mem::size_of_val(&UNICODE_NULL) as u32;
+        dwTmp = dwRequired + (wcslen(ValueToAppend) * (core::mem::size_of::<u16>() as u32) as usize) as u32 + core::mem::size_of_val(&UNICODE_NULL) as u32;
         dwLength = dwTmp;
-        Buffer = HeapAlloc(GetProcessHeap(), 0, dwLength) as PWSTR;
+        Buffer = HeapAlloc(GetProcessHeap(), 0, (dwLength) as SIZE_T) as PWSTR;
         if Buffer.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             '__cleanup: {
                 HeapFree(GetProcessHeap(), 0, Buffer as *mut _);
                 return rc;
@@ -202,7 +54,7 @@ unsafe extern "C" fn AppendStringToMultiSZ(
             Buffer as *mut u8,
             &mut dwTmp,
         );
-        if rc != ERROR_SUCCESS {
+        if rc != (ERROR_SUCCESS) as i32 {
             '__cleanup: {
                 HeapFree(GetProcessHeap(), 0, Buffer as *mut _);
                 return rc;
@@ -210,10 +62,10 @@ unsafe extern "C" fn AppendStringToMultiSZ(
         }
     } else {
         dwRequired = core::mem::size_of::<u16>() as u32;
-        dwLength = wcslen(ValueToAppend) * core::mem::size_of::<u16>() as u32 + 2 * core::mem::size_of_val(&UNICODE_NULL) as u32;
-        Buffer = HeapAlloc(GetProcessHeap(), 0, dwLength) as PWSTR;
+        dwLength = (wcslen(ValueToAppend) * (core::mem::size_of::<u16>() as u32) as usize + (2 * core::mem::size_of_val(&UNICODE_NULL) as u32) as usize) as u32;
+        Buffer = HeapAlloc(GetProcessHeap(), 0, (dwLength) as SIZE_T) as PWSTR;
         if Buffer.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             '__cleanup: {
                 HeapFree(GetProcessHeap(), 0, Buffer as *mut _);
                 return rc;
@@ -231,7 +83,7 @@ unsafe extern "C" fn AppendStringToMultiSZ(
         hKey,
         ValueName,
         0,
-        REG_MULTI_SZ,
+        (REG_MULTI_SZ) as u32,
         Buffer as *const u8,
         dwLength,
     );
@@ -251,16 +103,16 @@ unsafe extern "C" fn GetUniqueConnectionName(
 
     Length = LoadStringW(
         netcfgx_hInstance,
-        IDS_NET_CONNECT,
+        (IDS_NET_CONNECT) as u32,
         &pszDefaultName as *const PWSTR as LPWSTR,
         0,
     );
     if Length == 0 {
-        pszDefaultName = b"N\0e\0t\0w\0o\0r\0k\0 \0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0\0\0".as_ptr() as PWSTR;
-        Length = wcslen(pszDefaultName);
+        pszDefaultName = w!("Network Connection") as PWSTR;
+        Length = (wcslen(pszDefaultName)) as i32;
     }
 
-    dwError = RegQueryInfoKeyW(
+    dwError = (RegQueryInfoKeyW(
         hNetworkKey,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -273,19 +125,18 @@ unsafe extern "C" fn GetUniqueConnectionName(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         return dwError;
     }
 
     pszNameBuffer = HeapAlloc(
         GetProcessHeap(),
-        HEAP_ZERO_MEMORY,
-        (Length + if dwSubKeys != 0 {
+        HEAP_ZERO_MEMORY,((Length + if dwSubKeys != 0 {
             6
         } else {
             1
-        }) as usize * core::mem::size_of::<u16>(),
+        }) as usize * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     if pszNameBuffer.is_null() {
         return ERROR_OUTOFMEMORY;
@@ -294,8 +145,8 @@ unsafe extern "C" fn GetUniqueConnectionName(
     if dwSubKeys != 0 {
         StringCchPrintfW(
             pszNameBuffer,
-            Length + 6,
-            b"%\0.\0*\0s\0 \0%\0l\0u\0\0\0".as_ptr() as LPCWSTR,
+            (Length + 6) as usize,
+            w!("%.*s %lu") as LPCWSTR,
             Length,
             pszDefaultName,
             dwSubKeys + 1,
@@ -303,8 +154,8 @@ unsafe extern "C" fn GetUniqueConnectionName(
     } else {
         StringCchPrintfW(
             pszNameBuffer,
-            Length + 1,
-            b"%\0.\0*\0s\0\0\0".as_ptr() as LPCWSTR,
+            (Length + 1) as usize,
+            w!("%.*s") as LPCWSTR,
             Length,
             pszDefaultName,
         );
@@ -346,7 +197,7 @@ unsafe extern "C" fn InstallNetDevice(
             break 'cleanup;
         }
 
-        DeviceInstallParams.Flags |= DI_DONOTCALLCONFIGMG;
+        DeviceInstallParams.Flags |= (DI_DONOTCALLCONFIGMG) as u32;
 
         if SetupDiSetDeviceInstallParamsW(DeviceInfoSet, DeviceInfoData, &mut DeviceInstallParams) == 0 {
             rc = GetLastError() as i32;
@@ -359,13 +210,13 @@ unsafe extern "C" fn InstallNetDevice(
         }
 
         if SetupDiGetDeviceInstanceIdW(DeviceInfoSet, DeviceInfoData, core::ptr::null_mut(), 0, &mut dwLength) != 0 {
-            rc = ERROR_GEN_FAILURE;
+            rc = (ERROR_GEN_FAILURE) as i32;
             break 'cleanup;
         }
 
-        InstanceId = HeapAlloc(GetProcessHeap(), 0, dwLength as usize * core::mem::size_of::<u16>()) as LPWSTR;
+        InstanceId = HeapAlloc(GetProcessHeap(), 0,(dwLength as usize * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if InstanceId.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             break 'cleanup;
         }
 
@@ -374,9 +225,9 @@ unsafe extern "C" fn InstallNetDevice(
             break 'cleanup;
         }
 
-        ComponentId = HeapAlloc(GetProcessHeap(), 0, dwLength as usize * core::mem::size_of::<u16>()) as LPWSTR;
+        ComponentId = HeapAlloc(GetProcessHeap(), 0,(dwLength as usize * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if ComponentId.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             break 'cleanup;
         }
 
@@ -386,159 +237,159 @@ unsafe extern "C" fn InstallNetDevice(
             *ptr = UNICODE_NULL;
         }
 
-        DeviceName = HeapAlloc(GetProcessHeap(), 0, (wcslen(DEVICE_PREFIX.as_ptr() as LPCWSTR) + wcslen(UuidString)) * core::mem::size_of::<u16>() + core::mem::size_of_val(&UNICODE_NULL)) as LPWSTR;
+        DeviceName = HeapAlloc(GetProcessHeap(), 0,((wcslen(w!("\\Device\\") as LPCWSTR) + wcslen(UuidString)) * core::mem::size_of::<u16>() + core::mem::size_of_val(&UNICODE_NULL)) as SIZE_T) as LPWSTR;
         if DeviceName.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             break 'cleanup;
         }
-        wcscpy(DeviceName, DEVICE_PREFIX.as_ptr() as LPCWSTR);
+        wcscpy(DeviceName, w!("\\Device\\") as LPCWSTR);
         wcscat(DeviceName, UuidString);
 
-        ExportName = HeapAlloc(GetProcessHeap(), 0, (wcslen(DEVICE_TCPIP_PREFIX.as_ptr() as LPCWSTR) + wcslen(UuidString)) * core::mem::size_of::<u16>() + core::mem::size_of_val(&UNICODE_NULL)) as LPWSTR;
+        ExportName = HeapAlloc(GetProcessHeap(), 0,((wcslen(w!("\\Device\\Tcpip_") as LPCWSTR) + wcslen(UuidString)) * core::mem::size_of::<u16>() + core::mem::size_of_val(&UNICODE_NULL)) as SIZE_T) as LPWSTR;
         if ExportName.is_null() {
-            rc = ERROR_NOT_ENOUGH_MEMORY;
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             break 'cleanup;
         }
-        wcscpy(ExportName, DEVICE_TCPIP_PREFIX.as_ptr() as LPCWSTR);
+        wcscpy(ExportName, w!("\\Device\\Tcpip_") as LPCWSTR);
         wcscat(ExportName, UuidString);
 
-        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, TCPIP_INTERFACES_KEY.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_WRITE, core::ptr::null_mut(), &mut hInterfacesKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces") as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_WRITE, core::ptr::null_mut(), &mut hInterfacesKey, core::ptr::null_mut());
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
         rc = RegCreateKeyExW(hInterfacesKey, UuidString, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_WRITE, core::ptr::null_mut(), &mut hInterfaceKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hInterfaceKey, REG_DEFAULT_GATEWAY.as_ptr() as LPCWSTR, 0, REG_SZ, REG_ZERO_IP.as_ptr() as *const u8, (wcslen(REG_ZERO_IP.as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hInterfaceKey, w!("DefaultGateway") as LPCWSTR, 0, (REG_SZ) as u32, w!("0.0.0.0") as *const BYTE, ((wcslen(w!("0.0.0.0") as LPCWSTR) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hInterfaceKey, REG_IP_ADDRESS.as_ptr() as LPCWSTR, 0, REG_SZ, REG_ZERO_IP.as_ptr() as *const u8, (wcslen(REG_ZERO_IP.as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hInterfaceKey, w!("IPAddress") as LPCWSTR, 0, (REG_SZ) as u32, w!("0.0.0.0") as *const BYTE, ((wcslen(w!("0.0.0.0") as LPCWSTR) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hInterfaceKey, REG_SUBNET_MASK.as_ptr() as LPCWSTR, 0, REG_SZ, REG_ZERO_IP.as_ptr() as *const u8, (wcslen(REG_ZERO_IP.as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hInterfaceKey, w!("SubnetMask") as LPCWSTR, 0, (REG_SZ) as u32, w!("0.0.0.0") as *const BYTE, ((wcslen(w!("0.0.0.0") as LPCWSTR) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
         dwValue = 1;
-        rc = RegSetValueExW(hInterfaceKey, REG_ENABLE_DHCP2.as_ptr() as LPCWSTR, 0, REG_DWORD, &dwValue as *const _ as *const u8, core::mem::size_of::<u32>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hInterfaceKey, w!("EnableDHCP") as LPCWSTR, 0, (REG_DWORD) as u32, &dwValue as *const _ as *const u8, core::mem::size_of::<u32>() as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        hKey = SetupDiOpenDevRegKey(DeviceInfoSet, DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DRV, KEY_READ | KEY_WRITE);
-        if hKey == INVALID_HANDLE_VALUE && GetLastError() == ERROR_FILE_NOT_FOUND {
-            hKey = SetupDiCreateDevRegKeyW(DeviceInfoSet, DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DRV, core::ptr::null_mut(), core::ptr::null_mut());
+        hKey = SetupDiOpenDevRegKey(DeviceInfoSet, DeviceInfoData, (DICS_FLAG_GLOBAL) as u32, 0, (DIREG_DRV) as u32, KEY_READ | KEY_WRITE);
+        if hKey == (INVALID_HANDLE_VALUE).cast() && GetLastError() == ERROR_FILE_NOT_FOUND {
+            hKey = SetupDiCreateDevRegKeyW(DeviceInfoSet, DeviceInfoData, (DICS_FLAG_GLOBAL) as u32, 0, (DIREG_DRV) as u32, core::ptr::null_mut(), core::ptr::null_mut());
         }
-        if hKey == INVALID_HANDLE_VALUE {
+        if hKey == (INVALID_HANDLE_VALUE).cast() {
             hKey = core::ptr::null_mut();
             rc = GetLastError() as i32;
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hKey, REG_NET_CFG_INSTANCE_ID.as_ptr() as LPCWSTR, 0, REG_SZ, UuidString as *const u8, (wcslen(UuidString) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hKey, w!("NetCfgInstanceId") as LPCWSTR, 0, (REG_SZ) as u32, UuidString as *const u8, ((wcslen(UuidString) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hKey, REG_CHARACTERISTICS.as_ptr() as LPCWSTR, 0, REG_DWORD, &Characteristics as *const _ as *const u8, core::mem::size_of::<u32>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hKey, w!("Characteristics") as LPCWSTR, 0, (REG_DWORD) as u32, &Characteristics as *const _ as *const u8, core::mem::size_of::<u32>() as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hKey, REG_COMPONENT_ID.as_ptr() as LPCWSTR, 0, REG_SZ, ComponentId as *const u8, (wcslen(ComponentId) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hKey, w!("ComponentId") as LPCWSTR, 0, (REG_SZ) as u32, ComponentId as *const u8, ((wcslen(ComponentId) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
         if !BusType.is_null() {
-            rc = RegSetValueExW(hKey, REG_BUS_TYPE.as_ptr() as LPCWSTR, 0, REG_SZ, BusType as *const u8, (wcslen(BusType) + 1) * core::mem::size_of::<u16>() as u32);
-            if rc != ERROR_SUCCESS {
+            rc = RegSetValueExW(hKey, w!("BusType") as LPCWSTR, 0, (REG_SZ) as u32, BusType as *const u8, ((wcslen(BusType) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+            if rc != (ERROR_SUCCESS) as i32 {
                 break 'cleanup;
             }
         }
 
-        rc = RegCreateKeyExW(hKey, REG_LINKAGE.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), &mut hLinkageKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        rc = RegCreateKeyExW(hKey, w!("Linkage") as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), &mut hLinkageKey, core::ptr::null_mut());
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hLinkageKey, REG_EXPORT.as_ptr() as LPCWSTR, 0, REG_SZ, DeviceName as *const u8, (wcslen(DeviceName) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hLinkageKey, w!("Export") as LPCWSTR, 0, (REG_SZ) as u32, DeviceName as *const u8, ((wcslen(DeviceName) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hLinkageKey, REG_ROOT_DEVICE.as_ptr() as LPCWSTR, 0, REG_SZ, UuidString as *const u8, (wcslen(UuidString) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hLinkageKey, w!("RootDevice") as LPCWSTR, 0, (REG_SZ) as u32, UuidString as *const u8, ((wcslen(UuidString) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hLinkageKey, REG_UPPER_BIND.as_ptr() as LPCWSTR, 0, REG_SZ, REG_TCPIP_VALUE.as_ptr() as *const u8, (wcslen(REG_TCPIP_VALUE.as_ptr() as LPCWSTR) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hLinkageKey, w!("UpperBind") as LPCWSTR, 0, (REG_SZ) as u32, w!("Tcpip") as *const BYTE, ((wcslen(w!("Tcpip") as LPCWSTR) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
         RegCloseKey(hKey);
         hKey = core::ptr::null_mut();
 
-        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, NETWORK_CLASS_KEY.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_CREATE_SUB_KEY | KEY_QUERY_VALUE, core::ptr::null_mut(), &mut hNetworkKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}") as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_CREATE_SUB_KEY | KEY_QUERY_VALUE, core::ptr::null_mut(), &mut hNetworkKey, core::ptr::null_mut());
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = GetUniqueConnectionName(hNetworkKey, &mut pszNameBuffer);
-        if rc != ERROR_SUCCESS {
+        rc = (GetUniqueConnectionName(hNetworkKey, &mut pszNameBuffer)) as i32;
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
         rc = RegCreateKeyExW(hNetworkKey, UuidString, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_CREATE_SUB_KEY, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegCreateKeyExW(hKey, REG_CONNECTION.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), &mut hConnectionKey, core::ptr::null_mut());
+        rc = RegCreateKeyExW(hKey, w!("Connection") as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), &mut hConnectionKey, core::ptr::null_mut());
         RegCloseKey(hKey);
         hKey = core::ptr::null_mut();
-        if rc != ERROR_SUCCESS {
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hConnectionKey, REG_NAME.as_ptr() as LPCWSTR, 0, REG_SZ, pszNameBuffer as *const u8, (wcslen(pszNameBuffer) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hConnectionKey, w!("Name") as LPCWSTR, 0, (REG_SZ) as u32, pszNameBuffer as *const u8, ((wcslen(pszNameBuffer) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hConnectionKey, REG_PNP_INSTANCE_ID.as_ptr() as LPCWSTR, 0, REG_SZ, InstanceId as *const u8, (wcslen(InstanceId) + 1) * core::mem::size_of::<u16>() as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hConnectionKey, w!("PnpInstanceID") as LPCWSTR, 0, (REG_SZ) as u32, InstanceId as *const u8, ((wcslen(InstanceId) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
         dwShowIcon = 1;
-        rc = RegSetValueExW(hConnectionKey, REG_SHOW_ICON.as_ptr() as LPCWSTR, 0, REG_DWORD, &dwShowIcon as *const _ as *const u8, core::mem::size_of_val(&dwShowIcon) as u32);
-        if rc != ERROR_SUCCESS {
+        rc = RegSetValueExW(hConnectionKey, w!("ShowIcon") as LPCWSTR, 0, (REG_DWORD) as u32, &dwShowIcon as *const _ as *const u8, core::mem::size_of_val(&dwShowIcon) as u32);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
-        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, TCPIP_LINKAGE_KEY.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_QUERY_VALUE | KEY_SET_VALUE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut());
-        if rc != ERROR_SUCCESS {
+        rc = RegCreateKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Linkage") as LPCWSTR, 0, core::ptr::null_mut(), REG_OPTION_NON_VOLATILE, KEY_QUERY_VALUE | KEY_SET_VALUE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut());
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
-        rc = AppendStringToMultiSZ(hKey, REG_BIND.as_ptr() as PCWSTR, DeviceName);
-        if rc != ERROR_SUCCESS {
+        rc = AppendStringToMultiSZ(hKey, w!("Bind") as PCWSTR, DeviceName);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
-        rc = AppendStringToMultiSZ(hKey, REG_EXPORT.as_ptr() as PCWSTR, ExportName);
-        if rc != ERROR_SUCCESS {
+        rc = AppendStringToMultiSZ(hKey, w!("Export") as PCWSTR, ExportName);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
-        rc = AppendStringToMultiSZ(hKey, REG_ROUTE.as_ptr() as PCWSTR, UuidString);
-        if rc != ERROR_SUCCESS {
+        rc = AppendStringToMultiSZ(hKey, w!("Route") as PCWSTR, UuidString);
+        if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }
 
@@ -547,7 +398,7 @@ unsafe extern "C" fn InstallNetDevice(
             break 'cleanup;
         }
 
-        rc = ERROR_SUCCESS;
+        rc = (ERROR_SUCCESS) as i32;
         break;
     }
 
@@ -601,7 +452,7 @@ pub unsafe extern "system" fn NetClassInstaller(
 ) -> DWORD {
     let mut DriverInfoData: SP_DRVINFO_DATA_W = core::mem::zeroed();
     let mut DriverInfoDetail: SP_DRVINFO_DETAIL_DATA_W = core::mem::zeroed();
-    let mut SectionName: [u16; LINE_LEN] = [0; LINE_LEN];
+    let mut SectionName: [u16; (LINE_LEN) as usize] = [0; (LINE_LEN) as usize];
     let mut hInf: HINF = INVALID_HANDLE_VALUE;
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
     let mut ErrorLine: u32 = 0;
@@ -615,8 +466,8 @@ pub unsafe extern "system" fn NetClassInstaller(
     let mut rc: i32 = 0;
     let mut dwLength: u32 = 0;
 
-    if InstallFunction != DIF_INSTALLDEVICE {
-        return ERROR_DI_DO_DEFAULT;
+    if InstallFunction != (DIF_INSTALLDEVICE) as u32 {
+        return (ERROR_DI_DO_DEFAULT) as u32;
     }
 
     DriverInfoData.cbSize = core::mem::size_of::<SP_DRVINFO_DATA_W>() as u32;
@@ -661,9 +512,9 @@ pub unsafe extern "system" fn NetClassInstaller(
     }
 
     hInf = SetupOpenInfFileW(
-        DriverInfoDetail.InfFileName.as_ptr(),
+        core::ptr::addr_of!(DriverInfoDetail.InfFileName) as *const u16,
         core::ptr::null(),
-        INF_STYLE_WIN4,
+        (INF_STYLE_WIN4) as u32,
         &mut ErrorLine,
     );
     if hInf == INVALID_HANDLE_VALUE {
@@ -683,9 +534,9 @@ pub unsafe extern "system" fn NetClassInstaller(
 
     if SetupDiGetActualSectionToInstallW(
         hInf,
-        DriverInfoDetail.SectionName.as_ptr(),
+        core::ptr::addr_of!(DriverInfoDetail.SectionName) as *const u16,
         SectionName.as_mut_ptr(),
-        LINE_LEN,
+        (LINE_LEN) as u32,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     ) == 0
@@ -707,7 +558,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     if SetupFindFirstLineW(
         hInf,
         SectionName.as_ptr(),
-        b"C\0h\0a\0r\0a\0c\0t\0e\0r\0i\0s\0t\0i\0c\0s\0\0\0".as_ptr() as LPCWSTR,
+        w!("Characteristics") as LPCWSTR,
         &mut InfContext,
     ) == 0
     {
@@ -741,11 +592,11 @@ pub unsafe extern "system" fn NetClassInstaller(
     }
 
     Characteristics = CharacteristicsInt as u32;
-    if IsEqualIID(&(*DeviceInfoData).ClassGuid, &GUID_DEVCLASS_NET) != 0 {
+    if IsEqualIID!(core::ptr::addr_of!((*DeviceInfoData).ClassGuid), &GUID_DEVCLASS_NET) {
         if SetupFindFirstLineW(
             hInf,
             SectionName.as_ptr(),
-            b"B\0u\0s\0T\0y\0p\0e\0\0\0".as_ptr() as LPCWSTR,
+            w!("BusType") as LPCWSTR,
             &mut InfContext,
         ) != 0
         {
@@ -773,11 +624,10 @@ pub unsafe extern "system" fn NetClassInstaller(
 
             BusType = HeapAlloc(
                 GetProcessHeap(),
-                0,
-                (dwLength as usize) * core::mem::size_of::<u16>(),
+                0,((dwLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as LPWSTR;
             if BusType.is_null() {
-                rc = ERROR_NOT_ENOUGH_MEMORY;
+                rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
                 return 'cleanup: loop {
                     if hInf != INVALID_HANDLE_VALUE {
                         SetupCloseInfFile(hInf);
@@ -816,8 +666,8 @@ pub unsafe extern "system" fn NetClassInstaller(
     }
 
     RpcStatus = UuidCreate(&mut Uuid);
-    if RpcStatus != RPC_S_OK && RpcStatus != RPC_S_UUID_LOCAL_ONLY {
-        rc = ERROR_GEN_FAILURE;
+    if RpcStatus != RPC_S_OK && RpcStatus != (RPC_S_UUID_LOCAL_ONLY) as i32 {
+        rc = (ERROR_GEN_FAILURE) as i32;
         return 'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
@@ -833,7 +683,7 @@ pub unsafe extern "system" fn NetClassInstaller(
 
     RpcStatus = UuidToStringW(&mut Uuid, &mut UuidRpcString);
     if RpcStatus != RPC_S_OK {
-        rc = ERROR_GEN_FAILURE;
+        rc = (ERROR_GEN_FAILURE) as i32;
         return 'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
@@ -849,12 +699,11 @@ pub unsafe extern "system" fn NetClassInstaller(
 
     UuidString = HeapAlloc(
         GetProcessHeap(),
-        0,
-        (2 + wcslen(UuidRpcString)) * core::mem::size_of::<u16>()
-            + core::mem::size_of::<UNICODE_NULL>(),
+        0,((2 + wcslen(UuidRpcString)) * core::mem::size_of::<u16>()
+            + core::mem::size_of_val(&UNICODE_NULL)) as SIZE_T,
     ) as LPWSTR;
     if UuidString.is_null() {
-        rc = ERROR_NOT_ENOUGH_MEMORY;
+        rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
         return 'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
@@ -868,20 +717,20 @@ pub unsafe extern "system" fn NetClassInstaller(
         };
     }
 
-    wcscpy(UuidString, b"{\0\0\0".as_ptr() as LPCWSTR);
+    wcscpy(UuidString, w!("{") as LPCWSTR);
     wcscat(UuidString, UuidRpcString);
-    wcscat(UuidString, b"}\0\0\0".as_ptr() as LPCWSTR);
+    wcscat(UuidString, w!("}") as LPCWSTR);
 
-    if IsEqualIID(&(*DeviceInfoData).ClassGuid, &GUID_DEVCLASS_NET) != 0 {
+    if IsEqualIID!(core::ptr::addr_of!((*DeviceInfoData).ClassGuid), &GUID_DEVCLASS_NET) {
         rc = InstallNetDevice(DeviceInfoSet, DeviceInfoData, UuidString, Characteristics, BusType) as i32;
-    } else if IsEqualIID(&(*DeviceInfoData).ClassGuid, &GUID_DEVCLASS_NETCLIENT) != 0 {
+    } else if IsEqualIID!(core::ptr::addr_of!((*DeviceInfoData).ClassGuid), &GUID_DEVCLASS_NETCLIENT) {
         rc = InstallNetClient() as i32;
-    } else if IsEqualIID(&(*DeviceInfoData).ClassGuid, &GUID_DEVCLASS_NETSERVICE) != 0 {
+    } else if IsEqualIID!(core::ptr::addr_of!((*DeviceInfoData).ClassGuid), &GUID_DEVCLASS_NETSERVICE) {
         rc = InstallNetService() as i32;
-    } else if IsEqualIID(&(*DeviceInfoData).ClassGuid, &GUID_DEVCLASS_NETTRANS) != 0 {
+    } else if IsEqualIID!(core::ptr::addr_of!((*DeviceInfoData).ClassGuid), &GUID_DEVCLASS_NETTRANS) {
         rc = InstallNetTransport() as i32;
     } else {
-        rc = ERROR_GEN_FAILURE;
+        rc = (ERROR_GEN_FAILURE) as i32;
     }
 
     'cleanup: loop {

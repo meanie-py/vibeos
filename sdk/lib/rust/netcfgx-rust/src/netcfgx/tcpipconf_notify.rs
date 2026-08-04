@@ -1,144 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s"
-static TCPIP_IFACE_FMT: [u16; 65] = [
-    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
-    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
-    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
-    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'P' as u16, b'a' as u16,
-    b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, b'\\' as u16, b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16,
-    b'f' as u16, b'a' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'%' as u16,
-    b's' as u16, 0,
-];
-// L"RegisterAdapterName"
-static REG_REGISTER_ADAPTER_NAME: [u16; 20] = [
-    b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'e' as u16,
-    b'r' as u16, b'A' as u16, b'd' as u16, b'a' as u16, b'p' as u16, b't' as u16, b'e' as u16,
-    b'r' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0,
-];
-// L"RegistrationEnabled"
-static REG_REGISTRATION_ENABLED: [u16; 20] = [
-    b'R' as u16, b'e' as u16, b'g' as u16, b'i' as u16, b's' as u16, b't' as u16, b'r' as u16,
-    b'a' as u16, b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'E' as u16, b'n' as u16,
-    b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'd' as u16, 0,
-];
-// L"Domain"
-static REG_DOMAIN2: [u16; 7] = [
-    b'D' as u16, b'o' as u16, b'm' as u16, b'a' as u16, b'i' as u16, b'n' as u16, 0,
-];
-// L"InterfaceMetric"
-static REG_INTERFACE_METRIC: [u16; 16] = [
-    b'I' as u16, b'n' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'f' as u16, b'a' as u16,
-    b'c' as u16, b'e' as u16, b'M' as u16, b'e' as u16, b't' as u16, b'r' as u16, b'i' as u16,
-    b'c' as u16, 0,
-];
-// L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
-static TCPIP_PARAMETERS_KEY: [u16; 51] = [
-    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
-    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
-    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
-    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
-    b'v' as u16, b'i' as u16, b'c' as u16, b'e' as u16, b's' as u16, b'\\' as u16, b'T' as u16,
-    b'c' as u16, b'p' as u16, b'i' as u16, b'p' as u16, b'\\' as u16, b'P' as u16, b'a' as u16,
-    b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b't' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, 0,
-];
-// L"UseDomainNameDevolution"
-static REG_USE_DOMAIN_NAME_DEVOLUTION: [u16; 24] = [
-    b'U' as u16, b's' as u16, b'e' as u16, b'D' as u16, b'o' as u16, b'm' as u16, b'a' as u16,
-    b'i' as u16, b'n' as u16, b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'D' as u16,
-    b'e' as u16, b'v' as u16, b'o' as u16, b'l' as u16, b'u' as u16, b't' as u16, b'i' as u16,
-    b'o' as u16, b'n' as u16, 0,
-];
-// L"SearchList"
-static REG_SEARCH_LIST: [u16; 11] = [
-    b'S' as u16, b'e' as u16, b'a' as u16, b'r' as u16, b'c' as u16, b'h' as u16, b'L' as u16,
-    b'i' as u16, b's' as u16, b't' as u16, 0,
-];
-// L"EnableSecurityFilters"
-static REG_ENABLE_SECURITY_FILTERS: [u16; 22] = [
-    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'S' as u16,
-    b'e' as u16, b'c' as u16, b'u' as u16, b'r' as u16, b'i' as u16, b't' as u16, b'y' as u16,
-    b'F' as u16, b'i' as u16, b'l' as u16, b't' as u16, b'e' as u16, b'r' as u16, b's' as u16,
-    0,
-];
-// L"TCPAllowedPorts"
-static REG_TCP_ALLOWED_PORTS: [u16; 16] = [
-    b'T' as u16, b'C' as u16, b'P' as u16, b'A' as u16, b'l' as u16, b'l' as u16, b'o' as u16,
-    b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'o' as u16, b'r' as u16, b't' as u16,
-    b's' as u16, 0,
-];
-// L"UDPAllowedPorts"
-static REG_UDP_ALLOWED_PORTS: [u16; 16] = [
-    b'U' as u16, b'D' as u16, b'P' as u16, b'A' as u16, b'l' as u16, b'l' as u16, b'o' as u16,
-    b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'o' as u16, b'r' as u16, b't' as u16,
-    b's' as u16, 0,
-];
-// L"RawIPAllowedProtocols"
-static REG_RAW_IP_ALLOWED_PROTOCOLS: [u16; 22] = [
-    b'R' as u16, b'a' as u16, b'w' as u16, b'I' as u16, b'P' as u16, b'A' as u16, b'l' as u16,
-    b'l' as u16, b'o' as u16, b'w' as u16, b'e' as u16, b'd' as u16, b'P' as u16, b'r' as u16,
-    b'o' as u16, b't' as u16, b'o' as u16, b'c' as u16, b'o' as u16, b'l' as u16, b's' as u16,
-    0,
-];
-// L"INetCfgComponentPropertyUi_fnValidateProperties"
-static MSG_VALIDATE_PROPERTIES: [u16; 48] = [
-    b'I' as u16, b'N' as u16, b'e' as u16, b't' as u16, b'C' as u16, b'f' as u16, b'g' as u16,
-    b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'o' as u16, b'n' as u16, b'e' as u16,
-    b'n' as u16, b't' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'p' as u16, b'e' as u16,
-    b'r' as u16, b't' as u16, b'y' as u16, b'U' as u16, b'i' as u16, b'_' as u16, b'f' as u16,
-    b'n' as u16, b'V' as u16, b'a' as u16, b'l' as u16, b'i' as u16, b'd' as u16, b'a' as u16,
-    b't' as u16, b'e' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'p' as u16, b'e' as u16,
-    b'r' as u16, b't' as u16, b'i' as u16, b'e' as u16, b's' as u16, 0,
-];
-// L"EnableDHCP"
-static REG_ENABLE_DHCP3: [u16; 11] = [
-    b'E' as u16, b'n' as u16, b'a' as u16, b'b' as u16, b'l' as u16, b'e' as u16, b'D' as u16,
-    b'H' as u16, b'C' as u16, b'P' as u16, 0,
-];
-// L"IPAddress"
-static REG_IP_ADDRESS2: [u16; 10] = [
-    b'I' as u16, b'P' as u16, b'A' as u16, b'd' as u16, b'd' as u16, b'r' as u16, b'e' as u16,
-    b's' as u16, b's' as u16, 0,
-];
-// L"SubnetMask"
-static REG_SUBNET_MASK2: [u16; 11] = [
-    b'S' as u16, b'u' as u16, b'b' as u16, b'n' as u16, b'e' as u16, b't' as u16, b'M' as u16,
-    b'a' as u16, b's' as u16, b'k' as u16, 0,
-];
-// L"DefaultGateway"
-static REG_DEFAULT_GATEWAY2: [u16; 15] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b'G' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'w' as u16, b'a' as u16, b'y' as u16,
-    0,
-];
-// L"DefaultGatewayMetric"
-static REG_DEFAULT_GATEWAY_METRIC: [u16; 21] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b'G' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'w' as u16, b'a' as u16, b'y' as u16,
-    b'M' as u16, b'e' as u16, b't' as u16, b'r' as u16, b'i' as u16, b'c' as u16, 0,
-];
-// L"NameServer"
-static REG_NAME_SERVER: [u16; 11] = [
-    b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, b'S' as u16, b'e' as u16, b'r' as u16,
-    b'v' as u16, b'e' as u16, b'r' as u16, 0,
-];
-// L"0.0.0.0" — REG_MULTI_SZ (LPBYTE)L"0.0.0.0\0" in the C: 7 chars + explicit \0 + the
-// auto NUL = 9 wide chars, double-NUL terminated as REG_MULTI_SZ requires.
-static ZERO_IP_MULTISZ: [u16; 9] = [
-    b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16, b'.' as u16, b'0' as u16,
-    0, 0,
-];
-// (LPBYTE)L"" in the C: an empty REG_MULTI_SZ value is a single wide NUL, 1 * sizeof(WCHAR).
-static EMPTY_MULTISZ: [u16; 1] = [0];
-// (LPBYTE)L"\0" in the C: an explicit NUL char plus the auto NUL = 2 wide NULs,
-// sizeof(WCHAR) * 2.
-static DOUBLE_NULL_MULTISZ: [u16; 2] = [0, 0];
-
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct TcpFilterSettings {
@@ -184,14 +46,6 @@ pub type PIP_ADDR = *mut IP_ADDR;
 pub const METRIC: u32 = 1;
 pub const SUBMASK: u32 = 2;
 pub const IPADDR: u32 = 3;
-
-// L"%lu.%lu.%lu.%lu" — swprintf format string, used verbatim from dll/win32/netcfgx/tcpipconf_notify.c
-static FMT_DOTTED_QUAD: [u16; 16] = [
-    b'%' as u16, b'l' as u16, b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16, b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16,
-    b'u' as u16, b'.' as u16, b'%' as u16, b'l' as u16, b'u' as u16, 0,
-];
-// L"%u" — swprintf format string, used verbatim from dll/win32/netcfgx/tcpipconf_notify.c
-static FMT_UINT: [u16; 3] = [b'%' as u16, b'u' as u16, 0];
 
 pub type COPY_TYPE = u32;
 
@@ -285,9 +139,9 @@ pub unsafe extern "C" fn DisplayError(ResTxt: UINT, ResTitle: UINT, Type: UINT) 
         (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32,
     ) != 0
     {
-        szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = L'\0' as u16;
+        szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = '\0' as u16;
     } else {
-        szBuffer[0] = L'\0' as u16;
+        szBuffer[0] = '\0' as u16;
     }
 
     if LoadStringW(
@@ -297,9 +151,9 @@ pub unsafe extern "C" fn DisplayError(ResTxt: UINT, ResTitle: UINT, Type: UINT) 
         (core::mem::size_of_val(&szTitle) / core::mem::size_of::<WCHAR>()) as i32,
     ) != 0
     {
-        szTitle[(core::mem::size_of_val(&szTitle) / core::mem::size_of::<WCHAR>()) - 1] = L'\0' as u16;
+        szTitle[(core::mem::size_of_val(&szTitle) / core::mem::size_of::<WCHAR>()) - 1] = '\0' as u16;
     } else {
-        szTitle[0] = L'\0' as u16;
+        szTitle[0] = '\0' as u16;
     }
 
     MessageBoxW(core::ptr::null_mut(), szBuffer.as_ptr(), szTitle.as_ptr(), Type);
@@ -313,8 +167,10 @@ pub unsafe extern "system" fn TcpipFilterPortDlg(
 ) -> INT_PTR {
     let mut pPort: *mut TcpipPortSettings;
     let mut Num: UINT;
-    let mut find: LVFINDINFOW;
-    let mut li: LVITEMW;
+    // Written by ZeroMemory below, exactly as the C does — but Rust wants them
+    // definitely-initialised at the point the address is taken.
+    let mut find: LVFINDINFOW = core::mem::zeroed();
+    let mut li: LVITEMW = core::mem::zeroed();
     let mut szBuffer: [WCHAR; 100] = [0; 100];
 
     match uMsg {
@@ -333,37 +189,37 @@ pub unsafe extern "system" fn TcpipFilterPortDlg(
                 SendDlgItemMessageW(hwndDlg, IDC_PORT_VAL, EM_LIMITTEXT, 3, 0);
             }
 
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDCANCEL {
-                EndDialog(hwndDlg, FALSE);
-            } else if LOWORD(wParam) == IDC_OK {
+            if LOWORD!(wParam) == (IDCANCEL) as u16 {
+                EndDialog(hwndDlg, FALSE as INT_PTR);
+            } else if LOWORD!(wParam) == (IDC_OK) as u16 {
                 pPort = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipPortSettings;
-                Num = GetDlgItemInt(hwndDlg, IDC_PORT_VAL, core::ptr::null_mut(), TRUE);
+                Num = GetDlgItemInt(hwndDlg, IDC_PORT_VAL, core::ptr::null_mut(), (TRUE) as i32);
                 if Num > (*pPort).MaxNum || Num == 0 {
                     if (*pPort).MaxNum == 65536 {
-                        DisplayError(IDS_PORT_RANGE, IDS_TCPIP, MB_ICONWARNING);
+                        DisplayError((IDS_PORT_RANGE) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
                     } else {
-                        DisplayError(IDS_PROT_RANGE, IDS_TCPIP, MB_ICONWARNING);
+                        DisplayError((IDS_PROT_RANGE) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
                     }
 
                     SetFocus(GetDlgItem(hwndDlg, IDC_PORT_VAL));
                 } else {
                     if GetWindowTextW(GetDlgItem(hwndDlg, IDC_PORT_VAL), szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                         szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
-                        ZeroMemory(core::ptr::addr_of_mut!(find) as LPVOID, core::mem::size_of_val(&LVFINDINFOW) as u32);
-                        find.flags = LVFI_STRING;
+                        ZeroMemory!(core::ptr::addr_of_mut!(find) as LPVOID, core::mem::size_of::<LVFINDINFOW>() as u32);
+                        find.flags = (LVFI_STRING) as u32;
                         find.psz = szBuffer.as_ptr();
-                        if SendMessageW((*pPort).hDlgCtrl, LVM_FINDITEMW, (1 as i32).wrapping_neg() as WPARAM, core::ptr::addr_of_mut!(find) as LPARAM) == (1 as i32).wrapping_neg() {
-                            ZeroMemory(core::ptr::addr_of_mut!(li) as LPVOID, core::mem::size_of_val(&LVITEMW) as u32);
-                            li.mask = LVIF_TEXT;
-                            li.iItem = ListView_GetItemCount((*pPort).hDlgCtrl);
+                        if SendMessageW((*pPort).hDlgCtrl, (LVM_FINDITEMW) as u32, (1 as i32).wrapping_neg() as WPARAM, core::ptr::addr_of_mut!(find) as LPARAM) == ((1 as i32).wrapping_neg()) as LRESULT {
+                            ZeroMemory!(core::ptr::addr_of_mut!(li) as LPVOID, core::mem::size_of::<LVITEMW>() as u32);
+                            li.mask = (LVIF_TEXT) as u32;
+                            li.iItem = ListView_GetItemCount!((*pPort).hDlgCtrl);
                             li.pszText = szBuffer.as_mut_ptr();
-                            SendMessageW((*pPort).hDlgCtrl, LVM_INSERTITEMW, 0, core::ptr::addr_of_mut!(li) as LPARAM);
-                            EndDialog(hwndDlg, TRUE);
+                            SendMessageW((*pPort).hDlgCtrl, (LVM_INSERTITEMW) as u32, 0, core::ptr::addr_of_mut!(li) as LPARAM);
+                            EndDialog(hwndDlg, TRUE as INT_PTR);
                         } else {
-                            DisplayError(IDS_DUP_NUMBER, IDS_PROT_RANGE, MB_ICONWARNING);
+                            DisplayError((IDS_DUP_NUMBER) as u32, (IDS_PROT_RANGE) as u32, MB_ICONWARNING);
                             SetFocus(GetDlgItem(hwndDlg, IDC_PORT_VAL));
                         }
                     }
@@ -372,7 +228,7 @@ pub unsafe extern "system" fn TcpipFilterPortDlg(
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitFilterListBox(
@@ -389,9 +245,9 @@ pub unsafe extern "C" fn InitFilterListBox(
     let mut iItem: INT;
 
     if pData.is_null() || _wtoi(pData) == 0 {
-        CheckDlgButton(hwndDlg, AllowButton, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, AddButton), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, DelButton), FALSE);
+        CheckDlgButton(hwndDlg, (AllowButton) as i32, BST_CHECKED);
+        EnableWindow(GetDlgItem(hwndDlg, (AddButton) as i32), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, (DelButton) as i32), (FALSE) as i32);
         return;
     }
 
@@ -399,9 +255,9 @@ pub unsafe extern "C" fn InitFilterListBox(
     memset(
         &mut li as *mut _ as *mut core::ffi::c_void,
         0x0,
-        core::mem::size_of_val(&LVITEMW),
+        core::mem::size_of::<LVITEMW>(),
     );
-    li.mask = LVIF_TEXT;
+    li.mask = (LVIF_TEXT) as u32;
     iItem = 0;
 
     while *pCur.offset(0) != 0 {
@@ -409,7 +265,7 @@ pub unsafe extern "C" fn InitFilterListBox(
         li.iItem = iItem;
         SendMessageW(
             hDlgCtrl,
-            LVM_INSERTITEMW,
+            (LVM_INSERTITEMW) as u32,
             0,
             &li as *const _ as LPARAM,
         );
@@ -418,9 +274,9 @@ pub unsafe extern "C" fn InitFilterListBox(
     }
 
     if iItem == 0 {
-        CheckDlgButton(hwndDlg, AllowButton, BST_CHECKED);
+        CheckDlgButton(hwndDlg, (AllowButton) as i32, BST_CHECKED);
     } else {
-        CheckDlgButton(hwndDlg, RestrictButton, BST_CHECKED);
+        CheckDlgButton(hwndDlg, (RestrictButton) as i32, BST_CHECKED);
     }
 }
 #[no_mangle]
@@ -436,9 +292,9 @@ pub unsafe extern "C" fn CreateFilterList(
     let mut dwSize: u32;
     let mut szBuffer: [u16; 10] = [0; 10];
 
-    iCount = ListView_GetItemCount(hDlgCtrl);
+    iCount = ListView_GetItemCount!(hDlgCtrl);
     if iCount == 0 {
-        pData = CoTaskMemAlloc(3 * core::mem::size_of::<u16>()) as LPWSTR;
+        pData = CoTaskMemAlloc((3 * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if pData.is_null() {
             return core::ptr::null_mut();
         }
@@ -449,7 +305,7 @@ pub unsafe extern "C" fn CreateFilterList(
         return pData;
     }
 
-    pData = CoTaskMemAlloc((6 * iCount + 1) as usize * core::mem::size_of::<u16>()) as LPWSTR;
+    pData = CoTaskMemAlloc(((6 * iCount + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
     if pData.is_null() {
         return core::ptr::null_mut();
     }
@@ -458,12 +314,12 @@ pub unsafe extern "C" fn CreateFilterList(
     dwSize = 0;
     iIndex = 0;
     while iIndex < iCount {
-        ZeroMemory(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LVITEMW));
-        li.mask = LVIF_TEXT;
+        ZeroMemory!(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEMW>());
+        li.mask = (LVIF_TEXT) as u32;
         li.iItem = iIndex;
         li.pszText = szBuffer.as_mut_ptr();
         li.cchTextMax = (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32;
-        if SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM) != 0 {
+        if SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM) != 0 {
             wcscpy(pCur, szBuffer.as_ptr());
             dwSize += wcslen(szBuffer.as_ptr()) as u32 + 1;
             pCur = pCur.offset(wcslen(szBuffer.as_ptr()) as isize + 1);
@@ -480,15 +336,15 @@ pub unsafe extern "C" fn StoreTcpipFilterSettings(
 ) -> *mut TcpFilterSettings {
     let pFilter: *mut TcpFilterSettings;
 
-    pFilter = CoTaskMemAlloc(core::mem::size_of::<TcpFilterSettings>()) as *mut TcpFilterSettings;
+    pFilter = CoTaskMemAlloc((core::mem::size_of::<TcpFilterSettings>()) as SIZE_T) as *mut TcpFilterSettings;
     if pFilter.is_null() {
         return core::ptr::null_mut();
     }
 
-    if IsDlgButtonChecked(hwndDlg, IDC_USE_FILTER) == BST_CHECKED {
-        (*pFilter).EnableSecurityFilters = TRUE;
+    if IsDlgButtonChecked(hwndDlg, IDC_USE_FILTER) == BST_CHECKED as UINT {
+        (*pFilter).EnableSecurityFilters = TRUE as DWORD;
     } else {
-        (*pFilter).EnableSecurityFilters = FALSE;
+        (*pFilter).EnableSecurityFilters = FALSE as DWORD;
     }
 
     (*pFilter).szTCPAllowedPorts = CreateFilterList(GetDlgItem(hwndDlg, IDC_TCP_LIST), core::ptr::addr_of_mut!((*pFilter).TCPSize));
@@ -511,9 +367,9 @@ unsafe extern "C" fn AddItem(
 
     DialogBoxParamW(
         netcfgx_hInstance,
-        MAKEINTRESOURCEW(IDD_TCPIP_PORT_DLG),
+        MAKEINTRESOURCEW!(IDD_TCPIP_PORT_DLG),
         hwndDlg,
-        TcpipFilterPortDlg,
+        Some(TcpipFilterPortDlg),
         core::ptr::addr_of_mut!(Port) as LPARAM,
     );
 }
@@ -521,10 +377,10 @@ unsafe extern "C" fn DelItem(hDlgCtrl: HWND) {
     let iIndex = GetSelectedItem(hDlgCtrl);
 
     if iIndex != -1 {
-        ListView_DeleteItem(hDlgCtrl, iIndex);
+        ListView_DeleteItem!(hDlgCtrl, iIndex);
         return;
     }
-    DisplayError(IDS_NOITEMSEL, IDS_TCPIP, MB_ICONWARNING);
+    DisplayError((IDS_NOITEMSEL) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
 }
 #[no_mangle]
 pub unsafe extern "system" fn TcpipFilterSettingsDlg(
@@ -539,88 +395,88 @@ pub unsafe extern "system" fn TcpipFilterSettingsDlg(
     match uMsg {
         WM_INITDIALOG => {
             pContext = lParam as *mut TcpipConfNotifyImpl;
-            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_TCP_LIST), IDS_TCP_PORTS, 0, 100);
-            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_UDP_LIST), IDS_UDP_PORTS, 0, 100);
-            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IP_LIST), IDS_IP_PROTO, 0, 100);
+            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_TCP_LIST), (IDS_TCP_PORTS) as u32, 0, 100);
+            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_UDP_LIST), (IDS_UDP_PORTS) as u32, 0, 100);
+            InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IP_LIST), (IDS_IP_PROTO) as u32, 0, 100);
             if !(*pContext).pCurrentConfig.is_null() && !(*(*pContext).pCurrentConfig).pFilter.is_null() {
-                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szTCPAllowedPorts, hwndDlg, GetDlgItem(hwndDlg, IDC_TCP_LIST), IDC_TCP_ALLOW_ALL, IDC_TCP_RESTRICT, IDC_TCP_ADD, IDC_TCP_DEL);
-                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szUDPAllowedPorts, hwndDlg, GetDlgItem(hwndDlg, IDC_UDP_LIST), IDC_UDP_ALLOW_ALL, IDC_UDP_RESTRICT, IDC_UDP_ADD, IDC_UDP_DEL);
-                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szRawIPAllowedProtocols, hwndDlg, GetDlgItem(hwndDlg, IDC_IP_LIST), IDC_IP_ALLOW_ALL, IDC_IP_RESTRICT, IDC_IP_ADD, IDC_IP_DEL);
+                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szTCPAllowedPorts, hwndDlg, GetDlgItem(hwndDlg, IDC_TCP_LIST), (IDC_TCP_ALLOW_ALL) as u32, (IDC_TCP_RESTRICT) as u32, (IDC_TCP_ADD) as u32, (IDC_TCP_DEL) as u32);
+                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szUDPAllowedPorts, hwndDlg, GetDlgItem(hwndDlg, IDC_UDP_LIST), (IDC_UDP_ALLOW_ALL) as u32, (IDC_UDP_RESTRICT) as u32, (IDC_UDP_ADD) as u32, (IDC_UDP_DEL) as u32);
+                InitFilterListBox((*(*(*pContext).pCurrentConfig).pFilter).szRawIPAllowedProtocols, hwndDlg, GetDlgItem(hwndDlg, IDC_IP_LIST), (IDC_IP_ALLOW_ALL) as u32, (IDC_IP_RESTRICT) as u32, (IDC_IP_ADD) as u32, (IDC_IP_DEL) as u32);
                 if (*(*(*pContext).pCurrentConfig).pFilter).EnableSecurityFilters != 0 {
                     CheckDlgButton(hwndDlg, IDC_USE_FILTER, BST_CHECKED);
                 }
             }
             SetWindowLongPtr(hwndDlg, DWLP_USER, pContext as LONG_PTR);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if HIWORD(wParam) == BN_CLICKED {
-                match LOWORD(wParam) {
+            if HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                match LOWORD!(wParam) as c_int {
                     IDC_TCP_ALLOW_ALL => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_TCP_ALLOW_ALL) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_TCP_ALLOW_ALL) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_TCP_RESTRICT, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_LIST), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_ADD), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_DEL), FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_LIST), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_ADD), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_DEL), (FALSE) as i32);
                         }
                     }
                     IDC_TCP_RESTRICT => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_TCP_RESTRICT) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_TCP_RESTRICT) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_TCP_ALLOW_ALL, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_LIST), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_ADD), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_DEL), TRUE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_LIST), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_ADD), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_TCP_DEL), (TRUE) as i32);
                         }
                     }
                     IDC_UDP_ALLOW_ALL => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_UDP_ALLOW_ALL) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_UDP_ALLOW_ALL) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_UDP_RESTRICT, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_LIST), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_ADD), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_DEL), FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_LIST), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_ADD), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_DEL), (FALSE) as i32);
                         }
                     }
                     IDC_UDP_RESTRICT => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_UDP_RESTRICT) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_UDP_RESTRICT) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_UDP_ALLOW_ALL, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_LIST), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_ADD), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_DEL), TRUE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_LIST), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_ADD), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_UDP_DEL), (TRUE) as i32);
                         }
                     }
                     IDC_IP_ALLOW_ALL => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_IP_ALLOW_ALL) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_IP_ALLOW_ALL) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_IP_RESTRICT, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_LIST), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_ADD), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_DEL), FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_LIST), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_ADD), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_DEL), (FALSE) as i32);
                         }
                     }
                     IDC_IP_RESTRICT => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_IP_RESTRICT) == BST_CHECKED {
+                        if IsDlgButtonChecked(hwndDlg, IDC_IP_RESTRICT) == BST_CHECKED as UINT {
                             CheckDlgButton(hwndDlg, IDC_IP_ALLOW_ALL, BST_UNCHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_LIST), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_ADD), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_DEL), TRUE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_LIST), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_ADD), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IP_DEL), (TRUE) as i32);
                         }
                     }
                     IDC_USE_FILTER => {
-                        if IsDlgButtonChecked(hwndDlg, IDC_USE_FILTER) == BST_UNCHECKED {
-                            DisplayError(IDS_DISABLE_FILTER, IDS_TCPIP, MB_OK);
+                        if IsDlgButtonChecked(hwndDlg, IDC_USE_FILTER) == BST_UNCHECKED as UINT {
+                            DisplayError((IDS_DISABLE_FILTER) as u32, (IDS_TCPIP) as u32, MB_OK);
                         }
                     }
                     _ => {}
                 }
             }
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as c_int {
                 IDC_OK => {
                     pContext = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
                     pFilter = StoreTcpipFilterSettings(hwndDlg);
                     if !pFilter.is_null() {
                         if !(*pContext).pCurrentConfig.is_null() && !(*(*pContext).pCurrentConfig).pFilter.is_null() {
-                            CoTaskMemFree((*(*(*pContext).pCurrentConfig).pFilter).szTCPAllowedPorts);
-                            CoTaskMemFree((*(*(*pContext).pCurrentConfig).pFilter).szUDPAllowedPorts);
-                            CoTaskMemFree((*(*(*pContext).pCurrentConfig).pFilter).szRawIPAllowedProtocols);
+                            CoTaskMemFree(((*(*(*pContext).pCurrentConfig).pFilter).szTCPAllowedPorts).cast());
+                            CoTaskMemFree(((*(*(*pContext).pCurrentConfig).pFilter).szUDPAllowedPorts).cast());
+                            CoTaskMemFree(((*(*(*pContext).pCurrentConfig).pFilter).szRawIPAllowedProtocols).cast());
                             CoTaskMemFree((*(*pContext).pCurrentConfig).pFilter as LPVOID);
                         }
                         (*(*pContext).pCurrentConfig).pFilter = pFilter;
@@ -628,22 +484,22 @@ pub unsafe extern "system" fn TcpipFilterSettingsDlg(
                     EndDialog(hwndDlg, TRUE as INT_PTR);
                 }
                 IDCANCEL => {
-                    EndDialog(hwndDlg, FALSE);
+                    EndDialog(hwndDlg, FALSE as INT_PTR);
                 }
                 IDC_TCP_ADD => {
-                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_TCP_LIST), 65536, IDS_TCP_PORTS);
+                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_TCP_LIST), 65536, (IDS_TCP_PORTS) as u32);
                 }
                 IDC_TCP_DEL => {
                     DelItem(GetDlgItem(hwndDlg, IDC_TCP_LIST));
                 }
                 IDC_UDP_ADD => {
-                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_UDP_LIST), 65536, IDS_UDP_PORTS);
+                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_UDP_LIST), 65536, (IDS_UDP_PORTS) as u32);
                 }
                 IDC_UDP_DEL => {
                     DelItem(GetDlgItem(hwndDlg, IDC_UDP_LIST));
                 }
                 IDC_IP_ADD => {
-                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_IP_LIST), 256, IDS_IP_PROTO);
+                    AddItem(hwndDlg, GetDlgItem(hwndDlg, IDC_IP_LIST), 256, (IDS_IP_PROTO) as u32);
                 }
                 IDC_IP_DEL => {
                     DelItem(GetDlgItem(hwndDlg, IDC_IP_LIST));
@@ -654,7 +510,7 @@ pub unsafe extern "system" fn TcpipFilterSettingsDlg(
         _ => {}
     }
 
-    FALSE
+    FALSE as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializePropertySheetPage(
@@ -671,13 +527,13 @@ pub unsafe extern "C" fn InitializePropertySheetPage(
         core::mem::size_of::<PROPSHEETPAGEW>(),
     );
     ppage.dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;
-    ppage.dwFlags = PSP_DEFAULT;
-    ppage.u.pszTemplate = resname;
+    ppage.dwFlags = (PSP_DEFAULT) as u32;
+    *ppage.u.pszTemplate.as_mut() = resname;
     ppage.pfnDlgProc = dlgproc;
     ppage.lParam = lParam;
     ppage.hInstance = netcfgx_hInstance;
     if !szTitle.is_null() {
-        ppage.dwFlags |= PSP_USETITLE;
+        ppage.dwFlags |= (PSP_USETITLE) as u32;
         ppage.pszTitle = szTitle;
     }
     CreatePropertySheetPageW(core::ptr::addr_of_mut!(ppage))
@@ -690,14 +546,14 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedOptDlg(
 
     SetWindowLongPtr(hwndDlg, DWLP_USER, This as INT_PTR);
 
-    if LoadStringW(netcfgx_hInstance, IDS_TCPFILTER, szText.as_mut_ptr(), (core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) as i32) != 0 {
+    if LoadStringW(netcfgx_hInstance, (IDS_TCPFILTER) as u32, szText.as_mut_ptr(), (core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) as i32) != 0 {
         szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0;
-        if SendDlgItemMessageW(hwndDlg, IDC_OPTLIST, LB_ADDSTRING, 0, szText.as_ptr() as LPARAM) != LB_ERR {
+        if SendDlgItemMessageW(hwndDlg, IDC_OPTLIST, LB_ADDSTRING, 0, szText.as_ptr() as LPARAM) != (LB_ERR) as LRESULT {
             SendDlgItemMessageW(hwndDlg, IDC_OPTLIST, LB_SETCURSEL, 0, 0);
         }
     }
 
-    if LoadStringW(netcfgx_hInstance, IDS_TCPFILTERDESC, szText.as_mut_ptr(), (core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) as i32) != 0 {
+    if LoadStringW(netcfgx_hInstance, (IDS_TCPFILTERDESC) as u32, szText.as_mut_ptr(), (core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) as i32) != 0 {
         szText[(core::mem::size_of_val(&szText) / core::mem::size_of::<u16>()) - 1] = 0;
         SendDlgItemMessageW(hwndDlg, IDC_OPTDESC, WM_SETTEXT, 0, szText.as_ptr() as LPARAM);
     }
@@ -717,20 +573,20 @@ pub unsafe extern "system" fn TcpipAdvancedOptDlg(
             page = lParam as LPPROPSHEETPAGE;
             This = (*page).lParam as *mut TcpipConfNotifyImpl;
             InitializeTcpipAdvancedOptDlg(hwndDlg, This);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_OPTPROP {
+            if LOWORD!(wParam) == (IDC_OPTPROP) as u16 {
                 DialogBoxParamW(netcfgx_hInstance,
-                                MAKEINTRESOURCEW(IDD_TCPIP_FILTER_DLG),
+                                MAKEINTRESOURCEW!(IDD_TCPIP_FILTER_DLG),
                                 GetParent(hwndDlg),
-                                TcpipFilterSettingsDlg,
+                                Some(TcpipFilterSettingsDlg),
                                 GetWindowLongPtr(hwndDlg, DWLP_USER) as LPARAM);
             }
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn InsertColumnToListView(
@@ -757,14 +613,14 @@ pub unsafe extern "C" fn InsertColumnToListView(
         0,
         core::mem::size_of::<LV_COLUMN>(),
     );
-    lc.mask = LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
+    lc.mask = (LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT) as u32;
     lc.iSubItem = SubItem as i32;
     lc.fmt = LVCFMT_FIXED_WIDTH;
     lc.cx = Size as i32;
-    lc.cchTextMax = wcslen(szBuffer.as_ptr());
+    lc.cchTextMax = (wcslen(szBuffer.as_ptr())) as i32;
     lc.pszText = szBuffer.as_mut_ptr();
 
-    SendMessageW(hDlgCtrl, LVM_INSERTCOLUMNW, SubItem as WPARAM, &lc as *const _ as LPARAM);
+    SendMessageW(hDlgCtrl, (LVM_INSERTCOLUMNW) as u32, SubItem as WPARAM, &lc as *const _ as LPARAM);
 }
 #[no_mangle]
 pub unsafe extern "C" fn InsertIpAddressToListView(
@@ -773,70 +629,71 @@ pub unsafe extern "C" fn InsertIpAddressToListView(
     bSubMask: BOOL,
 ) {
     let mut szBuffer: [u16; 70] = [0; 70];
-    let mut dwIpAddr: u32;
+    let mut dwIpAddr: u32 = 0;
     let mut itemCount: u32 = 0;
     let mut li: LVITEMW = core::mem::zeroed();
 
     while !pAddr.is_null() {
-        ZeroMemory(
+        // C: ZeroMemory(&li, sizeof(li)). The translation gave it memset's THREE arguments
+        // (dest, 0, len); ZeroMemory takes two and supplies the zero itself.
+        ZeroMemory!(
             &mut li as *mut _ as *mut core::ffi::c_void,
-            0,
             core::mem::size_of::<LVITEMW>(),
         );
-        li.mask = LVIF_TEXT;
+        li.mask = (LVIF_TEXT) as u32;
         li.iItem = itemCount as i32;
         li.iSubItem = 0;
         dwIpAddr = (*pAddr).IpAddress;
         swprintf(
             szBuffer.as_mut_ptr(),
-            FMT_DOTTED_QUAD.as_ptr() as *const u16,
-            FIRST_IPADDRESS(dwIpAddr),
-            SECOND_IPADDRESS(dwIpAddr),
-            THIRD_IPADDRESS(dwIpAddr),
-            FOURTH_IPADDRESS(dwIpAddr),
+            w!("%lu.%lu.%lu.%lu") as *const u16,
+            FIRST_IPADDRESS!(dwIpAddr),
+            SECOND_IPADDRESS!(dwIpAddr),
+            THIRD_IPADDRESS!(dwIpAddr),
+            FOURTH_IPADDRESS!(dwIpAddr),
         );
 
         li.pszText = szBuffer.as_mut_ptr();
-        li.iItem = SendMessageW(
+        li.iItem = (SendMessageW(
             hDlgCtrl,
-            LVM_INSERTITEMW,
+            (LVM_INSERTITEMW) as u32,
             0,
             &li as *const _ as LPARAM,
-        );
+        )) as i32;
         if li.iItem != -1 {
             if bSubMask != 0 {
                 dwIpAddr = (*pAddr).u.Subnetmask;
                 swprintf(
                     szBuffer.as_mut_ptr(),
-                    FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                    FIRST_IPADDRESS(dwIpAddr),
-                    SECOND_IPADDRESS(dwIpAddr),
-                    THIRD_IPADDRESS(dwIpAddr),
-                    FOURTH_IPADDRESS(dwIpAddr),
+                    w!("%lu.%lu.%lu.%lu") as *const u16,
+                    FIRST_IPADDRESS!(dwIpAddr),
+                    SECOND_IPADDRESS!(dwIpAddr),
+                    THIRD_IPADDRESS!(dwIpAddr),
+                    FOURTH_IPADDRESS!(dwIpAddr),
                 );
             } else {
                 if (*pAddr).u.Metric != 0 {
                     swprintf(
                         szBuffer.as_mut_ptr(),
-                        FMT_UINT.as_ptr() as *const u16,
-                        (*pAddr).u.Metric,
+                        w!("%u") as *const u16,
+                        (*pAddr).u.Metric as c_uint,
                     );
                 } else {
                     LoadStringW(
                         netcfgx_hInstance,
-                        IDS_AUTOMATIC,
+                        (IDS_AUTOMATIC) as u32,
                         szBuffer.as_mut_ptr(),
                         (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32,
                     );
                 }
             }
 
-            li.mask = LVIF_TEXT;
+            li.mask = (LVIF_TEXT) as u32;
             li.iSubItem = 1;
             li.pszText = szBuffer.as_mut_ptr();
             SendMessageW(
                 hDlgCtrl,
-                LVM_SETITEMW,
+                (LVM_SETITEMW) as u32,
                 0,
                 &li as *const _ as LPARAM,
             );
@@ -854,41 +711,41 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedIpDlg(
     let mut li: LVITEMW = core::mem::zeroed();
     let mut szBuffer: [WCHAR; 100] = [0; 100];
 
-    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IPLIST), IDS_IPADDR, 0, 100);
+    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IPLIST), (IDS_IPADDR) as u32, 0, 100);
     GetClientRect(GetDlgItem(hwndDlg, IDC_IPLIST), &mut rect);
-    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IPLIST), IDS_SUBMASK, 1, (rect.right - rect.left - 100));
+    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_IPLIST), (IDS_SUBMASK) as u32, 1, ((rect.right - rect.left - 100)) as u32);
 
     if (*This).pCurrentConfig.is_null() == false && (*(*This).pCurrentConfig).DhcpEnabled != 0 {
-        if LoadStringW(netcfgx_hInstance, IDS_DHCPACTIVE, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
-            ZeroMemory(&mut li as *mut _ as LPVOID, core::mem::size_of_val(&LVITEMW) as u32);
-            li.mask = LVIF_TEXT;
+        if LoadStringW(netcfgx_hInstance, (IDS_DHCPACTIVE) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+            ZeroMemory!(&mut li as *mut _ as LPVOID, core::mem::size_of::<LVITEMW>() as u32);
+            li.mask = (LVIF_TEXT) as u32;
             li.pszText = szBuffer.as_mut_ptr();
-            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
+            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, (LVM_INSERTITEMW) as u32, 0, &li as *const _ as LPARAM);
         }
-        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADD), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADD), (FALSE) as i32);
     } else {
-        InsertIpAddressToListView(GetDlgItem(hwndDlg, IDC_IPLIST), (*(*This).pCurrentConfig).Ip, TRUE);
+        InsertIpAddressToListView(GetDlgItem(hwndDlg, IDC_IPLIST), (*(*This).pCurrentConfig).Ip, (TRUE) as i32);
     }
 
-    EnableWindow(GetDlgItem(hwndDlg, IDC_IPMOD), FALSE);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_IPDEL), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_IPMOD), (FALSE) as i32);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_IPDEL), (FALSE) as i32);
 
-    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_GWLIST), IDS_GATEWAY, 0, 100);
+    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_GWLIST), (IDS_GATEWAY) as u32, 0, 100);
     GetClientRect(GetDlgItem(hwndDlg, IDC_IPLIST), &mut rect);
-    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_GWLIST), IDS_METRIC, 1, (rect.right - rect.left - 100));
+    InsertColumnToListView(GetDlgItem(hwndDlg, IDC_GWLIST), (IDS_METRIC) as u32, 1, ((rect.right - rect.left - 100)) as u32);
 
-    InsertIpAddressToListView(GetDlgItem(hwndDlg, IDC_GWLIST), (*(*This).pCurrentConfig).Gw, FALSE);
+    InsertIpAddressToListView(GetDlgItem(hwndDlg, IDC_GWLIST), (*(*This).pCurrentConfig).Gw, (FALSE) as i32);
 
-    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMOD), FALSE);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_GWDEL), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMOD), (FALSE) as i32);
+    EnableWindow(GetDlgItem(hwndDlg, IDC_GWDEL), (FALSE) as i32);
 
     SendDlgItemMessageW(hwndDlg, IDC_IFMETRIC, EM_LIMITTEXT, 4, 0);
     if (*(*This).pCurrentConfig).Metric != 0 {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), TRUE);
-        SetDlgItemInt(hwndDlg, IDC_IFMETRIC, (*(*This).pCurrentConfig).Metric, FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), (TRUE) as i32);
+        SetDlgItemInt(hwndDlg, IDC_IFMETRIC, (*(*This).pCurrentConfig).Metric, (FALSE) as i32);
     } else {
         CheckDlgButton(hwndDlg, IDC_IFAUTOMETRIC, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), (FALSE) as i32);
     }
 }
 #[no_mangle]
@@ -900,81 +757,81 @@ pub unsafe extern "system" fn TcpipAdvGwDlg(
 ) -> INT_PTR {
     let mut szBuffer: [u16; 70] = [0; 70];
     let mut pGwSettings: *mut TcpipGwSettings;
-    let mut dwIpAddr: u32;
+    let mut dwIpAddr: u32 = 0;
     let mut lpnmipa: *mut core::ffi::c_void;
     let mut find: core::mem::MaybeUninit<[u8; core::mem::size_of::<usize>() * 4]> = core::mem::MaybeUninit::uninit();
 
     match uMsg {
         WM_INITDIALOG => {
             pGwSettings = lParam as *mut TcpipGwSettings;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as LONG_PTR);
 
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
             if (*pGwSettings).bAdd != 0 {
-                if LoadStringW(netcfgx_hInstance, IDS_ADD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_ADD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (FALSE) as i32);
                 CheckDlgButton(hwndDlg, IDC_GWAUTOMETRIC, BST_CHECKED);
             } else {
-                if LoadStringW(netcfgx_hInstance, IDS_MOD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_MOD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
 
-                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETADDRESS, 0, GetIpAddressFromStringW((*pGwSettings).szIP.as_mut_ptr()) as LPARAM);
+                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETADDRESS) as u32, 0, GetIpAddressFromStringW((*pGwSettings).szIP.as_mut_ptr()) as LPARAM);
 
                 if (*pGwSettings).Metric != 0 {
-                    SetDlgItemInt(hwndDlg, IDC_GWMETRIC, (*pGwSettings).Metric, FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), TRUE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), TRUE);
+                    SetDlgItemInt(hwndDlg, IDC_GWMETRIC, (*pGwSettings).Metric, (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), (TRUE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), (TRUE) as i32);
                 } else {
                     CheckDlgButton(hwndDlg, IDC_GWAUTOMETRIC, BST_CHECKED);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), FALSE);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), (FALSE) as i32);
                 }
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_GWAUTOMETRIC {
-                if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_CHECKED {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), FALSE);
-                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, b"\0\0".as_ptr() as LPARAM);
+            if LOWORD!(wParam) == (IDC_GWAUTOMETRIC) as u16 {
+                if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_CHECKED as UINT {
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), (FALSE) as i32);
+                    SendDlgItemMessageW(hwndDlg, IDC_GWMETRIC, WM_SETTEXT, 0, w!("") as LPARAM);
                 } else {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), TRUE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), TRUE);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRIC), (TRUE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_GWMETRICTXT), (TRUE) as i32);
                 }
-            } else if LOWORD(wParam) == IDCANCEL {
-                EndDialog(hwndDlg, FALSE);
-            } else if LOWORD(wParam) == IDC_OK {
-                if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_GETADDRESS, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
+            } else if LOWORD!(wParam) == (IDCANCEL) as u16 {
+                EndDialog(hwndDlg, FALSE as INT_PTR);
+            } else if LOWORD!(wParam) == (IDC_OK) as u16 {
+                if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_GETADDRESS) as u32, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
                     pGwSettings = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipGwSettings;
                     SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_GETTEXT, 16, (*pGwSettings).szIP.as_mut_ptr() as LPARAM);
 
-                    ZeroMemory(find.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of_val(&LVFINDINFOW));
+                    ZeroMemory!(find.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<LVFINDINFOW>());
                     let find_ptr = find.as_mut_ptr() as *mut usize;
-                    *find_ptr.offset(0) = LVFI_STRING;
+                    *find_ptr.offset(0) = (LVFI_STRING) as usize;
                     *find_ptr.offset(1) = (*pGwSettings).szIP.as_ptr() as usize;
 
-                    if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_UNCHECKED {
-                        (*pGwSettings).Metric = GetDlgItemInt(hwndDlg, IDC_GWMETRIC, core::ptr::null_mut(), FALSE);
+                    if IsDlgButtonChecked(hwndDlg, IDC_GWAUTOMETRIC) == BST_UNCHECKED as UINT {
+                        (*pGwSettings).Metric = GetDlgItemInt(hwndDlg, IDC_GWMETRIC, core::ptr::null_mut(), (FALSE) as i32);
                     } else {
                         (*pGwSettings).Metric = 0;
                     }
 
-                    if SendMessageW((*pGwSettings).hDlgCtrl, LVM_FINDITEMW, (1 as isize).wrapping_neg() as WPARAM, find.as_ptr() as LPARAM) == (1 as isize).wrapping_neg() {
-                        EndDialog(hwndDlg, TRUE);
+                    if SendMessageW((*pGwSettings).hDlgCtrl, (LVM_FINDITEMW) as u32, (1 as isize).wrapping_neg() as WPARAM, find.as_ptr() as LPARAM) == (1 as LRESULT).wrapping_neg() {
+                        EndDialog(hwndDlg, TRUE as INT_PTR);
                     } else if !(*pGwSettings).bAdd != 0 {
-                        EndDialog(hwndDlg, FALSE);
+                        EndDialog(hwndDlg, FALSE as INT_PTR);
                     } else {
-                        DisplayError(IDS_DUP_GW, IDS_TCPIP, MB_ICONINFORMATION);
+                        DisplayError((IDS_DUP_GW) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);
                     }
                 }
             }
@@ -983,17 +840,17 @@ pub unsafe extern "system" fn TcpipAdvGwDlg(
             lpnmipa = lParam as *mut core::ffi::c_void;
             let code = *(lpnmipa as *const u32).offset(2);
             let idFrom = *(lpnmipa as *const usize).offset(1);
-            if code == IPN_FIELDCHANGED {
-                if idFrom == IDC_IPADDR {
-                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_GETADDRESS, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), TRUE);
+            if code == (IPN_FIELDCHANGED) as u32 {
+                if idFrom == (IDC_IPADDR) as usize {
+                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_GETADDRESS) as u32, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (TRUE) as i32);
                     }
                 }
             }
         }
         _ => {}
     }
-    FALSE
+    FALSE as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetGWListEntry(hDlgCtrl: HWND, Index: i32, pGwSettings: *mut TcpipGwSettings) -> i32 {
@@ -1001,22 +858,22 @@ pub unsafe extern "C" fn GetGWListEntry(hDlgCtrl: HWND, Index: i32, pGwSettings:
     let mut szBuffer: [u16; 30] = [0; 30];
     let bRet: i32;
 
-    ZeroMemory(&mut li as *mut _ as LPVOID, core::mem::size_of::<LVITEMW>());
-    li.mask = LVIF_TEXT;
+    ZeroMemory!(&mut li as *mut _ as LPVOID, core::mem::size_of::<LVITEMW>());
+    li.mask = (LVIF_TEXT) as u32;
     li.cchTextMax = 16;
     li.pszText = (*pGwSettings).szIP.as_mut_ptr();
     li.iItem = Index;
 
-    if SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM) == 0 {
-        return FALSE;
+    if SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM) == 0 {
+        return (FALSE) as i32;
     }
     li.pszText = szBuffer.as_mut_ptr();
     li.cchTextMax = 30;
     li.iSubItem = 1;
 
-    bRet = SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM);
+    bRet = (SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM)) as i32;
     if bRet != 0 {
-        (*pGwSettings).Metric = _wtoi(szBuffer.as_ptr());
+        (*pGwSettings).Metric = (_wtoi(szBuffer.as_ptr())) as u32;
     }
 
     bRet
@@ -1029,10 +886,10 @@ pub unsafe extern "system" fn TcpipAddIpDlg(
     lParam: LPARAM,
 ) -> INT_PTR {
     let mut lpnmipa: LPNMIPADDRESS;
-    let mut dwIpAddr: DWORD;
+    let mut dwIpAddr: DWORD = 0;
     let mut pIpSettings: *mut TcpipIpSettings;
     let mut szBuffer: [u16; 50] = [0; 50];
-    let mut find: LVFINDINFOW;
+    let mut find: LVFINDINFOW = core::mem::zeroed();
     let mut lResult: LRESULT;
 
     match uMsg {
@@ -1040,93 +897,93 @@ pub unsafe extern "system" fn TcpipAddIpDlg(
             pIpSettings = lParam as *mut TcpipIpSettings;
             SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as LONG_PTR);
 
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 0, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
             if (*pIpSettings).bAdd != 0 {
-                if LoadStringW(netcfgx_hInstance, IDS_ADD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_ADD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (FALSE) as i32);
             } else {
-                if LoadStringW(netcfgx_hInstance, IDS_MOD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_MOD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
 
-                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETADDRESS, 0, GetIpAddressFromStringW((*pIpSettings).szIP.as_mut_ptr()) as LPARAM);
-                SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, GetIpAddressFromStringW((*pIpSettings).szMask.as_mut_ptr()) as LPARAM);
+                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETADDRESS) as u32, 0, GetIpAddressFromStringW((*pIpSettings).szIP.as_mut_ptr()) as LPARAM);
+                SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, GetIpAddressFromStringW((*pIpSettings).szMask.as_mut_ptr()) as LPARAM);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_NOTIFY => {
             lpnmipa = lParam as LPNMIPADDRESS;
-            if (*lpnmipa).hdr.code == IPN_FIELDCHANGED {
-                if (*lpnmipa).hdr.idFrom == IDC_IPADDR {
-                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_GETADDRESS, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
-                        if dwIpAddr <= MAKEIPADDRESS(127, 255, 255, 255) {
-                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, MAKEIPADDRESS(255, 0, 0, 0) as LPARAM);
-                        } else if dwIpAddr <= MAKEIPADDRESS(191, 255, 255, 255) {
-                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, MAKEIPADDRESS(255, 255, 0, 0) as LPARAM);
-                        } else if dwIpAddr <= MAKEIPADDRESS(223, 255, 255, 255) {
-                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, MAKEIPADDRESS(255, 255, 255, 0) as LPARAM);
+            if (*lpnmipa).hdr.code == (IPN_FIELDCHANGED) as u32 {
+                if (*lpnmipa).hdr.idFrom == IDC_IPADDR as UINT_PTR {
+                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_GETADDRESS) as u32, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
+                        if dwIpAddr <= MAKEIPADDRESS!(127, 255, 255, 255) {
+                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, MAKEIPADDRESS!(255, 0, 0, 0) as LPARAM);
+                        } else if dwIpAddr <= MAKEIPADDRESS!(191, 255, 255, 255) {
+                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, MAKEIPADDRESS!(255, 255, 0, 0) as LPARAM);
+                        } else if dwIpAddr <= MAKEIPADDRESS!(223, 255, 255, 255) {
+                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, MAKEIPADDRESS!(255, 255, 255, 0) as LPARAM);
                         }
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), TRUE);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (TRUE) as i32);
                     }
                 }
             }
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_OK {
+            if LOWORD!(wParam) == (IDC_OK) as u16 {
                 pIpSettings = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipIpSettings;
                 SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_GETTEXT, 16, (*pIpSettings).szIP.as_mut_ptr() as LPARAM);
                 SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, WM_GETTEXT, 16, (*pIpSettings).szMask.as_mut_ptr() as LPARAM);
 
-                ZeroMemory(core::ptr::addr_of_mut!(find) as LPVOID, core::mem::size_of_val(&LVFINDINFOW));
-                find.flags = LVFI_STRING;
+                ZeroMemory!(core::ptr::addr_of_mut!(find) as LPVOID, core::mem::size_of::<LVFINDINFOW>());
+                find.flags = (LVFI_STRING) as u32;
                 find.psz = (*pIpSettings).szIP.as_mut_ptr();
-                lResult = SendMessageW((*pIpSettings).hDlgCtrl, LVM_FINDITEMW, (-1) as WPARAM, core::ptr::addr_of_mut!(find) as LPARAM);
+                lResult = SendMessageW((*pIpSettings).hDlgCtrl, (LVM_FINDITEMW) as u32, (-1i32) as isize as WPARAM, core::ptr::addr_of_mut!(find) as LPARAM);
 
                 if lResult == -1 {
-                    EndDialog(hwndDlg, TRUE);
+                    EndDialog(hwndDlg, TRUE as INT_PTR);
                     return 0;
                 } else if (*pIpSettings).bAdd == 0 {
-                    EndDialog(hwndDlg, FALSE);
+                    EndDialog(hwndDlg, FALSE as INT_PTR);
                     return 0;
                 }
-                DisplayError(IDS_DUP_IPADDR, IDS_TCPIP, MB_ICONINFORMATION);
+                DisplayError((IDS_DUP_IPADDR) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);
                 return 0;
-            } else if LOWORD(wParam) == IDCANCEL {
-                EndDialog(hwndDlg, FALSE);
+            } else if LOWORD!(wParam) == (IDCANCEL) as u16 {
+                EndDialog(hwndDlg, FALSE as INT_PTR);
             }
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn VerifyDNSSuffix(
     szName: LPWSTR
 ) -> i32 {
     let mut Index: u32;
-    let Length: u32 = wcslen(szName);
+    let Length: u32 = (wcslen(szName)) as u32;
 
     Index = 0;
     while Index < Length {
-        if iswalnum(*szName.offset(Index as isize) as u16 as i32) == 0 && *szName.offset(Index as isize) != '.' as u16 && *szName.offset(Index as isize) != '-' as u16 {
-            return FALSE;
+        if iswalnum((*szName.offset(Index as isize) as u16 as i32) as u16) == 0 && *szName.offset(Index as isize) != '.' as u16 && *szName.offset(Index as isize) != '-' as u16 {
+            return (FALSE) as i32;
         }
         Index = Index + 1;
     }
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn TcpipAddSuffixDlg(
@@ -1144,70 +1001,70 @@ pub unsafe extern "system" fn TcpipAddSuffixDlg(
             pSettings = lParam as *mut TcpipSuffixSettings;
             if (*pSettings).bAdd == 0 {
                 SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_SETTEXT, 0, (*pSettings).Suffix as LPARAM);
-                if LoadStringW(netcfgx_hInstance, IDS_MOD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_MOD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
                 CoTaskMemFree((*pSettings).Suffix as LPVOID);
                 (*pSettings).Suffix = core::ptr::null_mut();
             } else {
-                if LoadStringW(netcfgx_hInstance, IDS_ADD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_ADD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
             }
             SetWindowLongPtr(hwndDlg, DWLP_USER, pSettings as LONG_PTR);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDCANCEL {
-                EndDialog(hwndDlg, FALSE);
-            } else if LOWORD(wParam) == IDC_OK {
+            if LOWORD!(wParam) == (IDCANCEL) as u16 {
+                EndDialog(hwndDlg, FALSE as INT_PTR);
+            } else if LOWORD!(wParam) == (IDC_OK) as u16 {
                 lLength = SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_GETTEXTLENGTH, 0, 0);
                 if lLength != 0 {
                     pSettings = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipSuffixSettings;
-                    (*pSettings).Suffix = CoTaskMemAlloc(((lLength + 1) * core::mem::size_of::<WCHAR>() as isize) as usize) as LPWSTR;
+                    (*pSettings).Suffix = CoTaskMemAlloc(((lLength + 1) as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
                     if !(*pSettings).Suffix.is_null() {
-                        SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_GETTEXT, lLength + 1, (*pSettings).Suffix as LPARAM);
-                        if SendMessageW((*pSettings).hDlgCtrl, LB_FINDSTRING, 0, (*pSettings).Suffix as LPARAM) != LB_ERR {
-                            DisplayError(IDS_DUP_SUFFIX, IDS_TCPIP, MB_ICONWARNING);
+                        SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_GETTEXT, (lLength + 1) as WPARAM, (*pSettings).Suffix as LPARAM);
+                        if SendMessageW((*pSettings).hDlgCtrl, LB_FINDSTRING, 0, (*pSettings).Suffix as LPARAM) != (LB_ERR) as LRESULT {
+                            DisplayError((IDS_DUP_SUFFIX) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
                             CoTaskMemFree((*pSettings).Suffix as LPVOID);
-                            return FALSE;
+                            return FALSE as INT_PTR;
                         }
 
                         if VerifyDNSSuffix((*pSettings).Suffix) == 0 {
-                            DisplayError(IDS_DOMAIN_SUFFIX, IDS_TCPIP, MB_ICONWARNING);
+                            DisplayError((IDS_DOMAIN_SUFFIX) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
                             CoTaskMemFree((*pSettings).Suffix as LPVOID);
-                            return FALSE;
+                            return FALSE as INT_PTR;
                         }
-                        EndDialog(hwndDlg, TRUE);
+                        EndDialog(hwndDlg, TRUE as INT_PTR);
                     }
                 }
             }
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetSelectedItem(hDlgCtrl: HWND) -> i32 {
     let mut li: LVITEMW = core::mem::zeroed();
-    let iItemCount: u32;
-    let mut iIndex: u32;
+    let iItemCount: c_int;
+    let mut iIndex: c_int;
 
-    iItemCount = ListView_GetItemCount(hDlgCtrl);
+    iItemCount = ListView_GetItemCount!(hDlgCtrl);
     if iItemCount == 0 {
         return -1;
     }
 
     iIndex = 0;
     while iIndex < iItemCount {
-        ZeroMemory(&mut li as *mut _ as LPVOID, core::mem::size_of_val(&LVITEMW));
-        li.mask = LVIF_STATE;
+        ZeroMemory!(&mut li as *mut _ as LPVOID, core::mem::size_of::<LVITEMW>());
+        li.mask = (LVIF_STATE) as u32;
         li.stateMask = (-1 as i32) as u32;
         li.iItem = iIndex as i32;
-        if SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM) != 0 {
-            if (li.state & LVIS_SELECTED) != 0 {
+        if SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM) != 0 {
+            if (li.state & (LVIS_SELECTED) as u32) != 0 {
                 return iIndex as i32;
             }
         }
@@ -1219,24 +1076,24 @@ pub unsafe extern "C" fn GetSelectedItem(hDlgCtrl: HWND) -> i32 {
 pub unsafe extern "C" fn GetIPListEntry(hDlgCtrl: HWND, Index: i32, pIpSettings: *mut TcpipIpSettings) -> i32 {
     let mut li: LVITEMW = core::mem::zeroed();
 
-    ZeroMemory(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEMW>());
-    li.mask = LVIF_TEXT;
+    ZeroMemory!(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEMW>());
+    li.mask = (LVIF_TEXT) as u32;
     li.cchTextMax = 16;
     li.pszText = (*pIpSettings).szIP.as_mut_ptr();
     li.iItem = Index;
 
-    if SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM) == 0 {
-        return FALSE;
+    if SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM) == 0 {
+        return (FALSE) as i32;
     }
 
-    ZeroMemory(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEMW>());
-    li.mask = LVIF_TEXT;
+    ZeroMemory!(&mut li as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEMW>());
+    li.mask = (LVIF_TEXT) as u32;
     li.cchTextMax = 16;
     li.pszText = (*pIpSettings).szMask.as_mut_ptr();
     li.iSubItem = 1;
     li.iItem = Index;
 
-    SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM)
+    (SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM)) as i32
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeleteItemFromList(hDlgCtrl: HWND) {
@@ -1245,14 +1102,14 @@ pub unsafe extern "C" fn DeleteItemFromList(hDlgCtrl: HWND) {
     memset(
         &mut li as *mut _ as *mut core::ffi::c_void,
         0x0,
-        core::mem::size_of_val(&LVITEMW),
+        core::mem::size_of::<LVITEMW>(),
     );
     li.iItem = GetSelectedItem(hDlgCtrl);
     if li.iItem < 0 {
-        DisplayError(IDS_NOITEMSEL, IDS_TCPIP, MB_ICONINFORMATION);
+        DisplayError((IDS_NOITEMSEL) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);
         SetFocus(hDlgCtrl);
     } else {
-        ListView_DeleteItem(hDlgCtrl, li.iItem);
+        ListView_DeleteItem!(hDlgCtrl, li.iItem);
     }
 }
 #[no_mangle]
@@ -1287,11 +1144,11 @@ pub unsafe extern "C" fn GetIpAddressFromStringA(
 ) -> u32 {
     let mut szIp: [u16; 16] = core::mem::zeroed();
 
-    if MultiByteToWideChar(CP_ACP, 0, sBuffer, -1, szIp.as_mut_ptr(), 16) != 0 {
+    if MultiByteToWideChar((CP_ACP) as u32, 0, sBuffer, -1, szIp.as_mut_ptr(), 16) != 0 {
         szIp[15] = 0u16;
         return GetIpAddressFromStringW(szIp.as_mut_ptr());
     }
-    return (-1) as u32;
+    return (-1i32) as u32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn FreeIPAddr(mut pAddr: *mut IP_ADDR) {
@@ -1317,13 +1174,13 @@ pub unsafe extern "C" fn GetListViewItem(
 ) -> BOOL {
     let mut li: LVITEMW = core::mem::zeroed();
 
-    ZeroMemory(&mut li as *mut _ as PVOID, core::mem::size_of::<LVITEMW>());
-    li.mask = LVIF_TEXT;
+    ZeroMemory!(&mut li as *mut _ as PVOID, core::mem::size_of::<LVITEMW>());
+    li.mask = (LVIF_TEXT) as u32;
     li.pszText = szBuffer;
     li.iItem = Index as i32;
     li.iSubItem = SubIndex as i32;
     li.cchTextMax = BufferSize as i32;
-    SendMessageW(hDlgCtrl, LVM_GETITEMW, 0, &li as *const _ as LPARAM) as BOOL
+    SendMessageW(hDlgCtrl, (LVM_GETITEMW) as u32, 0, &li as *const _ as LPARAM) as BOOL
 }
 #[no_mangle]
 pub unsafe extern "C" fn StoreIPSettings(
@@ -1338,7 +1195,7 @@ pub unsafe extern "C" fn StoreIPSettings(
     let mut pCur: *mut IP_ADDR;
     let mut pLast: *mut IP_ADDR;
 
-    iCount = ListView_GetItemCount(hDlgCtrl);
+    iCount = ListView_GetItemCount!(hDlgCtrl);
     if iCount == 0 {
         return;
     }
@@ -1354,11 +1211,11 @@ pub unsafe extern "C" fn StoreIPSettings(
             (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as UINT,
         ) != 0
         {
-            pCur = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+            pCur = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
             if pCur.is_null() {
                 break;
             }
-            ZeroMemory(pCur as LPVOID, core::mem::size_of::<IP_ADDR>());
+            ZeroMemory!(pCur as LPVOID, core::mem::size_of::<IP_ADDR>());
 
             szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
             (*pCur).IpAddress = GetIpAddressFromStringW(szBuffer.as_mut_ptr());
@@ -1417,174 +1274,174 @@ pub unsafe extern "system" fn TcpipAdvancedIpDlg(
             This = (*page).lParam as *mut TcpipConfNotifyImpl;
             InitializeTcpipAdvancedIpDlg(hwndDlg, This);
             SetWindowLongPtr(hwndDlg, DWLP_USER, This as INT_PTR);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_NOTIFY => {
             lppsn = lParam as LPPSHNOTIFY;
-            if (*lppsn).hdr.code == LVN_ITEMCHANGED {
+            if (*lppsn).hdr.code == (LVN_ITEMCHANGED) as u32 {
                 let lplv = lParam as LPNMLISTVIEW;
                 let mut bEnable: BOOL;
 
-                if (*lplv).hdr.idFrom == IDC_IPLIST {
+                if (*lplv).hdr.idFrom == IDC_IPLIST as UINT_PTR {
                     This = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
 
-                    bEnable = (((*lplv).uNewState & LVIS_SELECTED) != 0)
-                        && (!(*(*This).pCurrentConfig).DhcpEnabled);
+                    bEnable = ((((*lplv).uNewState & (LVIS_SELECTED) as u32) != 0)
+                        && ((*(*This).pCurrentConfig).DhcpEnabled == 0)) as BOOL;
 
                     EnableWindow(GetDlgItem(hwndDlg, IDC_IPMOD), bEnable);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_IPDEL), bEnable);
-                } else if (*lplv).hdr.idFrom == IDC_GWLIST {
-                    bEnable = (((*lplv).uNewState & LVIS_SELECTED) != 0);
+                } else if (*lplv).hdr.idFrom == IDC_GWLIST as UINT_PTR {
+                    bEnable = ((((*lplv).uNewState & (LVIS_SELECTED) as u32) != 0) as BOOL);
 
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWMOD), bEnable);
                     EnableWindow(GetDlgItem(hwndDlg, IDC_GWDEL), bEnable);
                 }
-            } else if (*lppsn).hdr.code == PSN_KILLACTIVE {
+            } else if (*lppsn).hdr.code == (PSN_KILLACTIVE) as u32 {
                 This = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
-                if !(*(*This).pCurrentConfig).DhcpEnabled && ListView_GetItemCount(GetDlgItem(hwndDlg, IDC_IPLIST)) == 0 {
-                    DisplayError(IDS_NO_IPADDR_SET, IDS_TCPIP, MB_ICONWARNING);
-                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
-                    return TRUE;
+                if (*(*This).pCurrentConfig).DhcpEnabled == 0 && ListView_GetItemCount!(GetDlgItem(hwndDlg, IDC_IPLIST)) == 0i32 {
+                    DisplayError((IDS_NO_IPADDR_SET) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
+                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
+                    return TRUE as INT_PTR;
                 }
 
                 if IsDlgButtonChecked(hwndDlg, IDC_IFAUTOMETRIC) != BST_CHECKED {
-                    let val = GetDlgItemInt(hwndDlg, IDC_IFMETRIC, core::ptr::null_mut(), FALSE);
+                    let val = GetDlgItemInt(hwndDlg, IDC_IFMETRIC, core::ptr::null_mut(), (FALSE) as i32);
                     if (val < 1) || (val > 9999) {
-                        DisplayError(IDS_METRIC_RANGE, IDS_TCPIP, MB_ICONWARNING);
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
-                        return TRUE;
+                        DisplayError((IDS_METRIC_RANGE) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
+                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
+                        return TRUE as INT_PTR;
                     }
                 }
-            } else if (*lppsn).hdr.code == PSN_APPLY {
+            } else if (*lppsn).hdr.code == (PSN_APPLY) as u32 {
                 This = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
                 FreeIPAddr((*(*This).pCurrentConfig).Gw);
                 (*(*This).pCurrentConfig).Gw = core::ptr::null_mut();
                 FreeIPAddr((*(*This).pCurrentConfig).Ip);
                 (*(*This).pCurrentConfig).Ip = core::ptr::null_mut();
-                StoreIPSettings(GetDlgItem(hwndDlg, IDC_IPLIST), This, TRUE);
-                StoreIPSettings(GetDlgItem(hwndDlg, IDC_GWLIST), This, FALSE);
+                StoreIPSettings(GetDlgItem(hwndDlg, IDC_IPLIST), This, (TRUE) as i32);
+                StoreIPSettings(GetDlgItem(hwndDlg, IDC_GWLIST), This, (FALSE) as i32);
 
-                if IsDlgButtonChecked(hwndDlg, IDC_IFAUTOMETRIC) == BST_CHECKED {
+                if IsDlgButtonChecked(hwndDlg, IDC_IFAUTOMETRIC) == BST_CHECKED as UINT {
                     (*(*This).pCurrentConfig).Metric = 0;
                 } else {
-                    (*(*This).pCurrentConfig).Metric = GetDlgItemInt(hwndDlg, IDC_IFMETRIC, core::ptr::null_mut(), FALSE);
+                    (*(*This).pCurrentConfig).Metric = GetDlgItemInt(hwndDlg, IDC_IFMETRIC, core::ptr::null_mut(), (FALSE) as i32);
                 }
 
-                SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
-                return TRUE;
+                SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (PSNRET_NOERROR) as LRESULT);
+                return TRUE as INT_PTR;
             }
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_IFAUTOMETRIC {
-                if IsDlgButtonChecked(hwndDlg, IDC_IFAUTOMETRIC) == BST_CHECKED {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), FALSE);
+            if LOWORD!(wParam) == (IDC_IFAUTOMETRIC) as u16 {
+                if IsDlgButtonChecked(hwndDlg, IDC_IFAUTOMETRIC) == BST_CHECKED as UINT {
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), (FALSE) as i32);
                 } else {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), TRUE);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_IFMETRIC), (TRUE) as i32);
                 }
-            } else if LOWORD(wParam) == IDC_IPADD {
-                Ip.bAdd = TRUE;
+            } else if LOWORD!(wParam) == (IDC_IPADD) as u16 {
+                Ip.bAdd = (TRUE) as i32;
                 Ip.hDlgCtrl = GetDlgItem(hwndDlg, IDC_IPLIST);
-                res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPADDIP_DLG), hwndDlg, TcpipAddIpDlg, &mut Ip as *mut _ as LPARAM);
+                res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPADDIP_DLG), hwndDlg, Some(TcpipAddIpDlg), &mut Ip as *mut _ as LPARAM);
                 if res != 0 {
-                    memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of_val(&LVITEMW));
-                    li.mask = LVIF_TEXT | LVIF_PARAM;
-                    li.iItem = ListView_GetItemCount(GetDlgItem(hwndDlg, IDC_IPLIST));
+                    memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<LVITEMW>());
+                    li.mask = (LVIF_TEXT | LVIF_PARAM) as u32;
+                    li.iItem = ListView_GetItemCount!(GetDlgItem(hwndDlg, IDC_IPLIST));
                     li.pszText = Ip.szIP.as_mut_ptr();
-                    li.iItem = SendDlgItemMessageW(hwndDlg, IDC_IPLIST, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
+                    li.iItem = (SendDlgItemMessageW(hwndDlg, IDC_IPLIST, (LVM_INSERTITEMW) as u32, 0, &li as *const _ as LPARAM)) as i32;
                     if li.iItem != -1 {
-                        li.mask = LVIF_TEXT;
+                        li.mask = (LVIF_TEXT) as u32;
                         li.iSubItem = 1;
                         li.pszText = Ip.szMask.as_mut_ptr();
-                        SendDlgItemMessageW(hwndDlg, IDC_IPLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                        SendDlgItemMessageW(hwndDlg, IDC_IPLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                     }
                 }
-            } else if LOWORD(wParam) == IDC_IPMOD {
-                memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of_val(&LVITEMW));
+            } else if LOWORD!(wParam) == (IDC_IPMOD) as u16 {
+                memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<LVITEMW>());
                 li.iItem = GetSelectedItem(GetDlgItem(hwndDlg, IDC_IPLIST));
                 if li.iItem < 0 {
-                    DisplayError(IDS_NOITEMSEL, IDS_TCPIP, MB_ICONINFORMATION);
+                    DisplayError((IDS_NOITEMSEL) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);
                     SetFocus(GetDlgItem(hwndDlg, IDC_IPLIST));
                 } else {
-                    Ip.bAdd = FALSE;
+                    Ip.bAdd = (FALSE) as i32;
                     Ip.hDlgCtrl = GetDlgItem(hwndDlg, IDC_IPLIST);
                     if GetIPListEntry(GetDlgItem(hwndDlg, IDC_IPLIST), li.iItem, &mut Ip) != 0 {
-                        res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPADDIP_DLG), hwndDlg, TcpipAddIpDlg, &mut Ip as *mut _ as LPARAM);
+                        res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPADDIP_DLG), hwndDlg, Some(TcpipAddIpDlg), &mut Ip as *mut _ as LPARAM);
                         if res != 0 {
-                            li.mask = LVIF_TEXT;
+                            li.mask = (LVIF_TEXT) as u32;
                             li.pszText = Ip.szIP.as_mut_ptr();
-                            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                             li.pszText = Ip.szMask.as_mut_ptr();
                             li.iSubItem = 1;
-                            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                            SendDlgItemMessageW(hwndDlg, IDC_IPLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                         }
                     }
                 }
-            } else if LOWORD(wParam) == IDC_IPDEL {
+            } else if LOWORD!(wParam) == (IDC_IPDEL) as u16 {
                 DeleteItemFromList(GetDlgItem(hwndDlg, IDC_IPLIST));
-            } else if LOWORD(wParam) == IDC_GWADD {
-                Gw.bAdd = TRUE;
+            } else if LOWORD!(wParam) == (IDC_GWADD) as u16 {
+                Gw.bAdd = (TRUE) as i32;
                 Gw.hDlgCtrl = GetDlgItem(hwndDlg, IDC_GWLIST);
-                res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPGW_DLG), hwndDlg, TcpipAdvGwDlg, &mut Gw as *mut _ as LPARAM);
+                res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPGW_DLG), hwndDlg, Some(TcpipAdvGwDlg), &mut Gw as *mut _ as LPARAM);
                 if res != 0 {
-                    memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of_val(&LVITEMW));
-                    li.mask = LVIF_TEXT;
-                    li.iItem = ListView_GetItemCount(GetDlgItem(hwndDlg, IDC_GWLIST));
+                    memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<LVITEMW>());
+                    li.mask = (LVIF_TEXT) as u32;
+                    li.iItem = ListView_GetItemCount!(GetDlgItem(hwndDlg, IDC_GWLIST));
                     li.pszText = Gw.szIP.as_mut_ptr();
-                    li.iItem = SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_INSERTITEMW, 0, &li as *const _ as LPARAM);
+                    li.iItem = (SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_INSERTITEMW) as u32, 0, &li as *const _ as LPARAM)) as i32;
                     if li.iItem >= 0 {
                         if Gw.Metric != 0 {
-                            swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
+                            swprintf(szBuffer.as_mut_ptr(), w!("%u") as *const _, Gw.Metric);
                             li.iSubItem = 1;
                             li.pszText = szBuffer.as_mut_ptr();
-                            SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                            SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                         } else {
-                            if LoadStringW(netcfgx_hInstance, IDS_AUTOMATIC, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                            if LoadStringW(netcfgx_hInstance, (IDS_AUTOMATIC) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                                 szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = '\0' as u16;
                                 li.iSubItem = 1;
                                 li.pszText = szBuffer.as_mut_ptr();
-                                SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                                SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                             }
                         }
                     }
                 }
-            } else if LOWORD(wParam) == IDC_GWMOD {
-                memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of_val(&LVITEMW));
+            } else if LOWORD!(wParam) == (IDC_GWMOD) as u16 {
+                memset(core::ptr::addr_of_mut!(li) as *mut core::ffi::c_void, 0x0, core::mem::size_of::<LVITEMW>());
                 li.iItem = GetSelectedItem(GetDlgItem(hwndDlg, IDC_GWLIST));
                 if li.iItem < 0 {
-                    DisplayError(IDS_NOITEMSEL, IDS_TCPIP, MB_ICONINFORMATION);
+                    DisplayError((IDS_NOITEMSEL) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);
                     SetFocus(GetDlgItem(hwndDlg, IDC_GWLIST));
                 } else {
                     if GetGWListEntry(GetDlgItem(hwndDlg, IDC_GWLIST), li.iItem, &mut Gw) != 0 {
-                        Gw.bAdd = FALSE;
+                        Gw.bAdd = (FALSE) as i32;
                         Gw.hDlgCtrl = GetDlgItem(hwndDlg, IDC_GWLIST);
-                        res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPGW_DLG), hwndDlg, TcpipAdvGwDlg, &mut Gw as *mut _ as LPARAM);
+                        res = DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPGW_DLG), hwndDlg, Some(TcpipAdvGwDlg), &mut Gw as *mut _ as LPARAM);
                         if res != 0 {
-                            li.mask = LVIF_TEXT;
+                            li.mask = (LVIF_TEXT) as u32;
                             li.pszText = Gw.szIP.as_mut_ptr();
-                            SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                            SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                             if Gw.Metric != 0 {
-                                swprintf(szBuffer.as_mut_ptr(), b"%\0u\0\0\0".as_ptr() as *const _, Gw.Metric);
+                                swprintf(szBuffer.as_mut_ptr(), w!("%u") as *const _, Gw.Metric);
                                 li.iSubItem = 1;
                                 li.pszText = szBuffer.as_mut_ptr();
-                                SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                                SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                             } else {
-                                if LoadStringW(netcfgx_hInstance, IDS_AUTOMATIC, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                                if LoadStringW(netcfgx_hInstance, (IDS_AUTOMATIC) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = '\0' as u16;
                                     li.iSubItem = 1;
                                     li.pszText = szBuffer.as_mut_ptr();
-                                    SendDlgItemMessageW(hwndDlg, IDC_GWLIST, LVM_SETITEMW, 0, &li as *const _ as LPARAM);
+                                    SendDlgItemMessageW(hwndDlg, IDC_GWLIST, (LVM_SETITEMW) as u32, 0, &li as *const _ as LPARAM);
                                 }
                             }
                         }
                     }
                 }
-            } else if LOWORD(wParam) == IDC_GWDEL {
+            } else if LOWORD!(wParam) == (IDC_GWDEL) as u16 {
                 DeleteItemFromList(GetDlgItem(hwndDlg, IDC_GWLIST));
             }
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "system" fn TcpipAddDNSDlg(
@@ -1603,54 +1460,54 @@ pub unsafe extern "system" fn TcpipAddDNSDlg(
             pSettings = lParam as *mut TcpipDnsSettings;
             SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as LONG_PTR);
             if (*pSettings).bAdd == 0 {
-                if LoadStringW(netcfgx_hInstance, IDS_MOD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_MOD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
-                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_SETTEXT, 0, (*pSettings).szIP as LPARAM);
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), TRUE);
+                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_SETTEXT, 0, (*pSettings).szIP.as_ptr() as LPARAM);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (TRUE) as i32);
             } else {
-                if LoadStringW(netcfgx_hInstance, IDS_ADD, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+                if LoadStringW(netcfgx_hInstance, (IDS_ADD) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
                     szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0;
                     SendDlgItemMessageW(hwndDlg, IDC_OK, WM_SETTEXT, 0, szBuffer.as_ptr() as LPARAM);
                 }
-                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (FALSE) as i32);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            if LOWORD(wParam as u32) == IDCANCEL {
-                EndDialog(hwndDlg, FALSE);
-            } else if LOWORD(wParam as u32) == IDC_OK {
+            if LOWORD!(wParam as u32) == (IDCANCEL) as u16 {
+                EndDialog(hwndDlg, FALSE as INT_PTR);
+            } else if LOWORD!(wParam as u32) == (IDC_OK) as u16 {
                 pSettings = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipDnsSettings;
-                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_GETTEXT, 16, (*pSettings).szIP as LPARAM);
-                if SendMessageW((*pSettings).hDlgCtrl, LB_FINDSTRING, 0, (*pSettings).szIP as LPARAM) == LB_ERR {
+                SendDlgItemMessageW(hwndDlg, IDC_IPADDR, WM_GETTEXT, 16, (*pSettings).szIP.as_ptr() as LPARAM);
+                if SendMessageW((*pSettings).hDlgCtrl, LB_FINDSTRING, 0, (*pSettings).szIP.as_ptr() as LPARAM) == (LB_ERR) as LRESULT {
                     if (*pSettings).bAdd != 0 {
-                        SendMessageW((*pSettings).hDlgCtrl, LB_ADDSTRING, 0, (*pSettings).szIP as LPARAM);
+                        SendMessageW((*pSettings).hDlgCtrl, LB_ADDSTRING, 0, (*pSettings).szIP.as_ptr() as LPARAM);
                     }
-                    EndDialog(hwndDlg, TRUE);
-                    return FALSE;
+                    EndDialog(hwndDlg, TRUE as INT_PTR);
+                    return FALSE as INT_PTR;
                 }
                 if (*pSettings).bAdd == 0 {
-                    EndDialog(hwndDlg, FALSE);
-                    return FALSE;
+                    EndDialog(hwndDlg, FALSE as INT_PTR);
+                    return FALSE as INT_PTR;
                 }
-                DisplayError(IDS_DUP_SUFFIX, IDS_TCPIP, MB_ICONERROR);
+                DisplayError((IDS_DUP_SUFFIX) as u32, (IDS_TCPIP) as u32, MB_ICONERROR);
             }
         }
         WM_NOTIFY => {
             lpnmipa = lParam as LPNMIPADDRESS;
-            if (*lpnmipa).hdr.code == IPN_FIELDCHANGED {
-                if (*lpnmipa).hdr.idFrom == IDC_IPADDR {
-                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_GETADDRESS, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), TRUE);
+            if (*lpnmipa).hdr.code == (IPN_FIELDCHANGED) as u32 {
+                if (*lpnmipa).hdr.idFrom == IDC_IPADDR as UINT_PTR {
+                    if SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_GETADDRESS) as u32, 0, core::ptr::addr_of_mut!(dwIpAddr) as LPARAM) == 4 {
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_OK), (TRUE) as i32);
                     }
                 }
             }
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
@@ -1661,14 +1518,14 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
     let mut pSep: LPWSTR;
     let mut pList: LPWSTR;
     let mut pAddr: *mut IP_ADDR;
-    let mut dwIpAddr: u32;
+    let mut dwIpAddr: u32 = 0;
 
     pAddr = (*(*This).pCurrentConfig).Ns;
     while !pAddr.is_null() {
         dwIpAddr = (*pAddr).IpAddress;
         swprintf(szBuffer.as_mut_ptr(),
-                 FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                 FIRST_IPADDRESS(dwIpAddr), SECOND_IPADDRESS(dwIpAddr), THIRD_IPADDRESS(dwIpAddr), FOURTH_IPADDRESS(dwIpAddr));
+                 w!("%lu.%lu.%lu.%lu") as *const u16,
+                 FIRST_IPADDRESS!(dwIpAddr), SECOND_IPADDRESS!(dwIpAddr), THIRD_IPADDRESS!(dwIpAddr), FOURTH_IPADDRESS!(dwIpAddr));
 
         SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_ADDSTRING, 0, szBuffer.as_ptr() as LPARAM);
         pAddr = (*pAddr).Next;
@@ -1682,7 +1539,7 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
     if (*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName != 0 {
         CheckDlgButton(hwndDlg, IDC_REGSUFFIX, BST_CHECKED);
     } else {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), (FALSE) as i32);
     }
 
     if (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled != 0 {
@@ -1699,7 +1556,7 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
 
     if (*(*(*This).pCurrentConfig).pDNS).szSearchList.is_null() || wcslen((*(*(*This).pCurrentConfig).pDNS).szSearchList) == 0 {
         CheckDlgButton(hwndDlg, IDC_PRIMSUFFIX, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), (FALSE) as i32);
         return;
     }
 
@@ -1722,7 +1579,7 @@ pub unsafe extern "C" fn InitializeTcpipAdvancedDNSDlg(
             }
         }
 
-        EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), (FALSE) as i32);
         CheckDlgButton(hwndDlg, IDC_SELSUFFIX, BST_CHECKED);
         SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_SETCURSEL, 0, 0);
     }
@@ -1732,30 +1589,30 @@ pub unsafe extern "C" fn ToggleUpDown(hwndDlg: HWND, hDlgCtrl: HWND, UpButton: u
     let lResult: isize;
     let lCount: isize;
 
-    lResult = SendMessageW(hDlgCtrl, LB_GETCURSEL, 0, 0);
-    lCount = SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0);
-    if lResult != LB_ERR {
+    lResult = (SendMessageW(hDlgCtrl, LB_GETCURSEL, 0, 0)) as isize;
+    lCount = (SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0)) as isize;
+    if lResult != (LB_ERR) as isize {
         if lResult == 0 {
-            EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), (FALSE) as i32);
         } else {
-            EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), TRUE);
+            EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), (TRUE) as i32);
         }
 
         if lResult < lCount - 1 {
-            EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), TRUE);
+            EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), (TRUE) as i32);
         } else {
-            EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), FALSE);
+            EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), (FALSE) as i32);
         }
     }
 
     if lCount != 0 {
-        EnableWindow(GetDlgItem(hwndDlg, ModButton as i32), TRUE);
-        EnableWindow(GetDlgItem(hwndDlg, DelButton as i32), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, ModButton as i32), (TRUE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, DelButton as i32), (TRUE) as i32);
     } else {
-        EnableWindow(GetDlgItem(hwndDlg, ModButton as i32), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, DelButton as i32), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, ModButton as i32), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, DelButton as i32), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, UpButton as i32), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, DownButton as i32), (FALSE) as i32);
     }
 }
 #[no_mangle]
@@ -1769,11 +1626,11 @@ pub unsafe extern "C" fn MoveItem(
     let lResult: LRESULT;
 
     lResult = SendMessageW(hDlgCtrl, LB_GETCURSEL, 0, 0);
-    if lResult != LB_ERR
+    if lResult != (LB_ERR) as LRESULT
     {
         if SendMessageW(hDlgCtrl, LB_GETTEXTLEN, lResult as WPARAM, 0) < (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>() - 1) as LRESULT
         {
-            if SendMessageW(hDlgCtrl, LB_GETTEXT, lResult as WPARAM, szBuffer.as_mut_ptr() as LPARAM) != LB_ERR
+            if SendMessageW(hDlgCtrl, LB_GETTEXT, lResult as WPARAM, szBuffer.as_mut_ptr() as LPARAM) != (LB_ERR) as LRESULT
             {
                 SendMessageW(hDlgCtrl, LB_DELETESTRING, lResult as WPARAM, 0);
                 SendMessageW(hDlgCtrl, LB_INSERTSTRING, (lResult + pos as LRESULT) as WPARAM, szBuffer.as_ptr() as LPARAM);
@@ -1789,7 +1646,7 @@ pub unsafe extern "C" fn RemoveItem(
     let mut lCount: LRESULT;
 
     lResult = SendMessageW(hDlgCtrl, LB_GETCURSEL, 0, 0);
-    if lResult != LB_ERR
+    if lResult != (LB_ERR) as LRESULT
     {
         SendMessageW(hDlgCtrl, LB_DELETESTRING, lResult as WPARAM, 0);
         lCount = SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0);
@@ -1811,7 +1668,7 @@ pub unsafe extern "C" fn GetListViewEntries(
     let mut pszSearchList: LPWSTR;
     let mut pItem: LPWSTR;
 
-    iCount = SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0);
+    iCount = (SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0)) as i32;
     if iCount == 0 || iCount == LB_ERR {
         return core::ptr::null_mut();
     }
@@ -1820,8 +1677,8 @@ pub unsafe extern "C" fn GetListViewEntries(
 
     iIndex = 0;
     while iIndex < iCount {
-        lResult = SendMessageW(hDlgCtrl, LB_GETTEXTLEN, iIndex, 0);
-        if lResult == LB_ERR {
+        lResult = SendMessageW(hDlgCtrl, LB_GETTEXTLEN, iIndex as WPARAM, 0);
+        if lResult == (LB_ERR) as LRESULT {
             return core::ptr::null_mut();
         }
 
@@ -1829,7 +1686,7 @@ pub unsafe extern "C" fn GetListViewEntries(
         iIndex += 1;
     }
 
-    pszSearchList = CoTaskMemAlloc((dwSize + 1) * core::mem::size_of::<u16>() as DWORD) as LPWSTR;
+    pszSearchList = CoTaskMemAlloc(((dwSize + 1) * core::mem::size_of::<u16>() as DWORD) as SIZE_T) as LPWSTR;
     if pszSearchList.is_null() {
         return core::ptr::null_mut();
     }
@@ -1837,8 +1694,8 @@ pub unsafe extern "C" fn GetListViewEntries(
     pItem = pszSearchList;
     iIndex = 0;
     while iIndex < iCount {
-        lResult = SendMessageW(hDlgCtrl, LB_GETTEXT, iIndex, pItem as LPARAM);
-        if lResult == LB_ERR {
+        lResult = SendMessageW(hDlgCtrl, LB_GETTEXT, iIndex as WPARAM, pItem as LPARAM);
+        if lResult == (LB_ERR) as LRESULT {
             CoTaskMemFree(pszSearchList as LPVOID);
             return core::ptr::null_mut();
         }
@@ -1867,7 +1724,7 @@ pub unsafe extern "C" fn StoreDNSSettings(
     FreeIPAddr((*(*This).pCurrentConfig).Ns);
     (*(*This).pCurrentConfig).Ns = core::ptr::null_mut();
 
-    iCount = SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0);
+    iCount = (SendMessageW(hDlgCtrl, LB_GETCOUNT, 0, 0)) as i32;
     if iCount == 0 || iCount == LB_ERR {
         return;
     }
@@ -1875,15 +1732,15 @@ pub unsafe extern "C" fn StoreDNSSettings(
     pLast = core::ptr::null_mut();
     iIndex = 0;
     while iIndex < iCount {
-        if SendMessageW(hDlgCtrl, LB_GETTEXT, iIndex, Ip.as_mut_ptr() as LPARAM) == LB_ERR {
+        if SendMessageW(hDlgCtrl, LB_GETTEXT, iIndex as WPARAM, Ip.as_mut_ptr() as LPARAM) == (LB_ERR) as LRESULT {
             break;
         }
 
-        pCur = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+        pCur = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
         if pCur.is_null() {
             break;
         }
-        ZeroMemory(pCur as *mut core::ffi::c_void, core::mem::size_of::<IP_ADDR>());
+        ZeroMemory!(pCur as *mut core::ffi::c_void, core::mem::size_of::<IP_ADDR>());
         (*pCur).IpAddress = GetIpAddressFromStringW(Ip.as_mut_ptr());
 
         if pLast.is_null() {
@@ -1896,7 +1753,7 @@ pub unsafe extern "C" fn StoreDNSSettings(
         pCur = (*pCur).Next;
         iIndex += 1;
     }
-    (*(*This).pCurrentConfig).AutoconfigActive = FALSE;
+    (*(*This).pCurrentConfig).AutoconfigActive = FALSE as DWORD;
 }
 #[no_mangle]
 pub unsafe extern "system" fn TcpipAdvancedDnsDlg(
@@ -1907,10 +1764,10 @@ pub unsafe extern "system" fn TcpipAdvancedDnsDlg(
 ) -> INT_PTR {
     let mut This: *mut TcpipConfNotifyImpl;
     let mut page: LPPROPSHEETPAGE;
-    let mut Dns: TcpipDnsSettings;
+    let mut Dns: TcpipDnsSettings = core::mem::zeroed();
     let mut lIndex: LRESULT;
     let mut lLength: LRESULT;
-    let mut Suffix: TcpipSuffixSettings;
+    let mut Suffix: TcpipSuffixSettings = core::mem::zeroed();
     let mut lppsn: LPPSHNOTIFY;
     let mut szSuffix: [u16; 100] = [0; 100];
     let mut szFormat: [u16; 200] = [0; 200];
@@ -1922,190 +1779,190 @@ pub unsafe extern "system" fn TcpipAdvancedDnsDlg(
             This = (*page).lParam as *mut TcpipConfNotifyImpl;
             SetWindowLongPtr(hwndDlg, DWLP_USER, This as INT_PTR);
             InitializeTcpipAdvancedDNSDlg(hwndDlg, This);
-            ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
-            ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
-            return TRUE;
+            ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
+            ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
+            return TRUE as INT_PTR;
         }
         WM_NOTIFY => {
             lppsn = lParam as LPPSHNOTIFY;
-            if (*lppsn).hdr.code == PSN_KILLACTIVE {
-                if IsDlgButtonChecked(hwndDlg, IDC_SELSUFFIX) == BST_CHECKED &&
+            if (*lppsn).hdr.code == (PSN_KILLACTIVE) as u32 {
+                if IsDlgButtonChecked(hwndDlg, IDC_SELSUFFIX) == BST_CHECKED as UINT &&
                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_GETCOUNT, 0, 0) == 0 {
-                    DisplayError(IDS_NO_SUFFIX, IDS_TCPIP, MB_ICONWARNING);
-                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
-                    return TRUE;
+                    DisplayError((IDS_NO_SUFFIX) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
+                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
+                    return TRUE as INT_PTR;
                 }
                 if SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_GETTEXT, (core::mem::size_of_val(&szSuffix) / core::mem::size_of::<u16>()) as WPARAM, szSuffix.as_mut_ptr() as LPARAM) != 0 {
                     szSuffix[(core::mem::size_of_val(&szSuffix) / core::mem::size_of::<u16>()) - 1] = 0;
-                    if VerifyDNSSuffix(szSuffix.as_mut_ptr()) == FALSE {
-                        if LoadStringW(netcfgx_hInstance, IDS_DNS_SUFFIX, szFormat.as_mut_ptr(), (core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) as i32) != 0 {
+                    if VerifyDNSSuffix(szSuffix.as_mut_ptr()) == (FALSE) as i32 {
+                        if LoadStringW(netcfgx_hInstance, (IDS_DNS_SUFFIX) as u32, szFormat.as_mut_ptr(), (core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) as i32) != 0 {
                             szFormat[(core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) - 1] = 0;
                             swprintf(szBuffer.as_mut_ptr(), szFormat.as_ptr(), szSuffix.as_ptr());
-                            if LoadStringW(netcfgx_hInstance, IDS_TCPIP, szFormat.as_mut_ptr(), (core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) as i32) != 0 {
+                            if LoadStringW(netcfgx_hInstance, (IDS_TCPIP) as u32, szFormat.as_mut_ptr(), (core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) as i32) != 0 {
                                 szFormat[(core::mem::size_of_val(&szFormat) / core::mem::size_of::<u16>()) - 1] = 0;
                             } else {
                                 szFormat[0] = 0;
                             }
                             MessageBoxW(hwndDlg, szBuffer.as_ptr(), szFormat.as_ptr(), MB_ICONWARNING);
-                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
                             SetFocus(GetDlgItem(hwndDlg, IDC_SUFFIX));
-                            return TRUE;
+                            return TRUE as INT_PTR;
                         }
                     }
                 }
-            } else if (*lppsn).hdr.code == PSN_APPLY {
+            } else if (*lppsn).hdr.code == (PSN_APPLY) as u32 {
                 This = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
                 if (*This).pCurrentConfig.is_null() || (*(*This).pCurrentConfig).pDNS.is_null() {
                     // break equivalent
                 } else {
                     StoreDNSSettings(GetDlgItem(hwndDlg, IDC_DNSADDRLIST), This);
-                    if IsDlgButtonChecked(hwndDlg, IDC_PRIMSUFFIX) == BST_CHECKED {
-                        CoTaskMemFree((*(*(*This).pCurrentConfig).pDNS).szSearchList);
+                    if IsDlgButtonChecked(hwndDlg, IDC_PRIMSUFFIX) == BST_CHECKED as UINT {
+                        CoTaskMemFree(((*(*(*This).pCurrentConfig).pDNS).szSearchList).cast());
                         (*(*(*This).pCurrentConfig).pDNS).szSearchList = core::ptr::null_mut();
-                        if IsDlgButtonChecked(hwndDlg, IDC_TOPPRIMSUFFIX) == BST_CHECKED {
-                            (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = TRUE;
+                        if IsDlgButtonChecked(hwndDlg, IDC_TOPPRIMSUFFIX) == BST_CHECKED as UINT {
+                            (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = TRUE as DWORD;
                         } else {
-                            (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = FALSE;
+                            (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = FALSE as DWORD;
                         }
                     } else {
-                        CoTaskMemFree((*(*(*This).pCurrentConfig).pDNS).szSearchList);
+                        CoTaskMemFree(((*(*(*This).pCurrentConfig).pDNS).szSearchList).cast());
                         (*(*(*This).pCurrentConfig).pDNS).szSearchList = core::ptr::null_mut();
-                        (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = FALSE;
+                        (*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution = FALSE as DWORD;
                         (*(*(*This).pCurrentConfig).pDNS).szSearchList = GetListViewEntries(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
                     }
 
-                    if IsDlgButtonChecked(hwndDlg, IDC_REGSUFFIX) == BST_CHECKED {
-                        (*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName = TRUE;
-                        if IsDlgButtonChecked(hwndDlg, IDC_USESUFFIX) == BST_CHECKED {
-                            (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = TRUE;
+                    if IsDlgButtonChecked(hwndDlg, IDC_REGSUFFIX) == BST_CHECKED as UINT {
+                        (*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName = TRUE as DWORD;
+                        if IsDlgButtonChecked(hwndDlg, IDC_USESUFFIX) == BST_CHECKED as UINT {
+                            (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = TRUE as DWORD;
                         } else {
-                            (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = FALSE;
+                            (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = FALSE as DWORD;
                         }
                     } else {
-                        (*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName = FALSE;
-                        (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = FALSE;
+                        (*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName = FALSE as DWORD;
+                        (*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled = FALSE as DWORD;
                     }
                 }
             }
         }
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_DNSADDRLIST && HIWORD(wParam) == LBN_SELCHANGE {
-                ToggleUpDown(hwndDlg, lParam as HWND, IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXLIST && HIWORD(wParam) == LBN_SELCHANGE {
-                ToggleUpDown(hwndDlg, lParam as HWND, IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_PRIMSUFFIX && HIWORD(wParam) == BN_CLICKED {
-                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXUP), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXDOWN), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXMOD), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXDEL), FALSE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), TRUE);
+            if LOWORD!(wParam) == (IDC_DNSADDRLIST) as u16 && HIWORD!(wParam) == (LBN_SELCHANGE) as u16 {
+                ToggleUpDown(hwndDlg, lParam as HWND, (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXLIST) as u16 && HIWORD!(wParam) == (LBN_SELCHANGE) as u16 {
+                ToggleUpDown(hwndDlg, lParam as HWND, (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_PRIMSUFFIX) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED as LRESULT {
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXUP), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXDOWN), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXMOD), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXDEL), (FALSE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), (TRUE) as i32);
                     SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_RESETCONTENT, 0, 0);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                 }
-            } else if LOWORD(wParam) == IDC_SELSUFFIX && HIWORD(wParam) == BN_CLICKED {
-                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), TRUE);
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), FALSE);
-                    ToggleUpDown(hwndDlg, lParam as HWND, IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_SELSUFFIX) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED as LRESULT {
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_DNSSUFFIXADD), (TRUE) as i32);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_TOPPRIMSUFFIX), (FALSE) as i32);
+                    ToggleUpDown(hwndDlg, lParam as HWND, (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                 }
-            } else if LOWORD(wParam) == IDC_REGSUFFIX && HIWORD(wParam) == BN_CLICKED {
-                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), TRUE);
+            } else if LOWORD!(wParam) == (IDC_REGSUFFIX) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                if SendMessageW(lParam as HWND, BM_GETCHECK, 0, 0) == BST_CHECKED as LRESULT {
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), (TRUE) as i32);
                 } else {
-                    EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), FALSE);
+                    EnableWindow(GetDlgItem(hwndDlg, IDC_USESUFFIX), (FALSE) as i32);
                 }
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSADDRUP && HIWORD(wParam) == BN_CLICKED {
-                MoveItem(GetDlgItem(hwndDlg, IDC_DNSADDRLIST), -(1 as isize));
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSADDRUP) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                MoveItem(GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (-(1 as isize)) as i32);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSADDRLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSADDRDOWN && HIWORD(wParam) == BN_CLICKED {
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSADDRDOWN) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 MoveItem(GetDlgItem(hwndDlg, IDC_DNSADDRLIST), 1);
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSADDRLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXUP && HIWORD(wParam) == BN_CLICKED {
-                MoveItem(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), -(1 as isize));
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXUP) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                MoveItem(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (-(1 as isize)) as i32);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXDOWN && HIWORD(wParam) == BN_CLICKED {
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXDOWN) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 MoveItem(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), 1);
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSADDRDEL && HIWORD(wParam) == BN_CLICKED {
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSADDRDEL) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 RemoveItem(GetDlgItem(hwndDlg, IDC_DNSADDRLIST));
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSADDRLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXDEL && HIWORD(wParam) == BN_CLICKED {
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXDEL) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 RemoveItem(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
+                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
                 SetFocus(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-            } else if LOWORD(wParam) == IDC_DNSADDRADD && HIWORD(wParam) == BN_CLICKED {
-                Dns.bAdd = TRUE;
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+            } else if LOWORD!(wParam) == (IDC_DNSADDRADD) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                Dns.bAdd = (TRUE) as i32;
                 Dns.hDlgCtrl = GetDlgItem(hwndDlg, IDC_DNSADDRLIST);
-                if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPDNS_DLG), core::ptr::null_mut(), TcpipAddDNSDlg, core::ptr::addr_of_mut!(Dns) as LPARAM) != 0 {
-                    ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), IDC_DNSADDRUP, IDC_DNSADDRDOWN, IDC_DNSADDRMOD, IDC_DNSADDRDEL);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPDNS_DLG), core::ptr::null_mut(), Some(TcpipAddDNSDlg), core::ptr::addr_of_mut!(Dns) as LPARAM) != 0 {
+                    ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSADDRLIST), (IDC_DNSADDRUP) as u32, (IDC_DNSADDRDOWN) as u32, (IDC_DNSADDRMOD) as u32, (IDC_DNSADDRDEL) as u32);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                 }
-            } else if LOWORD(wParam) == IDC_DNSADDRMOD && HIWORD(wParam) == BN_CLICKED {
+            } else if LOWORD!(wParam) == (IDC_DNSADDRMOD) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 lIndex = SendDlgItemMessage(hwndDlg, IDC_DNSADDRLIST, LB_GETCURSEL, 0, 0);
-                if lIndex != LB_ERR {
-                    Dns.bAdd = FALSE;
+                if lIndex != (LB_ERR) as LRESULT {
+                    Dns.bAdd = (FALSE) as i32;
                     Dns.hDlgCtrl = GetDlgItem(hwndDlg, IDC_DNSADDRLIST);
                     SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_GETTEXT, lIndex as WPARAM, Dns.szIP.as_mut_ptr() as LPARAM);
-                    if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPDNS_DLG), core::ptr::null_mut(), TcpipAddDNSDlg, core::ptr::addr_of_mut!(Dns) as LPARAM) != 0 {
-                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_DELETESTRING, lIndex, 0);
-                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_INSERTSTRING, lIndex, Dns.szIP.as_ptr() as LPARAM);
-                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_SETCURSEL, lIndex, 0);
+                    if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPDNS_DLG), core::ptr::null_mut(), Some(TcpipAddDNSDlg), core::ptr::addr_of_mut!(Dns) as LPARAM) != 0 {
+                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_DELETESTRING, lIndex as WPARAM, 0);
+                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_INSERTSTRING, lIndex as WPARAM, Dns.szIP.as_ptr() as LPARAM);
+                        SendDlgItemMessageW(hwndDlg, IDC_DNSADDRLIST, LB_SETCURSEL, lIndex as WPARAM, 0);
                         SetFocus(GetDlgItem(hwndDlg, IDC_DNSADDRLIST));
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXADD && HIWORD(wParam) == BN_CLICKED {
-                Suffix.bAdd = TRUE;
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXADD) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                Suffix.bAdd = (TRUE) as i32;
                 Suffix.hDlgCtrl = GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST);
                 Suffix.Suffix = core::ptr::null_mut();
-                if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPSUFFIX_DLG), core::ptr::null_mut(), TcpipAddSuffixDlg, core::ptr::addr_of_mut!(Suffix) as LPARAM) != 0 {
-                    ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
+                if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPSUFFIX_DLG), core::ptr::null_mut(), Some(TcpipAddSuffixDlg), core::ptr::addr_of_mut!(Suffix) as LPARAM) != 0 {
+                    ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
                     lIndex = SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_ADDSTRING, 0, Suffix.Suffix as LPARAM);
-                    if lIndex != LB_ERR {
-                        SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_SETCURSEL, lIndex, 0);
+                    if lIndex != (LB_ERR) as LRESULT {
+                        SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_SETCURSEL, lIndex as WPARAM, 0);
                     }
                     SetFocus(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                    CoTaskMemFree(Suffix.Suffix);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+                    CoTaskMemFree((Suffix.Suffix).cast());
                 }
-            } else if LOWORD(wParam) == IDC_DNSSUFFIXMOD && HIWORD(wParam) == BN_CLICKED {
+            } else if LOWORD!(wParam) == (IDC_DNSSUFFIXMOD) as u16 && HIWORD!(wParam) == (BN_CLICKED) as u16 {
                 lIndex = SendDlgItemMessage(hwndDlg, IDC_DNSSUFFIXLIST, LB_GETCURSEL, 0, 0);
-                if lIndex != LB_ERR {
-                    Suffix.bAdd = FALSE;
+                if lIndex != (LB_ERR) as LRESULT {
+                    Suffix.bAdd = (FALSE) as i32;
                     Suffix.hDlgCtrl = GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST);
-                    lLength = SendMessageW(Suffix.hDlgCtrl, LB_GETTEXTLEN, lIndex, 0);
-                    if lLength != LB_ERR {
-                        Suffix.Suffix = CoTaskMemAlloc((lLength + 1) * core::mem::size_of::<u16>() as isize) as LPWSTR;
+                    lLength = SendMessageW(Suffix.hDlgCtrl, LB_GETTEXTLEN, lIndex as WPARAM, 0);
+                    if lLength != (LB_ERR) as LRESULT {
+                        Suffix.Suffix = CoTaskMemAlloc(((lLength + 1) as usize * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
                         if !Suffix.Suffix.is_null() {
-                            SendMessageW(Suffix.hDlgCtrl, LB_GETTEXT, lIndex, Suffix.Suffix as LPARAM);
-                            *Suffix.Suffix.offset(lLength) = 0;
-                            if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW(IDD_TCPIPSUFFIX_DLG), core::ptr::null_mut(), TcpipAddSuffixDlg, core::ptr::addr_of_mut!(Suffix) as LPARAM) != 0 {
+                            SendMessageW(Suffix.hDlgCtrl, LB_GETTEXT, lIndex as WPARAM, Suffix.Suffix as LPARAM);
+                            *Suffix.Suffix.offset((lLength) as isize) = 0;
+                            if DialogBoxParamW(netcfgx_hInstance, MAKEINTRESOURCEW!(IDD_TCPIPSUFFIX_DLG), core::ptr::null_mut(), Some(TcpipAddSuffixDlg), core::ptr::addr_of_mut!(Suffix) as LPARAM) != 0 {
                                 if !Suffix.Suffix.is_null() {
-                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_DELETESTRING, lIndex, 0);
-                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_INSERTSTRING, lIndex, Suffix.Suffix as LPARAM);
-                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_SETCURSEL, lIndex, 0);
+                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_DELETESTRING, lIndex as WPARAM, 0);
+                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_INSERTSTRING, lIndex as WPARAM, Suffix.Suffix as LPARAM);
+                                    SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_SETCURSEL, lIndex as WPARAM, 0);
                                     SetFocus(GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST));
-                                    CoTaskMemFree(Suffix.Suffix);
+                                    CoTaskMemFree((Suffix.Suffix).cast());
                                 }
-                                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), IDC_DNSSUFFIXUP, IDC_DNSSUFFIXDOWN, IDC_DNSSUFFIXMOD, IDC_DNSSUFFIXDEL);
-                                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                                ToggleUpDown(hwndDlg, GetDlgItem(hwndDlg, IDC_DNSSUFFIXLIST), (IDC_DNSSUFFIXUP) as u32, (IDC_DNSSUFFIXDOWN) as u32, (IDC_DNSSUFFIXMOD) as u32, (IDC_DNSSUFFIXDEL) as u32);
+                                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                             }
                         }
                     }
@@ -2114,10 +1971,10 @@ pub unsafe extern "system" fn TcpipAdvancedDnsDlg(
         }
         _ => {}
     }
-    FALSE
+    FALSE as INT_PTR
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(
+unsafe extern "system" fn PropSheetProc(
     hwndDlg: HWND,
     uMsg: UINT,
     lParam: LPARAM,
@@ -2127,7 +1984,7 @@ unsafe extern "stdcall" fn PropSheetProc(
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(
                 netcfgx_hInstance,
-                MAKEINTRESOURCEW(IDI_NETWORK),
+                MAKEINTRESOURCEW!(IDI_NETWORK),
             );
             SendMessageW(
                 hwndDlg,
@@ -2142,7 +1999,7 @@ unsafe extern "stdcall" fn PropSheetProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetProc(
+unsafe extern "system" fn PropSheetProc(
     hwndDlg: HWND,
     uMsg: UINT,
     lParam: LPARAM,
@@ -2152,12 +2009,12 @@ unsafe extern "C" fn PropSheetProc(
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(
                 netcfgx_hInstance,
-                MAKEINTRESOURCEW(IDI_NETWORK),
+                MAKEINTRESOURCEW!(IDI_NETWORK),
             );
             SendMessageW(
                 hwndDlg,
                 WM_SETICON,
-                ICON_BIG,
+                (ICON_BIG) as SIZE_T,
                 hIcon as LPARAM,
             );
         }
@@ -2174,32 +2031,32 @@ pub unsafe extern "C" fn LaunchAdvancedTcpipSettings(
     let mut hppages: [HPROPSHEETPAGE; 3] = core::mem::zeroed();
     let mut szBuffer: [WCHAR; 100] = core::mem::zeroed();
 
-    hppages[0] = InitializePropertySheetPage(MAKEINTRESOURCEW(IDD_TCPIP_ADVIP_DLG), Some(TcpipAdvancedIpDlg), This as LPARAM, core::ptr::null_mut());
-    hppages[1] = InitializePropertySheetPage(MAKEINTRESOURCEW(IDD_TCPIP_ADVDNS_DLG), Some(TcpipAdvancedDnsDlg), This as LPARAM, core::ptr::null_mut());
-    hppages[2] = InitializePropertySheetPage(MAKEINTRESOURCEW(IDD_TCPIP_ADVOPT_DLG), Some(TcpipAdvancedOptDlg), This as LPARAM, core::ptr::null_mut());
+    hppages[0] = InitializePropertySheetPage(MAKEINTRESOURCEW!(IDD_TCPIP_ADVIP_DLG), Some(TcpipAdvancedIpDlg), This as LPARAM, core::ptr::null_mut());
+    hppages[1] = InitializePropertySheetPage(MAKEINTRESOURCEW!(IDD_TCPIP_ADVDNS_DLG), Some(TcpipAdvancedDnsDlg), This as LPARAM, core::ptr::null_mut());
+    hppages[2] = InitializePropertySheetPage(MAKEINTRESOURCEW!(IDD_TCPIP_ADVOPT_DLG), Some(TcpipAdvancedOptDlg), This as LPARAM, core::ptr::null_mut());
 
-    if LoadStringW(netcfgx_hInstance, IDS_TCPIP, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
+    if LoadStringW(netcfgx_hInstance, (IDS_TCPIP) as u32, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as i32) != 0 {
         szBuffer[(core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - 1] = 0u16;
     } else {
         szBuffer[0] = 0u16;
     }
 
-    ZeroMemory(core::ptr::addr_of_mut!(pinfo) as *mut core::ffi::c_void, core::mem::size_of_val(&PROPSHEETHEADERW));
-    pinfo.dwSize = core::mem::size_of_val(&PROPSHEETHEADERW) as u32;
-    pinfo.dwFlags = PSH_NOCONTEXTHELP | PSH_PROPTITLE | PSH_NOAPPLYNOW |
-                    PSH_USEICONID | PSH_USECALLBACK;
+    ZeroMemory!(core::ptr::addr_of_mut!(pinfo) as *mut core::ffi::c_void, core::mem::size_of::<PROPSHEETHEADERW>());
+    pinfo.dwSize = core::mem::size_of::<PROPSHEETHEADERW>() as u32;
+    pinfo.dwFlags = (PSH_NOCONTEXTHELP | PSH_PROPTITLE | PSH_NOAPPLYNOW |
+                    PSH_USEICONID | PSH_USECALLBACK) as u32;
     pinfo.u3.phpage = hppages.as_mut_ptr();
     pinfo.nPages = 3;
     pinfo.hwndParent = hwndDlg;
     pinfo.hInstance = netcfgx_hInstance;
     pinfo.pszCaption = szBuffer.as_ptr();
-    pinfo.u.pszIcon = MAKEINTRESOURCEW(IDI_NETWORK);
+    *pinfo.u.pszIcon.as_mut() = MAKEINTRESOURCEW!(IDI_NETWORK) as *const u16;
     pinfo.pfnCallback = Some(PropSheetProc);
 
-    StoreTcpipBasicSettings(hwndDlg, This, FALSE);
+    StoreTcpipBasicSettings(hwndDlg, This, (FALSE) as i32);
     if PropertySheetW(core::ptr::addr_of_mut!(pinfo)) > 0 {
         InitializeTcpipBasicDlgCtrls(hwndDlg, (*This).pCurrentConfig);
-        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
     }
 }
 #[no_mangle]
@@ -2207,63 +2064,63 @@ pub unsafe extern "C" fn InitializeTcpipAltDlgCtrls(
     hwndDlg: HWND,
     pCurSettings: *mut TcpipSettings
 ) -> HRESULT {
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 0, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
     if (*pCurSettings).DhcpEnabled != 0 {
         CheckRadioButton(hwndDlg, IDC_USEDHCP, IDC_NODHCP, IDC_USEDHCP);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (FALSE) as i32);
     } else {
         CheckRadioButton(hwndDlg, IDC_USEDHCP, IDC_NODHCP, IDC_NODHCP);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), TRUE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (TRUE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (TRUE) as i32);
 
         if !(*pCurSettings).Ip.is_null() {
-            SendDlgItemMessageA(hwndDlg, IDC_IPADDR, IPM_SETADDRESS, 0, (*(*pCurSettings).Ip).IpAddress as LPARAM);
-            SendDlgItemMessageA(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, (*(*pCurSettings).Ip).u.Subnetmask as LPARAM);
+            SendDlgItemMessageA(hwndDlg, IDC_IPADDR, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ip).IpAddress as LPARAM);
+            SendDlgItemMessageA(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ip).u.Subnetmask as LPARAM);
         }
     }
 
     if !(*pCurSettings).Gw.is_null() && (*(*pCurSettings).Gw).IpAddress != 0 {
-        SendDlgItemMessageA(hwndDlg, IDC_DEFGATEWAY, IPM_SETADDRESS, 0, (*(*pCurSettings).Gw).IpAddress as LPARAM);
+        SendDlgItemMessageA(hwndDlg, IDC_DEFGATEWAY, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Gw).IpAddress as LPARAM);
     }
 
     if !(*pCurSettings).Ns.is_null() {
-        SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETADDRESS, 0, (*(*pCurSettings).Ns).IpAddress as LPARAM);
+        SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ns).IpAddress as LPARAM);
         if !(*(*pCurSettings).Ns).Next.is_null() {
-            SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETADDRESS, 0, (*(*(*pCurSettings).Ns).Next).IpAddress as LPARAM);
+            SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETADDRESS) as u32, 0, (*(*(*pCurSettings).Ns).Next).IpAddress as LPARAM);
         } else {
-            SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_CLEARADDRESS, 0, 0);
+            SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_CLEARADDRESS) as u32, 0, 0);
         }
     } else {
-        SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_CLEARADDRESS, 0, 0);
-        SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_CLEARADDRESS, 0, 0);
+        SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_CLEARADDRESS) as u32, 0, 0);
+        SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_CLEARADDRESS) as u32, 0, 0);
     }
 
     S_OK
@@ -2282,26 +2139,26 @@ pub unsafe extern "system" fn TcpipAltConfDlg(
     match uMsg {
         WM_INITDIALOG => {
             page = lParam as *mut core::ffi::c_void;
-            This = (*(page as *mut core::ffi::c_void)).cast::<TcpipConfNotifyImpl>();
-            SetWindowLongPtr(hwndDlg, DWLP_USER, This as isize);
+            This = page as *mut TcpipConfNotifyImpl;
+            SetWindowLongPtr(hwndDlg, DWLP_USER, This as LONG_PTR);
             if !(*This).pCurrentConfig.is_null() {
                 InitializeTcpipAltDlgCtrls(hwndDlg, (*This).pCurrentConfig);
             }
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) as c_int {
                 IDC_USEDHCP | IDC_NODHCP => {
-                    if HIWORD(wParam) == BN_CLICKED {
-                        bNoDHCP = if IsDlgButtonChecked(hwndDlg, IDC_NODHCP) == BST_CHECKED {
+                    if HIWORD!(wParam) == (BN_CLICKED) as u16 {
+                        bNoDHCP = if IsDlgButtonChecked(hwndDlg, IDC_NODHCP) == BST_CHECKED as UINT {
                             1u8
                         } else {
                             0u8
                         };
                         if bNoDHCP != 0 {
-                            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_CLEARADDRESS, 0, 0);
-                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_CLEARADDRESS, 0, 0);
-                            SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_CLEARADDRESS, 0, 0);
+                            SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_CLEARADDRESS) as u32, 0, 0);
+                            SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_CLEARADDRESS) as u32, 0, 0);
+                            SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_CLEARADDRESS) as u32, 0, 0);
                         }
 
                         EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), bNoDHCP as i32);
@@ -2310,7 +2167,7 @@ pub unsafe extern "system" fn TcpipAltConfDlg(
                         EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), bNoDHCP as i32);
                         EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), bNoDHCP as i32);
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
                 _ => {}
@@ -2318,7 +2175,7 @@ pub unsafe extern "system" fn TcpipAltConfDlg(
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn AddAlternativeDialog(
@@ -2328,8 +2185,8 @@ pub unsafe extern "C" fn AddAlternativeDialog(
     let hpage: HPROPSHEETPAGE;
 
     hpage = InitializePropertySheetPage(
-        MAKEINTRESOURCEW(IDD_TCPIP_ALTCF_DLG),
-        TcpipAltConfDlg,
+        MAKEINTRESOURCEW!(IDD_TCPIP_ALTCF_DLG),
+        Some(TcpipAltConfDlg),
         This as LPARAM,
         core::ptr::null_mut(),
     );
@@ -2339,7 +2196,7 @@ pub unsafe extern "C" fn AddAlternativeDialog(
 
     SendMessageW(
         hDlg,
-        PSM_INSERTPAGE,
+        (PSM_INSERTPAGE) as u32,
         1,
         hpage as LPARAM,
     );
@@ -2352,84 +2209,84 @@ pub unsafe extern "C" fn StoreTcpipBasicSettings(
 ) -> INT_PTR {
     let mut dwIpAddr: DWORD = 0;
 
-    if IsDlgButtonChecked(hwndDlg, IDC_NODHCP) == BST_CHECKED {
-        (*(*This).pCurrentConfig).DhcpEnabled = FALSE;
+    if IsDlgButtonChecked(hwndDlg, IDC_NODHCP) == BST_CHECKED as UINT {
+        (*(*This).pCurrentConfig).DhcpEnabled = FALSE as DWORD;
         if SendDlgItemMessageW(
             hwndDlg,
             IDC_IPADDR,
-            IPM_GETADDRESS,
+            (IPM_GETADDRESS) as u32,
             0,
             &mut dwIpAddr as *mut _ as LPARAM,
         ) != 4
         {
             if bApply != 0 {
-                DisplayError(IDS_NO_IPADDR_SET, IDS_TCPIP, MB_ICONWARNING);
+                DisplayError((IDS_NO_IPADDR_SET) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
                 SetFocus(GetDlgItem(hwndDlg, IDC_IPADDR));
-                return E_FAIL;
+                return (E_FAIL) as LRESULT;
             }
         }
         if (*(*This).pCurrentConfig).Ip.is_null() {
-            (*(*This).pCurrentConfig).Ip = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+            (*(*This).pCurrentConfig).Ip = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
             if (*(*This).pCurrentConfig).Ip.is_null() {
-                return E_OUTOFMEMORY;
+                return (E_OUTOFMEMORY) as LRESULT;
             }
-            ZeroMemory((*(*This).pCurrentConfig).Ip as *mut _, core::mem::size_of::<IP_ADDR>());
+            ZeroMemory!((*(*This).pCurrentConfig).Ip as *mut _, core::mem::size_of::<IP_ADDR>());
         }
         (*(*(*This).pCurrentConfig).Ip).IpAddress = dwIpAddr;
 
         if SendDlgItemMessageW(
             hwndDlg,
             IDC_SUBNETMASK,
-            IPM_GETADDRESS,
+            (IPM_GETADDRESS) as u32,
             0,
             &mut dwIpAddr as *mut _ as LPARAM,
         ) != 4
         {
             if bApply != 0 {
-                DisplayError(IDS_NO_SUBMASK_SET, IDS_TCPIP, MB_ICONWARNING);
+                DisplayError((IDS_NO_SUBMASK_SET) as u32, (IDS_TCPIP) as u32, MB_ICONWARNING);
             }
             if SendDlgItemMessageW(
                 hwndDlg,
                 IDC_IPADDR,
-                IPM_GETADDRESS,
+                (IPM_GETADDRESS) as u32,
                 0,
                 &mut dwIpAddr as *mut _ as LPARAM,
             ) == 4
             {
-                if dwIpAddr <= MAKEIPADDRESS(127, 255, 255, 255) {
-                    dwIpAddr = MAKEIPADDRESS(255, 0, 0, 0);
-                } else if dwIpAddr <= MAKEIPADDRESS(191, 255, 255, 255) {
-                    dwIpAddr = MAKEIPADDRESS(255, 255, 0, 0);
-                } else if dwIpAddr <= MAKEIPADDRESS(223, 255, 255, 255) {
-                    dwIpAddr = MAKEIPADDRESS(255, 255, 255, 0);
+                if dwIpAddr <= MAKEIPADDRESS!(127, 255, 255, 255) {
+                    dwIpAddr = MAKEIPADDRESS!(255, 0, 0, 0);
+                } else if dwIpAddr <= MAKEIPADDRESS!(191, 255, 255, 255) {
+                    dwIpAddr = MAKEIPADDRESS!(255, 255, 0, 0);
+                } else if dwIpAddr <= MAKEIPADDRESS!(223, 255, 255, 255) {
+                    dwIpAddr = MAKEIPADDRESS!(255, 255, 255, 0);
                 }
 
-                SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, dwIpAddr as LPARAM);
+                SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, dwIpAddr as LPARAM);
             }
             if bApply != 0 {
                 SetFocus(GetDlgItem(hwndDlg, IDC_SUBNETMASK));
-                return E_FAIL;
+                return (E_FAIL) as LRESULT;
             }
         }
         (*(*(*This).pCurrentConfig).Ip).u.Subnetmask = dwIpAddr;
     } else {
-        (*(*This).pCurrentConfig).DhcpEnabled = TRUE;
+        (*(*This).pCurrentConfig).DhcpEnabled = TRUE as DWORD;
     }
 
     if SendDlgItemMessageW(
         hwndDlg,
         IDC_DEFGATEWAY,
-        IPM_GETADDRESS,
+        (IPM_GETADDRESS) as u32,
         0,
         &mut dwIpAddr as *mut _ as LPARAM,
     ) == 4
     {
         if (*(*This).pCurrentConfig).Gw.is_null() {
-            (*(*This).pCurrentConfig).Gw = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+            (*(*This).pCurrentConfig).Gw = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
             if (*(*This).pCurrentConfig).Gw.is_null() {
-                return E_OUTOFMEMORY;
+                return (E_OUTOFMEMORY) as LRESULT;
             }
-            ZeroMemory((*(*This).pCurrentConfig).Gw as *mut _, core::mem::size_of::<IP_ADDR>());
+            ZeroMemory!((*(*This).pCurrentConfig).Gw as *mut _, core::mem::size_of::<IP_ADDR>());
         }
         (*(*(*This).pCurrentConfig).Gw).IpAddress = dwIpAddr;
     } else {
@@ -2440,23 +2297,23 @@ pub unsafe extern "C" fn StoreTcpipBasicSettings(
         }
     }
 
-    if IsDlgButtonChecked(hwndDlg, IDC_FIXEDDNS) == BST_CHECKED {
+    if IsDlgButtonChecked(hwndDlg, IDC_FIXEDDNS) == BST_CHECKED as UINT {
         let mut bSkip = FALSE;
-        (*(*This).pCurrentConfig).AutoconfigActive = FALSE;
+        (*(*This).pCurrentConfig).AutoconfigActive = FALSE as DWORD;
         if SendDlgItemMessageW(
             hwndDlg,
             IDC_DNS1,
-            IPM_GETADDRESS,
+            (IPM_GETADDRESS) as u32,
             0,
             &mut dwIpAddr as *mut _ as LPARAM,
         ) == 4
         {
             if (*(*This).pCurrentConfig).Ns.is_null() {
-                (*(*This).pCurrentConfig).Ns = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+                (*(*This).pCurrentConfig).Ns = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
                 if (*(*This).pCurrentConfig).Ns.is_null() {
-                    return E_OUTOFMEMORY;
+                    return (E_OUTOFMEMORY) as LRESULT;
                 }
-                ZeroMemory((*(*This).pCurrentConfig).Ns as *mut _, core::mem::size_of::<IP_ADDR>());
+                ZeroMemory!((*(*This).pCurrentConfig).Ns as *mut _, core::mem::size_of::<IP_ADDR>());
             }
             (*(*(*This).pCurrentConfig).Ns).IpAddress = dwIpAddr;
         } else if !(*(*This).pCurrentConfig).Ns.is_null() {
@@ -2470,26 +2327,26 @@ pub unsafe extern "C" fn StoreTcpipBasicSettings(
         if SendDlgItemMessageW(
             hwndDlg,
             IDC_DNS2,
-            IPM_GETADDRESS,
+            (IPM_GETADDRESS) as u32,
             0,
             &mut dwIpAddr as *mut _ as LPARAM,
         ) == 4
         {
             if (*(*This).pCurrentConfig).Ns.is_null() || bSkip != 0 {
                 if (*(*This).pCurrentConfig).Ns.is_null() {
-                    (*(*This).pCurrentConfig).Ns = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+                    (*(*This).pCurrentConfig).Ns = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
                     if (*(*This).pCurrentConfig).Ns.is_null() {
-                        return E_OUTOFMEMORY;
+                        return (E_OUTOFMEMORY) as LRESULT;
                     }
-                    ZeroMemory((*(*This).pCurrentConfig).Ns as *mut _, core::mem::size_of::<IP_ADDR>());
+                    ZeroMemory!((*(*This).pCurrentConfig).Ns as *mut _, core::mem::size_of::<IP_ADDR>());
                 }
                 (*(*(*This).pCurrentConfig).Ns).IpAddress = dwIpAddr;
             } else if (*(*(*This).pCurrentConfig).Ns).Next.is_null() {
-                (*(*(*This).pCurrentConfig).Ns).Next = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>()) as *mut IP_ADDR;
+                (*(*(*This).pCurrentConfig).Ns).Next = CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T) as *mut IP_ADDR;
                 if (*(*(*This).pCurrentConfig).Ns).Next.is_null() {
-                    return E_OUTOFMEMORY;
+                    return (E_OUTOFMEMORY) as LRESULT;
                 }
-                ZeroMemory((*(*(*This).pCurrentConfig).Ns).Next as *mut _, core::mem::size_of::<IP_ADDR>());
+                ZeroMemory!((*(*(*This).pCurrentConfig).Ns).Next as *mut _, core::mem::size_of::<IP_ADDR>());
                 (*(*(*(*This).pCurrentConfig).Ns).Next).IpAddress = dwIpAddr;
             } else {
                 (*(*(*(*This).pCurrentConfig).Ns).Next).IpAddress = dwIpAddr;
@@ -2507,77 +2364,77 @@ pub unsafe extern "C" fn StoreTcpipBasicSettings(
             }
         }
     } else {
-        (*(*This).pCurrentConfig).AutoconfigActive = TRUE;
+        (*(*This).pCurrentConfig).AutoconfigActive = TRUE as DWORD;
     }
-    S_OK
+    (S_OK) as LRESULT
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeTcpipBasicDlgCtrls(
     hwndDlg: HWND,
     pCurSettings: *mut TcpipSettings
 ) -> HRESULT {
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_IPADDR, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 0, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_SUBNETMASK, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DEFGATEWAY, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 0, MAKEIPRANGE(1, 223));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 1, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 2, MAKEIPRANGE(0, 255));
-    SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETRANGE, 3, MAKEIPRANGE(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 0, MAKEIPRANGE!(1, 223));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 1, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 2, MAKEIPRANGE!(0, 255));
+    SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETRANGE) as u32, 3, MAKEIPRANGE!(0, 255));
 
     if (*pCurSettings).DhcpEnabled != 0 {
         CheckDlgButton(hwndDlg, IDC_USEDHCP, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), (TRUE) as i32);
     } else {
         CheckDlgButton(hwndDlg, IDC_NODHCP, BST_CHECKED);
 
         if !(*pCurSettings).Ip.is_null() {
-            SendDlgItemMessageA(hwndDlg, IDC_IPADDR, IPM_SETADDRESS, 0, (*(*pCurSettings).Ip).IpAddress as LPARAM);
-            SendDlgItemMessageA(hwndDlg, IDC_SUBNETMASK, IPM_SETADDRESS, 0, (*(*pCurSettings).Ip).u.Subnetmask as LPARAM);
+            SendDlgItemMessageA(hwndDlg, IDC_IPADDR, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ip).IpAddress as LPARAM);
+            SendDlgItemMessageA(hwndDlg, IDC_SUBNETMASK, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ip).u.Subnetmask as LPARAM);
         }
     }
 
     if !(*pCurSettings).Gw.is_null() && (*(*pCurSettings).Gw).IpAddress != 0 {
-        SendDlgItemMessageA(hwndDlg, IDC_DEFGATEWAY, IPM_SETADDRESS, 0, (*(*pCurSettings).Gw).IpAddress as LPARAM);
+        SendDlgItemMessageA(hwndDlg, IDC_DEFGATEWAY, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Gw).IpAddress as LPARAM);
     }
 
     if (*pCurSettings).AutoconfigActive != 0 {
         CheckDlgButton(hwndDlg, IDC_AUTODNS, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (FALSE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (FALSE) as i32);
     } else {
         CheckDlgButton(hwndDlg, IDC_FIXEDDNS, BST_CHECKED);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), TRUE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (TRUE) as i32);
+        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (TRUE) as i32);
         if !(*pCurSettings).Ns.is_null() {
-            SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_SETADDRESS, 0, (*(*pCurSettings).Ns).IpAddress as LPARAM);
+            SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_SETADDRESS) as u32, 0, (*(*pCurSettings).Ns).IpAddress as LPARAM);
             if !(*(*pCurSettings).Ns).Next.is_null() {
-                SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_SETADDRESS, 0, (*(*(*pCurSettings).Ns).Next).IpAddress as LPARAM);
+                SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_SETADDRESS) as u32, 0, (*(*(*pCurSettings).Ns).Next).IpAddress as LPARAM);
             } else {
-                SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_CLEARADDRESS, 0, 0);
+                SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_CLEARADDRESS) as u32, 0, 0);
             }
         } else {
-            SendDlgItemMessageW(hwndDlg, IDC_DNS1, IPM_CLEARADDRESS, 0, 0);
-            SendDlgItemMessageW(hwndDlg, IDC_DNS2, IPM_CLEARADDRESS, 0, 0);
+            SendDlgItemMessageW(hwndDlg, IDC_DNS1, (IPM_CLEARADDRESS) as u32, 0, 0);
+            SendDlgItemMessageW(hwndDlg, IDC_DNS2, (IPM_CLEARADDRESS) as u32, 0, 0);
         }
     }
 
@@ -2588,7 +2445,7 @@ pub unsafe extern "C" fn CopyIpAddrString(
     pSrc: *mut IP_ADDR_STRING,
     pTarget: *mut *mut IP_ADDR,
     Type: COPY_TYPE,
-    szMetric: LPWSTR,
+    mut szMetric: LPWSTR,
 ) -> HRESULT {
     let mut pCurrent: *mut IP_ADDR_STRING;
     let mut pNew: *mut IP_ADDR;
@@ -2598,11 +2455,11 @@ pub unsafe extern "C" fn CopyIpAddrString(
     pLast = core::ptr::null_mut();
 
     while !pCurrent.is_null() {
-        pNew = CoTaskMemAlloc(core::mem::size_of::<IP_ADDR>());
+        pNew = (CoTaskMemAlloc((core::mem::size_of::<IP_ADDR>()) as SIZE_T)).cast();
         if pNew.is_null() {
             break;
         }
-        ZeroMemory(pNew as *mut core::ffi::c_void, core::mem::size_of::<IP_ADDR>());
+        ZeroMemory!(pNew as *mut core::ffi::c_void, core::mem::size_of::<IP_ADDR>());
         (*pNew).IpAddress = GetIpAddressFromStringA((*pCurrent).IpAddress.String.as_mut_ptr());
         if (*pNew).IpAddress == 0 {
             CoTaskMemFree(pNew as *mut core::ffi::c_void);
@@ -2652,96 +2509,96 @@ pub unsafe extern "system" fn TcpipBasicDlg(
                 InitializeTcpipBasicDlgCtrls(hwndDlg, (*This).pCurrentConfig);
             }
             SetWindowLongPtr(hwndDlg, DWLP_USER, This as LONG_PTR);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_NOTIFY => {
             lppsn = lParam as LPPSHNOTIFY;
             lpnmipa = lParam as LPNMIPADDRESS;
-            if (*lpnmipa).hdr.code == IPN_FIELDCHANGED {
-                PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                if (*lpnmipa).hdr.idFrom == IDC_IPADDR {
+            if (*lpnmipa).hdr.code == (IPN_FIELDCHANGED) as u32 {
+                PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+                if (*lpnmipa).hdr.idFrom == IDC_IPADDR as UINT_PTR {
                     if SendDlgItemMessageW(
                         hwndDlg,
                         IDC_IPADDR,
-                        IPM_GETADDRESS,
+                        (IPM_GETADDRESS) as u32,
                         0,
                         core::ptr::addr_of_mut!(dwIpAddr) as LPARAM,
                     ) == 4
                     {
-                        if dwIpAddr <= MAKEIPADDRESS(127, 255, 255, 255) {
+                        if dwIpAddr <= MAKEIPADDRESS!(127, 255, 255, 255) {
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_SUBNETMASK,
-                                IPM_SETADDRESS,
+                                (IPM_SETADDRESS) as u32,
                                 0,
-                                MAKEIPADDRESS(255, 0, 0, 0) as LPARAM,
+                                MAKEIPADDRESS!(255, 0, 0, 0) as LPARAM,
                             );
-                        } else if dwIpAddr <= MAKEIPADDRESS(191, 255, 255, 255) {
+                        } else if dwIpAddr <= MAKEIPADDRESS!(191, 255, 255, 255) {
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_SUBNETMASK,
-                                IPM_SETADDRESS,
+                                (IPM_SETADDRESS) as u32,
                                 0,
-                                MAKEIPADDRESS(255, 255, 0, 0) as LPARAM,
+                                MAKEIPADDRESS!(255, 255, 0, 0) as LPARAM,
                             );
-                        } else if dwIpAddr <= MAKEIPADDRESS(223, 255, 255, 255) {
+                        } else if dwIpAddr <= MAKEIPADDRESS!(223, 255, 255, 255) {
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_SUBNETMASK,
-                                IPM_SETADDRESS,
+                                (IPM_SETADDRESS) as u32,
                                 0,
-                                MAKEIPADDRESS(255, 255, 255, 0) as LPARAM,
+                                MAKEIPADDRESS!(255, 255, 255, 0) as LPARAM,
                             );
                         }
                     }
                 }
-            } else if (*lppsn).hdr.code == PSN_APPLY {
+            } else if (*lppsn).hdr.code == (PSN_APPLY) as u32 {
                 This = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl;
-                if StoreTcpipBasicSettings(hwndDlg, This, TRUE) >= 0 {
-                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR);
+                if StoreTcpipBasicSettings(hwndDlg, This, (TRUE) as i32) >= 0 {
+                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (PSNRET_NOERROR) as LRESULT);
                 } else {
-                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, PSNRET_INVALID);
+                    SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (PSNRET_INVALID) as LRESULT);
                 }
-                return TRUE;
+                return TRUE as INT_PTR;
             }
         }
         WM_COMMAND => {
-            if HIWORD(wParam as DWORD) == BN_CLICKED {
-                match LOWORD(wParam as DWORD) {
+            if HIWORD!(wParam as DWORD) == (BN_CLICKED) as u16 {
+                match LOWORD!(wParam as DWORD) as c_int {
                     IDC_USEDHCP => {
                         if SendMessageW(
                             GetParent(hwndDlg),
-                            PSM_INDEXTOID,
+                            (PSM_INDEXTOID) as u32,
                             1,
                             0,
                         ) == 0
                         {
-                            PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                            PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_IPADDR,
-                                IPM_CLEARADDRESS,
+                                (IPM_CLEARADDRESS) as u32,
                                 0,
                                 0,
                             );
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_SUBNETMASK,
-                                IPM_CLEARADDRESS,
+                                (IPM_CLEARADDRESS) as u32,
                                 0,
                                 0,
                             );
                             SendDlgItemMessageW(
                                 hwndDlg,
                                 IDC_DEFGATEWAY,
-                                IPM_CLEARADDRESS,
+                                (IPM_CLEARADDRESS) as u32,
                                 0,
                                 0,
                             );
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), FALSE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), TRUE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), (FALSE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), (TRUE) as i32);
                             AddAlternativeDialog(
                                 GetParent(hwndDlg),
                                 GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut TcpipConfNotifyImpl,
@@ -2751,53 +2608,53 @@ pub unsafe extern "system" fn TcpipBasicDlg(
                     IDC_NODHCP => {
                         if SendMessageW(
                             GetParent(hwndDlg),
-                            PSM_INDEXTOID,
+                            (PSM_INDEXTOID) as u32,
                             1,
                             0,
                         ) != 0
                         {
-                            PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), TRUE);
-                            if IsDlgButtonChecked(hwndDlg, IDC_AUTODNS) == BST_CHECKED {
+                            PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_IPADDR), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_SUBNETMASK), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DEFGATEWAY), (TRUE) as i32);
+                            if IsDlgButtonChecked(hwndDlg, IDC_AUTODNS) == BST_CHECKED as UINT {
                                 CheckDlgButton(hwndDlg, IDC_AUTODNS, BST_UNCHECKED);
                             }
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), FALSE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_AUTODNS), (FALSE) as i32);
                             CheckDlgButton(hwndDlg, IDC_FIXEDDNS, BST_CHECKED);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), TRUE);
-                            EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), TRUE);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (TRUE) as i32);
+                            EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (TRUE) as i32);
                             SendMessageW(
                                 GetParent(hwndDlg),
-                                PSM_REMOVEPAGE,
+                                (PSM_REMOVEPAGE) as u32,
                                 1,
                                 0,
                             );
                         }
                     }
                     IDC_AUTODNS => {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         SendDlgItemMessageW(
                             hwndDlg,
                             IDC_DNS1,
-                            IPM_CLEARADDRESS,
+                            (IPM_CLEARADDRESS) as u32,
                             0,
                             0,
                         );
                         SendDlgItemMessageW(
                             hwndDlg,
                             IDC_DNS2,
-                            IPM_CLEARADDRESS,
+                            (IPM_CLEARADDRESS) as u32,
                             0,
                             0,
                         );
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), FALSE);
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), FALSE);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (FALSE) as i32);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (FALSE) as i32);
                     }
                     IDC_FIXEDDNS => {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), TRUE);
-                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), TRUE);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS1), (TRUE) as i32);
+                        EnableWindow(GetDlgItem(hwndDlg, IDC_DNS2), (TRUE) as i32);
                     }
                     IDC_ADVANCED => {
                         LaunchAdvancedTcpipSettings(
@@ -2811,7 +2668,7 @@ pub unsafe extern "system" fn TcpipBasicDlg(
         }
         _ => {}
     }
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 
 #[no_mangle]
@@ -2824,14 +2681,14 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnQueryInterface(
 
     *ppvObj = core::ptr::null_mut();
 
-    if IsEqualIID(iid, &IID_IUnknown) != 0 ||
-       IsEqualIID(iid, &IID_INetCfgComponentPropertyUi) != 0
+    if IsEqualIID!(iid, &IID_IUnknown) ||
+       IsEqualIID!(iid, &IID_INetCfgComponentPropertyUi)
     {
         *ppvObj = This as LPVOID;
         INetCfgComponentPropertyUi_AddRef(iface);
         return S_OK;
     }
-    else if IsEqualIID(iid, &IID_INetCfgComponentControl) != 0
+    else if IsEqualIID!(iid, &IID_INetCfgComponentControl)
     {
         *ppvObj = core::ptr::addr_of_mut!((*This).lpVtblCompControl) as LPVOID;
         INetCfgComponentPropertyUi_AddRef(iface);
@@ -2847,7 +2704,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnAddRef(
     let This = iface as *mut TcpipConfNotifyImpl;
     let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_));
 
-    return refCount;
+    return (refCount) as u32;
 }
 
 #[no_mangle]
@@ -2860,7 +2717,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnRelease(
     if refCount == 0 {
         CoTaskMemFree(This as LPVOID);
     }
-    refCount
+    (refCount) as u32
 }
 #[no_mangle]
 pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnQueryPropertyUi(
@@ -2875,7 +2732,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnQueryPropertyUi(
         &IID_INetLanConnectionUiInfo,
         &mut pLanInfo as *mut *mut INetLanConnectionUiInfo as *mut LPVOID,
     );
-    if ((hr) < 0) < 0 {
+    if (hr) < 0 {
         return hr;
     }
 
@@ -2908,46 +2765,46 @@ pub unsafe extern "C" fn LoadDNSSettings(
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut dwSize: DWORD = 0;
 
-    (*(*This).pCurrentConfig).pDNS = CoTaskMemAlloc(core::mem::size_of::<TcpipAdvancedDNSDlgSettings>()) as *mut TcpipAdvancedDNSDlgSettings;
+    (*(*This).pCurrentConfig).pDNS = CoTaskMemAlloc((core::mem::size_of::<TcpipAdvancedDNSDlgSettings>()) as SIZE_T) as *mut TcpipAdvancedDNSDlgSettings;
     if (*(*This).pCurrentConfig).pDNS.is_null() {
         return E_FAIL;
     }
 
-    ZeroMemory((*(*This).pCurrentConfig).pDNS as LPVOID, core::mem::size_of::<TcpipAdvancedDNSDlgSettings>());
+    ZeroMemory!((*(*This).pCurrentConfig).pDNS as LPVOID, core::mem::size_of::<TcpipAdvancedDNSDlgSettings>());
 
     if StringFromCLSID(core::ptr::addr_of!((*This).NetCfgInstanceId), core::ptr::addr_of_mut!(pStr)) < 0 {
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
+    swprintf(szBuffer.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s") as LPCWSTR, pStr);
     CoTaskMemFree(pStr as LPVOID);
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == (ERROR_SUCCESS) as i32 {
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, REG_REGISTER_ADAPTER_NAME.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, w!("RegisterAdapterName") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, REG_REGISTRATION_ENABLED.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, w!("RegistrationEnabled") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of_val(&(*(*(*This).pCurrentConfig).pDNS).szDomain) as DWORD;
-        RegQueryValueExW(hKey, REG_DOMAIN2.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, w!("Domain") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        if RegQueryValueExW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, w!("InterfaceMetric") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != (ERROR_SUCCESS) as i32 {
             (*(*This).pCurrentConfig).Metric = 0;
         }
 
         RegCloseKey(hKey);
     }
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters") as LPCWSTR, 0, KEY_READ, core::ptr::addr_of_mut!(hKey)) == (ERROR_SUCCESS) as i32 {
         dwSize = core::mem::size_of::<DWORD>() as DWORD;
-        RegQueryValueExW(hKey, REG_USE_DOMAIN_NAME_DEVOLUTION.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
+        RegQueryValueExW(hKey, w!("UseDomainNameDevolution") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::ptr::addr_of_mut!(dwSize));
 
         dwSize = 0;
-        if RegQueryValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSize)) == ERROR_SUCCESS {
-            (*(*(*This).pCurrentConfig).pDNS).szSearchList = CoTaskMemAlloc(dwSize as usize) as LPWSTR;
+        if RegQueryValueExW(hKey, w!("SearchList") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSize)) == (ERROR_SUCCESS) as i32 {
+            (*(*(*This).pCurrentConfig).pDNS).szSearchList = CoTaskMemAlloc((dwSize as usize) as SIZE_T) as LPWSTR;
             if !(*(*(*This).pCurrentConfig).pDNS).szSearchList.is_null() {
-                if RegQueryValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szSearchList as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
+                if RegQueryValueExW(hKey, w!("SearchList") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (*(*(*This).pCurrentConfig).pDNS).szSearchList as LPBYTE, core::ptr::addr_of_mut!(dwSize)) != (ERROR_SUCCESS) as i32 {
                     CoTaskMemFree((*(*(*This).pCurrentConfig).pDNS).szSearchList as LPVOID);
                     (*(*(*This).pCurrentConfig).pDNS).szSearchList = core::ptr::null_mut();
                 }
@@ -2962,16 +2819,16 @@ pub unsafe extern "C" fn LoadTcpFilterSettingsFromRegistry(hKey: HKEY, szName: L
     let mut dwSize: DWORD = 0;
     let pData: LPWSTR;
 
-    if RegQueryValueExW(hKey, szName, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut dwSize) != ERROR_SUCCESS {
+    if RegQueryValueExW(hKey, szName, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut dwSize) != (ERROR_SUCCESS) as i32 {
         return core::ptr::null_mut();
     }
 
-    pData = CoTaskMemAlloc(dwSize) as LPWSTR;
+    pData = CoTaskMemAlloc((dwSize) as SIZE_T) as LPWSTR;
     if pData.is_null() {
         return core::ptr::null_mut();
     }
 
-    if RegQueryValueExW(hKey, szName, core::ptr::null_mut(), core::ptr::null_mut(), pData as LPBYTE, &mut dwSize) != ERROR_SUCCESS {
+    if RegQueryValueExW(hKey, szName, core::ptr::null_mut(), core::ptr::null_mut(), pData as LPBYTE, &mut dwSize) != (ERROR_SUCCESS) as i32 {
         CoTaskMemFree(pData as LPVOID);
         return core::ptr::null_mut();
     }
@@ -2989,36 +2846,36 @@ pub unsafe extern "C" fn LoadFilterSettings(
     let mut dwVal: u32 = 0;
     let mut dwSize: u32;
 
-    pFilter = CoTaskMemAlloc(core::mem::size_of::<TcpFilterSettings>()) as *mut TcpFilterSettings;
+    pFilter = CoTaskMemAlloc((core::mem::size_of::<TcpFilterSettings>()) as SIZE_T) as *mut TcpFilterSettings;
     if pFilter.is_null() {
         return E_FAIL;
     }
 
-    ZeroMemory(pFilter as LPVOID, core::mem::size_of::<TcpFilterSettings>());
-    (*(*(*This).pCurrentConfig).pFilter) = pFilter;
+    ZeroMemory!(pFilter as LPVOID, core::mem::size_of::<TcpFilterSettings>());
+    (*(*This).pCurrentConfig).pFilter = pFilter;
 
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters") as LPCWSTR, 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
         dwSize = core::mem::size_of::<u32>() as u32;
-        if RegQueryValueExW(hKey, REG_ENABLE_SECURITY_FILTERS.as_ptr() as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwVal as *mut u32 as LPBYTE, &mut dwSize) == ERROR_SUCCESS {
+        if RegQueryValueExW(hKey, w!("EnableSecurityFilters") as LPCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), &mut dwVal as *mut u32 as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32 {
             (*pFilter).EnableSecurityFilters = dwVal;
         }
         RegCloseKey(hKey);
     } else {
-        (*pFilter).EnableSecurityFilters = FALSE;
+        (*pFilter).EnableSecurityFilters = FALSE as DWORD;
     }
 
     if StringFromCLSID(core::ptr::addr_of_mut!((*This).NetCfgInstanceId), &mut pStr) < 0 {
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
-    CoTaskMemFree(pStr);
-    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) != ERROR_SUCCESS {
+    swprintf(szBuffer.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s") as LPCWSTR, pStr);
+    CoTaskMemFree((pStr).cast());
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, KEY_READ, &mut hKey) != (ERROR_SUCCESS) as i32 {
         return S_OK;
     }
-    (*pFilter).szTCPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, REG_TCP_ALLOWED_PORTS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).TCPSize));
-    (*pFilter).szUDPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, REG_UDP_ALLOWED_PORTS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).UDPSize));
-    (*pFilter).szRawIPAllowedProtocols = LoadTcpFilterSettingsFromRegistry(hKey, REG_RAW_IP_ALLOWED_PROTOCOLS.as_ptr() as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).IPSize));
+    (*pFilter).szTCPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, w!("TCPAllowedPorts") as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).TCPSize));
+    (*pFilter).szUDPAllowedPorts = LoadTcpFilterSettingsFromRegistry(hKey, w!("UDPAllowedPorts") as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).UDPSize));
+    (*pFilter).szRawIPAllowedProtocols = LoadTcpFilterSettingsFromRegistry(hKey, w!("RawIPAllowedProtocols") as LPCWSTR, core::ptr::addr_of_mut!((*pFilter).IPSize));
     RegCloseKey(hKey);
     return S_OK;
 }
@@ -3053,28 +2910,28 @@ pub unsafe extern "C" fn Initialize(This: *mut TcpipConfNotifyImpl) -> HRESULT {
     if GetAdaptersInfo(core::ptr::null_mut(), core::ptr::addr_of_mut!(dwSize))
         != ERROR_BUFFER_OVERFLOW
     {
-        CoTaskMemFree(pStr);
+        CoTaskMemFree((pStr).cast());
         return E_FAIL;
     }
 
-    pInfo = CoTaskMemAlloc(dwSize) as *mut IP_ADAPTER_INFO;
+    pInfo = CoTaskMemAlloc((dwSize) as SIZE_T) as *mut IP_ADAPTER_INFO;
     if pInfo.is_null() {
-        CoTaskMemFree(pStr);
+        CoTaskMemFree((pStr).cast());
         return E_FAIL;
     }
 
     if GetAdaptersInfo(pInfo, core::ptr::addr_of_mut!(dwSize)) != ERROR_SUCCESS {
-        CoTaskMemFree(pStr);
+        CoTaskMemFree((pStr).cast());
         CoTaskMemFree(pInfo as LPVOID);
         return E_FAIL;
     }
 
     pCurrentAdapter = pInfo;
-    bFound = FALSE;
+    bFound = (FALSE) as i32;
     while !pCurrentAdapter.is_null() {
         szBuffer[0] = 0;
         if MultiByteToWideChar(
-            CP_ACP,
+            (CP_ACP) as u32,
             0,
             (*pCurrentAdapter).AdapterName.as_ptr(),
             -1,
@@ -3086,26 +2943,26 @@ pub unsafe extern "C" fn Initialize(This: *mut TcpipConfNotifyImpl) -> HRESULT {
                 - 1] = 0;
         }
         if _wcsicmp(szBuffer.as_ptr(), pStr) == 0 {
-            bFound = TRUE;
+            bFound = (TRUE) as i32;
             break;
         }
         pCurrentAdapter = (*pCurrentAdapter).Next;
     }
-    CoTaskMemFree(pStr);
+    CoTaskMemFree((pStr).cast());
 
     if bFound == 0 {
         CoTaskMemFree(pInfo as LPVOID);
         return E_FAIL;
     }
 
-    pCurSettings = CoTaskMemAlloc(core::mem::size_of::<TcpipSettings>() as u64)
+    pCurSettings = CoTaskMemAlloc(core::mem::size_of::<TcpipSettings>() as SIZE_T)
         as *mut TcpipSettings;
     if pCurSettings.is_null() {
         CoTaskMemFree(pInfo as LPVOID);
         return E_FAIL;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         pCurSettings as LPVOID,
         core::mem::size_of::<TcpipSettings>(),
     );
@@ -3129,10 +2986,10 @@ pub unsafe extern "C" fn Initialize(This: *mut TcpipConfNotifyImpl) -> HRESULT {
         core::ptr::null_mut(),
     );
 
-    uLength = core::mem::size_of_val(&IP_PER_ADAPTER_INFO) as u32;
-    ZeroMemory(
+    uLength = core::mem::size_of::<IP_PER_ADAPTER_INFO>() as u32;
+    ZeroMemory!(
         core::ptr::addr_of_mut!(Info) as LPVOID,
-        core::mem::size_of_val(&IP_PER_ADAPTER_INFO),
+        core::mem::size_of::<IP_PER_ADAPTER_INFO>(),
     );
 
     if GetPerAdapterInfo(
@@ -3141,14 +2998,14 @@ pub unsafe extern "C" fn Initialize(This: *mut TcpipConfNotifyImpl) -> HRESULT {
         core::ptr::addr_of_mut!(uLength),
     ) == ERROR_BUFFER_OVERFLOW
     {
-        pPerInfo = CoTaskMemAlloc(uLength as u64) as *mut IP_PER_ADAPTER_INFO;
+        pPerInfo = CoTaskMemAlloc((uLength as u64) as SIZE_T) as *mut IP_PER_ADAPTER_INFO;
         if !pPerInfo.is_null() {
             let Status = GetPerAdapterInfo(
                 (*pCurrentAdapter).Index,
                 pPerInfo,
                 core::ptr::addr_of_mut!(uLength),
             );
-            if Status == NOERROR {
+            if Status == (NOERROR) as u32 {
                 if (*pPerInfo).AutoconfigActive == 0 {
                     CopyIpAddrString(
                         core::ptr::addr_of_mut!((*pPerInfo).DnsServerList),
@@ -3192,7 +3049,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnMergePropPages(
     pahpspPrivate: *mut *mut BYTE,
     pcPages: *mut UINT,
     hwndParent: HWND,
-    pszStartPage: *const LPCWSTR,
+    pszStartPage: *mut LPCWSTR,
 ) -> HRESULT {
     let mut hppages: *mut HPROPSHEETPAGE;
     let NumPages: UINT;
@@ -3200,7 +3057,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnMergePropPages(
     let This = iface as *mut TcpipConfNotifyImpl;
 
     hr = Initialize(This);
-    if ((hr) < 0) < 0 {
+    if (hr) < 0 {
         return hr;
     }
 
@@ -3210,13 +3067,13 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnMergePropPages(
         NumPages = 1;
     }
 
-    hppages = CoTaskMemAlloc(core::mem::size_of::<HPROPSHEETPAGE>() * NumPages as usize) as *mut HPROPSHEETPAGE;
+    hppages = CoTaskMemAlloc((core::mem::size_of::<HPROPSHEETPAGE>() * NumPages as usize) as SIZE_T) as *mut HPROPSHEETPAGE;
     if hppages.is_null() {
         return E_FAIL;
     }
 
     *hppages.offset(0 as isize) = InitializePropertySheetPage(
-        MAKEINTRESOURCEW(IDD_TCPIP_BASIC_DLG),
+        MAKEINTRESOURCEW!(IDD_TCPIP_BASIC_DLG),
         Some(TcpipBasicDlg),
         This as LPARAM,
         core::ptr::null_mut(),
@@ -3227,7 +3084,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnMergePropPages(
     }
     if NumPages == 2 {
         *hppages.offset(1 as isize) = InitializePropertySheetPage(
-            MAKEINTRESOURCEW(IDD_TCPIP_ALTCF_DLG),
+            MAKEINTRESOURCEW!(IDD_TCPIP_ALTCF_DLG),
             Some(TcpipAltConfDlg),
             This as LPARAM,
             core::ptr::null_mut(),
@@ -3252,7 +3109,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnValidateProperties(
 ) -> HRESULT {
     MessageBoxW(
         core::ptr::null_mut(),
-        MSG_VALIDATE_PROPERTIES.as_ptr() as LPCWSTR,
+        w!("INetCfgComponentPropertyUi_fnValidateProperties") as LPCWSTR,
         core::ptr::null_mut(),
         MB_OK,
     );
@@ -3265,7 +3122,7 @@ pub unsafe extern "system" fn INetCfgComponentPropertyUi_fnApplyProperties(
 ) -> HRESULT {
     MessageBoxW(
         core::ptr::null_mut(),
-        "INetCfgComponentPropertyUi_fnApplyProperties\0".as_ptr() as *const u16,
+        w!("INetCfgComponentPropertyUi_fnApplyProperties"),
         core::ptr::null_mut(),
         MB_OK
     );
@@ -3327,7 +3184,7 @@ unsafe extern "C" fn CreateMultiSzString(
     let mut pStr: LPWSTR;
     let pRet: LPWSTR;
     let mut dwSize: DWORD;
-    let mut dwIpAddr: DWORD;
+    let mut dwIpAddr: DWORD = 0;
     let mut szBuffer: [u16; 30] = [0; 30];
     let mut pTemp: *mut IP_ADDR = pAddr;
 
@@ -3337,31 +3194,31 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).IpAddress;
             swprintf(
                 szBuffer.as_mut_ptr(),
-                FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                FIRST_IPADDRESS(dwIpAddr),
-                SECOND_IPADDRESS(dwIpAddr),
-                THIRD_IPADDRESS(dwIpAddr),
-                FOURTH_IPADDRESS(dwIpAddr),
+                w!("%lu.%lu.%lu.%lu") as *const u16,
+                FIRST_IPADDRESS!(dwIpAddr),
+                SECOND_IPADDRESS!(dwIpAddr),
+                THIRD_IPADDRESS!(dwIpAddr),
+                FOURTH_IPADDRESS!(dwIpAddr),
             );
         } else if Type == SUBMASK {
             dwIpAddr = (*pTemp).u.Subnetmask;
             swprintf(
                 szBuffer.as_mut_ptr(),
-                FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                FIRST_IPADDRESS(dwIpAddr),
-                SECOND_IPADDRESS(dwIpAddr),
-                THIRD_IPADDRESS(dwIpAddr),
-                FOURTH_IPADDRESS(dwIpAddr),
+                w!("%lu.%lu.%lu.%lu") as *const u16,
+                FIRST_IPADDRESS!(dwIpAddr),
+                SECOND_IPADDRESS!(dwIpAddr),
+                THIRD_IPADDRESS!(dwIpAddr),
+                FOURTH_IPADDRESS!(dwIpAddr),
             );
         } else if Type == METRIC {
             swprintf(
                 szBuffer.as_mut_ptr(),
-                FMT_UINT.as_ptr() as *const u16,
-                (*pTemp).u.Metric,
+                w!("%u") as *const u16,
+                (*pTemp).u.Metric as c_uint,
             );
         }
 
-        dwSize += wcslen(szBuffer.as_ptr()) + 1;
+        dwSize += (wcslen(szBuffer.as_ptr()) + 1) as u32;
         pTemp = (*pTemp).Next;
     }
 
@@ -3369,7 +3226,7 @@ unsafe extern "C" fn CreateMultiSzString(
         return core::ptr::null_mut();
     }
 
-    pRet = CoTaskMemAlloc((dwSize + 1) * core::mem::size_of::<u16>() as DWORD) as LPWSTR;
+    pRet = CoTaskMemAlloc(((dwSize + 1) * core::mem::size_of::<u16>() as DWORD) as SIZE_T) as LPWSTR;
     pStr = pRet;
     if pStr.is_null() {
         return core::ptr::null_mut();
@@ -3381,27 +3238,27 @@ unsafe extern "C" fn CreateMultiSzString(
             dwIpAddr = (*pTemp).IpAddress;
             swprintf(
                 pStr,
-                FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                FIRST_IPADDRESS(dwIpAddr),
-                SECOND_IPADDRESS(dwIpAddr),
-                THIRD_IPADDRESS(dwIpAddr),
-                FOURTH_IPADDRESS(dwIpAddr),
+                w!("%lu.%lu.%lu.%lu") as *const u16,
+                FIRST_IPADDRESS!(dwIpAddr),
+                SECOND_IPADDRESS!(dwIpAddr),
+                THIRD_IPADDRESS!(dwIpAddr),
+                FOURTH_IPADDRESS!(dwIpAddr),
             );
         } else if Type == SUBMASK {
             dwIpAddr = (*pTemp).u.Subnetmask;
             swprintf(
                 pStr,
-                FMT_DOTTED_QUAD.as_ptr() as *const u16,
-                FIRST_IPADDRESS(dwIpAddr),
-                SECOND_IPADDRESS(dwIpAddr),
-                THIRD_IPADDRESS(dwIpAddr),
-                FOURTH_IPADDRESS(dwIpAddr),
+                w!("%lu.%lu.%lu.%lu") as *const u16,
+                FIRST_IPADDRESS!(dwIpAddr),
+                SECOND_IPADDRESS!(dwIpAddr),
+                THIRD_IPADDRESS!(dwIpAddr),
+                FOURTH_IPADDRESS!(dwIpAddr),
             );
         } else if Type == METRIC {
             swprintf(
                 pStr,
-                FMT_UINT.as_ptr() as *const u16,
-                (*pTemp).u.Metric,
+                w!("%u") as *const u16,
+                (*pTemp).u.Metric as c_uint,
             );
         }
 
@@ -3445,14 +3302,14 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
     pOldConfig = (*This).pCurrentConfig;
     (*This).pCurrentConfig = pCurrentConfig;
 
-    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, TCPIP_PARAMETERS_KEY.as_ptr() as LPCWSTR, 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == ERROR_SUCCESS {
+    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters") as LPCWSTR, 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
         if !(*pCurrentConfig).pDNS.is_null() {
-            RegSetValueExW(hKey, REG_USE_DOMAIN_NAME_DEVOLUTION.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, REG_SEARCH_LIST.as_ptr() as LPCWSTR, 0, REG_SZ, (*(*pCurrentConfig).pDNS).szSearchList as LPBYTE,
-                       (wcslen((*(*pCurrentConfig).pDNS).szSearchList)+1) * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, w!("UseDomainNameDevolution") as LPCWSTR, 0, (REG_DWORD) as u32, core::ptr::addr_of_mut!((*(*pCurrentConfig).pDNS).UseDomainNameDevolution) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, w!("SearchList") as LPCWSTR, 0, (REG_SZ) as u32, (*(*pCurrentConfig).pDNS).szSearchList as LPBYTE,
+                       ((wcslen((*(*pCurrentConfig).pDNS).szSearchList)+1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
         }
         if !(*pCurrentConfig).pFilter.is_null() {
-            RegSetValueExW(hKey, REG_ENABLE_SECURITY_FILTERS.as_ptr() as LPCWSTR, 0, REG_DWORD,
+            RegSetValueExW(hKey, w!("EnableSecurityFilters") as LPCWSTR, 0, (REG_DWORD) as u32,
                       core::ptr::addr_of_mut!((*(*pCurrentConfig).pFilter).EnableSecurityFilters) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         }
         RegCloseKey(hKey);
@@ -3462,40 +3319,40 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
         return E_FAIL;
     }
 
-    swprintf(szBuffer.as_mut_ptr(), TCPIP_IFACE_FMT.as_ptr() as LPCWSTR, pStr);
-    CoTaskMemFree(pStr);
+    swprintf(szBuffer.as_mut_ptr(), w!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\%s") as LPCWSTR, pStr);
+    CoTaskMemFree((pStr).cast());
 
-    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == ERROR_SUCCESS {
+    if RegCreateKeyExW(HKEY_LOCAL_MACHINE, szBuffer.as_ptr(), 0, core::ptr::null_mut(), 0, KEY_WRITE, core::ptr::null_mut(), &mut hKey, core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
         if (*pCurrentConfig).Metric != 0 {
-            RegSetValueExW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, w!("InterfaceMetric") as LPCWSTR, 0, (REG_DWORD) as u32, core::ptr::addr_of_mut!((*(*This).pCurrentConfig).Metric) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         } else {
-            RegDeleteValueW(hKey, REG_INTERFACE_METRIC.as_ptr() as LPCWSTR);
+            RegDeleteValueW(hKey, w!("InterfaceMetric") as LPCWSTR);
         }
 
         if !(*pCurrentConfig).pDNS.is_null() {
-            RegSetValueExW(hKey, REG_REGISTER_ADAPTER_NAME.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, REG_REGISTRATION_ENABLED.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
-            RegSetValueExW(hKey, REG_DOMAIN2.as_ptr() as LPCWSTR, 0, REG_SZ, (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE,
-                       (wcslen((*(*(*This).pCurrentConfig).pDNS).szDomain.as_ptr())+1) * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, w!("RegisterAdapterName") as LPCWSTR, 0, (REG_DWORD) as u32, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegisterAdapterName) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, w!("RegistrationEnabled") as LPCWSTR, 0, (REG_DWORD) as u32, core::ptr::addr_of_mut!((*(*(*This).pCurrentConfig).pDNS).RegistrationEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+            RegSetValueExW(hKey, w!("Domain") as LPCWSTR, 0, (REG_SZ) as u32, (*(*(*This).pCurrentConfig).pDNS).szDomain.as_mut_ptr() as LPBYTE,
+                       ((wcslen((*(*(*This).pCurrentConfig).pDNS).szDomain.as_ptr())+1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
         }
-        RegSetValueExW(hKey, REG_ENABLE_DHCP3.as_ptr() as LPCWSTR, 0, REG_DWORD, core::ptr::addr_of_mut!((*pCurrentConfig).DhcpEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
+        RegSetValueExW(hKey, w!("EnableDHCP") as LPCWSTR, 0, (REG_DWORD) as u32, core::ptr::addr_of_mut!((*pCurrentConfig).DhcpEnabled) as LPBYTE, core::mem::size_of::<DWORD>() as u32);
         if (*pCurrentConfig).DhcpEnabled != 0 {
-            RegSetValueExW(hKey, REG_IP_ADDRESS2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, ZERO_IP_MULTISZ.as_ptr() as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
-            RegSetValueExW(hKey, REG_SUBNET_MASK2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, ZERO_IP_MULTISZ.as_ptr() as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, w!("IPAddress") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, w!("0.0.0.0\0") as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, w!("SubnetMask") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, w!("0.0.0.0\0") as LPBYTE, 9 * core::mem::size_of::<u16>() as u32);
             if (*pOldConfig).DhcpEnabled == 0 {
                 DeleteIPAddress((*(*pOldConfig).Ip).NTEContext);
 
                 dwSize = 0;
-                if GetIpForwardTable(core::ptr::null_mut(), &mut dwSize, FALSE) == ERROR_INSUFFICIENT_BUFFER {
+                if GetIpForwardTable(core::ptr::null_mut(), &mut dwSize, (FALSE) as i32) == ERROR_INSUFFICIENT_BUFFER {
                     let mut Index: DWORD;
-                    let pIpForwardTable = CoTaskMemAlloc(dwSize as usize) as PMIB_IPFORWARDTABLE;
+                    let pIpForwardTable = CoTaskMemAlloc((dwSize as usize) as SIZE_T) as PMIB_IPFORWARDTABLE;
                     if !pIpForwardTable.is_null() {
-                        if GetIpForwardTable(pIpForwardTable, &mut dwSize, FALSE) == NO_ERROR {
+                        if GetIpForwardTable(pIpForwardTable, &mut dwSize, (FALSE) as i32) == NO_ERROR {
                             Index = 0;
                             while Index < (*pIpForwardTable).dwNumEntries {
-                                if (*pIpForwardTable).table[Index as usize].dwForwardIfIndex == (*pOldConfig).Index &&
-                                    (*pIpForwardTable).table[Index as usize].dwForwardDest == 0 {
-                                    DeleteIpForwardEntry(core::ptr::addr_of_mut!((*pIpForwardTable).table[Index as usize]));
+                                if (*(*pIpForwardTable).table.as_ptr().add(Index as usize)).dwForwardIfIndex == (*pOldConfig).Index &&
+                                    (*(*pIpForwardTable).table.as_ptr().add(Index as usize)).dwForwardDest == 0 {
+                                    DeleteIpForwardEntry((*pIpForwardTable).table.as_mut_ptr().add(Index as usize));
                                 }
                                 Index += 1;
                             }
@@ -3521,29 +3378,29 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
                              &mut NTEInstance);
             }
 
-            pStr = CreateMultiSzString((*pCurrentConfig).Ip, IPADDR, &mut dwSize, FALSE);
+            pStr = CreateMultiSzString((*pCurrentConfig).Ip, IPADDR, &mut dwSize, (FALSE) as i32);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, REG_IP_ADDRESS2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, w!("IPAddress") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
 
-            pStr = CreateMultiSzString((*pCurrentConfig).Ip, SUBMASK, &mut dwSize, FALSE);
+            pStr = CreateMultiSzString((*pCurrentConfig).Ip, SUBMASK, &mut dwSize, (FALSE) as i32);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, REG_SUBNET_MASK2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, w!("SubnetMask") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
 
             dwSize = 0;
-            if GetIpForwardTable(core::ptr::null_mut(), &mut dwSize, FALSE) == ERROR_INSUFFICIENT_BUFFER {
+            if GetIpForwardTable(core::ptr::null_mut(), &mut dwSize, (FALSE) as i32) == ERROR_INSUFFICIENT_BUFFER {
                 let mut Index: DWORD;
-                let pIpForwardTable = CoTaskMemAlloc(dwSize as usize) as PMIB_IPFORWARDTABLE;
+                let pIpForwardTable = CoTaskMemAlloc((dwSize as usize) as SIZE_T) as PMIB_IPFORWARDTABLE;
                 if !pIpForwardTable.is_null() {
-                    if GetIpForwardTable(pIpForwardTable, &mut dwSize, FALSE) == NO_ERROR {
+                    if GetIpForwardTable(pIpForwardTable, &mut dwSize, (FALSE) as i32) == NO_ERROR {
                         Index = 0;
                         while Index < (*pIpForwardTable).dwNumEntries {
-                            if (*pIpForwardTable).table[Index as usize].dwForwardIfIndex == (*pOldConfig).Index &&
-                                (*pIpForwardTable).table[Index as usize].dwForwardDest == 0 {
-                                DeleteIpForwardEntry(core::ptr::addr_of_mut!((*pIpForwardTable).table[Index as usize]));
+                            if (*(*pIpForwardTable).table.as_ptr().add(Index as usize)).dwForwardIfIndex == (*pOldConfig).Index &&
+                                (*(*pIpForwardTable).table.as_ptr().add(Index as usize)).dwForwardDest == 0 {
+                                DeleteIpForwardEntry((*pIpForwardTable).table.as_mut_ptr().add(Index as usize));
                             }
                             Index += 1;
                         }
@@ -3555,36 +3412,36 @@ pub unsafe extern "system" fn INetCfgComponentControl_fnApplyRegistryChanges(
 
         if !(*pCurrentConfig).Gw.is_null() {
             let mut RouterMib: MIB_IPFORWARDROW = core::mem::zeroed();
-            ZeroMemory(core::ptr::addr_of_mut!(RouterMib) as *mut core::ffi::c_void, core::mem::size_of_val(&MIB_IPFORWARDROW) as usize);
+            ZeroMemory!(core::ptr::addr_of_mut!(RouterMib) as *mut core::ffi::c_void, core::mem::size_of::<MIB_IPFORWARDROW>() as usize);
 
             RouterMib.dwForwardMetric1 = 1;
             RouterMib.dwForwardIfIndex = (*pOldConfig).Index;
             RouterMib.dwForwardNextHop = htonl((*(*pCurrentConfig).Gw).IpAddress);
 
             if CreateIpForwardEntry(core::ptr::addr_of_mut!(RouterMib)) == NO_ERROR {
-                pStr = CreateMultiSzString((*pCurrentConfig).Gw, IPADDR, &mut dwSize, FALSE);
+                pStr = CreateMultiSzString((*pCurrentConfig).Gw, IPADDR, &mut dwSize, (FALSE) as i32);
                 if !pStr.is_null() {
-                    RegSetValueExW(hKey, REG_DEFAULT_GATEWAY2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                    RegSetValueExW(hKey, w!("DefaultGateway") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, pStr as LPBYTE, dwSize);
                     CoTaskMemFree(pStr as LPVOID);
                 }
 
-                pStr = CreateMultiSzString((*pCurrentConfig).Gw, METRIC, &mut dwSize, FALSE);
+                pStr = CreateMultiSzString((*pCurrentConfig).Gw, METRIC, &mut dwSize, (FALSE) as i32);
                 if !pStr.is_null() {
-                    RegSetValueExW(hKey, REG_DEFAULT_GATEWAY_METRIC.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, pStr as LPBYTE, dwSize);
+                    RegSetValueExW(hKey, w!("DefaultGatewayMetric") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, pStr as LPBYTE, dwSize);
                     CoTaskMemFree(pStr as LPVOID);
                 }
             }
         } else {
-            RegSetValueExW(hKey, REG_DEFAULT_GATEWAY2.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, EMPTY_MULTISZ.as_ptr() as LPBYTE, 1 * core::mem::size_of::<u16>() as u32);
-            RegSetValueExW(hKey, REG_DEFAULT_GATEWAY_METRIC.as_ptr() as LPCWSTR, 0, REG_MULTI_SZ, DOUBLE_NULL_MULTISZ.as_ptr() as LPBYTE, core::mem::size_of::<u16>() as u32 * 2);
+            RegSetValueExW(hKey, w!("DefaultGateway") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, w!("") as LPBYTE, 1 * core::mem::size_of::<u16>() as u32);
+            RegSetValueExW(hKey, w!("DefaultGatewayMetric") as LPCWSTR, 0, (REG_MULTI_SZ) as u32, w!("\0") as LPBYTE, core::mem::size_of::<u16>() as u32 * 2);
         }
 
         if (*pCurrentConfig).Ns.is_null() || (*pCurrentConfig).AutoconfigActive != 0 {
-            RegDeleteValueW(hKey, REG_NAME_SERVER.as_ptr() as LPCWSTR);
+            RegDeleteValueW(hKey, w!("NameServer") as LPCWSTR);
         } else {
-            pStr = CreateMultiSzString((*pCurrentConfig).Ns, IPADDR, &mut dwSize, TRUE);
+            pStr = CreateMultiSzString((*pCurrentConfig).Ns, IPADDR, &mut dwSize, (TRUE) as i32);
             if !pStr.is_null() {
-                RegSetValueExW(hKey, REG_NAME_SERVER.as_ptr() as LPCWSTR, 0, REG_SZ, pStr as LPBYTE, dwSize);
+                RegSetValueExW(hKey, w!("NameServer") as LPCWSTR, 0, (REG_SZ) as u32, pStr as LPBYTE, dwSize);
                 CoTaskMemFree(pStr as LPVOID);
             }
         }
@@ -3619,7 +3476,7 @@ pub unsafe extern "system" fn TcpipConfigNotify_Constructor(
         return E_POINTER;
     }
 
-    let This = CoTaskMemAlloc(core::mem::size_of::<TcpipConfNotifyImpl>()) as *mut TcpipConfNotifyImpl;
+    let This = CoTaskMemAlloc((core::mem::size_of::<TcpipConfNotifyImpl>()) as SIZE_T) as *mut TcpipConfNotifyImpl;
     if This.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -4192,7 +4049,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //     memset(&ppage, 0x0, sizeof(PROPSHEETPAGEW));
 //     ppage.dwSize = sizeof(PROPSHEETPAGEW);
 //     ppage.dwFlags = PSP_DEFAULT;
-//     ppage.u.pszTemplate = resname;
+//     *ppage.u.pszTemplate.as_mut() = resname;
 //     ppage.pfnDlgProc = dlgproc;
 //     ppage.lParam = lParam;
 //     ppage.hInstance = netcfgx_hInstance;
@@ -4259,7 +4116,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //                 DialogBoxParamW(netcfgx_hInstance,
 //                                 MAKEINTRESOURCEW(IDD_TCPIP_FILTER_DLG),
 //                                 GetParent(hwndDlg),
-//                                 TcpipFilterSettingsDlg,
+//                                 Some(TcpipFilterSettingsDlg),
 //                                 (LPARAM)GetWindowLongPtr(hwndDlg, DWLP_USER));
 //                 break;
 //             }
@@ -4999,7 +4856,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //                 if (!This->pCurrentConfig->DhcpEnabled && ListView_GetItemCount(GetDlgItem(hwndDlg, IDC_IPLIST)) == 0)
 //                 {
 //                     DisplayError(IDS_NO_IPADDR_SET, IDS_TCPIP, MB_ICONWARNING);
-//                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+//                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
 //                     return TRUE;
 //                 }
 //
@@ -5009,7 +4866,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //                     if ((val < 1) || (val > 9999))
 //                     {
 //                         DisplayError(IDS_METRIC_RANGE, IDS_TCPIP, MB_ICONWARNING);
-//                         SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+//                         SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
 //                         return TRUE;
 //                     }
 //                 }
@@ -5540,7 +5397,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //                     SendDlgItemMessageW(hwndDlg, IDC_DNSSUFFIXLIST, LB_GETCOUNT, 0, 0) == 0)
 //                 {
 //                     DisplayError(IDS_NO_SUFFIX, IDS_TCPIP, MB_ICONWARNING);
-//                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+//                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
 //                     return TRUE;
 //                 }
 //                 if (SendDlgItemMessageW(hwndDlg, IDC_SUFFIX, WM_GETTEXT, sizeof(szSuffix)/sizeof(WCHAR), (LPARAM)szSuffix))
@@ -5558,7 +5415,7 @@ pub static vt_NetCfgComponentControl: INetCfgComponentControlVtbl = INetCfgCompo
 //                                 szFormat[0] = L'\0';
 //
 //                             MessageBoxW(hwndDlg, szBuffer, szFormat, MB_ICONWARNING);
-//                             SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE);
+//                             SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, TRUE as LONG_PTR);
 //                             SetFocus(GetDlgItem(hwndDlg, IDC_SUFFIX));
 //                             return TRUE;
 //                         }

@@ -1401,6 +1401,17 @@ case "$DRIVER" in
     # constants resolve through the island (no §9.112 exposure at derive time).
     USERMODE=1
     BLOCKLIST_FUNCS=1
+    # MACRO_SIGNED: netcfgx is a dialog module, so nearly every constant it touches is an `int`
+    # in the C — control ids (IDC_*/IDD_*), window messages (WM_*/CB_*/LB_*/LVM_*), and the
+    # LSTATUS (= LONG) values every Reg*/Setup* call returns. Leaving bindgen's u32 default in
+    # place cost 715 E0308s on `rc != ERROR_SUCCESS` and `GetDlgItem(hDlg, IDC_*)` alone.
+    MACRO_SIGNED=1
+    # UNBLOCK DLGPROC so the island emits its OWN, which normalize_island_abi.py then spells
+    # `extern "system"` on all three arches. ntdll-sys's copy is `extern "stdcall"` on i386 and
+    # `extern "C"` on the 64-bit targets, and Rust compares fn-pointer ABIs NOMINALLY — neither
+    # spelling unifies with "system", so a module full of dialog procs would otherwise have to
+    # carry every DLGPROC body twice under complementary `#[cfg(target_arch)]` arms.
+    UNBLOCK="DLGPROC"
     DRIVER_DIR="${SRC}/dll/win32/netcfgx"
     WRAPPER_INC=$'#include "precomp.h"\n#include <olectl.h>\n#include <strsafe.h>\n#include <rpc.h>\n#include <winnls.h>\n#include <winsock.h>\n#include <iphlpapi.h>\n#include <dhcpcsdk.h>\n#include <dhcpcapi.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
