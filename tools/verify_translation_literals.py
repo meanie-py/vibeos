@@ -356,7 +356,10 @@ def rust_literals(path: Path) -> Counter:
 def check_pair(rs: Path, c: Path) -> list[str]:
     cl, rl = c_literals(c), rust_literals(rs)
     findings = []
-    rel = rs.relative_to(REPO)
+    # Repo-relative when it can be (findings must match a baseline captured in any
+    # worktree), raw otherwise -- a fixture pair under /tmp is how the controls exercise
+    # this, and a checker that cannot be pointed at a fixture cannot be shown to work.
+    rel = rs.relative_to(REPO) if rs.is_relative_to(REPO) else rs
     for lit in sorted(cl - rl):
         findings.append(
             f"MISSING: {rel}: {lit!r} appears {cl[lit]}x in {c.name} and {rl[lit]}x here"

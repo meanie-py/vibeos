@@ -1026,6 +1026,20 @@ UNCOVERED: dict[str, str] = {
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
     "marshalgen_audit": "covered by tools/wow64gen/test_wow64gen.py",
     "verify_svc_numbering": "covered by tools/wow64gen/test_wow64gen.py",
+    # Both compare a translated Rust module against the C it came FROM, so neither walks a
+    # tree the fixture-dir driver above can substitute — they need a .c/.rs PAIR (or, for
+    # the ctype tables, ctype.c plus the compiled object as the oracle). Same shape as the
+    # --cmake/--ramdisk case below. Dedicated suites instead, each with a real positive
+    # control taken from the defect that motivated the tool:
+    "verify_translation_literals": (
+        "covered by tools/test_verify_translation_literals.py (12 tests) — positive control "
+        'is undname.c\'s `case \'C\': "pascal"` shipping as "__stdcall", plus negatives for '
+        "each way a faithful translation legitimately SPELLS a literal differently"
+    ),
+    "gen_ctype_tables": (
+        "covered by tools/test_gen_ctype_tables.py (9 tests) — positive control is prove() "
+        "exiting on ONE wrong byte in 257, which is the claim the whole generator rests on"
+    ),
     # Audits a PAIR of specific named files (--cmake / --ramdisk), not a tree, so the
     # fixture-dir driver above cannot express it. Controls are the same shape and live
     # in tests/qemu/cli/test_cli_units.py::test_boot_media_drift_* (5 tests): positive
