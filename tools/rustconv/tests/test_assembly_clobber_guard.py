@@ -46,10 +46,23 @@ def test_allows_a_fresh_path(tmp_path):
     _guard_assembly_target(tmp_path / "does_not_exist.rs", "free-functions")
 
 
-def test_ignores_files_assembled_before_the_marker_existed(tmp_path):
-    """Every already-landed .rs predates the marker; the guard must not block re-running them."""
+def test_refuses_a_partial_slice_over_an_unmarked_file(tmp_path):
+    """An unmarked file is the DANGEROUS case, not the safe one.
+
+    dialogs/drvdefext.rs held a fully translated CDrvDefExt class with no marker, and a
+    --free-functions run replaced all 1,742 lines of it. Nothing can tell from the outside
+    what an unmarked file covers, so a partial slice has to ask.
+    """
+    p = _write(tmp_path, "drvdefext.rs", selector="")
+    with pytest.raises(AssemblyClobberError) as exc:
+        _guard_assembly_target(p, "free-functions")
+    assert "-o" in str(exc.value)
+
+
+def test_whole_tu_may_overwrite_an_unmarked_file(tmp_path):
+    """A whole-TU run is not a partial slice, so it cannot drop part of the TU."""
     p = _write(tmp_path, "legacy.rs", selector="")
-    _guard_assembly_target(p, "free-functions")
+    _guard_assembly_target(p, "whole-tu")
 
 
 def test_no_selector_disables_the_guard(tmp_path):

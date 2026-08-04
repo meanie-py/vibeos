@@ -32,11 +32,31 @@ class AssemblyClobberError(RuntimeError):
 
 
 def _guard_assembly_target(out_path: Path, selector: str) -> None:
+    """Refuse to overwrite an assembly that a DIFFERENT slice of the TU produced.
+
+    A partial slice (`free-functions`, `class:X`) covers only part of the TU, so writing it
+    over someone else's output drops symbols. `whole-tu` covers everything and may overwrite.
+    """
     if not selector or not out_path.exists():
         return
     first = out_path.read_text(errors="replace").split("\n", 1)[0]
+
     if not first.startswith(ASSEMBLY_MARKER):
-        return
+        # No marker: written before this guard existed, or hand-authored. We cannot tell WHAT
+        # is in there, which makes it the dangerous case, not the safe one -- an unmarked
+        # dialogs/drvdefext.rs held a whole translated CDrvDefExt class and a --free-functions
+        # run replaced all 1,742 lines of it. A whole-TU run still may overwrite: it is not a
+        # partial slice, so it cannot drop anything the TU should have.
+        if selector == "whole-tu":
+            return
+        raise AssemblyClobberError(
+            f"{out_path} already exists and carries no assembly marker, so this run cannot "
+            f"tell whether `{selector}` covers everything in it.\n"
+            f"Overwriting would DISCARD anything it covers that this slice does not.\n"
+            f"fix: pass `-o <path>` to give this run its own file (and check what is in the "
+            f"existing one first)."
+        )
+
     prior = first[len(ASSEMBLY_MARKER) :].strip()
     if prior == selector:
         return
