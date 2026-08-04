@@ -284,6 +284,33 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+**Grinding a post-assembly cargo-check on ONE target bakes that target's pointer width into
+every cast you pick.** Symptom: the lane is clean locally and the merge queue rejects it
+`CARGO_CHECK_FAIL` on amd64 or arm64. This is why `crate-repair` takes `--arches i386 amd64
+arm64` and applies a width-dependent cast only on cross-target AGREEMENT; a hand grind needs
+the same discipline and it is easy to skip, because i386 is the fast build. Four classes, all
+invisible on i386, from `dialogs/dialogs.rs`:
+
+- A DLGPROC returns `INT_PTR` (64-bit off i386) while `TRUE`/`FALSE` are `BOOL` and always 32,
+  so a bare `return TRUE` only type-checks where the widths coincide. Key the fix on the
+  ENCLOSING signature: a blanket widening over-reaches into the neighbouring functions that
+  genuinely answer `BOOL`.
+- A binding declared `i32` receiving `DialogBoxParamW`, which answers `INT_PTR`. Widen the
+  binding and narrow once at the return, as the C++ does implicitly. **Not** rustc's suggested
+  `.try_into().unwrap()` — that converts C's silent truncation into a panic in a live dialog,
+  which is why `crate-repair` refuses that suggestion by design.
+- `SendMessageW`'s `LRESULT` compared against an `i32` constant; `WPARAM`/`LPARAM` arguments
+  given `UINT`-typed constants; `HeapAlloc` sized `as u32` instead of `as SIZE_T`.
+- A callback transmute that names `extern "stdcall"` outright. **bindgen spells a callback's ABI
+  as the RESOLVED convention for the target**, so the same pointer is `stdcall` on i686 and `C`
+  on amd64/arm64, while our definitions say `extern "system"` — which IS that convention on each
+  target, but Rust keeps the spellings as distinct nominal types on fn pointers. Hardcoding one
+  compiles on i386 and fails everywhere else; use a `cfg`'d alias.
+
+The habit that avoids all of it: **cast at the call site using the NAMED type** (`as WPARAM`,
+`as SIZE_T`, `as INT_PTR`), never a concrete width. That is arch-neutral by construction —
+`folders/CNetFolder.rs` was ground the same night with that habit and needed zero amd64 fixes.
+
 ### An `extern` declaration for a symbol YOUR OWN CRATE defines
 The worst version of a width mismatch, because both halves are yours and neither compiler nor
 gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
