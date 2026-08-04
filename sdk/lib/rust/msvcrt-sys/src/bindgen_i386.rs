@@ -4489,6 +4489,23 @@ pub const MB_TYPEMASK: u32 = 15;
 pub const MB_CANCELTRYCONTINUE: u32 = 6;
 pub const IDCANCEL: u32 = 2;
 pub const SIGABRT: u32 = 22;
+pub const UNDNAME_COMPLETE: u32 = 0;
+pub const UNDNAME_NO_LEADING_UNDERSCORES: u32 = 1;
+pub const UNDNAME_NO_MS_KEYWORDS: u32 = 2;
+pub const UNDNAME_NO_FUNCTION_RETURNS: u32 = 4;
+pub const UNDNAME_NO_ALLOCATION_MODEL: u32 = 8;
+pub const UNDNAME_NO_ALLOCATION_LANGUAGE: u32 = 16;
+pub const UNDNAME_NO_MS_THISTYPE: u32 = 32;
+pub const UNDNAME_NO_CV_THISTYPE: u32 = 64;
+pub const UNDNAME_NO_THISTYPE: u32 = 96;
+pub const UNDNAME_NO_ACCESS_SPECIFIERS: u32 = 128;
+pub const UNDNAME_NO_THROW_SIGNATURES: u32 = 256;
+pub const UNDNAME_NO_MEMBER_TYPE: u32 = 512;
+pub const UNDNAME_NO_RETURN_UDT_MODEL: u32 = 1024;
+pub const UNDNAME_32_BIT_DECODE: u32 = 2048;
+pub const UNDNAME_NAME_ONLY: u32 = 4096;
+pub const UNDNAME_NO_ARGUMENTS: u32 = 8192;
+pub const UNDNAME_NO_SPECIAL_SYMS: u32 = 16384;
 // PINNED by generate_bindings.py: corecrt.h: the signed twin, same reasoning.
 // bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also
 // compiled for the linux host that builds msvcrt-difftest -- see

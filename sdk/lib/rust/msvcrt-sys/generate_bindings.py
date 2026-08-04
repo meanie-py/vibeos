@@ -372,6 +372,11 @@ WRAPPER_SRC = """\
 #include "winuser.h"
 #include <signal.h>
 #include "ntsecapi.h"
+/* undname.c: imagehlp.h owns the `UNDNAME_*` flag word the demangler branches on. It is
+   the header undname.c itself includes, and the reason to derive rather than transcribe
+   is that these are bit POSITIONS -- an invented one compiles, links and demangles, just
+   with the wrong options applied. */
+#include "imagehlp.h"
 """
 
 
@@ -735,6 +740,14 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # mis-files a whole locale category. Plus winnt.h's language ids that
         # `remap_synonym` special-cases, and mtdll.h's setlocale lock slot.
         "|LC_[A-Z]+|LANG_[A-Z_]+|SUBLANG_[A-Z_]+|SORT_[A-Z_]+|UCHAR_MAX|_SETLOCALE_LOCK"
+        # ── undname.c ───────────────────────────────────────────────────────
+        # imagehlp.h's `UNDNAME_*` flag word. The demangler branches on eleven of these
+        # and they are pure bit positions, so an invented value does not fail to compile
+        # or crash -- it silently demangles with the wrong options (a `__cdecl` that
+        # should have been suppressed, a class name where the caller asked for
+        # NAME_ONLY). Note `UNDNAME_NO_COMPLEX_TYPE` is NOT here: it is 0x8000 and
+        # undname.c defines it ITSELF at the top of the file, because no SDK header does.
+        "|UNDNAME_[A-Z_0-9]+"
         ")",
         "--",
         "-ferror-limit=0",

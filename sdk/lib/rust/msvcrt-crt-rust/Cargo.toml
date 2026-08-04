@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables"]
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
@@ -159,6 +159,30 @@ locale = []
 # are still C"), so linking data.rs beside them is two duplicate symbols. Same shape as
 # `dir-environ`'s `_getdrive`/`_wgetenv`.
 data = ["dir-environ"]
+
+# ctype.c's three DATA exports (`src/msvcrt/ctype.rs`): `MSVCRT__ctype[257]`,
+# `MSVCRT__wctype[257]` and the `MSVCRT__pwctype` pointer into the second. Default ON,
+# dropped by the host harnesses, and the reason is the `dir-environ` shape once more —
+# the harness DEFINES all three.
+#
+# ctype.c is msvcrt-difftest's reference TU #3, and build.rs deliberately leaves the two
+# tables OUT of its `ref_*` rename list: they are shared ENVIRONMENT, so the reference and
+# the subject agree on what the locale IS rather than grading data against data.
+# subjectimpl.c then defines the subject's own `MSVCRT__pwctype` pointer into the shared
+# `MSVCRT__wctype`. Linking ctype.rs beside that is three duplicate symbols.
+#
+# Unlike the four features above, this one costs NO gradeable coverage even in principle,
+# and the reason is worth stating because it inverts the usual argument. The tables are not
+# hand-copied — `tools/gen_ctype_tables.py` parses ctype.c's initializers, evaluates every
+# entry against the msvcrt-sys island's mask values, and refuses to emit unless all 514
+# match the bytes the C compiler placed in `ctype.c.obj`'s `.data`. That is a STRONGER
+# check than a differential test could run, because it compares the Rust against the
+# compiler's own output instead of against a second copy of the same numbers. Wiring
+# `--check` into the lint gate is what keeps it true as ctype.c moves.
+#
+# ctype.c's 44 FUNCTIONS are NOT behind this gate and never were: they are hand-written in
+# lib.rs and graded MATCH against reference TU #3 today.
+ctype-tables = []
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }
