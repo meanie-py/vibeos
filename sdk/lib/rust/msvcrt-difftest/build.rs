@@ -467,6 +467,14 @@ const CTYPE_PUBLIC_SYMBOLS: &[&str] = &[
     "_isprint_l",
     "isprint",
     "ispunct",
+    // `_ispunct_l` was absent from this list until wave 25, and the omission had the same
+    // root cause as the comment in msvcrt-crt-rust that claimed msvcrt exports no such
+    // function: it is `(MSVCR80.@)`, so it is NOT in msvcrt.spec — but ctype.c compiles it
+    // unconditionally and `llvm-nm --defined-only ctype.c.obj` lists `T __ispunct_l`. The
+    // DLL export list is not the object's symbol table. Nothing noticed while the subject
+    // side had no `_ispunct_l` of its own; the moment lib.rs grew one, the reference's
+    // un-renamed copy became a duplicate symbol and took the whole difftest link down.
+    "_ispunct_l",
     "_isspace_l",
     "isspace",
     "_isupper_l",
