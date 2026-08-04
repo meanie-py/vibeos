@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data"]
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
@@ -107,6 +107,58 @@ stdio = []
 # GetCurrentDirectoryW alongside the other Win32 stubs and let the real bodies run, the
 # same move `invalid-parameter` owes for its call counter.
 dir-environ = []
+
+# console.c (29 exports) and exit.c (18). Default ON, dropped by the host harness, and this
+# one is not a symbol-ownership problem like the three above — it is that the bodies have
+# nothing to stand on off-Windows and one of them would be actively destructive.
+#
+# exit.c is the destructive half: it defines `exit`, `_exit` and `abort` under their plain
+# names. Link that into a test binary and the Rust test harness's own `exit`/`abort` resolve
+# to bodies that call `ExitProcess` — a symbol that does not exist on the host, and if it did
+# would tear down the process instead of ending a test. The harness's runtime has to win.
+#
+# console.c is the empty half: every export is a passthrough to a console API the host does
+# not have (`WriteConsoleA`, `ReadConsoleInputA`, `CreateFileA` on CONIN$/CONOUT$,
+# Get/SetConsoleMode). There is no behaviour underneath to grade — the file IS the
+# marshalling — so excluding it costs no coverage that could otherwise exist.
+#
+# misc.c deliberately does NOT ride this gate. Its `qsort`/`qsort_s`/`bsearch`/`bsearch_s`/
+# `_lsearch`/`_lfind`/`rand`/`srand` are pure algorithms and among the most gradeable code in
+# msvcrt, so instead of hiding it the harness grew the four Win32 stubs it actually needed
+# (`Beep`, `DebugBreak`, `RtlGenRandom`, `VirtualProtect`) and dropped its now-redundant
+# `_get_output_format` stub in favour of the real body. Rows for those are owed, not blocked.
+conio-exit = []
+
+# locale.c (29 exports + the 8 globals it owns). Default ON, dropped by the host harness,
+# and this is the `invalid-parameter` shape rather than the `conio-exit` one: the harness
+# does not merely fail to host these, it DEFINES eight of them itself as its NLS model, and
+# that model is the oracle every other row depends on.
+#
+# `msvcrt-difftest/nlsimpl.c` supplies `MSVCRT_locale`, `locale_to_sname` and `free_mbcinfo`;
+# `refimpl.c`/`subjectimpl.c` supply `get_locinfo`, `get_mbcinfo`, `MSVCRT__pctype`,
+# `initial_locale` and `__crtLCMapStringA`. Together they are a CODEPAGE-AWARE C-locale
+# model built so that mbcs.c's 160 graded functions have real lead/trail-byte tables to
+# grade against — see nlsimpl.c's own header for why a codepage-blind model silently makes
+# every DBCS branch unreachable. Linking locale.rs beside it is eight duplicate symbols, and
+# even if it were not, the real bodies build their tables from `GetLocaleInfoEx` /
+# `EnumSystemLocalesEx`, which do not exist on the Linux host.
+#
+# So the harness keeping its own locale is correct, not a workaround. The cost is that
+# locale.c's own 29 exports cannot be graded there; that is the same limitation file.c,
+# process.c, dir.c and environ.c already carry, recorded rather than papered over.
+locale = []
+
+# data.c (57 globals — the CRT's process-wide state and the `__p__*` accessor family).
+# Default ON, dropped by the host harness, and it IMPLIES `dir-environ` because
+# `msvcrt_init_args` calls environ.c's `env_init`: enabling data without environ would be an
+# undefined symbol, so the feature graph states the dependency instead of leaving it to a
+# link error nobody sees until the DLL is built.
+#
+# Two of data.c's exports are harness-owned: `fileimpl.c` defines `_get_fmode` and
+# `msvcrt_wstrdupa` (both are in msvcrt-sys's allowlist as "CRT siblings file.c calls that
+# are still C"), so linking data.rs beside them is two duplicate symbols. Same shape as
+# `dir-environ`'s `_getdrive`/`_wgetenv`.
+data = ["dir-environ"]
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }

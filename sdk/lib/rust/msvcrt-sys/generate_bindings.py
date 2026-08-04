@@ -244,6 +244,50 @@ ALLOWLIST_TYPES = [
     "__time32_t",
     "__time64_t",
     "clock_t",
+    # ── console.c ────────────────────────────────────────────────────────
+    # wincon.h's INPUT_RECORD. Its `Event` member is a UNION of five event structs and
+    # the KEY_EVENT arm nests a further union of `UnicodeChar`/`AsciiChar` over the same
+    # two bytes; `_getch` reads the narrow member and `_getwch` the wide one from the
+    # SAME record. A hand-written struct that got the union nesting or the u16/u8 overlay
+    # wrong would compile and decode every keystroke to garbage.
+    "_INPUT_RECORD",
+    "INPUT_RECORD",
+    # ── exit.c ───────────────────────────────────────────────────────────
+    # winuser.h's MSGBOXPARAMSW — a 10-field struct passed BY POINTER to
+    # MessageBoxIndirectW with its own `cbSize` self-description, so its layout is
+    # validated by the callee at runtime rather than by the linker.
+    "tagMSGBOXPARAMSW",
+    "MSGBOXPARAMSW",
+    # winbase.h's CRITICAL_SECTION_DEBUG: exit.c statically initialises a
+    # CRITICAL_SECTION and its debug record as a mutually-pointing pair, which only
+    # works if both layouts are the real ones.
+    "_RTL_CRITICAL_SECTION_DEBUG",
+    "RTL_CRITICAL_SECTION_DEBUG",
+    "CRITICAL_SECTION_DEBUG",
+    # stdlib.h / msvcrt.h: the atexit registry vocabulary. `_onexit_table_t` is three
+    # pointers whose ORDER is the growth algorithm (`_first`/`_last`/`_end`), and
+    # `_onexit_t` vs `_PVFV` differ by return type — `__dllonexit` stores one as the
+    # other, so the two must be the header's own types and not two spellings of the
+    # same invented alias.
+    "_onexit_t",
+    "_onexit_table_t",
+    "_PVFV",
+    "_purecall_handler",
+    # windef.h's plain `INT`, spelled by console.c's and exit.c's own signatures.
+    "INT",
+    # winnt.h: data.c's `_get_osver`/`_get_winmajor`/`_get_winminor` fill one of these.
+    "_OSVERSIONINFOW",
+    "OSVERSIONINFOW",
+    # ── locale.c ─────────────────────────────────────────────────────────
+    # The typedef spellings locale.c uses in its own signatures. The underlying
+    # `threadlocaleinfostruct` is already above; these are the names the code says.
+    "threadlocinfo",
+    "pthreadlocinfo",
+    "threadmbcinfo",
+    "pthreadmbcinfo",
+    "_locale_tstruct",
+    "LCTYPE",
+    "LCID",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -321,6 +365,13 @@ WRAPPER_SRC = """\
 #include <float.h>
 #include <math.h>
 #include <process.h>
+/* exit.c: winuser.h owns MSGBOXPARAMSW plus the MB_/ID* vocabulary its message-box path
+   uses, and signal.h owns SIGABRT (which `abort` raises before falling through to
+   `_exit(3)`). misc.c: ntsecapi.h owns RtlGenRandom, which is `SystemFunction036` under
+   an alias returning BOOLEAN — the shape an extern block gets wrong quietly. */
+#include "winuser.h"
+#include <signal.h>
+#include "ntsecapi.h"
 """
 
 
@@ -535,6 +586,36 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # joined the wrapper above.
         "|calloc|iswalpha|_wcsdup|_wgetenv|_time64|_getdrive|_get_fmode"
         "|msvcrt_wstrdupa|__doserrno"
+        # wincon.h: console.c's whole surface. It opens CONIN$/CONOUT$ by NAME through
+        # CreateFileA, so the ANSI entry point joins the W one already above, and
+        # ReadConsoleInputA hands back an INPUT_RECORD whose KEY_EVENT arm is a UNION of
+        # an AsciiChar and a UnicodeChar over the same two bytes — read the wrong member
+        # and every enhanced key decodes to garbage. Derived, not transcribed.
+        "|CreateFileA|WriteConsoleA|ReadConsoleA|GetConsoleMode|SetConsoleMode"
+        "|ReadConsoleInputA|ReadConsoleInputW|PeekConsoleInputA"
+        "|GetNumberOfConsoleInputEvents"
+        # winuser.h / winbase.h / ntsecapi.h: exit.c's message-box path and misc.c's four.
+        # `SystemFunction036`, NOT `RtlGenRandom`: ntsecapi.h:691 is
+        # `#define RtlGenRandom SystemFunction036` and the prototype below it is spelled
+        # with the macro, so by the time bindgen sees the declaration the name is already
+        # rewritten and allowlisting `RtlGenRandom` matches nothing at all — silently, with
+        # a clean regeneration. Verified by grepping the emitted bindings for it, which is
+        # the only way this class shows up. The consuming crate re-exports it under the
+        # documented name. It is also `BOOLEAN` rather than `BOOL`, and stdcall on i386.
+        "|ExitProcess|GetModuleHandleW|GetActiveWindow|MessageBoxIndirectW|DebugBreak"
+        "|Beep|SystemFunction036|VirtualProtect"
+        # winbase.h: data.c's process-startup surface. `GetVersionExW` fills an
+        # OSVERSIONINFOW whose leading `dwOSVersionInfoSize` the callee validates, so the
+        # struct layout is part of the call contract rather than a detail.
+        "|GetCommandLineA|GetCommandLineW|GetModuleFileNameA|GetVersionExW"
+        # winnls.h: locale.c's NLS surface. `EnumSystemLocalesEx` takes a CALLBACK
+        # whose convention is stdcall on i386 — deriving it is what makes the Rust
+        # callback's `extern "system"` checkable instead of a guess — and
+        # `GetLocaleInfoW` returns a character count that locale.c uses to size
+        # allocations.
+        "|CompareStringA|CompareStringW|EnumSystemLocalesEx|GetLocaleInfoA"
+        "|GetLocaleInfoW|GetLocaleInfoEx|GetUserDefaultLocaleName|IsValidCodePage"
+        "|IsValidLocaleName|LCIDToLocaleName|GetACP"
         ")",
         # Constants the translations reference by NAME. A constant missing from the island
         # does not fail loudly -- it becomes a catch-all `match` arm or an invented literal
@@ -550,7 +631,14 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|EINVAL|ERANGE|EILSEQ|EOF|WEOF|INT_MAX|STRUNCATE|_TRUNCATE|_NLSCMPERROR"
         # winnls.h: the NLS calls the CRT delegates collation and case mapping to
         "|CP_ACP|CP_UTF8|CSTR_EQUAL|NORM_IGNORECASE|MB_[A-Z_]+"
-        "|LCMAP_[A-Z]+|LOCALE_[A-Z_]+|C1_[A-Z]+|C3_[A-Z]+|CT_CTYPE[0-9]"
+        "|LCMAP_[A-Z]+|LOCALE_[A-Z_0-9]+|C1_[A-Z]+|C3_[A-Z]+|CT_CTYPE[0-9]"
+        # `LOCALE_[A-Z_]+` did NOT match the digit-suffixed half of the family, so
+        # `LOCALE_SMONTHNAME1`..`12`, `LOCALE_SDAYNAME1`..`7`, `LOCALE_SABBREV*` and
+        # `LOCALE_S1159`/`S2359` were all absent — 42 of the LCTYPEs locale.c passes to
+        # GetLocaleInfoW to build `__lc_time_data`. Missing, they would have become
+        # invented literals: adjacent LCTYPE numbers name adjacent calendar fields, so a
+        # wrong one yields a locale whose month names are shifted rather than one that
+        # fails. The `0-9` is the fix and the reason it is spelled out here.
         # ── file.c ──────────────────────────────────────────────────────────
         # fcntl.h / share.h / sys/locking.h / sys/stat.h / stdio.h. `_IOMYBUF` is
         # the worked example of why these are DERIVED and not transcribed: it is
@@ -621,6 +709,32 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # `_TIME_LOCK` is mtdll.h's slot number for _tzset's critical section, in the
         # same family as the _STREAM_LOCKS above and wrong by silence if guessed.
         "|TIME_ZONE_ID_[A-Z]+|_TIME_LOCK|CLOCKS_PER_SEC|_MAX__TIME64_T"
+        # ── console.c ───────────────────────────────────────────────────────
+        # wincon.h's INPUT_RECORD vocabulary. `handle_enhanced_keys` dispatches a
+        # four-way `idx` on the ALT/CTRL/SHIFT modifier bits and indexes a 10x4x2 table
+        # with it, so one wrong bit silently returns a different scan code — the same
+        # shape as the _P_* family above, and unobservable without a real keyboard.
+        "|KEY_EVENT|MOUSE_EVENT|WINDOW_BUFFER_SIZE_EVENT|MENU_EVENT|FOCUS_EVENT"
+        "|LEFT_ALT_PRESSED|RIGHT_ALT_PRESSED|LEFT_CTRL_PRESSED|RIGHT_CTRL_PRESSED"
+        "|SHIFT_PRESSED|ENABLE_[A-Z_]+"
+        # ── exit.c / misc.c ─────────────────────────────────────────────────
+        # stdlib.h's `_set_error_mode`/`_set_abort_behavior` vocabulary and signal.h's
+        # SIGABRT. `_OUT_TO_DEFAULT`/`_OUT_TO_STDERR`/`_OUT_TO_MSGBOX` are 0/1/2 and
+        # `_REPORT_ERRMODE` is 3 — four consecutive small integers in one family, which
+        # is the permuted-recall shape, and `_EXIT_LOCK1` already arrived that way as
+        # `_CONIO_LOCK`'s 8. winnt.h's page protections back `_resetstkoflw`, and
+        # `_TWO_DIGIT_EXPONENT` is the only legal argument to `_set_output_format`.
+        "|_OUT_TO_[A-Z]+|_REPORT_ERRMODE|_WRITE_ABORT_MSG|_CALL_REPORTFAULT"
+        "|_TWO_DIGIT_EXPONENT|SIGABRT|RAND_MAX|PAGE_[A-Z_]+|IDCANCEL|LANG_NEUTRAL"
+        "|DLL_PROCESS_DETACH|DLL_PROCESS_ATTACH|DLL_THREAD_ATTACH|DLL_THREAD_DETACH"
+        "|_CONIO_LOCK|_EXIT_LOCK1|_EXIT_LOCK2"
+        # ── locale.c ────────────────────────────────────────────────────────
+        # locale.h's category numbering (LC_ALL=0 .. LC_TIME=5, with LC_MIN/LC_MAX
+        # bounding them) indexes six parallel arrays including the exported
+        # `MSVCRT___lc_handle[LC_MAX-LC_MIN+1]`, so an off-by-one here silently
+        # mis-files a whole locale category. Plus winnt.h's language ids that
+        # `remap_synonym` special-cases, and mtdll.h's setlocale lock slot.
+        "|LC_[A-Z]+|LANG_[A-Z_]+|SUBLANG_[A-Z_]+|SORT_[A-Z_]+|UCHAR_MAX|_SETLOCALE_LOCK"
         ")",
         "--",
         "-ferror-limit=0",

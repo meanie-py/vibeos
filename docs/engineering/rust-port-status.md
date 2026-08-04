@@ -733,6 +733,93 @@ the push stamp — see `tests/qemu/cli/README.md`. They were previously reachabl
 - **The wide integer parsers** (`wcstol`/`wcstoul`/`_wtoi`/…) — locale-bound via `_iswspace_l`
   where the *narrow* ones are not. Nearly flipped on a symmetry argument. Phase D.
 
+**Wave 23 (2026-08-04) — console.c, misc.c, exit.c and locale.c FLIPPED (93 exports, $0.80
+for locale.c; the other three were banked).** All four are whole-file.
+
+| file | exports | note |
+|---|---|---|
+| `console.c` | 25 of 29 | the other 4 are WINAPIV `...`; `rust_console_varargs_shim.c` |
+| `misc.c` | 17 of 17 | `qsort`/`qsort_s`/`bsearch`/`bsearch_s`/`_lsearch`/`_lfind`/`rand` |
+| `exit.c` | 18 of 18 | the atexit/onexit registry, `abort`, `_wassert`, `_exit` |
+| `locale.c` | 29 + 8 globals | `setlocale`/`_create_locale`/`localeconv`/`_Getdays`… |
+
+**Six defects the paid output shipped that no compiler or boot would have reported.** Worth
+reading as a set, because four are the same shape — a value that is REAL but belongs
+somewhere else, which is what recall produces and what a closed-SET seal cannot see:
+
+* `_EXIT_LOCK1` came back **8**, which is `_CONIO_LOCK` two lines earlier in the same
+  mtdll.h table. `_lock(8)` compiles, links and runs; `_cexit`/`_onexit`/`atexit` would have
+  serialized on the CONSOLE lock — racing each other while deadlocking against console.c.
+* `cloc_time_data.lcid` came back `0x0409`, a perfectly real LCID —
+  `MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US)` — where the C says
+  `MAKELCID(LANG_ENGLISH, SORT_DEFAULT)` = `0x0009`. The same initializer also named a
+  `wrefcount` field that does not exist at `_MSVCR_VER=0`, shifting `unk` and `refcount` one
+  slot each; `refcount = -1` is the "statically allocated, never free me" sentinel.
+* `_aexit_rtn` (exit.c) and locale.c's **eight** globals arrived as PRIVATE Rust statics.
+  Every one is a global in its object and `_aexit_rtn` is an msvcrt.spec export, so each
+  would have left the C object as the sole provider and dragged the whole TU back in.
+* `_country_synonyms` was declared `[*const i8; 72]` against 70 initializers.
+* `_exit` was DEFINED returning `()` while prelude.rs and process.rs both DECLARE it `-> !`
+  (stdlib.h:229 is `__declspec(noreturn)`); `scan_extern_arity` reported it as `[RETVOID]`.
+* `swprintf` would have been a one-slot-off ABI bug. locale.c's call is corecrt_wstdio.h's
+  `static inline` over `_vsnwprintf` — `llvm-nm --undefined-only locale.c.obj` imports
+  `__vsnwprintf` and no `swprintf` at all — while the DLL's exported `swprintf` is the
+  NON-conforming **2-argument** `_swprintf` (msvcrt.spec:1466). A 3-argument call through
+  that export puts the format string in the count slot. Call sites use `_snwprintf`.
+
+The generalisable lesson is the first four: **diff every translated constant against the
+header, not just the ones the seal flags.** The seal's invariant is a closed SET, so a
+permutation satisfies it, and the `UNVERIFIED CONSTANTS` audit fires only when NO sealed
+token survived. locale.c's run reported zero findings and still carried two.
+
+Three classes are now mechanised instead of remembered. The msvcrt-sys island derives the
+mtdll.h lock numbers, the `LC_`/`LANG_`/`SORT_` families, wincon.h's `INPUT_RECORD`
+vocabulary, and the digit-suffixed `LOCALE_S*` LCTYPEs — the pre-existing `LOCALE_[A-Z_]+`
+matched **none** of the 42 month/day-name constants, silently. And `wstr!` (prelude) builds
+a wide literal at compile time from its readable spelling, so the four hand-interleaving bug
+classes `scan_wide_literals.py` grades have no way in for new code.
+
+**Feature gates.** `conio-exit` (console + exit) and `locale`, both DEFAULT-ON and dropped
+only by the host harness. exit.c defines `exit`/`abort`, which would replace the test
+runner's own with bodies calling `ExitProcess`; the harness DEFINES eight of locale.c's
+symbols as the codepage-aware NLS oracle mbcs.c's 160 graded functions stand on (see
+`nlsimpl.c`'s header for why a codepage-blind model makes every DBCS branch unreachable).
+**misc.c deliberately does not ride a gate** — its sort/search family is among the most
+gradeable code in msvcrt, so the harness instead grew the four Win32 stubs it actually
+needed (`Beep`, `DebugBreak`, `RtlGenRandom`, `VirtualProtect`) and dropped its now-redundant
+`_get_output_format` stub in favour of the real body. Rows for misc.c are owed, not blocked.
+
+**Wave 24 (2026-08-04) — data.c FLIPPED (58 exports, $0.18).** The CRT's process-global
+state: `__argc`/`__argv`/`__wargv`/`_environ`/`_wenviron`/`_pgmptr`/`_wpgmptr`/`_acmdln`, the
+version words (`_osver`/`_winmajor`/`_winminor`/`_winver`/`_osplatform`), `MSVCRT_app_type`,
+the whole `__p__*` accessor family, `__getmainargs`/`__wgetmainargs`, and the `_initterm` /
+`_initterm_e` initializer walkers.
+
+`build_expanded_wargv` is HAND-WRITTEN: the paid translation damaged its sealed call envelope
+("not exactly once") and was refused, so `--skip-fn` dropped it, the other 39 replayed from
+cache for $0.02, and the body was transcribed from data.c:471. Two traps are recorded at the
+site — `path_len` walks BACKWARDS as the C's `int` (`wcslen(x) - 1` on an empty string is
+`-1` in C and an underflow panic in `usize`), and `len` is only assigned INSIDE the
+`do`/`while`, so an argument matching only `.`/`..` must fall through to the unexpanded
+fallback.
+
+**The private-static defect recurred for the third consecutive file, and that makes it
+systematic.** All 22 of data.c's exported globals arrived as private Rust statics — as
+`_aexit_rtn` did in exit.c and eight did in locale.c. It compiles, links, and silently leaves
+the C object as the only definition, dragging the whole TU back in. `llvm-nm --defined-only`
+on the object is the only thing that says so; the `static` keywords in the source do not.
+
+Also fixed: `_INITTERMFUN` and `_INITTERM_E_FN` are TU-LOCAL typedefs, so the translation
+carried them as bare (non-nullable) Rust fn pointers — but `_initterm` tests every table slot
+against NULL before calling it, which a bare fn pointer cannot express. `Option<fn>` is the
+right shape, and it is exactly what bindgen gives the sibling `_PVFV` for the identical C
+typedef.
+
+Behind a `data` feature that IMPLIES `dir-environ` — `msvcrt_init_args` calls environ.c's
+`env_init`, so the feature graph states the dependency rather than leaving it to a link error
+nobody sees until the DLL is built. Dropped by the host harness, which defines `_get_fmode`
+and `msvcrt_wstrdupa` itself.
+
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 

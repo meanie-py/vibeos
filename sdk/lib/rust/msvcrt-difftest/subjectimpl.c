@@ -439,12 +439,12 @@ int HeapFree(void *heap, unsigned int flags, void *ptr)
     return 1;
 }
 
-/* printf's %e exponent width: msvcrt default = 3-digit form (see refimpl's
- * msvcrt_ref_ twin — the two must agree or every %e row false-DIVERGEs). */
-unsigned int _get_output_format(void)
-{
-    return 0;
-}
+/* printf's %e exponent width used to be stubbed here, returning 0.  It is now supplied by
+ * the crate under test — `msvcrt/misc.rs`'s real `_get_output_format`, reading the real
+ * `output_format` static that `_set_output_format` writes — so a stub would be a duplicate
+ * symbol at link.  The default is still 0 (3-digit form), so refimpl's `msvcrt_ref_` twin
+ * continues to agree and no %e row moves; the difference is that the agreement is now a
+ * property of the shipping code rather than of two hand-kept-in-sync stubs. */
 
 /* `_mbtowc_l` USED to be a stub here — a C-locale 1:1 twin of the one in refimpl.c,
  * required to stay body-identical to it or every wide-conversion printf row would
