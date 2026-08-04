@@ -707,6 +707,19 @@ completely empty serial log. A real defect held harmless by a link-order acciden
 same shape as the no-op-fn fold above, and the reason a "no functional change" toolchain edit
 can detonate.
 
+**A second route to the same `jmp .`, and this one is invisible in the source: a `#[no_mangle]`
+export whose body calls an `extern` declaration carrying `#[link_name = "<that same export>"]`.**
+Two different Rust identifiers, no recursion anywhere on the page, and the loop only exists
+after the linker resolves both to one symbol. Seen 2026-08-04 in a `drvdefext.cpp` flip: the
+model needed `SH_FormatByteSize`, which is C++-linkage in a *different* TU
+(`dialogs/filedefext.cpp`) and only reachable through `drvdefext.cpp`'s own
+`SH_FormatByteSize_RustBridge` forwarder — so it imported the bridge under that `link_name` and
+then also published a `#[no_mangle]` bridge of the same name that called it. `cargo check` is
+perfectly happy. `scan_self_recursive` does catch it, but only post-link, and a duplicate-symbol
+error would usually fire first. **Rule: when a flip needs a `*_RustBridge` forwarder, the
+forwarder belongs in the TU that OWNS the target function, not in the TU being flipped away.**
+Grep a new module for any name that appears both as a `link_name` and as a `#[no_mangle]` fn.
+
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
   lookup wrongly rejects an object; a `DbgPrint` between the reads "fixes" it. `read_volatile`
@@ -2393,6 +2406,18 @@ Four things that cost precision, all of them found by being wrong first:
   `if (SUCCEEDED(hr)) { ERR("Got CLSID override for '%S'\n", Tmp); }` into `if hr >= 0 { }` — a
   branch that computes a condition and does nothing, which is what a lost print looks like from
   the outside.
+  **Know WHY the count is near zero before you call it a regression:** for shell32, rustconv
+  runs `strip_debug_statements` over the model's view of every body
+  (`__main__.py`, `model_bodies = {... strip_debug_statements(dep.body_text) ...}`), so the LLM
+  never sees a `TRACE`/`ERR`/`WARN`/`FIXME` and a freshly translated module starts at ~zero by
+  construction. Measured on three TUs flipped 2026-08-04: `folders/CNetFolder.cpp` had 10
+  always-on sites and its Rust modules 0; `CDefViewDual.cpp` had 11 and 0. The
+  already-landed-long-ago `net_folder.rs` is also 0, which is the tell that this is systemic
+  rather than per-flip. So "restore the print" here means **re-deriving it from the C**, not
+  recovering something a model dropped, and doing it for three TUs while ~40 sibling modules
+  stay bare buys nothing. It is a subsystem burn-down, and it is gated behind giving
+  shell32-rust a real wine debug sink first — until then `ERR!`/`FIXME!` are no-op
+  `macro_rules!` and a restored call site emits nothing anyway.
 - **The mirror image: a PARTIAL-slice assembly makes every C-vs-Rust pairing lint over-report.**
   Same oracle, opposite failure. rustconv embeds the **whole** TU's C source as trailing comments
   no matter how narrow the run was, so a `--free-functions` or `--cpp-com --class X` assembly

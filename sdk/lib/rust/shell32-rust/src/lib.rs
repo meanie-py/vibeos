@@ -183,6 +183,24 @@ pub mod net_folder_tu;
 #[path = "folders/CNetFolderEnum.rs"]
 pub mod net_folder_enum;
 
+// The same peel for three more hybrids. In each case the activated class was already Rust and
+// what kept the `.cpp` compiled was its free helpers plus a file-local helper class, so the
+// slices come in pairs: the `--free-functions` assembly and one `--cpp-com --class` assembly
+// per class. The `.cpp` files stay in CMake until each pair compiles and its retained closure
+// is published from Rust.
+#[path = "dialogs/drvdefext_tu.rs"]
+pub mod drv_def_ext_tu;
+#[path = "folders/CDesktopFolder.rs"]
+pub mod desktop_folder_tu;
+#[path = "folders/CDesktopFolderEnum.rs"]
+pub mod desktop_folder_enum;
+#[path = "folders/CControlPanelFolder.rs"]
+pub mod control_panel_folder_tu;
+#[path = "folders/CControlPanelEnum.rs"]
+pub mod control_panel_enum;
+#[path = "folders/CCPLItemMenu.rs"]
+pub mod cpl_item_menu;
+
 
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;

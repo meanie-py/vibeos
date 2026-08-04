@@ -270,6 +270,13 @@ SH_FormatInteger(LONGLONG Num, LPWSTR pwszResult, UINT cchResultMax)
     return cchResult - 1;
 }
 
+/* C-linkage forwarder to the C++-linkage SH_FormatByteSize just below. It used to live in
+   dialogs/drvdefext.cpp, which has now been replaced by Rust; a forwarder belongs in the TU
+   that OWNS the target function, so that exactly one definition exists before and after a
+   flip. Publishing it from the Rust side instead would have produced a function whose body
+   was a call to itself -- see shell32-rust/src/dialogs/drvdefext_tu.rs. */
+EXTERN_C UINT WINAPI SH_FormatByteSize_RustBridge(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax);
+
 UINT
 SH_FormatByteSize(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax)
 {
@@ -286,6 +293,11 @@ SH_FormatByteSize(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax)
     cchRemaining -= cchWritten;
 
     return cchResultMax - cchRemaining;
+}
+
+EXTERN_C UINT WINAPI SH_FormatByteSize_RustBridge(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax)
+{
+    return SH_FormatByteSize(cbSize, pwszResult, cchResultMax);
 }
 
 /*************************************************************************
