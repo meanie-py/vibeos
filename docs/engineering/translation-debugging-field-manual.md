@@ -399,6 +399,22 @@ claims nothing; same for freeldr's `PcFindPciBios`); a **uniform syscall-table s
 spells every entry `(_: usize, ...)` on purpose); and a decl in a file no `mod` chain reaches —
 dead code makes no calls, which is why freeldr's parked `directui.rs` drops out on its own.
 
+**The header's prototype is not always the symbol you will bind to — check the OBJECT.** A
+sibling of the count bug, and it does not present as a count mismatch at all because the
+declaration you write is perfectly consistent with the header you read. msvcrt's `locale.c`
+calls `swprintf(wbuf+len, ARRAY_SIZE(wbuf) - len, L"%d", cp)` and `corecrt_wstdio.h` shows a
+3-fixed-argument prototype, so an `extern "C" { fn swprintf(buf, count, fmt, ...) }` looks
+obviously right. It is wrong twice over: at this build `swprintf` is the `static inline` arm
+that forwards to `_vsnwprintf` — `llvm-nm --undefined-only locale.c.obj` imports
+`__vsnwprintf` and **no `swprintf` whatsoever** — and the name `swprintf` that the DLL does
+export is implemented by `_swprintf`, the NON-conforming **2-argument** form
+(`msvcrt.spec:1466`). So the extern would have linked cleanly to a function that reads the
+format string out of the count slot, on every call, forever. The rule that catches it costs
+one command: **before writing an `extern` for a CRT sibling, run `llvm-nm --undefined-only`
+on the C object and confirm the symbol is actually imported under that name.** A header arm
+selected by `#if`, a `static inline`, and a `.spec` alias each break the header→symbol
+assumption independently, and all three are invisible from the source.
+
 **Two parse traps that produced confidently wrong answers first**, both now in the GOOD control
 fixture so a regression surfaces as a false positive: count against comment-MASKED text
 (`RaiseOnError: u8, // BOOLEAN` contributes its own commas and `>`s), and **neutralise `->`
@@ -1935,6 +1951,44 @@ of them were **ours**, not the model's:
   `math_error` call sites took under a minute that way, and the eleventh was the bug. The real
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
+
+  **The cheapest defence that catches this class wholesale: diff every translated constant
+  against its header, mechanically, and do not wait for the audit to nominate one.** msvcrt's
+  wave 23 (console/misc/exit/locale) came back with the audit reporting ZERO findings and
+  still carried two permuted constants, both of which compile, link and run:
+
+  * `exit.c`'s `_EXIT_LOCK1` as **8**, which is `_CONIO_LOCK` two `#define`s earlier in the
+    same mtdll.h table. Effect: `_cexit`/`_onexit`/`atexit` serialize on the CONSOLE lock —
+    racing each other while deadlocking against `console.c`'s `LOCK_CONSOLE`.
+  * `locale.c`'s `cloc_time_data.lcid` as `0x0409`, a real LCID
+    (`MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US)`) where the C says
+    `MAKELCID(LANG_ENGLISH, SORT_DEFAULT)` = `0x0009`.
+
+  Both fit the pattern exactly: not invented, not out of range, just the WRONG member of the
+  right family. A twenty-line script that extracts every `const NAME: T = V;` from the
+  translated module and greps the module's own `.c` and its header closure for
+  `#define NAME` found both in seconds — including the `#if`-arm case, where the C's two
+  definitions must first be narrowed to the one this `_MSVCR_VER` compiles. Run it on every
+  translated module; it costs nothing and needs no model.
+
+  The same wave's structural sibling is worth naming with it, because the fix is the same
+  reflex: `cloc_time_data`'s initializer also assigned a **`wrefcount` field that does not
+  exist** at `_MSVCR_VER=0` (it is the `>= 110` spelling), which shifted the C's `1, -1` one
+  slot each. `refcount = -1` is the "statically allocated, never free me" sentinel
+  `free_locinfo` tests, so the C locale's time data would have looked refcounted and
+  freeable. Rust caught that one as a missing-field error only because the layout came from
+  bindgen; a hand-written struct would have accepted it.
+
+  **The durable fix for all of it is to stop transcribing.** Every constant in this list is
+  now DERIVED in the `msvcrt-sys` bindgen island — the mtdll.h lock numbers, the
+  `LC_`/`LANG_`/`SORT_` families — so the class cannot recur for those names. When adding a
+  family to an island, check the regex actually matches: `LOCALE_[A-Z_]+` had silently
+  matched **none** of the 42 digit-suffixed `LOCALE_SMONTHNAME1`..`12`/`LOCALE_SDAYNAME1`..`7`
+  LCTYPEs, and a constant absent from an island fails by becoming an invented literal, not by
+  failing to build. Grep the emitted bindings for a name you just allowlisted — that is the
+  only way this shows up. (`RtlGenRandom` is the other shape of the same trap: ntsecapi.h
+  `#define`s it to `SystemFunction036`, so the prototype bindgen sees is already renamed and
+  allowlisting the documented name matched nothing.)
 
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
