@@ -30,7 +30,11 @@ list(APPEND SOURCE
     # rust_changenotify_broker_stub.cpp below.
     rust_changenotify_broker_stub.cpp
     # debughlp.cpp — replaced by Rust (shell32-rust/src/debughlp.rs); cohab via libshell32_rust.a
-    dialogs/dialogs.cpp
+    # dialogs/dialogs.cpp — replaced by Rust (shell32-rust/src/dialogs/dialogs.rs); cohab via
+    # libshell32_rust.a. Whole-TU flip: of its 145 defined symbols only ExitWindowsDialog and
+    # PickIconDlg had callers outside it, and Rust exports both. 24 of its 26 functions came
+    # from the paid bank at $0; FillList and RunDlgProc are hand-written because the call-seal
+    # audit refused both, twice each, on different tokens — see the module for what it caught.
     # dialogs/drive.cpp — replaced by Rust (shell32-rust/src/dialogs/drive.rs); cohab via libshell32_rust.a
     dialogs/drvdefext.cpp
     # Hybrid cohab: CFileDefExt activation/methods are Rust-owned. This file retains
@@ -91,9 +95,12 @@ list(APPEND SOURCE
     # folders/CPrinterFolder.cpp — CPrinterFolder, CPrintersEnum, and retained
     # printer icon/PIDL helpers are Rust-owned.
     # folders/CAdminToolsFolder.cpp — replaced by Rust (shell32-rust/src/admin_tools_folder.rs); cohab via libshell32_rust.a
-    # Hybrid cohab: CNetFolder activation/methods are Rust-owned; this file
-    # retains network enumeration, context-menu callbacks, and explicit bridges.
-    folders/CNetFolder.cpp
+    # folders/CNetFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+    # activated class was already shell32-rust/src/net_folder.rs; its retained closure, measured
+    # against the real link by `rustconv hybrid-closure`, was 7 *_RustBridge entry points and
+    # nothing else — no C++-mangled symbol at all. Those are now
+    # shell32-rust/src/folders/CNetFolder.rs, and the file-local CNetFolderEnum enumerator is
+    # shell32-rust/src/folders/CNetFolderEnum.rs.
     # folders/CFontsFolder.cpp — replaced by Rust (shell32-rust/src/fonts_folder.rs); cohab via libshell32_rust.a
     folders/CControlPanelFolder.cpp
     folders/CRecycleBin.cpp
@@ -110,7 +117,11 @@ list(APPEND SOURCE
     CFileSysBindData.cpp
     CDefView.cpp
     CDefViewUtil.cpp
-    CDefViewDual.cpp
+    # CDefViewDual.cpp — replaced by Rust (shell32-rust/src/shell32/CDefViewDual.rs); cohab via
+    # libshell32_rust.a. Whole-TU flip: the only symbol the rest of the link still took from it
+    # was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes
+    # that now. Its IDispatchImpl<> template arguments — plibid/piid/wMajor/wMinor — are baked
+    # into the Rust translation, since a template reaches no TU and so has no body to translate.
     CDefViewBckgrndMenu.cpp
     # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a

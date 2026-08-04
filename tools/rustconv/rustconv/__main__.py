@@ -24,6 +24,7 @@ from . import (
     dup_census,
     file_splitter,
     gdi_lock_inventory,
+    hybrid_closure,
     seh_belt,
     seh_inventory,
     seh_llm_lower,
@@ -37,7 +38,7 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
-from .assembler import assemble_file, generate_lib_rs, generate_mod_rs
+from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
@@ -379,6 +380,19 @@ def cmd_dup_census(args):
         paths.append(path.resolve())
     report = dup_census.run_census(paths, REACTOS_ROOT, top=args.top)
     dup_census.print_census(report, as_json=args.json)
+
+
+def cmd_hybrid_closure(args):
+    """Measure which symbols of a still-compiled TU the rest of the link actually needs."""
+    build_dir, link_root, archive = hybrid_closure.resolve_paths(REACTOS_ROOT, args)
+    try:
+        report = hybrid_closure.measure(
+            REACTOS_ROOT, args.tu, build_dir, link_root, archive, args.arch, args.target_dir
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    hybrid_closure.print_report(report, as_json=args.json)
 
 
 def cmd_shell32_tail_inventory(args):
@@ -3492,15 +3506,29 @@ def cmd_translate(args):
                 output_tokens=total_out,
                 success=True,
             )
-            out_path = assemble_file(
-                fake_result,
-                subsystem,
-                scan.raw_source,
-                exports=file_res.exports,
-                scan=scan,
-                target=rustconv_target,
-                c_source_path=c_file,
-            )
+            # Name the SLICE of the TU this run covers, so a second run over the same TU
+            # (another class, or the free functions) cannot silently overwrite this file.
+            if getattr(args, "cpp_com", False) and getattr(args, "class_name", None):
+                selector = f"class:{args.class_name}"
+            elif getattr(args, "free_functions", False):
+                selector = "free-functions"
+            else:
+                selector = "whole-tu"
+            try:
+                out_path = assemble_file(
+                    fake_result,
+                    subsystem,
+                    scan.raw_source,
+                    exports=file_res.exports,
+                    scan=scan,
+                    target=rustconv_target,
+                    c_source_path=c_file,
+                    selector=selector,
+                    assembled_fns={dep.name for dep in sorted_deps},
+                )
+            except AssemblyClobberError as exc:
+                print(f"\n\u26d4 {exc}", file=sys.stderr)
+                sys.exit(1)
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
         # Respect the cost cap across files too, not just within one file.
@@ -3768,6 +3796,13 @@ def main():
     )
     p.add_argument("--ledger", help="Override the shell32 tail TOML ledger")
     p.add_argument("--json", action="store_true", help="Machine-readable report")
+
+    hybrid_closure.build_arg_parser(
+        sub.add_parser(
+            "hybrid-closure",
+            help="Which symbols of a hybrid TU are still needed elsewhere, measured from the link",
+        )
+    )
 
     # candidate-check — N isolated worker replacements, one cargo check per arch.
     p = sub.add_parser(
@@ -4418,6 +4453,7 @@ def main():
         "scan": cmd_scan,
         "dup-census": cmd_dup_census,
         "shell32-tail-inventory": cmd_shell32_tail_inventory,
+        "hybrid-closure": cmd_hybrid_closure,
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
         "difftest-gen": cmd_difftest_gen,

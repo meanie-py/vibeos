@@ -489,8 +489,11 @@ And the reason is visible in the source, which is worth knowing before buying an
 (dialogs.cpp:824/837). Rust has no such jump, so the model must restructure the whole
 allocate-or-default block — and restructuring is exactly what loses sealed call tokens. Note
 also that **one rejected worker assembles no file at all**, by design, so 24 accepted bodies
-cannot be stitched around 2 rejects: either repair them into the run, or hand-write them into
-the assembled module afterwards and say so in the module header.
+cannot be stitched around 2 rejects. `--exclude` does not help — it takes *file* stems, for
+batch mode. The way through is **`--fn` with the 24 accepted names as one comma-separated
+worker set**: verified `Resume cache: 24 banked ($0 replay), 0 to buy`, so it assembles the
+module for nothing, and the two hand-written bodies go into it afterwards with the module
+header saying which they are. Same ending as `changenotify`, reached without paying twice.
 
 **`CDefView.cpp` scoped 2026-08-02 (free, no paid call): the blocker is a design decision, not
 translation volume.** 191 method bodies, of which the preflight can extract 190 — the one it
@@ -561,3 +564,41 @@ Completed: 4 TUs / 1,233 lines (`CDropTargetHelper.cpp`, `CActiveDesktop.cpp`,
 Update this table from the generated live-CMake inventory at every cohort gate. A decreasing
 LOC count is informative; the authoritative metric is the live TU count plus executable
 three-architecture proof.
+
+### 2026-08-03 — the hybrid closure is measured now, not estimated
+
+`rustconv hybrid-closure <tu> --arch <a>` reports which of a TU's defined symbols the rest of
+the link still needs, as a set intersection over the real link inputs. Run over the whole
+remaining hybrid cohort it says the peel is far smaller than the LOC column implies:
+
+| TU | lines | retained symbols |
+|---|---:|---:|
+| `shellmenu/CMergedFolder.cpp` | 881 | 1 |
+| `dialogs/drvdefext.cpp` | 895 | 3 |
+| `folders/CControlPanelFolder.cpp` | 989 | 4 |
+| `folders/CDesktopFolder.cpp` | 1,167 | 4 |
+| `folders/CNetFolder.cpp` | 669 | 7 |
+| `dialogs/filedefext.cpp` | 1,697 | 10 |
+| `folders/CDrivesFolder.cpp` | 1,510 | 10 |
+| `folders/CRecycleBin.cpp` | 1,611 | 12 |
+| `COpenWithMenu.cpp` | 1,700 | 16 |
+| **total** | **11,119** | **67** |
+
+**`cxx_member` is empty across all nine.** CFSFolder's static-member problem — a C++ static
+member has one name and one class scope, so no `EXTERN_C` spelling, so it needs an inline
+forwarder in the class body — was specific to CFSFolder and does not recur. What is left is 62
+`extern_c` bridges that a `#[no_mangle]` replaces directly, 8 `cxx_free` needing `EXTERN_C` on
+their header declaration, and 1 data symbol.
+
+Prices, so nobody budgets from the LOC column again: CNetFolder's whole retained closure
+(11 free functions + the 13-method CNetFolderEnum) cost **$0.09** on sonnet, and drvdefext,
+CDesktopFolder and CControlPanelFolder came to **$0.24** between them. The dominant cost is
+the post-assembly cargo-check grind, not the API calls.
+
+Also closed this session: `dialogs/dialogs.cpp` (the last genuinely PARKED bank — 24 of its 26
+functions replayed from `.responses/` at $0, `FillList` and `RunDlgProc` hand-written after the
+call-seal audit refused both twice on different tokens) and `CDefViewDual.cpp` ($0.07, 10 of 20
+bodies lowered deterministically). A cross-check of every `.responses/` bank against the crates
+confirms **no other paid-but-unintegrated translation remains** in shell32 — the 100 %-missing
+rows in that sweep are superseded retry directories, and `CMenuBand`/`CMenuDeskBar`/`CMenuSite`/
+`CMergedFolder` are integrated in the separate `menuband-rust` crate.

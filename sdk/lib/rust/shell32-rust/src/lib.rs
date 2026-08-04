@@ -164,6 +164,26 @@ pub mod dialogs_folder_options;
 #[path = "dialogs/item_prop.rs"]
 pub mod dialogs_item_prop;
 
+// The shell's own dialogs: Run, Pick-Icon, Restart/Logoff/Exit-Windows.
+#[path = "dialogs/dialogs.rs"]
+pub mod dialogs_dialogs;
+
+// CDefViewDual — the IShellFolderViewDual automation object. Assembled at the C tree's path
+// (shell32/) so re-runs stay stable, but it is a COM class rather than one of that module's
+// free-function TUs, so it is wired here instead of from shell32/mod.rs.
+#[path = "shell32/CDefViewDual.rs"]
+pub mod def_view_dual;
+
+// The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
+// these two are the retained closure that kept the .cpp compiled — its free helpers and
+// `*_RustBridge` entry points, and the CNetFolderEnum enumerator. Two files because one TU
+// needs two rustconv runs (--free-functions and --cpp-com) and each assembles its own output.
+#[path = "folders/CNetFolder.rs"]
+pub mod net_folder_tu;
+#[path = "folders/CNetFolderEnum.rs"]
+pub mod net_folder_enum;
+
+
 // Wave 5, the shell32/ directory — free-function TUs from the root of dll/win32/shell32.
 pub mod shell32;
 // `stubs` is wired; the other six are parked on the C++ substrate, and shell32/mod.rs records

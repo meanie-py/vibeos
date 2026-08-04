@@ -19,6 +19,95 @@ if TYPE_CHECKING:
     from .scanner import ScanResult
     from .spec_parser import SpecEntry
 
+# First line of an assembled file, naming WHICH slice of the TU produced it. One C++ TU often
+# needs several runs -- `--free-functions` for its free helpers, `--cpp-com --class X` per class
+# -- and every one of them derives the same output path from the TU's stem. Without this marker
+# the second run silently overwrites the first, which looks like a successful assembly and is
+# only noticed later when the symbols it wrote are missing.
+ASSEMBLY_MARKER = "// rustconv-assembly: "
+
+
+class AssemblyClobberError(RuntimeError):
+    """Raised when a run would overwrite an assembly produced by a DIFFERENT slice of the TU."""
+
+
+def _guard_assembly_target(out_path: Path, selector: str) -> None:
+    """Refuse to overwrite an assembly that a DIFFERENT slice of the TU produced.
+
+    A partial slice (`free-functions`, `class:X`) covers only part of the TU, so writing it
+    over someone else's output drops symbols. `whole-tu` covers everything and may overwrite.
+    """
+    if not selector or not out_path.exists():
+        return
+    first = out_path.read_text(errors="replace").split("\n", 1)[0]
+
+    if not first.startswith(ASSEMBLY_MARKER):
+        # No marker: written before this guard existed, or hand-authored. We cannot tell WHAT
+        # is in there, which makes it the dangerous case, not the safe one -- an unmarked
+        # dialogs/drvdefext.rs held a whole translated CDrvDefExt class and a --free-functions
+        # run replaced all 1,742 lines of it. A whole-TU run still may overwrite: it is not a
+        # partial slice, so it cannot drop anything the TU should have.
+        if selector == "whole-tu":
+            return
+        raise AssemblyClobberError(
+            f"{out_path} already exists and carries no assembly marker, so this run cannot "
+            f"tell whether `{selector}` covers everything in it.\n"
+            f"Overwriting would DISCARD anything it covers that this slice does not.\n"
+            f"fix: pass `-o <path>` to give this run its own file (and check what is in the "
+            f"existing one first)."
+        )
+
+    prior = first[len(ASSEMBLY_MARKER) :].strip()
+    if prior == selector:
+        return
+    raise AssemblyClobberError(
+        f"{out_path} was assembled from `{prior}`, but this run is `{selector}`.\n"
+        f"Both derive their path from the same TU, so writing would DISCARD the other slice.\n"
+        f"fix: pass `-o <path>` to give this run its own file."
+    )
+
+
+def _c_source_for_slice(
+    c_source: str,
+    scan: ScanResult | None,
+    assembled_fns: set[str] | None,
+    selector: str,
+) -> tuple[str, int]:
+    """Embed only the C this run actually translated, when the run is a PARTIAL slice.
+
+    The trailing C comment block is not decoration -- several lints use it as their oracle,
+    pairing a commented-C function against the live Rust of the same name in the same file.
+    Embedding the WHOLE TU under a `--free-functions` or `--cpp-com --class X` run therefore
+    ships C whose Rust lives in a *sibling* module, and every one of those reads as a DROP:
+    `folders/CNetFolder.cpp`'s `rgfInOut &= ~SFGAO_VALIDATE` was reported dropped by
+    scan_mask_drift while sitting live and correct in `net_folder.rs:864`.
+
+    A whole-TU run embeds everything, unchanged -- there its C and its Rust cover the same set.
+    """
+    if selector in ("", "whole-tu") or scan is None or not assembled_fns:
+        return c_source, 0
+    keep: set[int] = set()
+    for f in scan.functions:
+        # A free function's worker is its own name; a C++ method's is `<Class>_<method>`.
+        names = {f.name}
+        if f.cpp_class:
+            names.add(f"{f.cpp_class}_{f.name}")
+        if names & assembled_fns:
+            keep.update(range(f.line_start, f.line_end + 1))
+    if not keep:
+        return c_source, 0
+    # Everything above the first translated function is file scope (includes, macros, statics)
+    # and belongs to every slice.
+    first_fn = min(f.line_start for f in scan.functions) if scan.functions else 1
+    lines = c_source.splitlines()
+    out, elided = [], 0
+    for i, line in enumerate(lines, 1):
+        if i < first_fn or i in keep:
+            out.append(line)
+        else:
+            elided += 1
+    return "\n".join(out), elided
+
 
 def assemble_file(
     result: TranslationResult,
@@ -29,6 +118,8 @@ def assemble_file(
     scan: ScanResult | None = None,
     target: Target | None = None,
     c_source_path: Path | None = None,
+    selector: str = "",
+    assembled_fns: set[str] | None = None,
 ) -> Path:
     """Write a single translation result into the crate structure.
 
@@ -70,6 +161,7 @@ def assemble_file(
     sub_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = sub_dir / f"{stem}.rs"
+    _guard_assembly_target(out_path, selector)
 
     # Post-process the Rust code
     rust_code = postprocess(
@@ -123,7 +215,16 @@ def assemble_file(
             )
 
     # Build the file content with C source as trailing comments
-    content_parts = [rust_code.rstrip()]
+    c_source, elided = _c_source_for_slice(c_source, scan, assembled_fns, selector)
+    if elided:
+        print(
+            f"  [c-source] embedded only this slice's C; elided {elided} line(s) belonging to "
+            f"functions another module owns (keeps the C-vs-Rust lints' oracle honest)"
+        )
+    content_parts = []
+    if selector:
+        content_parts.append(f"{ASSEMBLY_MARKER}{selector}")
+    content_parts.append(rust_code.rstrip())
     content_parts.append("")
     content_parts.append("")
     content_parts.append("// " + "=" * 76)

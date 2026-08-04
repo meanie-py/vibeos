@@ -284,6 +284,33 @@ Same family, three positions, all silent on the arch where the widths happen to 
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
 
+**Grinding a post-assembly cargo-check on ONE target bakes that target's pointer width into
+every cast you pick.** Symptom: the lane is clean locally and the merge queue rejects it
+`CARGO_CHECK_FAIL` on amd64 or arm64. This is why `crate-repair` takes `--arches i386 amd64
+arm64` and applies a width-dependent cast only on cross-target AGREEMENT; a hand grind needs
+the same discipline and it is easy to skip, because i386 is the fast build. Four classes, all
+invisible on i386, from `dialogs/dialogs.rs`:
+
+- A DLGPROC returns `INT_PTR` (64-bit off i386) while `TRUE`/`FALSE` are `BOOL` and always 32,
+  so a bare `return TRUE` only type-checks where the widths coincide. Key the fix on the
+  ENCLOSING signature: a blanket widening over-reaches into the neighbouring functions that
+  genuinely answer `BOOL`.
+- A binding declared `i32` receiving `DialogBoxParamW`, which answers `INT_PTR`. Widen the
+  binding and narrow once at the return, as the C++ does implicitly. **Not** rustc's suggested
+  `.try_into().unwrap()` — that converts C's silent truncation into a panic in a live dialog,
+  which is why `crate-repair` refuses that suggestion by design.
+- `SendMessageW`'s `LRESULT` compared against an `i32` constant; `WPARAM`/`LPARAM` arguments
+  given `UINT`-typed constants; `HeapAlloc` sized `as u32` instead of `as SIZE_T`.
+- A callback transmute that names `extern "stdcall"` outright. **bindgen spells a callback's ABI
+  as the RESOLVED convention for the target**, so the same pointer is `stdcall` on i686 and `C`
+  on amd64/arm64, while our definitions say `extern "system"` — which IS that convention on each
+  target, but Rust keeps the spellings as distinct nominal types on fn pointers. Hardcoding one
+  compiles on i386 and fails everywhere else; use a `cfg`'d alias.
+
+The habit that avoids all of it: **cast at the call site using the NAMED type** (`as WPARAM`,
+`as SIZE_T`, `as INT_PTR`), never a concrete width. That is arch-neutral by construction —
+`folders/CNetFolder.rs` was ground the same night with that habit and needed zero amd64 fixes.
+
 ### An `extern` declaration for a symbol YOUR OWN CRATE defines
 The worst version of a width mismatch, because both halves are yours and neither compiler nor
 gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
@@ -1934,6 +1961,26 @@ verdict says the envelope broke, the reply says how. Every diagnosis above came 
 `seal_facts=True` on any non-shell32 module returned zero rows, and that single query predicted
 all three bugs above.
 
+**The seal covers function BODIES; the file-scope PREAMBLE has no such protection.** Symptom: an
+assembled module references `CPP_COM_WSTR_<long digit run>` statics that were never declared, so
+it fails as an undefined name. Cause: static initializer data goes through the preamble worker,
+outside the fact/call envelope, and the model invented two plausible-looking literal names for
+`g_RegFolderInfo`'s `pszRelativePath` and `pszName` in `folders/CControlPanelFolder.cpp`. Fix:
+transcribe the literal from the C. It failed loudly only because an undeclared name does not
+compile — a preamble mistake that *is* spellable (a wrong length, a wrong flag in an initializer)
+has nothing catching it, so read assembled preambles against the C.
+
+**When a worker is rejected, read the rejection before re-buying it — twice tonight the audit
+had caught a genuine semantic bug, not a formatting one.** `CNetFolderBackgroundMenuCB` reused
+the `DestroyMenu` token for the tail call to `SHELL32_DefaultContextMenuCallBack`, which would
+have dropped default handling for every unhandled message *and* passed a shell-folder pointer to
+a menu-destroying API. `CreateCplAbsoluteParsingPath` permuted three separate calls: it tested
+`StringCchPrintfW(hr, 0)` as the `SUCCEEDED` predicate and then called `SHFree` with
+StringCchPrintfW's six arguments. Neither is a near miss, and nothing except the seal would have
+caught either. The rejected body is kept under `.responses/<run>/__rejected__/` as a forensic
+copy; assemble around it with `--fn <comma-separated accepted set>` for $0 and hand-write the
+one function.
+
 ---
 
 ## Dropped, degraded & silently-rewritten translation output
@@ -2292,6 +2339,22 @@ Four things that cost precision, all of them found by being wrong first:
   `if (SUCCEEDED(hr)) { ERR("Got CLSID override for '%S'\n", Tmp); }` into `if hr >= 0 { }` — a
   branch that computes a condition and does nothing, which is what a lost print looks like from
   the outside.
+- **The mirror image: a PARTIAL-slice assembly makes every C-vs-Rust pairing lint over-report.**
+  Same oracle, opposite failure. rustconv embeds the **whole** TU's C source as trailing comments
+  no matter how narrow the run was, so a `--free-functions` or `--cpp-com --class X` assembly
+  carries C whose Rust lives in a *sibling* module. `scan_mask_drift` then reports those as
+  DROPPED even though the flag-clear is present and correct next door — three such rows appeared
+  the moment `folders/CControlPanelFolder.cpp` and `folders/CDesktopFolder.cpp` were assembled
+  (`rgfInOut &= ~SFGAO_VALIDATE`, `grfMode &= ~STGM_CREATE`, `pcsFlags &= ~SHCOLSTATE_ONBYDEFAULT`),
+  and all three are live in `control_panel_folder.rs:1067` and `desktop_folder.rs:1621`. Check the
+  sibling module before believing a DROPPED row on a file whose first line is
+  `// rustconv-assembly: free-functions` or `class:...`. A whole-TU assembly has no such gap,
+  because its embedded C and its Rust cover the same set.
+- **Two TUs' anonymous enums can collide in `scan_const_contradictions`.** `IDC_PROPERTIES` is
+  `2` in `CRecycleBin.cpp`'s `enum { IDC_EMPTYRECYCLEBIN = 1, IDC_PROPERTIES }` and `0` in
+  `CNetFolder.cpp`'s `enum { IDC_PROPERTIES }`. Both translations are faithful; the name is simply
+  not crate-unique. Prefix the newer one and keep the C spelling in a comment — do not "reconcile"
+  the values, which would corrupt one of the two menus.
 
 **And the print is sometimes missing because the BRANCH is.** `CmpSetValueKeyNew` lost its whole
 `_SEH2_EXCEPT` around `CmpCopyName`, whose C comment says exactly why it exists ("this can crash
