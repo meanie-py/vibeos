@@ -1800,6 +1800,26 @@ verdict says the envelope broke, the reply says how. Every diagnosis above came 
 `seal_facts=True` on any non-shell32 module returned zero rows, and that single query predicted
 all three bugs above.
 
+**The seal covers function BODIES; the file-scope PREAMBLE has no such protection.** Symptom: an
+assembled module references `CPP_COM_WSTR_<long digit run>` statics that were never declared, so
+it fails as an undefined name. Cause: static initializer data goes through the preamble worker,
+outside the fact/call envelope, and the model invented two plausible-looking literal names for
+`g_RegFolderInfo`'s `pszRelativePath` and `pszName` in `folders/CControlPanelFolder.cpp`. Fix:
+transcribe the literal from the C. It failed loudly only because an undeclared name does not
+compile — a preamble mistake that *is* spellable (a wrong length, a wrong flag in an initializer)
+has nothing catching it, so read assembled preambles against the C.
+
+**When a worker is rejected, read the rejection before re-buying it — twice tonight the audit
+had caught a genuine semantic bug, not a formatting one.** `CNetFolderBackgroundMenuCB` reused
+the `DestroyMenu` token for the tail call to `SHELL32_DefaultContextMenuCallBack`, which would
+have dropped default handling for every unhandled message *and* passed a shell-folder pointer to
+a menu-destroying API. `CreateCplAbsoluteParsingPath` permuted three separate calls: it tested
+`StringCchPrintfW(hr, 0)` as the `SUCCEEDED` predicate and then called `SHFree` with
+StringCchPrintfW's six arguments. Neither is a near miss, and nothing except the seal would have
+caught either. The rejected body is kept under `.responses/<run>/__rejected__/` as a forensic
+copy; assemble around it with `--fn <comma-separated accepted set>` for $0 and hand-write the
+one function.
+
 ---
 
 ## Dropped, degraded & silently-rewritten translation output

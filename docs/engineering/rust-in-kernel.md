@@ -116,6 +116,35 @@ in-cargo rather than reusing cmake-built `.a` files. It applies to kernel DLLs
 (kdcom/bootvid), device drivers (`.sys`), the freeldr loaders (uefildr/rosload),
 and the user-mode spine binaries (smss/csrss/services/winlogon/winsrv).
 
+### Deciding when a HYBRID TU can leave CMake — measure, don't estimate
+
+A hybrid TU is one whose class is already Rust but whose `.cpp` is still compiled, because
+something else in the link still calls into it. Its remaining cost is **not** its line count.
+`rustconv hybrid-closure <tu> --arch i386` reports it as a set intersection over the real link
+inputs:
+
+```
+retained = defined(this TU's .obj)  ∩  undefined(everything else linked)
+```
+
+Measured this way, `folders/CFSFolder.cpp` read as 2,283 lines of work and was 21 symbols; the
+nine remaining shell32 Wave-1 hybrids are 11,119 lines and **67 symbols between them**.
+
+Two things the by-hand version of this kept getting wrong, both now structural in the tool:
+
+- **The Rust archive belongs on the undefined side.** A `#[no_mangle]` body that calls back into
+  a C++ helper is exactly the edge keeping the `.cpp` alive, so leaving `lib<target>_rust.a` out
+  understates the closure.
+- **The link unit is wider than one CMake target.** shell32 pulls in shellmenu, shelldesktop and
+  shellrecyclebin as static libs, each with its own `*.dir`. Scoping consumers to a single `.dir`
+  reads as "free to leave" right up until the link fails — it hid a live consumer of
+  `CRecycleBin.cpp` and could not see `shellmenu/CMergedFolder.cpp` at all.
+
+Output is classified by how each symbol can be re-published from Rust, which is the actual work:
+`extern_c` takes a `#[no_mangle]` directly; `cxx_free` needs `EXTERN_C` on its header declaration
+first; `cxx_member` has **no** `EXTERN_C` spelling — one name, one class scope — so it needs an
+inline forwarder in the class body calling an already-published C bridge (see `CFSFolder.h`).
+
 ### The `add_cargo_module` helper
 
 `add_cargo_module(<target> <crate> <output> [KIND

@@ -13,7 +13,6 @@
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
       "dll/win32/shell32/CFileSysBindData.cpp",
-      "dll/win32/shell32/CDefViewDual.cpp",
       "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
       "dll/win32/shell32/CDefaultContextMenu.cpp",
       "dll/win32/shell32/CFolder.cpp",
@@ -35,7 +34,6 @@
       "dll/win32/shell32/CDefViewUtil.cpp"
     ],
     "monolith": [
-      "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
       "dll/win32/shell32/CDefView.cpp",
@@ -58,9 +56,11 @@
   },
   "removed": {
     "dead_after_class_flip": [
-      "dll/win32/shell32/CShellLink.cpp"
+      "dll/win32/shell32/CShellLink.cpp",
+      "dll/win32/shell32/CDefViewDual.cpp"
     ],
     "free_function_tu": [
+      "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/brfolder.cpp",
       "dll/win32/shell32/changenotify.cpp",
       "dll/win32/shell32/debughlp.cpp",
