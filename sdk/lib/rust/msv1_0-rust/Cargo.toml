@@ -1,0 +1,15 @@
+# msv1_0-rust — see src/lib.rs for the module map.
+[package]
+name = "msv1_0-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "msv1_0_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
