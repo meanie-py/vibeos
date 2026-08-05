@@ -2374,6 +2374,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "umpnpmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "uniata-rust"
 version = "0.1.0"
 dependencies = [

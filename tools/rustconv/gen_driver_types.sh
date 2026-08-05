@@ -1589,6 +1589,68 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DSUPPORT_UXTHEME -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
 
+  # ---- Tier-3 batch E: umpnpmgr, the user-mode PnP manager service. Plain C, no COM;
+  # the SERVER half of pnp.idl, which cfgmgr32/setupapi speak as clients. ----
+  umpnpmgr)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from base/services/umpnpmgr/CMakeLists.txt
+    # (4 compiled TU(s), 180 headers in the include closure, 64 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    # Emit the header function surface, minus what the crate defines. umpnpmgr is a thin
+    # service over other people's APIs — cfgmgr32/setupapi/advapi32/userenv/rpcrt4 — so
+    # BLOCKLIST_FUNCS=1 would mean hand-writing ~200 prototypes, and a hand-written
+    # prototype wrong by one pointer level links and then corrupts silently.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MACRO_SIGNED stays OFF here, and that was MEASURED, not reasoned. netcfgx and aclui both
+    # want it on because they are dialog modules whose constants are `int` control ids and window
+    # messages. umpnpmgr looks similar but is not: it spends its time passing DBT_/WM_/CM_/SERVICE_
+    # constants into UNSIGNED Win32 parameters (SendMessageW's WPARAM, RegSetValueExW's dwType),
+    # so signing them cost 90 extra E0308s. Whole-crate check: 165 errors signed, 76 unsigned.
+    MACRO_SIGNED=0
+    # UNBLOCK so THIS island owns the thread-start callback type: ntdll-sys spells it with
+    # the arch's literal convention and normalize_island_abi only rewrites a crate's OWN
+    # islands, so the CreateThread slot would stay `stdcall` while the three thread bodies
+    # are `extern "system"`. LPTHREAD_START_ROUTINE is only an ALIAS, so its target has to
+    # be unblocked too or the alias just points back at the -sys definition.
+    UNBLOCK="LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE"
+    DRIVER_DIR="${SRC}/base/services/umpnpmgr"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]cmfuncs\.h'
+                  --allowlist-file '.*[/\\]dbt\.h'
+                  --allowlist-file '.*[/\\]ole2\.h'
+                  --allowlist-file '.*[/\\]pnp_s\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]rpcndr\.h'
+                  --allowlist-file '.*[/\\]rtlfuncs\.h'
+                  --allowlist-file '.*[/\\]setypes\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]umpnpmgr[/\\]sysguid\.h'
+                  --allowlist-file '.*[/\\]userenv\.h'
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  --allowlist-file '.*[/\\]winsvc_undoc\.h'
+                  # The two headers that own the module's actual Win32 surface. The derive does
+                  # not add them because SWITCH_CONST_HEADER_ADDED only pulls in a header that
+                  # owns a `case` label, and umpnpmgr reaches kernel32/user32 through ordinary
+                  # calls — lstrlenW/wsprintf/HWND_BROADCAST/PROCESS_ALL_ACCESS and ~30 more.
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  # rpcdce.h owns the RPC SERVER surface this module IS — RpcServerListen,
+                  # RpcServerRegisterIf, RpcServerUseProtseqEpW, RpcImpersonateClient, UuidEqual.
+                  # rpc.h alone (which the derive picked) is only the umbrella header.
+                  --allowlist-file '.*[/\\]rpcdce\.h'
+                  --allowlist-file '.*umpnpmgr[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/services/umpnpmgr" -I"${SRC}/build-i386/base/services/umpnpmgr" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/idl" -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
   shell32)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
     # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted
