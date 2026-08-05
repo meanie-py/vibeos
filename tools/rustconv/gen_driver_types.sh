@@ -1496,7 +1496,11 @@ case "$DRIVER" in
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
-    BLOCKLIST_FUNCS=1
+    # BLOCKLIST_FUNCS_FROM_CRATE, same reasoning as the aclui cell below: msv1_0 is a COHAB
+    # crate, so the island must declare what the module IMPORTS while not colliding with what
+    # the translation #[no_mangle]-DEFINES. Blocking every function left 141 E0425 on names like
+    # SamrCloseHandle/LsarClose/SystemFunction00x that the module only calls.
+    BLOCKLIST_FUNCS_FROM_CRATE=1
     DRIVER_DIR="${SRC}/dll/win32/msv1_0"
     # The derive unions the prologues of all 7 TUs, and the two under ntlm/ spell the SAME
     # header relatively: `../precomp.h` from dll/win32/msv1_0/ntlm IS dll/win32/msv1_0/precomp.h.
@@ -1504,6 +1508,12 @@ case "$DRIVER" in
     # against one header, so one island is correct (§9.108 is about GENUINELY different surfaces).
     WRAPPER_INC=$'#include "precomp.h"\n#include "wine/debug.h"'
     ALLOW_FILES=( --allowlist-file '.*[/\\]intsafe\.h' --allowlist-file '.*[/\\]ntlsa\.h'
+                  # Declarations the module CALLS: the SAM/LSA RPC client surface, the ntdll
+                  # RTL entry points, and the advapi32 SystemFunction00x crypt helpers.
+                  --allowlist-file '.*[/\\]sam_c\.h'
+                  --allowlist-file '.*[/\\]lsa_c\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]ntstatus\.h'
                   --allowlist-file '.*[/\\]ntmsv1_0\.h'
                   --allowlist-file '.*[/\\]ntsam\.h'
                   --allowlist-file '.*[/\\]ntsecapi\.h'

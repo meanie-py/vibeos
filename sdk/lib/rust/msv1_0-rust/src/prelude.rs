@@ -130,3 +130,99 @@ macro_rules! w {
     }};
 }
 pub use crate::w;
+
+// ================= NTSTATUS constants =========================================================
+// ntstatus.h spells each as `((NTSTATUS)0x…)`, a cast expression bindgen does not fold. Values
+// transcribed from sdk/include/psdk/ntstatus.h — these are the LOGON FAILURE codes msv1_0
+// returns to LSA, so a wrong one is an authentication behaviour change, not a compile error.
+pub const STATUS_NO_SUCH_USER: NTSTATUS = 0xC0000064u32 as NTSTATUS;
+pub const STATUS_WRONG_PASSWORD: NTSTATUS = 0xC000006Au32 as NTSTATUS;
+pub const STATUS_ACCOUNT_RESTRICTION: NTSTATUS = 0xC000006Eu32 as NTSTATUS;
+pub const STATUS_INVALID_LOGON_HOURS: NTSTATUS = 0xC000006Fu32 as NTSTATUS;
+pub const STATUS_INVALID_WORKSTATION: NTSTATUS = 0xC0000070u32 as NTSTATUS;
+pub const STATUS_PASSWORD_EXPIRED: NTSTATUS = 0xC0000071u32 as NTSTATUS;
+pub const STATUS_ACCOUNT_DISABLED: NTSTATUS = 0xC0000072u32 as NTSTATUS;
+pub const STATUS_BAD_VALIDATION_CLASS: NTSTATUS = 0xC00000A7u32 as NTSTATUS;
+pub const STATUS_INTERNAL_ERROR: NTSTATUS = 0xC00000E5u32 as NTSTATUS;
+pub const STATUS_ACCOUNT_EXPIRED: NTSTATUS = 0xC0000193u32 as NTSTATUS;
+pub const STATUS_PASSWORD_MUST_CHANGE: NTSTATUS = 0xC0000224u32 as NTSTATUS;
+pub const STATUS_ACCOUNT_LOCKED_OUT: NTSTATUS = 0xC0000234u32 as NTSTATUS;
+pub const S_OK: HRESULT = 0;
+
+// ntbasedef.h:619 / extypes.h:77
+pub const UNICODE_NULL: WCHAR = 0;
+pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+// setypes.h:554 `#define SECURITY_NT_AUTHORITY {0,0,0,0,0,5}` — a BRACED INITIALIZER, and both
+// call sites spell it `SID_IDENTIFIER_AUTHORITY x = {SECURITY_NT_AUTHORITY};`, i.e. it
+// initializes the `Value` FIELD. So it is the byte array, not the struct.
+pub const SECURITY_NT_AUTHORITY: [BYTE; 6] = [0, 0, 0, 0, 0, 5];
+
+// ================= CRT ========================================================================
+extern "C" {
+    pub fn wcslen(s: *const u16) -> usize;
+    pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
+    pub fn wcschr(s: *const u16, c: u16) -> *mut u16;
+    pub fn _wcsicmp(a: *const u16, b: *const u16) -> c_int;
+    pub fn strcpy(dest: *mut c_char, src: *const c_char) -> *mut c_char;
+}
+
+// ================= RTL macros / inlines =======================================================
+// winnt.h routes RtlCopyMemory/RtlZeroMemory at the CRT entry points. NEVER a Rust byte loop:
+// LLVM folds any such loop back into a call to memcpy/memset itself (AGENTS.md).
+#[inline(always)]
+pub unsafe fn RtlCopyMemory<D, S>(d: *mut D, s: *const S, len: usize) -> *mut c_void {
+    memcpy(d as *mut c_void, s as *const c_void, len)
+}
+#[inline(always)]
+pub unsafe fn RtlZeroMemory<T>(d: *mut T, len: usize) -> *mut c_void {
+    memset(d as *mut c_void, 0, len)
+}
+#[inline(always)]
+pub unsafe fn ZeroMemory<T>(d: *mut T, len: usize) -> *mut c_void { RtlZeroMemory(d, len) }
+#[inline(always)]
+pub unsafe fn RtlEqualMemory<A, B>(a: *const A, b: *const B, len: usize) -> bool {
+    memcmp(a as *const c_void, b as *const c_void, len) == 0
+}
+extern "system" {
+    pub fn RtlGetProcessHeap() -> PVOID;
+}
+// winnt.h RTL_CONSTANT_STRING: a UNICODE_STRING over a literal, Length EXCLUDING the NUL and
+// MaximumLength including it — getting that pair backwards is a silent off-by-two at every use.
+#[macro_export]
+macro_rules! RTL_CONSTANT_STRING {
+    ($s:expr) => {{
+        const N: usize = $s.len();
+        UNICODE_STRING {
+            Length: (N * 2) as USHORT,
+            MaximumLength: ((N + 1) * 2) as USHORT,
+            Buffer: $crate::w!($s) as *mut u16,
+        }
+    }};
+}
+pub use crate::RTL_CONSTANT_STRING;
+// ntbasedef.h:712 ARRAYSIZE -> RTL_NUMBER_OF_V2: the element count of an array.
+#[macro_export]
+macro_rules! ARRAYSIZE { ($a:expr) => { ($a).len() }; }
+pub use crate::ARRAYSIZE;
+// msv1_0.h:9 — rebase a pointer by a byte offset, NULL staying NULL.
+#[macro_export]
+macro_rules! FIXUP_POINTER {
+    ($p:expr, $off:expr) => {{
+        let p = $p;
+        if !p.is_null() { ((p as ULONG_PTR) + ($off as ULONG_PTR)) as PWSTR }
+        else { core::ptr::null_mut() }
+    }};
+}
+pub use crate::FIXUP_POINTER;
+// intsafe.h UIntPtrToUShort: narrowing with an explicit range check, S_OK or the overflow code.
+#[inline(always)]
+pub unsafe fn UIntPtrToUShort(operand: UINT_PTR, result: *mut USHORT) -> HRESULT {
+    if operand <= u16::MAX as UINT_PTR { *result = operand as USHORT; 0 }
+    else { *result = 0; 0x80070216u32 as HRESULT }
+}
+
+// windef.h `#define TRUE 1` / `FALSE 0` are UNTYPED in C and land wherever a BOOL is wanted.
+// bindgen models a #define as `u32`. Re-TYPED, never re-valued; a local item shadows the glob.
+pub const FALSE: BOOL = 0;
+pub const TRUE: BOOL = 1;

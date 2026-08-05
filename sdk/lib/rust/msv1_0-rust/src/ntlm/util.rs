@@ -20,9 +20,9 @@ pub unsafe extern "C" fn NtlmAllocate(
     match NtlmMode {
         NtlmLsaMode => {
             if UsePrivateLsaHeap {
-                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap_unchecked())(Size);
+                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap_unchecked())((Size) as u32);
             } else {
-                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap_unchecked())(Size);
+                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap_unchecked())((Size) as u32);
             }
 
             if !buffer.is_null() {
@@ -30,12 +30,12 @@ pub unsafe extern "C" fn NtlmAllocate(
             }
         }
         NtlmUserMode => {
-            buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+            buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (Size) as u32);
         }
         _ => {}
     }
 
-    memcpy(buffer, NTLM_ALLOC_TAG, NTLM_ALLOC_TAG_SIZE);
+    memcpy(buffer, (NTLM_ALLOC_TAG).cast(), NTLM_ALLOC_TAG_SIZE);
     buffer = (buffer as PBYTE).add(NTLM_ALLOC_TAG_SIZE) as *mut core::ffi::c_void;
 
     buffer
@@ -101,7 +101,7 @@ unsafe extern "C" fn NtlmStructWriteStrW(
     let mut SrcDataMaxLen: ULONG;
 
     if SrcDataLen == 0 {
-        SrcDataLen = wcslen(SrcDataW) * core::mem::size_of::<WCHAR>() as ULONG;
+        SrcDataLen = (wcslen(SrcDataW) * (core::mem::size_of::<WCHAR>() as ULONG) as usize) as u32;
     }
 
     SrcDataMaxLen = SrcDataLen;
@@ -117,12 +117,12 @@ unsafe extern "C" fn NtlmStructWriteStrW(
         return false;
     }
 
-    memcpy(*AbsoluteOffsetPtr, SrcDataW as *const core::ffi::c_void, SrcDataLen as usize);
+    memcpy((*AbsoluteOffsetPtr).cast(), SrcDataW as *const core::ffi::c_void, SrcDataLen as usize);
     *DstDataWPtr = *AbsoluteOffsetPtr as *mut WCHAR;
     if TerminateWith0 {
         (*(*DstDataWPtr).add((SrcDataLen / core::mem::size_of::<WCHAR>() as ULONG) as usize)) = 0;
     }
-    *AbsoluteOffsetPtr = (*AbsoluteOffsetPtr as PBYTE).add(SrcDataMaxLen as usize) as *mut core::ffi::c_void;
+    *AbsoluteOffsetPtr = ((*AbsoluteOffsetPtr as PBYTE).add(SrcDataMaxLen as usize) as *mut core::ffi::c_void).cast();
 
     return true;
 }
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn NtlmUStrWriteToStruct(
         DataSize,
         core::ptr::addr_of_mut!((*DstData).Buffer),
         (*SrcData).Buffer,
-        (*SrcData).Length,
+        ((*SrcData).Length) as u32,
         AbsoluteOffsetPtr,
         TerminateWith0,
     ) {
