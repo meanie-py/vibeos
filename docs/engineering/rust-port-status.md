@@ -846,10 +846,20 @@ Picking the wrong one is not a compile error; it is an allocator reading its hea
 the wrong offset. Both hops are in `GUARDED`, so the two guardians now fail the build if
 either struct moves.
 
-Three defect classes the compiler could not see, all in this one file:
+Four defect classes the compiler could not see, all in this one file:
 
-* **`NtCurrentTeb()->Peb->ProcessHeap` appears 4 times and was translated 4 different ways,
-  3 of them wrong** — two stopped one hop short and used the PEB pointer itself as the heap
+* **An INVENTED `#if` condition, and it is the one that cost a gate.** The C guards
+  `msvcrt_init_heap` with `#if _MSVCR_VER <= 100 && !defined(__REACTOS__)` — false here, so
+  the `#else` (`heap = NtCurrentTeb()->Peb->ProcessHeap`) compiles on all three arches. The
+  translation mapped that onto `target_pointer_width`. i386 ran the DEAD `HeapCreate` arm and
+  **booted green** (a private heap is still a valid heap — that is what hid it); amd64 and
+  arm64 got the PEB pointer as their heap handle, so every allocation failed and user-mode
+  starved with 15 threads parked on `WrFreePage`/`WrQueue`/`WrLpcReceive`. `msvcrt_destroy_heap`
+  had the same invented condition, which on i386 would `HeapDestroy` the process heap.
+  The free check, now standing practice: **diff the `#[cfg]` list against the `#if` list** and
+  require correspondence. Field manual, the build-configuration `#ifdef` entry.
+* **`NtCurrentTeb()->Peb->ProcessHeap` appears 5 times and was translated 5 different ways,
+  4 of them wrong** — two stopped one hop short and used the PEB pointer itself as the heap
   handle; a third walked the PEB by a hard-coded `0x18`, which is ProcessHeap's **i386**
   offset, so it read a neighbouring field on amd64 and arm64. The guarded offsets cannot
   catch this: they prove where the fields LIVE, not how many times a body dereferenced.

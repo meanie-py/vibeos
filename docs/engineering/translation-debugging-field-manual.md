@@ -2646,6 +2646,28 @@ in FFI signatures (`heap_alloc(len: usize)`, not `SIZE_T`) — `crate-repair` wi
 to bake `as u32` on i386 and `as u64` on amd64/arm64 for the same expression, and rightly
 refuses.
 
+**Variant: the condition was INVENTED — a `#if` mapped onto an unrelated `cfg`, so the DEAD
+arm ships on one arch.** Worse than resolving one away, because the output looks properly
+conditional and one arch keeps booting. msvcrt's `msvcrt_init_heap` is guarded by
+`#if _MSVCR_VER <= 100 && !defined(__REACTOS__)`; here `_MSVCR_VER` is 0 but `__REACTOS__` IS
+defined, so the condition is FALSE and the `#else` — `heap = NtCurrentTeb()->Peb->ProcessHeap`
+— is what compiles on all three arches. The translation emitted
+`#[cfg(not(target_pointer_width = "64"))] heap = HeapCreate(0,0,0)` against a 64-bit `#else`,
+a condition with no relationship to either term. i386 then ran the **dead** `HeapCreate` arm
+and **booted green** — a private heap is still a valid heap, which is exactly what hid it —
+while amd64 and arm64 got the PEB pointer as their heap handle, so every `RtlAllocateHeap`
+failed, `malloc` returned NULL forever, and user-mode starved: 15 threads parked >20s on
+`WrFreePage`/`WrQueue`/`WrLpcReceive` and no desktop marker. `msvcrt_destroy_heap` carried the
+same invented condition, which on i386 would have called `HeapDestroy` on the process heap.
+
+**Fix, and it is free: cross-check the two LISTS.** `grep -n '#\[cfg(' out.rs` against
+`grep -nE '^\s*#\s*(if|ifdef|ifndef|else|elif|endif)' in.c` and require every `cfg` to
+correspond to a real `#if`. On heap.c that left exactly two legitimate arch-conditionals (a
+`NtCurrentTeb` asm shim and a genuine `#ifdef _WIN64`) and both invented ones stood out
+immediately. **Do this before the gate, and never trust one green arch**: the tell here was
+that i386 passed while both 64-bit arches wedged, and an all-64-bit lane would have read as a
+uniform failure with no asymmetry to point at the arm selection.
+
 **Variant: the resolved-away arm was a BUILD FLAVOUR, and the flavour later changed.** Same
 class, but it compiles and boots, so nothing points at it for months. `hal/halx86/generic/
 spinlock.c` opens with `/* This file is compiled twice. Once for UP and once for MP */`; the
