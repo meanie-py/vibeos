@@ -489,6 +489,28 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
+Same root cause as the transmute above — `extern "system" fn` unifies with neither
+`extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is
+to emit the body TWICE under complementary `#[cfg(target_arch)]` arms. It is ABI-correct, and it
+is still a bug factory, because **only half of it is ever compiled**:
+- A fix applied to one twin is INVISIBLE until someone builds the other arch. `cargo check` on
+  any single target is structurally incapable of catching the divergence.
+- It defeats `crate-repair`'s cross-target agreement rule outright. A width-sensitive numeric
+  cast is only applied when 2+ targets independently demand it, and two targets can never agree
+  about a site that exists on exactly one of them. On aclui this withheld **119 of 119** repairs;
+  collapsing the twins first let 105 of them through on the next run.
+- The 64-bit twin had by then accumulated arch-BAKED casts the i386 twin never got
+  (`KillTimer(hwnd, (wParam as UINT) as u64)`), so the two bodies had silently drifted apart.
+
+**Fix: own the callback type locally instead.** `UNBLOCK="DLGPROC WNDPROC ..."` in the module's
+`gen_driver_types.sh` profile emits it into THIS crate's island, where `normalize_island_abi.py`
+spells it `extern "system"` on all three arches; one definition then serves every target. Watch
+for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
+`PTHREAD_START_ROUTINE`, and the WNDPROC slot that matters is a FIELD of `_WNDCLASSW`, so
+unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
+folds existing pairs, refusing any whose bodies differ by more than cast decoration.
+
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it
 is easier to miss because there is no bindgen slot to disagree with — the typedef and both its
@@ -828,6 +850,16 @@ size-verified. Real damage:
 - **A dropped term in a hand-derived `sizeof` `#define`** under-allocates and overlaps the
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
+
+### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
+`ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
+A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's
+`pub use ntdll_sys::nt::*`, and every `LPTSTR`/`LPCTSTR`/`TCHAR` in the translation silently
+means the NARROW type. aclui surfaced it loudly — `*mut i8` into `SetDlgItemTextW` — but that was
+luck: the same alias inside `size_of::<TCHAR>()` compiles clean and sizes every buffer at half.
+The A/W *function* aliases are usually derived into the crate prelude and the *type* family
+forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
+`LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
 
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
@@ -2345,6 +2377,26 @@ already been met the note is describing a bug, not a plan.
   name becomes a bare tuple no-op.**
 - **`verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`** — its regex is multi-line.
   **Diff the `.spec` export list against the assembled `#[no_mangle]` set before building.**
+- **A prefast declaration written with the function TYPE becomes a null STATIC, and takes the
+  body with it.** fastfat's devctrl.c:32 says `IO_COMPLETION_ROUTINE FatDeviceControlCompletionRoutine;`
+  — `<function type> <name>;`, no `*`, which declares the FUNCTION. That reads exactly like a
+  variable declaration, so it came back as
+  `pub static mut FatDeviceControlCompletionRoutine: IO_COMPLETION_ROUTINE = None;` and the real
+  body 350 lines further down was never translated at all. The call site then handed
+  `IoSetCompletionRoutine` a `None`, nothing signalled the event, and the
+  `KeWaitForSingleObject` two screens below — null timeout — waited forever. Nothing else could
+  catch it: a PRIVATE function that vanishes takes its callers' references with it, so there is
+  no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
+  under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
+  declarations and only the second is a variable.
+- **The oracle for this whole class is the C TEXT, not the plan** —
+  `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
+  C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
+  provides its own functions and is skipped), understands `#if 0`, SAL annotations and
+  macro-expanded definitions (`CSR_API(SrvFoo)`), and reports the reverse direction — a Rust fn
+  whose name the C never mentions — as a possible INVENTED callee. It does not evaluate
+  `#if`/`#ifdef` generally, so a config-gated function is the known residual false positive.
+  **Run it after every flip.**
 
 ### An unexpanded Win32 macro silently shrinks the translation plan `[§9.128]`
 `EXTERN_C` is `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows neither, so it

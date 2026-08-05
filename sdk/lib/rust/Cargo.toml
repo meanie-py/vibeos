@@ -88,6 +88,11 @@ members = [
     # The MSV1_0 authentication package. ntlm/global.c never went through `translate`
     # (globals only); its six definitions are hand-carried in src/ntlm/global.rs.
     "msv1_0-rust",
+    # The ACL editor UI (the Security tab's property page). Win32 + a small COM surface.
+    "aclui-rust",
+    # The user-mode PnP manager service — the SERVER half of pnp.idl, which cfgmgr32/setupapi
+    # speak as clients.
+    "umpnpmgr-rust",
     "access",
     "avltable",
     "bitmap",

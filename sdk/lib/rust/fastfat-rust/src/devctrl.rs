@@ -25,7 +25,7 @@ extern "system" {
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: ntkrnl_sys::ddk::PIO_COMPLETION_ROUTINE, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
+    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: FatCompletionRoutine, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
     fn PAGED_CODE();
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
@@ -117,7 +117,43 @@ pub struct SCSI_PASS_THROUGH32_EX {
 
 // ---- file-scope preamble (translated) ----
 pub const Dbg: u32 = DEBUG_TRACE_DEVCTRL;
-pub static mut FatDeviceControlCompletionRoutine: IO_COMPLETION_ROUTINE = None;
+// devctrl.c:32 writes `IO_COMPLETION_ROUTINE FatDeviceControlCompletionRoutine;` — a prefast
+// annotation that declares the function THROUGH ITS FUNCTION TYPE, with no `*`. That parsed as a
+// variable declaration, so this arrived as a null Option and the real body at devctrl.c:390 was
+// never translated at all: IoSetCompletionRoutine was handed None, nothing ever signalled
+// wait_event, and the KeWaitForSingleObject below (null timeout) waited forever.
+//
+// Spelled `extern "system"` — identical ABI to the stdcall the i386 kernel calls and to the C
+// ABI on 64-bit — so one definition serves all three targets. The IoSetCompletionRoutine decl
+// above takes `FatCompletionRoutine` for the same reason; ntkrnl-sys's PIO_COMPLETION_ROUTINE is
+// spelled with the arch's literal convention, and Rust compares fn-pointer ABIs nominally.
+pub type FatCompletionRoutine = Option<
+    unsafe extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS,
+>;
+
+#[no_mangle]
+pub unsafe extern "system" fn FatDeviceControlCompletionRoutine(
+    DeviceObject: *mut DEVICE_OBJECT,
+    Irp: *mut IRP,
+    Contxt: *mut c_void,
+) -> NTSTATUS {
+    let Event = Contxt as PKEVENT;
+
+    //
+    //  If there is an event, this is a synch request. Signal and
+    //  let I/O know this isn't done yet.
+    //
+
+    if !Event.is_null() {
+        KeSetEvent(Event as *mut c_void, 0, 0u8); // ntkrnl_sys::ke takes the event opaquely
+        return STATUS_MORE_PROCESSING_REQUIRED;
+    }
+
+    let _ = DeviceObject;
+    let _ = Irp;
+
+    STATUS_SUCCESS
+}
 
 const IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES: u32 = 1;
 const IOCTL_DISK_COPY_DATA: u32 = 0x0007C064;
@@ -240,7 +276,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
                 KeInitializeEvent(core::ptr::addr_of_mut!(wait_event), _EVENT_TYPE_NotificationEvent, 0u8);
                 completion_context = core::ptr::addr_of_mut!(wait_event) as *mut core::ffi::c_void;
                 IoCopyCurrentIrpStackLocationToNext(Irp);
-                IoSetCompletionRoutine(Irp, FatDeviceControlCompletionRoutine, completion_context, 1, 1, 1);
+                IoSetCompletionRoutine(Irp, Some(FatDeviceControlCompletionRoutine), completion_context, 1, 1, 1);
             }
             IOCTL_DISK_COPY_DATA => {
                 if FlagOn((*vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 &&

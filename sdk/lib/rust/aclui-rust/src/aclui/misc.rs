@@ -56,7 +56,7 @@ unsafe extern "C" fn AllocAndLoadString(
     ln = LengthOfStrResource(hInst, uID);
     ln += 1;
     if ln > 0 {
-        *lpTarget = LocalAlloc(LMEM_FIXED, (ln as usize) * core::mem::size_of::<u16>() as SIZE_T) as LPWSTR;
+        *lpTarget = LocalAlloc(LMEM_FIXED, ((ln as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if !(*lpTarget).is_null() {
             let Ret: i32;
             Ret = LoadStringW(hInst, uID, *lpTarget, ln);
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn LoadAndFormatString_v(
     {
         Ret = FormatMessageW(
             (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING) as u32,
-            lpFormat,
+            lpFormat as LPCVOID,
             0,
             0,
             lpTarget as LPWSTR,
@@ -236,10 +236,10 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
 
         hRet = ((*(*pdo).lpVtbl).GetData.unwrap_unchecked())(pdo, &mut fe, &mut stm);
         if hRet >= 0 {
-            let SelectionList: PDS_SELECTION_LIST = GlobalLock(stm.__bindgen_anon_1.hGlobal) as PDS_SELECTION_LIST;
+            let SelectionList: PDS_SELECTION_LIST = GlobalLock(*stm.__bindgen_anon_1.hGlobal.as_ref()) as PDS_SELECTION_LIST;
             if !SelectionList.is_null() {
                 let mut vSid: LPVARIANT;
-                let mut pSid: PSID;
+                let mut pSid: PSID = core::ptr::null_mut();
                 let mut i: u32;
                 let mut contLoop: u32 = TRUE;
 
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
                     i += 1;
                 }
 
-                GlobalUnlock(stm.__bindgen_anon_1.hGlobal);
+                GlobalUnlock(*stm.__bindgen_anon_1.hGlobal.as_ref());
 
                 if hRet >= 0 {
                     hRet = S_OK;

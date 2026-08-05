@@ -2,6 +2,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// aclui.c:38 `HINSTANCE hDllInstance;` has EXTERNAL linkage, and sibling TUs reach it by
+// name. Without #[no_mangle] the definition is mangled while the reference stays plain, so
+// the crate links against an undefined `hDllInstance` — i386 happened to resolve it, amd64
+// did not.
+#[no_mangle]
 pub static mut hDllInstance: HINSTANCE = core::ptr::null_mut();
 pub const SIDN_LOOKUPSUCCEEDED: u32 = 0x101;
 
@@ -197,7 +202,7 @@ unsafe extern "C" fn AddPrincipalToList(
             GetProcessHeap(),
             0,
             ((core::mem::size_of::<PRINCIPAL_LISTITEM>() as DWORD)
-                .wrapping_add(SidLength)) as u64,
+                .wrapping_add(SidLength)) as SIZE_T,
         ) as PPRINCIPAL_LISTITEM;
         if !PrincipalListItem.is_null() {
             (*PrincipalListItem).DisplayString = core::ptr::null_mut();
@@ -213,7 +218,7 @@ unsafe extern "C" fn AddPrincipalToList(
                 GetProcessHeap(),
                 0,
                 ((core::mem::size_of::<ACE_ENTRY>() as DWORD)
-                    .wrapping_add((*AceHeader).AceSize as DWORD)) as u64,
+                    .wrapping_add((*AceHeader).AceSize as DWORD)) as SIZE_T,
             ) as PACE_ENTRY;
             if !AceEntry.is_null() {
                 (*AceEntry).Next = core::ptr::null_mut();
@@ -232,7 +237,7 @@ unsafe extern "C" fn AddPrincipalToList(
                 Deferred = if LookupSidCache(
                     (*sp).SidCacheMgr,
                     Sid,
-                    SidLookupCompletion,
+                    Some(SidLookupCompletion),
                     sp as PVOID,
                 ) != 0
                 {
@@ -372,24 +377,7 @@ unsafe extern "C" fn AddPrincipalListEntry(
 
     return Ret;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PrincipalCompare(
-    lParam1: LPARAM,
-    lParam2: LPARAM,
-    lParamSort: LPARAM,
-) -> i32 {
-    let Item1 = lParam1 as PPRINCIPAL_LISTITEM;
-    let Item2 = lParam2 as PPRINCIPAL_LISTITEM;
-
-    if (*Item1).DisplayString != core::ptr::null_mut() && (*Item2).DisplayString != core::ptr::null_mut() {
-        return wcscmp((*Item1).DisplayString, (*Item2).DisplayString);
-    }
-
-    return 0;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PrincipalCompare(
+unsafe extern "system" fn PrincipalCompare(
     lParam1: LPARAM,
     lParam2: LPARAM,
     lParamSort: LPARAM,
@@ -451,7 +439,7 @@ unsafe extern "C" fn ReloadPrincipalsList(sp: PSECURITY_PAGE) {
     let mut OwnerDefaulted: BOOL = 0;
     let mut Dacl: PACL = core::ptr::null_mut();
     let mut OwnerSid: PSID = core::ptr::null_mut();
-    let mut OwnerSidString: LPTSTR;
+    let mut OwnerSidString: LPTSTR = core::ptr::null_mut();
     let mut SidLen: DWORD;
     let mut hRet: HRESULT;
 
@@ -464,7 +452,7 @@ unsafe extern "C" fn ReloadPrincipalsList(sp: PSECURITY_PAGE) {
         (FALSE) as i32,
     );
 
-    if ((hRet) >= 0) != 0 && SecurityDescriptor != core::ptr::null_mut() {
+    if SUCCEEDED!(hRet) && SecurityDescriptor != core::ptr::null_mut() {
         if GetSecurityDescriptorOwner(
             SecurityDescriptor,
             core::ptr::addr_of_mut!(OwnerSid),
@@ -481,19 +469,19 @@ unsafe extern "C" fn ReloadPrincipalsList(sp: PSECURITY_PAGE) {
             if SidLen == 0 {
                 SetDlgItemText((*sp).hWnd, IDC_OWNER, core::ptr::null_mut());
             } else {
-                (*sp).OwnerSid = LocalAlloc(LMEM_FIXED, (SidLen) as u64) as PSID;
+                (*sp).OwnerSid = LocalAlloc(LMEM_FIXED, SidLen as SIZE_T) as PSID;
                 if (*sp).OwnerSid != core::ptr::null_mut() {
                     if CopySid(SidLen, (*sp).OwnerSid, OwnerSid) != 0 {
                         if LookupSidCache(
                             (*sp).SidCacheMgr,
                             (*sp).OwnerSid,
-                            SidLookupCompletion,
+                            Some(SidLookupCompletion),
                             sp as LPVOID,
                         ) == 0
                         {
                             if ConvertSidToStringSid(
                                 (*sp).OwnerSid,
-                                (core::ptr::addr_of_mut!(OwnerSidString)).cast(),
+                                core::ptr::addr_of_mut!(OwnerSidString),
                             ) != 0
                             {
                                 SetDlgItemText(
@@ -527,7 +515,7 @@ unsafe extern "C" fn ReloadPrincipalsList(sp: PSECURITY_PAGE) {
             && Dacl != core::ptr::null_mut()
         {
             let mut Sid: PSID;
-            let mut AceHeader: PACE_HEADER;
+            let mut AceHeader: PACE_HEADER = core::ptr::null_mut();
             let mut AceIndex: ULONG;
 
             AceIndex = 0;
@@ -579,7 +567,7 @@ unsafe extern "C" fn UpdateControlStates(sp: PSECURITY_PAGE) {
     );
 
     if !Selected.is_null() {
-        let mut szLabel: LPWSTR;
+        let mut szLabel: LPWSTR = core::ptr::null_mut();
         let szDisplayString: LPWSTR;
 
         szDisplayString = GetPrincipalAccountNameString(Selected);
@@ -622,7 +610,7 @@ unsafe extern "C" fn UpdatePrincipalInfo(
     LookupInfo: PSIDLOOKUPNOTIFYINFO,
 ) {
     let mut CurItem: PPRINCIPAL_LISTITEM;
-    let mut DisplayName: LPWSTR;
+    let mut DisplayName: LPWSTR = core::ptr::null_mut();
 
     if (*sp).OwnerSid != core::ptr::null_mut() &&
         EqualSid((*sp).OwnerSid, (*LookupInfo).Sid) != 0
@@ -682,30 +670,7 @@ unsafe extern "C" fn UpdatePrincipalInfo(
         CurItem = (*CurItem).Next;
     }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn SecurityPageCallback(
-    hwnd: HWND,
-    uMsg: u32,
-    ppsp: *mut PROPSHEETPAGEW,
-) -> u32 {
-    let sp = (*ppsp).lParam as PSECURITY_PAGE;
-
-    match (uMsg) as INT {
-        PSPCB_CREATE => {
-            return TRUE;
-        }
-        PSPCB_RELEASE => {
-            DestroySecurityPage(sp);
-            return FALSE;
-        }
-        _ => {}
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn SecurityPageCallback(
+unsafe extern "system" fn SecurityPageCallback(
     hwnd: HWND,
     uMsg: u32,
     ppsp: *mut PROPSHEETPAGEW,
@@ -847,7 +812,7 @@ unsafe extern "C" fn LoadPermissionsList(
                 (*sp).hAceCheckList,
                 (CLM_SETITEMSTATE) as u32,
                 (*sp).SpecialPermCheckIndex as WPARAM,
-                (CIS_ALLOWDISABLED | CIS_DENYDISABLED | CIS_NONE) as i64,
+                (CIS_ALLOWDISABLED | CIS_DENYDISABLED | CIS_NONE) as LPARAM,
             );
         }
     }
@@ -1223,7 +1188,7 @@ unsafe extern "C" fn BuildDefaultPrincipalAce(
     core::ptr::null_mut()
 }
 unsafe extern "C" fn AddSelectedPrincipal(
-    pDsObjectPicker: *mut core::ffi::c_void,
+    pDsObjectPicker: *mut IDsObjectPicker,
     hwndParent: HWND,
     pSid: PSID,
     Context: PVOID,
@@ -1259,209 +1224,14 @@ unsafe extern "C" fn AddSelectedPrincipal(
 
     (TRUE) as i32
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn SecurityPageProc(
+unsafe extern "system" fn SecurityPageProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
     let mut sp: PSECURITY_PAGE;
-    let mut Ret: INT_PTR = FALSE;
-
-    sp = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSECURITY_PAGE;
-    if !sp.is_null() || uMsg == WM_INITDIALOG {
-        match (uMsg) as INT {
-            WM_NOTIFY => {
-                let pnmh = lParam as *mut NMHDR;
-
-                if (*pnmh).hwndFrom == (*sp).hWndPrincipalsList {
-                    match ((*pnmh).code) as INT {
-                        LVN_ITEMCHANGED => {
-                            let pnmv = lParam as LPNMLISTVIEW;
-
-                            if ((*pnmv).uChanged & LVIF_STATE) != 0 &&
-                                (((*pnmv).uOldState & (LVIS_FOCUSED | LVIS_SELECTED)) != 0 ||
-                                 ((*pnmv).uNewState & (LVIS_FOCUSED | LVIS_SELECTED)) != 0) {
-                                UpdateControlStates(sp);
-                            }
-                        }
-                        _ => {}
-                    }
-                } else if (*pnmh).hwndFrom == (*sp).hAceCheckList {
-                    match ((*pnmh).code) as INT {
-                        CLN_CHANGINGITEMCHECKBOX => {
-                            let pcicb = lParam as PNMCHANGEITEMCHECKBOX;
-
-                            if (*pcicb).Checked != 0 {
-                                (*pcicb).NewState &= !((if (*pcicb).CheckBox != CLB_DENY { CIS_DENY } else { CIS_ALLOW }));
-                            }
-                        }
-                        _ => {}
-                    }
-                } else if (*pnmh).hwndFrom == (*sp).hWnd {
-                    match ((*pnmh).code) as INT {
-                        SIDN_LOOKUPSUCCEEDED => {
-                            let LookupInfo = ((lParam as usize).wrapping_sub(core::mem::offset_of!(SIDLOOKUPNOTIFYINFO, nmh))) as PSIDLOOKUPNOTIFYINFO;
-
-                            UpdatePrincipalInfo(sp, LookupInfo);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            WM_COMMAND => {
-                match (LOWORD!(wParam)) as INT {
-                    IDC_ADD_PRINCIPAL => {
-                        let mut hRet: HRESULT;
-
-                        hRet = InitializeObjectPicker((*sp).ServerName,
-                                                      core::ptr::addr_of_mut!((*sp).ObjectInfo),
-                                                      core::ptr::addr_of_mut!((*sp).pDsObjectPicker));
-                        if hRet >= 0 {
-                            hRet = InvokeObjectPickerDialog((*sp).pDsObjectPicker,
-                                                            hwndDlg,
-                                                            AddSelectedPrincipal,
-                                                            sp as LPVOID);
-                            if hRet < 0 {
-                                MessageBox(hwndDlg, w!("InvokeObjectPickerDialog failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
-                            }
-
-                            FreeObjectPicker((*sp).pDsObjectPicker);
-                        } else {
-                            MessageBox(hwndDlg, w!("InitializeObjectPicker failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
-                        }
-                    }
-
-                    IDC_REMOVE_PRINCIPAL => {
-                        let SelectedPrincipal: PPRINCIPAL_LISTITEM;
-
-                        SelectedPrincipal = ListViewGetSelectedItemData((*sp).hWndPrincipalsList) as PPRINCIPAL_LISTITEM;
-                        if !SelectedPrincipal.is_null() {
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            WM_SIZE => {
-                ResizeControls(sp,
-                               LOWORD!(lParam) as i32,
-                               HIWORD!(lParam) as i32);
-            }
-
-            WM_INITDIALOG => {
-                sp = (*(lParam as LPPROPSHEETPAGE)).lParam as PSECURITY_PAGE;
-                if !sp.is_null() {
-                    let mut lvc: LV_COLUMN = core::mem::zeroed();
-                    let mut rcLvClient: RECT = core::mem::zeroed();
-
-                    (*sp).hWnd = hwndDlg;
-                    (*sp).hWndPrincipalsList = GetDlgItem(hwndDlg, IDC_PRINCIPALS);
-                    (*sp).hBtnAdd = GetDlgItem(hwndDlg, IDC_ADD_PRINCIPAL);
-                    (*sp).hBtnRemove = GetDlgItem(hwndDlg, IDC_REMOVE_PRINCIPAL);
-                    (*sp).hBtnAdvanced = GetDlgItem(hwndDlg, IDC_ADVANCED);
-                    (*sp).hAceCheckList = GetDlgItem(hwndDlg, IDC_ACE_CHECKLIST);
-                    (*sp).hPermissionsForLabel = GetDlgItem(hwndDlg, IDC_LABEL_PERMISSIONS_FOR);
-
-                    (*sp).SpecialPermCheckIndex = -1;
-
-                    SetWindowLongPtr(hwndDlg, DWLP_USER, sp as DWORD_PTR);
-
-                    ListView_SetExtendedListViewStyleEx!((*sp).hWndPrincipalsList,
-                                                              LVS_EX_FULLROWSELECT,
-                                                              LVS_EX_FULLROWSELECT);
-
-                    (*sp).hiPrincipals = ImageList_Create(16,
-                                                        16,
-                                                        ILC_COLOR32 | ILC_MASK,
-                                                        0,
-                                                        3);
-                    if !(*sp).hiPrincipals.is_null() {
-                        let hbmImages: HBITMAP;
-
-                        hbmImages = LoadBitmap(hDllInstance,
-                                               MAKEINTRESOURCE!(IDB_USRGRPIMAGES));
-                        if !hbmImages.is_null() {
-                            ImageList_AddMasked((*sp).hiPrincipals,
-                                                hbmImages,
-                                                RGB!(255,
-                                                    0,
-                                                    255));
-
-                            DeleteObject((hbmImages).cast());
-                        }
-                    }
-
-                    if !(*sp).hiPrincipals.is_null() {
-                        ListView_SetImageList!((*sp).hWndPrincipalsList,
-                                                    (*sp).hiPrincipals,
-                                                    LVSIL_SMALL);
-                    }
-
-                    GetClientRect((*sp).hWndPrincipalsList,
-                                  core::ptr::addr_of_mut!(rcLvClient));
-
-                    lvc.mask = LVCF_FMT | LVCF_WIDTH;
-                    lvc.fmt = LVCFMT_LEFT;
-                    lvc.cx = rcLvClient.right;
-                    ListView_InsertColumn!((*sp).hWndPrincipalsList,
-                                                0,
-                                                core::ptr::addr_of_mut!(lvc));
-
-                    ReloadPrincipalsList(sp);
-
-                    ListViewSelectItem((*sp).hWndPrincipalsList,
-                                       0);
-
-                    SetAceCheckListColumns((*sp).hAceCheckList,
-                                           CLB_ALLOW,
-                                           GetDlgItem(hwndDlg, IDC_LABEL_ALLOW));
-                    SetAceCheckListColumns((*sp).hAceCheckList,
-                                           CLB_DENY,
-                                           GetDlgItem(hwndDlg, IDC_LABEL_DENY));
-
-                    LoadPermissionsList(sp,
-                                        core::ptr::null_mut(),
-                                        SI_ACCESS_GENERAL |
-                                        (if ((*sp).ObjectInfo.dwFlags & SI_CONTAINER) != 0 { SI_ACCESS_CONTAINER } else { 0 }),
-                                        core::ptr::addr_of_mut!((*sp).DefaultAccess));
-
-                    if ((*sp).ObjectInfo.dwFlags & SI_ADVANCED) != 0 {
-                        (*sp).ObjectInfo.dwFlags |= SI_EDIT_PERMS;
-                    } else {
-                        ShowWindow((*sp).hBtnAdvanced,
-                                   SW_HIDE);
-                        ShowWindow(GetDlgItem(hwndDlg, IDC_LABEL_ADVANCED),
-                                   SW_HIDE);
-                    }
-
-                    SendMessage((*sp).hAceCheckList,
-                                CLM_ENABLEQUICKSEARCH,
-                                TRUE,
-                                0);
-
-                    UpdateControlStates(sp);
-                }
-
-                Ret = TRUE;
-            }
-            _ => {}
-        }
-    }
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn SecurityPageProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let mut sp: PSECURITY_PAGE;
-    let mut Ret: INT_PTR = (FALSE) as i64;
+    let mut Ret: INT_PTR = FALSE as INT_PTR;
 
     sp = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSECURITY_PAGE;
     if !sp.is_null() || uMsg == (WM_INITDIALOG) as u32 {
@@ -1494,7 +1264,7 @@ unsafe extern "C" fn SecurityPageProc(
                         _ => {}
                     }
                 } else if (*pnmh).hwndFrom == (*sp).hWnd {
-                    match ((*pnmh).code) as INT {
+                    match ((*pnmh).code) as UINT {
                         SIDN_LOOKUPSUCCEEDED => {
                             let LookupInfo = ((lParam as usize).wrapping_sub(core::mem::offset_of!(SIDLOOKUPNOTIFYINFO, nmh))) as PSIDLOOKUPNOTIFYINFO;
 
@@ -1516,7 +1286,7 @@ unsafe extern "C" fn SecurityPageProc(
                         if hRet >= 0 {
                             hRet = InvokeObjectPickerDialog((*sp).pDsObjectPicker,
                                                             hwndDlg,
-                                                            AddSelectedPrincipal,
+                                                            Some(AddSelectedPrincipal),
                                                             sp as LPVOID);
                             if hRet < 0 {
                                 MessageBox(hwndDlg, w!("InvokeObjectPickerDialog failed!\n") as LPCWSTR, core::ptr::null_mut(), 0);
@@ -1561,7 +1331,7 @@ unsafe extern "C" fn SecurityPageProc(
 
                     (*sp).SpecialPermCheckIndex = -1;
 
-                    SetWindowLongPtr(hwndDlg, DWLP_USER, (sp as DWORD_PTR) as i64);
+                    SetWindowLongPtr(hwndDlg, DWLP_USER, sp as LONG_PTR);
 
                     ListView_SetExtendedListViewStyleEx!((*sp).hWndPrincipalsList,
                                                               LVS_EX_FULLROWSELECT,
@@ -1632,14 +1402,14 @@ unsafe extern "C" fn SecurityPageProc(
                     }
 
                     SendMessage((*sp).hAceCheckList,
-                                CLM_ENABLEQUICKSEARCH,
-                                TRUE,
+                                CLM_ENABLEQUICKSEARCH as UINT,
+                                TRUE as WPARAM,
                                 0);
 
                     UpdateControlStates(sp);
                 }
 
-                Ret = (TRUE) as i64;
+                Ret = TRUE as INT_PTR;
             }
             _ => {}
         }
@@ -1713,7 +1483,7 @@ pub unsafe extern "system" fn CreateSecurityPage(psi: LPSECURITYINFO) -> HPROPSH
     );
 
     (*sPage).psi = psi;
-    (*sPage).ObjectInfo = ObjectInfo;
+    (*sPage).ObjectInfo = core::ptr::read(&ObjectInfo);
     (*sPage).ServerName = SystemName;
     (*sPage).SidCacheMgr = SidCacheMgr;
 
@@ -1745,7 +1515,7 @@ pub unsafe extern "system" fn EditSecurity(
 ) -> BOOL {
     let mut hRet: HRESULT;
     let mut ObjectInfo: SI_OBJECT_INFO = core::mem::zeroed();
-    let mut psh: PROPSHEETHEADER;
+    let mut psh: PROPSHEETHEADER = core::mem::zeroed();
     let mut hPages: [HPROPSHEETPAGE; 1] = core::mem::zeroed();
     let mut lpCaption: LPWSTR = core::ptr::null_mut();
     let Ret: BOOL;
@@ -1794,7 +1564,7 @@ pub unsafe extern "system" fn EditSecurity(
 
     psh.nPages = (core::mem::size_of_val(&hPages) / core::mem::size_of::<HPROPSHEETPAGE>()) as u32;
     *psh.__bindgen_anon_2.nStartPage.as_mut() = 0;
-    *psh.__bindgen_anon_3.phpage.as_mut() = hPages.as_mut_ptr();
+    psh.__bindgen_anon_3.phpage = hPages.as_mut_ptr();
 
     Ret = if PropertySheet(&mut psh) != -1 { 1 } else { 0 };
 
