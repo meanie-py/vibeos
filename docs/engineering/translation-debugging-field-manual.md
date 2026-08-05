@@ -2257,6 +2257,26 @@ alongside it had written `let Ret = AccRewriteGetHandleRights(…)` INSIDE the `
 the outer `Ret`, so the function would have returned the open result instead of the query's,
 silently, on the success path. `--retry-rejects` with the audit finding fed back fixed it.
 
+**The envelope pushes the other way too: a call it demands be EXECUTABLE can turn a
+never-taken branch into straight-line code.** Its invariant is "every call in the C appears
+exactly once and is reachable", and a model that cannot satisfy that inside a dead arm will
+satisfy it by deleting the arm's condition. msvcrt's `cpp.c` guards `__RTtypeid`,
+`__RTCastToVoid` and `__RTDynamicCast` with `__TRY … __EXCEPT_PAGE_FAULT { throw
+__non_rtti_object } __ENDTRY`; under DUMMY_PSEH (which is what msvcrt compiles with) that
+`__EXCEPT` is literally `if (_SEH2_Volatile0 || (0 && filter))` — compiled, never taken. All
+three bodies were rejected once for a damaged envelope and all three came back on retry with
+the handler **unconditional**, i.e. every RTTI query would throw. It compiles, links, and the
+audit is satisfied.
+
+So: **whenever a function the seal rejected comes back accepted, diff its control flow, not
+just its calls.** The retry is where this class is born, because the first answer was the one
+that respected the branch. And when the C's protected region is DUMMY_PSEH (check for an
+undefined `_SEH2_Volatile0` in the built object — no `__C_specific_handler`, no scope table),
+the faithful lowering is the body followed by `if _SEH2_Volatile0 != 0 { handler }`: one
+instruction, same as the C, and it keeps the handler compiling so it cannot rot. Deleting the
+handler as "unreachable" is the other wrong answer — it throws away the only record of what
+the C intends to do when the walk faults.
+
 ### A bindgen enum member's BARE name is missing even when its header IS allowlisted
 
 **Symptom.** `verify_match_consts` reports `[HIGH] <Name> -- not defined in-file and not defined
@@ -2428,6 +2448,37 @@ looks like.
 tree-sitter cannot parse in any spelling, fixed in `0b2d3521e0a` after wldap32 was translated
 against the older scanner. Every one of the 22 returns a pointer; not one non-pointer function was
 lost. **When a drop set shares a signature feature, the parser is the suspect, not the model.**
+
+The same hole reopens for **every convention keyword missing from `conventions.KW_TO_CONV`**, which
+is the table `scanner.RE_CC_AFTER_PTR` is built from. `__thiscall` was absent, so msvcrt's `cpp.c`
+came back as 37 of 62 bodies — 25 dropped, silently. The tell was again the return type:
+`void __thiscall bad_typeid_dtor(...)` parsed while `bad_typeid * __thiscall bad_typeid_ctor(...)`
+directly beside it did not, so the plan looked *partly* translatable rather than broken, which is
+much easier to accept than a zero. **Before paying for a file, diff the plan's function count
+against `llvm-nm` on the built object** — the plan is the only place this failure is visible, and
+it costs one command. Fixed by adding `__thiscall`/`_thiscall` to the table; the only files in the
+build that reach the shape are `cpp.c`, dead `concurrency.c`, `vssapi/main.c` and
+`sdk/lib/crt/wine/cpp.c`, none of which had been translated, so nothing shipped with it.
+
+### `thiscall` is not a spelling of `stdcall`, and collapsing it corrupts `this` on i386 only
+**Symptom.** A translated C++ method family links clean on all three arches, exports the right
+mangled names, and reads garbage for every member of `*this` — on i386, and nowhere else.
+
+**Cause.** rustconv mapped `thiscall` to Rust's `"system"` (i.e. stdcall) in three places:
+`postprocess._SPEC_EXPORT_ABI`, `_import_abi_map`, and — the one that actually won, because it runs
+last — `abi_enforce._canonical_block`, where `thiscall` simply fell through to the `extern "C"`
+default. **stdcall passes `this` as the first stack argument; thiscall passes it in ECX.** Every
+downstream check still agrees: same export name, same arity, same callee-cleanup. Only the register
+differs.
+
+**Fix.** Treat it exactly like `fastcall`: a per-arch cfg dual, `extern "thiscall"` on x86 and
+`extern "C"` elsewhere. Two facts make that the only option — `extern "thiscall"` is stable as of
+rustc 1.92 and lowers identically to the C (`this` in ECX, `retl $N`, undecorated symbol), and it
+is **x86-only**, so naming it on amd64 is a hard `E0570`. The `.spec` already says all of this:
+msvcrt carries `thiscall -arch=i386` beside `cdecl -arch=win64` and `cdecl -arch=arm` for one
+export. Match spec entries by **`impl_symbol`, not by export name** — C++ methods are exported under
+mangled names (`??0bad_cast@@QAE@ABQBD@Z`) while the Rust fn is `bad_cast_ctor`, so a key-based
+lookup finds nothing and the whole pass no-ops.
 
 ### A C++ `struct` used as a NAMESPACE falls between both C++ modes, and one skips it silently
 **Symptom.** `rustconv translate --free-functions <tu>.cpp` reports its plan cheerfully and buys
@@ -2667,6 +2718,25 @@ correspond to a real `#if`. On heap.c that left exactly two legitimate arch-cond
 immediately. **Do this before the gate, and never trust one green arch**: the tell here was
 that i386 passed while both 64-bit arches wedged, and an all-64-bit lane would have read as a
 uniform failure with no asymmetry to point at the arm selection.
+
+The same sweep on the very next file (`cpp.c`) caught two more, so run it every time — this is
+not a one-off. `get_obj_locator_base`'s `#ifdef RTTI_USE_RVA` came back as
+`#[cfg(all(target_pointer_width = "32", feature = "rtti_rva"))]`: **inverted** (cxx.h defines
+`RTTI_USE_RVA` for everything EXCEPT `__i386__`, so 32-bit is precisely where the arm is dead)
+**and** gated on a cargo feature that does not exist. Both terms false on all three arches, so
+no arch took the arm, and the RTTI walk on 64-bit would have resolved every type against image
+base 0. Note what a nonexistent feature does here: `#[cfg(feature = "…")]` for an undeclared
+feature is not an error, it is simply never satisfied — so an invented feature name is a
+silent, permanent `#[cfg(false)]`.
+
+The second was subtler and worth internalising: `msvcrt_init_exception` guarded the *same*
+`#ifdef RTTI_USE_RVA` with `#[cfg(target_pointer_width = "64")]`, which selects exactly the
+right arches — today. It is still wrong, because the C branches on `__i386__` and the two
+coincide only for the three targets we happen to build; a 32-bit non-x86 target would compile
+every RTTI blob in RVA form and then never patch it. **A `cfg` that is accidentally right is a
+defect, not a pass.** Key the condition to the term the C actually tests
+(`not(target_arch = "x86")`), and the cross-check above becomes a real equivalence rather than
+a coincidence you re-derive per arch.
 
 **Variant: the resolved-away arm was a BUILD FLAVOUR, and the flavour later changed.** Same
 class, but it compiles and boots, so nothing points at it for months. `hal/halx86/generic/
