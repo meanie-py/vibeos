@@ -11,13 +11,21 @@
 //! which outranks the prelude's island glob. The other thirteen interfaces shellcom does not
 //! have, so this file's declarations of those stay.
 //!
-//! Remaining: **87 ordinary type errors, identical on all three arches**, on two axes and a tail.
-//! The axes are the SAME struct declared in two `-sys` crates, which Rust compares nominally:
-//! `POINTL` is `com_sys::_POINTL` through `crate::types` (what shellcom's vtables use) and
-//! `ntdll_sys::nt::_POINTL` through the island glob. Importing `crate::types::POINTL` explicitly
-//! fixed that axis outright. `GUID` is the same story but pulls the OTHER way — the `IID_*`
-//! statics are island-typed, so importing shellcom's made things worse, not better; it has to be
-//! aligned per site rather than globally. The tail is mutability and numeric widths.
+//! Remaining: **82 errors, identical on all three arches, and NOT ONE of them is about type
+//! identity any more** — they are numeric widths (`usize` vs `u32` vs `i32` at length/count
+//! arguments), three struct initializers missing fields (`QCMINFO.pIdMap`, `CMINVOKECOMMANDINFO`),
+//! one mutability, and a `*mut c_void` that wants `*mut HKEY__`. Ordinary grind; cast by NAMED
+//! type (`as UINT`, `as DWORD`, `as INT`), never by concrete width.
+//!
+//! Getting there took aligning two type families, and both are the same trap: the SAME struct
+//! declared in two `-sys` crates, which Rust compares NOMINALLY.
+//!   * `POINTL` — `com_sys::_POINTL` via `crate::types` (what shellcom's vtables use) vs
+//!     `ntdll_sys::nt::_POINTL` via the island glob. One explicit import closed it.
+//!   * The GUID family — and this one is ALL-OR-NOTHING. The vtable slots are spelled with
+//!     shellcom's `GUID`, the `IID_*` statics below are declared with `IID`, and the fn
+//!     signatures use `REFIID`. Import some of those from shellcom and not the rest and the
+//!     mismatch just moves from the slots to the statics: importing `GUID`/`IID` WITHOUT
+//!     `REFIID` sat at 89 errors, the same number as importing none of them.
 //!
 //! Note the count ROSE from 2 to 89 when the last two name-resolution errors were fixed: name
 //! resolution was aborting before type checking ever ran, so the low number was masking, not
@@ -44,7 +52,13 @@ use crate::prelude::*;
 // copies were deleted above.
 use crate::shellcom::{
     IDataObject, IDataObjectVtbl, IDropTarget, IDropTargetVtbl, IUnknown, IUnknownVtbl,
-    REFGUID, SIGDN_DESKTOPABSOLUTEPARSING,
+    REFGUID, REFIID, SIGDN_DESKTOPABSOLUTEPARSING,
+    // GUID/IID/CLSID come from here too, and it has to be all-or-nothing: the vtable slots
+    // are spelled with shellcom's GUID and the IID_* statics below are declared with `IID`,
+    // so taking one from shellcom and the other from the island's glob just moves the
+    // mismatch from the slots to the statics. Importing GUID/IID without REFIID does the
+    // same thing, which is why an earlier attempt at this stayed at 89 errors.
+    CLSID, GUID, IID,
 };
 // The vtable slots above are spelled with `crate::types`' POINTL, and
 // the island's POINTL is a DIFFERENT nominal type (ntdll_sys::nt::_POINTL vs
