@@ -1280,6 +1280,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msv1_0-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "msvcrt-crt-cargo"
 version = "0.1.0"
 dependencies = [

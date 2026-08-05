@@ -878,6 +878,15 @@ which is skipped rather than guessed at. Those three took the tree from 102 find
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
   in **both** the append and the size math.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
+- **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
+  on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
+  so anything that projects one island onto another by NAME misses the slot entirely.
+  `normalize_island_abi.py` left 40 of msv1_0's `SECPKG_FUNCTION_TABLE` slots spelled
+  `extern "C"` on both 64-bit twins for exactly this reason, while the translation spelled
+  every one of them `extern "system"` — 31 E0308s that appear on the 64-bit arches ONLY, from
+  an island the i386 build had already normalized clean. The fix is to key on the struct FIELD
+  and resolve through the alias, which is what the pass now does. ntsecpkg.h writes its whole
+  SSP/AP surface this way, so expect it in any module lsasrv dispatches into.
 
 ### Indexing a bindgen flexible array past [0] — the panic class
 bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` for i≥1
@@ -1500,6 +1509,17 @@ surviving only because the `= 0` init leaves the high half clear on little-endia
 nobody traced what the contradiction meant. **Baselining a constant contradiction defers a real
 bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
 unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
+
+It also runs the other way: **a glob-imported unit const captures a LOCAL VARIABLE of the same
+name, because `let Name: T;` is then a constant PATTERN, not a binding.** msv1_0's
+`BuildTokenGroups` has the C's `PTOKEN_GROUPS TokenGroups;`, and ntdll-sys exports
+`pub const TokenGroups: _TOKEN_INFORMATION_CLASS` (the enum member). The `let` bound nothing,
+and the next line failed with `E0070: cannot assign to this expression` pointing at a name that
+looks like an ordinary local — the error never mentions the const it resolved to. C's separate
+tag/ordinary namespaces make a local named after an enum member completely normal, so expect
+this in any module that touches a `*_INFORMATION_CLASS`. Rename the LOCAL (no ABI consequence)
+rather than the import. Loud here; the silent cousin is the same name in a `match` arm — see
+"An undefined constant in a `match` arm becomes an irrefutable CATCH-ALL".
 
 ### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
 `ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
@@ -2693,6 +2713,17 @@ N+1 as evidence that the fix for bug N was wrong.**
   function tail — the jump never reaches it. Related but distinct from the replication shape in
   "A C lexer was masking Rust output" above: replication is faithful (each copy returns), a
   self-referential block is not.
+- **A reinterpreting read `*(T*)&field` becomes a read of `field` CAST TO A POINTER.** The C
+  `LogonTime.QuadPart >= *(UINT64*)&UserInfo->All.AccountExpires` takes the ADDRESS of an
+  OLD_LARGE_INTEGER (a split `LowPart`/`HighPart` pair with no `QuadPart` member at all) and
+  reads those eight bytes as one integer. msv1_0's `sam.rs` came back with
+  `*((*UserInfo).All.AccountExpires.QuadPart as *const UINT64)` — a field that does not exist,
+  and if it had, a *timestamp value* dereferenced as an address. It failed loudly here only
+  because bindgen models OLD_LARGE_INTEGER without a `QuadPart`; **the same rewrite over a real
+  LARGE_INTEGER compiles and reads a wild pointer.** The Rust is
+  `*(core::ptr::addr_of!(x.field) as *const T)`. Grep translated output for `.QuadPart as *`
+  and, more generally, for any `as *const`/`as *mut` whose operand is a struct FIELD rather than
+  a pointer.
 - **An out-parameter passed by ADDRESS instead of BY VALUE.** A C++ `T*& out` or `T** out`
   parameter has already lowered to `*mut *mut T` in Rust, so `addr_of_mut!(out)` adds a level of
   indirection: the callee writes into THIS frame's parameter slot and the caller's pointer is

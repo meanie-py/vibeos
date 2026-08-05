@@ -20,22 +20,24 @@ pub unsafe extern "C" fn NtlmAllocate(
     match NtlmMode {
         NtlmLsaMode => {
             if UsePrivateLsaHeap {
-                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap_unchecked())(Size);
+                // AllocatePrivateHeap takes SIZE_T, AllocateLsaHeap below takes ULONG
+                // (ntsecpkg.h:282 vs :246) — the C's implicit conversions differ per arm.
+                buffer = ((*LsaFunctions).AllocatePrivateHeap.unwrap_unchecked())(Size as SIZE_T);
             } else {
-                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap_unchecked())(Size);
+                buffer = ((*LsaFunctions).AllocateLsaHeap.unwrap_unchecked())(Size as ULONG);
             }
 
             if !buffer.is_null() {
-                RtlZeroMemory(buffer, Size);
+                RtlZeroMemory!(buffer, Size);
             }
         }
         NtlmUserMode => {
-            buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+            buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size as SIZE_T);
         }
         _ => {}
     }
 
-    memcpy(buffer, NTLM_ALLOC_TAG, NTLM_ALLOC_TAG_SIZE);
+    memcpy(buffer, (NTLM_ALLOC_TAG).cast(), NTLM_ALLOC_TAG_SIZE);
     buffer = (buffer as PBYTE).add(NTLM_ALLOC_TAG_SIZE) as *mut core::ffi::c_void;
 
     buffer
@@ -53,9 +55,9 @@ pub unsafe extern "C" fn NtlmFree(
         match NtlmMode {
             _NTLM_MODE_NtlmLsaMode => {
                 if FromPrivateLsaHeap {
-                    ((*LsaFunctions).FreePrivateHeap)(Buffer as PVOID);
+                    ((*LsaFunctions).FreePrivateHeap.unwrap_unchecked())(Buffer as PVOID);
                 } else {
-                    ((*LsaFunctions).FreeLsaHeap)(Buffer as PVOID);
+                    ((*LsaFunctions).FreeLsaHeap.unwrap_unchecked())(Buffer as PVOID);
                 }
             }
             _NTLM_MODE_NtlmUserMode => {
@@ -101,7 +103,7 @@ unsafe extern "C" fn NtlmStructWriteStrW(
     let mut SrcDataMaxLen: ULONG;
 
     if SrcDataLen == 0 {
-        SrcDataLen = wcslen(SrcDataW) * core::mem::size_of::<WCHAR>() as ULONG;
+        SrcDataLen = (wcslen(SrcDataW) * (core::mem::size_of::<WCHAR>() as ULONG) as usize) as u32;
     }
 
     SrcDataMaxLen = SrcDataLen;
@@ -117,12 +119,12 @@ unsafe extern "C" fn NtlmStructWriteStrW(
         return false;
     }
 
-    memcpy(*AbsoluteOffsetPtr, SrcDataW as *const core::ffi::c_void, SrcDataLen as usize);
+    memcpy((*AbsoluteOffsetPtr).cast(), SrcDataW as *const core::ffi::c_void, SrcDataLen as usize);
     *DstDataWPtr = *AbsoluteOffsetPtr as *mut WCHAR;
     if TerminateWith0 {
         (*(*DstDataWPtr).add((SrcDataLen / core::mem::size_of::<WCHAR>() as ULONG) as usize)) = 0;
     }
-    *AbsoluteOffsetPtr = (*AbsoluteOffsetPtr as PBYTE).add(SrcDataMaxLen as usize) as *mut core::ffi::c_void;
+    *AbsoluteOffsetPtr = ((*AbsoluteOffsetPtr as PBYTE).add(SrcDataMaxLen as usize) as *mut core::ffi::c_void).cast();
 
     return true;
 }
@@ -140,7 +142,7 @@ pub unsafe extern "C" fn NtlmUStrWriteToStruct(
         DataSize,
         core::ptr::addr_of_mut!((*DstData).Buffer),
         (*SrcData).Buffer,
-        (*SrcData).Length,
+        ((*SrcData).Length) as u32,
         AbsoluteOffsetPtr,
         TerminateWith0,
     ) {
@@ -163,7 +165,7 @@ pub unsafe extern "C" fn NtlmFixupAndValidateUStr(
     let Status: i32;
 
     if (*String).Length != 0 {
-        (*String).Buffer = FIXUP_POINTER((*String).Buffer, FixupOffset);
+        (*String).Buffer = FIXUP_POINTER!((*String).Buffer, FixupOffset);
         (*String).MaximumLength = (*String).Length;
     } else {
         (*String).Buffer = core::ptr::null_mut();
@@ -179,7 +181,7 @@ pub unsafe extern "C" fn NtlmFixupAStr(
     FixupOffset: usize,
 ) -> bool {
     if (*String).Length != 0 {
-        (*String).Buffer = FIXUP_POINTER((*String).Buffer, FixupOffset) as PCHAR;
+        (*String).Buffer = FIXUP_POINTER!((*String).Buffer, FixupOffset) as PCHAR;
         (*String).MaximumLength = (*String).Length;
     } else {
         (*String).Buffer = core::ptr::null_mut();
@@ -268,7 +270,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
         NtlmFree((*Buffer).LocalBuffer, false);
         (*Buffer).LocalBuffer = core::ptr::null_mut();
         if FreeClientBuffer {
-            (DispatchTable.FreeClientBuffer)(ClientRequest, (*Buffer).ClientBaseAddress);
+            (DispatchTable.FreeClientBuffer.unwrap_unchecked())(ClientRequest, (*Buffer).ClientBaseAddress);
         }
         (*Buffer).ClientBaseAddress = core::ptr::null_mut();
     }
@@ -320,12 +322,12 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 //                 buffer = LsaFunctions->AllocateLsaHeap(Size);
 //
 //             if (buffer != NULL)
-//                 RtlZeroMemory(buffer, Size);
+//                 RtlZeroMemory!(buffer, Size);
 //             break;
 //         }
 //         case NtlmUserMode:
 //         {
-//             buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+//             buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size as SIZE_T);
 //             break;
 //         }
 //         default:
@@ -509,7 +511,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 //
 //     if (String->Length)
 //     {
-//         String->Buffer = FIXUP_POINTER(String->Buffer, FixupOffset);
+//         String->Buffer = FIXUP_POINTER!(String->Buffer, FixupOffset);
 //         String->MaximumLength = String->Length;
 //     }
 //     else
@@ -529,7 +531,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 // {
 //     if (String->Length)
 //     {
-//         String->Buffer = (PCHAR)FIXUP_POINTER(String->Buffer, FixupOffset);
+//         String->Buffer = (PCHAR)FIXUP_POINTER!(String->Buffer, FixupOffset);
 //         String->MaximumLength = String->Length;
 //     }
 //     else
@@ -564,7 +566,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 //     }
 //     else
 //     {
-//         Status = DispatchTable.AllocateClientBuffer(ClientRequest,
+//         Status = DispatchTable.AllocateClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                                     BufferLength,
 //                                                     &Buffer->ClientBaseAddress);
 //         if (!NT_SUCCESS(Status))
@@ -604,7 +606,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 //             ERR("Invalid Buffer - not allocated!\n");
 //             return STATUS_NO_MEMORY;
 //         }
-//         Status = DispatchTable.CopyToClientBuffer(ClientRequest,
+//         Status = DispatchTable.CopyToClientBuffer.unwrap_unchecked()(ClientRequest,
 //                                                   BufferLength,
 //                                                   Buffer->ClientBaseAddress,
 //                                                   Buffer->LocalBuffer);
@@ -642,7 +644,7 @@ pub unsafe extern "C" fn NtlmFreeClientBuffer(
 //         NtlmFree(Buffer->LocalBuffer, false);
 //         Buffer->LocalBuffer = NULL;
 //         if (FreeClientBuffer)
-//             DispatchTable.FreeClientBuffer(ClientRequest, Buffer->ClientBaseAddress);
+//             DispatchTable.FreeClientBuffer.unwrap_unchecked()(ClientRequest, Buffer->ClientBaseAddress);
 //         Buffer->ClientBaseAddress = NULL;
 //     }
 // }

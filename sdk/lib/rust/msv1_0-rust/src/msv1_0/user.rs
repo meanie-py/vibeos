@@ -30,7 +30,7 @@ pub unsafe extern "system" fn UsrSpVerifySignature(
     pfQOP: PULONG,
 ) -> NTSTATUS {
     // TRACE!("UsrSpVerifySignature(0x%p 0x%x 0x%x 0x%p)\n", phContext, pMessage, MessageSeqNo, pfQOP);
-    ERROR_NOT_SUPPORTED
+    (ERROR_NOT_SUPPORTED) as i32
 }
 
 #[no_mangle]
@@ -97,7 +97,7 @@ pub unsafe extern "system" fn UsrSpFormatCredentials(
     FormattedCredentials: PSecBuffer,
 ) -> NTSTATUS {
     // TRACE!("UsrSpFormatCredentials(0x%p 0x%p)\n", Credentials, FormattedCredentials);
-    ERROR_NOT_SUPPORTED
+    (ERROR_NOT_SUPPORTED) as i32
 }
 
 #[no_mangle]
@@ -108,7 +108,7 @@ pub unsafe extern "system" fn UsrSpMarshallSupplementalCreds(
     MarshalledCreds: *mut PVOID,
 ) -> NTSTATUS {
     // TRACE!("UsrSpMarshallSupplementalCreds(0x%x 0x%p 0x%p 0x%p)\n", CredentialSize, Credentials, MarshalledCredSize, MarshalledCreds);
-    ERROR_NOT_SUPPORTED
+    (ERROR_NOT_SUPPORTED) as i32
 }
 
 #[no_mangle]
@@ -119,7 +119,7 @@ pub unsafe extern "system" fn UsrSpExportSecurityContext(
     pToken: PHANDLE,
 ) -> NTSTATUS {
     // TRACE!("UsrSpExportSecurityContext(0x%p 0x%x 0x%p 0x%p)\n", phContext, fFlags, pPackedContext, pToken);
-    ERROR_NOT_SUPPORTED
+    (ERROR_NOT_SUPPORTED) as i32
 }
 
 #[no_mangle]
@@ -129,7 +129,7 @@ pub unsafe extern "system" fn UsrSpImportSecurityContext(
     phContext: PLSA_SEC_HANDLE,
 ) -> NTSTATUS {
     // TRACE!("UsrSpImportSecurityContext(0x%p 0x%x 0x%p)\n", pPackedContext, Token, phContext);
-    ERROR_NOT_SUPPORTED
+    (ERROR_NOT_SUPPORTED) as i32
 }
 
 

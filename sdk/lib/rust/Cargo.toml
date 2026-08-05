@@ -85,6 +85,9 @@ members = [
     # C-style COM: every vtable method is a plain `extern "C"` fn, so the whole 11-TU module
     # translates as plain C — no C++ substrate.
     "netcfgx-rust",
+    # The MSV1_0 authentication package. ntlm/global.c never went through `translate`
+    # (globals only); its six definitions are hand-carried in src/ntlm/global.rs.
+    "msv1_0-rust",
     "access",
     "avltable",
     "bitmap",
