@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp"]
 
 # heap.c (`src/msvcrt/heap.rs`) — the allocator. ON for every build that produces
 # msvcrt.dll, OFF for both host harnesses, and this one is not a convenience gate like the
@@ -61,6 +61,15 @@ default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", 
 # `refstub/` mapping the Rtl* family onto the host allocator, exactly as `fileimpl.c` does
 # for the fd table; that is a lane, not an errand.
 heap = []
+
+# cpp.c (`src/msvcrt/cpp.rs` + `src/msvcrt/cpp_rtti.rs`) — the C++ RTTI / exception-object
+# subsystem. ON for every build that produces msvcrt.dll, OFF for both host harnesses, and
+# the reason is structural rather than a preference: `cpp_rtti` builds its five vtables with
+# `global_asm!` into `.data` under COFF symbol names, and the RTTI walk resolves an image
+# base through `RtlPcToFileHeader`. An ELF host binary has neither, so the module cannot
+# link there at all — this gate is what keeps msvcrt-difftest buildable.
+cpp = []
+
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.

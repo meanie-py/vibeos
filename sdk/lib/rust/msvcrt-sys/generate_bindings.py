@@ -320,6 +320,41 @@ ALLOWLIST_TYPES = [
     "TEB",
     "_PEB",
     "PEB",
+    # ── cpp.c (the C++ RTTI / exception-object subsystem) ────────────────
+    # These are msvcrt's OWN cxx.h and cppexcept.h, not the SDK's. Deriving them is
+    # not a nicety here: cxx.h defines each RTTI struct TWICE, under
+    # `#ifndef RTTI_USE_RVA`, and the two arms differ in FIELD TYPE, not in field
+    # names -- i386 stores real `const type_info *` pointers where amd64/arm64 store
+    # 32-bit RVAs off the image base. Same struct name, same field names, different
+    # width and different meaning. A hand-written Rust struct would necessarily pick
+    # one arm and be silently wrong on the other two arches, and "wrong" means the
+    # RTTI walk in __RTDynamicCast dereferences an image offset as an address.
+    # bindgen runs under probe_flags(arch), i.e. msvcrt's real per-arch flags, so each
+    # island gets exactly the arm its own build compiles -- which is the entire reason
+    # this is derived rather than transcribed.
+    "__exception",
+    "exception",
+    "__type_info",
+    "type_info",
+    "this_ptr_offsets",
+    "rtti_base_descriptor",
+    "rtti_base_array",
+    "rtti_object_hierarchy",
+    "rtti_object_locator",
+    "cxx_type_info",
+    "cxx_type_info_table",
+    "cxx_exception_type",
+    # `vtable_ptr` is `void (*)(void)` -- the element type of every vtable we define.
+    # Named because the exception object's first field IS a `const vtable_ptr *` and
+    # every ctor in cpp.c takes one as its third argument.
+    "vtable_ptr",
+    # msvcrt.h's three handler-slot function pointers. `terminate_function` and
+    # `unexpected_function` are both `void (*)(void)` and would survive being confused;
+    # `_se_translator_function` is not, and all three are stored into DIFFERENT fields
+    # of thread_data_t by set_terminate/set_unexpected/_set_se_translator.
+    "terminate_function",
+    "unexpected_function",
+    "_se_translator_function",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -360,6 +395,24 @@ GUARDED = [
     # PEB.Reserved4.
     ("_TEB", "Peb"),
     ("_PEB", "ProcessHeap"),
+    # wave 27 (cpp.c): the two C++ objects whose fields the translated bodies poke
+    # directly. `__exception` is written field-by-field by every ctor
+    # (vtable/name/do_free) and `__type_info.mangled` is the one field the whole RTTI
+    # comparison rests on -- type_info_opequals_equals, type_info_before and
+    # __RTDynamicCast all strcmp `mangled + 1`, skipping the leading '.'. `mangled` is
+    # declared `char[128]` but is genuinely VARIABLE length in the real static RTTI the
+    # compiler emits, so its OFFSET is load-bearing while its size is not: a drift there
+    # compares the wrong bytes and dynamic_cast silently starts answering "no".
+    # Only tagged structs can be guarded -- the RTTI descriptor shapes above are
+    # anonymous typedefs in the RVA arm, so they carry no offsetof-able name. They need
+    # no guard for the same reason: this crate DEFINES those blobs from the bindgen
+    # types rather than reading someone else's, so their layout is derived by
+    # construction.
+    ("__exception", "vtable"),
+    ("__exception", "name"),
+    ("__exception", "do_free"),
+    ("__type_info", "name"),
+    ("__type_info", "mangled"),
 ]
 
 WRAPPER_SRC = """\
@@ -427,6 +480,19 @@ WRAPPER_SRC = """\
    is that these are bit POSITIONS -- an invented one compiles, links and demangles, just
    with the wrong options applied. */
 #include "imagehlp.h"
+/* cpp.c: msvcrt's own cxx.h and cppexcept.h own the whole C++ RTTI vocabulary --
+   the exception object, type_info, the four RTTI descriptor shapes and the three
+   cxx_* throw-descriptor shapes, plus CXX_EXCEPTION / CXX_FRAME_MAGIC_VC6 /
+   CXX_EXCEPTION_PARAMS. cxx.h must come AFTER winternl.h and rtlsupportapi.h (it
+   includes both itself and uses RtlPcToFileHeader), and both headers branch on
+   `_MSVCR_VER` and on `RTTI_USE_RVA` -- which is keyed off `__i386__`, so each arch
+   legitimately gets a different island. That is derived here rather than chosen by
+   hand; see the cpp.c block in ALLOWLIST_TYPES for why choosing would be a bug.
+   ONLY cppexcept.h is named, and that is not a style choice: cxx.h has NO include
+   guard (it is written to be included exactly once per TU) and cppexcept.h includes it
+   itself, so naming both redefines every struct in it. cpp.c gets away with including
+   both because it lists cppexcept.h LAST. */
+#include "cppexcept.h"
 """
 
 
@@ -646,6 +712,16 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # whose five FILETIME/size fields dir.c copies straight into a `_finddata*_t` — the
         # struct pair whose per-arch layout is the entire reason this island exists rather
         # than a hand-written extern block.
+        # cpp.c's four externals. `RaiseException` is how _CxxThrowException actually
+        # throws: four args, the last an array of ULONG_PTR whose LENGTH is
+        # CXX_EXCEPTION_PARAMS (3 on i386, 4 elsewhere), so the count and the array must
+        # come from the same header. `RtlPcToFileHeader` is the image-base lookup the
+        # whole RVA arm of the RTTI walk rests on -- it takes an out-parameter and RETURNS
+        # the base, which is the exact shape a hand-written extern gets backwards.
+        # `__unDName` is undname.c's demangler (already Rust), reached here through five
+        # arguments including TWO function pointers (malloc/free), and `operator_delete`
+        # is the C++ deallocator every vector_dtor calls.
+        "|RaiseException|RtlPcToFileHeader|__unDName|operator_delete"
         "|FindFirstFileA|FindFirstFileW|FindNextFileA|FindNextFileW|FindClose"
         "|CreateDirectoryW|RemoveDirectoryW|SetCurrentDirectoryW|GetCurrentDirectoryW"
         "|GetFullPathNameW|GetDiskFreeSpaceW|GetDriveTypeW"
@@ -845,6 +921,17 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # NAME_ONLY). Note `UNDNAME_NO_COMPLEX_TYPE` is NOT here: it is 0x8000 and
         # undname.c defines it ITSELF at the top of the file, because no SDK header does.
         "|UNDNAME_[A-Z_0-9]+"
+        # ── cpp.c ───────────────────────────────────────────────────────────
+        # cppexcept.h's throw protocol. `CXX_EXCEPTION` (0xe06d7363, "msc" with the
+        # high bit) is the SEH code every C++ throw travels under, `CXX_FRAME_MAGIC_VC6`
+        # stamps the descriptor version, and `CXX_EXCEPTION_PARAMS` is the one that must
+        # be derived rather than written: it is 3 on i386 and 4 on 64-bit, because the
+        # RVA arm needs a fourth slot for the image base. It is simultaneously the LENGTH
+        # of _CxxThrowException's argument array and the count handed to RaiseException,
+        # so a transcribed 4 on i386 would read one word past the array and pass it to
+        # the exception dispatcher as an image base.
+        "|CXX_EXCEPTION|CXX_FRAME_MAGIC_VC6|CXX_FRAME_MAGIC_VC7|CXX_FRAME_MAGIC_VC8"
+        "|CXX_EXCEPTION_PARAMS|EXCEPTION_NONCONTINUABLE"
         ")",
         "--",
         "-ferror-limit=0",
@@ -953,6 +1040,11 @@ RUST_TYPE_OF = {
     # with TEB/PEB as separate typedefs), so tag and Rust name coincide here.
     "_TEB": "_TEB",
     "_PEB": "_PEB",
+    # cpp.c's two C++ objects. cxx.h spells them `struct __exception` / `struct
+    # __type_info` with `exception` / `type_info` as the typedefs, and bindgen keeps the
+    # tag, so tag and Rust name coincide the same way _TEB/_PEB do.
+    "__exception": "__exception",
+    "__type_info": "__type_info",
 }
 
 
@@ -989,6 +1081,10 @@ def c_guardian(per_arch: dict[str, dict[tuple[str, str], int]]) -> str:
         # clang said `offsetof of incomplete type 'struct _TEB'` rather than passing
         # vacuously, which is the behaviour this guardian exists to have.
         '#include "winternl.h"',
+        # cpp.c's `struct __exception` / `struct __type_info`. Same lesson as winternl.h
+        # above, learned the same way: this list must reach every tag GUARDED names, or
+        # clang reports an incomplete type instead of checking anything.
+        '#include "cxx.h"',
         "#include <stddef.h>",
         "",
         "/* C11 _Static_assert; clang has it in all modes we build. */",

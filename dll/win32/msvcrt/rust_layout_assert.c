@@ -22,6 +22,7 @@
 #include "msvcrt.h"
 #include "winnls.h"
 #include "winternl.h"
+#include "cxx.h"
 #include <stddef.h>
 
 /* C11 _Static_assert; clang has it in all modes we build. */
@@ -53,6 +54,11 @@ VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 4);
 VIBEOS_ASSERT_OFF(_TEB, Peb, 48);
 VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 24);
+VIBEOS_ASSERT_OFF(__exception, vtable, 0);
+VIBEOS_ASSERT_OFF(__exception, name, 4);
+VIBEOS_ASSERT_OFF(__exception, do_free, 8);
+VIBEOS_ASSERT_OFF(__type_info, name, 4);
+VIBEOS_ASSERT_OFF(__type_info, mangled, 8);
 #endif
 
 #if defined(_M_AMD64)
@@ -78,6 +84,11 @@ VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
 VIBEOS_ASSERT_OFF(_TEB, Peb, 96);
 VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 48);
+VIBEOS_ASSERT_OFF(__exception, vtable, 0);
+VIBEOS_ASSERT_OFF(__exception, name, 8);
+VIBEOS_ASSERT_OFF(__exception, do_free, 16);
+VIBEOS_ASSERT_OFF(__type_info, name, 8);
+VIBEOS_ASSERT_OFF(__type_info, mangled, 16);
 #endif
 
 #if defined(_M_ARM64)
@@ -103,6 +114,11 @@ VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
 VIBEOS_ASSERT_OFF(_TEB, Peb, 96);
 VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 48);
+VIBEOS_ASSERT_OFF(__exception, vtable, 0);
+VIBEOS_ASSERT_OFF(__exception, name, 8);
+VIBEOS_ASSERT_OFF(__exception, do_free, 16);
+VIBEOS_ASSERT_OFF(__type_info, name, 8);
+VIBEOS_ASSERT_OFF(__type_info, mangled, 16);
 #endif
 
 /* ── wave 13 (fpnum.rs): the float parser's scalar pins ──────────────────── */

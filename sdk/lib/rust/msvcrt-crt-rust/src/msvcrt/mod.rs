@@ -214,3 +214,24 @@ pub mod math;
 // ungated `pub mod process;` broke that harness with an unresolved `crate::msvcrt::file`.
 #[cfg(feature = "stdio")]
 pub mod process;
+
+// cpp.c: the C++ RTTI / exception-object subsystem — 47 spec exports, the largest single
+// block of C left in msvcrt. Whole-file, plus a hand-written `cpp_rtti` companion for the
+// half of the TU that exists only as MACRO expansions (the five vtables, the RTTI and throw
+// descriptors, and the seven bodies `CREATE_EXCEPTION_OBJECT` / `CREATE_TYPE_INFO_VTABLE`
+// generate). rustconv's scanner reads source text, so a macro invocation is where those
+// would be — they are not "missed", they are not there to see.
+//
+// Behind the `cpp` DEFAULT feature, and OFF for the host harnesses for a plain reason: the
+// vtables are `global_asm!` in `.data` naming COFF symbols, and the RTTI walk calls
+// `RtlPcToFileHeader` to find an image base. Neither means anything in an ELF test binary.
+//
+// The 11 `#if _MSVCR_VER >= 80/140 || defined(__UCRTSUPPORT__)` bodies (`__AdjustPointer`,
+// the four `__std_type_info_*`, `_is_exception_typeof`, …) are deliberately absent: msvcrt
+// compiles at `_MSVCR_VER = 0` without `__UCRTSUPPORT__`, so nothing here builds them. They
+// are owed only if someone flips msvcrt_shared for ucrtbase, and the translation run
+// recorded each one as an audit finding rather than dropping it quietly.
+#[cfg(feature = "cpp")]
+pub mod cpp;
+#[cfg(feature = "cpp")]
+pub mod cpp_rtti;

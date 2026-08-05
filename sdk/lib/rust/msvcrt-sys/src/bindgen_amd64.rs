@@ -4182,6 +4182,7 @@ pub const RTL_CRITICAL_SECTION_FLAG_STATIC_INIT: u32 = 67108864;
 pub const RTL_CRITICAL_SECTION_FLAG_RESOURCE_TYPE: u32 = 134217728;
 pub const RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO: u32 = 268435456;
 pub const RTL_CRITICAL_SECTION_FLAG_RESERVED: u32 = 3758096384;
+pub const EXCEPTION_NONCONTINUABLE: u32 = 1;
 pub const DELETE: u32 = 65536;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
@@ -4661,6 +4662,11 @@ pub const UNDNAME_32_BIT_DECODE: u32 = 2048;
 pub const UNDNAME_NAME_ONLY: u32 = 4096;
 pub const UNDNAME_NO_ARGUMENTS: u32 = 8192;
 pub const UNDNAME_NO_SPECIAL_SYMS: u32 = 16384;
+pub const CXX_FRAME_MAGIC_VC6: u32 = 429065504;
+pub const CXX_FRAME_MAGIC_VC7: u32 = 429065505;
+pub const CXX_FRAME_MAGIC_VC8: u32 = 429065506;
+pub const CXX_EXCEPTION: u32 = 3765269347;
+pub const CXX_EXCEPTION_PARAMS: u32 = 4;
 // PINNED by generate_bindings.py: corecrt.h: the signed twin, same reasoning.
 // bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also
 // compiled for the linux host that builds msvcrt-difftest -- see
@@ -5364,6 +5370,9 @@ pub struct _RTL_CRITICAL_SECTION {
 }
 pub type RTL_CRITICAL_SECTION = _RTL_CRITICAL_SECTION;
 pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
+unsafe extern "C" {
+    pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OSVERSIONINFOW {
@@ -5880,6 +5889,9 @@ unsafe extern "C" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
 unsafe extern "C" {
+    pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
+}
+unsafe extern "C" {
     pub fn ReadFile(
         arg1: HANDLE,
         arg2: PVOID,
@@ -6212,6 +6224,12 @@ unsafe extern "C" {
     pub fn msvcrt_wstrdupa(arg1: *const ::core::ffi::c_char) -> *mut wchar_t;
 }
 unsafe extern "C" {
+    pub fn operator_delete(arg1: *mut ::core::ffi::c_void);
+}
+pub type malloc_func_t =
+    ::core::option::Option<unsafe extern "C" fn(arg1: usize) -> *mut ::core::ffi::c_void>;
+pub type free_func_t = ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>;
+unsafe extern "C" {
     pub fn get_locinfo() -> pthreadlocinfo;
 }
 unsafe extern "C" {
@@ -6226,6 +6244,16 @@ pub union _printf_arg {
     pub get_double: f64,
 }
 pub type printf_arg = _printf_arg;
+unsafe extern "C" {
+    pub fn __unDName(
+        arg1: *mut ::core::ffi::c_char,
+        arg2: *const ::core::ffi::c_char,
+        arg3: ::core::ffi::c_int,
+        arg4: malloc_func_t,
+        arg5: free_func_t,
+        arg6: ::core::ffi::c_ushort,
+    ) -> *mut ::core::ffi::c_char;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _finddata32_t {
@@ -7898,6 +7926,84 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
+}
+pub type vtable_ptr = ::core::option::Option<unsafe extern "C" fn()>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __exception {
+    pub vtable: *const vtable_ptr,
+    pub name: *mut ::core::ffi::c_char,
+    pub do_free: ::core::ffi::c_int,
+}
+pub type exception = __exception;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __type_info {
+    pub vtable: *const vtable_ptr,
+    pub name: *mut ::core::ffi::c_char,
+    pub mangled: [::core::ffi::c_char; 128usize],
+}
+pub type type_info = __type_info;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct this_ptr_offsets {
+    pub this_offset: ::core::ffi::c_int,
+    pub vbase_descr: ::core::ffi::c_int,
+    pub vbase_offset: ::core::ffi::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rtti_base_descriptor {
+    pub type_descriptor: ::core::ffi::c_uint,
+    pub num_base_classes: ::core::ffi::c_int,
+    pub offsets: this_ptr_offsets,
+    pub attributes: ::core::ffi::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rtti_base_array {
+    pub bases: [::core::ffi::c_uint; 10usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rtti_object_hierarchy {
+    pub signature: ::core::ffi::c_uint,
+    pub attributes: ::core::ffi::c_uint,
+    pub array_len: ::core::ffi::c_int,
+    pub base_classes: ::core::ffi::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rtti_object_locator {
+    pub signature: ::core::ffi::c_uint,
+    pub base_class_offset: ::core::ffi::c_int,
+    pub flags: ::core::ffi::c_uint,
+    pub type_descriptor: ::core::ffi::c_uint,
+    pub type_hierarchy: ::core::ffi::c_uint,
+    pub object_locator: ::core::ffi::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cxx_type_info {
+    pub flags: UINT,
+    pub type_info: ::core::ffi::c_uint,
+    pub offsets: this_ptr_offsets,
+    pub size: ::core::ffi::c_uint,
+    pub copy_ctor: ::core::ffi::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cxx_type_info_table {
+    pub count: UINT,
+    pub info: [::core::ffi::c_uint; 5usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cxx_exception_type {
+    pub flags: UINT,
+    pub destructor: ::core::ffi::c_uint,
+    pub custom_handler: ::core::ffi::c_uint,
+    pub type_info_table: ::core::ffi::c_uint,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
