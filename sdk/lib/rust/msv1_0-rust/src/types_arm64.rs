@@ -641,69 +641,6 @@ pub const _SIZE_T_ERROR: i32 = -1;
 pub const size_t_ERROR: i32 = -1;
 pub const UCHAR_ERROR: u8 = 0u8;
 pub const CHAR_ERROR: u8 = 0u8;
-pub const FACILITY_DEBUGGER: u32 = 1;
-pub const FACILITY_RPC_RUNTIME: u32 = 2;
-pub const FACILITY_RPC_STUBS: u32 = 3;
-pub const FACILITY_IO_ERROR_CODE: u32 = 4;
-pub const FACILITY_CODCLASS_ERROR_CODE: u32 = 6;
-pub const FACILITY_NTWIN32: u32 = 7;
-pub const FACILITY_NTCERT: u32 = 8;
-pub const FACILITY_NTSSPI: u32 = 9;
-pub const FACILITY_TERMINAL_SERVER: u32 = 10;
-pub const FACILTIY_MUI_ERROR_CODE: u32 = 11;
-pub const FACILITY_USB_ERROR_CODE: u32 = 16;
-pub const FACILITY_HID_ERROR_CODE: u32 = 17;
-pub const FACILITY_FIREWIRE_ERROR_CODE: u32 = 18;
-pub const FACILITY_CLUSTER_ERROR_CODE: u32 = 19;
-pub const FACILITY_ACPI_ERROR_CODE: u32 = 20;
-pub const FACILITY_SXS_ERROR_CODE: u32 = 21;
-pub const FACILITY_TRANSACTION: u32 = 25;
-pub const FACILITY_COMMONLOG: u32 = 26;
-pub const FACILITY_VIDEO: u32 = 27;
-pub const FACILITY_FILTER_MANAGER: u32 = 28;
-pub const FACILITY_MONITOR: u32 = 29;
-pub const FACILITY_GRAPHICS_KERNEL: u32 = 30;
-pub const FACILITY_DRIVER_FRAMEWORK: u32 = 32;
-pub const FACILITY_FVE_ERROR_CODE: u32 = 33;
-pub const FACILITY_FWP_ERROR_CODE: u32 = 34;
-pub const FACILITY_NDIS_ERROR_CODE: u32 = 35;
-pub const FACILITY_QUIC_ERROR_CODE: u32 = 36;
-pub const FACILITY_TPM: u32 = 41;
-pub const FACILITY_RTPM: u32 = 42;
-pub const FACILITY_HYPERVISOR: u32 = 53;
-pub const FACILITY_IPSEC: u32 = 54;
-pub const FACILITY_VIRTUALIZATION: u32 = 55;
-pub const FACILITY_VOLMGR: u32 = 56;
-pub const FACILITY_BCD_ERROR_CODE: u32 = 57;
-pub const FACILITY_WIN32K_NTUSER: u32 = 62;
-pub const FACILITY_WIN32K_NTGDI: u32 = 63;
-pub const FACILITY_RESUME_KEY_FILTER: u32 = 64;
-pub const FACILITY_RDBSS: u32 = 65;
-pub const FACILITY_BTH_ATT: u32 = 66;
-pub const FACILITY_SECUREBOOT: u32 = 67;
-pub const FACILITY_AUDIO_KERNEL: u32 = 68;
-pub const FACILITY_VSM: u32 = 69;
-pub const FACILITY_NT_IORING: u32 = 70;
-pub const FACILITY_VOLSNAP: u32 = 80;
-pub const FACILITY_SDBUS: u32 = 81;
-pub const FACILITY_SHARED_VHDX: u32 = 92;
-pub const FACILITY_SMB: u32 = 93;
-pub const FACILITY_XVS: u32 = 94;
-pub const FACILITY_INTERIX: u32 = 153;
-pub const FACILITY_SPACES: u32 = 231;
-pub const FACILITY_SECURITY_CORE: u32 = 232;
-pub const FACILITY_SYSTEM_INTEGRITY: u32 = 233;
-pub const FACILITY_LICENSING: u32 = 234;
-pub const FACILITY_PLATFORM_MANIFEST: u32 = 235;
-pub const FACILITY_APP_EXEC: u32 = 236;
-pub const FACILITY_UNIONFS: u32 = 237;
-pub const FACILITY_PLATFORM_RUNTIME_MECHANISM: u32 = 238;
-pub const FACILITY_WIN_ACCEL: u32 = 239;
-pub const FACILITY_MAXIMUM_VALUE: u32 = 240;
-pub const STATUS_SEVERITY_SUCCESS: u32 = 0;
-pub const STATUS_SEVERITY_INFORMATIONAL: u32 = 1;
-pub const STATUS_SEVERITY_WARNING: u32 = 2;
-pub const STATUS_SEVERITY_ERROR: u32 = 3;
 pub const UNISP_NAME_A: &[u8; 45] = b"Microsoft Unified Security Protocol Provider\0";
 pub const UNISP_NAME_W: &[u8; 45] = b"Microsoft Unified Security Protocol Provider\0";
 pub const SSPIPFC_CREDPROV_DO_NOT_SAVE: u32 = 1;
@@ -7959,16 +7896,16 @@ pub type PLSA_AP_LOGON_USER_EX2 = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpInitializeFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: ULONG_PTR,
         arg2: PSECPKG_PARAMETERS,
         arg3: PLSA_SECPKG_FUNCTION_TABLE,
     ) -> NTSTATUS,
 >;
-pub type SpShutDownFn = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
-pub type SpGetInfoFn = ::core::option::Option<unsafe extern "C" fn(arg1: PSecPkgInfoW) -> NTSTATUS>;
+pub type SpShutDownFn = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
+pub type SpGetInfoFn = ::core::option::Option<unsafe extern "system" fn(arg1: PSecPkgInfoW) -> NTSTATUS>;
 pub type SpAcceptCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: SECURITY_LOGON_TYPE,
         arg2: PUNICODE_STRING,
         arg3: PSECPKG_PRIMARY_CRED,
@@ -7976,7 +7913,7 @@ pub type SpAcceptCredentialsFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpAcquireCredentialsHandleFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PUNICODE_STRING,
         arg2: ULONG,
         arg3: PLUID,
@@ -7988,21 +7925,21 @@ pub type SpAcquireCredentialsHandleFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpQueryCredentialsAttributesFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
 >;
 pub type SpFreeCredentialsHandleFn =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LSA_SEC_HANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LSA_SEC_HANDLE) -> NTSTATUS>;
 pub type SpSaveCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
 >;
 pub type SpGetCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
 >;
 pub type SpDeleteCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
 >;
 pub type SpInitLsaModeContextFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: LSA_SEC_HANDLE,
         arg3: PUNICODE_STRING,
@@ -8018,7 +7955,7 @@ pub type SpInitLsaModeContextFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpAcceptLsaModeContextFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: LSA_SEC_HANDLE,
         arg3: PSecBufferDesc,
@@ -8033,24 +7970,24 @@ pub type SpAcceptLsaModeContextFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpDeleteContextFn =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LSA_SEC_HANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LSA_SEC_HANDLE) -> NTSTATUS>;
 pub type SpApplyControlTokenFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBufferDesc) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBufferDesc) -> NTSTATUS,
 >;
 pub type SpGetUserInfoFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PLUID, arg2: ULONG, arg3: *mut PSecurityUserData) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PLUID, arg2: ULONG, arg3: *mut PSecurityUserData) -> NTSTATUS,
 >;
 pub type SpGetExtendedInformationFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: SECPKG_EXTENDED_INFORMATION_CLASS,
         arg2: *mut PSECPKG_EXTENDED_INFORMATION,
     ) -> NTSTATUS,
 >;
 pub type SpQueryContextAttributesFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
 >;
 pub type SpAddCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: PUNICODE_STRING,
         arg3: PUNICODE_STRING,
@@ -8062,19 +7999,19 @@ pub type SpAddCredentialsFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpSetExtendedInformationFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: SECPKG_EXTENDED_INFORMATION_CLASS,
         arg2: PSECPKG_EXTENDED_INFORMATION,
     ) -> NTSTATUS,
 >;
 pub type SpSetContextAttributesFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID, arg4: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID, arg4: ULONG) -> NTSTATUS,
 >;
 pub type SpSetCredentialsAttributesFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID, arg4: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: ULONG, arg3: PVOID, arg4: ULONG) -> NTSTATUS,
 >;
 pub type SpChangeAccountPasswordFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PUNICODE_STRING,
         arg2: PUNICODE_STRING,
         arg3: PUNICODE_STRING,
@@ -8084,7 +8021,7 @@ pub type SpChangeAccountPasswordFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpQueryMetaDataFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: PUNICODE_STRING,
         arg3: ULONG,
@@ -8094,7 +8031,7 @@ pub type SpQueryMetaDataFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpExchangeMetaDataFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: PUNICODE_STRING,
         arg3: ULONG,
@@ -8104,7 +8041,7 @@ pub type SpExchangeMetaDataFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpGetCredUIContextFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: *mut GUID,
         arg3: PULONG,
@@ -8112,7 +8049,7 @@ pub type SpGetCredUIContextFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpUpdateCredentialsFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: *mut GUID,
         arg3: ULONG,
@@ -8120,7 +8057,7 @@ pub type SpUpdateCredentialsFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpValidateTargetInfoFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PLSA_CLIENT_REQUEST,
         arg2: PVOID,
         arg3: PVOID,
@@ -8129,15 +8066,15 @@ pub type SpValidateTargetInfoFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type LSA_AP_POST_LOGON_USER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PSECPKG_POST_LOGON_USER_INFO) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PSECPKG_POST_LOGON_USER_INFO) -> NTSTATUS>;
 pub type SpInstanceInitFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: ULONG, arg2: PSECPKG_DLL_FUNCTIONS, arg3: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: ULONG, arg2: PSECPKG_DLL_FUNCTIONS, arg3: *mut PVOID) -> NTSTATUS,
 >;
 pub type SpInitUserModeContextFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBuffer) -> NTSTATUS,
 >;
 pub type SpMakeSignatureFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -8145,7 +8082,7 @@ pub type SpMakeSignatureFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpVerifySignatureFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -8153,7 +8090,7 @@ pub type SpVerifySignatureFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpSealMessageFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -8161,7 +8098,7 @@ pub type SpSealMessageFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpUnsealMessageFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -8169,17 +8106,17 @@ pub type SpUnsealMessageFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpGetContextTokenFn =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PHANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PHANDLE) -> NTSTATUS>;
 pub type SpCompleteAuthTokenFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBufferDesc) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: LSA_SEC_HANDLE, arg2: PSecBufferDesc) -> NTSTATUS,
 >;
 pub type SpFormatCredentialsFn =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PSecBuffer, arg2: PSecBuffer) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PSecBuffer, arg2: PSecBuffer) -> NTSTATUS>;
 pub type SpMarshallSupplementalCredsFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: ULONG, arg2: PUCHAR, arg3: PULONG, arg4: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: ULONG, arg2: PUCHAR, arg3: PULONG, arg4: *mut PVOID) -> NTSTATUS,
 >;
 pub type SpExportSecurityContextFn = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LSA_SEC_HANDLE,
         arg2: ULONG,
         arg3: PSecBuffer,
@@ -8187,7 +8124,7 @@ pub type SpExportSecurityContextFn = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type SpImportSecurityContextFn = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PSecBuffer, arg2: HANDLE, arg3: PLSA_SEC_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PSecBuffer, arg2: HANDLE, arg3: PLSA_SEC_HANDLE) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]

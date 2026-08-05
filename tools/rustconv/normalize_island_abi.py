@@ -40,6 +40,15 @@ textually identical across the three arches apart from the ABI string. Correspon
 therefore exact on `pub type <NAME> =` for aliases and `<struct>::<field>` for inline
 callback slots.
 
+...with ONE asymmetry, which is why the witness is also projected THROUGH aliases. A C
+function TYPE (`typedef NTSTATUS (NTAPI SpInitializeFn)(...)` — no star, ntsecpkg.h's whole
+SECPKG_FUNCTION_TABLE surface is written this way) is emitted by bindgen as a NAMED alias on
+amd64/arm64 but INLINED into the struct field on i386. The two spellings then share no key,
+so the i386 stdcall witness could not reach the 64-bit alias and 31 of msv1_0's SECPKG slots
+stayed `extern "C"` while the translation spelled them `system`. Slot identity is the struct
+FIELD, not the spelling: when `<struct>::<field>` is a stdcall witness and this island types
+that field by a bare alias name, the alias is rewritten too.
+
 Idempotent: entries already spelled `system` are left alone, so it is safe to re-run and
 safe to wire into generation.
 """
@@ -69,6 +78,11 @@ _FIELD = (
 # that gives inline callback slots a key stable across the three islands. Group names must
 # be distinct — Python's re rejects a duplicate name across an alternation.
 _ANY = re.compile(r"pub struct (?P<s>\w+)|" + _ALIAS + "|" + _FIELD)
+
+# `pub field: SomeAlias,` — a struct field typed by a BARE alias name (no `*`, no generics).
+# Paired with the enclosing `pub struct`, this maps a slot key onto the alias that carries
+# its ABI on this island.
+_ALIAS_FIELD = re.compile(r"pub struct (?P<s>\w+)|pub (?P<fname>\w+): (?P<ty>[A-Za-z_]\w*),")
 
 
 def island_paths(crate_src: pathlib.Path, stem: str | None = None) -> dict[str, list[pathlib.Path]]:
@@ -104,6 +118,18 @@ def scan(text: str) -> dict[str, str]:
         elif m.group("fname"):
             found[f"{struct}::{m.group('fname')}"] = m.group("fabi")
     return found
+
+
+def alias_fields(text: str) -> dict[str, str]:
+    """`<struct>::<field>` -> the bare alias name that types that field on this island."""
+    out: dict[str, str] = {}
+    struct = ""
+    for m in _ALIAS_FIELD.finditer(text):
+        if m.group("s"):
+            struct = m.group("s")
+        else:
+            out[f"{struct}::{m.group('fname')}"] = m.group("ty")
+    return out
 
 
 def rewrite(text: str, keys: set[str], from_abi: str) -> tuple[str, int]:
@@ -148,7 +174,13 @@ def normalize_crate(
         frm = "stdcall" if arch == "i386" else "C"
         for p in islands[arch]:
             text = p.read_text(errors="replace")
-            new, n = rewrite(text, stdcall, frm)
+            # Project the witness through this island's aliases: a slot i386 inlined as
+            # stdcall may be a NAMED alias here (C function TYPES take that shape), and the
+            # two spellings share no key of their own.
+            keys = stdcall | {
+                ty for slot, ty in alias_fields(text).items() if slot in stdcall
+            }
+            new, n = rewrite(text, keys, frm)
             if n and apply:
                 p.write_text(new)
             if n:

@@ -1,44 +1,35 @@
-/* rust_varargs_shim.c — the one thing stable Rust cannot express here.
+/* rust_varargs_shim.c — aclui-rust variadic entry trampoline.
  *
- * DEFINING a C-variadic function: `va_start` is legal only inside one, and that is the
- * `c_variadic` feature (rust-lang/rust#44930 — FCP-complete with a merge disposition, so
- * this file is expected to be DELETED once it stabilizes; see
- * docs/engineering/active-lanes/stable-toolchain-plan.md). *Calling* and *declaring* a
- * variadic C function are already stable, so every aclui-rust call site is untouched.
+ * Stable Rust cannot DEFINE a C-variadic function (`va_start` can only appear inside one —
+ * c_variadic, rust-lang/rust#44930). misc.c's LoadAndFormatString is variadic, so its ENTRY
+ * point lives here: it does the `va_start` Rust can't, then tail-calls the fixed-arity
+ * `LoadAndFormatString_v` twin in aclui-rust/src/aclui/misc.rs, which holds the real translated
+ * logic (AllocAndLoadString + FormatMessageW + LocalFree). This is the sanctioned varargs-rust
+ * trampoline pattern (see AGENTS.md "c_variadic" and
+ * sdk/lib/rust/varargs-rust/rust_varargs_shim.c.template), NOT a translation reverted to C.
  *
- * aclui needs no `va_arg` pullers at all — unlike the usbhub/usbstor shims, which format
- * their own output. LoadAndFormatString never inspects its arguments; it hands the whole
- * list to FormatMessageW, which walks it. So this is the variadic entry point and nothing
- * else: three lines back into Rust, where the real body (AllocAndLoadString, the
- * FormatMessageW call, the LocalFree) stays. A shim for a language gap, NOT a Rust
- * translation reverted to C (AGENTS.md "the goal is Rust").
- *
- * We hand Rust a POINTER to the va_list (`&ap`), never the va_list itself — that avoids
- * assuming `va_list` is a single pointer (true on our three Windows targets, false on
- * SysV x86-64), and it is the shape FormatMessageW's `Arguments` parameter wants anyway,
- * so the Rust side forwards it unchanged.
- *
- * Template: sdk/lib/rust/varargs-rust/rust_varargs_shim.c.template
+ * WHY WE PASS THE va_list VALUE (not &ap): the `_v` twin forwards the va_list straight to
+ * FormatMessageW's `Arguments` parameter, which is a `va_list *`. On all three targets
+ * (x86_64/i686/aarch64 -pc-windows-gnu) `va_list` is `char*` — a single pointer — so passing it
+ * through a `void*` and taking its address on the Rust side is exact.
  */
 
 #include <stdarg.h>
-#include <stddef.h>
+#include <windef.h>
+#include <winbase.h>
 
-typedef unsigned long DWORD_C;
-typedef unsigned int UINT_C;
-typedef unsigned short WCHAR_C;
+extern DWORD LoadAndFormatString_v(HINSTANCE hInstance,
+                                   UINT uID,
+                                   LPWSTR *lpTarget,
+                                   void *ap);
 
-extern DWORD_C LoadAndFormatString_v(
-    void *hInstance, UINT_C uID, WCHAR_C **lpTarget, void *ap);
-
-DWORD_C LoadAndFormatString(
-    void *hInstance, UINT_C uID, WCHAR_C **lpTarget, ...)
+DWORD LoadAndFormatString(HINSTANCE hInstance, UINT uID, LPWSTR *lpTarget, ...)
 {
     va_list ap;
-    DWORD_C ret;
+    DWORD r;
 
     va_start(ap, lpTarget);
-    ret = LoadAndFormatString_v(hInstance, uID, lpTarget, &ap);
+    r = LoadAndFormatString_v(hInstance, uID, lpTarget, (void *)ap);
     va_end(ap);
-    return ret;
+    return r;
 }

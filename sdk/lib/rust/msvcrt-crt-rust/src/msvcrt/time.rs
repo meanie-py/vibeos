@@ -776,7 +776,7 @@ pub unsafe extern "C" fn _strtime_s(time: *mut u8, size: usize) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn _wstrtime(time: *mut wchar_t) -> *mut wchar_t {
     // `L"HH':'mm':'ss"` — same wide-NUL rule as `_wstrdate` above.
-    GetTimeFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), b"H\0H\0:\0'\0m\0m\0:\0'\0s\0s\0\0\0".as_ptr() as *const wchar_t, time, 9);
+    GetTimeFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), b"H\0H\0'\0:\0'\0m\0m\0'\0:\0'\0s\0s\0\0\0".as_ptr() as *const wchar_t, time, 9);
     time
 }
 

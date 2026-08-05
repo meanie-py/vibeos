@@ -2,10 +2,14 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-// `const`, not `static`: an array of raw pointers is not Sync, and this table is only ever
-// read for its elements. Each element still points at `w!`'s own `static` UTF-16 buffer, so
-// the string addresses are stable -- only the ARRAY is materialized per use.
-pub const ObjectPickerAttributes: [PCWSTR; 1] = [w!("ObjectSid") as PCWSTR];
+// `static const PCWSTR ObjectPickerAttributes[] = { L"ObjectSid" };`. A Rust `static` demands
+// `PCWSTR: Sync`, which a raw pointer is not, so the array is built at first use instead — the
+// pointed-to text is already backed by a real `static [u16]` from `w!`, which is the only part
+// whose address escapes.
+#[inline(always)]
+unsafe fn ObjectPickerAttributes() -> [PCWSTR; 1] {
+    [w!("ObjectSid") as PCWSTR]
+}
 unsafe extern "C" fn LengthOfStrResource(
     hInst: HINSTANCE,
     uID: u32,
@@ -19,7 +23,7 @@ unsafe extern "C" fn LengthOfStrResource(
         return -1;
     }
 
-    lpName = MAKEINTRESOURCE((uID >> 4) + 1) as LPWSTR;
+    lpName = MAKEINTRESOURCE!((uID >> 4) + 1) as LPWSTR;
 
     hrSrc = FindResourceW(hInst, lpName, RT_STRING as LPWSTR);
     if hrSrc != core::ptr::null_mut() {
@@ -64,18 +68,21 @@ unsafe extern "C" fn AllocAndLoadString(
     }
     return 0;
 }
-// The `_v` twin of the variadic entry in dll/win32/aclui/rust_varargs_shim.c. `va_start` is
-// the only part that has to be C; everything the function actually DOES is here, and the
-// va_list arrives by pointer, which is exactly what FormatMessageW's `Arguments` wants.
+// The fixed-arity half of misc.c's variadic LoadAndFormatString. Stable Rust cannot DEFINE a
+// C-variadic (`va_start` is only legal inside one), so the entry point that does the va_start
+// lives in dll/win32/aclui/rust_varargs_shim.c and tail-calls this. `ap` is the va_list the
+// shim already opened, passed by VALUE through a void* — on all three windows-gnu targets a
+// va_list is a single `char*`, so FormatMessageW's `va_list *Arguments` is `&ap` here.
 #[no_mangle]
 pub unsafe extern "C" fn LoadAndFormatString_v(
     hInstance: HINSTANCE,
     uID: u32,
     lpTarget: *mut LPWSTR,
-    lArgs: *mut va_list,
+    ap: *mut c_void,
 ) -> u32 {
     let mut Ret: u32 = 0;
     let mut lpFormat: LPWSTR = core::ptr::null_mut();
+    let mut lArgs: va_list = ap as va_list;
 
     if AllocAndLoadString(
         core::ptr::addr_of_mut!(lpFormat),
@@ -84,13 +91,13 @@ pub unsafe extern "C" fn LoadAndFormatString_v(
     ) > 0
     {
         Ret = FormatMessageW(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
-            lpFormat as *const c_void,
+            (FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING) as u32,
+            lpFormat as LPCVOID,
             0,
             0,
             lpTarget as LPWSTR,
             0,
-            lArgs,
+            core::ptr::addr_of_mut!(lArgs),
         );
 
         LocalFree(lpFormat as HLOCAL);
@@ -100,19 +107,19 @@ pub unsafe extern "C" fn LoadAndFormatString_v(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ListViewGetSelectedItemData(hwnd: HWND) -> LPARAM {
-    let Index = ListView_GetNextItem(
+    let Index = ListView_GetNextItem!(
         hwnd,
-        -1,
+        -1 as INT,
         LVNI_SELECTED,
     );
     if Index != -1 {
         let mut li: LVITEM = core::mem::zeroed();
 
-        li.mask = LVIF_PARAM;
+        li.mask = (LVIF_PARAM) as u32;
         li.iItem = Index;
         li.iSubItem = 0;
 
-        if ListView_GetItem(hwnd, &mut li) != 0 {
+        if ListView_GetItem!(hwnd, &mut li) != 0 {
             return li.lParam;
         }
     }
@@ -126,13 +133,13 @@ pub unsafe extern "C" fn ListViewSelectItem(
 ) -> i32 {
     let mut li: _LVITEMW = core::mem::zeroed();
 
-    li.mask = LVIF_STATE;
+    li.mask = (LVIF_STATE) as u32;
     li.iItem = Index;
     li.iSubItem = 0;
-    li.state = LVIS_SELECTED;
-    li.stateMask = LVIS_SELECTED;
+    li.state = (LVIS_SELECTED) as u32;
+    li.stateMask = (LVIS_SELECTED) as u32;
 
-    ListView_SetItem(hwnd, &mut li)
+    ListView_SetItem!(hwnd, &mut li)
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeObjectPicker(
@@ -156,15 +163,15 @@ pub unsafe extern "C" fn InitializeObjectPicker(
         let mut i: u32;
         static mut Scopes: [DSOP_SCOPE_INIT_INFO; 1] = [DSOP_SCOPE_INIT_INFO {
             cbSize: core::mem::size_of::<DSOP_SCOPE_INIT_INFO>() as u32,
-            flType: DSOP_SCOPE_TYPE_TARGET_COMPUTER,
-            flScope: DSOP_SCOPE_FLAG_DEFAULT_FILTER_USERS | DSOP_SCOPE_FLAG_DEFAULT_FILTER_GROUPS | DSOP_SCOPE_FLAG_STARTING_SCOPE,
+            flType: (DSOP_SCOPE_TYPE_TARGET_COMPUTER) as u32,
+            flScope: (DSOP_SCOPE_FLAG_DEFAULT_FILTER_USERS | DSOP_SCOPE_FLAG_DEFAULT_FILTER_GROUPS | DSOP_SCOPE_FLAG_STARTING_SCOPE) as u32,
             FilterFlags: DSOP_FILTER_FLAGS {
                 Uplevel: DSOP_UPLEVEL_FILTER_FLAGS {
                     flBothModes: 0,
                     flMixedModeOnly: 0,
                     flNativeModeOnly: 0,
                 },
-                flDownlevel: DSOP_DOWNLEVEL_FILTER_USERS | DSOP_DOWNLEVEL_FILTER_LOCAL_GROUPS | DSOP_DOWNLEVEL_FILTER_GLOBAL_GROUPS | DSOP_DOWNLEVEL_FILTER_ALL_WELLKNOWN_SIDS,
+                flDownlevel: (DSOP_DOWNLEVEL_FILTER_USERS | DSOP_DOWNLEVEL_FILTER_LOCAL_GROUPS | DSOP_DOWNLEVEL_FILTER_GLOBAL_GROUPS | DSOP_DOWNLEVEL_FILTER_ALL_WELLKNOWN_SIDS) as u32,
             },
             pwzDcName: core::ptr::null_mut(),
             pwzADsPath: core::ptr::null_mut(),
@@ -175,14 +182,15 @@ pub unsafe extern "C" fn InitializeObjectPicker(
         InitInfo.pwzTargetComputer = ServerName;
         InitInfo.cDsScopeInfos = (core::mem::size_of_val(&Scopes) / core::mem::size_of::<DSOP_SCOPE_INIT_INFO>()) as u32;
         InitInfo.aDsScopeInfos = Scopes.as_mut_ptr();
-        InitInfo.flOptions = DSOP_FLAG_MULTISELECT;
-        InitInfo.cAttributesToFetch = (core::mem::size_of_val(&ObjectPickerAttributes) / core::mem::size_of::<PCWSTR>()) as u32;
-        InitInfo.apwzAttributeNames = ObjectPickerAttributes.as_ptr() as *mut PCWSTR;
+        InitInfo.flOptions = (DSOP_FLAG_MULTISELECT) as u32;
+        let Attributes = ObjectPickerAttributes();
+        InitInfo.cAttributesToFetch = Attributes.len() as u32;
+        InitInfo.apwzAttributeNames = Attributes.as_ptr() as *mut PCWSTR;
 
         i = 0;
         while i < InitInfo.cDsScopeInfos {
-            if ((*ObjectInfo).dwFlags & SI_SERVER_IS_DC) != 0
-                && (InitInfo.aDsScopeInfos.add(i as usize).read().flType & DSOP_SCOPE_TYPE_UPLEVEL_JOINED_DOMAIN) != 0
+            if ((*ObjectInfo).dwFlags & (SI_SERVER_IS_DC) as u32) != 0
+                && (InitInfo.aDsScopeInfos.add(i as usize).read().flType & (DSOP_SCOPE_TYPE_UPLEVEL_JOINED_DOMAIN) as u32) != 0
             {
                 (*InitInfo.aDsScopeInfos.add(i as usize)).pwzDcName = InitInfo.pwzTargetComputer;
             }
@@ -220,7 +228,7 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
         let mut stm: STGMEDIUM = core::mem::zeroed();
         let mut fe: FORMATETC = core::mem::zeroed();
 
-        fe.cfFormat = RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST_BUF.as_ptr()) as u16;
+        fe.cfFormat = RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST!()) as u16;
         fe.ptd = core::ptr::null_mut();
         fe.dwAspect = DVASPECT_CONTENT;
         fe.lindex = -(1 as i32);
@@ -233,15 +241,15 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
                 let mut vSid: LPVARIANT;
                 let mut pSid: PSID = core::ptr::null_mut();
                 let mut i: u32;
-                let mut contLoop: u32 = (TRUE) as u32;
+                let mut contLoop: u32 = TRUE;
 
                 i = 0;
                 while i < (*SelectionList).cItems && contLoop != 0 {
                     vSid = (*(*SelectionList).aDsSelection.as_ptr().add(i as usize)).pvarFetchedAttributes;
 
-                    if !vSid.is_null() && V_VT(vSid) == ((VT_ARRAY | VT_UI1)) as u16 {
+                    if !vSid.is_null() && V_VT!(vSid) == ((VT_ARRAY | VT_UI1)) as u16 {
                         hRet = SafeArrayAccessData(
-                            V_ARRAY(vSid),
+                            V_ARRAY!(vSid),
                             &mut pSid as *mut PSID as *mut *mut core::ffi::c_void,
                         );
                         if hRet < 0 {
@@ -257,7 +265,7 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
                             )) as u32;
                         }
 
-                        SafeArrayUnaccessData(V_ARRAY(vSid));
+                        SafeArrayUnaccessData(V_ARRAY!(vSid));
                     }
 
                     i += 1;
@@ -342,7 +350,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //     }
 //
 //     /* There are always blocks of 16 strings */
-//     lpName = (LPWSTR)MAKEINTRESOURCE((uID >> 4) + 1);
+//     lpName = (LPWSTR)MAKEINTRESOURCE!((uID >> 4) + 1);
 //
 //     /* Find the string table block */
 //     if ((hrSrc = FindResourceW(hInst, lpName, (LPWSTR)RT_STRING)) &&
@@ -425,7 +433,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 // {
 //     int Index;
 //
-//     Index = ListView_GetNextItem(hwnd,
+//     Index = ListView_GetNextItem!(hwnd,
 //                                  -1,
 //                                  LVNI_SELECTED);
 //     if (Index != -1)
@@ -436,7 +444,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //         li.iItem = Index;
 //         li.iSubItem = 0;
 //
-//         if (ListView_GetItem(hwnd,
+//         if (ListView_GetItem!(hwnd,
 //                              &li))
 //         {
 //             return li.lParam;
@@ -458,7 +466,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //     li.state = LVIS_SELECTED;
 //     li.stateMask = LVIS_SELECTED;
 //
-//     return ListView_SetItem(hwnd,
+//     return ListView_SetItem!(hwnd,
 //                             &li);
 // }
 //
@@ -476,7 +484,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                             CLSCTX_INPROC_SERVER,
 //                             &IID_IDsObjectPicker,
 //                             (LPVOID*)pDsObjectPicker);
-//     if (SUCCEEDED(hRet))
+//     if (SUCCEEDED!(hRet))
 //     {
 //         DSOP_INIT_INFO InitInfo;
 //         UINT i;
@@ -525,7 +533,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //         hRet = (*pDsObjectPicker)->lpVtbl->Initialize(*pDsObjectPicker,
 //                                                       &InitInfo);
 //
-//         if (FAILED(hRet))
+//         if (FAILED!(hRet))
 //         {
 //             /* delete the object picker in case initialization failed! */
 //             (*pDsObjectPicker)->lpVtbl->Release(*pDsObjectPicker);
@@ -552,7 +560,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //         STGMEDIUM stm;
 //         FORMATETC fe;
 //
-//         fe.cfFormat = (WORD)RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST_BUF.as_ptr());
+//         fe.cfFormat = (WORD)RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST!());
 //         fe.ptd = NULL;
 //         fe.dwAspect = DVASPECT_CONTENT;
 //         fe.lindex = -1;
@@ -561,9 +569,9 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //         hRet = pdo->lpVtbl->GetData(pdo,
 //                                     &fe,
 //                                     &stm);
-//         if (SUCCEEDED(hRet))
+//         if (SUCCEEDED!(hRet))
 //         {
-//             PDS_SELECTION_LIST SelectionList = (PDS_SELECTION_LIST)GlobalLock(*stm.__bindgen_anon_1.hGlobal.as_ref());
+//             PDS_SELECTION_LIST SelectionList = (PDS_SELECTION_LIST)GlobalLock(stm.__bindgen_anon_1.hGlobal);
 //             if (SelectionList != NULL)
 //             {
 //                 LPVARIANT vSid;
@@ -575,11 +583,11 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                 {
 //                     vSid = SelectionList->aDsSelection[i].pvarFetchedAttributes;
 //
-//                     if (vSid != NULL && V_VT(vSid) == (VT_ARRAY | VT_UI1))
+//                     if (vSid != NULL && V_VT!(vSid) == (VT_ARRAY | VT_UI1))
 //                     {
-//                         hRet = SafeArrayAccessData(V_ARRAY(vSid),
+//                         hRet = SafeArrayAccessData(V_ARRAY!(vSid),
 //                                                    (void **)&pSid);
-//                         if (FAILED(hRet))
+//                         if (FAILED!(hRet))
 //                         {
 //                             break;
 //                         }
@@ -592,13 +600,13 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                                                            Context);
 //                         }
 //
-//                         SafeArrayUnaccessData(V_ARRAY(vSid));
+//                         SafeArrayUnaccessData(V_ARRAY!(vSid));
 //                     }
 //                 }
 //
-//                 GlobalUnlock(*stm.__bindgen_anon_1.hGlobal.as_ref());
+//                 GlobalUnlock(stm.__bindgen_anon_1.hGlobal);
 //
-//                 if (SUCCEEDED(hRet))
+//                 if (SUCCEEDED!(hRet))
 //                 {
 //                     /* return S_OK instead of possible other success codes if
 //                        everything went well */

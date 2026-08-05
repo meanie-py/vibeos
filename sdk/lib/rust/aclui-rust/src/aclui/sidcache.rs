@@ -2,20 +2,6 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-
-// `typedef struct _X { … } X, *PX;` — the translation kept the tag and the POINTER alias but
-// dropped the value alias that the rest of the crate spells.
-pub type SIDCACHEMGR = _SIDCACHEMGR;
-pub type SIDCACHECALLBACKINFO = _SIDCACHECALLBACKINFO;
-pub type SIDQUEUEENTRY = _SIDQUEUEENTRY;
-pub type SIDCACHEENTRY = _SIDCACHEENTRY;
-
-// sidcache.c:36-37 — plain casts, spelled as macros there.
-#[inline(always)]
-pub fn HandleToScm(handle: HANDLE) -> PSIDCACHEMGR { handle as PSIDCACHEMGR }
-#[inline(always)]
-pub fn ScmToHandle(scm: PSIDCACHEMGR) -> HANDLE { scm as HANDLE }
-
 #[repr(C)]
 pub struct _SIDCACHEMGR {
     pub RefCount: i32,
@@ -58,6 +44,15 @@ pub struct _SIDCACHEENTRY {
 }
 
 pub type PSIDCACHEENTRY = *mut _SIDCACHEENTRY;
+
+// The un-underscored halves of sidcache.c's four `typedef struct _X {...} X, *PX;` pairs. The
+// translation emitted `_X` and `PX` for each and dropped `X`, which is the spelling the other
+// TUs use.
+pub type SIDCACHEMGR = _SIDCACHEMGR;
+pub type SIDCACHECALLBACKINFO = _SIDCACHECALLBACKINFO;
+pub type SIDQUEUEENTRY = _SIDQUEUEENTRY;
+pub type SIDCACHEENTRY = _SIDCACHEENTRY;
+
 unsafe extern "C" fn FreeQueueEntry(
     scm: PSIDCACHEMGR,
     QueueEntry: PSIDQUEUEENTRY,
@@ -112,16 +107,16 @@ unsafe extern "C" fn CleanupSidCacheMgr(scm: PSIDCACHEMGR) {
     DeleteCriticalSection(core::ptr::addr_of_mut!((*scm).Lock));
 }
 unsafe extern "C" fn ReferenceSidCacheMgr(SidCacheMgr: HANDLE) -> PSIDCACHEMGR {
-    let scm = HandleToScm(SidCacheMgr);
+    let scm = HandleToScm!(SidCacheMgr);
 
-    if InterlockedIncrement(core::ptr::addr_of_mut!((*scm).RefCount)) != 1 {
+    if InterlockedIncrement!(core::ptr::addr_of_mut!((*scm).RefCount)) != 1 {
         return scm;
     }
 
     return core::ptr::null_mut();
 }
 unsafe extern "C" fn DereferenceSidCacheMgr(scm: PSIDCACHEMGR) {
-    if InterlockedDecrement(core::ptr::addr_of_mut!((*scm).RefCount)) == 0 {
+    if InterlockedDecrement!(core::ptr::addr_of_mut!((*scm).RefCount)) == 0 {
         SetEvent((*scm).LookupEvent);
     }
 }
@@ -192,7 +187,7 @@ unsafe extern "C" fn LookupSidInformation(
 
         if !ReferencedDomain.is_null() && (*Names).DomainIndex >= 0 {
             Domain = (*ReferencedDomain).Domains.add((*Names).DomainIndex as usize);
-            DomainName = core::ptr::addr_of_mut!((*Domain).Name);
+            DomainName = &mut (*Domain).Name;
         } else {
             Domain = core::ptr::null_mut();
             DomainName = core::ptr::null_mut();
@@ -242,14 +237,14 @@ unsafe extern "C" fn LookupSidInformation(
                 .offset((AccountNameSize / core::mem::size_of::<WCHAR>() as u32) as isize)
                 .offset(1);
 
-            CopyMemory(
+            CopyMemory!(
                 (*ReqRet).AccountName as PVOID,
                 (*Names).Name.Buffer as PVOID,
                 (*Names).Name.Length as usize,
             );
 
             if !DomainName.is_null() {
-                CopyMemory(
+                CopyMemory!(
                     (*ReqRet).DomainName as PVOID,
                     (*DomainName).Buffer as PVOID,
                     (*DomainName).Length as usize,
@@ -288,7 +283,7 @@ unsafe extern "C" fn LookupSidInformation(
 }
 unsafe extern "C" fn FindSidInCache(
     scm: PSIDCACHEMGR,
-    mut pSid: PSID,
+    pSid: PSID,
     ReqResult: *mut PSIDREQRESULT,
 ) -> BOOL {
     let mut CacheEntry: PSIDCACHEENTRY;
@@ -405,7 +400,7 @@ unsafe extern "system" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
     let scm: PSIDCACHEMGR = lpParameter as PSIDCACHEMGR;
 
     if GetModuleHandleExW(
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) as u32,
         hDllInstance as LPCWSTR,
         &mut hModule,
     ) == 0
@@ -427,7 +422,7 @@ unsafe extern "system" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
         } else {
             LeaveCriticalSection(&mut (*scm).Lock);
 
-            WaitForSingleObject((*scm).LookupEvent, INFINITE);
+            WaitForSingleObject((*scm).LookupEvent, (INFINITE) as u32);
             continue;
         }
 
@@ -470,7 +465,7 @@ unsafe extern "system" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
 
                     LeaveCriticalSection(&mut (*scm).Lock);
 
-                    CompletionProc.unwrap_unchecked()(ScmToHandle(scm), pSid, ReqResult, Context);
+                    CompletionProc.unwrap_unchecked()(ScmToHandle!(scm), pSid, ReqResult, Context);
 
                     EnterCriticalSection(&mut (*scm).Lock);
 
@@ -496,7 +491,6 @@ unsafe extern "system" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
 
     0
 }
-
 #[no_mangle]
 pub unsafe extern "C" fn CreateSidCacheMgr(
     Heap: HANDLE,
@@ -513,18 +507,16 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
     scm = HeapAlloc(
         Heap,
         0,
-        // sidcache.c:606 `FIELD_OFFSET(SIDCACHEMGR, SystemName[wcslen(SystemName) + 1])` —
-        // C's offsetof-of-an-array-ELEMENT, i.e. the struct up to the flexible tail plus room
-        // for the string and its NUL. offset_of! takes a field, not an index, so the element
-        // arithmetic is spelled out.
-        (FIELD_OFFSET!(SIDCACHEMGR, SystemName) as usize
-            + (wcslen(SystemName) + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
+        FIELD_OFFSET!(
+            SIDCACHEMGR,
+            SystemName[wcslen(SystemName) + 1]
+        ) as SIZE_T,
     ) as PSIDCACHEMGR;
 
     if !scm.is_null() {
-        ZeroMemory(
+        ZeroMemory!(
             scm as LPVOID,
-            FIELD_OFFSET!(SIDCACHEMGR, SystemName) as usize,
+            FIELD_OFFSET!(SIDCACHEMGR, SystemName),
         );
 
         (*scm).RefCount = 1;
@@ -567,7 +559,7 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
         } else {
             if OpenLSAPolicyHandle(
                 (*scm).SystemName.as_mut_ptr(),
-                POLICY_LOOKUP_NAMES | POLICY_VIEW_LOCAL_INFORMATION,
+                (POLICY_LOOKUP_NAMES | POLICY_VIEW_LOCAL_INFORMATION) as u32,
                 core::ptr::addr_of_mut!((*scm).LsaHandle),
             ) == 0 {
                 'Cleanup: loop {
@@ -626,7 +618,7 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
 }
 #[no_mangle]
 pub unsafe extern "C" fn DestroySidCacheMgr(SidCacheMgr: HANDLE) {
-    let scm = HandleToScm(SidCacheMgr);
+    let scm = HandleToScm!(SidCacheMgr);
 
     if !scm.is_null() {
         DereferenceSidCacheMgr(scm);
@@ -675,7 +667,7 @@ unsafe extern "C" fn QueueSidLookup(
         FoundEntry = HeapAlloc(
             (*scm).Heap,
             0,
-            (core::mem::size_of::<SIDQUEUEENTRY>() as u32).wrapping_add(SidLength) as SIZE_T,
+            (core::mem::size_of::<SIDQUEUEENTRY>() as u32).wrapping_add(SidLength) as usize as SIZE_T,
         ) as *mut SIDQUEUEENTRY;
         if FoundEntry != core::ptr::null_mut() {
             CopySid(
@@ -713,11 +705,10 @@ unsafe extern "C" fn QueueSidLookup(
             (*scm).Heap,
             0,
             (*FoundEntry).Callbacks as LPVOID,
-            ((*FoundEntry)
+            (((*FoundEntry)
                 .CallbackCount
                 .wrapping_add(1) as usize)
-                .wrapping_mul(core::mem::size_of::<SIDCACHECALLBACKINFO>())
-                as SIZE_T,
+                .wrapping_mul(core::mem::size_of::<SIDCACHECALLBACKINFO>())) as SIZE_T,
         ) as *mut SIDCACHECALLBACKINFO;
         if Sidccb != core::ptr::null_mut() {
             (*FoundEntry).Callbacks = Sidccb;
@@ -788,7 +779,7 @@ pub unsafe extern "C" fn ReferenceSidReqResult(
 
     scm = ReferenceSidCacheMgr(SidCacheMgr);
     if scm != core::ptr::null_mut() {
-        InterlockedIncrement(core::ptr::addr_of_mut!((*ReqResult).RefCount));
+        InterlockedIncrement!(core::ptr::addr_of_mut!((*ReqResult).RefCount));
 
         DereferenceSidCacheMgr(scm);
     }
@@ -800,7 +791,7 @@ pub unsafe extern "C" fn DereferenceSidReqResult(
 ) {
     let scm: PSIDCACHEMGR = ReferenceSidCacheMgr(SidCacheMgr);
     if !scm.is_null() {
-        if InterlockedDecrement(core::ptr::addr_of_mut!((*ReqResult).RefCount)) == 0 {
+        if InterlockedDecrement!(core::ptr::addr_of_mut!((*ReqResult).RefCount)) == 0 {
             HeapFree(
                 (*scm).Heap,
                 0,
@@ -912,8 +903,8 @@ pub unsafe extern "C" fn LookupSidCache(
 // #define NDEBUG
 // #include <debug.h>
 //
-// #define HandleToScm(Handle) (PSIDCACHEMGR)(Handle)
-// #define ScmToHandle(Scm) (HANDLE)(Scm)
+// #define HandleToScm!(Handle) (PSIDCACHEMGR)(Handle)
+// #define ScmToHandle!(Scm) (HANDLE)(Scm)
 //
 // typedef struct _SIDCACHEMGR
 // {
@@ -1025,9 +1016,9 @@ pub unsafe extern "C" fn LookupSidCache(
 // static PSIDCACHEMGR
 // ReferenceSidCacheMgr( HANDLE SidCacheMgr)
 // {
-//     PSIDCACHEMGR scm = HandleToScm(SidCacheMgr);
+//     PSIDCACHEMGR scm = HandleToScm!(SidCacheMgr);
 //
-//     if (InterlockedIncrement(&scm->RefCount) != 1)
+//     if (InterlockedIncrement!(&scm->RefCount) != 1)
 //     {
 //         return scm;
 //     }
@@ -1039,7 +1030,7 @@ pub unsafe extern "C" fn LookupSidCache(
 // static VOID
 // DereferenceSidCacheMgr( PSIDCACHEMGR scm)
 // {
-//     if (InterlockedDecrement(&scm->RefCount) == 0)
+//     if (InterlockedDecrement!(&scm->RefCount) == 0)
 //     {
 //         /* Signal the lookup thread so it can terminate */
 //         SetEvent(scm->LookupEvent);
@@ -1107,7 +1098,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //
 //     Status = LsaLookupSids(scm->LsaHandle,
 //                            1,
-//                            &mut pSid,
+//                            &pSid,
 //                            &ReferencedDomain,
 //                            &Names);
 //     if (NT_SUCCESS(Status))
@@ -1170,13 +1161,13 @@ pub unsafe extern "C" fn LookupSidCache(
 //             ReqRet->AccountName = (LPWSTR)(ReqRet + 1);
 //             ReqRet->DomainName = ReqRet->AccountName + (AccountNameSize / sizeof(WCHAR)) + 1;
 //
-//             CopyMemory(ReqRet->AccountName,
+//             CopyMemory!(ReqRet->AccountName,
 //                        Names->Name.Buffer,
 //                        Names->Name.Length);
 //
 //             if (DomainName != NULL)
 //             {
-//                 CopyMemory(ReqRet->DomainName,
+//                 CopyMemory!(ReqRet->DomainName,
 //                            DomainName->Buffer,
 //                            DomainName->Length);
 //             }
@@ -1432,7 +1423,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //                     LeaveCriticalSection(&scm->Lock);
 //
 //                     /* call the completion proc without holding the lock! */
-//                     CompletionProc(ScmToHandle(scm),
+//                     CompletionProc.unwrap_unchecked()(ScmToHandle!(scm),
 //                                    pSid,
 //                                    ReqResult,
 //                                    Context);
@@ -1482,13 +1473,13 @@ pub unsafe extern "C" fn LookupSidCache(
 //
 //     scm = HeapAlloc(Heap,
 //                     0,
-//                     FIELD_OFFSET(SIDCACHEMGR,
+//                     FIELD_OFFSET!(SIDCACHEMGR,
 //                                  SystemName[wcslen(SystemName) + 1]));
 //     if (scm != NULL)
 //     {
 //         /* zero the static part of the structure */
-//         ZeroMemory(scm,
-//                    FIELD_OFFSET(SIDCACHEMGR,
+//         ZeroMemory!(scm,
+//                    FIELD_OFFSET!(SIDCACHEMGR,
 //                                 SystemName));
 //
 //         scm->RefCount = 1;
@@ -1554,7 +1545,7 @@ pub unsafe extern "C" fn LookupSidCache(
 // VOID
 // DestroySidCacheMgr( HANDLE SidCacheMgr)
 // {
-//     PSIDCACHEMGR scm = HandleToScm(SidCacheMgr);
+//     PSIDCACHEMGR scm = HandleToScm!(SidCacheMgr);
 //
 //     if (scm != NULL)
 //     {
@@ -1723,7 +1714,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //     scm = ReferenceSidCacheMgr(SidCacheMgr);
 //     if (scm != NULL)
 //     {
-//         InterlockedIncrement(&ReqResult->RefCount);
+//         InterlockedIncrement!(&ReqResult->RefCount);
 //
 //         DereferenceSidCacheMgr(scm);
 //     }
@@ -1739,7 +1730,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //     scm = ReferenceSidCacheMgr(SidCacheMgr);
 //     if (scm != NULL)
 //     {
-//         if (InterlockedDecrement(&ReqResult->RefCount) == 0)
+//         if (InterlockedDecrement!(&ReqResult->RefCount) == 0)
 //         {
 //             HeapFree(scm->Heap,
 //                      0,
@@ -1830,7 +1821,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //         /* call the completion callback */
 //         if (Found)
 //         {
-//             CompletionProc(SidCacheMgr,
+//             CompletionProc.unwrap_unchecked()(SidCacheMgr,
 //                            pSid,
 //                            ReqResult,
 //                            Context);

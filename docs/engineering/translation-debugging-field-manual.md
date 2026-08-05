@@ -489,6 +489,28 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
+Same root cause as the transmute above — `extern "system" fn` unifies with neither
+`extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is
+to emit the body TWICE under complementary `#[cfg(target_arch)]` arms. It is ABI-correct, and it
+is still a bug factory, because **only half of it is ever compiled**:
+- A fix applied to one twin is INVISIBLE until someone builds the other arch. `cargo check` on
+  any single target is structurally incapable of catching the divergence.
+- It defeats `crate-repair`'s cross-target agreement rule outright. A width-sensitive numeric
+  cast is only applied when 2+ targets independently demand it, and two targets can never agree
+  about a site that exists on exactly one of them. On aclui this withheld **119 of 119** repairs;
+  collapsing the twins first let 105 of them through on the next run.
+- The 64-bit twin had by then accumulated arch-BAKED casts the i386 twin never got
+  (`KillTimer(hwnd, (wParam as UINT) as u64)`), so the two bodies had silently drifted apart.
+
+**Fix: own the callback type locally instead.** `UNBLOCK="DLGPROC WNDPROC ..."` in the module's
+`gen_driver_types.sh` profile emits it into THIS crate's island, where `normalize_island_abi.py`
+spells it `extern "system"` on all three arches; one definition then serves every target. Watch
+for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
+`PTHREAD_START_ROUTINE`, and the WNDPROC slot that matters is a FIELD of `_WNDCLASSW`, so
+unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
+folds existing pairs, refusing any whose bodies differ by more than cast decoration.
+
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it
 is easier to miss because there is no bindgen slot to disagree with — the typedef and both its
@@ -829,6 +851,16 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
+`ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
+A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's
+`pub use ntdll_sys::nt::*`, and every `LPTSTR`/`LPCTSTR`/`TCHAR` in the translation silently
+means the NARROW type. aclui surfaced it loudly — `*mut i8` into `SetDlgItemTextW` — but that was
+luck: the same alias inside `size_of::<TCHAR>()` compiles clean and sizes every buffer at half.
+The A/W *function* aliases are usually derived into the crate prelude and the *type* family
+forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
+`LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
+
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
 cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
@@ -894,6 +926,15 @@ which is skipped rather than guessed at. Those three took the tree from 102 find
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
   in **both** the append and the size math.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
+- **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
+  on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
+  so anything that projects one island onto another by NAME misses the slot entirely.
+  `normalize_island_abi.py` left 40 of msv1_0's `SECPKG_FUNCTION_TABLE` slots spelled
+  `extern "C"` on both 64-bit twins for exactly this reason, while the translation spelled
+  every one of them `extern "system"` — 31 E0308s that appear on the 64-bit arches ONLY, from
+  an island the i386 build had already normalized clean. The fix is to key on the struct FIELD
+  and resolve through the alias, which is what the pass now does. ntsecpkg.h writes its whole
+  SSP/AP surface this way, so expect it in any module lsasrv dispatches into.
 
 ### Indexing a bindgen flexible array past [0] — the panic class
 bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` for i≥1
@@ -1517,6 +1558,17 @@ nobody traced what the contradiction meant. **Baselining a constant contradictio
 bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
 unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
 
+It also runs the other way: **a glob-imported unit const captures a LOCAL VARIABLE of the same
+name, because `let Name: T;` is then a constant PATTERN, not a binding.** msv1_0's
+`BuildTokenGroups` has the C's `PTOKEN_GROUPS TokenGroups;`, and ntdll-sys exports
+`pub const TokenGroups: _TOKEN_INFORMATION_CLASS` (the enum member). The `let` bound nothing,
+and the next line failed with `E0070: cannot assign to this expression` pointing at a name that
+looks like an ordinary local — the error never mentions the const it resolved to. C's separate
+tag/ordinary namespaces make a local named after an enum member completely normal, so expect
+this in any module that touches a `*_INFORMATION_CLASS`. Rename the LOCAL (no ABI consequence)
+rather than the import. Loud here; the silent cousin is the same name in a `match` arm — see
+"An undefined constant in a `match` arm becomes an irrefutable CATCH-ALL".
+
 ### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
 `ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
 `ndk/*/ketypes.h` says DEBUG=1, UNIPROCESSOR=2 — **the two were swapped**, and i386 and amd64
@@ -2033,6 +2085,44 @@ of them were **ours**, not the model's:
   `#define`s it to `SystemFunction036`, so the prototype bindgen sees is already renamed and
   allowlisting the documented name matched nothing.)
 
+  **STRING LITERALS are the same class and were the blind spot: compare them as a MULTISET
+  against the C, per file.** The constant diff above only reaches things spelled as
+  constants. A demangler, a formatter or a path builder carries its behaviour in string
+  literals instead, and there a permutation is invisible to every other check — the SET of
+  strings in the file is unchanged, so nothing is missing, invented, or out of range.
+  `tools/verify_translation_literals.py` is that comparison, and it found two the first time
+  it ran:
+
+  * `undname.c`'s calling-convention switch shipped `case 'C'/'D'` as `"__stdcall"` where the
+    C says `"pascal"` — and `"__stdcall"` is a genuine member of that very switch, eight
+    lines down in its `else` twin. Every `?f@@YCXXZ` would demangle wrong, forever, silently.
+  * `time.c`'s `GetTimeFormatW(..., L"HH':'mm':'ss", ...)` shipped as `HH:'mm:'ss` — in a
+    picture string `'` QUOTES the character it surrounds, so the C forces a literal colon and
+    the translation asked for the locale's separator, with an unbalanced quote left over.
+    This one had already LANDED and was green on every gate it ever ran.
+
+  For a LOOKUP TABLE the multiset is not enough, and undname.c is the worked example: 155
+  `case 'X': ... "name"` pairs, and a translation that swapped two of them leaves the
+  literal multiset *and* the case-label set both perfectly intact. The sharper check is to
+  extract the ordered `(case label, first string literal in the arm)` sequence from both
+  files and `difflib` them — 155 pairs, and the only diffs were an extractor artifact
+  (grouped `case 'A': case 'B':` reports its LAST label while a Rust `b'A' | b'B' =>` arm
+  reports its first). Same idea for a pure `code -> string` function like `get_simple_type`:
+  build the map on both sides and compare it, not its values. Worth ten minutes on any file
+  whose job IS a table.
+
+  Multiset, not set, is the whole point for the file-wide check: a literal moved from one arm
+  to another leaves the set identical and changes exactly two counts. Make it usable rather than noisy by teaching
+  it what is representation instead of content — assembly text (`__ASM_GLOBAL_FUNC` vs
+  `global_asm!`), no-op debug channels, `L"..."` spelled as interleaved bytes, `\0` vs
+  `\x00`, a `static char[64]` built rather than written — and above all the C arms this build
+  does NOT compile. That last one is not optional: `asctime`'s `"%s %s %2d ..."` is the
+  `_MSVCR_VER>=140` arm and the shipping one is `%02d`, so a checker blind to `#if` sends you
+  hunting a bug that is not there. Two smaller traps in writing the checker itself, both of
+  which silently UN-skip content: Rust loop labels (`'fail:`) look like the start of a char
+  literal and desynchronise a naive comment scanner for the rest of the file, and a `;` in a
+  `#[cfg(any())]` attribute's own trailing comment ends the "find this item" scan early.
+
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
 `--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is
@@ -2287,6 +2377,26 @@ already been met the note is describing a bug, not a plan.
   name becomes a bare tuple no-op.**
 - **`verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`** — its regex is multi-line.
   **Diff the `.spec` export list against the assembled `#[no_mangle]` set before building.**
+- **A prefast declaration written with the function TYPE becomes a null STATIC, and takes the
+  body with it.** fastfat's devctrl.c:32 says `IO_COMPLETION_ROUTINE FatDeviceControlCompletionRoutine;`
+  — `<function type> <name>;`, no `*`, which declares the FUNCTION. That reads exactly like a
+  variable declaration, so it came back as
+  `pub static mut FatDeviceControlCompletionRoutine: IO_COMPLETION_ROUTINE = None;` and the real
+  body 350 lines further down was never translated at all. The call site then handed
+  `IoSetCompletionRoutine` a `None`, nothing signalled the event, and the
+  `KeWaitForSingleObject` two screens below — null timeout — waited forever. Nothing else could
+  catch it: a PRIVATE function that vanishes takes its callers' references with it, so there is
+  no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
+  under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
+  declarations and only the second is a variable.
+- **The oracle for this whole class is the C TEXT, not the plan** —
+  `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
+  C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
+  provides its own functions and is skipped), understands `#if 0`, SAL annotations and
+  macro-expanded definitions (`CSR_API(SrvFoo)`), and reports the reverse direction — a Rust fn
+  whose name the C never mentions — as a possible INVENTED callee. It does not evaluate
+  `#if`/`#ifdef` generally, so a config-gated function is the known residual false positive.
+  **Run it after every flip.**
 
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
@@ -2713,6 +2823,17 @@ N+1 as evidence that the fix for bug N was wrong.**
   function tail — the jump never reaches it. Related but distinct from the replication shape in
   "A C lexer was masking Rust output" above: replication is faithful (each copy returns), a
   self-referential block is not.
+- **A reinterpreting read `*(T*)&field` becomes a read of `field` CAST TO A POINTER.** The C
+  `LogonTime.QuadPart >= *(UINT64*)&UserInfo->All.AccountExpires` takes the ADDRESS of an
+  OLD_LARGE_INTEGER (a split `LowPart`/`HighPart` pair with no `QuadPart` member at all) and
+  reads those eight bytes as one integer. msv1_0's `sam.rs` came back with
+  `*((*UserInfo).All.AccountExpires.QuadPart as *const UINT64)` — a field that does not exist,
+  and if it had, a *timestamp value* dereferenced as an address. It failed loudly here only
+  because bindgen models OLD_LARGE_INTEGER without a `QuadPart`; **the same rewrite over a real
+  LARGE_INTEGER compiles and reads a wild pointer.** The Rust is
+  `*(core::ptr::addr_of!(x.field) as *const T)`. Grep translated output for `.QuadPart as *`
+  and, more generally, for any `as *const`/`as *mut` whose operand is a struct FIELD rather than
+  a pointer.
 - **An out-parameter passed by ADDRESS instead of BY VALUE.** A C++ `T*& out` or `T** out`
   parameter has already lowered to `*mut *mut T` in Rust, so `addr_of_mut!(out)` adds a level of
   indirection: the callee writes into THIS frame's parameter slot and the caller's pointer is

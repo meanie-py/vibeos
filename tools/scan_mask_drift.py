@@ -131,7 +131,11 @@ NOLINT_IDS = {"", "all", "mask-drift", "mask_drift", "scan_mask_drift"}
 # `Cr4` is `cr4` in the Rust), and nothing in this tree gives one scope two
 # variables differing only in case.
 C_MASK_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*&=?\s*~\s*(\(?[^;{}]*)")
-RS_MASK_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*&=?\s*!\s*(\(?[^;{}]*)")
+# The Rust side tolerates parens between `&=` and the `!`, because a repair pass that widens
+# the mask to the target's type writes `X &= (!(A | B)) as u32` — semantically the identical
+# clear, but a pattern anchored on `&=\s*!` sees no mask at all and reports DROPPED. That
+# false positive cost four findings on aclui the day crate-repair first widened a mask.
+RS_MASK_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*&=?\s*\(*\s*!\s*(\(?[^;{}]*)")
 
 # An UPPER_SNAKE token is a constant name; `0x300`, `as ULONG`, `sizeof` are not.
 CONST_NAME_RE = re.compile(r"\b([A-Z][A-Z0-9_]{2,})\b")

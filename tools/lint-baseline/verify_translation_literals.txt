@@ -1,0 +1,43 @@
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: '%ls\\n\\nProgram: %ls\\n%ls\\n\\nPress OK to exit the program, or Cancel to start the Wine debugger.\\n' appears 1x here and 0x in exit.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file.c: file_crit.crit' appears 1x here and 0x in file.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file_crit.crit' appears 1x here and 0x in file.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'C' appears 7x here and 6x in locale.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'stdcall' appears 1x here and 0x in locale.c
+EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/undname.rs: '\\" %s' appears 1x here and 0x in undname.c
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: '@:\\\\' appears 1x in dir.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:' appears 1x in dir.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:\\\\' appears 1x in dir.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/errno.rs: ': ' appears 2x in errno.c and 1x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/errno.rs: '\\n' appears 2x in errno.c and 1x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: '%ls\\n\\nProgram: %ls\\n%ls\\n\\n' appears 1x in exit.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: ': MSVCRT_onexit_cs' appears 1x in exit.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: 'Press OK to exit the program, or Cancel to start the Wine debugger.\\n' appears 1x in exit.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': MSVCRT_file_cs' appears 1x in file.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': file_crit.crit' appears 2x in file.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '' appears 1x in locale.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '.' appears 1x in locale.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: ', %ax\\n\\t' appears 2x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '.cfi_adjust_cfa_offset -4\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '.cfi_adjust_cfa_offset 4\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '1:\\n\\t' appears 2x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'addl $4, %esp\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'andw $~' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'cmpw %ax, 2(%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fldcw (%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fldcw 2(%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fldl 8(%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fnstcw (%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fstpl 8(%esp)\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'fwait\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'je 1f\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'jz 1f\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'movw %ax, 2(%esp)\\n\\t' appears 2x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'movw (%esp), %ax\\n\\t' appears 2x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'subl $4, %esp\\n\\t' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: 'testw $' appears 1x in math.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/process.rs: '.bat' appears 1x in process.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/process.rs: '.cmd' appears 1x in process.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/process.rs: '.com' appears 1x in process.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/process.rs: '.exe' appears 1x in process.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/time.rs: 'PDT' appears 1x in time.c and 0x here
+MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/time.rs: 'PST' appears 1x in time.c and 0x here
