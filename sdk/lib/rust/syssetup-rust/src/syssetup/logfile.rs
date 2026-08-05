@@ -88,7 +88,7 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
         pszFormatBuffer = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            ((FORMAT_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as u64,
+            ((FORMAT_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as SIZE_T,
         ) as PWSTR;
         if pszFormatBuffer.is_null() {
             'done: loop {
@@ -107,13 +107,13 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
         }
 
         // va_start/va_end happen in the C trampoline; `args_list` is the live va_list it passed.
-        vsnwprintf(pszFormatBuffer, FORMAT_BUFFER_SIZE, pszMessage, args_list);
+        _vsnwprintf(pszFormatBuffer, FORMAT_BUFFER_SIZE, pszMessage, args_list);
     }
 
     pszLineBuffer = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        ((LINE_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as u64,
+        ((LINE_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as SIZE_T,
     ) as PWSTR;
     if pszLineBuffer.is_null() {
         'done: loop {
@@ -135,13 +135,13 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
         pszLineBuffer,
         LINE_BUFFER_SIZE,
         w!("%02d/%02d/%04d %02d:%02d:%02d.%03d, %s, %d, %s, %s\r\n") as PCWSTR,
-        stTime.wMonth,
-        stTime.wDay,
-        stTime.wYear,
-        stTime.wHour,
-        stTime.wMinute,
-        stTime.wSecond,
-        stTime.wMilliseconds,
+        stTime.wMonth as c_int,
+        stTime.wDay as c_int,
+        stTime.wYear as c_int,
+        stTime.wHour as c_int,
+        stTime.wMinute as c_int,
+        stTime.wSecond as c_int,
+        stTime.wMilliseconds as c_int,
         if !pszFileName.is_null() { pszFileName } else { w!("") as PCWSTR },
         nLineNumber,
         if !pszTag.is_null() { pszTag } else { w!("") as PCWSTR },
@@ -154,7 +154,7 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
     pszOutputBuffer = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (ulOutputSize) as u64,
+        (ulOutputSize) as SIZE_T,
     ) as PSTR;
     if pszOutputBuffer.is_null() {
         'done: loop {
