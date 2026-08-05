@@ -1,4 +1,4 @@
-/* rust_recyclebin_bridges_stub.cpp — the three bridges folders/CRecycleBin.cpp could not take
+/* rust_recyclebin_bridges_stub.cpp — the bridges folders/CRecycleBin.cpp could not take
  * with it when it flipped to Rust (shell32-rust/src/folders/CRecycleBin.rs).
  *
  * The other two bridges that block lived beside — CRecycleBinEnum_CreateInstance_RustBridge and
@@ -7,10 +7,10 @@
  * the Rust TU slice publishes those two symbols itself. What is left here is what still has a
  * C++ implementation on the other side of the call:
  *
- *   - CRecyclerDropTarget_CreateInstance is defined in droptargets/CRecyclerDropTarget.cpp,
- *     which is still C++, and is declared in folders/CRecycleBin.h WITHOUT EXTERN_C, so its
- *     symbol is C++-mangled and Rust cannot name it. A one-line forwarder is cheaper and more
- *     honest than changing the linkage of a function whose only caller is this forwarder.
+ *   - CRecyclerDropTarget's forwarder is GONE: that class is now Rust too
+ *     (shell32-rust/src/droptargets/CRecyclerDropTarget.rs) and the Rust slice publishes
+ *     CRecyclerDropTarget_CreateInstance_RustBridge itself, so a C++ forwarder here would be a
+ *     duplicate symbol rather than a peer.
  *
  *   - CRecycleBinFolderViewCB is a C++ class in a TU that CANNOT be bought: the deterministic
  *     scaffold preflight refuses it twice over (no OBJECT_ENTRY activation, and a
@@ -32,12 +32,6 @@
 #include "precomp.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
-
-extern "C" HRESULT WINAPI
-CRecyclerDropTarget_CreateInstance_RustBridge(REFIID riid, LPVOID *ppvOut)
-{
-    return CRecyclerDropTarget_CreateInstance(riid, ppvOut);
-}
 
 extern "C" HRESULT WINAPI
 CRecycleBinFolderViewCB_CreateInstance_RustBridge(

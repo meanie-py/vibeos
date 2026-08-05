@@ -438,6 +438,20 @@ because the declaration is all the call site can see; and `verify_ffi`'s arity c
 against `ntoskrnl.spec`, which does not describe a crate-local shim. Only the crate's own decl
 against the crate's own definition sees it.
 
+**A cohab flip can CREATE this bug across languages, and neither compiler can see it.** When a
+C++ class moves to Rust, the generated `--internal` factory takes the aggregation outer as an
+extra leading argument, so Rust publishes `#[no_mangle] extern "C" fn X_CreateInstance(outer,
+riid, ppv)` while the C++ header still declares `HRESULT X_CreateInstance(REFIID, LPVOID*)`.
+Same name, same `extern "C"`, different arity: it links silently, and the C++ caller's `riid`
+lands in `outer` and its `ppv` in `riid`, so the out-pointer is read from a register that holds
+a GUID address. cdecl again means no stack damage and no diagnostic. shell32's
+CRecyclerDropTarget hit exactly this (8deb9f26010). The fix is a 2-argument `_RustBridge`
+adapter that supplies the outer, and the rule is: **when flipping a class, diff the Rust
+factory's parameter list against the C header's declaration before deciding the C++ side just
+needs `EXTERN_C`.** CDefViewBckgrndMenu in the same lane needed only `EXTERN_C`, because its
+`--internal` form takes `psf` where the other took an outer — so the arity happened to match.
+Do not generalise from one flip to the next; look.
+
 **Three things that are NOT this bug**, baselined with reasons rather than "fixed": an
 **address-only forward decl** (`fn BaseThreadStartup();` exists so kernel32 can write
 `BaseThreadStartup as ULONG_PTR` into a new thread's `Rip` — never called through, so its arity
@@ -1233,6 +1247,18 @@ Two traps specific to this move:
   (~73 on shell32). Blocklist the interfaces with `EXTRA_BL_ITEMS` *and* re-export them with
   `EXTRA_RAW_LINES`: blocklisting removes the definition, not the references, so without the
   re-export the island fails E0412 on its own output.
+  Where an interface slipped through and IS island-typed, the failure is not identity but
+  **callability**: bindgen wraps every vtable slot in `Option<fn>` where a hand-written vtable
+  module uses raw fn pointers, so `((*(*p).lpVtbl).Release)(p)` is `E0618: expected function,
+  found Option<...>` — which reads like a missing `.unwrap()` and is really "you took this
+  interface from the wrong module". shell32's CDefViewBckgrndMenu hit it on `IDropTarget`; the
+  fix is one explicit `use crate::shellcom::{IDropTarget, IDropTargetVtbl};`, not an unwrap.
+  And when you import an interface from the vtable module, **the GUID family has to come with
+  it, all of it**: the slots are spelled with that module's `GUID`, the `IID_*` statics with its
+  `IID`, and the signatures with its `REFIID`/`REFGUID`. Taking some and not the rest does not
+  reduce the error count, it MOVES the mismatch from the vtable slots to the statics — measured
+  on CFSDropTarget, where importing `GUID`/`IID` without `REFIID` sat at exactly the same 89
+  errors as importing none of them.
 - **A duplicate layout in your vtable module is a real cost, but check WHO ELSE COMPILES THAT
   FILE before collapsing it.** shell32's `shellcom.rs` hand-writes `SHITEMID`/`ITEMIDLIST`
   beside the island's `_ITEMIDLIST`; two structurally identical `#[repr(C, packed)]`
@@ -3039,6 +3065,12 @@ N+1 as evidence that the fix for bug N was wrong.**
   feeds a condition, so there is no type error to catch it. `shlexec`'s verb probe took the
   `runas` path whenever `AssocQueryStringW` *failed*. Grep any HRESULT compared `>= 0` or `< 0`
   for an intervening `as u32` / `as DWORD`.
+  The macro also comes back **expanded twice** — `if ((hr) >= 0) >= 0` in
+  CDefViewBckgrndMenu's QueryContextMenu, where the scaffold's expansion and the model's own
+  stacked. Rust catches that one (`expected bool, found integer`) only because it has no
+  bool-to-int coercion; in C++ it would have compared `true` against 0 and inverted the branch
+  that decides whether the folder's own menu items are counted. So it is a *type* error here and
+  a *silent* one anywhere else — worth grepping `>= 0) >= 0` and `< 0) < 0` after any run.
 - **`goto L` lowered to a block that jumps to ITSELF** — `'L: { break 'L; }` placed at the goto
   SITE rather than spanning what the goto skips. It compiles, it is a no-op, and execution falls
   straight through into the code the `goto` existed to bypass. In `SHELL_ExecuteW` the

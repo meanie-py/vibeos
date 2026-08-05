@@ -1147,13 +1147,29 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
   `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
   translatable and left `CEnumMergedFolder` with only its activation shape.
-  `droptargets/CFSDropTarget.cpp` is **bought and banked but not flipped**: all 21 bodies are in
-  `shell32-rust/src/droptargets/CFSDropTarget.rs` (19 paid, one on the sanctioned retry, `_DoDrop`
-  hand-written after two envelope refusals), carrying an `ORPHAN-BY-DESIGN` banner because the
-  file, the island and `shellcom` each declare their own
-  `IDataObject`/`IUnknown`/`IShellFolderView`/`STGMEDIUM`/`CFSDropTarget` and deciding which module
-  owns each is the actual remaining work — a wrong vtable there corrupts on drag-and-drop rather
-  than failing to build.
+  **Three more whole-TU flips landed 2026-08-05** — `droptargets/CFSDropTarget.cpp`,
+  `droptargets/CRecyclerDropTarget.cpp` and `CDefViewBckgrndMenu.cpp` — and between them they
+  settled the per-module type-ownership question that had CFSDropTarget parked
+  `ORPHAN-BY-DESIGN`. The answer is three-way and none of it is optional:
+  **`shellcom` owns the COM vtable ABI** (imported explicitly, which outranks the prelude's
+  island glob, and the GUID family has to move WITH it — taking some and not the rest merely
+  relocates the mismatch from the vtable slots to the `IID_*` statics);
+  **the island owns data layouts**, so every PIDL / POINT / STRRET / GUID crossing INTO a
+  shellcom slot takes a `.cast()` at the call site (shellcom.rs:91 already says why it keeps
+  layout-identical copies and that the cast is the price);
+  **the file owns whatever neither has** — e.g. `IShellFolderView`, whose island form is
+  bindgen's opaque `vtable_: *const c_void` with no callable slot, and `_DoDropData`, whose
+  island form names the island's ATL-shaped `CFSDropTarget` and would read `data->This` at the
+  wrong offsets on the receiving thread.
+  A fourth rule fell out of CDefViewBckgrndMenu and is worth knowing before the next flip: the
+  island renders IDropTarget's vtable slots as `Option<fn>` where shellcom uses raw fn pointers,
+  so an island-typed interface pointer cannot be CALLED at all (E0618, not a mismatch).
+  Two shellcom vtables grew trailing slots to make this work, and both are additive for the same
+  reason — a `usize` slot is the same SIZE as a fn pointer and cannot be called, so typing one
+  changes the vtable's type and not its layout, and nothing in the tree builds either as a
+  literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
+  `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
+  shobjidl.idl:866.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
   `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
   arches: they are the first shell32 TUs to take their substrate from the **bindgen island**

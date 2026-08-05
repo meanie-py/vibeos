@@ -140,11 +140,11 @@ list(APPEND SOURCE
     # shell32-rust/src/folders/CRecycleBin.rs, and BOTH file-local COM classes came across too —
     # CRecycleBinEnum.rs and CRecycleBinItemContextMenu.rs, each an internal ShellObjectCreator
     # object with no OBJECT_ENTRY, so both needed `--cpp-com --internal`.
-    # THREE of its five retained bridges could NOT come across, because their far side is still
-    # C++ (CRecyclerDropTarget and CRecycleBinFolderViewCB each own a separate .cpp, and the
-    # latter cannot be bought at all — its scaffold preflight refuses it twice). They are now
+    # TWO of its five retained bridges still could not come across, both for CRecycleBinFolderViewCB,
+    # which cannot be bought at all — its scaffold preflight refuses it twice. They are now
     # rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
-    # move exposed in CRecycleBinFolderViewCB.
+    # move exposed in that class. (The third, CRecyclerDropTarget_CreateInstance, has since
+    # gone Rust with its own .cpp.)
     # SHQueryRecycleBin{A,W} are hand-written in the Rust slice: bindgen renders IRecycleBin,
     # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
     folders/CRecycleBinFolderViewCB.cpp
@@ -159,7 +159,12 @@ list(APPEND SOURCE
     # already-flipped CFSFolder. Rust now publishes the
     # CFSDropTarget_CreateInstance_RustBridge that cfs_folder.rs links against, so the C++
     # bridge here would have been a duplicate symbol rather than a peer.
-    droptargets/CRecyclerDropTarget.cpp
+    # droptargets/CRecyclerDropTarget.cpp — replaced by Rust
+    # (shell32-rust/src/droptargets/CRecyclerDropTarget.rs); cohab via libshell32_rust.a.
+    # Whole-TU flip: an internal ShellObjectCreator class with no OBJECT_ENTRY. Its two callers
+    # (the Rust CRecycleBin and the still-C++ CDefaultContextMenu) both go through
+    # CRecyclerDropTarget_CreateInstance_RustBridge, which Rust publishes; the C++ forwarder
+    # that used to live in rust_recyclebin_bridges_stub.cpp is gone with it.
     # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     # shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
     # shlfileop.cpp — replaced by Rust (shell32-rust/src/shell32/shlfileop.rs); cohab via libshell32_rust.a
@@ -177,7 +182,12 @@ list(APPEND SOURCE
     # was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes
     # that now. Its IDispatchImpl<> template arguments — plibid/piid/wMajor/wMinor — are baked
     # into the Rust translation, since a template reaches no TU and so has no body to translate.
-    CDefViewBckgrndMenu.cpp
+    # CDefViewBckgrndMenu.cpp — replaced by Rust
+    # (shell32-rust/src/shell32/CDefViewBckgrndMenu.rs); cohab via libshell32_rust.a. Whole-TU
+    # flip: an internal ShellObjectCreator class with no OBJECT_ENTRY, whose only outside entry
+    # point is CDefViewBckgrndMenu_CreateInstance. Its one caller is the still-C++
+    # CDefView.cpp:3578, so shfldr.h's forward declaration became EXTERN_C to name the
+    # unmangled cdecl symbol Rust publishes — same treatment CDefViewUtil's helpers got.
     # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a

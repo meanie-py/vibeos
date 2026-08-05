@@ -83,6 +83,8 @@ pub mod drop_target_helper;
 // Assembled at the C tree's path (droptargets/) by rustconv; keep that path stable for re-runs.
 #[path = "droptargets/CFSDropTarget.rs"]
 pub mod fs_drop_target;
+#[path = "droptargets/CRecyclerDropTarget.rs"]
+pub mod recycler_drop_target;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;
@@ -176,6 +178,12 @@ pub mod dialogs_dialogs;
 // free-function TUs, so it is wired here instead of from shell32/mod.rs.
 #[path = "shell32/CDefViewDual.rs"]
 pub mod def_view_dual;
+
+// CDefViewBckgrndMenu — the folder-background context menu. Same wiring rationale as
+// CDefViewDual above: assembled under shell32/ to keep the re-run path stable, wired here
+// because it is a COM class and not one of that module's free-function TUs.
+#[path = "shell32/CDefViewBckgrndMenu.rs"]
+pub mod def_view_bckgrnd_menu;
 
 // The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
 // these two are the retained closure that kept the .cpp compiled — its free helpers and
