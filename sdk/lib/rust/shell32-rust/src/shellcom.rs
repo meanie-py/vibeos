@@ -563,12 +563,19 @@ pub struct IDataObject {
 }
 #[repr(C)]
 pub struct IDataObjectVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    // A `usize` slot and a fn-pointer slot are the same size, so typing one changes the vtable's
+    // TYPE and not its LAYOUT. These three were typed for CFSDropTarget, which calls all of them;
+    // it is additive because a `usize` slot cannot be called, so no existing caller could have
+    // been reading them (checked: nothing in the crate constructs an IDataObjectVtbl literal, and
+    // every other consumer passes `*mut IDataObject` around opaquely).
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IDataObject, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IDataObject) -> ULONG,
     pub GetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void, *mut c_void) -> HRESULT,
     pub GetDataHere: usize,
-    pub QueryGetData: usize,
+    // `c_void` for the FORMATETC, matching GetData/SetData below for the reason given there.
+    pub QueryGetData: unsafe extern "system" fn(*mut IDataObject, *mut c_void) -> HRESULT,
     pub GetCanonicalFormatEtc: usize,
     // Typed for shellutils.h's DataObject_SetData. FORMATETC/STGMEDIUM stay `c_void` to match
     // GetData above, so the one shape of this vtable serves both island and hand-written callers.
