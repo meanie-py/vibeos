@@ -33,9 +33,13 @@ Baseline is EMPTY = strict. A new unexplained orphan fails the gate.
 
 The banner is an ASSERTION, so it is also checked in the other direction: a file that
 carries it and IS reachable from a `mod` chain is a [STALE-BANNER] finding. That matters
-beyond tidiness — `scan_extern_arity` and `scan_cc_mismatch` both skip a file the moment
-they see the banner, on the premise that nothing compiles it. When the premise goes false
-the exemption stops being free and starts hiding a live module from two gates.
+beyond tidiness — `scan_extern_arity`, `scan_cc_mismatch` and `scan_silent_failures` all
+skip a file the moment they see the banner, on the premise that nothing compiles it. When
+the premise goes false the exemption stops being free and starts hiding a live module from
+three gates. It found two real `.unwrap()`s in shipping shlfileop.rs on its first run.
+
+Before stripping a banner, run all three: `grep -rl ORPHAN-BY-DESIGN tools/*.py` is the
+authoritative list, because it grows.
 
 WHAT IS NOT AN ORPHAN:
   build.rs / tests/ / benches/ / examples/ (cargo compiles these by their own
@@ -176,8 +180,8 @@ def main():
     for path in stale:
         print(
             f"{os.path.relpath(path, repo)}:1: [STALE-BANNER] a `mod` chain DOES reach this "
-            f"file, so its `{BANNER}` banner is false — and scan_extern_arity and "
-            f"scan_cc_mismatch both skip a file on sight of that banner. Delete the banner "
+            f"file, so its `{BANNER}` banner is false — and scan_extern_arity, scan_cc_mismatch "
+            f"and scan_silent_failures all skip a file on sight of that banner. Delete the banner "
             f"now that the file is wired."
         )
     if args.show_declared:
