@@ -1,12 +1,28 @@
 //! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip. All 21 bodies are here — 19
 //! bought, `_RepositionItems` on the sanctioned retry, `_DoDrop` hand-written — but the file is
-//! deliberately in no `mod` chain so shell32-rust keeps compiling. What blocks it is one
-//! substrate decision, not a grind: this file declares its own IDataObject / IUnknown /
-//! IShellFolderView / STGMEDIUM / CFSDropTarget, the bindgen island declares a second set and
-//! `shellcom` a third, and the ~78 remaining errors are that identity mismatch plus its
-//! knock-on. Measured both ways — prelude glob alone leaves 80, types/win32/shellcom alone
-//! leaves 78 — so neither glob is close; the work is choosing per interface which module OWNS
-//! it. Guessing a vtable shape there does not fail loudly, it corrupts on drag-and-drop.
+//! deliberately in no `mod` chain so shell32-rust keeps compiling. ~78 errors remain, and they
+//! are ONE substrate decision rather than a grind — measured both ways, the prelude glob alone
+//! leaves 80 and types/win32/shellcom alone leaves 78, so neither is close.
+//!
+//! Diffing the vtables (not guessing) splits the interfaces three ways:
+//!   * `IDropTarget` — shellcom's is SLOT-FOR-SLOT IDENTICAL to the copy below; only parameter
+//!     names and formatting differ. Delete this one and take shellcom's.
+//!   * `IDataObject` — the actual blocker. shellcom's vtable is a deliberately PARTIAL view:
+//!     right slot count and order, but `QueryInterface`/`AddRef`/`GetDataHere`/`QueryGetData`/
+//!     `GetCanonicalFormatEtc`/`EnumFormatEtc`/`DAdvise`/`DUnadvise`/`EnumDAdvise` are `usize`
+//!     placeholders and `GetData`/`SetData` take `*mut c_void` (deliberately, per its own
+//!     comment, so one shape serves island and hand-written callers alike). This TU CALLS
+//!     `QueryGetData` and passes real `FORMATETC`/`STGMEDIUM`, so it cannot use shellcom's
+//!     as-is. Typing those slots is not a local edit: ~40 landed COM modules compile against
+//!     shellcom.
+//!   * `IObjectWithSite`/`IPersistFile`/`IShellLinkW`/`IAsyncOperation`/`IAdviseSink`/
+//!     `IEnumFORMATETC`/`IEnumSTATDATA`/`IMoniker`/`IBindCtx`/`IEnumMoniker`/`IStream`/
+//!     `IEnumString`/`IRunningObjectTable` — shellcom has none of these; the copies below are
+//!     the only ones and stay.
+//!
+//! `exe_drop_handler.rs` is the landed sibling that globs shellcom+types and declares only what
+//! shellcom lacks — but it never calls `QueryGetData`, which is exactly why it never hit this.
+//! Guessing a vtable shape here does not fail loudly; it corrupts on drag-and-drop.
 //! Owner: task #48. Do NOT delete: re-translating costs a real API call.
 
 // rustconv-assembly: class:CFSDropTarget
