@@ -7385,6 +7385,259 @@ pub const STRSAFE_IGNORE_NULL_UNICODE_STRINGS: u32 = 65536;
 pub const STRSAFE_UNICODE_STRING_DEST_NULL_TERMINATED: u32 = 131072;
 pub const STRSAFE_VALID_FLAGS: u32 = 8191;
 pub const STRSAFE_UNICODE_STRING_VALID_FLAGS: u32 = 204799;
+pub const GDIP_EMFPLUS_RECORD_BASE: u32 = 16384;
+pub const GDIP_WMF_RECORD_BASE: u32 = 65536;
+pub const FlatnessDefault: f64 = 0.25;
+pub const PixelFormatIndexed: u32 = 65536;
+pub const PixelFormatGDI: u32 = 131072;
+pub const PixelFormatAlpha: u32 = 262144;
+pub const PixelFormatPAlpha: u32 = 524288;
+pub const PixelFormatExtended: u32 = 1048576;
+pub const PixelFormatCanonical: u32 = 2097152;
+pub const PixelFormatUndefined: u32 = 0;
+pub const PixelFormatDontCare: u32 = 0;
+pub const PixelFormat1bppIndexed: u32 = 196865;
+pub const PixelFormat4bppIndexed: u32 = 197634;
+pub const PixelFormat8bppIndexed: u32 = 198659;
+pub const PixelFormat16bppGrayScale: u32 = 1052676;
+pub const PixelFormat16bppRGB555: u32 = 135173;
+pub const PixelFormat16bppRGB565: u32 = 135174;
+pub const PixelFormat16bppARGB1555: u32 = 397319;
+pub const PixelFormat24bppRGB: u32 = 137224;
+pub const PixelFormat32bppRGB: u32 = 139273;
+pub const PixelFormat32bppARGB: u32 = 2498570;
+pub const PixelFormat32bppPARGB: u32 = 925707;
+pub const PixelFormat48bppRGB: u32 = 1060876;
+pub const PixelFormat64bppARGB: u32 = 3424269;
+pub const PixelFormat64bppPARGB: u32 = 1851406;
+pub const PixelFormat32bppCMYK: u32 = 8207;
+pub const PixelFormatMax: u32 = 16;
+pub const GDIP_EMFPLUSFLAGS_DISPLAY: u32 = 1;
+pub const PropertyTagTypeByte: u32 = 1;
+pub const PropertyTagTypeASCII: u32 = 2;
+pub const PropertyTagTypeShort: u32 = 3;
+pub const PropertyTagTypeLong: u32 = 4;
+pub const PropertyTagTypeRational: u32 = 5;
+pub const PropertyTagTypeUndefined: u32 = 7;
+pub const PropertyTagTypeSLONG: u32 = 9;
+pub const PropertyTagTypeSRational: u32 = 10;
+pub const PropertyTagExifIFD: u32 = 34665;
+pub const PropertyTagGpsIFD: u32 = 34853;
+pub const PropertyTagNewSubfileType: u32 = 254;
+pub const PropertyTagSubfileType: u32 = 255;
+pub const PropertyTagImageWidth: u32 = 256;
+pub const PropertyTagImageHeight: u32 = 257;
+pub const PropertyTagBitsPerSample: u32 = 258;
+pub const PropertyTagCompression: u32 = 259;
+pub const PropertyTagPhotometricInterp: u32 = 262;
+pub const PropertyTagThreshHolding: u32 = 263;
+pub const PropertyTagCellWidth: u32 = 264;
+pub const PropertyTagCellHeight: u32 = 265;
+pub const PropertyTagFillOrder: u32 = 266;
+pub const PropertyTagDocumentName: u32 = 269;
+pub const PropertyTagImageDescription: u32 = 270;
+pub const PropertyTagEquipMake: u32 = 271;
+pub const PropertyTagEquipModel: u32 = 272;
+pub const PropertyTagStripOffsets: u32 = 273;
+pub const PropertyTagOrientation: u32 = 274;
+pub const PropertyTagSamplesPerPixel: u32 = 277;
+pub const PropertyTagRowsPerStrip: u32 = 278;
+pub const PropertyTagStripBytesCount: u32 = 279;
+pub const PropertyTagMinSampleValue: u32 = 280;
+pub const PropertyTagMaxSampleValue: u32 = 281;
+pub const PropertyTagXResolution: u32 = 282;
+pub const PropertyTagYResolution: u32 = 283;
+pub const PropertyTagPlanarConfig: u32 = 284;
+pub const PropertyTagPageName: u32 = 285;
+pub const PropertyTagXPosition: u32 = 286;
+pub const PropertyTagYPosition: u32 = 287;
+pub const PropertyTagFreeOffset: u32 = 288;
+pub const PropertyTagFreeByteCounts: u32 = 289;
+pub const PropertyTagGrayResponseUnit: u32 = 290;
+pub const PropertyTagGrayResponseCurve: u32 = 291;
+pub const PropertyTagT4Option: u32 = 292;
+pub const PropertyTagT6Option: u32 = 293;
+pub const PropertyTagResolutionUnit: u32 = 296;
+pub const PropertyTagPageNumber: u32 = 297;
+pub const PropertyTagTransferFuncition: u32 = 301;
+pub const PropertyTagSoftwareUsed: u32 = 305;
+pub const PropertyTagDateTime: u32 = 306;
+pub const PropertyTagArtist: u32 = 315;
+pub const PropertyTagHostComputer: u32 = 316;
+pub const PropertyTagPredictor: u32 = 317;
+pub const PropertyTagWhitePoint: u32 = 318;
+pub const PropertyTagPrimaryChromaticities: u32 = 319;
+pub const PropertyTagColorMap: u32 = 320;
+pub const PropertyTagHalftoneHints: u32 = 321;
+pub const PropertyTagTileWidth: u32 = 322;
+pub const PropertyTagTileLength: u32 = 323;
+pub const PropertyTagTileOffset: u32 = 324;
+pub const PropertyTagTileByteCounts: u32 = 325;
+pub const PropertyTagInkSet: u32 = 332;
+pub const PropertyTagInkNames: u32 = 333;
+pub const PropertyTagNumberOfInks: u32 = 334;
+pub const PropertyTagDotRange: u32 = 336;
+pub const PropertyTagTargetPrinter: u32 = 337;
+pub const PropertyTagExtraSamples: u32 = 338;
+pub const PropertyTagSampleFormat: u32 = 339;
+pub const PropertyTagSMinSampleValue: u32 = 340;
+pub const PropertyTagSMaxSampleValue: u32 = 341;
+pub const PropertyTagTransferRange: u32 = 342;
+pub const PropertyTagJPEGProc: u32 = 512;
+pub const PropertyTagJPEGInterFormat: u32 = 513;
+pub const PropertyTagJPEGInterLength: u32 = 514;
+pub const PropertyTagJPEGRestartInterval: u32 = 515;
+pub const PropertyTagJPEGLosslessPredictors: u32 = 517;
+pub const PropertyTagJPEGPointTransforms: u32 = 518;
+pub const PropertyTagJPEGQTables: u32 = 519;
+pub const PropertyTagJPEGDCTables: u32 = 520;
+pub const PropertyTagJPEGACTables: u32 = 521;
+pub const PropertyTagYCbCrCoefficients: u32 = 529;
+pub const PropertyTagYCbCrSubsampling: u32 = 530;
+pub const PropertyTagYCbCrPositioning: u32 = 531;
+pub const PropertyTagREFBlackWhite: u32 = 532;
+pub const PropertyTagICCProfile: u32 = 34675;
+pub const PropertyTagGamma: u32 = 769;
+pub const PropertyTagICCProfileDescriptor: u32 = 770;
+pub const PropertyTagSRGBRenderingIntent: u32 = 771;
+pub const PropertyTagImageTitle: u32 = 800;
+pub const PropertyTagCopyright: u32 = 33432;
+pub const PropertyTagResolutionXUnit: u32 = 20481;
+pub const PropertyTagResolutionYUnit: u32 = 20482;
+pub const PropertyTagResolutionXLengthUnit: u32 = 20483;
+pub const PropertyTagResolutionYLengthUnit: u32 = 20484;
+pub const PropertyTagPrintFlags: u32 = 20485;
+pub const PropertyTagPrintFlagsVersion: u32 = 20486;
+pub const PropertyTagPrintFlagsCrop: u32 = 20487;
+pub const PropertyTagPrintFlagsBleedWidth: u32 = 20488;
+pub const PropertyTagPrintFlagsBleedWidthScale: u32 = 20489;
+pub const PropertyTagHalftoneLPI: u32 = 20490;
+pub const PropertyTagHalftoneLPIUnit: u32 = 20491;
+pub const PropertyTagHalftoneDegree: u32 = 20492;
+pub const PropertyTagHalftoneShape: u32 = 20493;
+pub const PropertyTagHalftoneMisc: u32 = 20494;
+pub const PropertyTagHalftoneScreen: u32 = 20495;
+pub const PropertyTagJPEGQuality: u32 = 20496;
+pub const PropertyTagGridSize: u32 = 20497;
+pub const PropertyTagThumbnailFormat: u32 = 20498;
+pub const PropertyTagThumbnailWidth: u32 = 20499;
+pub const PropertyTagThumbnailHeight: u32 = 20500;
+pub const PropertyTagThumbnailColorDepth: u32 = 20501;
+pub const PropertyTagThumbnailPlanes: u32 = 20502;
+pub const PropertyTagThumbnailRawBytes: u32 = 20503;
+pub const PropertyTagThumbnailSize: u32 = 20504;
+pub const PropertyTagThumbnailCompressedSize: u32 = 20505;
+pub const PropertyTagColorTransferFunction: u32 = 20506;
+pub const PropertyTagThumbnailData: u32 = 20507;
+pub const PropertyTagThumbnailImageWidth: u32 = 20512;
+pub const PropertyTagThumbnailImageHeight: u32 = 20513;
+pub const PropertyTagThumbnailBitsPerSample: u32 = 20514;
+pub const PropertyTagThumbnailCompression: u32 = 20515;
+pub const PropertyTagThumbnailPhotometricInterp: u32 = 20516;
+pub const PropertyTagThumbnailImageDescription: u32 = 20517;
+pub const PropertyTagThumbnailEquipMake: u32 = 20518;
+pub const PropertyTagThumbnailEquipModel: u32 = 20519;
+pub const PropertyTagThumbnailStripOffsets: u32 = 20520;
+pub const PropertyTagThumbnailOrientation: u32 = 20521;
+pub const PropertyTagThumbnailSamplesPerPixel: u32 = 20522;
+pub const PropertyTagThumbnailRowsPerStrip: u32 = 20523;
+pub const PropertyTagThumbnailStripBytesCount: u32 = 20524;
+pub const PropertyTagThumbnailResolutionX: u32 = 20525;
+pub const PropertyTagThumbnailResolutionY: u32 = 20526;
+pub const PropertyTagThumbnailPlanarConfig: u32 = 20527;
+pub const PropertyTagThumbnailResolutionUnit: u32 = 20528;
+pub const PropertyTagThumbnailTransferFunction: u32 = 20529;
+pub const PropertyTagThumbnailSoftwareUsed: u32 = 20530;
+pub const PropertyTagThumbnailDateTime: u32 = 20531;
+pub const PropertyTagThumbnailArtist: u32 = 20532;
+pub const PropertyTagThumbnailWhitePoint: u32 = 20533;
+pub const PropertyTagThumbnailPrimaryChromaticities: u32 = 20534;
+pub const PropertyTagThumbnailYCbCrCoefficients: u32 = 20535;
+pub const PropertyTagThumbnailYCbCrSubsampling: u32 = 20536;
+pub const PropertyTagThumbnailYCbCrPositioning: u32 = 20537;
+pub const PropertyTagThumbnailRefBlackWhite: u32 = 20538;
+pub const PropertyTagThumbnailCopyRight: u32 = 20539;
+pub const PropertyTagLuminanceTable: u32 = 20624;
+pub const PropertyTagChrominanceTable: u32 = 20625;
+pub const PropertyTagFrameDelay: u32 = 20736;
+pub const PropertyTagLoopCount: u32 = 20737;
+pub const PropertyTagGlobalPalette: u32 = 20738;
+pub const PropertyTagIndexBackground: u32 = 20739;
+pub const PropertyTagIndexTransparent: u32 = 20740;
+pub const PropertyTagPixelUnit: u32 = 20752;
+pub const PropertyTagPixelPerUnitX: u32 = 20753;
+pub const PropertyTagPixelPerUnitY: u32 = 20754;
+pub const PropertyTagPaletteHistogram: u32 = 20755;
+pub const PropertyTagExifExposureTime: u32 = 33434;
+pub const PropertyTagExifFNumber: u32 = 33437;
+pub const PropertyTagExifExposureProg: u32 = 34850;
+pub const PropertyTagExifSpectralSense: u32 = 34852;
+pub const PropertyTagExifISOSpeed: u32 = 34855;
+pub const PropertyTagExifOECF: u32 = 34856;
+pub const PropertyTagExifVer: u32 = 36864;
+pub const PropertyTagExifDTOrig: u32 = 36867;
+pub const PropertyTagExifDTDigitized: u32 = 36868;
+pub const PropertyTagExifCompConfig: u32 = 37121;
+pub const PropertyTagExifCompBPP: u32 = 37122;
+pub const PropertyTagExifShutterSpeed: u32 = 37377;
+pub const PropertyTagExifAperture: u32 = 37378;
+pub const PropertyTagExifBrightness: u32 = 37379;
+pub const PropertyTagExifExposureBias: u32 = 37380;
+pub const PropertyTagExifMaxAperture: u32 = 37381;
+pub const PropertyTagExifSubjectDist: u32 = 37382;
+pub const PropertyTagExifMeteringMode: u32 = 37383;
+pub const PropertyTagExifLightSource: u32 = 37384;
+pub const PropertyTagExifFlash: u32 = 37385;
+pub const PropertyTagExifFocalLength: u32 = 37386;
+pub const PropertyTagExifMakerNote: u32 = 37500;
+pub const PropertyTagExifUserComment: u32 = 37510;
+pub const PropertyTagExifDTSubsec: u32 = 37520;
+pub const PropertyTagExifDTOrigSS: u32 = 37521;
+pub const PropertyTagExifDTDigSS: u32 = 37522;
+pub const PropertyTagExifFPXVer: u32 = 40960;
+pub const PropertyTagExifColorSpace: u32 = 40961;
+pub const PropertyTagExifPixXDim: u32 = 40962;
+pub const PropertyTagExifPixYDim: u32 = 40963;
+pub const PropertyTagExifRelatedWav: u32 = 40964;
+pub const PropertyTagExifInterop: u32 = 40965;
+pub const PropertyTagExifFlashEnergy: u32 = 41483;
+pub const PropertyTagExifSpatialFR: u32 = 41484;
+pub const PropertyTagExifFocalXRes: u32 = 41486;
+pub const PropertyTagExifFocalYRes: u32 = 41487;
+pub const PropertyTagExifFocalResUnit: u32 = 41488;
+pub const PropertyTagExifSubjectLoc: u32 = 41492;
+pub const PropertyTagExifExposureIndex: u32 = 41493;
+pub const PropertyTagExifSensingMethod: u32 = 41495;
+pub const PropertyTagExifFileSource: u32 = 41728;
+pub const PropertyTagExifSceneType: u32 = 41729;
+pub const PropertyTagExifCfaPattern: u32 = 41730;
+pub const PropertyTagGpsVer: u32 = 0;
+pub const PropertyTagGpsLatitudeRef: u32 = 1;
+pub const PropertyTagGpsLatitude: u32 = 2;
+pub const PropertyTagGpsLongitudeRef: u32 = 3;
+pub const PropertyTagGpsLongitude: u32 = 4;
+pub const PropertyTagGpsAltitudeRef: u32 = 5;
+pub const PropertyTagGpsAltitude: u32 = 6;
+pub const PropertyTagGpsGpsTime: u32 = 7;
+pub const PropertyTagGpsGpsSatellites: u32 = 8;
+pub const PropertyTagGpsGpsStatus: u32 = 9;
+pub const PropertyTagGpsGpsMeasureMode: u32 = 10;
+pub const PropertyTagGpsGpsDop: u32 = 11;
+pub const PropertyTagGpsSpeedRef: u32 = 12;
+pub const PropertyTagGpsSpeed: u32 = 13;
+pub const PropertyTagGpsTrackRef: u32 = 14;
+pub const PropertyTagGpsTrack: u32 = 15;
+pub const PropertyTagGpsImgDirRef: u32 = 16;
+pub const PropertyTagGpsImgDir: u32 = 17;
+pub const PropertyTagGpsMapDatum: u32 = 18;
+pub const PropertyTagGpsDestLatRef: u32 = 19;
+pub const PropertyTagGpsDestLat: u32 = 20;
+pub const PropertyTagGpsDestLongRef: u32 = 21;
+pub const PropertyTagGpsDestLong: u32 = 22;
+pub const PropertyTagGpsDestBearRef: u32 = 23;
+pub const PropertyTagGpsDestBear: u32 = 24;
+pub const PropertyTagGpsDestDistRef: u32 = 25;
+pub const PropertyTagGpsDestDist: u32 = 26;
 pub const SIZE_BORDER_WIDTH: u32 = 0;
 pub const SIZE_SCROLL_WIDTH: u32 = 1;
 pub const SIZE_SCROLL_HEIGHT: u32 = 2;
@@ -26421,6 +26674,7 @@ pub struct tagDEC__bindgen_ty_2__bindgen_ty_1 {
 pub type DECIMAL = tagDEC;
 pub type BSTR = *mut OLECHAR;
 pub type VARIANT_BOOL = ::core::ffi::c_short;
+pub type PROPID = ULONG;
 pub type VARTYPE = ::core::ffi::c_ushort;
 pub type LPUNKNOWN = *mut IUnknown;
 #[repr(C)]
@@ -31848,6 +32102,4632 @@ pub struct _DESK_EXT_INTERFACE {
 }
 pub type DESK_EXT_INTERFACE = _DESK_EXT_INTERFACE;
 pub type PDESK_EXT_INTERFACE = *mut _DESK_EXT_INTERFACE;
+unsafe extern "C" {
+    pub fn GdipAlloc(arg1: SIZE_T) -> *mut ::core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn GdipFree(arg1: *mut ::core::ffi::c_void);
+}
+pub type GraphicsState = UINT;
+pub type GraphicsContainer = UINT;
+pub const Unit_UnitWorld: Unit = 0;
+pub const Unit_UnitDisplay: Unit = 1;
+pub const Unit_UnitPixel: Unit = 2;
+pub const Unit_UnitPoint: Unit = 3;
+pub const Unit_UnitInch: Unit = 4;
+pub const Unit_UnitDocument: Unit = 5;
+pub const Unit_UnitMillimeter: Unit = 6;
+pub type Unit = ::core::ffi::c_uint;
+pub const BrushType_BrushTypeSolidColor: BrushType = 0;
+pub const BrushType_BrushTypeHatchFill: BrushType = 1;
+pub const BrushType_BrushTypeTextureFill: BrushType = 2;
+pub const BrushType_BrushTypePathGradient: BrushType = 3;
+pub const BrushType_BrushTypeLinearGradient: BrushType = 4;
+pub type BrushType = ::core::ffi::c_uint;
+pub const DriverStringOptions_DriverStringOptionsCmapLookup: DriverStringOptions = 1;
+pub const DriverStringOptions_DriverStringOptionsVertical: DriverStringOptions = 2;
+pub const DriverStringOptions_DriverStringOptionsRealizedAdvance: DriverStringOptions = 4;
+pub const DriverStringOptions_DriverStringOptionsLimitSubpixel: DriverStringOptions = 8;
+pub type DriverStringOptions = ::core::ffi::c_uint;
+pub const FillMode_FillModeAlternate: FillMode = 0;
+pub const FillMode_FillModeWinding: FillMode = 1;
+pub type FillMode = ::core::ffi::c_uint;
+pub const LineCap_LineCapFlat: LineCap = 0;
+pub const LineCap_LineCapSquare: LineCap = 1;
+pub const LineCap_LineCapRound: LineCap = 2;
+pub const LineCap_LineCapTriangle: LineCap = 3;
+pub const LineCap_LineCapNoAnchor: LineCap = 16;
+pub const LineCap_LineCapSquareAnchor: LineCap = 17;
+pub const LineCap_LineCapRoundAnchor: LineCap = 18;
+pub const LineCap_LineCapDiamondAnchor: LineCap = 19;
+pub const LineCap_LineCapArrowAnchor: LineCap = 20;
+pub const LineCap_LineCapCustom: LineCap = 255;
+pub const LineCap_LineCapAnchorMask: LineCap = 240;
+pub type LineCap = ::core::ffi::c_uint;
+pub const CustomLineCapType_CustomLineCapTypeDefault: CustomLineCapType = 0;
+pub const CustomLineCapType_CustomLineCapTypeAdjustableArrow: CustomLineCapType = 1;
+pub type CustomLineCapType = ::core::ffi::c_uint;
+pub const PathPointType_PathPointTypeStart: PathPointType = 0;
+pub const PathPointType_PathPointTypeLine: PathPointType = 1;
+pub const PathPointType_PathPointTypeBezier: PathPointType = 3;
+pub const PathPointType_PathPointTypePathTypeMask: PathPointType = 7;
+pub const PathPointType_PathPointTypePathDashMode: PathPointType = 16;
+pub const PathPointType_PathPointTypePathMarker: PathPointType = 32;
+pub const PathPointType_PathPointTypeCloseSubpath: PathPointType = 128;
+pub const PathPointType_PathPointTypeBezier3: PathPointType = 3;
+pub type PathPointType = ::core::ffi::c_uint;
+pub const PenType_PenTypeSolidColor: PenType = 0;
+pub const PenType_PenTypeHatchFill: PenType = 1;
+pub const PenType_PenTypeTextureFill: PenType = 2;
+pub const PenType_PenTypePathGradient: PenType = 3;
+pub const PenType_PenTypeLinearGradient: PenType = 4;
+pub const PenType_PenTypeUnknown: PenType = -1;
+pub type PenType = ::core::ffi::c_int;
+pub const LineJoin_LineJoinMiter: LineJoin = 0;
+pub const LineJoin_LineJoinBevel: LineJoin = 1;
+pub const LineJoin_LineJoinRound: LineJoin = 2;
+pub const LineJoin_LineJoinMiterClipped: LineJoin = 3;
+pub type LineJoin = ::core::ffi::c_uint;
+pub const QualityMode_QualityModeInvalid: QualityMode = -1;
+pub const QualityMode_QualityModeDefault: QualityMode = 0;
+pub const QualityMode_QualityModeLow: QualityMode = 1;
+pub const QualityMode_QualityModeHigh: QualityMode = 2;
+pub type QualityMode = ::core::ffi::c_int;
+pub const SmoothingMode_SmoothingModeInvalid: SmoothingMode = -1;
+pub const SmoothingMode_SmoothingModeDefault: SmoothingMode = 0;
+pub const SmoothingMode_SmoothingModeHighSpeed: SmoothingMode = 1;
+pub const SmoothingMode_SmoothingModeHighQuality: SmoothingMode = 2;
+pub const SmoothingMode_SmoothingModeNone: SmoothingMode = 3;
+pub const SmoothingMode_SmoothingModeAntiAlias: SmoothingMode = 4;
+pub type SmoothingMode = ::core::ffi::c_int;
+pub const CompositingQuality_CompositingQualityInvalid: CompositingQuality = -1;
+pub const CompositingQuality_CompositingQualityDefault: CompositingQuality = 0;
+pub const CompositingQuality_CompositingQualityHighSpeed: CompositingQuality = 1;
+pub const CompositingQuality_CompositingQualityHighQuality: CompositingQuality = 2;
+pub const CompositingQuality_CompositingQualityGammaCorrected: CompositingQuality = 3;
+pub const CompositingQuality_CompositingQualityAssumeLinear: CompositingQuality = 4;
+pub type CompositingQuality = ::core::ffi::c_int;
+pub const InterpolationMode_InterpolationModeInvalid: InterpolationMode = -1;
+pub const InterpolationMode_InterpolationModeDefault: InterpolationMode = 0;
+pub const InterpolationMode_InterpolationModeLowQuality: InterpolationMode = 1;
+pub const InterpolationMode_InterpolationModeHighQuality: InterpolationMode = 2;
+pub const InterpolationMode_InterpolationModeBilinear: InterpolationMode = 3;
+pub const InterpolationMode_InterpolationModeBicubic: InterpolationMode = 4;
+pub const InterpolationMode_InterpolationModeNearestNeighbor: InterpolationMode = 5;
+pub const InterpolationMode_InterpolationModeHighQualityBilinear: InterpolationMode = 6;
+pub const InterpolationMode_InterpolationModeHighQualityBicubic: InterpolationMode = 7;
+pub type InterpolationMode = ::core::ffi::c_int;
+pub const PenAlignment_PenAlignmentCenter: PenAlignment = 0;
+pub const PenAlignment_PenAlignmentInset: PenAlignment = 1;
+pub type PenAlignment = ::core::ffi::c_uint;
+pub const PixelOffsetMode_PixelOffsetModeInvalid: PixelOffsetMode = -1;
+pub const PixelOffsetMode_PixelOffsetModeDefault: PixelOffsetMode = 0;
+pub const PixelOffsetMode_PixelOffsetModeHighSpeed: PixelOffsetMode = 1;
+pub const PixelOffsetMode_PixelOffsetModeHighQuality: PixelOffsetMode = 2;
+pub const PixelOffsetMode_PixelOffsetModeNone: PixelOffsetMode = 3;
+pub const PixelOffsetMode_PixelOffsetModeHalf: PixelOffsetMode = 4;
+pub type PixelOffsetMode = ::core::ffi::c_int;
+pub const DashCap_DashCapFlat: DashCap = 0;
+pub const DashCap_DashCapRound: DashCap = 2;
+pub const DashCap_DashCapTriangle: DashCap = 3;
+pub type DashCap = ::core::ffi::c_uint;
+pub const DashStyle_DashStyleSolid: DashStyle = 0;
+pub const DashStyle_DashStyleDash: DashStyle = 1;
+pub const DashStyle_DashStyleDot: DashStyle = 2;
+pub const DashStyle_DashStyleDashDot: DashStyle = 3;
+pub const DashStyle_DashStyleDashDotDot: DashStyle = 4;
+pub const DashStyle_DashStyleCustom: DashStyle = 5;
+pub type DashStyle = ::core::ffi::c_uint;
+pub const MatrixOrder_MatrixOrderPrepend: MatrixOrder = 0;
+pub const MatrixOrder_MatrixOrderAppend: MatrixOrder = 1;
+pub type MatrixOrder = ::core::ffi::c_uint;
+pub const ImageType_ImageTypeUnknown: ImageType = 0;
+pub const ImageType_ImageTypeBitmap: ImageType = 1;
+pub const ImageType_ImageTypeMetafile: ImageType = 2;
+pub type ImageType = ::core::ffi::c_uint;
+pub const WarpMode_WarpModePerspective: WarpMode = 0;
+pub const WarpMode_WarpModeBilinear: WarpMode = 1;
+pub type WarpMode = ::core::ffi::c_uint;
+pub const WrapMode_WrapModeTile: WrapMode = 0;
+pub const WrapMode_WrapModeTileFlipX: WrapMode = 1;
+pub const WrapMode_WrapModeTileFlipY: WrapMode = 2;
+pub const WrapMode_WrapModeTileFlipXY: WrapMode = 3;
+pub const WrapMode_WrapModeClamp: WrapMode = 4;
+pub type WrapMode = ::core::ffi::c_uint;
+pub const MetafileType_MetafileTypeInvalid: MetafileType = 0;
+pub const MetafileType_MetafileTypeWmf: MetafileType = 1;
+pub const MetafileType_MetafileTypeWmfPlaceable: MetafileType = 2;
+pub const MetafileType_MetafileTypeEmf: MetafileType = 3;
+pub const MetafileType_MetafileTypeEmfPlusOnly: MetafileType = 4;
+pub const MetafileType_MetafileTypeEmfPlusDual: MetafileType = 5;
+pub type MetafileType = ::core::ffi::c_uint;
+pub const LinearGradientMode_LinearGradientModeHorizontal: LinearGradientMode = 0;
+pub const LinearGradientMode_LinearGradientModeVertical: LinearGradientMode = 1;
+pub const LinearGradientMode_LinearGradientModeForwardDiagonal: LinearGradientMode = 2;
+pub const LinearGradientMode_LinearGradientModeBackwardDiagonal: LinearGradientMode = 3;
+pub type LinearGradientMode = ::core::ffi::c_uint;
+pub const EmfType_EmfTypeEmfOnly: EmfType = 3;
+pub const EmfType_EmfTypeEmfPlusOnly: EmfType = 4;
+pub const EmfType_EmfTypeEmfPlusDual: EmfType = 5;
+pub type EmfType = ::core::ffi::c_uint;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsDefault: EmfToWmfBitsFlags = 0;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsEmbedEmf: EmfToWmfBitsFlags = 1;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsIncludePlaceable: EmfToWmfBitsFlags = 2;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsNoXORClip: EmfToWmfBitsFlags = 4;
+pub type EmfToWmfBitsFlags = ::core::ffi::c_uint;
+pub const CompositingMode_CompositingModeSourceOver: CompositingMode = 0;
+pub const CompositingMode_CompositingModeSourceCopy: CompositingMode = 1;
+pub type CompositingMode = ::core::ffi::c_uint;
+pub const TextRenderingHint_TextRenderingHintSystemDefault: TextRenderingHint = 0;
+pub const TextRenderingHint_TextRenderingHintSingleBitPerPixelGridFit: TextRenderingHint = 1;
+pub const TextRenderingHint_TextRenderingHintSingleBitPerPixel: TextRenderingHint = 2;
+pub const TextRenderingHint_TextRenderingHintAntiAliasGridFit: TextRenderingHint = 3;
+pub const TextRenderingHint_TextRenderingHintAntiAlias: TextRenderingHint = 4;
+pub const TextRenderingHint_TextRenderingHintClearTypeGridFit: TextRenderingHint = 5;
+pub type TextRenderingHint = ::core::ffi::c_uint;
+pub const StringAlignment_StringAlignmentNear: StringAlignment = 0;
+pub const StringAlignment_StringAlignmentCenter: StringAlignment = 1;
+pub const StringAlignment_StringAlignmentFar: StringAlignment = 2;
+pub type StringAlignment = ::core::ffi::c_uint;
+pub const StringDigitSubstitute_StringDigitSubstituteUser: StringDigitSubstitute = 0;
+pub const StringDigitSubstitute_StringDigitSubstituteNone: StringDigitSubstitute = 1;
+pub const StringDigitSubstitute_StringDigitSubstituteNational: StringDigitSubstitute = 2;
+pub const StringDigitSubstitute_StringDigitSubstituteTraditional: StringDigitSubstitute = 3;
+pub type StringDigitSubstitute = ::core::ffi::c_uint;
+pub const StringFormatFlags_StringFormatFlagsDirectionRightToLeft: StringFormatFlags = 1;
+pub const StringFormatFlags_StringFormatFlagsDirectionVertical: StringFormatFlags = 2;
+pub const StringFormatFlags_StringFormatFlagsNoFitBlackBox: StringFormatFlags = 4;
+pub const StringFormatFlags_StringFormatFlagsDisplayFormatControl: StringFormatFlags = 32;
+pub const StringFormatFlags_StringFormatFlagsNoFontFallback: StringFormatFlags = 1024;
+pub const StringFormatFlags_StringFormatFlagsMeasureTrailingSpaces: StringFormatFlags = 2048;
+pub const StringFormatFlags_StringFormatFlagsNoWrap: StringFormatFlags = 4096;
+pub const StringFormatFlags_StringFormatFlagsLineLimit: StringFormatFlags = 8192;
+pub const StringFormatFlags_StringFormatFlagsNoClip: StringFormatFlags = 16384;
+pub type StringFormatFlags = ::core::ffi::c_uint;
+pub const StringTrimming_StringTrimmingNone: StringTrimming = 0;
+pub const StringTrimming_StringTrimmingCharacter: StringTrimming = 1;
+pub const StringTrimming_StringTrimmingWord: StringTrimming = 2;
+pub const StringTrimming_StringTrimmingEllipsisCharacter: StringTrimming = 3;
+pub const StringTrimming_StringTrimmingEllipsisWord: StringTrimming = 4;
+pub const StringTrimming_StringTrimmingEllipsisPath: StringTrimming = 5;
+pub type StringTrimming = ::core::ffi::c_uint;
+pub const FontStyle_FontStyleRegular: FontStyle = 0;
+pub const FontStyle_FontStyleBold: FontStyle = 1;
+pub const FontStyle_FontStyleItalic: FontStyle = 2;
+pub const FontStyle_FontStyleBoldItalic: FontStyle = 3;
+pub const FontStyle_FontStyleUnderline: FontStyle = 4;
+pub const FontStyle_FontStyleStrikeout: FontStyle = 8;
+pub type FontStyle = ::core::ffi::c_uint;
+pub const HotkeyPrefix_HotkeyPrefixNone: HotkeyPrefix = 0;
+pub const HotkeyPrefix_HotkeyPrefixShow: HotkeyPrefix = 1;
+pub const HotkeyPrefix_HotkeyPrefixHide: HotkeyPrefix = 2;
+pub type HotkeyPrefix = ::core::ffi::c_uint;
+pub const ImageCodecFlags_ImageCodecFlagsEncoder: ImageCodecFlags = 1;
+pub const ImageCodecFlags_ImageCodecFlagsDecoder: ImageCodecFlags = 2;
+pub const ImageCodecFlags_ImageCodecFlagsSupportBitmap: ImageCodecFlags = 4;
+pub const ImageCodecFlags_ImageCodecFlagsSupportVector: ImageCodecFlags = 8;
+pub const ImageCodecFlags_ImageCodecFlagsSeekableEncode: ImageCodecFlags = 16;
+pub const ImageCodecFlags_ImageCodecFlagsBlockingDecode: ImageCodecFlags = 32;
+pub const ImageCodecFlags_ImageCodecFlagsBuiltin: ImageCodecFlags = 65536;
+pub const ImageCodecFlags_ImageCodecFlagsSystem: ImageCodecFlags = 131072;
+pub const ImageCodecFlags_ImageCodecFlagsUser: ImageCodecFlags = 262144;
+pub type ImageCodecFlags = ::core::ffi::c_uint;
+pub const ImageFlags_ImageFlagsNone: ImageFlags = 0;
+pub const ImageFlags_ImageFlagsScalable: ImageFlags = 1;
+pub const ImageFlags_ImageFlagsHasAlpha: ImageFlags = 2;
+pub const ImageFlags_ImageFlagsHasTranslucent: ImageFlags = 4;
+pub const ImageFlags_ImageFlagsPartiallyScalable: ImageFlags = 8;
+pub const ImageFlags_ImageFlagsColorSpaceRGB: ImageFlags = 16;
+pub const ImageFlags_ImageFlagsColorSpaceCMYK: ImageFlags = 32;
+pub const ImageFlags_ImageFlagsColorSpaceGRAY: ImageFlags = 64;
+pub const ImageFlags_ImageFlagsColorSpaceYCBCR: ImageFlags = 128;
+pub const ImageFlags_ImageFlagsColorSpaceYCCK: ImageFlags = 256;
+pub const ImageFlags_ImageFlagsHasRealDPI: ImageFlags = 4096;
+pub const ImageFlags_ImageFlagsHasRealPixelSize: ImageFlags = 8192;
+pub const ImageFlags_ImageFlagsReadOnly: ImageFlags = 65536;
+pub const ImageFlags_ImageFlagsCaching: ImageFlags = 131072;
+pub type ImageFlags = ::core::ffi::c_uint;
+pub const CombineMode_CombineModeReplace: CombineMode = 0;
+pub const CombineMode_CombineModeIntersect: CombineMode = 1;
+pub const CombineMode_CombineModeUnion: CombineMode = 2;
+pub const CombineMode_CombineModeXor: CombineMode = 3;
+pub const CombineMode_CombineModeExclude: CombineMode = 4;
+pub const CombineMode_CombineModeComplement: CombineMode = 5;
+pub type CombineMode = ::core::ffi::c_uint;
+pub const FlushIntention_FlushIntentionFlush: FlushIntention = 0;
+pub const FlushIntention_FlushIntentionSync: FlushIntention = 1;
+pub type FlushIntention = ::core::ffi::c_uint;
+pub const CoordinateSpace_CoordinateSpaceWorld: CoordinateSpace = 0;
+pub const CoordinateSpace_CoordinateSpacePage: CoordinateSpace = 1;
+pub const CoordinateSpace_CoordinateSpaceDevice: CoordinateSpace = 2;
+pub type CoordinateSpace = ::core::ffi::c_uint;
+pub const GpTestControlEnum_TestControlForceBilinear: GpTestControlEnum = 0;
+pub const GpTestControlEnum_TestControlNoICM: GpTestControlEnum = 1;
+pub const GpTestControlEnum_TestControlGetBuildNumber: GpTestControlEnum = 2;
+pub type GpTestControlEnum = ::core::ffi::c_uint;
+pub const MetafileFrameUnit_MetafileFrameUnitPixel: MetafileFrameUnit = 2;
+pub const MetafileFrameUnit_MetafileFrameUnitPoint: MetafileFrameUnit = 3;
+pub const MetafileFrameUnit_MetafileFrameUnitInch: MetafileFrameUnit = 4;
+pub const MetafileFrameUnit_MetafileFrameUnitDocument: MetafileFrameUnit = 5;
+pub const MetafileFrameUnit_MetafileFrameUnitMillimeter: MetafileFrameUnit = 6;
+pub const MetafileFrameUnit_MetafileFrameUnitGdi: MetafileFrameUnit = 7;
+pub type MetafileFrameUnit = ::core::ffi::c_uint;
+pub const HatchStyle_HatchStyleHorizontal: HatchStyle = 0;
+pub const HatchStyle_HatchStyleVertical: HatchStyle = 1;
+pub const HatchStyle_HatchStyleForwardDiagonal: HatchStyle = 2;
+pub const HatchStyle_HatchStyleBackwardDiagonal: HatchStyle = 3;
+pub const HatchStyle_HatchStyleCross: HatchStyle = 4;
+pub const HatchStyle_HatchStyleDiagonalCross: HatchStyle = 5;
+pub const HatchStyle_HatchStyle05Percent: HatchStyle = 6;
+pub const HatchStyle_HatchStyle10Percent: HatchStyle = 7;
+pub const HatchStyle_HatchStyle20Percent: HatchStyle = 8;
+pub const HatchStyle_HatchStyle25Percent: HatchStyle = 9;
+pub const HatchStyle_HatchStyle30Percent: HatchStyle = 10;
+pub const HatchStyle_HatchStyle40Percent: HatchStyle = 11;
+pub const HatchStyle_HatchStyle50Percent: HatchStyle = 12;
+pub const HatchStyle_HatchStyle60Percent: HatchStyle = 13;
+pub const HatchStyle_HatchStyle70Percent: HatchStyle = 14;
+pub const HatchStyle_HatchStyle75Percent: HatchStyle = 15;
+pub const HatchStyle_HatchStyle80Percent: HatchStyle = 16;
+pub const HatchStyle_HatchStyle90Percent: HatchStyle = 17;
+pub const HatchStyle_HatchStyleLightDownwardDiagonal: HatchStyle = 18;
+pub const HatchStyle_HatchStyleLightUpwardDiagonal: HatchStyle = 19;
+pub const HatchStyle_HatchStyleDarkDownwardDiagonal: HatchStyle = 20;
+pub const HatchStyle_HatchStyleDarkUpwardDiagonal: HatchStyle = 21;
+pub const HatchStyle_HatchStyleWideDownwardDiagonal: HatchStyle = 22;
+pub const HatchStyle_HatchStyleWideUpwardDiagonal: HatchStyle = 23;
+pub const HatchStyle_HatchStyleLightVertical: HatchStyle = 24;
+pub const HatchStyle_HatchStyleLightHorizontal: HatchStyle = 25;
+pub const HatchStyle_HatchStyleNarrowVertical: HatchStyle = 26;
+pub const HatchStyle_HatchStyleNarrowHorizontal: HatchStyle = 27;
+pub const HatchStyle_HatchStyleDarkVertical: HatchStyle = 28;
+pub const HatchStyle_HatchStyleDarkHorizontal: HatchStyle = 29;
+pub const HatchStyle_HatchStyleDashedDownwardDiagonal: HatchStyle = 30;
+pub const HatchStyle_HatchStyleDashedUpwardDiagonal: HatchStyle = 31;
+pub const HatchStyle_HatchStyleDashedHorizontal: HatchStyle = 32;
+pub const HatchStyle_HatchStyleDashedVertical: HatchStyle = 33;
+pub const HatchStyle_HatchStyleSmallConfetti: HatchStyle = 34;
+pub const HatchStyle_HatchStyleLargeConfetti: HatchStyle = 35;
+pub const HatchStyle_HatchStyleZigZag: HatchStyle = 36;
+pub const HatchStyle_HatchStyleWave: HatchStyle = 37;
+pub const HatchStyle_HatchStyleDiagonalBrick: HatchStyle = 38;
+pub const HatchStyle_HatchStyleHorizontalBrick: HatchStyle = 39;
+pub const HatchStyle_HatchStyleWeave: HatchStyle = 40;
+pub const HatchStyle_HatchStylePlaid: HatchStyle = 41;
+pub const HatchStyle_HatchStyleDivot: HatchStyle = 42;
+pub const HatchStyle_HatchStyleDottedGrid: HatchStyle = 43;
+pub const HatchStyle_HatchStyleDottedDiamond: HatchStyle = 44;
+pub const HatchStyle_HatchStyleShingle: HatchStyle = 45;
+pub const HatchStyle_HatchStyleTrellis: HatchStyle = 46;
+pub const HatchStyle_HatchStyleSphere: HatchStyle = 47;
+pub const HatchStyle_HatchStyleSmallGrid: HatchStyle = 48;
+pub const HatchStyle_HatchStyleSmallCheckerBoard: HatchStyle = 49;
+pub const HatchStyle_HatchStyleLargeCheckerBoard: HatchStyle = 50;
+pub const HatchStyle_HatchStyleOutlinedDiamond: HatchStyle = 51;
+pub const HatchStyle_HatchStyleSolidDiamond: HatchStyle = 52;
+pub const HatchStyle_HatchStyleTotal: HatchStyle = 53;
+pub const HatchStyle_HatchStyleLargeGrid: HatchStyle = 4;
+pub const HatchStyle_HatchStyleMin: HatchStyle = 0;
+pub const HatchStyle_HatchStyleMax: HatchStyle = 52;
+pub type HatchStyle = ::core::ffi::c_uint;
+pub const EmfPlusRecordType_WmfRecordTypeSetBkColor: EmfPlusRecordType = 66049;
+pub const EmfPlusRecordType_WmfRecordTypeSetBkMode: EmfPlusRecordType = 65794;
+pub const EmfPlusRecordType_WmfRecordTypeSetMapMode: EmfPlusRecordType = 65795;
+pub const EmfPlusRecordType_WmfRecordTypeSetROP2: EmfPlusRecordType = 65796;
+pub const EmfPlusRecordType_WmfRecordTypeSetRelAbs: EmfPlusRecordType = 65797;
+pub const EmfPlusRecordType_WmfRecordTypeSetPolyFillMode: EmfPlusRecordType = 65798;
+pub const EmfPlusRecordType_WmfRecordTypeSetStretchBltMode: EmfPlusRecordType = 65799;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextCharExtra: EmfPlusRecordType = 65800;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextColor: EmfPlusRecordType = 66057;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextJustification: EmfPlusRecordType = 66058;
+pub const EmfPlusRecordType_WmfRecordTypeSetWindowOrg: EmfPlusRecordType = 66059;
+pub const EmfPlusRecordType_WmfRecordTypeSetWindowExt: EmfPlusRecordType = 66060;
+pub const EmfPlusRecordType_WmfRecordTypeSetViewportOrg: EmfPlusRecordType = 66061;
+pub const EmfPlusRecordType_WmfRecordTypeSetViewportExt: EmfPlusRecordType = 66062;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetWindowOrg: EmfPlusRecordType = 66063;
+pub const EmfPlusRecordType_WmfRecordTypeScaleWindowExt: EmfPlusRecordType = 66576;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetViewportOrg: EmfPlusRecordType = 66065;
+pub const EmfPlusRecordType_WmfRecordTypeScaleViewportExt: EmfPlusRecordType = 66578;
+pub const EmfPlusRecordType_WmfRecordTypeLineTo: EmfPlusRecordType = 66067;
+pub const EmfPlusRecordType_WmfRecordTypeMoveTo: EmfPlusRecordType = 66068;
+pub const EmfPlusRecordType_WmfRecordTypeExcludeClipRect: EmfPlusRecordType = 66581;
+pub const EmfPlusRecordType_WmfRecordTypeIntersectClipRect: EmfPlusRecordType = 66582;
+pub const EmfPlusRecordType_WmfRecordTypeArc: EmfPlusRecordType = 67607;
+pub const EmfPlusRecordType_WmfRecordTypeEllipse: EmfPlusRecordType = 66584;
+pub const EmfPlusRecordType_WmfRecordTypeFloodFill: EmfPlusRecordType = 66585;
+pub const EmfPlusRecordType_WmfRecordTypePie: EmfPlusRecordType = 67610;
+pub const EmfPlusRecordType_WmfRecordTypeRectangle: EmfPlusRecordType = 66587;
+pub const EmfPlusRecordType_WmfRecordTypeRoundRect: EmfPlusRecordType = 67100;
+pub const EmfPlusRecordType_WmfRecordTypePatBlt: EmfPlusRecordType = 67101;
+pub const EmfPlusRecordType_WmfRecordTypeSaveDC: EmfPlusRecordType = 65566;
+pub const EmfPlusRecordType_WmfRecordTypeSetPixel: EmfPlusRecordType = 66591;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetClipRgn: EmfPlusRecordType = 66080;
+pub const EmfPlusRecordType_WmfRecordTypeTextOut: EmfPlusRecordType = 66849;
+pub const EmfPlusRecordType_WmfRecordTypeBitBlt: EmfPlusRecordType = 67874;
+pub const EmfPlusRecordType_WmfRecordTypeStretchBlt: EmfPlusRecordType = 68387;
+pub const EmfPlusRecordType_WmfRecordTypePolygon: EmfPlusRecordType = 66340;
+pub const EmfPlusRecordType_WmfRecordTypePolyline: EmfPlusRecordType = 66341;
+pub const EmfPlusRecordType_WmfRecordTypeEscape: EmfPlusRecordType = 67110;
+pub const EmfPlusRecordType_WmfRecordTypeRestoreDC: EmfPlusRecordType = 65831;
+pub const EmfPlusRecordType_WmfRecordTypeFillRegion: EmfPlusRecordType = 66088;
+pub const EmfPlusRecordType_WmfRecordTypeFrameRegion: EmfPlusRecordType = 66601;
+pub const EmfPlusRecordType_WmfRecordTypeInvertRegion: EmfPlusRecordType = 65834;
+pub const EmfPlusRecordType_WmfRecordTypePaintRegion: EmfPlusRecordType = 65835;
+pub const EmfPlusRecordType_WmfRecordTypeSelectClipRegion: EmfPlusRecordType = 65836;
+pub const EmfPlusRecordType_WmfRecordTypeSelectObject: EmfPlusRecordType = 65837;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextAlign: EmfPlusRecordType = 65838;
+pub const EmfPlusRecordType_WmfRecordTypeDrawText: EmfPlusRecordType = 67119;
+pub const EmfPlusRecordType_WmfRecordTypeChord: EmfPlusRecordType = 67632;
+pub const EmfPlusRecordType_WmfRecordTypeSetMapperFlags: EmfPlusRecordType = 66097;
+pub const EmfPlusRecordType_WmfRecordTypeExtTextOut: EmfPlusRecordType = 68146;
+pub const EmfPlusRecordType_WmfRecordTypeSetDIBToDev: EmfPlusRecordType = 68915;
+pub const EmfPlusRecordType_WmfRecordTypeSelectPalette: EmfPlusRecordType = 66100;
+pub const EmfPlusRecordType_WmfRecordTypeRealizePalette: EmfPlusRecordType = 65589;
+pub const EmfPlusRecordType_WmfRecordTypeAnimatePalette: EmfPlusRecordType = 66614;
+pub const EmfPlusRecordType_WmfRecordTypeSetPalEntries: EmfPlusRecordType = 65591;
+pub const EmfPlusRecordType_WmfRecordTypePolyPolygon: EmfPlusRecordType = 66872;
+pub const EmfPlusRecordType_WmfRecordTypeResizePalette: EmfPlusRecordType = 65849;
+pub const EmfPlusRecordType_WmfRecordTypeDIBBitBlt: EmfPlusRecordType = 67904;
+pub const EmfPlusRecordType_WmfRecordTypeDIBStretchBlt: EmfPlusRecordType = 68417;
+pub const EmfPlusRecordType_WmfRecordTypeDIBCreatePatternBrush: EmfPlusRecordType = 65858;
+pub const EmfPlusRecordType_WmfRecordTypeStretchDIB: EmfPlusRecordType = 69443;
+pub const EmfPlusRecordType_WmfRecordTypeExtFloodFill: EmfPlusRecordType = 66888;
+pub const EmfPlusRecordType_WmfRecordTypeSetLayout: EmfPlusRecordType = 65865;
+pub const EmfPlusRecordType_WmfRecordTypeResetDC: EmfPlusRecordType = 65868;
+pub const EmfPlusRecordType_WmfRecordTypeStartDoc: EmfPlusRecordType = 65869;
+pub const EmfPlusRecordType_WmfRecordTypeStartPage: EmfPlusRecordType = 65615;
+pub const EmfPlusRecordType_WmfRecordTypeEndPage: EmfPlusRecordType = 65616;
+pub const EmfPlusRecordType_WmfRecordTypeAbortDoc: EmfPlusRecordType = 65618;
+pub const EmfPlusRecordType_WmfRecordTypeEndDoc: EmfPlusRecordType = 65630;
+pub const EmfPlusRecordType_WmfRecordTypeDeleteObject: EmfPlusRecordType = 66032;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePalette: EmfPlusRecordType = 65783;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBrush: EmfPlusRecordType = 65784;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePatternBrush: EmfPlusRecordType = 66041;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePenIndirect: EmfPlusRecordType = 66298;
+pub const EmfPlusRecordType_WmfRecordTypeCreateFontIndirect: EmfPlusRecordType = 66299;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBrushIndirect: EmfPlusRecordType = 66300;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBitmapIndirect: EmfPlusRecordType = 66301;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBitmap: EmfPlusRecordType = 67326;
+pub const EmfPlusRecordType_WmfRecordTypeCreateRegion: EmfPlusRecordType = 67327;
+pub const EmfPlusRecordType_EmfRecordTypeHeader: EmfPlusRecordType = 1;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezier: EmfPlusRecordType = 2;
+pub const EmfPlusRecordType_EmfRecordTypePolygon: EmfPlusRecordType = 3;
+pub const EmfPlusRecordType_EmfRecordTypePolyline: EmfPlusRecordType = 4;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezierTo: EmfPlusRecordType = 5;
+pub const EmfPlusRecordType_EmfRecordTypePolyLineTo: EmfPlusRecordType = 6;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolyline: EmfPlusRecordType = 7;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolygon: EmfPlusRecordType = 8;
+pub const EmfPlusRecordType_EmfRecordTypeSetWindowExtEx: EmfPlusRecordType = 9;
+pub const EmfPlusRecordType_EmfRecordTypeSetWindowOrgEx: EmfPlusRecordType = 10;
+pub const EmfPlusRecordType_EmfRecordTypeSetViewportExtEx: EmfPlusRecordType = 11;
+pub const EmfPlusRecordType_EmfRecordTypeSetViewportOrgEx: EmfPlusRecordType = 12;
+pub const EmfPlusRecordType_EmfRecordTypeSetBrushOrgEx: EmfPlusRecordType = 13;
+pub const EmfPlusRecordType_EmfRecordTypeEOF: EmfPlusRecordType = 14;
+pub const EmfPlusRecordType_EmfRecordTypeSetPixelV: EmfPlusRecordType = 15;
+pub const EmfPlusRecordType_EmfRecordTypeSetMapperFlags: EmfPlusRecordType = 16;
+pub const EmfPlusRecordType_EmfRecordTypeSetMapMode: EmfPlusRecordType = 17;
+pub const EmfPlusRecordType_EmfRecordTypeSetBkMode: EmfPlusRecordType = 18;
+pub const EmfPlusRecordType_EmfRecordTypeSetPolyFillMode: EmfPlusRecordType = 19;
+pub const EmfPlusRecordType_EmfRecordTypeSetROP2: EmfPlusRecordType = 20;
+pub const EmfPlusRecordType_EmfRecordTypeSetStretchBltMode: EmfPlusRecordType = 21;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextAlign: EmfPlusRecordType = 22;
+pub const EmfPlusRecordType_EmfRecordTypeSetColorAdjustment: EmfPlusRecordType = 23;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextColor: EmfPlusRecordType = 24;
+pub const EmfPlusRecordType_EmfRecordTypeSetBkColor: EmfPlusRecordType = 25;
+pub const EmfPlusRecordType_EmfRecordTypeOffsetClipRgn: EmfPlusRecordType = 26;
+pub const EmfPlusRecordType_EmfRecordTypeMoveToEx: EmfPlusRecordType = 27;
+pub const EmfPlusRecordType_EmfRecordTypeSetMetaRgn: EmfPlusRecordType = 28;
+pub const EmfPlusRecordType_EmfRecordTypeExcludeClipRect: EmfPlusRecordType = 29;
+pub const EmfPlusRecordType_EmfRecordTypeIntersectClipRect: EmfPlusRecordType = 30;
+pub const EmfPlusRecordType_EmfRecordTypeScaleViewportExtEx: EmfPlusRecordType = 31;
+pub const EmfPlusRecordType_EmfRecordTypeScaleWindowExtEx: EmfPlusRecordType = 32;
+pub const EmfPlusRecordType_EmfRecordTypeSaveDC: EmfPlusRecordType = 33;
+pub const EmfPlusRecordType_EmfRecordTypeRestoreDC: EmfPlusRecordType = 34;
+pub const EmfPlusRecordType_EmfRecordTypeSetWorldTransform: EmfPlusRecordType = 35;
+pub const EmfPlusRecordType_EmfRecordTypeModifyWorldTransform: EmfPlusRecordType = 36;
+pub const EmfPlusRecordType_EmfRecordTypeSelectObject: EmfPlusRecordType = 37;
+pub const EmfPlusRecordType_EmfRecordTypeCreatePen: EmfPlusRecordType = 38;
+pub const EmfPlusRecordType_EmfRecordTypeCreateBrushIndirect: EmfPlusRecordType = 39;
+pub const EmfPlusRecordType_EmfRecordTypeDeleteObject: EmfPlusRecordType = 40;
+pub const EmfPlusRecordType_EmfRecordTypeAngleArc: EmfPlusRecordType = 41;
+pub const EmfPlusRecordType_EmfRecordTypeEllipse: EmfPlusRecordType = 42;
+pub const EmfPlusRecordType_EmfRecordTypeRectangle: EmfPlusRecordType = 43;
+pub const EmfPlusRecordType_EmfRecordTypeRoundRect: EmfPlusRecordType = 44;
+pub const EmfPlusRecordType_EmfRecordTypeArc: EmfPlusRecordType = 45;
+pub const EmfPlusRecordType_EmfRecordTypeChord: EmfPlusRecordType = 46;
+pub const EmfPlusRecordType_EmfRecordTypePie: EmfPlusRecordType = 47;
+pub const EmfPlusRecordType_EmfRecordTypeSelectPalette: EmfPlusRecordType = 48;
+pub const EmfPlusRecordType_EmfRecordTypeCreatePalette: EmfPlusRecordType = 49;
+pub const EmfPlusRecordType_EmfRecordTypeSetPaletteEntries: EmfPlusRecordType = 50;
+pub const EmfPlusRecordType_EmfRecordTypeResizePalette: EmfPlusRecordType = 51;
+pub const EmfPlusRecordType_EmfRecordTypeRealizePalette: EmfPlusRecordType = 52;
+pub const EmfPlusRecordType_EmfRecordTypeExtFloodFill: EmfPlusRecordType = 53;
+pub const EmfPlusRecordType_EmfRecordTypeLineTo: EmfPlusRecordType = 54;
+pub const EmfPlusRecordType_EmfRecordTypeArcTo: EmfPlusRecordType = 55;
+pub const EmfPlusRecordType_EmfRecordTypePolyDraw: EmfPlusRecordType = 56;
+pub const EmfPlusRecordType_EmfRecordTypeSetArcDirection: EmfPlusRecordType = 57;
+pub const EmfPlusRecordType_EmfRecordTypeSetMiterLimit: EmfPlusRecordType = 58;
+pub const EmfPlusRecordType_EmfRecordTypeBeginPath: EmfPlusRecordType = 59;
+pub const EmfPlusRecordType_EmfRecordTypeEndPath: EmfPlusRecordType = 60;
+pub const EmfPlusRecordType_EmfRecordTypeCloseFigure: EmfPlusRecordType = 61;
+pub const EmfPlusRecordType_EmfRecordTypeFillPath: EmfPlusRecordType = 62;
+pub const EmfPlusRecordType_EmfRecordTypeStrokeAndFillPath: EmfPlusRecordType = 63;
+pub const EmfPlusRecordType_EmfRecordTypeStrokePath: EmfPlusRecordType = 64;
+pub const EmfPlusRecordType_EmfRecordTypeFlattenPath: EmfPlusRecordType = 65;
+pub const EmfPlusRecordType_EmfRecordTypeWidenPath: EmfPlusRecordType = 66;
+pub const EmfPlusRecordType_EmfRecordTypeSelectClipPath: EmfPlusRecordType = 67;
+pub const EmfPlusRecordType_EmfRecordTypeAbortPath: EmfPlusRecordType = 68;
+pub const EmfPlusRecordType_EmfRecordTypeReserved_069: EmfPlusRecordType = 69;
+pub const EmfPlusRecordType_EmfRecordTypeGdiComment: EmfPlusRecordType = 70;
+pub const EmfPlusRecordType_EmfRecordTypeFillRgn: EmfPlusRecordType = 71;
+pub const EmfPlusRecordType_EmfRecordTypeFrameRgn: EmfPlusRecordType = 72;
+pub const EmfPlusRecordType_EmfRecordTypeInvertRgn: EmfPlusRecordType = 73;
+pub const EmfPlusRecordType_EmfRecordTypePaintRgn: EmfPlusRecordType = 74;
+pub const EmfPlusRecordType_EmfRecordTypeExtSelectClipRgn: EmfPlusRecordType = 75;
+pub const EmfPlusRecordType_EmfRecordTypeBitBlt: EmfPlusRecordType = 76;
+pub const EmfPlusRecordType_EmfRecordTypeStretchBlt: EmfPlusRecordType = 77;
+pub const EmfPlusRecordType_EmfRecordTypeMaskBlt: EmfPlusRecordType = 78;
+pub const EmfPlusRecordType_EmfRecordTypePlgBlt: EmfPlusRecordType = 79;
+pub const EmfPlusRecordType_EmfRecordTypeSetDIBitsToDevice: EmfPlusRecordType = 80;
+pub const EmfPlusRecordType_EmfRecordTypeStretchDIBits: EmfPlusRecordType = 81;
+pub const EmfPlusRecordType_EmfRecordTypeExtCreateFontIndirect: EmfPlusRecordType = 82;
+pub const EmfPlusRecordType_EmfRecordTypeExtTextOutA: EmfPlusRecordType = 83;
+pub const EmfPlusRecordType_EmfRecordTypeExtTextOutW: EmfPlusRecordType = 84;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezier16: EmfPlusRecordType = 85;
+pub const EmfPlusRecordType_EmfRecordTypePolygon16: EmfPlusRecordType = 86;
+pub const EmfPlusRecordType_EmfRecordTypePolyline16: EmfPlusRecordType = 87;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezierTo16: EmfPlusRecordType = 88;
+pub const EmfPlusRecordType_EmfRecordTypePolylineTo16: EmfPlusRecordType = 89;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolyline16: EmfPlusRecordType = 90;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolygon16: EmfPlusRecordType = 91;
+pub const EmfPlusRecordType_EmfRecordTypePolyDraw16: EmfPlusRecordType = 92;
+pub const EmfPlusRecordType_EmfRecordTypeCreateMonoBrush: EmfPlusRecordType = 93;
+pub const EmfPlusRecordType_EmfRecordTypeCreateDIBPatternBrushPt: EmfPlusRecordType = 94;
+pub const EmfPlusRecordType_EmfRecordTypeExtCreatePen: EmfPlusRecordType = 95;
+pub const EmfPlusRecordType_EmfRecordTypePolyTextOutA: EmfPlusRecordType = 96;
+pub const EmfPlusRecordType_EmfRecordTypePolyTextOutW: EmfPlusRecordType = 97;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMMode: EmfPlusRecordType = 98;
+pub const EmfPlusRecordType_EmfRecordTypeCreateColorSpace: EmfPlusRecordType = 99;
+pub const EmfPlusRecordType_EmfRecordTypeSetColorSpace: EmfPlusRecordType = 100;
+pub const EmfPlusRecordType_EmfRecordTypeDeleteColorSpace: EmfPlusRecordType = 101;
+pub const EmfPlusRecordType_EmfRecordTypeGLSRecord: EmfPlusRecordType = 102;
+pub const EmfPlusRecordType_EmfRecordTypeGLSBoundedRecord: EmfPlusRecordType = 103;
+pub const EmfPlusRecordType_EmfRecordTypePixelFormat: EmfPlusRecordType = 104;
+pub const EmfPlusRecordType_EmfRecordTypeDrawEscape: EmfPlusRecordType = 105;
+pub const EmfPlusRecordType_EmfRecordTypeExtEscape: EmfPlusRecordType = 106;
+pub const EmfPlusRecordType_EmfRecordTypeStartDoc: EmfPlusRecordType = 107;
+pub const EmfPlusRecordType_EmfRecordTypeSmallTextOut: EmfPlusRecordType = 108;
+pub const EmfPlusRecordType_EmfRecordTypeForceUFIMapping: EmfPlusRecordType = 109;
+pub const EmfPlusRecordType_EmfRecordTypeNamedEscape: EmfPlusRecordType = 110;
+pub const EmfPlusRecordType_EmfRecordTypeColorCorrectPalette: EmfPlusRecordType = 111;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMProfileA: EmfPlusRecordType = 112;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMProfileW: EmfPlusRecordType = 113;
+pub const EmfPlusRecordType_EmfRecordTypeAlphaBlend: EmfPlusRecordType = 114;
+pub const EmfPlusRecordType_EmfRecordTypeSetLayout: EmfPlusRecordType = 115;
+pub const EmfPlusRecordType_EmfRecordTypeTransparentBlt: EmfPlusRecordType = 116;
+pub const EmfPlusRecordType_EmfRecordTypeReserved_117: EmfPlusRecordType = 117;
+pub const EmfPlusRecordType_EmfRecordTypeGradientFill: EmfPlusRecordType = 118;
+pub const EmfPlusRecordType_EmfRecordTypeSetLinkedUFIs: EmfPlusRecordType = 119;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextJustification: EmfPlusRecordType = 120;
+pub const EmfPlusRecordType_EmfRecordTypeColorMatchToTargetW: EmfPlusRecordType = 121;
+pub const EmfPlusRecordType_EmfRecordTypeCreateColorSpaceW: EmfPlusRecordType = 122;
+pub const EmfPlusRecordType_EmfRecordTypeMax: EmfPlusRecordType = 122;
+pub const EmfPlusRecordType_EmfRecordTypeMin: EmfPlusRecordType = 1;
+pub const EmfPlusRecordType_EmfPlusRecordTypeInvalid: EmfPlusRecordType = 16384;
+pub const EmfPlusRecordType_EmfPlusRecordTypeHeader: EmfPlusRecordType = 16385;
+pub const EmfPlusRecordType_EmfPlusRecordTypeEndOfFile: EmfPlusRecordType = 16386;
+pub const EmfPlusRecordType_EmfPlusRecordTypeComment: EmfPlusRecordType = 16387;
+pub const EmfPlusRecordType_EmfPlusRecordTypeGetDC: EmfPlusRecordType = 16388;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatStart: EmfPlusRecordType = 16389;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatSection: EmfPlusRecordType = 16390;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatEnd: EmfPlusRecordType = 16391;
+pub const EmfPlusRecordType_EmfPlusRecordTypeObject: EmfPlusRecordType = 16392;
+pub const EmfPlusRecordType_EmfPlusRecordTypeClear: EmfPlusRecordType = 16393;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillRects: EmfPlusRecordType = 16394;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawRects: EmfPlusRecordType = 16395;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPolygon: EmfPlusRecordType = 16396;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawLines: EmfPlusRecordType = 16397;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillEllipse: EmfPlusRecordType = 16398;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawEllipse: EmfPlusRecordType = 16399;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPie: EmfPlusRecordType = 16400;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawPie: EmfPlusRecordType = 16401;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawArc: EmfPlusRecordType = 16402;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillRegion: EmfPlusRecordType = 16403;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPath: EmfPlusRecordType = 16404;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawPath: EmfPlusRecordType = 16405;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillClosedCurve: EmfPlusRecordType = 16406;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawClosedCurve: EmfPlusRecordType = 16407;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawCurve: EmfPlusRecordType = 16408;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawBeziers: EmfPlusRecordType = 16409;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawImage: EmfPlusRecordType = 16410;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawImagePoints: EmfPlusRecordType = 16411;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawString: EmfPlusRecordType = 16412;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetRenderingOrigin: EmfPlusRecordType = 16413;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetAntiAliasMode: EmfPlusRecordType = 16414;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTextRenderingHint: EmfPlusRecordType = 16415;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTextContrast: EmfPlusRecordType = 16416;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetInterpolationMode: EmfPlusRecordType = 16417;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetPixelOffsetMode: EmfPlusRecordType = 16418;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetCompositingMode: EmfPlusRecordType = 16419;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetCompositingQuality: EmfPlusRecordType = 16420;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSave: EmfPlusRecordType = 16421;
+pub const EmfPlusRecordType_EmfPlusRecordTypeRestore: EmfPlusRecordType = 16422;
+pub const EmfPlusRecordType_EmfPlusRecordTypeBeginContainer: EmfPlusRecordType = 16423;
+pub const EmfPlusRecordType_EmfPlusRecordTypeBeginContainerNoParams: EmfPlusRecordType = 16424;
+pub const EmfPlusRecordType_EmfPlusRecordTypeEndContainer: EmfPlusRecordType = 16425;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetWorldTransform: EmfPlusRecordType = 16426;
+pub const EmfPlusRecordType_EmfPlusRecordTypeResetWorldTransform: EmfPlusRecordType = 16427;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiplyWorldTransform: EmfPlusRecordType = 16428;
+pub const EmfPlusRecordType_EmfPlusRecordTypeTranslateWorldTransform: EmfPlusRecordType = 16429;
+pub const EmfPlusRecordType_EmfPlusRecordTypeScaleWorldTransform: EmfPlusRecordType = 16430;
+pub const EmfPlusRecordType_EmfPlusRecordTypeRotateWorldTransform: EmfPlusRecordType = 16431;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetPageTransform: EmfPlusRecordType = 16432;
+pub const EmfPlusRecordType_EmfPlusRecordTypeResetClip: EmfPlusRecordType = 16433;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipRect: EmfPlusRecordType = 16434;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipPath: EmfPlusRecordType = 16435;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipRegion: EmfPlusRecordType = 16436;
+pub const EmfPlusRecordType_EmfPlusRecordTypeOffsetClip: EmfPlusRecordType = 16437;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawDriverString: EmfPlusRecordType = 16438;
+pub const EmfPlusRecordType_EmfPlusRecordTypeStrokeFillPath: EmfPlusRecordType = 16439;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSerializableObject: EmfPlusRecordType = 16440;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTSGraphics: EmfPlusRecordType = 16441;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTSClip: EmfPlusRecordType = 16442;
+pub const EmfPlusRecordType_EmfPlusRecordTotal: EmfPlusRecordType = 16443;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMax: EmfPlusRecordType = 16442;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMin: EmfPlusRecordType = 16385;
+pub type EmfPlusRecordType = ::core::ffi::c_uint;
+pub type REAL = f32;
+pub const Status_Ok: Status = 0;
+pub const Status_GenericError: Status = 1;
+pub const Status_InvalidParameter: Status = 2;
+pub const Status_OutOfMemory: Status = 3;
+pub const Status_ObjectBusy: Status = 4;
+pub const Status_InsufficientBuffer: Status = 5;
+pub const Status_NotImplemented: Status = 6;
+pub const Status_Win32Error: Status = 7;
+pub const Status_WrongState: Status = 8;
+pub const Status_Aborted: Status = 9;
+pub const Status_FileNotFound: Status = 10;
+pub const Status_ValueOverflow: Status = 11;
+pub const Status_AccessDenied: Status = 12;
+pub const Status_UnknownImageFormat: Status = 13;
+pub const Status_FontFamilyNotFound: Status = 14;
+pub const Status_FontStyleNotFound: Status = 15;
+pub const Status_NotTrueTypeFont: Status = 16;
+pub const Status_UnsupportedGdiplusVersion: Status = 17;
+pub const Status_GdiplusNotInitialized: Status = 18;
+pub const Status_PropertyNotFound: Status = 19;
+pub const Status_PropertyNotSupported: Status = 20;
+pub const Status_ProfileNotFound: Status = 21;
+pub type Status = ::core::ffi::c_uint;
+pub type ImageAbort =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> BOOL>;
+pub type DrawImageAbort = ImageAbort;
+pub type GetThumbnailImageAbort = ImageAbort;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GdiplusAbort {
+    _unused: [u8; 0],
+}
+pub type EnumerateMetafileProc = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: EmfPlusRecordType,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *const BYTE,
+        arg5: *mut ::core::ffi::c_void,
+    ) -> BOOL,
+>;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Point {
+    pub X: INT,
+    pub Y: INT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PointF {
+    pub X: REAL,
+    pub Y: REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PathData {
+    pub Count: INT,
+    pub Points: *mut PointF,
+    pub Types: *mut BYTE,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct RectF {
+    pub X: REAL,
+    pub Y: REAL,
+    pub Width: REAL,
+    pub Height: REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Rect {
+    pub X: INT,
+    pub Y: INT,
+    pub Width: INT,
+    pub Height: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct CharacterRange {
+    pub First: INT,
+    pub Length: INT,
+}
+pub const DebugEventLevel_DebugEventLevelFatal: DebugEventLevel = 0;
+pub const DebugEventLevel_DebugEventLevelWarning: DebugEventLevel = 1;
+pub type DebugEventLevel = ::core::ffi::c_uint;
+pub type DebugEventProc =
+    ::core::option::Option<unsafe extern "system" fn(arg1: DebugEventLevel, arg2: *mut CHAR)>;
+pub type NotificationHookProc =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ULONG_PTR) -> Status>;
+pub type NotificationUnhookProc = ::core::option::Option<unsafe extern "system" fn(arg1: ULONG_PTR)>;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct GdiplusStartupInput {
+    pub GdiplusVersion: UINT32,
+    pub DebugEventCallback: DebugEventProc,
+    pub SuppressBackgroundThread: BOOL,
+    pub SuppressExternalCodecs: BOOL,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GdiplusStartupOutput {
+    pub NotificationHook: NotificationHookProc,
+    pub NotificationUnhook: NotificationUnhookProc,
+}
+unsafe extern "C" {
+    pub fn GdiplusStartup(
+        arg1: *mut ULONG_PTR,
+        arg2: *const GdiplusStartupInput,
+        arg3: *mut GdiplusStartupOutput,
+    ) -> Status;
+}
+unsafe extern "C" {
+    pub fn GdiplusShutdown(arg1: ULONG_PTR);
+}
+pub type ARGB = DWORD;
+pub type PixelFormat = INT;
+pub const PaletteFlags_PaletteFlagsHasAlpha: PaletteFlags = 1;
+pub const PaletteFlags_PaletteFlagsGrayScale: PaletteFlags = 2;
+pub const PaletteFlags_PaletteFlagsHalftone: PaletteFlags = 4;
+pub type PaletteFlags = i32;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ColorPalette {
+    pub Flags: UINT,
+    pub Count: UINT,
+    pub Entries: [ARGB; 1usize],
+}
+pub const DitherType_DitherTypeNone: DitherType = 0;
+pub const DitherType_DitherTypeSolid: DitherType = 1;
+pub const DitherType_DitherTypeOrdered4x4: DitherType = 2;
+pub const DitherType_DitherTypeOrdered8x8: DitherType = 3;
+pub const DitherType_DitherTypeOrdered16x16: DitherType = 4;
+pub const DitherType_DitherTypeSpiral4x4: DitherType = 5;
+pub const DitherType_DitherTypeSpiral8x8: DitherType = 6;
+pub const DitherType_DitherTypeDualSpiral4x4: DitherType = 7;
+pub const DitherType_DitherTypeDualSpiral8x8: DitherType = 8;
+pub const DitherType_DitherTypeErrorDiffusion: DitherType = 9;
+pub const DitherType_DitherTypeMax: DitherType = 10;
+pub type DitherType = ::core::ffi::c_uint;
+pub const PaletteType_PaletteTypeCustom: PaletteType = 0;
+pub const PaletteType_PaletteTypeOptimal: PaletteType = 1;
+pub const PaletteType_PaletteTypeFixedBW: PaletteType = 2;
+pub const PaletteType_PaletteTypeFixedHalftone8: PaletteType = 3;
+pub const PaletteType_PaletteTypeFixedHalftone27: PaletteType = 4;
+pub const PaletteType_PaletteTypeFixedHalftone64: PaletteType = 5;
+pub const PaletteType_PaletteTypeFixedHalftone125: PaletteType = 6;
+pub const PaletteType_PaletteTypeFixedHalftone216: PaletteType = 7;
+pub const PaletteType_PaletteTypeFixedHalftone252: PaletteType = 8;
+pub const PaletteType_PaletteTypeFixedHalftone256: PaletteType = 9;
+pub type PaletteType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ENHMETAHEADER3 {
+    pub iType: DWORD,
+    pub nSize: DWORD,
+    pub rclBounds: RECTL,
+    pub rclFrame: RECTL,
+    pub dSignature: DWORD,
+    pub nVersion: DWORD,
+    pub nBytes: DWORD,
+    pub nRecords: DWORD,
+    pub nHandles: WORD,
+    pub sReserved: WORD,
+    pub nDescription: DWORD,
+    pub offDescription: DWORD,
+    pub nPalEntries: DWORD,
+    pub szlDevice: SIZEL,
+    pub szlMillimeters: SIZEL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PWMFRect16 {
+    pub Left: INT16,
+    pub Top: INT16,
+    pub Right: INT16,
+    pub Bottom: INT16,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed(2))]
+pub struct WmfPlaceableFileHeader {
+    pub Key: UINT32,
+    pub Hmf: INT16,
+    pub BoundingBox: PWMFRect16,
+    pub Inch: INT16,
+    pub Reserved: UINT32,
+    pub Checksum: INT16,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct MetafileHeader {
+    pub Type: MetafileType,
+    pub Size: UINT,
+    pub Version: UINT,
+    pub EmfPlusFlags: UINT,
+    pub DpiX: REAL,
+    pub DpiY: REAL,
+    pub X: INT,
+    pub Y: INT,
+    pub Width: INT,
+    pub Height: INT,
+    pub __bindgen_anon_1: MetafileHeader__bindgen_ty_1,
+    pub EmfPlusHeaderSize: INT,
+    pub LogicalDpiX: INT,
+    pub LogicalDpiY: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union MetafileHeader__bindgen_ty_1 {
+    pub WmfHeader: METAHEADER,
+    pub EmfHeader: ENHMETAHEADER3,
+}
+unsafe extern "C" {
+    pub static ImageFormatUndefined: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatMemoryBMP: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatBMP: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatEMF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatWMF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatJPEG: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatPNG: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatGIF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatTIFF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatEXIF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatIcon: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionTime: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionPage: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionResolution: GUID;
+}
+pub const ImageLockMode_ImageLockModeRead: ImageLockMode = 1;
+pub const ImageLockMode_ImageLockModeWrite: ImageLockMode = 2;
+pub const ImageLockMode_ImageLockModeUserInputBuf: ImageLockMode = 4;
+pub type ImageLockMode = ::core::ffi::c_uint;
+pub const RotateFlipType_RotateNoneFlipNone: RotateFlipType = 0;
+pub const RotateFlipType_Rotate180FlipXY: RotateFlipType = 0;
+pub const RotateFlipType_Rotate90FlipNone: RotateFlipType = 1;
+pub const RotateFlipType_Rotate270FlipXY: RotateFlipType = 1;
+pub const RotateFlipType_Rotate180FlipNone: RotateFlipType = 2;
+pub const RotateFlipType_RotateNoneFlipXY: RotateFlipType = 2;
+pub const RotateFlipType_Rotate270FlipNone: RotateFlipType = 3;
+pub const RotateFlipType_Rotate90FlipXY: RotateFlipType = 3;
+pub const RotateFlipType_RotateNoneFlipX: RotateFlipType = 4;
+pub const RotateFlipType_Rotate180FlipY: RotateFlipType = 4;
+pub const RotateFlipType_Rotate90FlipX: RotateFlipType = 5;
+pub const RotateFlipType_Rotate270FlipY: RotateFlipType = 5;
+pub const RotateFlipType_Rotate180FlipX: RotateFlipType = 6;
+pub const RotateFlipType_RotateNoneFlipY: RotateFlipType = 6;
+pub const RotateFlipType_Rotate270FlipX: RotateFlipType = 7;
+pub const RotateFlipType_Rotate90FlipY: RotateFlipType = 7;
+pub type RotateFlipType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct EncoderParameter {
+    pub Guid: GUID,
+    pub NumberOfValues: ULONG,
+    pub Type: ULONG,
+    pub Value: *mut ::core::ffi::c_void,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct EncoderParameters {
+    pub Count: UINT,
+    pub Parameter: [EncoderParameter; 1usize],
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ImageCodecInfo {
+    pub Clsid: CLSID,
+    pub FormatID: GUID,
+    pub CodecName: *const WCHAR,
+    pub DllName: *const WCHAR,
+    pub FormatDescription: *const WCHAR,
+    pub FilenameExtension: *const WCHAR,
+    pub MimeType: *const WCHAR,
+    pub Flags: DWORD,
+    pub Version: DWORD,
+    pub SigCount: DWORD,
+    pub SigSize: DWORD,
+    pub SigPattern: *const BYTE,
+    pub SigMask: *const BYTE,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct BitmapData {
+    pub Width: UINT,
+    pub Height: UINT,
+    pub Stride: INT,
+    pub PixelFormat: PixelFormat,
+    pub Scan0: *mut ::core::ffi::c_void,
+    pub Reserved: UINT_PTR,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ImageItemData {
+    pub Size: UINT,
+    pub Position: UINT,
+    pub Desc: *mut ::core::ffi::c_void,
+    pub DescSize: UINT,
+    pub Data: *mut ::core::ffi::c_void,
+    pub DataSize: UINT,
+    pub Cookie: UINT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PropertyItem {
+    pub id: PROPID,
+    pub length: ULONG,
+    pub type_: WORD,
+    pub value: *mut ::core::ffi::c_void,
+}
+pub const ColorChannelFlags_ColorChannelFlagsC: ColorChannelFlags = 0;
+pub const ColorChannelFlags_ColorChannelFlagsM: ColorChannelFlags = 1;
+pub const ColorChannelFlags_ColorChannelFlagsY: ColorChannelFlags = 2;
+pub const ColorChannelFlags_ColorChannelFlagsK: ColorChannelFlags = 3;
+pub const ColorChannelFlags_ColorChannelFlagsLast: ColorChannelFlags = 4;
+pub type ColorChannelFlags = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Color {
+    pub Argb: ARGB,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ColorMatrix {
+    pub m: [[REAL; 5usize]; 5usize],
+}
+pub const ColorMatrixFlags_ColorMatrixFlagsDefault: ColorMatrixFlags = 0;
+pub const ColorMatrixFlags_ColorMatrixFlagsSkipGrays: ColorMatrixFlags = 1;
+pub const ColorMatrixFlags_ColorMatrixFlagsAltGray: ColorMatrixFlags = 2;
+pub type ColorMatrixFlags = ::core::ffi::c_uint;
+pub const ColorAdjustType_ColorAdjustTypeDefault: ColorAdjustType = 0;
+pub const ColorAdjustType_ColorAdjustTypeBitmap: ColorAdjustType = 1;
+pub const ColorAdjustType_ColorAdjustTypeBrush: ColorAdjustType = 2;
+pub const ColorAdjustType_ColorAdjustTypePen: ColorAdjustType = 3;
+pub const ColorAdjustType_ColorAdjustTypeText: ColorAdjustType = 4;
+pub const ColorAdjustType_ColorAdjustTypeCount: ColorAdjustType = 5;
+pub const ColorAdjustType_ColorAdjustTypeAny: ColorAdjustType = 6;
+pub type ColorAdjustType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ColorMap {
+    pub oldColor: Color,
+    pub newColor: Color,
+}
+pub const HistogramFormat_HistogramFormatARGB: HistogramFormat = 0;
+pub const HistogramFormat_HistogramFormatPARGB: HistogramFormat = 1;
+pub const HistogramFormat_HistogramFormatRGB: HistogramFormat = 2;
+pub const HistogramFormat_HistogramFormatGray: HistogramFormat = 3;
+pub const HistogramFormat_HistogramFormatB: HistogramFormat = 4;
+pub const HistogramFormat_HistogramFormatG: HistogramFormat = 5;
+pub const HistogramFormat_HistogramFormatR: HistogramFormat = 6;
+pub const HistogramFormat_HistogramFormatA: HistogramFormat = 7;
+pub type HistogramFormat = ::core::ffi::c_uint;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpGraphics {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPen {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpBrush {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpHatch {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpSolidFill {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPath {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpMatrix {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPathIterator {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpCustomLineCap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpAdjustableArrowCap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpImage {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpMetafile {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpImageAttributes {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpCachedBitmap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpBitmap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPathGradient {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpLineGradient {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpTexture {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFont {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFontCollection {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFontFamily {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpStringFormat {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpRegion {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CGpEffect {
+    _unused: [u8; 0],
+}
+pub use self::BrushType as GpBrushType;
+pub use self::Status as GpStatus;
+pub use self::Unit as GpUnit;
+pub type GpPointF = PointF;
+pub use self::FillMode as GpFillMode;
+pub type GpPathData = PathData;
+pub use self::LineCap as GpLineCap;
+pub type GpRectF = RectF;
+pub type GpRect = Rect;
+pub use self::DashCap as GpDashCap;
+pub use self::DashStyle as GpDashStyle;
+pub use self::LineJoin as GpLineJoin;
+pub use self::MatrixOrder as GpMatrixOrder;
+pub type GpPoint = Point;
+pub use self::WrapMode as GpWrapMode;
+pub type GpColor = Color;
+pub use self::CoordinateSpace as GpCoordinateSpace;
+pub use self::FlushIntention as GpFlushIntention;
+pub use self::HatchStyle as GpHatchStyle;
+pub use self::PenAlignment as GpPenAlignment;
+pub use self::PenType as GpPenType;
+unsafe extern "C" {
+    pub fn GdipCreateAdjustableArrowCap(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: BOOL,
+        arg4: *mut *mut GpAdjustableArrowCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetAdjustableArrowCapFillState(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetAdjustableArrowCapHeight(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetAdjustableArrowCapMiddleInset(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetAdjustableArrowCapWidth(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetAdjustableArrowCapFillState(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetAdjustableArrowCapHeight(arg1: *mut GpAdjustableArrowCap, arg2: REAL)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetAdjustableArrowCapMiddleInset(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetAdjustableArrowCapWidth(arg1: *mut GpAdjustableArrowCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapApplyEffect(
+        arg1: *mut GpBitmap,
+        arg2: *mut CGpEffect,
+        arg3: *mut RECT,
+        arg4: BOOL,
+        arg5: *mut *mut ::core::ffi::c_void,
+        arg6: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapCreateApplyEffect(
+        arg1: *mut *mut GpBitmap,
+        arg2: INT,
+        arg3: *mut CGpEffect,
+        arg4: *mut RECT,
+        arg5: *mut RECT,
+        arg6: *mut *mut GpBitmap,
+        arg7: BOOL,
+        arg8: *mut *mut ::core::ffi::c_void,
+        arg9: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapGetHistogram(
+        arg1: *mut GpBitmap,
+        arg2: HistogramFormat,
+        arg3: UINT,
+        arg4: *mut UINT,
+        arg5: *mut UINT,
+        arg6: *mut UINT,
+        arg7: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapGetHistogramSize(arg1: HistogramFormat, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapGetPixel(
+        arg1: *mut GpBitmap,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapLockBits(
+        arg1: *mut GpBitmap,
+        arg2: *const GpRect,
+        arg3: UINT,
+        arg4: PixelFormat,
+        arg5: *mut BitmapData,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapSetPixel(arg1: *mut GpBitmap, arg2: INT, arg3: INT, arg4: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapSetResolution(arg1: *mut GpBitmap, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBitmapUnlockBits(arg1: *mut GpBitmap, arg2: *mut BitmapData) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneBitmapArea(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: PixelFormat,
+        arg6: *mut GpBitmap,
+        arg7: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneBitmapAreaI(
+        arg1: INT,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: PixelFormat,
+        arg6: *mut GpBitmap,
+        arg7: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromFile(arg1: *const WCHAR, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromFileICM(arg1: *const WCHAR, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromGdiDib(
+        arg1: *const BITMAPINFO,
+        arg2: *mut ::core::ffi::c_void,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromGraphics(
+        arg1: INT,
+        arg2: INT,
+        arg3: *mut GpGraphics,
+        arg4: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromHBITMAP(
+        arg1: HBITMAP,
+        arg2: HPALETTE,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromHICON(arg1: HICON, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromResource(
+        arg1: HINSTANCE,
+        arg2: *const WCHAR,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromScan0(
+        arg1: INT,
+        arg2: INT,
+        arg3: INT,
+        arg4: PixelFormat,
+        arg5: *mut BYTE,
+        arg6: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromStream(arg1: *mut IStream, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateBitmapFromStreamICM(arg1: *mut IStream, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateHBITMAPFromBitmap(
+        arg1: *mut GpBitmap,
+        arg2: *mut HBITMAP,
+        arg3: ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateHICONFromBitmap(arg1: *mut GpBitmap, arg2: *mut HICON) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteEffect(arg1: *mut CGpEffect) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetEffectParameters(
+        arg1: *mut CGpEffect,
+        arg2: *const ::core::ffi::c_void,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneBrush(arg1: *mut GpBrush, arg2: *mut *mut GpBrush) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteBrush(arg1: *mut GpBrush) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetBrushType(arg1: *mut GpBrush, arg2: *mut GpBrushType) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateCachedBitmap(
+        arg1: *mut GpBitmap,
+        arg2: *mut GpGraphics,
+        arg3: *mut *mut GpCachedBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteCachedBitmap(arg1: *mut GpCachedBitmap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCachedBitmap(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpCachedBitmap,
+        arg3: INT,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneCustomLineCap(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut *mut GpCustomLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateCustomLineCap(
+        arg1: *mut GpPath,
+        arg2: *mut GpPath,
+        arg3: GpLineCap,
+        arg4: REAL,
+        arg5: *mut *mut GpCustomLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteCustomLineCap(arg1: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCustomLineCapBaseCap(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut GpLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCustomLineCapBaseCap(arg1: *mut GpCustomLineCap, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCustomLineCapBaseInset(arg1: *mut GpCustomLineCap, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCustomLineCapBaseInset(arg1: *mut GpCustomLineCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCustomLineCapStrokeCaps(
+        arg1: *mut GpCustomLineCap,
+        arg2: GpLineCap,
+        arg3: GpLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCustomLineCapStrokeJoin(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut GpLineJoin,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCustomLineCapStrokeJoin(arg1: *mut GpCustomLineCap, arg2: GpLineJoin)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCustomLineCapWidthScale(arg1: *mut GpCustomLineCap, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCustomLineCapWidthScale(arg1: *mut GpCustomLineCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCustomLineCapType(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut CustomLineCapType,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneFont(arg1: *mut GpFont, arg2: *mut *mut GpFont) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFont(
+        arg1: *const GpFontFamily,
+        arg2: REAL,
+        arg3: INT,
+        arg4: Unit,
+        arg5: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFontFromDC(arg1: HDC, arg2: *mut *mut GpFont) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFontFromLogfontA(
+        arg1: HDC,
+        arg2: *const LOGFONTA,
+        arg3: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFontFromLogfontW(
+        arg1: HDC,
+        arg2: *const LOGFONTW,
+        arg3: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteFont(arg1: *mut GpFont) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLogFontA(
+        arg1: *mut GpFont,
+        arg2: *mut GpGraphics,
+        arg3: *mut LOGFONTA,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLogFontW(
+        arg1: *mut GpFont,
+        arg2: *mut GpGraphics,
+        arg3: *mut LOGFONTW,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFamily(arg1: *mut GpFont, arg2: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontUnit(arg1: *mut GpFont, arg2: *mut Unit) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontSize(arg1: *mut GpFont, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontStyle(arg1: *mut GpFont, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontHeight(
+        arg1: *const GpFont,
+        arg2: *const GpGraphics,
+        arg3: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontHeightGivenDPI(arg1: *const GpFont, arg2: REAL, arg3: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipNewInstalledFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipNewPrivateFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeletePrivateFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPrivateAddFontFile(arg1: *mut GpFontCollection, arg2: *const WCHAR) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPrivateAddMemoryFont(
+        arg1: *mut GpFontCollection,
+        arg2: *const ::core::ffi::c_void,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontCollectionFamilyCount(
+        arg1: *mut GpFontCollection,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFontCollectionFamilyList(
+        arg1: *mut GpFontCollection,
+        arg2: INT,
+        arg3: *mut *mut GpFontFamily,
+        arg4: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneFontFamily(arg1: *mut GpFontFamily, arg2: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFontFamilyFromName(
+        arg1: *const WCHAR,
+        arg2: *mut GpFontCollection,
+        arg3: *mut *mut GpFontFamily,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteFontFamily(arg1: *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetFamilyName(arg1: *const GpFontFamily, arg2: *mut WCHAR, arg3: LANGID)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCellAscent(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCellDescent(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetEmHeight(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetGenericFontFamilySansSerif(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetGenericFontFamilySerif(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetGenericFontFamilyMonospace(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineSpacing(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsStyleAvailable(arg1: *const GpFontFamily, arg2: INT, arg3: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFlush(arg1: *mut GpGraphics, arg2: GpFlushIntention) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBeginContainer(
+        arg1: *mut GpGraphics,
+        arg2: *const GpRectF,
+        arg3: *const GpRectF,
+        arg4: GpUnit,
+        arg5: *mut GraphicsContainer,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBeginContainer2(arg1: *mut GpGraphics, arg2: *mut GraphicsContainer) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipBeginContainerI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpRect,
+        arg3: *const GpRect,
+        arg4: GpUnit,
+        arg5: *mut GraphicsContainer,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEndContainer(arg1: *mut GpGraphics, arg2: GraphicsContainer) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipComment(arg1: *mut GpGraphics, arg2: UINT, arg3: *const BYTE) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFromHDC(arg1: HDC, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFromHDC2(arg1: HDC, arg2: HANDLE, arg3: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFromHWND(arg1: HWND, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateFromHWNDICM(arg1: HWND, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateHalftonePalette() -> HPALETTE;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteGraphics(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawArc(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawArcI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawBezier(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+        arg10: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawBezierI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+        arg10: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawBeziers(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawBeziersI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawClosedCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawClosedCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawClosedCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawClosedCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurve3(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawCurve3I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawDriverString(
+        arg1: *mut GpGraphics,
+        arg2: *const UINT16,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const GpBrush,
+        arg6: *const PointF,
+        arg7: INT,
+        arg8: *const GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawEllipse(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawEllipseI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImage(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImageI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePointRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePointRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePoints(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePointsI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePointsRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: GpUnit,
+        arg10: *const GpImageAttributes,
+        arg11: DrawImageAbort,
+        arg12: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImagePointsRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: GpUnit,
+        arg10: *const GpImageAttributes,
+        arg11: DrawImageAbort,
+        arg12: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImageRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImageRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImageRectRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+        arg10: REAL,
+        arg11: GpUnit,
+        arg12: *const GpImageAttributes,
+        arg13: DrawImageAbort,
+        arg14: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawImageRectRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+        arg10: INT,
+        arg11: GpUnit,
+        arg12: *const GpImageAttributes,
+        arg13: DrawImageAbort,
+        arg14: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawLine(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawLineI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawLines(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawLinesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawPath(arg1: *mut GpGraphics, arg2: *mut GpPen, arg3: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawPie(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawPieI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawPolygon(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawPolygonI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawRectangle(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawRectangleI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawRectangles(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpRectF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawRectanglesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpRect,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDrawString(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: *const GpBrush,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEnumerateMetafileDestPoint(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPointF,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEnumerateMetafileDestPointI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPoint,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEnumerateMetafileDestRect(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpRectF,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEnumerateMetafileDestRectI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpRect,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEnumerateMetafileSrcRectDestPoints(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: *const GpRectF,
+        arg6: Unit,
+        arg7: EnumerateMetafileProc,
+        arg8: *mut ::core::ffi::c_void,
+        arg9: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillClosedCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillClosedCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+        arg6: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillClosedCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillClosedCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillEllipse(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillEllipseI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPath(arg1: *mut GpGraphics, arg2: *mut GpBrush, arg3: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPie(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPieI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPolygon(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPolygonI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPolygon2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillPolygon2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillRectangle(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillRectangleI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillRectangles(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpRectF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillRectanglesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpRect,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFillRegion(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetClip(arg1: *mut GpGraphics, arg2: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetClipBounds(arg1: *mut GpGraphics, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetClipBoundsI(arg1: *mut GpGraphics, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCompositingMode(arg1: *mut GpGraphics, arg2: *mut CompositingMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetCompositingQuality(
+        arg1: *mut GpGraphics,
+        arg2: *mut CompositingQuality,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetDC(arg1: *mut GpGraphics, arg2: *mut HDC) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetDpiX(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetDpiY(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetEncoderParameterListSize(
+        arg1: *mut GpImage,
+        arg2: *const CLSID,
+        arg3: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageDecoders(arg1: UINT, arg2: UINT, arg3: *mut ImageCodecInfo) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageDecodersSize(arg1: *mut UINT, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageGraphicsContext(arg1: *mut GpImage, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetInterpolationMode(
+        arg1: *mut GpGraphics,
+        arg2: *mut InterpolationMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetNearestColor(arg1: *mut GpGraphics, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPageScale(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPageUnit(arg1: *mut GpGraphics, arg2: *mut GpUnit) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPixelOffsetMode(arg1: *mut GpGraphics, arg2: *mut PixelOffsetMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRenderingOrigin(
+        arg1: *mut GpGraphics,
+        arg2: *mut INT,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetSmoothingMode(arg1: *mut GpGraphics, arg2: *mut SmoothingMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetTextContrast(arg1: *mut GpGraphics, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetTextRenderingHint(
+        arg1: *mut GpGraphics,
+        arg2: *mut TextRenderingHint,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetWorldTransform(arg1: *mut GpGraphics, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGraphicsClear(arg1: *mut GpGraphics, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGraphicsSetAbort(arg1: *mut GpGraphics, arg2: *mut GdiplusAbort) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetVisibleClipBounds(arg1: *mut GpGraphics, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetVisibleClipBoundsI(arg1: *mut GpGraphics, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipInitializePalette(
+        arg1: *mut ColorPalette,
+        arg2: PaletteType,
+        arg3: INT,
+        arg4: BOOL,
+        arg5: *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsClipEmpty(arg1: *mut GpGraphics, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleClipEmpty(arg1: *mut GpGraphics, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisiblePoint(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisiblePointI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRect(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRectI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMeasureCharacterRanges(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: INT,
+        arg8: *mut *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMeasureDriverString(
+        arg1: *mut GpGraphics,
+        arg2: *const UINT16,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const PointF,
+        arg6: INT,
+        arg7: *const GpMatrix,
+        arg8: *mut RectF,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMeasureString(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: *mut RectF,
+        arg8: *mut INT,
+        arg9: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRecordMetafileFileName(
+        arg1: *const WCHAR,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRectF,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRecordMetafileFileNameI(
+        arg1: *const WCHAR,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRect,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRecordMetafileI(
+        arg1: HDC,
+        arg2: EmfType,
+        arg3: *const GpRect,
+        arg4: MetafileFrameUnit,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipReleaseDC(arg1: *mut GpGraphics, arg2: HDC) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetClip(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetWorldTransform(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRestoreGraphics(arg1: *mut GpGraphics, arg2: GraphicsState) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotateWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSaveAdd(arg1: *mut GpImage, arg2: *const EncoderParameters) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSaveGraphics(arg1: *mut GpGraphics, arg2: *mut GraphicsState) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScaleWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipHrgn(arg1: *mut GpGraphics, arg2: HRGN, arg3: CombineMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipGraphics(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpGraphics,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipPath(arg1: *mut GpGraphics, arg2: *mut GpPath, arg3: CombineMode)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipRect(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipRectI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetClipRegion(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpRegion,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCompositingMode(arg1: *mut GpGraphics, arg2: CompositingMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetCompositingQuality(arg1: *mut GpGraphics, arg2: CompositingQuality) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetInterpolationMode(arg1: *mut GpGraphics, arg2: InterpolationMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPageScale(arg1: *mut GpGraphics, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPageUnit(arg1: *mut GpGraphics, arg2: GpUnit) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPixelOffsetMode(arg1: *mut GpGraphics, arg2: PixelOffsetMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetRenderingOrigin(arg1: *mut GpGraphics, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetSmoothingMode(arg1: *mut GpGraphics, arg2: SmoothingMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetTextContrast(arg1: *mut GpGraphics, arg2: UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetTextRenderingHint(arg1: *mut GpGraphics, arg2: TextRenderingHint) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetWorldTransform(arg1: *mut GpGraphics, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformPoints(
+        arg1: *mut GpGraphics,
+        arg2: GpCoordinateSpace,
+        arg3: GpCoordinateSpace,
+        arg4: *mut GpPointF,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformPointsI(
+        arg1: *mut GpGraphics,
+        arg2: GpCoordinateSpace,
+        arg3: GpCoordinateSpace,
+        arg4: *mut GpPoint,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateClip(arg1: *mut GpGraphics, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateClipI(arg1: *mut GpGraphics, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathArc(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathArcI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathBezier(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathBezierI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathBeziers(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathBeziersI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathClosedCurve(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathClosedCurveI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathClosedCurve2(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathClosedCurve2I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurve(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurveI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurve2(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurve2I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurve3(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathCurve3I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathEllipse(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathEllipseI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathLine(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathLineI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathLine2(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathLine2I(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathPath(arg1: *mut GpPath, arg2: *const GpPath, arg3: BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathPie(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathPieI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathPolygon(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathPolygonI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathRectangle(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathRectangleI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathRectangles(arg1: *mut GpPath, arg2: *const GpRectF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathRectanglesI(arg1: *mut GpPath, arg2: *const GpRect, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathString(
+        arg1: *mut GpPath,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFontFamily,
+        arg5: INT,
+        arg6: REAL,
+        arg7: *const RectF,
+        arg8: *const GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipAddPathStringI(
+        arg1: *mut GpPath,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFontFamily,
+        arg5: INT,
+        arg6: REAL,
+        arg7: *const Rect,
+        arg8: *const GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipClearPathMarkers(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipClonePath(arg1: *mut GpPath, arg2: *mut *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipClosePathFigure(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipClosePathFigures(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePath(arg1: GpFillMode, arg2: *mut *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePath2(
+        arg1: *const GpPointF,
+        arg2: *const BYTE,
+        arg3: INT,
+        arg4: GpFillMode,
+        arg5: *mut *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePath2I(
+        arg1: *const GpPoint,
+        arg2: *const BYTE,
+        arg3: INT,
+        arg4: GpFillMode,
+        arg5: *mut *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeletePath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFlattenPath(arg1: *mut GpPath, arg2: *mut GpMatrix, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsOutlineVisiblePathPoint(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpPen,
+        arg5: *mut GpGraphics,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsOutlineVisiblePathPointI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpPen,
+        arg5: *mut GpGraphics,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisiblePathPoint(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisiblePathPointI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathData(arg1: *mut GpPath, arg2: *mut GpPathData) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathFillMode(arg1: *mut GpPath, arg2: *mut GpFillMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathLastPoint(arg1: *mut GpPath, arg2: *mut GpPointF) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathPoints(arg1: *mut GpPath, arg2: *mut GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathPointsI(arg1: *mut GpPath, arg2: *mut GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathTypes(arg1: *mut GpPath, arg2: *mut BYTE, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathWorldBounds(
+        arg1: *mut GpPath,
+        arg2: *mut GpRectF,
+        arg3: *const GpMatrix,
+        arg4: *const GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathWorldBoundsI(
+        arg1: *mut GpPath,
+        arg2: *mut GpRect,
+        arg3: *const GpMatrix,
+        arg4: *const GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPointCount(arg1: *mut GpPath, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetPath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipReversePath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathFillMode(arg1: *mut GpPath, arg2: GpFillMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathMarker(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipStartPathFigure(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformPath(arg1: *mut GpPath, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipWarpPath(
+        arg1: *mut GpPath,
+        arg2: *mut GpMatrix,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: WarpMode,
+        arg10: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipWidenPath(
+        arg1: *mut GpPath,
+        arg2: *mut GpPen,
+        arg3: *mut GpMatrix,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipWindingModeOutline(arg1: *mut GpPath, arg2: *mut GpMatrix, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateHatchBrush(
+        arg1: GpHatchStyle,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: *mut *mut GpHatch,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetHatchBackgroundColor(arg1: *mut GpHatch, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetHatchForegroundColor(arg1: *mut GpHatch, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetHatchStyle(arg1: *mut GpHatch, arg2: *mut GpHatchStyle) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneImage(arg1: *mut GpImage, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneImageAttributes(
+        arg1: *const GpImageAttributes,
+        arg2: *mut *mut GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDisposeImage(arg1: *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipEmfToWmfBits(
+        arg1: HENHMETAFILE,
+        arg2: UINT,
+        arg3: LPBYTE,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFindFirstImageItem(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipFindNextImageItem(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetAllPropertyItems(
+        arg1: *mut GpImage,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *mut PropertyItem,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageBounds(
+        arg1: *mut GpImage,
+        arg2: *mut GpRectF,
+        arg3: *mut GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageDimension(arg1: *mut GpImage, arg2: *mut REAL, arg3: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageFlags(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageHeight(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageHorizontalResolution(arg1: *mut GpImage, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageItemData(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImagePalette(arg1: *mut GpImage, arg2: *mut ColorPalette, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImagePaletteSize(arg1: *mut GpImage, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImagePixelFormat(arg1: *mut GpImage, arg2: *mut PixelFormat) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageRawFormat(arg1: *mut GpImage, arg2: *mut GUID) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageThumbnail(
+        arg1: *mut GpImage,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *mut *mut GpImage,
+        arg5: GetThumbnailImageAbort,
+        arg6: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageType(arg1: *mut GpImage, arg2: *mut ImageType) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageVerticalResolution(arg1: *mut GpImage, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageWidth(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPropertyCount(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPropertyIdList(arg1: *mut GpImage, arg2: UINT, arg3: *mut PROPID) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPropertyItem(
+        arg1: *mut GpImage,
+        arg2: PROPID,
+        arg3: UINT,
+        arg4: *mut PropertyItem,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPropertyItemSize(arg1: *mut GpImage, arg2: PROPID, arg3: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPropertySize(arg1: *mut GpImage, arg2: *mut UINT, arg3: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageForceValidation(arg1: *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageGetFrameCount(
+        arg1: *mut GpImage,
+        arg2: *const GUID,
+        arg3: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageGetFrameDimensionsCount(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageGetFrameDimensionsList(
+        arg1: *mut GpImage,
+        arg2: *mut GUID,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageRotateFlip(arg1: *mut GpImage, arg2: RotateFlipType) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageSelectActiveFrame(
+        arg1: *mut GpImage,
+        arg2: *const GUID,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipImageSetAbort(arg1: *mut GpImage, arg2: *mut GdiplusAbort) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipLoadImageFromFile(arg1: *const WCHAR, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipLoadImageFromFileICM(arg1: *const WCHAR, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipLoadImageFromStream(arg1: *mut IStream, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipLoadImageFromStreamICM(arg1: *mut IStream, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRemovePropertyItem(arg1: *mut GpImage, arg2: PROPID) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSaveImageToFile(
+        arg1: *mut GpImage,
+        arg2: *const WCHAR,
+        arg3: *const CLSID,
+        arg4: *const EncoderParameters,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSaveImageToStream(
+        arg1: *mut GpImage,
+        arg2: *mut IStream,
+        arg3: *const CLSID,
+        arg4: *const EncoderParameters,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImagePalette(arg1: *mut GpImage, arg2: *const ColorPalette) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPropertyItem(arg1: *mut GpImage, arg2: *const PropertyItem) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateImageAttributes(arg1: *mut *mut GpImageAttributes) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDisposeImageAttributes(arg1: *mut GpImageAttributes) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageAttributesAdjustedPalette(
+        arg1: *mut GpImageAttributes,
+        arg2: *mut ColorPalette,
+        arg3: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesCachedBackground(
+        arg1: *mut GpImageAttributes,
+        arg2: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesColorKeys(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: ARGB,
+        arg5: ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesColorMatrix(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: *const ColorMatrix,
+        arg5: *const ColorMatrix,
+        arg6: ColorMatrixFlags,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesGamma(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesNoOp(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesOutputChannel(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: ColorChannelFlags,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesOutputChannelColorProfile(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: *const WCHAR,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesRemapTable(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: UINT,
+        arg5: *const ColorMap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesThreshold(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesToIdentity(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetImageAttributesWrapMode(
+        arg1: *mut GpImageAttributes,
+        arg2: WrapMode,
+        arg3: ARGB,
+        arg4: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetImageAttributes(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrush(
+        arg1: *const GpPointF,
+        arg2: *const GpPointF,
+        arg3: ARGB,
+        arg4: ARGB,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrushI(
+        arg1: *const GpPoint,
+        arg2: *const GpPoint,
+        arg3: ARGB,
+        arg4: ARGB,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrushFromRect(
+        arg1: *const GpRectF,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: LinearGradientMode,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrushFromRectI(
+        arg1: *const GpRect,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: LinearGradientMode,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrushFromRectWithAngle(
+        arg1: *const GpRectF,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: REAL,
+        arg5: BOOL,
+        arg6: GpWrapMode,
+        arg7: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateLineBrushFromRectWithAngleI(
+        arg1: *const GpRect,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: REAL,
+        arg5: BOOL,
+        arg6: GpWrapMode,
+        arg7: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineColors(arg1: *mut GpLineGradient, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineGammaCorrection(arg1: *mut GpLineGradient, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineRect(arg1: *mut GpLineGradient, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineRectI(arg1: *mut GpLineGradient, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineWrapMode(arg1: *mut GpLineGradient, arg2: *mut GpWrapMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *const REAL,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineBlendCount(arg1: *mut GpLineGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLinePresetBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *const ARGB,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLinePresetBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *mut ARGB,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLinePresetBlendCount(arg1: *mut GpLineGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetLineTransform(arg1: *mut GpLineGradient, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetLineTransform(arg1: *mut GpLineGradient) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotateLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScaleLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineColors(arg1: *mut GpLineGradient, arg2: ARGB, arg3: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineGammaCorrection(arg1: *mut GpLineGradient, arg2: BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineSigmaBlend(arg1: *mut GpLineGradient, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineTransform(arg1: *mut GpLineGradient, arg2: *const GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineLinearBlend(arg1: *mut GpLineGradient, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetLineWrapMode(arg1: *mut GpLineGradient, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneMatrix(arg1: *mut GpMatrix, arg2: *mut *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMatrix(arg1: *mut *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMatrix2(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMatrix3(
+        arg1: *const GpRectF,
+        arg2: *const GpPointF,
+        arg3: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMatrix3I(
+        arg1: *const GpRect,
+        arg2: *const GpPoint,
+        arg3: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteMatrix(arg1: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMatrixElements(arg1: *const GpMatrix, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipInvertMatrix(arg1: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsMatrixEqual(
+        arg1: *const GpMatrix,
+        arg2: *const GpMatrix,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsMatrixIdentity(arg1: *const GpMatrix, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsMatrixInvertible(arg1: *const GpMatrix, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyMatrix(
+        arg1: *mut GpMatrix,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotateMatrix(arg1: *mut GpMatrix, arg2: REAL, arg3: GpMatrixOrder) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipShearMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScaleMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetMatrixElements(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformMatrixPoints(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPointF,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformMatrixPointsI(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPoint,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipVectorTransformMatrixPoints(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPointF,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipVectorTransformMatrixPointsI(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPoint,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipConvertToEmfPlus(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: EmfType,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipConvertToEmfPlusToFile(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: *const WCHAR,
+        arg5: EmfType,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipConvertToEmfPlusToStream(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: *mut IStream,
+        arg5: EmfType,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMetafileFromEmf(
+        arg1: HENHMETAFILE,
+        arg2: BOOL,
+        arg3: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMetafileFromWmf(
+        arg1: HMETAFILE,
+        arg2: BOOL,
+        arg3: *const WmfPlaceableFileHeader,
+        arg4: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMetafileFromWmfFile(
+        arg1: *const WCHAR,
+        arg2: *const WmfPlaceableFileHeader,
+        arg3: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMetafileFromFile(arg1: *const WCHAR, arg2: *mut *mut GpMetafile) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateMetafileFromStream(arg1: *mut IStream, arg2: *mut *mut GpMetafile)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetHemfFromMetafile(arg1: *mut GpMetafile, arg2: *mut HENHMETAFILE) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPlayMetafileRecord(
+        arg1: *const GpMetafile,
+        arg2: EmfPlusRecordType,
+        arg3: UINT,
+        arg4: UINT,
+        arg5: *const BYTE,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetMetafileDownLevelRasterizationLimit(
+        arg1: *mut GpMetafile,
+        arg2: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRecordMetafile(
+        arg1: HDC,
+        arg2: EmfType,
+        arg3: *const GpRectF,
+        arg4: MetafileFrameUnit,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRecordMetafileStream(
+        arg1: *mut IStream,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRectF,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMetafileHeaderFromEmf(arg1: HENHMETAFILE, arg2: *mut MetafileHeader) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMetafileHeaderFromFile(arg1: *const WCHAR, arg2: *mut MetafileHeader)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMetafileHeaderFromMetafile(
+        arg1: *mut GpMetafile,
+        arg2: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMetafileHeaderFromStream(
+        arg1: *mut IStream,
+        arg2: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetMetafileHeaderFromWmf(
+        arg1: HMETAFILE,
+        arg2: *const WmfPlaceableFileHeader,
+        arg3: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdiplusNotificationHook(arg1: *mut ULONG_PTR) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdiplusNotificationUnhook(arg1: ULONG_PTR);
+}
+unsafe extern "C" {
+    pub fn GdipCreatePathGradient(
+        arg1: *const GpPointF,
+        arg2: INT,
+        arg3: GpWrapMode,
+        arg4: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePathGradientI(
+        arg1: *const GpPoint,
+        arg2: INT,
+        arg3: GpWrapMode,
+        arg4: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePathGradientFromPath(
+        arg1: *const GpPath,
+        arg2: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientBlendCount(arg1: *mut GpPathGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientCenterColor(arg1: *mut GpPathGradient, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientCenterPoint(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPointF,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientCenterPointI(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPoint,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientFocusScales(
+        arg1: *mut GpPathGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientGammaCorrection(
+        arg1: *mut GpPathGradient,
+        arg2: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientPath(arg1: *mut GpPathGradient, arg2: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientPresetBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *mut ARGB,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientPresetBlendCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientPointCount(arg1: *mut GpPathGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientPresetBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *const ARGB,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientRect(arg1: *mut GpPathGradient, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientRectI(arg1: *mut GpPathGradient, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientSurroundColorCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientSurroundColorsWithCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut ARGB,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientTransform(arg1: *mut GpPathGradient, arg2: *mut GpMatrix)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPathGradientWrapMode(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpWrapMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyPathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetPathGradientTransform(arg1: *mut GpPathGradient) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotatePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScalePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientLinearBlend(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *const REAL,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientCenterColor(arg1: *mut GpPathGradient, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientCenterPoint(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPointF,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientCenterPointI(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPoint,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientFocusScales(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientGammaCorrection(arg1: *mut GpPathGradient, arg2: BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientPath(arg1: *mut GpPathGradient, arg2: *const GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientSigmaBlend(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientSurroundColorsWithCount(
+        arg1: *mut GpPathGradient,
+        arg2: *const ARGB,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientTransform(arg1: *mut GpPathGradient, arg2: *mut GpMatrix)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPathGradientWrapMode(arg1: *mut GpPathGradient, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslatePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePathIter(arg1: *mut *mut GpPathIterator, arg2: *mut GpPath) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeletePathIter(arg1: *mut GpPathIterator) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterCopyData(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPointF,
+        arg4: *mut BYTE,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterGetCount(arg1: *mut GpPathIterator, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterGetSubpathCount(arg1: *mut GpPathIterator, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterEnumerate(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPointF,
+        arg4: *mut BYTE,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterHasCurve(arg1: *mut GpPathIterator, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterIsValid(arg1: *mut GpPathIterator, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterNextMarker(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut INT,
+        arg4: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterNextMarkerPath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterNextPathType(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut BYTE,
+        arg4: *mut INT,
+        arg5: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterNextSubpath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut INT,
+        arg4: *mut INT,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterNextSubpathPath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPath,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipPathIterRewind(arg1: *mut GpPathIterator) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipClonePen(arg1: *mut GpPen, arg2: *mut *mut GpPen) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePen1(arg1: ARGB, arg2: REAL, arg3: GpUnit, arg4: *mut *mut GpPen) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreatePen2(
+        arg1: *mut GpBrush,
+        arg2: REAL,
+        arg3: GpUnit,
+        arg4: *mut *mut GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeletePen(arg1: *mut GpPen) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenBrushFill(arg1: *mut GpPen, arg2: *mut *mut GpBrush) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenColor(arg1: *mut GpPen, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenCompoundCount(arg1: *mut GpPen, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenCustomStartCap(arg1: *mut GpPen, arg2: *mut *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenCustomEndCap(arg1: *mut GpPen, arg2: *mut *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenDashArray(arg1: *mut GpPen, arg2: *mut REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenDashCount(arg1: *mut GpPen, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenDashOffset(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenDashStyle(arg1: *mut GpPen, arg2: *mut GpDashStyle) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenMode(arg1: *mut GpPen, arg2: *mut GpPenAlignment) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenTransform(arg1: *mut GpPen, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyPenTransform(
+        arg1: *mut GpPen,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetPenTransform(arg1: *mut GpPen) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotatePenTransform(arg1: *mut GpPen, arg2: REAL, arg3: GpMatrixOrder) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScalePenTransform(
+        arg1: *mut GpPen,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenBrushFill(arg1: *mut GpPen, arg2: *mut GpBrush) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenColor(arg1: *mut GpPen, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenCompoundArray(arg1: *mut GpPen, arg2: *const REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenCustomEndCap(arg1: *mut GpPen, arg2: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenCustomStartCap(arg1: *mut GpPen, arg2: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenDashArray(arg1: *mut GpPen, arg2: *const REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenDashCap197819(arg1: *mut GpPen, arg2: GpDashCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenDashOffset(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenDashStyle(arg1: *mut GpPen, arg2: GpDashStyle) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenEndCap(arg1: *mut GpPen, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenFillType(arg1: *mut GpPen, arg2: *mut GpPenType) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenLineCap197819(
+        arg1: *mut GpPen,
+        arg2: GpLineCap,
+        arg3: GpLineCap,
+        arg4: GpDashCap,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenLineJoin(arg1: *mut GpPen, arg2: GpLineJoin) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenMode(arg1: *mut GpPen, arg2: GpPenAlignment) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenMiterLimit(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenStartCap(arg1: *mut GpPen, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenTransform(arg1: *mut GpPen, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetPenWidth(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenDashCap197819(arg1: *mut GpPen, arg2: *mut GpDashCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenEndCap(arg1: *mut GpPen, arg2: *mut GpLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenLineJoin(arg1: *mut GpPen, arg2: *mut GpLineJoin) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenMiterLimit(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenStartCap(arg1: *mut GpPen, arg2: *mut GpLineCap) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenUnit(arg1: *mut GpPen, arg2: *mut GpUnit) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetPenWidth(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslatePenTransform(
+        arg1: *mut GpPen,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneRegion(arg1: *mut GpRegion, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCombineRegionPath(
+        arg1: *mut GpRegion,
+        arg2: *mut GpPath,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCombineRegionRect(
+        arg1: *mut GpRegion,
+        arg2: *const GpRectF,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCombineRegionRectI(
+        arg1: *mut GpRegion,
+        arg2: *const GpRect,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCombineRegionRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRegion,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegion(arg1: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegionPath(arg1: *mut GpPath, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegionRect(arg1: *const GpRectF, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegionRectI(arg1: *const GpRect, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegionRgnData(
+        arg1: *const BYTE,
+        arg2: INT,
+        arg3: *mut *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateRegionHrgn(arg1: HRGN, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteRegion(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionBounds(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut GpRectF,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionBoundsI(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut GpRect,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionData(
+        arg1: *mut GpRegion,
+        arg2: *mut BYTE,
+        arg3: UINT,
+        arg4: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionDataSize(arg1: *mut GpRegion, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionHRgn(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut HRGN,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionScans(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRectF,
+        arg3: *mut INT,
+        arg4: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionScansI(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRect,
+        arg3: *mut INT,
+        arg4: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetRegionScansCount(
+        arg1: *mut GpRegion,
+        arg2: *mut UINT,
+        arg3: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsEmptyRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsEqualRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRegion,
+        arg3: *mut GpGraphics,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsInfiniteRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRegionPoint(
+        arg1: *mut GpRegion,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRegionPointI(
+        arg1: *mut GpRegion,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRegionRect(
+        arg1: *mut GpRegion,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: *mut GpGraphics,
+        arg7: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipIsVisibleRegionRectI(
+        arg1: *mut GpRegion,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: *mut GpGraphics,
+        arg7: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetEmpty(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetInfinite(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTransformRegion(arg1: *mut GpRegion, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateRegion(arg1: *mut GpRegion, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateRegionI(arg1: *mut GpRegion, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateSolidFill(arg1: ARGB, arg2: *mut *mut GpSolidFill) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetSolidFillColor(arg1: *mut GpSolidFill, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetSolidFillColor(arg1: *mut GpSolidFill, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCloneStringFormat(
+        arg1: *const GpStringFormat,
+        arg2: *mut *mut GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateStringFormat(
+        arg1: INT,
+        arg2: LANGID,
+        arg3: *mut *mut GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipDeleteStringFormat(arg1: *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatAlign(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatDigitSubstitution(
+        arg1: *const GpStringFormat,
+        arg2: *mut LANGID,
+        arg3: *mut StringDigitSubstitute,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatFlags(arg1: *const GpStringFormat, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatHotkeyPrefix(arg1: *const GpStringFormat, arg2: *mut INT)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatLineAlign(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatMeasurableCharacterRangeCount(
+        arg1: *const GpStringFormat,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatTabStopCount(arg1: *const GpStringFormat, arg2: *mut INT)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatTabStops(
+        arg1: *const GpStringFormat,
+        arg2: INT,
+        arg3: *mut REAL,
+        arg4: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetStringFormatTrimming(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringTrimming,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatAlign(arg1: *mut GpStringFormat, arg2: StringAlignment) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatDigitSubstitution(
+        arg1: *mut GpStringFormat,
+        arg2: LANGID,
+        arg3: StringDigitSubstitute,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatHotkeyPrefix(arg1: *mut GpStringFormat, arg2: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatLineAlign(
+        arg1: *mut GpStringFormat,
+        arg2: StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatMeasurableCharacterRanges(
+        arg1: *mut GpStringFormat,
+        arg2: INT,
+        arg3: *const CharacterRange,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatTabStops(
+        arg1: *mut GpStringFormat,
+        arg2: REAL,
+        arg3: INT,
+        arg4: *const REAL,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatTrimming(arg1: *mut GpStringFormat, arg2: StringTrimming)
+        -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetStringFormatFlags(arg1: *mut GpStringFormat, arg2: INT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipStringFormatGetGenericDefault(arg1: *mut *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipStringFormatGetGenericTypographic(arg1: *mut *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateTexture(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateTexture2(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateTexture2I(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateTextureIA(
+        arg1: *mut GpImage,
+        arg2: *const GpImageAttributes,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateTextureIAI(
+        arg1: *mut GpImage,
+        arg2: *const GpImageAttributes,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetTextureImage(arg1: *mut GpTexture, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetTextureTransform(arg1: *mut GpTexture, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetTextureWrapMode(arg1: *mut GpTexture, arg2: *mut GpWrapMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipMultiplyTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipResetTextureTransform(arg1: *mut GpTexture) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipRotateTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipScaleTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetTextureTransform(arg1: *mut GpTexture, arg2: *const GpMatrix) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipSetTextureWrapMode(arg1: *mut GpTexture, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTranslateTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipCreateStreamOnFile(
+        arg1: *const WCHAR,
+        arg2: UINT,
+        arg3: *mut *mut IStream,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageEncodersSize(numEncoders: *mut UINT, size: *mut UINT) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipGetImageEncoders(
+        numEncoders: UINT,
+        size: UINT,
+        encoders: *mut ImageCodecInfo,
+    ) -> GpStatus;
+}
+unsafe extern "C" {
+    pub fn GdipTestControl(arg1: GpTestControlEnum, arg2: *mut ::core::ffi::c_void) -> GpStatus;
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct EFFECTS {
@@ -31932,70 +36812,6 @@ pub struct tagGLOBALS {
     pub crCustom: [COLORREF; 16usize],
 }
 pub type GLOBALS = tagGLOBALS;
-unsafe extern "C" {
-    pub fn SchemeSetMetric(
-        scheme: *mut COLOR_SCHEME,
-        id: ::core::ffi::c_int,
-        value: ::core::ffi::c_int,
-    );
-}
-unsafe extern "C" {
-    pub fn SchemeGetMetric(scheme: *mut COLOR_SCHEME, id: ::core::ffi::c_int)
-        -> ::core::ffi::c_int;
-}
-unsafe extern "C" {
-    pub fn SchemeGetFont(scheme: *mut COLOR_SCHEME, id: ::core::ffi::c_int) -> PLOGFONTW;
-}
-unsafe extern "C" {
-    pub fn LoadTheme(pszThemeFileName: LPCWSTR, pszThemeName: LPCWSTR) -> PTHEME;
-}
-unsafe extern "C" {
-    pub fn LoadThemes() -> PTHEME;
-}
-unsafe extern "C" {
-    pub fn FindOrAppendTheme(
-        pThemeList: PTHEME,
-        pwszThemeFileName: LPCWSTR,
-        pwszColorBuff: LPCWSTR,
-        pwszSizeBuff: LPCWSTR,
-        pSelectedTheme: PTHEME_SELECTION,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetActiveTheme(pThemeList: PTHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetActiveClassicTheme(pThemeList: PTHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadCurrentScheme(scheme: PCOLOR_SCHEME) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadSchemeFromReg(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadSchemeFromTheme(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn ApplyScheme(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION);
-}
-unsafe extern "C" {
-    pub fn ActivateTheme(pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn CleanupThemes(pThemeList: PTHEME);
-}
-unsafe extern "C" {
-    pub fn DrawThemePreview(
-        hdcMem: HDC,
-        scheme: PCOLOR_SCHEME,
-        pSelectedTheme: PTHEME_SELECTION,
-        prcWindow: PRECT,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn ActivateThemeFile(pwszFile: LPCWSTR) -> BOOL;
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MONSL_MONINFO {
@@ -32151,15 +36967,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub static mut hCPLWindow: HWND;
-}
-unsafe extern "C" {
-    pub fn SwitchDisplayMode(
-        hwndDlg: HWND,
-        DeviceName: PWSTR,
-        seInit: PSETTINGS_ENTRY,
-        seNew: PSETTINGS_ENTRY,
-        rc: PLONG,
-    ) -> BOOL;
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

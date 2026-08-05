@@ -1692,7 +1692,14 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]cpl\.h'
                   --allowlist-file '.*[/\\]cplext\.h'
                   --allowlist-file '.*[/\\]dll[/\\]desk[/\\]deskcplx\.h'
-                  --allowlist-file '.*[/\\]gdiplus\.h'
+                  # The gdiplus FAMILY, not just the umbrella header. gdiplus.h's C branch
+                  # is nothing but #includes (gdiplusflat.h for the flat API, gdiplusgpstubs
+                  # /gdiplustypes/gdiplusenums/gdipluspixelformats/gdiplusimaging for GpImage,
+                  # GpStatus, ImageCodecInfo, PixelFormat*, ImageLockMode*), and
+                  # --allowlist-file matches where an item is DEFINED. Allowlisting only
+                  # `gdiplus\.h` therefore emitted ZERO of them: 19 Gdip* functions and 8
+                  # types that dibitmap.c and preview.c call directly.
+                  --allowlist-file '.*[/\\]gdiplus[a-z]*\.h'
                   --allowlist-file '.*[/\\]initguid\.h'
                   --allowlist-file '.*[/\\]objbase\.h'
                   --allowlist-file '.*[/\\]prsht\.h'
