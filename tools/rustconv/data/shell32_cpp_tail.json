@@ -20,8 +20,6 @@
       "dll/win32/shell32/CFolderItemVerbs.cpp"
     ],
     "hybrid": [
-      "dll/win32/shell32/folders/CDrivesFolder.cpp",
-      "dll/win32/shell32/folders/CRecycleBin.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
     ],
@@ -88,9 +86,11 @@
       "dll/win32/shell32/droptargets/CexeDropHandler.cpp",
       "dll/win32/shell32/folders/CControlPanelFolder.cpp",
       "dll/win32/shell32/folders/CDesktopFolder.cpp",
+      "dll/win32/shell32/folders/CDrivesFolder.cpp",
       "dll/win32/shell32/folders/CFSFolder.cpp",
       "dll/win32/shell32/folders/CNetFolder.cpp",
-      "dll/win32/shell32/folders/CPrinterFolder.cpp"
+      "dll/win32/shell32/folders/CPrinterFolder.cpp",
+      "dll/win32/shell32/folders/CRecycleBin.cpp"
     ]
   },
   "sanctioned": {
@@ -103,6 +103,9 @@
     "atl_window_class": [
       "dll/win32/shell32/rust_folder_options_stub.cpp",
       "dll/win32/shell32/rust_changenotify_broker_stub.cpp"
+    ],
+    "cpp_only_companion_bridge": [
+      "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"
     ]
   },
   "version": 1

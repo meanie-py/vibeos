@@ -24,12 +24,13 @@ pub mod msv1_0 {
     pub mod usercontext;
 }
 
-// The two TUs the CMake source list puts under ntlm/. `ntlm/global.c` is absent on purpose:
-// it defines only globals (NtlmMode, DispatchTable, LsaFunctions, UsrFunctions and the
-// NtlmLsaFn/NtlmUsrFn dispatch tables) and no functions, so `rustconv translate` has nothing to
-// buy there. The island declares all six as `extern`, which is why this crate CHECKS clean —
-// they only go missing at LINK. Carrying them across is what gates the cohab flip.
+// The two TUs the CMake source list puts under ntlm/, plus `ntlm/global.c`. global.c never went
+// through `rustconv translate` — it defines only globals and no functions, so there was nothing
+// to buy; its six definitions are hand-carried in global.rs, mechanically for the two dispatch
+// tables. The island declares all six as `extern`, which is why this crate CHECKED clean while
+// they were still absent: they only go missing at LINK, and that gated the cohab flip.
 pub mod ntlm {
+    pub mod global;
     pub mod util;
 }
 

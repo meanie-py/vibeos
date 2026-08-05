@@ -29,6 +29,13 @@ EXTERN_C BOOL TRASH_CanTrashFile(LPCWSTR wszPath);
 EXTERN_C BOOL TRASH_TrashFile(LPCWSTR wszPath);
 HRESULT CRecyclerDropTarget_CreateInstance(REFIID riid, LPVOID * ppvOut);
 
+/* CRecycleBin's one non-virtual method, over the C ABI. The class is Rust-owned
+ * (shell32-rust/src/recycle_bin.rs), so a C++ caller has no mangled symbol to link against and
+ * no business casting an interface pointer back to the C++ class layout. Takes the
+ * IShellFolder2 the caller already holds; the Rust side does the offset arithmetic. */
+EXTERN_C HRESULT WINAPI CRecycleBin_ParseRecycleBinPath_RustBridge(
+    IShellFolder2 *psf, LPCWSTR lpszPath, LPBC pbc, PIDLIST_RELATIVE *ppidl, DWORD *pdwAttributes);
+
 class CRecycleBin :
     public CComCoClass<CRecycleBin, &CLSID_RecycleBin>,
     public CComObjectRootEx<CComMultiThreadModelNoCS>,

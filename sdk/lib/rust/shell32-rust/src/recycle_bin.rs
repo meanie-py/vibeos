@@ -734,6 +734,27 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
         && (*left).Data4 == (*right).Data4
 }
 
+/// `ParseRecycleBinPath` over the C ABI, for the one C++ caller left:
+/// `CRecycleBinFolderViewCB::TranslatePidl`. That TU cannot be bought (its scaffold preflight
+/// refuses it twice — see rust_recyclebin_bridges_stub.cpp), and the method is non-virtual, so
+/// there is no vtable slot to reach it through.
+///
+/// It takes the `IShellFolder2*` the caller was handed and does the offset arithmetic HERE,
+/// against the Rust layout. Until CRecycleBin.cpp flipped, the C++ side instead did
+/// `static_cast<CRecycleBin *>(psf)` and called the dead C++ copy of this method — the C++
+/// class's base offset applied to a Rust-laid-out object. It linked; it was wrong.
+#[no_mangle] pub unsafe extern "system" fn CRecycleBin_ParseRecycleBinPath_RustBridge(
+    psf: *mut IShellFolder2,
+    lpszPath: LPCWSTR,
+    pbc: LPBC,
+    ppidl: *mut PIDLIST_RELATIVE,
+    pdwAttributes: *mut DWORD,
+) -> HRESULT {
+    if psf.is_null() { return E_POINTER; }
+    let this = (psf as *mut u8).sub(core::mem::offset_of!(CRecycleBin, IShellFolder2_iface)) as *mut CRecycleBin;
+    CRecycleBin_ParseRecycleBinPath_body(this, lpszPath, pbc, ppidl, pdwAttributes)
+}
+
 // Activation: CLSID_RecycleBin currently maps to CRecycleBin in shell32.cpp.
 // The generated C++ adapter redirects ATL activation to this factory.
 #[no_mangle] pub unsafe extern "system" fn CRecycleBin_CreateInstance(

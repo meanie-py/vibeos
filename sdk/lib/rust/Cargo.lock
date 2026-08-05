@@ -7,6 +7,14 @@ name = "access"
 version = "0.1.0"
 
 [[package]]
+name = "aclui-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "acpi-rust"
 version = "0.1.0"
 dependencies = [
@@ -1280,6 +1288,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msv1_0-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "msvcrt-crt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2355,6 +2371,14 @@ name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
  "reactos-link",
+]
+
+[[package]]
+name = "umpnpmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
 ]
 
 [[package]]

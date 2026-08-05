@@ -21,9 +21,9 @@ unsafe extern "C" fn GetAccountDomainSid(
         return Status;
     }
 
-    Length = RtlLengthSid((*PolicyInfo).PolicyAccountDomainInfo.Sid);
+    Length = RtlLengthSid((*PolicyInfo).PolicyAccountDomainInfo.as_ref().Sid as PVOID);
 
-    *Sid = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length);
+    *Sid = (RtlAllocateHeap(RtlGetProcessHeap!(), 0, Length as SIZE_T)).cast();
     if (*Sid).is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
         if !PolicyInfo.is_null() {
@@ -36,7 +36,11 @@ unsafe extern "C" fn GetAccountDomainSid(
         return Status;
     }
 
-    memcpy(*Sid, (*PolicyInfo).PolicyAccountDomainInfo.Sid, Length);
+    memcpy(
+        (*Sid).cast(),
+        (*PolicyInfo).PolicyAccountDomainInfo.as_ref().Sid as *const c_void,
+        Length as usize,
+    );
 
     if !PolicyInfo.is_null() {
         LsaIFree_LSAPR_POLICY_INFORMATION(PolicyAccountDomainInformation,
@@ -55,8 +59,8 @@ unsafe extern "C" fn MsvpCheckPassword(
 ) -> NTSTATUS {
     let mut UserNtPassword: ENCRYPTED_NT_OWF_PASSWORD = core::mem::zeroed();
     let mut UserLmPassword: ENCRYPTED_LM_OWF_PASSWORD = core::mem::zeroed();
-    let mut UserLmPasswordPresent: BOOLEAN = FALSE;
-    let mut UserNtPasswordPresent: BOOLEAN = FALSE;
+    let mut UserLmPasswordPresent: BOOLEAN = (FALSE) as u8;
+    let mut UserNtPasswordPresent: BOOLEAN = (FALSE) as u8;
     let mut LmPwdString: OEM_STRING = core::mem::zeroed();
     let mut LmPwdBuffer: [CHAR; 15] = [0; 15];
     let mut Status: NTSTATUS;
@@ -64,12 +68,12 @@ unsafe extern "C" fn MsvpCheckPassword(
     LmPwdString.Length = 15;
     LmPwdString.MaximumLength = 15;
     LmPwdString.Buffer = LmPwdBuffer.as_mut_ptr();
-    ZeroMemory(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
+    ZeroMemory!(LmPwdString.Buffer as *mut core::ffi::c_void, LmPwdString.MaximumLength as usize);
 
     Status = RtlUpcaseUnicodeStringToOemString(
         &mut LmPwdString,
         (*UserPwdData).PlainPwd,
-        FALSE,
+        (FALSE) as u8,
     );
     if NT_SUCCESS(Status) {
         Status = SystemFunction006(
@@ -77,7 +81,7 @@ unsafe extern "C" fn MsvpCheckPassword(
             &mut UserLmPassword as *mut _ as LPSTR,
         );
         if NT_SUCCESS(Status) {
-            UserLmPasswordPresent = TRUE;
+            UserLmPasswordPresent = (TRUE) as u8;
         }
     }
 
@@ -86,25 +90,25 @@ unsafe extern "C" fn MsvpCheckPassword(
         &mut UserNtPassword as *mut _ as LPBYTE,
     );
     if NT_SUCCESS(Status) {
-        UserNtPasswordPresent = TRUE;
+        UserNtPasswordPresent = (TRUE) as u8;
     }
 
     Status = STATUS_WRONG_PASSWORD;
 
     'done: loop {
-        if (*UserInfo).All.NtPasswordPresent == FALSE
-            && (*UserInfo).All.LmPasswordPresent == FALSE
+        if (*UserInfo).All.NtPasswordPresent == (FALSE) as u8
+            && (*UserInfo).All.LmPasswordPresent == (FALSE) as u8
         {
             Status = STATUS_SUCCESS;
             break 'done;
         }
 
         if UserNtPasswordPresent != 0 && (*UserInfo).All.NtPasswordPresent != 0 {
-            if RtlEqualMemory(
+            if RtlEqualMemory!(
                 &UserNtPassword as *const _ as *const core::ffi::c_void,
                 (*UserInfo).All.NtOwfPassword.Buffer as *const core::ffi::c_void,
-                core::mem::size_of_val(&ENCRYPTED_NT_OWF_PASSWORD),
-            ) != 0
+                core::mem::size_of::<ENCRYPTED_NT_OWF_PASSWORD>(),
+            )
             {
                 Status = STATUS_SUCCESS;
                 break 'done;
@@ -112,11 +116,11 @@ unsafe extern "C" fn MsvpCheckPassword(
         }
 
         if UserLmPasswordPresent != 0 && (*UserInfo).All.LmPasswordPresent != 0 {
-            if RtlEqualMemory(
+            if RtlEqualMemory!(
                 &UserLmPassword as *const _ as *const core::ffi::c_void,
                 (*UserInfo).All.LmOwfPassword.Buffer as *const core::ffi::c_void,
-                core::mem::size_of_val(&ENCRYPTED_LM_OWF_PASSWORD),
-            ) != 0
+                core::mem::size_of::<ENCRYPTED_LM_OWF_PASSWORD>(),
+            )
             {
                 Status = STATUS_SUCCESS;
                 break 'done;
@@ -183,7 +187,7 @@ unsafe extern "C" fn SamValidateNormalUser(
     let mut Status: NTSTATUS;
     let mut ServerHandle: SAMPR_HANDLE = core::ptr::null_mut();
     let mut DomainHandle: SAMPR_HANDLE = core::ptr::null_mut();
-    let mut AccountDomainSid: PRPC_SID;
+    let mut AccountDomainSid: PRPC_SID = core::ptr::null_mut();
     let mut Names: [RPC_UNICODE_STRING; 1] = core::mem::zeroed();
     let mut UserHandle: SAMPR_HANDLE = core::ptr::null_mut();
     let mut RelativeIds: SAMPR_ULONG_ARRAY = SAMPR_ULONG_ARRAY {
@@ -209,7 +213,7 @@ unsafe extern "C" fn SamValidateNormalUser(
             core::ptr::null_mut(),
             &mut ServerHandle,
             SAM_SERVER_CONNECT | SAM_SERVER_LOOKUP_DOMAIN,
-            TRUE,
+            (TRUE) as u8,
         );
         if !NT_SUCCESS(Status) {
             break 'done;
@@ -282,14 +286,23 @@ unsafe extern "C" fn SamValidateNormalUser(
                 break 'done;
             }
 
-            if (*LogonTime.QuadPart) >= *((*UserInfo).All.AccountExpires.QuadPart as *const UINT64) {
+            // The C is `LogonTime.QuadPart >= *(UINT64*)&UserInfo->All.AccountExpires`: it takes
+            // the ADDRESS of an OLD_LARGE_INTEGER (a split LowPart/HighPart pair, no QuadPart
+            // member at all) and reinterprets those 8 bytes as one UINT64. The translation had
+            // read a `.QuadPart` field that does not exist and cast its VALUE to a pointer,
+            // which would have dereferenced a timestamp as an address.
+            if LogonTime.QuadPart as UINT64
+                >= *(core::ptr::addr_of!((*UserInfo).All.AccountExpires) as *const UINT64)
+            {
                 *SubStatus = STATUS_ACCOUNT_EXPIRED;
                 Status = STATUS_ACCOUNT_RESTRICTION;
                 break 'done;
             }
 
-            if (*LogonTime.QuadPart) >= *((*UserInfo).All.PasswordMustChange.QuadPart as *const UINT64) {
-                if *((*UserInfo).All.PasswordLastSet.QuadPart as *const UINT64) == 0 {
+            if LogonTime.QuadPart as UINT64
+                >= *(core::ptr::addr_of!((*UserInfo).All.PasswordMustChange) as *const UINT64)
+            {
+                if *(core::ptr::addr_of!((*UserInfo).All.PasswordLastSet) as *const UINT64) == 0 {
                     *SubStatus = STATUS_PASSWORD_MUST_CHANGE;
                 } else {
                     *SubStatus = STATUS_PASSWORD_EXPIRED;
@@ -320,7 +333,7 @@ unsafe extern "C" fn SamValidateNormalUser(
         *UserInfoPtr = UserInfo;
     } else {
         if !AccountDomainSid.is_null() {
-            RtlFreeHeap(RtlGetProcessHeap(), 0, AccountDomainSid as *mut _);
+            RtlFreeHeap(RtlGetProcessHeap!(), 0, AccountDomainSid as *mut _);
         }
 
         if !UserHandle.is_null() {
@@ -345,17 +358,18 @@ unsafe extern "C" fn SamValidateNormalUser(
 }
 unsafe extern "C" fn GetNtAuthorityDomainSid(
      Sid: *mut PRPC_SID) -> NTSTATUS {
-    let NtAuthority: SID_IDENTIFIER_AUTHORITY = SECURITY_NT_AUTHORITY;
+    let NtAuthority: SID_IDENTIFIER_AUTHORITY =
+        SID_IDENTIFIER_AUTHORITY { Value: SECURITY_NT_AUTHORITY };
     let mut Length: ULONG = 0;
 
     Length = RtlLengthRequiredSid(0);
-    *Sid = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length) as PRPC_SID;
+    *Sid = RtlAllocateHeap(RtlGetProcessHeap!(), 0, Length as SIZE_T) as PRPC_SID;
     if (*Sid).is_null()
     {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    RtlInitializeSid(*Sid, core::ptr::addr_of!(NtAuthority) as *mut SID_IDENTIFIER_AUTHORITY, 0);
+    RtlInitializeSid((*Sid).cast(), core::ptr::addr_of!(NtAuthority) as *mut SID_IDENTIFIER_AUTHORITY, 0);
 
     return STATUS_SUCCESS;
 }
@@ -372,50 +386,55 @@ pub unsafe extern "C" fn SamValidateUser(
     UserInfoPtr: *mut PSAMPR_USER_INFO_BUFFER,
     SubStatus: PNTSTATUS,
 ) -> NTSTATUS {
-    static NtAuthorityU: _UNICODE_STRING = RTL_CONSTANT_STRING(b"N\0T\0 \0A\0U\0T\0H\0O\0R\0I\0T\0Y\0\0\0");
-    static LocalServiceU: _UNICODE_STRING = RTL_CONSTANT_STRING(b"L\0o\0c\0a\0l\0S\0e\0r\0v\0i\0c\0e\0\0\0");
-    static NetworkServiceU: _UNICODE_STRING = RTL_CONSTANT_STRING(b"N\0e\0t\0w\0o\0r\0k\0S\0e\0r\0v\0i\0c\0e\0\0\0");
+    // The C spells these `static const UNICODE_STRING`. A Rust `static` would demand
+    // `UNICODE_STRING: Sync`, which a raw `Buffer` pointer is not; `let` is equivalent here
+    // because the only thing whose address escapes is the wide text, and `w!` already backs
+    // that with a real `static [u16]`. The three-word header is rebuilt per call and never
+    // outlives it — exactly what the C's `&NtAuthorityU` hands RtlEqualUnicodeString.
+    let NtAuthorityU: _UNICODE_STRING = RTL_CONSTANT_STRING!("NT AUTHORITY");
+    let LocalServiceU: _UNICODE_STRING = RTL_CONSTANT_STRING!("LocalService");
+    let NetworkServiceU: _UNICODE_STRING = RTL_CONSTANT_STRING!("NetworkService");
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    *SpecialAccount = FALSE;
+    *SpecialAccount = (FALSE) as i32;
     *UserInfoPtr = core::ptr::null_mut();
     *SubStatus = STATUS_SUCCESS;
 
-    if RtlEqualUnicodeString(LogonDomain, &NtAuthorityU as *const _ as *mut _, TRUE) != 0 {
-        *SpecialAccount = TRUE;
+    if RtlEqualUnicodeString(LogonDomain, &NtAuthorityU as *const _ as *mut _, (TRUE) as u8) != 0 {
+        *SpecialAccount = (TRUE) as i32;
 
         Status = GetNtAuthorityDomainSid(AccountDomainSidPtr);
         if !NT_SUCCESS(Status) {
             return Status;
         }
 
-        if RtlEqualUnicodeString(LogonUserName, &LocalServiceU as *const _ as *mut _, TRUE) != 0 {
+        if RtlEqualUnicodeString(LogonUserName, &LocalServiceU as *const _ as *mut _, (TRUE) as u8) != 0 {
             if LogonType != Service {
                 return STATUS_LOGON_FAILURE;
             }
 
-            *UserInfoPtr = RtlAllocateHeap(
-                RtlGetProcessHeap(),
+            *UserInfoPtr = (RtlAllocateHeap(
+                RtlGetProcessHeap!(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<SAMPR_USER_ALL_INFORMATION>(),
-            ) as *mut SAMPR_USER_ALL_INFORMATION;
+                core::mem::size_of::<SAMPR_USER_ALL_INFORMATION>() as SIZE_T,
+            ) as *mut SAMPR_USER_ALL_INFORMATION).cast();
             if (*UserInfoPtr).is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
             (**UserInfoPtr).All.UserId = SECURITY_LOCAL_SERVICE_RID;
             (**UserInfoPtr).All.PrimaryGroupId = SECURITY_LOCAL_SERVICE_RID;
-        } else if RtlEqualUnicodeString(LogonUserName, &NetworkServiceU as *const _ as *mut _, TRUE) != 0 {
+        } else if RtlEqualUnicodeString(LogonUserName, &NetworkServiceU as *const _ as *mut _, (TRUE) as u8) != 0 {
             if LogonType != Service {
                 return STATUS_LOGON_FAILURE;
             }
 
-            *UserInfoPtr = RtlAllocateHeap(
-                RtlGetProcessHeap(),
+            *UserInfoPtr = (RtlAllocateHeap(
+                RtlGetProcessHeap!(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<SAMPR_USER_ALL_INFORMATION>(),
-            ) as *mut SAMPR_USER_ALL_INFORMATION;
+                core::mem::size_of::<SAMPR_USER_ALL_INFORMATION>() as SIZE_T,
+            ) as *mut SAMPR_USER_ALL_INFORMATION).cast();
             if (*UserInfoPtr).is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -489,7 +508,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //
 //     Length = RtlLengthSid(PolicyInfo->PolicyAccountDomainInfo.Sid);
 //
-//     *Sid = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length);
+//     *Sid = RtlAllocateHeap(RtlGetProcessHeap!(), 0, Length);
 //     if (*Sid == NULL)
 //     {
 //         ERR("Failed to allocate SID\n");
@@ -531,7 +550,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     LmPwdString.Length = 15;
 //     LmPwdString.MaximumLength = 15;
 //     LmPwdString.Buffer = LmPwdBuffer;
-//     ZeroMemory(LmPwdString.Buffer, LmPwdString.MaximumLength);
+//     ZeroMemory!(LmPwdString.Buffer, LmPwdString.MaximumLength);
 //
 //     Status = RtlUpcaseUnicodeStringToOemString(&LmPwdString,
 //                                                UserPwdData->PlainPwd,
@@ -570,7 +589,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     if (UserNtPasswordPresent && UserInfo->All.NtPasswordPresent)
 //     {
 //         TRACE("Check NT password hashes:\n");
-//         if (RtlEqualMemory(&UserNtPassword,
+//         if (RtlEqualMemory!(&UserNtPassword,
 //                            UserInfo->All.NtOwfPassword.Buffer,
 //                            sizeof(ENCRYPTED_NT_OWF_PASSWORD)))
 //         {
@@ -586,7 +605,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     if (UserLmPasswordPresent && UserInfo->All.LmPasswordPresent)
 //     {
 //         TRACE("Check LM password hashes:\n");
-//         if (RtlEqualMemory(&UserLmPassword,
+//         if (RtlEqualMemory!(&UserLmPassword,
 //                            UserInfo->All.LmOwfPassword.Buffer,
 //                            sizeof(ENCRYPTED_LM_OWF_PASSWORD)))
 //         {
@@ -834,7 +853,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     else
 //     {
 //         if (AccountDomainSid != NULL)
-//             RtlFreeHeap(RtlGetProcessHeap(), 0, AccountDomainSid);
+//             RtlFreeHeap(RtlGetProcessHeap!(), 0, AccountDomainSid);
 //
 //         if (UserHandle != NULL)
 //             SamrCloseHandle(&UserHandle);
@@ -865,7 +884,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //     ULONG Length = 0;
 //
 //     Length = RtlLengthRequiredSid(0);
-//     *Sid = RtlAllocateHeap(RtlGetProcessHeap(), 0, Length);
+//     *Sid = RtlAllocateHeap(RtlGetProcessHeap!(), 0, Length);
 //     if (*Sid == NULL)
 //     {
 //         ERR("Failed to allocate SID\n");
@@ -891,9 +910,9 @@ pub unsafe extern "C" fn SamValidateUser(
 //      PSAMPR_USER_INFO_BUFFER* UserInfoPtr,
 //      PNTSTATUS SubStatus)
 // {
-//     static const UNICODE_STRING NtAuthorityU = RTL_CONSTANT_STRING(L"NT AUTHORITY");
-//     static const UNICODE_STRING LocalServiceU = RTL_CONSTANT_STRING(L"LocalService");
-//     static const UNICODE_STRING NetworkServiceU = RTL_CONSTANT_STRING(L"NetworkService");
+//     static const UNICODE_STRING NtAuthorityU = RTL_CONSTANT_STRING!(L"NT AUTHORITY");
+//     static const UNICODE_STRING LocalServiceU = RTL_CONSTANT_STRING!(L"LocalService");
+//     static const UNICODE_STRING NetworkServiceU = RTL_CONSTANT_STRING!(L"NetworkService");
 //
 //     NTSTATUS Status = STATUS_SUCCESS;
 //
@@ -922,7 +941,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //             if (LogonType != Service)
 //                 return STATUS_LOGON_FAILURE;
 //
-//             *UserInfoPtr = RtlAllocateHeap(RtlGetProcessHeap(),
+//             *UserInfoPtr = RtlAllocateHeap(RtlGetProcessHeap!(),
 //                                            HEAP_ZERO_MEMORY,
 //                                            sizeof(SAMPR_USER_ALL_INFORMATION));
 //             if (*UserInfoPtr == NULL)
@@ -938,7 +957,7 @@ pub unsafe extern "C" fn SamValidateUser(
 //             if (LogonType != Service)
 //                 return STATUS_LOGON_FAILURE;
 //
-//             *UserInfoPtr = RtlAllocateHeap(RtlGetProcessHeap(),
+//             *UserInfoPtr = RtlAllocateHeap(RtlGetProcessHeap!(),
 //                                            HEAP_ZERO_MEMORY,
 //                                            sizeof(SAMPR_USER_ALL_INFORMATION));
 //             if (*UserInfoPtr == NULL)
