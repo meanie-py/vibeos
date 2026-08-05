@@ -6441,6 +6441,9 @@ pub const RTL_ENCRYPT_MEMORY_SIZE: i32 = 8;
 pub const RTL_ENCRYPT_OPTION_SAME_PROCESS: i32 = 0;
 pub const RTL_ENCRYPT_OPTION_CROSS_PROCESS: i32 = 1;
 pub const RTL_ENCRYPT_OPTION_SAME_LOGON: i32 = 2;
+pub type PTHREAD_START_ROUTINE =
+    ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> DWORD>;
+pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
 unsafe extern "C" {
     pub fn WinMain(
         arg1: HINSTANCE,
@@ -20232,6 +20235,26 @@ unsafe extern "C" {
         pmtime: *const FILETIME,
     ) -> HRESULT;
 }
+pub type DLGPROC = ::core::option::Option<
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
+>;
+pub type WNDPROC = ::core::option::Option<
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT,
+>;
+#[repr(C)]
+pub struct _WNDCLASSW {
+    pub style: UINT,
+    pub lpfnWndProc: WNDPROC,
+    pub cbClsExtra: ::core::ffi::c_int,
+    pub cbWndExtra: ::core::ffi::c_int,
+    pub hInstance: HINSTANCE,
+    pub hIcon: HICON,
+    pub hCursor: HCURSOR,
+    pub hbrBackground: HBRUSH,
+    pub lpszMenuName: LPCWSTR,
+    pub lpszClassName: LPCWSTR,
+}
+pub type WNDCLASSW = _WNDCLASSW;
 pub use self::tagAR_STATE as AR_STATE;
 #[repr(C)]
 pub struct tagICONMETRICSA {
@@ -30245,6 +30268,14 @@ impl _SECURITY_PAGE {
 }
 pub type SECURITY_PAGE = _SECURITY_PAGE;
 pub type PSECURITY_PAGE = *mut _SECURITY_PAGE;
+unsafe extern "C" {
+    pub fn LoadAndFormatString(
+        hInstance: HINSTANCE,
+        uID: UINT,
+        lpTarget: *mut LPWSTR,
+        ...
+    ) -> DWORD;
+}
 pub type POBJPICK_SELECTED_SID = ::core::option::Option<
     unsafe extern "C" fn(
         pDsObjectPicker: *mut IDsObjectPicker,

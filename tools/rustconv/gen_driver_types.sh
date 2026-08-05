@@ -1542,6 +1542,16 @@ case "$DRIVER" in
     # (WM_*/LVM_*/SB_*) and LSTATUS the module touches is an `int` in the C, so bindgen's u32
     # default turns each use into an E0308.
     MACRO_SIGNED=1
+    # UNBLOCK: same reason as netcfgx above — ntdll-sys spells these with the arch's literal
+    # convention and normalize_island_abi.py only rewrites a crate's OWN islands, so a slot that
+    # resolves through the -sys glob stays `stdcall`/`C` while the callback is `extern "system"`.
+    # aclui needs all three: SecurityPageProc (DLGPROC), CheckListWndProc (WNDPROC) and
+    # LookupThreadProc (LPTHREAD_START_ROUTINE, via CreateThread).
+    # PTHREAD_START_ROUTINE because LPTHREAD_START_ROUTINE is only an ALIAS of it — unblocking
+    # the alias alone leaves it pointing back at the -sys definition. _WNDCLASSW because the
+    # WNDPROC slot that matters is a FIELD of it (bindgen names the struct _WNDCLASSW), and a
+    # blocklisted struct keeps the -sys field type no matter how the pointee is spelled here.
+    UNBLOCK="DLGPROC WNDPROC LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE _WNDCLASSW WNDCLASSW"
     DRIVER_DIR="${SRC}/dll/win32/aclui"
     WRAPPER_INC=$'#include "precomp.h"\n#include <sddl.h>\n#define NDEBUG\n#include <debug.h>\n#include "resource.h"\n#include <uxtheme.h>\n#include <tmschema.h>\n#include <ntsecapi.h>\n#include <stdarg.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <aclui.h>\n#include <objsel.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]aclui\.h' --allowlist-file '.*[/\\]commctrl\.h'

@@ -60,6 +60,15 @@ pub use crate::types::{
     LVFINDINFOW as LVFINDINFO, LVITEMW as LVITEM, PROPSHEETHEADERW as PROPSHEETHEADER,
     PROPSHEETPAGEW as PROPSHEETPAGE, LVITEMW as _LVITEMW,
 };
+// The TCHAR TYPE family, and it must be spelled out rather than inherited: ntdll-sys is built
+// without UNICODE, so its glob supplies `LPTSTR = LPSTR` — and a UNICODE module that picks that
+// up is not a compile error waiting to happen, it is a correctness bug waiting to happen. Here
+// it surfaced loudly (`*mut i8` into SetDlgItemTextW), but the same alias inside a
+// `size_of::<TCHAR>()` allocation would compile clean and size every buffer at half.
+// These explicit re-exports shadow the glob, exactly as the A/W function aliases above do.
+pub use crate::types::{
+    LPCWSTR as LPCTSTR, LPWSTR as LPTSTR, PCWSTR as PCTSTR, PWSTR as PTSTR, WCHAR as TCHAR,
+};
 // DrawTextW/SetWindowLongPtrW/GetWindowLongPtrW: on i386 the Ptr forms are `#define`s onto the
 // 32-bit calls, which is why they have no `W` twin of their own to alias on that arch.
 pub use crate::types::DrawTextW as DrawText;
@@ -171,22 +180,26 @@ macro_rules! InterlockedDecrement { ($p:expr $(,)?) => { $crate::prelude::_Inter
 
 // commctrl.h models the whole ListView API as macros over SendMessage. Kept macros for the same
 // reason, and spelled against LVM_* from the island so a message number cannot drift.
+// The struct argument goes `as *const _ as LPARAM`, never `as *mut c_void`: a cast out of a
+// reference may not change the pointee type, so `&mut lvi as *mut c_void` is rejected outright.
+// `*const _` keeps the pointee and accepts all four shapes callers pass (&T, &mut T, *const T,
+// *mut T); LPARAM is an integer, so const-ness is not information being discarded.
 #[macro_export]
 macro_rules! ListView_GetItem {
-    ($hwnd:expr, $pitem:expr $(,)?) => { SendMessage($hwnd, LVM_GETITEMW as UINT, 0, $pitem as *mut c_void as LPARAM) != 0 };
+    ($hwnd:expr, $pitem:expr $(,)?) => { (SendMessage($hwnd, LVM_GETITEMW as UINT, 0, $pitem as *const _ as LPARAM) != 0) as BOOL };
 }
 #[macro_export]
 macro_rules! ListView_SetItem {
-    ($hwnd:expr, $pitem:expr $(,)?) => { SendMessage($hwnd, LVM_SETITEMW as UINT, 0, $pitem as *mut c_void as LPARAM) != 0 };
+    ($hwnd:expr, $pitem:expr $(,)?) => { (SendMessage($hwnd, LVM_SETITEMW as UINT, 0, $pitem as *const _ as LPARAM) != 0) as BOOL };
 }
 #[macro_export]
 macro_rules! ListView_InsertItem {
-    ($hwnd:expr, $pitem:expr $(,)?) => { SendMessage($hwnd, LVM_INSERTITEMW as UINT, 0, $pitem as *mut c_void as LPARAM) as c_int };
+    ($hwnd:expr, $pitem:expr $(,)?) => { SendMessage($hwnd, LVM_INSERTITEMW as UINT, 0, $pitem as *const _ as LPARAM) as c_int };
 }
 #[macro_export]
 macro_rules! ListView_FindItem {
     ($hwnd:expr, $start:expr, $plvfi:expr $(,)?) => {
-        SendMessage($hwnd, LVM_FINDITEMW as UINT, $start as WPARAM, $plvfi as *mut c_void as LPARAM) as c_int
+        SendMessage($hwnd, LVM_FINDITEMW as UINT, $start as WPARAM, $plvfi as *const _ as LPARAM) as c_int
     };
 }
 #[macro_export]
@@ -198,31 +211,31 @@ macro_rules! ListView_GetNextItem {
 #[macro_export]
 macro_rules! ListView_InsertColumn {
     ($hwnd:expr, $icol:expr, $pcol:expr $(,)?) => {
-        SendMessage($hwnd, LVM_INSERTCOLUMNW as UINT, $icol as WPARAM, $pcol as *mut c_void as LPARAM) as c_int
+        SendMessage($hwnd, LVM_INSERTCOLUMNW as UINT, $icol as WPARAM, $pcol as *const _ as LPARAM) as c_int
     };
 }
 #[macro_export]
 macro_rules! ListView_SetColumn {
     ($hwnd:expr, $icol:expr, $pcol:expr $(,)?) => {
-        SendMessage($hwnd, LVM_SETCOLUMNW as UINT, $icol as WPARAM, $pcol as *mut c_void as LPARAM) != 0
+        (SendMessage($hwnd, LVM_SETCOLUMNW as UINT, $icol as WPARAM, $pcol as *const _ as LPARAM) != 0) as BOOL
     };
 }
 #[macro_export]
 macro_rules! ListView_SetImageList {
     ($hwnd:expr, $himl:expr, $iImageList:expr $(,)?) => {
-        SendMessage($hwnd, LVM_SETIMAGELIST as UINT, $iImageList as WPARAM, $himl as *mut c_void as LPARAM) as HIMAGELIST
+        SendMessage($hwnd, LVM_SETIMAGELIST as UINT, $iImageList as WPARAM, $himl as *const _ as LPARAM) as HIMAGELIST
     };
 }
 #[macro_export]
 macro_rules! ListView_SortItems {
     ($hwnd:expr, $pfnCompare:expr, $lPrm:expr $(,)?) => {
-        SendMessage($hwnd, LVM_SORTITEMS as UINT, $lPrm as WPARAM, $pfnCompare as *mut c_void as LPARAM) != 0
+        (SendMessage($hwnd, LVM_SORTITEMS as UINT, $lPrm as WPARAM, $pfnCompare as usize as LPARAM) != 0) as BOOL
     };
 }
 #[macro_export]
 macro_rules! ListView_SetExtendedListViewStyleEx {
     ($hwnd:expr, $mask:expr, $ex:expr $(,)?) => {
-        SendMessage($hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE as UINT, $mask as WPARAM, $ex as *mut c_void as LPARAM) as DWORD
+        SendMessage($hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE as UINT, $mask as WPARAM, $ex as LPARAM) as DWORD
     };
 }
 
