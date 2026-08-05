@@ -70,8 +70,8 @@ pub use crate::shellcom::{
 // `atl.rs` documents the three invariants those call sites lean on (zeroable, transparent,
 // Drop-as-destructor).
 pub use crate::atl::{
-    CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator, CSimpleArray,
-    CStringW,
+    CAtlList, CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator,
+    CSimpleArray, CStringW,
 };
 
 // shellutils.h / utils.h header inlines. The explicit `use` deliberately shadows the island

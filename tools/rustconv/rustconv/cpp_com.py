@@ -3490,6 +3490,15 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
     # stable and owned by the explicit support block below, which represents
     # those ABI-equivalent optional pointers as c_void.
     selected.discard("SFV_CREATE")
+    # An ATL container has a Rust lowering in `crate::atl` that the prelude re-exports, so
+    # rendering the header's own definition here emits a SHADOW that wins over it by scope.
+    # Worse than a duplicate: this renderer erases template parameters, so ATL's
+    # `CSimpleArray<T>` came out as a non-generic `CSimpleArray { m_aT: *mut c_void, ... }` —
+    # right layout, wrong type, no `new()`, no `Drop`. The container's whole reason for
+    # keeping its type is that `Drop` restores the C++ member destructor, and a shadow
+    # silently takes that away again.
+    for container in _RAII_CONTAINER_LOWERINGS:
+        selected.discard(container)
     # Embedded SDK records are part of the same deterministic layout closure.
     changed = True
     while changed:
