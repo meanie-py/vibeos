@@ -2329,3 +2329,11 @@ SHGetNameAndFlagsW_RustBridge(LPCITEMIDLIST pidl, DWORD dwFlags, LPWSTR pszText,
 {
     return SHGetNameAndFlagsW(pidl, dwFlags, pszText, cchBuf, pdwAttributes);
 }
+
+/* Rust bridge — DCIA_AddShellExSubkey has C++ linkage (utils.h:129), so it is name-mangled
+ * and the Rust-owned CFSDropTarget cannot import it directly. */
+extern "C" void WINAPI
+DCIA_AddShellExSubkey_RustBridge(HDCIA hDCIA, HKEY hProgId, PCWSTR pszSubkey)
+{
+    DCIA_AddShellExSubkey(hDCIA, hProgId, pszSubkey);
+}

@@ -700,13 +700,37 @@ pub struct IFolderView {
 }
 #[repr(C)]
 pub struct IFolderViewVtbl {
-    pub QueryInterface: usize,
-    pub AddRef: usize,
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
     pub Release: unsafe extern "system" fn(*mut IFolderView) -> ULONG,
     pub GetCurrentViewMode: usize,
     pub SetCurrentViewMode: usize,
     pub GetFolder:
         unsafe extern "system" fn(*mut IFolderView, REFIID, *mut *mut c_void) -> HRESULT,
+    // This vtable used to STOP at GetFolder. It is truncated, not partial-by-design, so the
+    // eleven slots below (shobjidl.idl:866) are additive: nothing constructs an
+    // IFolderViewVtbl literal — it is only ever read through a `*mut` handed over by C++ —
+    // so growing the tail moves no existing slot. Untyped ones stay `usize`, which is the
+    // same size as a fn pointer and cannot be called by accident.
+    pub Item: usize,
+    pub ItemCount: usize,
+    pub Items: usize,
+    pub GetSelectionMarkedItem: usize,
+    pub GetFocusedItem: usize,
+    pub GetItemPosition:
+        unsafe extern "system" fn(*mut IFolderView, PCUITEMID_CHILD, *mut POINT) -> HRESULT,
+    pub GetSpacing: usize,
+    pub GetDefaultSpacing: usize,
+    pub GetAutoArrange: usize,
+    pub SelectItem: usize,
+    pub SelectAndPositionItems: unsafe extern "system" fn(
+        *mut IFolderView,
+        UINT,
+        PCUITEMID_CHILD_ARRAY,
+        *mut POINT,
+        DWORD,
+    ) -> HRESULT,
 }
 
 #[repr(C)]
