@@ -4550,6 +4550,25 @@ present is a silently-wrong island.
   tolerance is not a warning, and the two are easy to confuse. The salvage is to gate the
   translated bodies behind the same `#[cfg(feature = ...)]` the C uses, which keeps the paid
   artifact and makes the Rust strictly better than the C.
+- **There are TWO decidable gate classes, and knowing only wine's was worth 4,614 dead lines.**
+  `config.h`'s `/* #undef HAVE_LDAP */` settles `#ifdef HAVE_LDAP`; a module's own
+  `-DNAME=<int>` settles `#if NAME >= 100` just as completely, and nothing was reading the
+  *value*. msvcrt compiles at `-D_MSVCR_VER=0`: `concurrency.c` puts all 3,839 of its lines
+  inside `#if _MSVCR_VER >= 100` and `handler4.c` 775 inside
+  `defined(__x86_64__) && _MSVCR_VER>=140`. **Both build to a 396-byte object with ZERO
+  defined symbols**, and both read as prime targets — concurrency.c is the largest untranslated
+  file in the module. `_eval_int_guard` now settles these; short-circuit is what makes it work
+  on handler4.c, where one decidably-false conjunct kills the block while `defined(__x86_64__)`
+  stays forever unknown. It refuses mixed `&&`/`||` precedence rather than risk the inverse
+  error, which is the one that hurts: reporting LIVE code dead sends someone to delete a body
+  the compiler really is building.
+- **The finding has to be PER-TU. A module-wide percentage hides exactly the file you were
+  about to pay for.** Those two msvcrt files are 10.6% of the module's compiled lines — *under*
+  the 15% `MOSTLY_DEAD_BODIES` threshold — so the module-wide warning stayed silent on 4,614
+  lines of guaranteed-dead code. You choose a FILE to translate, not a module, so `DEAD_TU`
+  fires at **ERROR** for any single compiled TU that is ≥90% dead. `DEAD_SOURCE` cannot cover
+  this: these files ARE in the CMake source list and do get compiled — they just preprocess to
+  nothing. Confirm any hit the same way it was found, with `nm` on the `.obj`.
 - **`add_pch()`'s SKIP list is load-bearing.** Its third argument names the TUs that must not
   get the PCH, and they are skipped *precisely because they do not compile with it*. wldap32's
   `ber.c` includes `<winldap.h>` while `precomp.h` pulls `"winldap_private.h"`; the two declare
