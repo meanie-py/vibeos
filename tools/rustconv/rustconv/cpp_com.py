@@ -126,6 +126,39 @@ class PlainStateField:
         return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
 
     @property
+    def owns_resource(self) -> bool:
+        """True when the C++ member has a non-trivial destructor of its own."""
+        return (
+            self.com_ptr_interface is not None
+            or self.owned_cstring
+            or self.owned_heap_ptr
+            or self.raii_container is not None
+        )
+
+    @property
+    def owned_rust_type(self) -> str:
+        """The field spelling where RUST DROP GLUE owns the lifetime.
+
+        This differs from `rust_type`, which is the COM *owner's* spelling: an owner's
+        ATL members are released by explicitly generated code in `Release`, so a raw
+        `*mut T` there is complete. A POD has no generated code at all — its only
+        destructor is the drop glue Rust derives from its field types — so an ATL member
+        flattened to a raw pointer here is a leak with nothing red anywhere. Keeping the
+        owning type makes Rust's field-drop order reproduce C++'s implicit destructor.
+        Every type used is `repr(transparent)` over the same pointer, so layout is
+        unchanged.
+        """
+        if self.raii_container is not None:
+            return self.raii_container
+        if self.com_ptr_interface is not None:
+            rust = f"CComPtr<{self.com_ptr_interface}>"
+        elif self.owned_heap_ptr:
+            rust = f"CComHeapPtr<{c_type_to_rust(self.c_type).removeprefix('*mut ').strip()}>"
+        else:
+            return self.rust_type
+        return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
+
+    @property
     def init_expression(self) -> str:
         """The struct-literal initialiser. Every other field is `zeroed()`, which is the
         C++ default ctor for a POD and is documented-valid for atl.rs's pointer types;
@@ -157,6 +190,37 @@ class PodStateType:
     name: str
     fields: tuple[PlainStateField, ...]
     packed: bool = False
+
+    @property
+    def owns_resources(self) -> bool:
+        """True when this struct's own fields give it a non-trivial C++ destructor."""
+        return any(state.owns_resource for state in self.fields)
+
+
+def pods_with_drop(pods: Sequence[PodStateType]) -> frozenset[str]:
+    """POD names whose Rust struct has real drop glue — directly, or transitively through
+    a by-value field of another such POD.
+
+    C++'s implicit destructor is transitive and so is Rust's, so a guard that looked only
+    one level deep would wave through a wrapper struct and leak everything inside it.
+    """
+    names = {pod.name for pod in pods if pod.owns_resources}
+    changed = True
+    while changed:
+        changed = False
+        for pod in pods:
+            if pod.name in names:
+                continue
+            for state in pod.fields:
+                # A POINTER to a POD owns nothing — C++ destroys neither end. Only a
+                # by-value member (an array of them included) runs the element destructor.
+                if "*" in state.c_type:
+                    continue
+                if state.c_type.strip() in names:
+                    names.add(pod.name)
+                    changed = True
+                    break
+    return frozenset(names)
 
 
 @dataclass(frozen=True)
@@ -254,6 +318,16 @@ class CppComClass:
                 problems.append(
                     "bindgen-backed STGMEDIUM state lacks source-proven constructor/"
                     f"destructor lifecycle: {declaration}"
+                )
+        for pod in self.pod_state_types:
+            if pod.packed and pod.owns_resources:
+                # rustc refuses to drop a field of a packed struct (it cannot take a
+                # reference to a misaligned place), so this would not even compile —
+                # but saying so here names the C++ construct instead of dumping E0793.
+                problems.append(
+                    f"packed struct `{pod.name}` has a member with a destructor "
+                    f"({', '.join(s.declaration for s in pod.fields if s.owns_resource)}); "
+                    "Rust cannot drop a packed field"
                 )
         for declaration in self.state_fields:
             try:
@@ -861,9 +935,16 @@ def _parse_plain_state_field(
     )
     if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
         # The element type has to be one the scaffold can already spell, or the container
-        # would be generic over a type the module never defines. POD state types are
-        # discovered from the same source, so `CAtlList<DynamicShellEntry>` resolves once
-        # `DynamicShellEntry` is in `allowed_pod_types`.
+        # would be generic over a type the module never defines. Two families qualify, and
+        # they are safe for DIFFERENT reasons:
+        #   - a scalar or an island struct is trivially destructible, so the container's
+        #     per-element `drop_in_place` is a no-op and matches C++ exactly;
+        #   - a source-discovered POD may hold ATL members, and is safe because the POD is
+        #     rendered with `owned_rust_type` — its RAII members keep their owning Rust
+        #     types, so Rust's field-drop order IS the C++ implicit destructor.
+        # Rendering that POD with raw pointers instead would leak every element with
+        # nothing red anywhere; `CAtlList<DynamicShellEntry>` (a `CComPtr<IContextMenu>`
+        # per entry) is the shape that makes the difference visible.
         element = container.group("element")
         known = (
             set(allowed_pod_types)
@@ -1192,6 +1273,18 @@ def _discover_pod_state_types(
     """
     candidates = []
     for declaration in declarations:
+        # An ATL container's ELEMENT type is state too, and it hides inside the template
+        # argument where the plain `Type name` pattern below cannot see it. Missing it does
+        # not fail loud: the container preflight then rejects the element as "not a proven
+        # layout" and the whole TU reads as untranslatable, when the real answer is that
+        # nobody looked. `CAtlList<DynamicShellEntry>` is the shape.
+        container = re.fullmatch(
+            r"\s*(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+[A-Za-z_]\w*\s*",
+            declaration,
+        )
+        if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
+            candidates.append(container.group("element"))
+            continue
         match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration)
         if match:
             c_type = match.group("type")
@@ -3546,7 +3639,9 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
             field_name = (
                 f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
-            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+            # Identical to `rust_type` for a C SDK record, which cannot hold an ATL member;
+            # spelled this way so every POD renderer states the same ownership invariant.
+            lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
         lines.append("}")
         for alias, pointer in aliases:
             if alias != base and (alias in used_words or alias in shared):
@@ -3724,7 +3819,11 @@ def render_cpp_support(
             field_name = (
                 f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
             )
-            lines.append(f"    pub {field_name}: {state_field.rust_type},")
+            # `owned_rust_type`, not `rust_type`: a free-function module has no generated
+            # Release to run lifetimes for it, so the struct's drop glue is its ONLY
+            # destructor and an ATL member flattened to a raw pointer leaks silently.
+            # For a plain C field the two spellings are identical by construction.
+            lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
         lines.append("}")
         chunks.append("\n".join(lines))
     for name in sorted((used_words & definitions.keys()) - shared_values):
@@ -5476,7 +5575,7 @@ def render_class_scaffold(
         lines.extend([representation, f"pub struct {pod.name} {{"])
         for state in pod.fields:
             field_name = f"r#{state.name}" if state.name in _RUST_KEYWORDS else state.name
-            lines.append(f"    pub {field_name}: {state.rust_type},")
+            lines.append(f"    pub {field_name}: {state.owned_rust_type},")
         lines.extend(["}", ""])
 
     lines.extend(
@@ -5646,12 +5745,16 @@ def render_class_scaffold(
     )
     for worker in cls.base_dtor_workers:
         lines.append(f"        {cls.name}_{worker}_body(this);")
+    drop_pods = pods_with_drop(cls.pod_state_types)
     for state in cls.plain_state_fields():
         if state.assignment_helper is not None:
             lines.append(
                 f"        {cls.name}_{state.assignment_helper}(this, core::ptr::null_mut());"
             )
-        if state.owned_cstring or state.raii_container is not None:
+        # A by-value POD member whose own fields are RAII is destroyed by the C++ owner
+        # exactly like a CStringW member is; its Rust drop glue is what reproduces that.
+        by_value_pod = "*" not in state.c_type and state.c_type.strip() in drop_pods
+        if state.owned_cstring or state.raii_container is not None or by_value_pod:
             # The container's `Drop` in atl.rs IS the C++ member destructor the
             # translation dropped. It runs AFTER the explicit dtor body, which is C++'s
             # own order — and every container here has an idempotent RemoveAll, so an

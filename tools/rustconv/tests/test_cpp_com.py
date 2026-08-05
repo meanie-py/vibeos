@@ -25,6 +25,7 @@ from rustconv.cpp_com import (
     normalize_worker_body,
     normalize_worker_semantics,
     parse_widl_interface,
+    pods_with_drop,
     prepare_helper_closure,
     render_class_scaffold,
     render_cpp_support,
@@ -2420,19 +2421,164 @@ def test_atl_container_state_field_keeps_its_type_and_its_drop():
     assert field.init_expression == "CSimpleArray::new()", "zeroed() is not a valid container"
 
 
-def test_atl_container_over_a_cxx_class_element_is_still_refused():
-    """`CAtlList<StaticShellEntry>` where the element holds a `CStringW`.
+def test_atl_container_over_an_unproven_element_is_still_refused():
+    """An element nobody proved a layout for stays a refusal.
 
-    This is the case that must NOT pass. `atl.rs`'s container `Drop` runs one
-    `drop_in_place` per element, which reproduces the C++ only when the element is
-    trivially destructible. A C++ class with a real destructor is never in the island's
-    struct set, so it stays a refusal instead of becoming a silent per-element leak.
+    The container's `Drop` runs one `drop_in_place` per element, so the element's own
+    destructor semantics have to be known before a single byte is generated. An element
+    that is neither an island struct nor a source-discovered POD is exactly the case where
+    they are not, and guessing would ship either a leak or a wrong layout.
     """
     with pytest.raises(CppComError, match="container element type is not a proven layout"):
         _parse_plain_state_field(
             "CAtlList<StaticShellEntry> m_StaticEntries",
             island_struct_types={"FORMATETC"},
         )
+
+
+def test_container_element_pod_keeps_its_raii_members_owning(tmp_path: Path):
+    """`CAtlList<DynamicShellEntry>` — CDefaultContextMenu's shape, and the leak it hides.
+
+    Discovering the element is only half of it. The element POD holds a
+    `CComPtr<IContextMenu>`, and the COM *owner's* field spelling for that is a raw
+    `*mut IContextMenu` — correct there, because the owner's generated `Release` does the
+    releasing explicitly. A POD has no generated code at all, so the same spelling inside
+    it means the container's per-element `drop_in_place` drops a raw pointer: one leaked
+    interface reference per entry, with nothing red anywhere. The POD therefore has to
+    keep the owning types, and Rust's field-drop order is then the C++ implicit dtor.
+    """
+    source = tmp_path / "menu.cpp"
+    source.write_text(
+        """
+typedef struct _DynamicShellEntry_
+{
+    UINT iIdCmdFirst;
+    CComPtr<IContextMenu> pCM;
+} DynamicShellEntry, *PDynamicShellEntry;
+
+typedef struct _StaticShellEntry_
+{
+    CStringW Verb;
+    HKEY hkClass;
+} StaticShellEntry, *PStaticShellEntry;
+
+class CMenu : public CComCoClass<CMenu>,
+              public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  CAtlList<DynamicShellEntry> m_DynamicEntries;
+  CAtlList<StaticShellEntry> m_StaticEntries;
+  DECLARE_NOT_AGGREGATABLE(CMenu)
+  BEGIN_COM_MAP(CMenu) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Menu, CMenu)\n")
+    cls = analyze_class(source, "CMenu", object_map_source=object_map)
+    cls.require_supported()
+
+    # The element hides in the template argument; the plain `Type name` scan cannot see it.
+    assert sorted(pod.name for pod in cls.pod_state_types) == [
+        "DynamicShellEntry",
+        "StaticShellEntry",
+    ]
+    assert pods_with_drop(cls.pod_state_types) == {"DynamicShellEntry", "StaticShellEntry"}
+
+    rendered = render_class_scaffold(cls, [InterfaceSpec("IFoo", (), "test.h")])
+    assert "pub pCM: CComPtr<IContextMenu>," in rendered
+    assert "pub pCM: *mut IContextMenu," not in rendered, "a raw pointer here leaks per entry"
+    assert "pub Verb: CStringW," in rendered
+    # The containers themselves still drop in Release, after the explicit dtor body.
+    assert "core::ptr::drop_in_place(&mut (*this).m_DynamicEntries);" in rendered
+
+
+def test_by_value_pod_with_raii_members_is_dropped_by_release(tmp_path: Path):
+    """The same leak one level up: a POD held BY VALUE by the COM owner.
+
+    Release only ever dropped fields it could see were RAII from their own declaration.
+    A `DynamicShellEntry m_entry;` declaration looks like any other POD, so the member's
+    destructor went missing exactly as it did inside the container.
+    """
+    source = tmp_path / "owner.cpp"
+    source.write_text(
+        """
+typedef struct _Entry_ { UINT id; CComPtr<IContextMenu> pCM; } Entry, *PEntry;
+typedef struct _Wrapper_ { Entry inner; DWORD flags; } Wrapper, *PWrapper;
+
+class COwner : public CComCoClass<COwner>,
+               public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  Wrapper m_wrapper;
+  Entry *m_borrowed;
+  DECLARE_NOT_AGGREGATABLE(COwner)
+  BEGIN_COM_MAP(COwner) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Owner, COwner)\n")
+    cls = analyze_class(source, "COwner", object_map_source=object_map)
+    cls.require_supported()
+
+    # Transitive: Wrapper has no RAII field of its own, it just contains one that does.
+    assert pods_with_drop(cls.pod_state_types) == {"Entry", "Wrapper"}
+
+    rendered = render_class_scaffold(cls, [InterfaceSpec("IFoo", (), "test.h")])
+    assert "core::ptr::drop_in_place(&mut (*this).m_wrapper);" in rendered
+    assert "drop_in_place(&mut (*this).m_borrowed)" not in rendered, "a POINTER owns nothing"
+
+
+def test_free_function_support_pod_keeps_its_raii_members_owning(tmp_path: Path):
+    """The same leak on the free-function path, which is most of shell32.
+
+    `BrItemData` (brfolder.cpp) is the precedent, and it is how the bug was found: the
+    SHIPPED brfolder.rs spells these fields `CComPtr` / `CComHeapPtr`, while the generator
+    emitted raw pointers — right next to the `CComHeapPtr` support block it was not using.
+    A regeneration would have silently downgraded a correct file into a leaking one.
+    """
+    source = tmp_path / "brlike.cpp"
+    source.write_text(
+        """
+struct BrItemData
+{
+    CComPtr<IShellFolder> lpsfParent;
+    PCIDLIST_RELATIVE pidlChild;
+    CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlFull;
+};
+static void use(BrItemData *p) { (void)p; }
+"""
+    )
+    rendered = render_cpp_support(
+        source, {"BrItemData", "lpsfParent", "pidlChild", "pidlFull"}
+    )
+    assert "pub lpsfParent: CComPtr<IShellFolder>," in rendered
+    assert "pub pidlFull: CComHeapPtr<ITEMIDLIST_ABSOLUTE>," in rendered
+    assert "pub lpsfParent: *mut IShellFolder," not in rendered
+    assert "pub pidlChild: PCIDLIST_RELATIVE," in rendered, "a plain C field is unchanged"
+
+
+def test_packed_pod_with_a_destructor_member_fails_before_payment(tmp_path: Path):
+    """`#[repr(C, packed)]` plus drop glue is not expressible: rustc cannot reference a
+    misaligned place to drop it. Catch it in preflight, naming the C++ construct, rather
+    than paying for a translation and then reading E0793."""
+    source = tmp_path / "packed.cpp"
+    source.write_text(
+        """
+#include <pshpack1.h>
+typedef struct _Tight_ { BYTE tag; CStringW name; } Tight, *PTight;
+#include <poppack.h>
+
+class CPacked : public CComCoClass<CPacked>,
+                public CComObjectRootEx<CComMultiThreadModelNoCS>, public IFoo {
+  Tight m_tight;
+  DECLARE_NOT_AGGREGATABLE(CPacked)
+  BEGIN_COM_MAP(CPacked) COM_INTERFACE_ENTRY_IID(IID_IFoo, IFoo) END_COM_MAP()
+};
+"""
+    )
+    object_map = tmp_path / "shell32.cpp"
+    object_map.write_text("OBJECT_ENTRY(CLSID_Packed, CPacked)\n")
+    cls = analyze_class(source, "CPacked", object_map_source=object_map)
+    with pytest.raises(CppComError, match="Rust cannot drop a packed field"):
+        cls.require_supported()
 
 
 def test_unlisted_cxx_container_names_the_missing_lowering():
