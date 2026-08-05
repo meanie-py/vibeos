@@ -12,6 +12,29 @@
 pub use crate::types::*;
 use core::ffi::{c_int, c_void};
 
+// ---- 0. Wide literals ----
+// Replaces the byte-string-as-wide-pointer form, which is wrong twice over: `b"..."` has
+// ALIGNMENT 1 (an odd address is an amd64-only 0x1E STATUS_DATATYPE_MISALIGNMENT), and Rust does
+// not append the SECOND zero byte a UTF-16 terminator needs.
+#[macro_export]
+macro_rules! w {
+    ($s:expr $(,)?) => {{
+        const INPUT: &[u8] = $s.as_bytes();
+        static OUT: [u16; INPUT.len() + 1] = {
+            let mut out = [0u16; INPUT.len() + 1];
+            let mut i = 0;
+            while i < INPUT.len() {
+                assert!(INPUT[i] < 0x80, "w!() takes ASCII literals only");
+                out[i] = INPUT[i] as u16;
+                i += 1;
+            }
+            out // trailing element stays 0 => NUL-terminated
+        };
+        OUT.as_ptr()
+    }};
+}
+pub use crate::w;
+
 // ---- 1. Types bindgen didn't cover (mswsock-private headers) ----
 
 // MSW_BUFFER / PMSW_BUFFER — the DLL's private scratch buffer for building WSAQUERYSET blobs

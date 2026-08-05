@@ -71,22 +71,53 @@ def decode(raw: bytes) -> str | None:
     # NEVER rstrip the RAW bytes: the high byte of the last UTF-16 unit is itself 0x00, so
     # stripping trailing zeros eats half of the final character ('s' -> 0x73,0x00 -> 0x73) and
     # leaves an odd length that then fails to decode. Decode first, strip CODE UNITS after.
+    # The TERMINATOR bug in its commonest shape: the body is UTF-16LE and then ONE trailing zero
+    # byte, because the C's `L"foo"` was transliterated as `b"f\0o\0o\0\0"` — half a wide NUL. The
+    # byte count is then ODD, which is not decodable as UTF-16 at all, so the pass used to report
+    # it and walk away, leaving the very corruption it exists to remove. Peel the lone byte and
+    # decode the prefix: the whole point is that the terminator is WRONG.
+    if len(raw) % 2 == 1 and raw[-1] == 0:
+        raw = raw[:-1]
     if len(raw) % 2 == 0 and all(b == 0 for b in raw[1::2]):
         try:
             return raw.decode("utf-16-le").rstrip("\x00")
         except UnicodeDecodeError:
             return None
+    # WRONG BYTE ORDER. `b"\0F\0a\0i\0l\0e\0d"` puts the zero BEFORE each character: that is
+    # UTF-16BE, and reading it little-endian (which is what the callee does) yields CJK garbage,
+    # not the string. A separate bug from the terminator and from narrowness, and the only clue
+    # is which half of each pair is zero.
+    if len(raw) % 2 == 0 and raw and all(b == 0 for b in raw[0::2]):
+        try:
+            return raw.decode("utf-16-be").rstrip("\x00")
+        except UnicodeDecodeError:
+            return None
     narrow = raw.rstrip(b"\x00")
-    if narrow and all(0x20 <= b < 0x7F for b in narrow):
+    # \t \r \n are ordinary content in a format string — logfile.c's L"..\r\n" came back as a
+    # NARROW string behind a PCWSTR, and rejecting it for holding a CR left the corruption in.
+    if narrow and all(0x20 <= b < 0x7F or b in (0x09, 0x0A, 0x0D) for b in narrow):
         return narrow.decode("ascii")  # narrow ASCII behind a wide pointer — the content bug
     return None
+
+
+def _c_escape(text: str) -> str:
+    """The text as the C SOURCE spells it — control characters back to their escapes.
+
+    The oracle compares against source, not against bytes: a decoded "\\r\\n" is written `\\r\\n`
+    in the .c, so comparing the raw characters never matches and every format string with a
+    newline reads as "the C never spells this".
+    """
+    out = text.replace("\\", "\\\\").replace('"', '\\"')
+    for ch, esc in (("\t", "\\t"), ("\r", "\\r"), ("\n", "\\n")):
+        out = out.replace(ch, esc)
+    return out
 
 
 def c_has_literal(c_text: str, text: str) -> bool:
     """Does the C spell this exact string as a wide literal?"""
     if not text:
         return True
-    esc = text.replace("\\", "\\\\").replace('"', '\\"')
+    esc = _c_escape(text)
     return f'L"{esc}"' in c_text or f'TEXT("{esc}")' in c_text or f'_T("{esc}")' in c_text
 
 
@@ -107,8 +138,9 @@ def convert(rs: pathlib.Path, c_text: str, apply: bool) -> tuple[int, list[str]]
             notes.append(f"  ! {rs.name}:{line} decodes to {got!r}, which the C never spells — left alone")
             return m.group(0)
         n += 1
-        esc = got.replace("\\", "\\\\").replace('"', '\\"')
-        return f'w!("{esc}") as {m.group("ty")}'
+        # Rust spells \t \r \n the same way C does, so the source-form escape serves both the
+        # oracle and the emitted literal. Emitting the raw control character would break the line.
+        return f'w!("{_c_escape(got)}") as {m.group("ty")}'
 
     new = _LIT.sub(repl, text)
     if n and apply:

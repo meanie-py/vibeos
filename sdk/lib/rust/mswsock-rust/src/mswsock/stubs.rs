@@ -28,7 +28,7 @@ pub unsafe extern "system" fn EnumProtocolsA(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0E\0n\0u\0m\0P\0r\0o\0t\0o\0c\0o\0l\0s\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR,
+        w!("w32sock EnumProtocolsA stub called\n") as LPCWSTR,
     );
     return SOCKET_ERROR;
 }
@@ -41,7 +41,7 @@ pub unsafe extern "system" fn EnumProtocolsW(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0E\0n\0u\0m\0P\0r\0o\0t\0o\0c\0o\0l\0s\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("w32sock EnumProtocolsW stub called\n") as *const u16
     );
 
     SOCKET_ERROR
@@ -62,7 +62,7 @@ pub unsafe extern "system" fn GetAddressByNameA(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0A\0d\0d\0r\0e\0s\0s\0B\0y\0N\0a\0m\0e\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR,
+        w!("w32sock GetAddressByNameA stub called\n") as LPCWSTR,
     );
 
     return SOCKET_ERROR;
@@ -83,7 +83,7 @@ pub unsafe extern "system" fn GetAddressByNameW(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0A\0d\0d\0r\0e\0s\0s\0B\0y\0N\0a\0m\0e\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR
+        w!("w32sock GetAddressByNameW stub called\n") as LPCWSTR
     );
 
     return SOCKET_ERROR;
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn GetServiceA(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0S\0e\0r\0v\0i\0c\0e\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR
+        w!("w32sock GetServiceA stub called\n") as LPCWSTR
     );
     
     SOCKET_ERROR
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn GetServiceW(
     _ServiceAsyncInfo: LPSERVICE_ASYNC_INFO,
 ) -> INT {
 
-    OutputDebugStringW(b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0S\0e\0r\0v\0i\0c\0e\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR);
+    OutputDebugStringW(w!("w32sock GetServiceW stub called\n") as LPCWSTR);
 
     SOCKET_ERROR
 }
@@ -130,7 +130,7 @@ pub unsafe extern "system" fn GetTypeByNameA(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0T\0y\0p\0e\0B\0y\0N\0a\0m\0e\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR
+        w!("w32sock GetTypeByNameA stub called\n") as LPCWSTR
     );
 
     SOCKET_ERROR
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn GetTypeByNameW(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0T\0y\0p\0e\0B\0y\0N\0a\0m\0e\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR,
+        w!("w32sock GetTypeByNameW stub called\n") as LPCWSTR,
     );
     return SOCKET_ERROR;
 }
@@ -156,7 +156,7 @@ pub unsafe extern "system" fn MigrateWinsockConfiguration(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0M\0i\0g\0r\0a\0t\0e\0W\0i\0n\0s\0o\0c\0k\0C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR,
+        w!("w32sock MigrateWinsockConfiguration stub called\n") as LPCWSTR,
     );
     return SOCKET_ERROR;
 }
@@ -172,8 +172,7 @@ pub unsafe extern "system" fn SetServiceA(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0S\0e\0t\0S\0e\0r\0v\0i\0c\0e\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0"
-            .as_ptr() as LPCWSTR
+        w!("w32sock SetServiceA stub called\n") as LPCWSTR
     );
     return SOCKET_ERROR;
 }
@@ -189,8 +188,7 @@ pub unsafe extern "system" fn SetServiceW(
 ) -> INT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0S\0e\0t\0S\0e\0r\0v\0i\0c\0e\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0"
-            .as_ptr() as LPCWSTR
+        w!("w32sock SetServiceW stub called\n") as LPCWSTR
     );
     return SOCKET_ERROR;
 }
@@ -204,7 +202,7 @@ pub unsafe extern "system" fn WSARecvEx(
 ) -> i32 {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0W\0S\0A\0R\0e\0c\0v\0E\0x\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16,
+        w!("w32sock WSARecvEx stub called\n") as *const u16,
     );
     SOCKET_ERROR
 }
@@ -218,7 +216,7 @@ pub unsafe extern "system" fn dn_expand(
     Length: i32,
 ) -> i32 {
 
-    OutputDebugStringW(b"w\x003\x002\0s\0o\0c\0k\0 \0d\0n\0_\0e\0x\0p\0a\0n\0d\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16);
+    OutputDebugStringW(w!("w32sock dn_expand stub called\n") as *const u16);
     return SOCKET_ERROR;
 }
 
@@ -226,7 +224,7 @@ pub unsafe extern "system" fn dn_expand(
 pub unsafe extern "system" fn getnetbyname(name: *const i8) -> *mut netent {
     
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0g\0e\0t\0n\0e\0t\0b\0y\0n\0a\0m\0e\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR
+        w!("w32sock getnetbyname stub called\n") as LPCWSTR
     );
     
     core::ptr::null_mut::<netent>()
@@ -236,8 +234,7 @@ pub unsafe extern "system" fn getnetbyname(name: *const i8) -> *mut netent {
 pub unsafe extern "system" fn inet_network(cp: *const i8) -> UINT {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0i\0n\0e\0t\0_\0n\0e\0t\0w\0o\0r\0k\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0"
-            .as_ptr() as *const u16
+        w!("w32sock inet_network stub called\n") as *const u16
     );
     
     INADDR_NONE
@@ -253,7 +250,7 @@ pub unsafe extern "system" fn rcmd(
     Fd2p: *mut i32,
 ) -> usize {
 
-    OutputDebugStringW(b"w\x003\x002\0s\0o\0c\0k\0 \0r\0c\0m\0d\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16);
+    OutputDebugStringW(w!("w32sock rcmd stub called\n") as *const u16);
 
     return INVALID_SOCKET as usize;
 }
@@ -269,7 +266,7 @@ pub unsafe extern "system" fn rexec(
 ) -> SOCKET {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0r\0e\0x\0e\0c\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("w32sock rexec stub called\n") as *const u16
     );
     return INVALID_SOCKET;
 }
@@ -278,7 +275,7 @@ pub unsafe extern "system" fn rexec(
 pub unsafe extern "system" fn rresvport(port: *mut i32) -> SOCKET {
     
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0r\0r\0e\0s\0v\0p\0o\0r\0t\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR
+        w!("w32sock rresvport stub called\n") as LPCWSTR
     );
     
     INVALID_SOCKET
@@ -301,7 +298,7 @@ pub unsafe extern "system" fn sethostname(
 ) -> i32 {
 
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0s\0e\0t\0h\0o\0s\0t\0n\0a\0m\0e\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("w32sock sethostname stub called\n") as *const u16
     );
 
     SOCKET_ERROR
@@ -324,7 +321,7 @@ pub unsafe extern "system" fn GetNameByTypeA(
 ) -> INT {
     
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0N\0a\0m\0e\0B\0y\0T\0y\0p\0e\0A\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("w32sock GetNameByTypeA stub called\n") as *const u16
     );
     return 1;
 }
@@ -337,7 +334,7 @@ pub unsafe extern "system" fn GetNameByTypeW(
 ) -> INT {
     
     OutputDebugStringW(
-        b"w\x003\x002\0s\0o\0c\0k\0 \0G\0e\0t\0N\0a\0m\0e\0B\0y\0T\0y\0p\0e\0W\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("w32sock GetNameByTypeW stub called\n") as *const u16
     );
     return 1i32;
 }
@@ -361,7 +358,7 @@ pub unsafe extern "system" fn NPLoadNameSpaces(
 ) -> INT {
 
     OutputDebugStringW(
-        b"m\0s\0w\0s\0o\0c\0k\0 \0N\0P\0L\0o\0a\0d\0N\0a\0m\0e\0S\0p\0a\0c\0e\0s\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR,
+        w!("mswsock NPLoadNameSpaces stub called\n") as LPCWSTR,
     );
 
     *lpdwVersion = 1;
@@ -373,26 +370,26 @@ pub unsafe extern "system" fn NPLoadNameSpaces(
 pub unsafe extern "system" fn StartWsdpService() {
     
     OutputDebugStringW(
-        b"m\0s\0w\0s\0o\0c\0k\0 \0S\0t\0a\0r\0t\0W\0s\0d\0p\0S\0e\0r\0v\0i\0c\0e\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16
+        w!("mswsock StartWsdpService stub called\n") as *const u16
     );
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn StopWsdpService() {
     
-    OutputDebugStringW(b"m\0s\0w\0s\0o\0c\0k\0 \0S\0t\0o\0p\0W\0s\0d\0p\0S\0e\0r\0v\0i\0c\0e\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16);
+    OutputDebugStringW(w!("mswsock StopWsdpService stub called\n") as *const u16);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SvchostPushServiceGlobals(lpGlobals: PSVCHOST_GLOBAL_DATA) {
     
-    OutputDebugStringW(b"m\0s\0w\0s\0o\0c\0k\0 \0S\0v\0c\0h\0o\0s\0t\0P\0u\0s\0h\0S\0e\0r\0v\0i\0c\0e\0G\0l\0o\0b\0a\0l\0s\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as LPCWSTR);
+    OutputDebugStringW(w!("mswsock SvchostPushServiceGlobals stub called\n") as LPCWSTR);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn ServiceMain(Unknown1: DWORD, Unknown2: DWORD) {
     
-    OutputDebugStringW(b"m\0s\0w\0s\0o\0c\0k\0 \0S\0e\0r\0v\0i\0c\0e\0M\0a\0i\0n\0 \0s\0t\0u\0b\0 \0c\0a\0l\0l\0e\0d\0\n\0\0\0".as_ptr() as *const u16);
+    OutputDebugStringW(w!("mswsock ServiceMain stub called\n") as *const u16);
 }
 
 
