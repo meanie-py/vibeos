@@ -630,23 +630,23 @@ unsafe extern "stdcall" fn GplDlgProc(
             memcpy(GplText as *mut core::ffi::c_void, GplTextLocked, Size as usize);
             *GplText.offset(Size as isize) = b'\0' as i8;
             SendMessageA(
-                GetDlgItem(hwndDlg, IDC_GPL_TEXT),
+                GetDlgItem(hwndDlg, (IDC_GPL_TEXT) as i32),
                 WM_SETTEXT,
                 0,
                 GplText as LPARAM,
             );
             HeapFree(GetProcessHeap(), 0, GplText as LPVOID);
-            SetFocus(GetDlgItem(hwndDlg, IDOK));
+            SetFocus(GetDlgItem(hwndDlg, (IDOK) as i32));
             return FALSE;
         }
 
         WM_CLOSE => {
-            EndDialog(hwndDlg, IDCANCEL);
+            EndDialog(hwndDlg, (IDCANCEL) as i32);
         }
 
         WM_COMMAND => {
             if HIWORD!(wParam) == (BN_CLICKED) as u16 && IDOK == LOWORD!(wParam) {
-                EndDialog(hwndDlg, IDOK);
+                EndDialog(hwndDlg, (IDOK) as i32);
             }
         }
 
@@ -755,13 +755,13 @@ unsafe extern "stdcall" fn WelcomeDlgProc(
             dwStyle = GetWindowLongPtr(hwndControl, GWL_STYLE) as DWORD;
             SetWindowLongPtr(hwndControl, GWL_STYLE, (dwStyle & !WS_SYSMENU) as LONG_PTR);
 
-            hwndControl = GetDlgItem(GetParent(hwndDlg), IDCANCEL);
-            ShowWindow(hwndControl, SW_HIDE);
+            hwndControl = GetDlgItem(GetParent(hwndDlg), (IDCANCEL) as i32);
+            ShowWindow(hwndControl, (SW_HIDE) as i32);
             EnableWindow(hwndControl, FALSE);
 
             SendDlgItemMessage(
                 hwndDlg,
-                IDC_WELCOMETITLE,
+                (IDC_WELCOMETITLE) as i32,
                 WM_SETFONT,
                 (*pSetupData).hTitleFont as WPARAM,
                 TRUE as LPARAM,
@@ -925,7 +925,7 @@ unsafe extern "stdcall" fn AckPageDlgProc(
                     *End = 0u16;
                 }
                 ListBox_AddString!(
-                    GetDlgItem(hwndDlg, IDC_PROJECTS),
+                    GetDlgItem(hwndDlg, (IDC_PROJECTS) as i32),
                     CurrentProject,
                 );
                 if !End.is_null() {
@@ -1310,33 +1310,33 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
             SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
 
-            LoadStringW(hDllInstance, IDS_DEFAULT, szDefault.as_mut_ptr(), _countof!(szDefault));
+            LoadStringW(hDllInstance, IDS_DEFAULT, szDefault.as_mut_ptr(), (_countof!(szDefault)) as i32);
 
-            LoadStringW(hDllInstance, IDS_PRODUCTSERVERNAME, szText.as_mut_ptr(), _countof!(szText));
+            LoadStringW(hDllInstance, IDS_PRODUCTSERVERNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_SERVER {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
 
-            LoadStringW(hDllInstance, IDS_PRODUCTWORKSTATIONNAME, szText.as_mut_ptr(), _countof!(szText));
+            LoadStringW(hDllInstance, IDS_PRODUCTWORKSTATIONNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
             if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_WORKSTATION {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
 
-            SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_SETCURSEL, PRODUCT_OPTION_DEFAULT, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_SETCURSEL, PRODUCT_OPTION_DEFAULT, 0);
             OnChooseOption(hwndDlg, PRODUCT_OPTION_DEFAULT);
 
             hIcon = LoadIcon(core::ptr::null_mut(), IDI_WINLOGO);
-            SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_ICON, STM_SETICON, hIcon as WPARAM, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_ICON) as i32, STM_SETICON, hIcon as WPARAM, 0);
             return TRUE;
         }
 
         WM_COMMAND => {
             if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) {
-                iItem = SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_GETCURSEL, 0, 0);
+                iItem = SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_GETCURSEL, 0, 0);
                 OnChooseOption(hwndDlg, iItem as PRODUCT_OPTION);
             }
         }
@@ -1356,7 +1356,7 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
                 }
 
                 PSN_WIZNEXT => {
-                    iItem = SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_GETCURSEL, 0, 0);
+                    iItem = SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_GETCURSEL, 0, 0);
                     (*pSetupData).ProductOption = iItem as PRODUCT_OPTION;
                     DoWriteProductOption((*pSetupData).ProductOption);
                 }
@@ -1521,16 +1521,16 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
             SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
 
-            if LoadStringW(hDllInstance, IDS_MACHINE_OWNER_NAME, OwnerName.as_mut_ptr(), _countof!(OwnerName)) != 0 {
-                SendDlgItemMessage(hwndDlg, IDC_OWNERNAME, WM_SETTEXT, 0, OwnerName.as_ptr() as LPARAM);
+            if LoadStringW(hDllInstance, IDS_MACHINE_OWNER_NAME, OwnerName.as_mut_ptr(), (_countof!(OwnerName)) as i32) != 0 {
+                SendDlgItemMessage(hwndDlg, (IDC_OWNERNAME) as i32, WM_SETTEXT, 0, OwnerName.as_ptr() as LPARAM);
             }
 
-            SendDlgItemMessage(hwndDlg, IDC_OWNERNAME, EM_LIMITTEXT, 50, 0);
-            SendDlgItemMessage(hwndDlg, IDC_OWNERORGANIZATION, EM_LIMITTEXT, 50, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_OWNERNAME) as i32, EM_LIMITTEXT, 50, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_OWNERORGANIZATION) as i32, EM_LIMITTEXT, 50, 0);
 
-            SetFocus(GetDlgItem(hwndDlg, IDC_OWNERNAME));
+            SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
 
-            SendDlgItemMessage(hwndDlg, IDC_OWNERNAME, EM_SETSEL, 0, (-1) as LPARAM);
+            SendDlgItemMessage(hwndDlg, (IDC_OWNERNAME) as i32, EM_SETSEL, 0, (-1) as LPARAM);
         }
 
         WM_NOTIFY => {
@@ -1540,8 +1540,8 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        SendMessage(GetDlgItem(hwndDlg, IDC_OWNERNAME), WM_SETTEXT, 0, (*pSetupData).OwnerName as LPARAM);
-                        SendMessage(GetDlgItem(hwndDlg, IDC_OWNERORGANIZATION), WM_SETTEXT, 0, (*pSetupData).OwnerOrganization as LPARAM);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerName as LPARAM);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERORGANIZATION) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerOrganization as LPARAM);
                         if WriteOwnerSettings((*pSetupData).OwnerName, (*pSetupData).OwnerOrganization) != 0 {
                             SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_COMPUTERPAGE);
                             return TRUE;
@@ -1551,27 +1551,27 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
 
                 PSN_WIZNEXT => {
                     OwnerName[0] = 0;
-                    if GetDlgItemTextW(hwndDlg, IDC_OWNERNAME, OwnerName.as_mut_ptr(), 50) == 0 {
-                        if 0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title.as_mut_ptr(), ARRAYSIZE!(Title)) {
+                    if GetDlgItemTextW(hwndDlg, (IDC_OWNERNAME) as i32, OwnerName.as_mut_ptr(), 50) == 0 {
+                        if 0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title.as_mut_ptr(), (ARRAYSIZE!(Title)) as i32) {
                             wcscpy(Title.as_mut_ptr(), w!("ReactOS Setup") as PCWSTR);
                         }
-                        if 0 == LoadStringW(hDllInstance, IDS_WZD_NAME, ErrorName.as_mut_ptr(), ARRAYSIZE!(ErrorName)) {
+                        if 0 == LoadStringW(hDllInstance, IDS_WZD_NAME, ErrorName.as_mut_ptr(), (ARRAYSIZE!(ErrorName)) as i32) {
                             wcscpy(ErrorName.as_mut_ptr(), w!("Setup cannot continue until you enter your name.") as PCWSTR);
                         }
                         MessageBoxW(hwndDlg, ErrorName.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
 
-                        SetFocus(GetDlgItem(hwndDlg, IDC_OWNERNAME));
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (-1) as LPARAM);
+                        SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
 
                         return TRUE;
                     }
 
                     OwnerOrganization[0] = 0;
-                    GetDlgItemTextW(hwndDlg, IDC_OWNERORGANIZATION, OwnerOrganization.as_mut_ptr(), 50);
+                    GetDlgItemTextW(hwndDlg, (IDC_OWNERORGANIZATION) as i32, OwnerOrganization.as_mut_ptr(), 50);
 
                     if WriteOwnerSettings(OwnerName.as_mut_ptr(), OwnerOrganization.as_mut_ptr()) == 0 {
-                        SetFocus(GetDlgItem(hwndDlg, IDC_OWNERNAME));
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (-1) as LPARAM);
+                        SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
                         return TRUE;
                     }
                 }
@@ -1828,7 +1828,7 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
 
     pSetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
-    if 0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title.as_mut_ptr(), ARRAYSIZE!(Title)) {
+    if 0 == LoadStringW(hDllInstance, IDS_REACTOS_SETUP, Title.as_mut_ptr(), (ARRAYSIZE!(Title)) as i32) {
         wcscpy(Title.as_mut_ptr(), w!("ReactOS Setup") as PWSTR);
     }
 
@@ -1839,17 +1839,17 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
 
             GenerateComputerName(ComputerName.as_mut_ptr());
 
-            SetDlgItemTextW(hwndDlg, IDC_COMPUTERNAME, ComputerName.as_ptr());
+            SetDlgItemTextW(hwndDlg, (IDC_COMPUTERNAME) as i32, ComputerName.as_ptr());
 
-            SendDlgItemMessage(hwndDlg, IDC_COMPUTERNAME, EM_LIMITTEXT, MAX_COMPUTERNAME_LENGTH, 0);
-            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD1, EM_LIMITTEXT, 127, 0);
-            SendDlgItemMessage(hwndDlg, IDC_ADMINPASSWORD2, EM_LIMITTEXT, 127, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_COMPUTERNAME) as i32, EM_LIMITTEXT, MAX_COMPUTERNAME_LENGTH, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_ADMINPASSWORD1) as i32, EM_LIMITTEXT, 127, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_ADMINPASSWORD2) as i32, EM_LIMITTEXT, 127, 0);
 
-            SetFocus(GetDlgItem(hwndDlg, IDC_COMPUTERNAME));
+            SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
             if (*pSetupData).UnattendSetup != 0 {
-                SendMessage(GetDlgItem(hwndDlg, IDC_COMPUTERNAME), WM_SETTEXT, 0, (*pSetupData).ComputerName as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, IDC_ADMINPASSWORD1), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, IDC_ADMINPASSWORD2), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).ComputerName as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD1) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD2) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
                 WriteComputerSettings((*pSetupData).ComputerName, core::ptr::null_mut());
                 SetAdministratorPassword((*pSetupData).AdminPassword);
             }
@@ -1871,41 +1871,41 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
 
                 PSN_WIZNEXT => {
                     if 0 == GetDlgItemTextW(hwndDlg, IDC_COMPUTERNAME, ComputerName.as_mut_ptr(), MAX_COMPUTERNAME_LENGTH + 1) {
-                        if 0 == LoadStringW(hDllInstance, IDS_WZD_COMPUTERNAME, EmptyComputerName.as_mut_ptr(), ARRAYSIZE!(EmptyComputerName)) {
+                        if 0 == LoadStringW(hDllInstance, IDS_WZD_COMPUTERNAME, EmptyComputerName.as_mut_ptr(), (ARRAYSIZE!(EmptyComputerName)) as i32) {
                             wcscpy(EmptyComputerName.as_mut_ptr(), w!("Setup cannot continue until you enter the name of your computer.") as PWSTR);
                         }
                         MessageBoxW(hwndDlg, EmptyComputerName.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
-                        SetFocus(GetDlgItem(hwndDlg, IDC_COMPUTERNAME));
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, -(1 as i32) as LRESULT);
+                        SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
                         return TRUE;
                     }
 
                     if WriteComputerSettings(ComputerName.as_mut_ptr(), hwndDlg) == 0 {
-                        SetFocus(GetDlgItem(hwndDlg, IDC_COMPUTERNAME));
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, -(1 as i32) as LRESULT);
+                        SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
                         return TRUE;
                     }
 
-                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD1, Password1.as_mut_ptr(), 128);
-                    GetDlgItemTextW(hwndDlg, IDC_ADMINPASSWORD2, Password2.as_mut_ptr(), 128);
+                    GetDlgItemTextW(hwndDlg, (IDC_ADMINPASSWORD1) as i32, Password1.as_mut_ptr(), 128);
+                    GetDlgItemTextW(hwndDlg, (IDC_ADMINPASSWORD2) as i32, Password2.as_mut_ptr(), 128);
 
                     if wcscmp(Password1.as_ptr(), Password2.as_ptr()) != 0 {
-                        if 0 == LoadStringW(hDllInstance, IDS_WZD_PASSWORDMATCH, NotMatchPassword.as_mut_ptr(), ARRAYSIZE!(NotMatchPassword)) {
+                        if 0 == LoadStringW(hDllInstance, IDS_WZD_PASSWORDMATCH, NotMatchPassword.as_mut_ptr(), (ARRAYSIZE!(NotMatchPassword)) as i32) {
                             wcscpy(NotMatchPassword.as_mut_ptr(), w!("The passwords you entered do not match. Please enter the desired password again.") as PWSTR);
                         }
                         MessageBoxW(hwndDlg, NotMatchPassword.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
                         return TRUE;
                     }
 
                     Password = Password1.as_mut_ptr();
                     while *Password != 0 {
                         if isprint(*Password as i32) == 0 {
-                            if 0 == LoadStringW(hDllInstance, IDS_WZD_PASSWORDCHAR, WrongPassword.as_mut_ptr(), ARRAYSIZE!(WrongPassword)) {
+                            if 0 == LoadStringW(hDllInstance, IDS_WZD_PASSWORDCHAR, WrongPassword.as_mut_ptr(), (ARRAYSIZE!(WrongPassword)) as i32) {
                                 wcscpy(WrongPassword.as_mut_ptr(), w!("The password you entered contains invalid characters. Please enter a cleaned password.") as PWSTR);
                             }
                             MessageBoxW(hwndDlg, WrongPassword.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
-                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, -(1 as i32) as LRESULT);
+                            SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
                             return TRUE;
                         }
                         Password = Password.offset(1);
@@ -2274,11 +2274,11 @@ unsafe extern "stdcall" fn LocalePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, SetupData as DWORD_PTR);
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
             WriteUserLocale();
 
-            SetUserLocaleName(GetDlgItem(hwndDlg, IDC_LOCALETEXT));
-            SetKeyboardLayoutName(GetDlgItem(hwndDlg, IDC_LAYOUTTEXT));
+            SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
+            SetKeyboardLayoutName(GetDlgItem(hwndDlg, (IDC_LAYOUTTEXT) as i32));
         }
 
         WM_COMMAND => {
@@ -2286,12 +2286,12 @@ unsafe extern "stdcall" fn LocalePageDlgProc(
                 match (LOWORD!(wParam)) as u32 {
                     IDC_CUSTOMLOCALE => {
                         RunControlPanelApplet(hwndDlg, w!("intl.cpl,,5") as PCWSTR);
-                        SetUserLocaleName(GetDlgItem(hwndDlg, IDC_LOCALETEXT));
+                        SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
                     }
 
                     IDC_CUSTOMLAYOUT => {
                         RunControlPanelApplet(hwndDlg, w!("input.dll,@1") as PCWSTR);
-                        SetKeyboardLayoutName(GetDlgItem(hwndDlg, IDC_LAYOUTTEXT));
+                        SetKeyboardLayoutName(GetDlgItem(hwndDlg, (IDC_LAYOUTTEXT) as i32));
                     }
 
                     _ => {}
@@ -2657,13 +2657,13 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let SetupData: PSETUPDATA = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, SetupData as DWORD_PTR);
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
 
             CreateTimeZoneList(SetupData);
 
             if (*SetupData).UnattendSetup != 0 {
                 ShowTimeZoneList(
-                    GetDlgItem(hwndDlg, IDC_TIMEZONELIST),
+                    GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (*SetupData).TimeZoneIndex,
                 );
@@ -2671,7 +2671,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
                 if (*SetupData).DisableAutoDaylightTimeSet == 0 {
                     SendDlgItemMessage(
                         hwndDlg,
-                        IDC_AUTODAYLIGHT,
+                        (IDC_AUTODAYLIGHT) as i32,
                         BM_SETCHECK,
                         BST_CHECKED as WPARAM,
                         0,
@@ -2679,14 +2679,14 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
                 }
             } else {
                 ShowTimeZoneList(
-                    GetDlgItem(hwndDlg, IDC_TIMEZONELIST),
+                    GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (1 as i32).wrapping_neg() as u32,
                 );
 
                 SendDlgItemMessage(
                     hwndDlg,
-                    IDC_AUTODAYLIGHT,
+                    (IDC_AUTODAYLIGHT) as i32,
                     BM_SETCHECK,
                     BST_CHECKED as WPARAM,
                     0,
@@ -2894,15 +2894,15 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
             let mut lvi: LVITEM = core::mem::zeroed();
 
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, SetupData as DWORD_PTR);
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
 
-            hListView = GetDlgItem(hwndDlg, IDC_THEMEPICKER);
+            hListView = GetDlgItem(hwndDlg, (IDC_THEMEPICKER) as i32);
 
             himl = ImageList_Create(
                 180,
                 163,
                 ILC_COLOR32 | ILC_MASK,
-                ARRAYSIZE!(Themes),
+                (ARRAYSIZE!(Themes)) as i32,
                 1,
             );
             lvi.mask = LVIF_TEXT | LVIF_IMAGE | LVIF_STATE;
@@ -2924,7 +2924,7 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
                     hDllInstance,
                     Themes[n as usize].DisplayName,
                     DisplayName.as_mut_ptr(),
-                    ARRAYSIZE!(DisplayName),
+                    (ARRAYSIZE!(DisplayName)) as i32,
                 );
                 DisplayName[ARRAYSIZE!(DisplayName) - 1] = UNICODE_NULL;
 
@@ -3526,15 +3526,15 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, SetupData as DWORD_PTR);
-            ShowWindow(GetDlgItem(hwndDlg, IDC_TASKTEXT3), SW_HIDE);
-            ShowWindow(GetDlgItem(hwndDlg, IDC_TASKTEXT4), SW_HIDE);
-            ShowWindow(GetDlgItem(hwndDlg, IDC_CHECK3), SW_HIDE);
-            ShowWindow(GetDlgItem(hwndDlg, IDC_CHECK4), SW_HIDE);
+            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
+            ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT3) as i32), (SW_HIDE) as i32);
+            ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT4) as i32), (SW_HIDE) as i32);
+            ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK3) as i32), (SW_HIDE) as i32);
+            ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK4) as i32), (SW_HIDE) as i32);
             s_hCheckIcon = LoadImageW(hDllInstance, MAKEINTRESOURCEW!(IDI_CHECKICON), IMAGE_ICON, 16, 16, 0) as HICON;
             s_hArrowIcon = LoadImageW(hDllInstance, MAKEINTRESOURCEW!(IDI_ARROWICON), IMAGE_ICON, 16, 16, 0) as HICON;
             s_hCrossIcon = LoadImageW(hDllInstance, MAKEINTRESOURCEW!(IDI_CROSSICON), IMAGE_ICON, 16, 16, 0) as HICON;
-            s_hNormalFont = SendDlgItemMessage(hwndDlg, IDC_TASKTEXT1, WM_GETFONT, 0, 0) as HFONT;
+            s_hNormalFont = SendDlgItemMessage(hwndDlg, (IDC_TASKTEXT1) as i32, WM_GETFONT, 0, 0) as HFONT;
         }
 
         WM_DESTROY => {
@@ -3564,18 +3564,18 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
         }
 
         PM_ITEM_START => {
-            SendDlgItemMessage(hwndDlg, IDC_PROCESSPROGRESS, PBM_SETRANGE, 0, MAKELPARAM!(0, lParam as ULONG));
-            SendDlgItemMessage(hwndDlg, IDC_PROCESSPROGRESS, PBM_SETPOS, 0, 0);
-            SendDlgItemMessage(hwndDlg, IDC_TASKTEXT1 + wParam, WM_SETFONT, (*SetupData).hBoldFont as WPARAM, TRUE as LPARAM);
-            SendDlgItemMessage(hwndDlg, IDC_CHECK1 + wParam, STM_SETIMAGE, IMAGE_ICON, s_hArrowIcon as LPARAM);
+            SendDlgItemMessage(hwndDlg, (IDC_PROCESSPROGRESS) as i32, PBM_SETRANGE, 0, MAKELPARAM!(0, lParam as ULONG));
+            SendDlgItemMessage(hwndDlg, (IDC_PROCESSPROGRESS) as i32, PBM_SETPOS, 0, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_TASKTEXT1 + wParam) as i32, WM_SETFONT, (*SetupData).hBoldFont as WPARAM, TRUE as LPARAM);
+            SendDlgItemMessage(hwndDlg, (IDC_CHECK1 + wParam) as i32, STM_SETIMAGE, IMAGE_ICON, s_hArrowIcon as LPARAM);
         }
 
         PM_ITEM_END => {
-            SendDlgItemMessage(hwndDlg, IDC_TASKTEXT1 + wParam, WM_SETFONT, s_hNormalFont as WPARAM, TRUE as LPARAM);
-            if lParam == ERROR_SUCCESS {
-                SendDlgItemMessage(hwndDlg, IDC_CHECK1 + wParam, STM_SETIMAGE, IMAGE_ICON, s_hCheckIcon as LPARAM);
+            SendDlgItemMessage(hwndDlg, (IDC_TASKTEXT1 + wParam) as i32, WM_SETFONT, s_hNormalFont as WPARAM, TRUE as LPARAM);
+            if lParam == (ERROR_SUCCESS) as i32 {
+                SendDlgItemMessage(hwndDlg, (IDC_CHECK1 + wParam) as i32, STM_SETIMAGE, IMAGE_ICON, s_hCheckIcon as LPARAM);
             } else {
-                SendDlgItemMessage(hwndDlg, IDC_CHECK1 + wParam, STM_SETIMAGE, IMAGE_ICON, s_hCrossIcon as LPARAM);
+                SendDlgItemMessage(hwndDlg, (IDC_CHECK1 + wParam) as i32, STM_SETIMAGE, IMAGE_ICON, s_hCrossIcon as LPARAM);
                 ShowItemError(hwndDlg, lParam as DWORD);
             }
         }
@@ -3584,7 +3584,7 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
             RegistrationNotify = lParam as PREGISTRATIONNOTIFY;
             SendDlgItemMessage(
                 hwndDlg,
-                IDC_ITEM,
+                (IDC_ITEM) as i32,
                 WM_SETTEXT,
                 0,
                 if (*RegistrationNotify).CurrentItem != core::ptr::null_mut() {
@@ -3597,7 +3597,7 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
 
         PM_STEP_END => {
             RegistrationNotify = lParam as PREGISTRATIONNOTIFY;
-            SendDlgItemMessage(hwndDlg, IDC_PROCESSPROGRESS, PBM_SETPOS, (*RegistrationNotify).Progress, 0);
+            SendDlgItemMessage(hwndDlg, (IDC_PROCESSPROGRESS) as i32, PBM_SETPOS, (*RegistrationNotify).Progress, 0);
             if (*RegistrationNotify).LastError != ERROR_SUCCESS {
                 ShowStepError(hwndDlg, RegistrationNotify);
             }
@@ -3768,7 +3768,7 @@ unsafe extern "stdcall" fn FinishDlgProc(
 
             SendDlgItemMessage(
                 hwndDlg,
-                IDC_FINISHTITLE,
+                (IDC_FINISHTITLE) as i32,
                 WM_SETFONT,
                 (*SetupData).hTitleFont as WPARAM,
                 TRUE as LPARAM,
@@ -3787,7 +3787,7 @@ unsafe extern "stdcall" fn FinishDlgProc(
         }
 
         WM_TIMER => {
-            let hWndProgress = GetDlgItem(hwndDlg, IDC_RESTART_PROGRESS);
+            let hWndProgress = GetDlgItem(hwndDlg, (IDC_RESTART_PROGRESS) as i32);
             let Position = SendMessage(
                 hWndProgress,
                 PBM_GETPOS,
@@ -3801,7 +3801,7 @@ unsafe extern "stdcall" fn FinishDlgProc(
                 SendMessage(
                     hWndProgress,
                     PBM_SETPOS,
-                    Position + 1,
+                    (Position + 1) as u32,
                     0,
                 );
             }
@@ -3817,14 +3817,14 @@ unsafe extern "stdcall" fn FinishDlgProc(
 
                     SendDlgItemMessage(
                         hwndDlg,
-                        IDC_RESTART_PROGRESS,
+                        (IDC_RESTART_PROGRESS) as i32,
                         PBM_SETRANGE,
                         0,
                         MAKELPARAM!(0, 300),
                     );
                     SendDlgItemMessage(
                         hwndDlg,
-                        IDC_RESTART_PROGRESS,
+                        (IDC_RESTART_PROGRESS) as i32,
                         PBM_SETPOS,
                         0,
                         0,
