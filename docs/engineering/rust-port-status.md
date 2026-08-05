@@ -1145,6 +1145,18 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
   `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
   translatable and left `CEnumMergedFolder` with only its activation shape.
+  **Re-measured 2026-08-05 after three more flips, now per-TU** (`rustconv cpp-tu` over every
+  live TU). Gap (3), object-field RAII, is the cheapest to close and blocks exactly three:
+  `CIDLDataObj` (`CSimpleArray<FORMATETC>`/`<STGMEDIUM>`), `CDefaultContextMenu`
+  (`CAtlList<>` ×2, 1,995 lines) and `CRecycleBinFolderViewCB` (`CComHeapPtr<ITEMIDLIST>
+  m_pidls[2]`). The leverage is that `atl.rs` **already implements** CComPtr / CHeapPtr /
+  CComHeapPtr / CSimpleArray with `Drop` restoring the dropped destructors, and
+  `--local-raii NAME=PATH` already performs exactly this substitution for BODY-locals — there
+  is simply no equivalent for a class's STATE fields. Gap (2), inherited layout, blocks
+  `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
+  and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
+  (`CFileSysBindData`, `CExtractIcon`, `COpenWithList`/`COpenWithDialog`, `CRegFolderInfo`,
+  `CChangeNotifyBroker`).
   **Three more whole-TU flips landed 2026-08-05** — `droptargets/CFSDropTarget.cpp`,
   `droptargets/CRecyclerDropTarget.cpp` and `CDefViewBckgrndMenu.cpp` — and between them they
   settled the per-module type-ownership question that had CFSDropTarget parked
