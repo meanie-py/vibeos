@@ -493,6 +493,14 @@ WRAPPER_SRC = """\
    itself, so naming both redefines every struct in it. cpp.c gets away with including
    both because it lists cppexcept.h LAST. */
 #include "cppexcept.h"
+/* except.c: `_fpieee_flt` switches on five `STATUS_FLOAT_*` codes, which live in
+   ntstatus.h and nowhere else. profile_derive flags them as ERROR
+   SWITCH_CONST_IN_BASE_HEADER precisely because a constant the island does not carry
+   becomes a silent catch-all `match` arm — the class that shipped a BUGCHECK 0x1E.
+   Ordered as except.c's own TU orders it: ntstatus.h BEFORE `WIN32_NO_STATUS`, so the
+   STATUS_* definitions come from here and winnt.h does not re-emit them. */
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 """
 
 
@@ -932,6 +940,23 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # the exception dispatcher as an image base.
         "|CXX_EXCEPTION|CXX_FRAME_MAGIC_VC6|CXX_FRAME_MAGIC_VC7|CXX_FRAME_MAGIC_VC8"
         "|CXX_EXCEPTION_PARAMS|EXCEPTION_NONCONTINUABLE"
+        # ── except.c ────────────────────────────────────────────────────────
+        # The two switch vocabularies profile_derive reports as BLOCKING for this file.
+        # `STATUS_FLOAT_*` (ntstatus.h) are the five codes `_fpieee_flt` dispatches on and
+        # `CTRL_C_EVENT` (wincon.h) is what the console handler tests — miss either and the
+        # arm silently swallows every case instead of one. The `EXCEPTION_FLT_*` family is
+        # the SAME numeric values under winnt.h's spelling, and both spellings are needed
+        # because `float_exception_map` uses one and `_fpieee_flt` the other; deriving both
+        # is also what proves they still agree.
+        "|STATUS_FLOAT_[A-Z_]+|CTRL_[A-Z_]+_EVENT|EXCEPTION_FLT_[A-Z_]+"
+        "|EXCEPTION_CONTINUE_SEARCH|EXCEPTION_CONTINUE_EXECUTION|EXCEPTION_EXECUTE_HANDLER"
+        "|EXCEPTION_ACCESS_VIOLATION|EXCEPTION_ILLEGAL_INSTRUCTION|EXCEPTION_INT_[A-Z_]+"
+        "|EXCEPTION_PRIV_INSTRUCTION|EXCEPTION_STACK_OVERFLOW|EXCEPTION_UNWINDING"
+        # float.h's `_FPE_*` signal sub-codes float_exception_map maps each status onto,
+        # and signal.h's handler slots. `_FPE_*` are small adjacent integers, so a
+        # transcription that drifts by one reports the wrong arithmetic fault.
+        "|_FPE_[A-Z]+|SIGINT|SIGILL|SIGFPE|SIGSEGV|SIGTERM|SIGABRT|SIGBREAK"
+        "|SIG_IGN|SIG_DFL|SIG_ERR|SIG_GET|SIG_SGE|SIG_ACK|NSIG"
         ")",
         "--",
         "-ferror-limit=0",
