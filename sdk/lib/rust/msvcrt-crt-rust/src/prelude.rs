@@ -565,6 +565,17 @@ pub unsafe fn InterlockedDecrement(addend: *mut c_int) -> c_int {
     (*(addend as *const AtomicI32)).fetch_sub(1, Ordering::SeqCst) - 1
 }
 
+/// heap.c's `_set_new_mode` — `return InterlockedExchange(&MSVCRT_new_mode, mode);`. Same
+/// family, same reason, same lowering. Win32 returns the value BEFORE the exchange, which is
+/// exactly what `swap` returns, so unlike the increment/decrement pair above there is no
+/// adjustment to make.
+#[inline]
+#[allow(non_snake_case)]
+pub unsafe fn InterlockedExchange(target: *mut c_int, value: c_int) -> c_int {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (*(target as *const AtomicI32)).swap(value, Ordering::SeqCst)
+}
+
 #[inline]
 #[allow(non_snake_case)]
 pub unsafe fn InterlockedCompareExchange(

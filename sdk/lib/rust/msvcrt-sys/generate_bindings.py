@@ -288,6 +288,38 @@ ALLOWLIST_TYPES = [
     "_locale_tstruct",
     "LCTYPE",
     "LCID",
+    # ── heap.c (the allocator) ───────────────────────────────────────────
+    # `_heapwalk`'s two structs, and they sit on opposite sides of one copy: the caller
+    # owns a `_HEAPINFO` and heap.c shuttles its three fields into and out of a
+    # `PROCESS_HEAP_ENTRY` on every iteration. The tag is `_heapinfo` and the typedef
+    # `_HEAPINFO`; both are named because signatures spell the second. Note WHICH
+    # malloc.h: the module drops sdk/include/crt and substitutes its own dir, so this is
+    # dll/win32/msvcrt/include/malloc.h — the same shadowing that makes dir.c's
+    # `_finddata64_t` spell differently from the SDK's `__finddata64_t`.
+    # PROCESS_HEAP_ENTRY (minwinbase.h, already an allowlisted file) carries a UNION of
+    # a Block and a Region arm over the same bytes; _heapwalk reads lpData/cbData/wFlags,
+    # which live BEFORE the union, and a hand-written struct that got the union's size
+    # wrong would still read those three correctly and then walk the heap by the wrong
+    # stride. Derived, not transcribed.
+    "_heapinfo",
+    "_HEAPINFO",
+    "_PROCESS_HEAP_ENTRY",
+    "PROCESS_HEAP_ENTRY",
+    # winternl.h's TEB and PEB, for heap.c's `NtCurrentTeb()->Peb->ProcessHeap` lazy
+    # init. READ THE HEADER THAT WINS: msvcrt does `include_directories(BEFORE
+    # sdk/include/wine)`, so `#include "winternl.h"` resolves to sdk/include/wine's copy,
+    # which has the real fields (PEB.ProcessHeap /* 018/030 */, TEB.Peb /* 030/0060 */).
+    # The psdk copy of the SAME NAME spells those bytes `PVOID Reserved4[3]` and calls
+    # the TEB field `ProcessEnvironmentBlock`. Getting the other one is not a compile
+    # error here — it is an allocator reading its heap handle from the wrong offset.
+    # Nothing above needs to be trusted: bindgen and the offset probe both run with
+    # probe_flags(), i.e. msvcrt's REAL include order out of compile_commands.json, so
+    # they cannot disagree with the build or with each other. Both hops are in GUARDED
+    # below, which is what turns that argument into a check.
+    "_TEB",
+    "TEB",
+    "_PEB",
+    "PEB",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -318,6 +350,16 @@ GUARDED = [
     ("lconv", "decimal_point"),
     ("localeinfo_struct", "locinfo"),
     ("localeinfo_struct", "mbcinfo"),
+    # wave 26 (heap.c): `NtCurrentTeb()->Peb->ProcessHeap` is a two-hop reach, so both
+    # hops are guarded — the same shape as locinfo -> lconv -> decimal_point above.
+    # This pair is the whole defence against the two same-named winternl.h headers (see
+    # TEB/PEB in ALLOWLIST_TYPES): the clang probe compiles with msvcrt's real flags, so
+    # if bindgen ever snapshots the psdk layout while the build takes wine's, these two
+    # offsets disagree and rust_layout_assert.c fails the msvcrt build on all 3 arches.
+    # Without them the mismatch is silent and the allocator reads a heap handle out of
+    # PEB.Reserved4.
+    ("_TEB", "Peb"),
+    ("_PEB", "ProcessHeap"),
 ]
 
 WRAPPER_SRC = """\
@@ -349,6 +391,14 @@ WRAPPER_SRC = """\
 #include "wincon.h"
 #include "winbase.h"
 #include "winternl.h"
+/* heap.c: malloc.h owns `_HEAPINFO` and the `_heapwalk` result vocabulary
+   (_USEDENTRY/_FREEENTRY, _HEAPOK/_HEAPEND/_HEAPBADBEGIN/_HEAPBADNODE/_HEAPEMPTY).
+   Those are return values the CALLER switches on, so a transcribed literal that drifts
+   turns "heap is fine" into "heap is corrupt" with nothing to catch it. This resolves
+   to dll/win32/msvcrt/include/malloc.h, not sdk/include/crt's -- the module drops the
+   SDK crt dir and substitutes its own, the same shadowing dir.c's `_finddata64_t`
+   documents above. */
+#include <malloc.h>
 /* file.c's lock numbering. `_STREAM_LOCKS` (28) and `_IOB_ENTRIES` (20) live here, and
    mtdll.h is the header file.c itself takes them from. Deriving rather than copying
    matters more than usual for `_IOB_ENTRIES`: it is 20 in crt/stdio.h and mtdll.h but
@@ -552,7 +602,16 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # synchronisation
         "|InitializeCriticalSection|InitializeCriticalSectionEx|DeleteCriticalSection"
         "|EnterCriticalSection|LeaveCriticalSection|TryEnterCriticalSection"
-        "|InterlockedCompareExchange|InterlockedCompareExchangePointer"
+        # NOT the Interlocked family, and this is the note that stops it being re-added a
+        # fourth time. `InterlockedCompareExchange`/`InterlockedCompareExchangePointer` sat
+        # in this regex emitting NOTHING, silently, because the whole family is
+        # `__INTRIN_INLINE` in vcruntime/mingw32/intrin_x86.h — a compiler intrinsic with no
+        # symbol to import. bindgen cannot emit what the header never declares, and an
+        # `extern` block would link against a name that does not exist. The real home is
+        # msvcrt-crt-rust's prelude.rs, which lowers each to the matching core::sync::atomic
+        # op under SeqCst (the barrier Win32 documents) and states why at each one. An
+        # allowlist entry that quietly matches nothing is worse than no entry: it reads as
+        # coverage.
         # winternl.h / ntdll: the NT calls file.c and time.c make directly
         "|NtQueryInformationFile|RtlTimeToSecondsSince1970|NtQuerySystemTime"
         # winbase.h / timezoneapi.h / datetimeapi.h: time.c's clock and calendar
@@ -570,6 +629,19 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|CreateProcessW|WaitForSingleObject|GetExitCodeProcess|TerminateProcess"
         "|GetProcessHeap|HeapAlloc|HeapFree|HeapReAlloc"
         "|LoadLibraryW|FreeLibrary|GetProcAddress|GetModuleFileNameW"
+        # winbase.h + winternl.h: heap.c's allocator surface. It deliberately reaches
+        # PAST the kernel32 wrappers already listed above and calls ntdll's Rtl* family
+        # directly, because it needs the small-block heap as a SECOND handle — the flags
+        # argument is heap.c's own (HEAP_ZERO_MEMORY for calloc), not a wrapper's. The
+        # kernel32 five are the ones with no Rtl equivalent it uses: HeapCreate/Destroy
+        # build and tear down that second heap, and Validate/Compact/Walk serve _heapchk,
+        # _heapmin and _heapwalk. HeapWalk is the shape that justifies deriving all of
+        # them: its PROCESS_HEAP_ENTRY out-parameter is a union-bearing struct it
+        # advances in place, so a wrong signature corrupts a walk rather than failing to
+        # link. heap.c's `InterlockedExchange` is deliberately NOT here — see the
+        # Interlocked note above; it lives in prelude.rs like the rest of its family.
+        "|RtlAllocateHeap|RtlReAllocateHeap|RtlFreeHeap|RtlSizeHeap|RtlValidateHeap"
+        "|HeapCreate|HeapDestroy|HeapValidate|HeapCompact|HeapWalk"
         # winbase.h: dir.c's Win32 surface. FindFirstFileA/W hand back a WIN32_FIND_DATA
         # whose five FILETIME/size fields dir.c copies straight into a `_finddata*_t` — the
         # struct pair whose per-arch layout is the entire reason this island exists rather
@@ -589,6 +661,12 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # why their signatures come from the headers rather than from a hand-written
         # `extern` block. `_time64` and `_getdrive` are the reason time.h and direct.h
         # joined the wrapper above.
+        # `calloc` STAYS here even though heap.rs now defines it, and the reason is the
+        # `heap` feature: with it OFF (both host harnesses) there is no Rust definition and
+        # file.rs/exit.rs need the host's. With it ON, the glob-imported extern loses to
+        # heap.rs's local item inside that module, and every other caller binds to the same
+        # `#[no_mangle] calloc` symbol at link time — so both configurations are correct and
+        # neither has two definitions. Removing this line would break the difftest link.
         "|calloc|iswalpha|_wcsdup|_wgetenv|_time64|_getdrive|_get_fmode"
         "|msvcrt_wstrdupa|__doserrno"
         # wincon.h: console.c's whole surface. It opens CONIN$/CONOUT$ by NAME through
@@ -733,6 +811,25 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|_TWO_DIGIT_EXPONENT|SIGABRT|RAND_MAX|PAGE_[A-Z_]+|IDCANCEL|LANG_NEUTRAL"
         "|DLL_PROCESS_DETACH|DLL_PROCESS_ATTACH|DLL_THREAD_ATTACH|DLL_THREAD_DETACH"
         "|_CONIO_LOCK|_EXIT_LOCK1|_EXIT_LOCK2"
+        # ── heap.c ──────────────────────────────────────────────────────────
+        # `_HEAP_LOCK` is mtdll.h slot 9, one line below `_CONIO_LOCK`'s 8 — i.e. the exact
+        # neighbour that `_EXIT_LOCK1` was silently recalled as, per the note above. The
+        # `_HEAP*` family is `_heapchk`/`_heapwalk`'s RETURN vocabulary — small negatives,
+        # so a permutation reads as a different DIAGNOSIS rather than as garbage. Worth
+        # recording how this line was written: the author put "_HEAPOK -2, _HEAPEND -1,
+        # _HEAPEMPTY -3" here from memory and the derived values are -2, -5 and -1. Two of
+        # three wrong, in the comment justifying why they must be derived.
+        # `_USEDENTRY`/`_FREEENTRY` are the
+        # `_HEAPINFO._useflag` values the CALLER compares against, and the PROCESS_HEAP_*
+        # bits are HeapWalk's flags — where confusing ENTRY_BUSY with REGION makes the walk
+        # skip live blocks. All of them are the shape that is wrong by silence if guessed.
+        "|_HEAP_LOCK|_HEAPOK|_HEAPEND|_HEAPEMPTY|_HEAPBADBEGIN|_HEAPBADNODE|_HEAPBADPTR"
+        "|_USEDENTRY|_FREEENTRY|_HEAP_MAXREQ|PROCESS_HEAP_[A-Z_]+"
+        # The two winnt.h HeapAlloc flags heap.c passes: HEAP_ZERO_MEMORY is calloc's, and
+        # HEAP_REALLOC_IN_PLACE_ONLY is what makes `_expand` an expand rather than a realloc
+        # — drop it and `_expand` silently starts MOVING blocks, which is the one thing its
+        # contract promises it will not do.
+        "|HEAP_ZERO_MEMORY|HEAP_REALLOC_IN_PLACE_ONLY"
         # ── locale.c ────────────────────────────────────────────────────────
         # locale.h's category numbering (LC_ALL=0 .. LC_TIME=5, with LC_MIN/LC_MAX
         # bounding them) indexes six parallel arrays including the exported
@@ -851,6 +948,11 @@ RUST_TYPE_OF = {
     "threadmbcinfostruct": "threadmbcinfostruct",
     "localeinfo_struct": "localeinfo_struct",
     "lconv": "lconv",
+    # heap.c's `NtCurrentTeb()->Peb->ProcessHeap`. bindgen keeps winternl.h's leading
+    # underscore on these two (they are `struct _TEB` / `struct _PEB` in the header,
+    # with TEB/PEB as separate typedefs), so tag and Rust name coincide here.
+    "_TEB": "_TEB",
+    "_PEB": "_PEB",
 }
 
 
@@ -879,6 +981,14 @@ def c_guardian(per_arch: dict[str, dict[tuple[str, str], int]]) -> str:
         "#include <locale.h>",
         '#include "msvcrt.h"',
         '#include "winnls.h"',
+        # heap.c's TEB/PEB hops. This TU is compiled with msvcrt's REAL flags, so this
+        # include resolves the way heap.c's does -- to sdk/include/wine/winternl.h, whose
+        # PEB has ProcessHeap where the psdk header of the same name has Reserved4. That
+        # is the point: the assert below is only meaningful because this file resolves the
+        # header the same way the module does. It arrived incomplete first time round and
+        # clang said `offsetof of incomplete type 'struct _TEB'` rather than passing
+        # vacuously, which is the behaviour this guardian exists to have.
+        '#include "winternl.h"',
         "#include <stddef.h>",
         "",
         "/* C11 _Static_assert; clang has it in all modes we build. */",

@@ -21,6 +21,7 @@
 #include <locale.h>
 #include "msvcrt.h"
 #include "winnls.h"
+#include "winternl.h"
 #include <stddef.h>
 
 /* C11 _Static_assert; clang has it in all modes we build. */
@@ -50,6 +51,8 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 188);
 VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 4);
+VIBEOS_ASSERT_OFF(_TEB, Peb, 48);
+VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 24);
 #endif
 
 #if defined(_M_AMD64)
@@ -73,6 +76,8 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 296);
 VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
+VIBEOS_ASSERT_OFF(_TEB, Peb, 96);
+VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 48);
 #endif
 
 #if defined(_M_ARM64)
@@ -96,6 +101,8 @@ VIBEOS_ASSERT_OFF(threadlocaleinfostruct, lconv, 296);
 VIBEOS_ASSERT_OFF(lconv, decimal_point, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, locinfo, 0);
 VIBEOS_ASSERT_OFF(localeinfo_struct, mbcinfo, 8);
+VIBEOS_ASSERT_OFF(_TEB, Peb, 96);
+VIBEOS_ASSERT_OFF(_PEB, ProcessHeap, 48);
 #endif
 
 /* ── wave 13 (fpnum.rs): the float parser's scalar pins ──────────────────── */

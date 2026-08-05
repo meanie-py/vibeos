@@ -2047,6 +2047,30 @@ of them were **ours**, not the model's:
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
 
+  **An ABSENT constant is not sealed — it is INVENTED, and no audit fires.** Sealing can only
+  seal a name the `-sys` island CARRIES; a constant the island lacks never becomes a token, so
+  the model writes it from memory and the envelope has nothing to check. This is the mirror of
+  the permutation above: permutation needs the constant PRESENT, this needs it ABSENT.
+  msvcrt's `_heapset` is the worked example (wave 26, `--seal-facts` on, audit clean): the C
+  is `while ((retval = _heapwalk(&h)) == _HEAPOK)` and `return retval == _HEAPEND ? _HEAPOK :
+  retval`, and the translation shipped `if retval != 1 { break }` and `if retval == 5 { 1 }`.
+  `_HEAPOK` is **-2** and `_HEAPEND` **-5**, so the loop body never executed and the return
+  came from the wrong namespace entirely — a `_heapset` that fills nothing. The whole `_HEAP*`
+  family was missing from the island at call time.
+  It also sits in `profile_derive`'s blind spot: its switch-constant audit reads `case` labels
+  only, and every one of these is in a `while` or a `?:`. **Fix: run `profile_derive` first
+  and treat a constant used in ANY control expression the way it treats a `case` label — if
+  the family is not in the island, put it there BEFORE paying.** Detection after the fact is
+  the same table diff as above: list the C's ALL-CAPS vocabulary and check each is SPELLED BY
+  NAME in the Rust; a bare literal where the C names a constant is the finding.
+
+  **Diff constant COUNTS against the compiled C, never against the file.** The same sweep on
+  heap.c showed `EINVAL` 13 in the C vs 9 in the Rust, `ERANGE` 8 vs 4 — which reads as four
+  deleted parameter checks. Both were correct: the missing occurrences live in
+  `#if _MSVCR_VER>=80/140` arms that this DLL does not compile. Strip the untaken arms first
+  (`tools/verify_translation_literals.py:strip_untaken_arms` already does it) or the check
+  produces confident false positives and trains you to ignore it.
+
   **The cheapest defence that catches this class wholesale: diff every translated constant
   against its header, mechanically, and do not wait for the audit to nominate one.** msvcrt's
   wave 23 (console/misc/exit/locale) came back with the audit reporting ZERO findings and

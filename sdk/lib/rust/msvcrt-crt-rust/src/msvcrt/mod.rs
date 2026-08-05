@@ -156,6 +156,30 @@ pub mod undname;
 #[cfg(feature = "ctype-tables")]
 pub mod ctype;
 
+// heap.c: the allocator — 37 functions, and the file every other translated module in this
+// crate is already standing on. `malloc`/`free`/`calloc`/`realloc`/`_msize`/`_expand`, the
+// `_aligned_*` family, the `_heap*` diagnostics, `memcpy_s`/`memmove_s`, and the C++
+// `operator_new`/`operator_delete` pair (which are `?`-mangled exports, so this flip reaches
+// into the C++ surface that is otherwise a separate lane).
+//
+// Whole-file, and for a stronger reason than the other whole-file flips: `heap` and `sb_heap`
+// are two file-static HANDLEs that every entry point reaches through
+// `msvcrt_heap_alloc`/`_realloc`/`_free`/`_size`, and `msvcrt_heap_realloc` decides which of
+// the two a pointer belongs to by asking `RtlValidateHeap`. Half the family on C's pair of
+// handles and half on Rust's would free small-block pointers against the main heap.
+//
+// The substrate is derived, not declared here: msvcrt-sys carries the Rtl*/Heap* family and
+// the TEB/PEB hop for `NtCurrentTeb()->Peb->ProcessHeap`, with both offsets in GUARDED so
+// the two guardians fail the build if either struct moves. `InterlockedExchange` is the one
+// exception and it is NOT an extern — the Interlocked family is a compiler intrinsic with no
+// symbol, so it lives in prelude.rs as an atomic, like its siblings.
+//
+// Behind the `heap` DEFAULT feature. That gate is load-bearing rather than cosmetic — see
+// this crate's Cargo.toml for why linking these four names into a glibc host binary is worse
+// than a duplicate symbol.
+#[cfg(feature = "heap")]
+pub mod heap;
+
 // math.c. Note what the C build does to this file before you diff it: CMakeLists.txt defines
 // `-Dmath_error=_invoke_matherr`, `-Dasm_sqrt=sqrt`, `-Dasm_sqrtf=sqrtf` and `-Dx87_asin=asin`,
 // so three of the hand-written assembly stubs are DEFINED-BUT-DEAD (their call sites are

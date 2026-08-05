@@ -827,6 +827,61 @@ and `msvcrt_wstrdupa` itself.
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
+**Wave 26 (2026-08-04) — heap.c FLIPPED ($0.18). The allocator is Rust; 87.8% of msvcrt.**
+
+37 functions, 855 lines, and the file every other translated module in this crate already
+stands on. `heap.c.obj` is now fully covered — zero exports left C — which took amd64 from
+1,060 to **1,083 of 1,234** non-C++ exports (85.9% → 87.8%), and reached **8 `?`-mangled
+exports** (`operator_new`, `operator_delete`, `operator_new_dbg`, the `_set_new_handler`
+family) that had been counted as the separate C++ lane.
+
+Substrate first, and it was most of the work. Nothing in msvcrt-sys covered this file: the
+island gained `RtlAllocateHeap`/`RtlReAllocateHeap`/`RtlFreeHeap`/`RtlSizeHeap`/
+`RtlValidateHeap` + `HeapCreate`/`HeapDestroy`/`HeapValidate`/`HeapCompact`/`HeapWalk`, the
+`_heapinfo`/`PROCESS_HEAP_ENTRY` pair, `TEB`/`PEB`, and 15 constants.
+
+**Read the header that WINS.** msvcrt does `include_directories(BEFORE sdk/include/wine)`, so
+`#include "winternl.h"` resolves to sdk/include/wine's copy — the one with real fields
+(`PEB.ProcessHeap` /* 018/030 */, `TEB.Peb` /* 030/0060 */). The psdk header of the SAME NAME
+spells those bytes `PVOID Reserved4[3]` and calls the TEB field `ProcessEnvironmentBlock`.
+Picking the wrong one is not a compile error; it is an allocator reading its heap handle from
+the wrong offset. Both hops are in `GUARDED`, so the two guardians now fail the build if
+either struct moves.
+
+Three defect classes the compiler could not see, all in this one file:
+
+* **`NtCurrentTeb()->Peb->ProcessHeap` appears 4 times and was translated 4 different ways,
+  3 of them wrong** — two stopped one hop short and used the PEB pointer itself as the heap
+  handle; a third walked the PEB by a hard-coded `0x18`, which is ProcessHeap's **i386**
+  offset, so it read a neighbouring field on amd64 and arm64. The guarded offsets cannot
+  catch this: they prove where the fields LIVE, not how many times a body dereferenced.
+* **An absent constant is not sealed, it is INVENTED.** `_heapset` shipped `!= 1` for
+  `!= _HEAPOK` (-2) and `== 5 { 1 }` for `== _HEAPEND ? _HEAPOK` (-5, -2) — as written the
+  loop body never executes. `--seal-facts` was on; it can only seal a constant the ISLAND
+  CARRIES, and the `_HEAP*` family was not in it at call time. Distinct from the recall
+  PERMUTATION entry: that needs the constant present, this needs it absent. It also falls in
+  `profile_derive`'s blind spot, whose switch-constant audit reads `case` labels only —
+  every one of these is in a `while`/`?:`.
+* **The assembler split `_set_sbh_threshold`**, emitting its signature into the file-scope
+  preamble with no body (whose `{` then swallowed every following item) and leaving the body
+  headerless 400 lines down. The parse failure MASKED name resolution: the first `cargo
+  check` reported 21 errors, the real count was 40.
+
+Verification that came back clean, and is worth repeating on the next file: diffing the C's
+whole constant vocabulary against the Rust showed `EINVAL` 13→9, `ENOMEM` 3→2, `ERANGE` 8→4,
+which reads as dropped parameter checks. Stripping the uncompiled `#if _MSVCR_VER>=X` arms
+first gives 9/9, 2/2, 4/4 — nothing dropped. Compare against the COMPILED C, never the file.
+
+Status is **PORTED, NOT GRADED**, and the `heap` feature is why: msvcrt-difftest is a Linux
+host binary, and linking `malloc`/`free`/`calloc`/`realloc` into it replaces glibc's allocator
+with one calling `RtlAllocateHeap`. Lifting that needs a heap shim in `refstub/` mapping the
+Rtl* family onto the host allocator, the way `fileimpl.c` does for the fd table.
+
+Also closed here: `InterlockedCompareExchange`/`InterlockedCompareExchangePointer` had been
+sitting in the island's `--allowlist-function` emitting NOTHING, silently — the family is
+`__INTRIN_INLINE`, a compiler intrinsic with no symbol. `prelude.rs` documented that and
+nobody removed the dead entries. An allowlist entry that matches nothing reads as coverage.
+
 **Wave 25 (2026-08-04) — undname.c FLIPPED (1,788 lines, $0.55), and ctype.c CLOSED.**
 
 `undname.c` is the Visual C++ symbol demangler behind `__unDName`/`__unDNameEx`, and the
