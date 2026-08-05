@@ -332,10 +332,9 @@ def strip_rust_attributes(text: str) -> str:
     return "".join(out)
 
 
-
 _ARCH_ARM = re.compile(
     r'#\[cfg\((not\()?target_arch\s*=\s*"[^"]+"\)?\)\]\s*\n'
-    r'(?:\s*#\[[^\]]*\]\s*\n)*'
+    r"(?:\s*#\[[^\]]*\]\s*\n)*"
     r'\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]*"\s+)?fn\s+(\w+)'
 )
 
