@@ -2422,6 +2422,48 @@ already been met the note is describing a bug, not a plan.
   `#if`/`#ifdef` generally, so a config-gated function is the known residual false positive.
   **Run it after every flip.**
 
+### A function whose body straddles a preprocessor conditional vanishes from the worklist
+
+**Symptom.** The translation calls a function it never defined; the only signal is rustc's
+"cannot find function" at a surviving call site. `scan.unextracted` is EMPTY, so nothing in the
+pipeline reports the loss. aclui's `checklist.c:789 PaintControl` (277 lines) was dropped this
+way, and the assembler emitted it as a commented-out stub with no finding.
+
+**Cause.** The `#if SUPPORT_UXTHEME` block at checklist.c:947 ENDS MID-STATEMENT — the
+`if (FAILED(hDrawResult))` condition is inside the conditional and its braced body follows the
+`#endif`. Brace matching therefore sees a balanced function that the statement grammar does not,
+and the extractor gives up on that one body while reporting nothing.
+
+**Fix.** Resolve the module's own conditional into a scratch copy of the TU and translate from
+that: the value is fixed at build time (`dll/win32/aclui/CMakeLists.txt:3` defines
+`SUPPORT_UXTHEME`), so the resolved source IS the configuration that ships. The scanner then sees
+37 functions instead of 36. `translate` needs the file at its REAL path — the call seal looks the
+TU up in `compile_commands.json` and hard-fails otherwise (correctly) — so swap the resolved copy
+in, buy, and restore from a byte-exact backup verified with `git diff --quiet`.
+
+**Detection.** A column-0 sweep for `^name(` that is absent from the extracted set finds it with
+zero false positives on this file. Repo-wide it is noisy (`WINE_DEFAULT_DEBUG_CHANNEL` and other
+macro invocations sit at column 0 too), so it needs a macro-name filter before it can be a gate.
+
+### A sealed constant comes back as the enclosing `case` label
+
+**Symptom.** `GetKeyState(VK_BACK)` where checklist.c:1972 says `GetKeyState(VK_SHIFT)` — inside
+a `case VK_BACK:` arm. It compiles, links, and polls the wrong key, so shift-extend selection
+reads the Backspace state. All three of the C's `GetKeyState` calls are `VK_SHIFT`; the
+translation got one of them wrong.
+
+**Cause.** The recall failure mode §9.117 describes, in its most confusing form: the model
+substituted the constant it had just seen in the arm's LABEL for the one the expression uses.
+The seal's invariant is a closed SET over the body, and both constants are legitimately present
+in it, so nothing fires.
+
+**Fix.** Nothing caught this but luck — Rust rejected the unrelated `i16 & 0x8000` on the same
+line (C promotes the `SHORT` to `int` first; Rust needs the `as INT`). The cheap general defence
+is the one §9.117 already prescribes for shared helpers: enumerate every call to the function on
+both sides and diff the argument lists as a table. Here that is three rows and the odd one out is
+immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
+differ.
+
 ### An unexpanded Win32 macro silently shrinks the translation plan `[§9.128]`
 `EXTERN_C` is `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows neither, so it
 parses the macro as the return type and the real return type becomes a second type-identifier.

@@ -60,6 +60,7 @@ from .config import (
     OUTPUT_CRATE,
     REACTOS_ROOT,
     RUST_DIR,
+    SHELL32_ISLAND_FILES,
     TARGETS,
     cost_usd,
     detect_target,
@@ -967,6 +968,7 @@ def cmd_cpp_com(args):
         args.class_name,
         object_map_source=object_map,
         method_names=[f.name for f in class_methods],
+        island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
     )
     cls.require_supported(allow_internal=args.internal)
 
@@ -1846,6 +1848,7 @@ def cmd_translate(args):
             target_path,
             args.class_name,
             object_map_source=rustconv_target.source_dir / "shell32.cpp",
+            island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
         )
         scan = _extend_cpp_class_scan(
             scan_file(target_path),

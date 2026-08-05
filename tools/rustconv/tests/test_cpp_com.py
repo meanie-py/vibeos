@@ -7,7 +7,7 @@ import pytest
 from rustconv.__main__ import _cost_cap_reached, _extend_cpp_class_scan, _trivial_cpp_body
 from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
-from rustconv.config import REACTOS_ROOT, TARGETS, detect_target
+from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
     CppComError,
     InterfaceMethod,
@@ -18,6 +18,7 @@ from rustconv.cpp_com import (
     audit_worker_body,
     c_type_to_rust,
     discover_widl_header,
+    island_integer_aliases,
     lower_trivial_worker,
     normalize_worker_body,
     normalize_worker_semantics,
@@ -2273,3 +2274,58 @@ def test_worker_normalizer_discards_model_comments_inside_generated_signature():
     normalized = normalize_worker_body(model, expected)
     assert normalized.startswith(expected + " {")
     assert "retained for ABI" not in normalized
+
+
+def test_island_integer_aliases_requires_every_arch_to_agree(tmp_path):
+    """An SDK enum is int-sized only if EVERY arch island says so, identically."""
+
+    def island(text: str, name: str) -> Path:
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    agree = [
+        island(
+            "pub type __WIDL_generated_00000001 = ::core::ffi::c_int;\n"
+            "pub use self::__WIDL_generated_00000001 as FOLDERVIEWMODE;\n"
+            "pub type SIZE_T = u32;\n",
+            f"island_{arch}.rs",
+        )
+        for arch in ("i386", "amd64")
+    ]
+    # Second arch widens SIZE_T, exactly as a real 64-bit island does.
+    agree[1].write_text(
+        "pub type __WIDL_generated_00000001 = ::core::ffi::c_int;\n"
+        "pub use self::__WIDL_generated_00000001 as FOLDERVIEWMODE;\n"
+        "pub type SIZE_T = u64;\n",
+        encoding="utf-8",
+    )
+    proven = island_integer_aliases(agree)
+    assert "FOLDERVIEWMODE" in proven, "re-export chained onto an int alias is int-sized"
+    assert "SIZE_T" not in proven, "a width that changes per arch must never be assumed"
+
+
+def test_island_integer_aliases_is_empty_when_an_island_is_missing(tmp_path):
+    """No islands, no proof -- the caller must stay a loud preflight failure."""
+    assert island_integer_aliases([tmp_path / "island_nope.rs"]) == frozenset()
+    assert island_integer_aliases([]) == frozenset()
+
+
+def test_sdk_enum_state_field_is_accepted_only_with_island_proof():
+    """FOLDERVIEWMODE m_FVM: unprovable from the header alone, provable from the islands."""
+    source = SHELL32 / "CDefViewUtil.cpp"
+    if not source.is_file():
+        pytest.skip("CDefViewUtil.cpp has been retired from the tree")
+    with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
+        analyze_class(
+            source, "CShellFolderViewCBWrapper", object_map_source=SHELL32 / "shell32.cpp"
+        ).require_supported(allow_internal=True)
+    proved = analyze_class(
+        source,
+        "CShellFolderViewCBWrapper",
+        object_map_source=SHELL32 / "shell32.cpp",
+        island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
+    )
+    proved.require_supported(allow_internal=True)
+    fvm = next(f for f in proved.plain_state_fields() if f.name == "m_FVM")
+    assert fvm.rust_type == "FOLDERVIEWMODE", "must reference the island alias, not a local copy"

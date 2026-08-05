@@ -207,6 +207,7 @@ pub mod drives_folder_enum;
 // helpers plus BOTH of its file-local COM classes. The two companions that this TU only *calls*
 // — CRecyclerDropTarget and CRecycleBinFolderViewCB — stay C++; see
 // dll/win32/shell32/rust_recyclebin_bridges_stub.cpp for why neither could come across.
+pub mod def_view_util;
 #[path = "folders/CRecycleBin.rs"]
 pub mod recycle_bin_tu;
 #[path = "folders/CRecycleBinEnum.rs"]

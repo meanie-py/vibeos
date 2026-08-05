@@ -160,7 +160,12 @@ list(APPEND SOURCE
     # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
     CFileSysBindData.cpp
     CDefView.cpp
-    CDefViewUtil.cpp
+    # CDefViewUtil.cpp — replaced by Rust (shell32-rust/src/def_view_util.rs); cohab via
+    # libshell32_rust.a. Whole-TU flip: CShellFolderViewCBWrapper is referenced by nothing
+    # outside this TU, so the class moved wholesale. The two view-mode helpers are still
+    # called from the C++ CDefView.cpp, whose forward declarations became EXTERN_C so they
+    # name the unmangled cdecl symbols Rust publishes.
+    #   CDefViewUtil.cpp
     # CDefViewDual.cpp — replaced by Rust (shell32-rust/src/shell32/CDefViewDual.rs); cohab via
     # libshell32_rust.a. Whole-TU flip: the only symbol the rest of the link still took from it
     # was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes

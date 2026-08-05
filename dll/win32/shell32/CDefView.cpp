@@ -216,8 +216,13 @@ static inline COLORREF GetViewColor(COLORREF Clr, UINT SysFallback)
 }
 
 #define VID_Default ( *(const SHELLVIEWID*)&IID_CDefView )
-extern HRESULT ShellViewIdToFolderViewMode(const SHELLVIEWID *pVid);
-extern const SHELLVIEWID* FolderViewModeToShellViewId(UINT FVM);
+/* Defined in shell32-rust/src/def_view_util.rs since the CDefViewUtil.cpp flip.
+ * EXTERN_C, not a bare `extern`: with C++ linkage these would be mangled names that
+ * no #[no_mangle] Rust symbol can satisfy. Neither carries WINAPI, so both stay
+ * cdecl -- mangling and calling convention are independent, and reading only one of
+ * them is how an i386-only LINK_FAIL gets shipped. */
+EXTERN_C HRESULT ShellViewIdToFolderViewMode(const SHELLVIEWID *pVid);
+EXTERN_C const SHELLVIEWID* FolderViewModeToShellViewId(UINT FVM);
 
 class CDefView :
     public CWindowImpl<CDefView, CWindow, CControlWinTraits>,
