@@ -104,11 +104,16 @@ list(APPEND SOURCE
     # those 7 became EXTERN_C in shfldr.h; the five CFSFolder:: statics became inline forwarders
     # to the bridges in CFSFolder.h, because a static MEMBER has no EXTERN_C spelling. The
     # file-local CFileSysEnum enumerator is shell32-rust/src/file_sys_enum.rs.
-    # Hybrid cohab: CDrivesFolder activation/methods are Rust-owned
-    # (shell32-rust/src/drives_folder.rs); this file retains CDrivesFolderEnum,
-    # the drives context menu/eject/format cluster, CDrivesExtractIcon + icon
-    # helpers, and the explicit *_RustBridge shims.
-    folders/CDrivesFolder.cpp
+    # folders/CDrivesFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip:
+    # the CDrivesFolder class was already shell32-rust/src/drives_folder.rs, the free helpers
+    # (drives context menu/eject/format cluster, CDrivesExtractIcon, icon helpers, the
+    # *_RustBridge shims) are shell32-rust/src/folders/CDrivesFolder.rs, and the file-local
+    # CDrivesFolderEnum is shell32-rust/src/folders/CDrivesFolderEnum.rs — an INTERNAL
+    # ShellObjectCreator object with no OBJECT_ENTRY, so it needed `--cpp-com --internal`.
+    # Its retained closure was 8: 7 `_RustBridge` entries plus the `g_IsFloppyCache` DATA
+    # symbol, which the free-function slice now owns with `#[no_mangle]` (drives_folder.rs
+    # still reaches it as an `extern static mut` under the unmangled C name). No C++ edits:
+    # every consumer was already going through a bridge.
     # folders/CMyDocsFolder.cpp — replaced by Rust (shell32-rust/src/my_docs_folder.rs); cohab via libshell32_rust.a
     # Hybrid cohab: CPrinterFolder activation/methods are Rust-owned; this file
     # retains CPrintersEnum and three explicit source-local Rust bridge helpers.

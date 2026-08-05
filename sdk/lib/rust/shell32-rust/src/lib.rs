@@ -196,6 +196,13 @@ pub mod drv_def_ext_tu;
 // land together.
 #[path = "dialogs/filedefext_tu.rs"]
 pub mod file_def_ext_tu;
+// CDrivesFolder.cpp: the CDrivesFolder class itself was already `drives_folder.rs`; these are
+// its free helpers and the one file-local COM class (CDrivesFolderEnum, an internal
+// ShellObjectCreator object with no OBJECT_ENTRY — bought with `--cpp-com --internal`).
+#[path = "folders/CDrivesFolder.rs"]
+pub mod drives_folder_tu;
+#[path = "folders/CDrivesFolderEnum.rs"]
+pub mod drives_folder_enum;
 #[path = "folders/CDesktopFolder.rs"]
 pub mod desktop_folder_tu;
 #[path = "folders/CDesktopFolderEnum.rs"]
