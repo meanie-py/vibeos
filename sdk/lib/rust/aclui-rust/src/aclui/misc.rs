@@ -2,9 +2,10 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static ObjectPickerAttributes: [PCWSTR; 1] = [
-    w!("ObjectSid") as PCWSTR,
-];
+// `const`, not `static`: an array of raw pointers is not Sync, and this table is only ever
+// read for its elements. Each element still points at `w!`'s own `static` UTF-16 buffer, so
+// the string addresses are stable -- only the ARRAY is materialized per use.
+pub const ObjectPickerAttributes: [PCWSTR; 1] = [w!("ObjectSid") as PCWSTR];
 unsafe extern "C" fn LengthOfStrResource(
     hInst: HINSTANCE,
     uID: u32,
@@ -51,7 +52,7 @@ unsafe extern "C" fn AllocAndLoadString(
     ln = LengthOfStrResource(hInst, uID);
     ln += 1;
     if ln > 0 {
-        *lpTarget = LocalAlloc(LMEM_FIXED, (ln as usize) * core::mem::size_of::<u16>()) as LPWSTR;
+        *lpTarget = LocalAlloc(LMEM_FIXED, ((ln as usize) * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
         if !(*lpTarget).is_null() {
             let Ret: i32;
             Ret = LoadStringW(hInst, uID, *lpTarget, ln);
@@ -63,16 +64,18 @@ unsafe extern "C" fn AllocAndLoadString(
     }
     return 0;
 }
+// The `_v` twin of the variadic entry in dll/win32/aclui/rust_varargs_shim.c. `va_start` is
+// the only part that has to be C; everything the function actually DOES is here, and the
+// va_list arrives by pointer, which is exactly what FormatMessageW's `Arguments` wants.
 #[no_mangle]
-pub unsafe extern "C" fn LoadAndFormatString(
+pub unsafe extern "C" fn LoadAndFormatString_v(
     hInstance: HINSTANCE,
     uID: u32,
     lpTarget: *mut LPWSTR,
-    mut args: ...
+    lArgs: *mut va_list,
 ) -> u32 {
     let mut Ret: u32 = 0;
     let mut lpFormat: LPWSTR = core::ptr::null_mut();
-    let mut lArgs: va_list = core::mem::zeroed();
 
     if AllocAndLoadString(
         core::ptr::addr_of_mut!(lpFormat),
@@ -80,17 +83,15 @@ pub unsafe extern "C" fn LoadAndFormatString(
         uID,
     ) > 0
     {
-        va_start(lArgs, lpTarget);
         Ret = FormatMessageW(
             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
-            lpFormat,
+            lpFormat as *const c_void,
             0,
             0,
             lpTarget as LPWSTR,
             0,
-            core::ptr::addr_of_mut!(lArgs),
+            lArgs,
         );
-        va_end(lArgs);
 
         LocalFree(lpFormat as HLOCAL);
     }
@@ -210,7 +211,7 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
     let mut pdo: *mut IDataObject = core::ptr::null_mut();
     let mut hRet: HRESULT;
 
-    hRet = ((*(*pDsObjectPicker).lpVtbl).InvokeDialog)(
+    hRet = ((*(*pDsObjectPicker).lpVtbl).InvokeDialog.unwrap_unchecked())(
         pDsObjectPicker,
         hwndParent,
         &mut pdo,
@@ -219,26 +220,26 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
         let mut stm: STGMEDIUM = core::mem::zeroed();
         let mut fe: FORMATETC = core::mem::zeroed();
 
-        fe.cfFormat = RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST) as u16;
+        fe.cfFormat = RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST_BUF.as_ptr()) as u16;
         fe.ptd = core::ptr::null_mut();
         fe.dwAspect = DVASPECT_CONTENT;
         fe.lindex = -(1 as i32);
         fe.tymed = TYMED_HGLOBAL;
 
-        hRet = ((*(*pdo).lpVtbl).GetData)(pdo, &mut fe, &mut stm);
+        hRet = ((*(*pdo).lpVtbl).GetData.unwrap_unchecked())(pdo, &mut fe, &mut stm);
         if hRet >= 0 {
-            let SelectionList: PDS_SELECTION_LIST = GlobalLock(stm.hGlobal) as PDS_SELECTION_LIST;
+            let SelectionList: PDS_SELECTION_LIST = GlobalLock(*stm.__bindgen_anon_1.hGlobal.as_ref()) as PDS_SELECTION_LIST;
             if !SelectionList.is_null() {
                 let mut vSid: LPVARIANT;
-                let mut pSid: PSID;
+                let mut pSid: PSID = core::ptr::null_mut();
                 let mut i: u32;
-                let mut contLoop: u32 = TRUE;
+                let mut contLoop: u32 = (TRUE) as u32;
 
                 i = 0;
                 while i < (*SelectionList).cItems && contLoop != 0 {
-                    vSid = (*SelectionList).aDsSelection[i as usize].pvarFetchedAttributes;
+                    vSid = (*(*SelectionList).aDsSelection.as_ptr().add(i as usize)).pvarFetchedAttributes;
 
-                    if !vSid.is_null() && V_VT(vSid) == (VT_ARRAY | VT_UI1) {
+                    if !vSid.is_null() && V_VT(vSid) == ((VT_ARRAY | VT_UI1)) as u16 {
                         hRet = SafeArrayAccessData(
                             V_ARRAY(vSid),
                             &mut pSid as *mut PSID as *mut *mut core::ffi::c_void,
@@ -248,12 +249,12 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
                         }
 
                         if !pSid.is_null() {
-                            contLoop = SelectedSidCallback(
+                            contLoop = (SelectedSidCallback.unwrap_unchecked()(
                                 pDsObjectPicker,
                                 hwndParent,
                                 pSid,
                                 Context,
-                            );
+                            )) as u32;
                         }
 
                         SafeArrayUnaccessData(V_ARRAY(vSid));
@@ -262,7 +263,7 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
                     i += 1;
                 }
 
-                GlobalUnlock(stm.hGlobal);
+                GlobalUnlock(*stm.__bindgen_anon_1.hGlobal.as_ref());
 
                 if hRet >= 0 {
                     hRet = S_OK;
@@ -274,14 +275,14 @@ pub unsafe extern "C" fn InvokeObjectPickerDialog(
             ReleaseStgMedium(&mut stm);
         }
 
-        ((*(*pdo).lpVtbl).Release)(pdo);
+        ((*(*pdo).lpVtbl).Release.unwrap_unchecked())(pdo);
     }
 
     return hRet;
 }
 #[no_mangle]
 pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker) {
-    ((*(*pDsObjectPicker).lpVtbl).Release)(pDsObjectPicker);
+    ((*(*pDsObjectPicker).lpVtbl).Release.unwrap_unchecked())(pDsObjectPicker);
 }
 
 
@@ -403,8 +404,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                            hInstance,
 //                            uID) > 0)
 //     {
-//         va_start(lArgs, lpTarget);
-//         /* let's use FormatMessage to format it because it has the ability to allocate
+// //         /* let's use FormatMessage to format it because it has the ability to allocate
 //            memory automatically */
 //         Ret = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
 //                              lpFormat,
@@ -413,8 +413,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                              (LPWSTR)lpTarget,
 //                              0,
 //                              &lArgs);
-//         va_end(lArgs);
-//
+// //
 //         LocalFree((HLOCAL)lpFormat);
 //     }
 //
@@ -553,7 +552,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //         STGMEDIUM stm;
 //         FORMATETC fe;
 //
-//         fe.cfFormat = (WORD)RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST);
+//         fe.cfFormat = (WORD)RegisterClipboardFormat(CFSTR_DSOP_DS_SELECTION_LIST_BUF.as_ptr());
 //         fe.ptd = NULL;
 //         fe.dwAspect = DVASPECT_CONTENT;
 //         fe.lindex = -1;
@@ -564,7 +563,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                                     &stm);
 //         if (SUCCEEDED(hRet))
 //         {
-//             PDS_SELECTION_LIST SelectionList = (PDS_SELECTION_LIST)GlobalLock(stm.hGlobal);
+//             PDS_SELECTION_LIST SelectionList = (PDS_SELECTION_LIST)GlobalLock(*stm.__bindgen_anon_1.hGlobal.as_ref());
 //             if (SelectionList != NULL)
 //             {
 //                 LPVARIANT vSid;
@@ -587,7 +586,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //
 //                         if (pSid != NULL)
 //                         {
-//                             contLoop = SelectedSidCallback(pDsObjectPicker,
+//                             contLoop = SelectedSidCallback.unwrap_unchecked()(pDsObjectPicker,
 //                                                            hwndParent,
 //                                                            pSid,
 //                                                            Context);
@@ -597,7 +596,7 @@ pub unsafe extern "C" fn FreeObjectPicker(pDsObjectPicker: *mut IDsObjectPicker)
 //                     }
 //                 }
 //
-//                 GlobalUnlock(stm.hGlobal);
+//                 GlobalUnlock(*stm.__bindgen_anon_1.hGlobal.as_ref());
 //
 //                 if (SUCCEEDED(hRet))
 //                 {

@@ -1411,7 +1411,13 @@ case "$DRIVER" in
     # `extern "C"` on the 64-bit targets, and Rust compares fn-pointer ABIs NOMINALLY — neither
     # spelling unifies with "system", so a module full of dialog procs would otherwise have to
     # carry every DLGPROC body twice under complementary `#[cfg(target_arch)]` arms.
-    UNBLOCK="DLGPROC"
+    # WNDPROC and LPTHREAD_START_ROUTINE join it for the same reason: aclui registers a window
+    # class and starts a lookup thread, and ntdll-sys spells both "stdcall" on i386 / "C" on
+    # 64-bit, neither of which unifies NOMINALLY with the "system" the island normalizes to.
+    # The callback TYPEDEFS alone are not enough: `wc.lpfnWndProc` takes its type from
+    # WNDCLASSW, and CreateThread's parameter from PTHREAD_START_ROUTINE, so those have to come
+    # from the island too or the blocklisted -sys spelling wins at the use site.
+    UNBLOCK="DLGPROC WNDPROC PTHREAD_START_ROUTINE LPTHREAD_START_ROUTINE _WNDCLASSW WNDCLASSW LPWNDCLASSW"
     DRIVER_DIR="${SRC}/dll/win32/netcfgx"
     WRAPPER_INC=$'#include "precomp.h"\n#include <olectl.h>\n#include <strsafe.h>\n#include <rpc.h>\n#include <winnls.h>\n#include <winsock.h>\n#include <iphlpapi.h>\n#include <dhcpcsdk.h>\n#include <dhcpcapi.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
@@ -1519,10 +1525,55 @@ case "$DRIVER" in
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
-    BLOCKLIST_FUNCS=1
+    # MACRO_SIGNED left OFF, and MEASURED rather than assumed: aclui looks like netcfgx (a
+    # dialog module whose IDC_*/IDD_*/message constants are all `int` in the C), but turning it
+    # on took i386 from 114 errors to 373 — the msafd failure mode exactly, where signing the
+    # constants trades one E0308 set for the reverse `u32-param = i32-const` set and nets out
+    # worse. The dialog-module shape is NOT sufficient reason; measure per module.
+    # UNBLOCK DLGPROC for the reason spelled out in the netcfgx cell: Rust compares fn-pointer
+    # ABIs NOMINALLY, and ntdll-sys spells DLGPROC "stdcall" on i386 / "C" on 64-bit, neither
+    # of which unifies with the "system" the island is normalized to.
+    # WNDPROC and LPTHREAD_START_ROUTINE join it for the same reason: aclui registers a window
+    # class and starts a lookup thread, and ntdll-sys spells both "stdcall" on i386 / "C" on
+    # 64-bit, neither of which unifies NOMINALLY with the "system" the island normalizes to.
+    # The callback TYPEDEFS alone are not enough: `wc.lpfnWndProc` takes its type from
+    # WNDCLASSW, and CreateThread's parameter from PTHREAD_START_ROUTINE, so those have to come
+    # from the island too or the blocklisted -sys spelling wins at the use site.
+    UNBLOCK="DLGPROC WNDPROC PTHREAD_START_ROUTINE LPTHREAD_START_ROUTINE _WNDCLASSW WNDCLASSW LPWNDCLASSW"
+    # BLOCKLIST_FUNCS_FROM_CRATE, not BLOCKLIST_FUNCS: aclui is a COHAB crate and needs both
+    # halves. Blocklisting every function left the translation calling 189 undeclared Win32
+    # entry points (GetDlgItem/HeapAlloc/EqualSid/...) -- 469 E0425 on i386 alone. Emitting the
+    # whole header surface instead would collide with the four functions aclui.c exports and
+    # the translation #[no_mangle]-defines. Subtracting the crate's own definition set is the
+    # exact discriminator, and it stays correct as translation proceeds.
+    BLOCKLIST_FUNCS_FROM_CRATE=1
     DRIVER_DIR="${SRC}/dll/win32/aclui"
     WRAPPER_INC=$'#include "precomp.h"\n#include <sddl.h>\n#define NDEBUG\n#include <debug.h>\n#include "resource.h"\n#include <uxtheme.h>\n#include <tmschema.h>\n#include <ntsecapi.h>\n#include <stdarg.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <aclui.h>\n#include <objsel.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]aclui\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  # Win32 entry points the translation CALLS. Types stay single-identity via
+                  # the -sys glob; these are allowlisted for their function declarations.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]heapapi\.h'
+                  --allowlist-file '.*[/\\]securitybaseapi\.h'
+                  --allowlist-file '.*[/\\]processthreadsapi\.h'
+                  --allowlist-file '.*[/\\]synchapi\.h'
+                  --allowlist-file '.*[/\\]libloaderapi\.h'
+                  --allowlist-file '.*[/\\]handleapi\.h'
+                  --allowlist-file '.*[/\\]errhandlingapi\.h'
+                  # SafeArray*/VARIANT surface: aclui.c drives the DS object picker through
+                  # an IDataObject whose payload is a VARIANT-wrapped SAFEARRAY.
+                  # SI_EDIT_PERMS/SI_ADVANCED/SI_ACCESS_* -- the ISecurityInformation flags
+                  # aclui.c switches on. profile_derive excluded accctrl.h as depth-2, but a
+                  # constant's owning header being unallowlisted is exactly how a value ends up
+                  # hand-transcribed instead of bindgen-derived.
+                  --allowlist-file '.*[/\\]accctrl\.h'
+                  --allowlist-file '.*[/\\]oleauto\.h'
+                  --allowlist-file '.*[/\\]oaidl\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h'
+                  --allowlist-file '.*[/\\]wtypesbase\.h'
+                  --allowlist-file '.*[/\\]winerror\.h'
                   --allowlist-file '.*[/\\]initguid\.h'
                   --allowlist-file '.*[/\\]ntsecapi\.h'
                   --allowlist-file '.*[/\\]objbase\.h'

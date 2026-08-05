@@ -46,7 +46,13 @@ pub struct _CHECKLISTWND {
     pub HoveredCheckItemBox: UINT,
     pub HoverTime: UINT,
     pub ThemeHandle: HTHEME,
-    pub _bitfield_1: u32,
+    // checklist.c:93-96 `UINT HasFocus:1, FocusedPushed:1, QuickSearchEnabled:1, ShowingCaret:1`.
+    // Unpacked: _CHECKLISTWND is allocated, read and freed entirely inside this crate, so the
+    // bit packing has no observer, and every use is `= TRUE/FALSE/1/0` or a `!= 0` test.
+    pub HasFocus: BOOL,
+    pub FocusedPushed: BOOL,
+    pub QuickSearchEnabled: BOOL,
+    pub ShowingCaret: BOOL,
 }
 pub type CHECKLISTWND = _CHECKLISTWND;
 pub type PCHECKLISTWND = *mut _CHECKLISTWND;
@@ -64,7 +70,7 @@ unsafe extern "C" fn NotifyControlParent(
         (*pnmh).idFrom = GetWindowLongPtr(
             (*infoPtr).hSelf,
             GWLP_ID,
-        ) as usize;
+        ) as UINT_PTR;
         (*pnmh).code = code;
 
         Ret = SendMessage(
@@ -303,7 +309,7 @@ unsafe extern "C" fn PtToCheckItemBox(
     let mut Index: i32;
     let Item: *mut _CHECKITEM;
 
-    FirstVisible = GetScrollPos((*infoPtr).hSelf, SB_VERT);
+    FirstVisible = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
 
     Index = FirstVisible + ((*ppt).y / (*infoPtr).ItemHeight);
 
@@ -342,9 +348,9 @@ unsafe extern "C" fn PtToCheckItemBox(
                                 - (cxBox / 2)
                                 + cxBox))))
             {
-                *DirectlyInCheckBox = TRUE;
+                *DirectlyInCheckBox = (TRUE) as i32;
             } else {
-                *DirectlyInCheckBox = FALSE;
+                *DirectlyInCheckBox = (FALSE) as i32;
             }
         }
     }
@@ -397,14 +403,14 @@ unsafe extern "C" fn DeleteCheckItem(
                      0,
                      CurItem as *mut _);
             (*infoPtr).CheckItemCount -= 1;
-            return TRUE;
+            return (TRUE) as i32;
         }
 
         PrevPtr = core::ptr::addr_of_mut!((*CurItem).Next);
         CurItem = (*CurItem).Next;
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 unsafe extern "C" fn AddCheckItem(
     infoPtr: *mut CHECKLISTWND,
@@ -419,7 +425,7 @@ unsafe extern "C" fn AddCheckItem(
     let Item: PCHECKITEM = HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<CHECKITEM>() + (wcslen(Name) * core::mem::size_of::<WCHAR>()),
+        (core::mem::size_of::<CHECKITEM>() + (wcslen(Name) * core::mem::size_of::<WCHAR>())) as SIZE_T,
     ) as PCHECKITEM;
     if Item != core::ptr::null_mut() {
         CurItem = (*infoPtr).CheckItemListHead;
@@ -481,7 +487,7 @@ unsafe extern "C" fn UpdateControl(infoPtr: *mut CHECKLISTWND) {
         ScrollInfo.nMax -= 1;
     }
 
-    SetScrollInfo((*infoPtr).hSelf, SB_VERT, &mut ScrollInfo, TRUE);
+    SetScrollInfo((*infoPtr).hSelf, (SB_VERT) as i32, &mut ScrollInfo, (TRUE) as i32);
 
     RedrawWindow((*infoPtr).hSelf, core::ptr::null_mut(), core::ptr::null_mut(), RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_NOCHILDREN);
 }
@@ -495,7 +501,7 @@ unsafe extern "C" fn UpdateCheckItem(
     let Index: i32 = CheckItemToIndex(infoPtr, Item);
 
     if Index != -1 {
-        VisibleFirst = GetScrollPos((*infoPtr).hSelf, SB_VERT);
+        VisibleFirst = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
 
         if Index >= VisibleFirst {
             GetClientRect((*infoPtr).hSelf, &mut rcClient);
@@ -530,7 +536,7 @@ unsafe extern "C" fn MakeCheckItemVisible(
     let mut NewPos: i32;
     let Index: i32 = CheckItemToIndex(infoPtr, Item);
     if Index != -1 {
-        VisibleFirst = GetScrollPos((*infoPtr).hSelf, SB_VERT);
+        VisibleFirst = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
 
         if Index <= VisibleFirst {
             NewPos = Index;
@@ -553,9 +559,9 @@ unsafe extern "C" fn MakeCheckItemVisible(
             ScrollInfo.nPos = NewPos;
             NewPos = SetScrollInfo(
                 (*infoPtr).hSelf,
-                SB_VERT,
+                (SB_VERT) as i32,
                 &mut ScrollInfo,
-                TRUE,
+                (TRUE) as i32,
             );
 
             if VisibleFirst != NewPos {
@@ -585,7 +591,7 @@ unsafe extern "C" fn GetIdealItemHeight(infoPtr: PCHECKLISTWND) -> UINT {
     if hdc != core::ptr::null_mut() {
         let mut height: UINT;
         let mut tm: TEXTMETRIC = core::mem::zeroed();
-        let hOldFont = SelectObject(hdc, (*infoPtr).hFont);
+        let hOldFont = SelectObject(hdc, ((*infoPtr).hFont).cast());
 
         if GetTextMetrics(hdc, &mut tm) != 0 {
             height = tm.tmHeight as UINT;
@@ -610,7 +616,7 @@ unsafe extern "C" fn RetChangeControlFont(
     (*infoPtr).hFont = hFont;
 
     if hOldFont != hFont {
-        (*infoPtr).ItemHeight = (2 * CI_TEXT_MARGIN_HEIGHT) + GetIdealItemHeight(infoPtr);
+        (*infoPtr).ItemHeight = (2 * CI_TEXT_MARGIN_HEIGHT) + (GetIdealItemHeight(infoPtr)) as i32;
     }
 
     if (*infoPtr).ShowingCaret != 0 {
@@ -638,26 +644,26 @@ unsafe extern "C" fn CalculateCheckBoxStyle(
     if Checked != 0 {
         BtnState = if Enabled != 0 {
             if Pushed != 0 {
-                CBS_CHECKEDPRESSED
+                (CBS_CHECKEDPRESSED) as i32
             } else if HotTrack != 0 {
-                CBS_CHECKEDHOT
+                (CBS_CHECKEDHOT) as i32
             } else {
-                CBS_CHECKEDNORMAL
+                (CBS_CHECKEDNORMAL) as i32
             }
         } else {
-            CBS_CHECKEDDISABLED
+            (CBS_CHECKEDDISABLED) as i32
         };
     } else {
         BtnState = if Enabled != 0 {
             if Pushed != 0 {
-                CBS_UNCHECKEDPRESSED
+                (CBS_UNCHECKEDPRESSED) as i32
             } else if HotTrack != 0 {
-                CBS_UNCHECKEDHOT
+                (CBS_UNCHECKEDHOT) as i32
             } else {
-                CBS_UNCHECKEDNORMAL
+                (CBS_UNCHECKEDNORMAL) as i32
             }
         } else {
-            CBS_UNCHECKEDDISABLED
+            (CBS_UNCHECKEDDISABLED) as i32
         };
     }
 
@@ -695,7 +701,7 @@ unsafe extern "C" fn UpdateCheckItemBox(
     let VisibleItems: i32;
     let Index: i32 = CheckItemToIndex(infoPtr, Item);
     if Index != -1 {
-        VisibleFirst = GetScrollPos((*infoPtr).hSelf, SB_VERT);
+        VisibleFirst = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
 
         if Index >= VisibleFirst {
             GetClientRect((*infoPtr).hSelf, &mut rcClient);
@@ -768,13 +774,13 @@ unsafe extern "C" fn ChangeCheckBox(
         OldState | CheckedBit
     };
     CheckData.CheckBox = (*infoPtr).FocusedCheckItemBox;
-    CheckData.Checked = if Checked != 0 { 0u8 } else { 1u8 };
+    CheckData.Checked = if Checked != 0 { (0u8) as i32 } else { (1u8) as i32 };
 
     if NotifyControlParent(
         infoPtr,
         CLN_CHANGINGITEMCHECKBOX,
         core::ptr::addr_of_mut!(CheckData) as *mut core::ffi::c_void,
-    ) != -((1) as isize)
+    ) != -(1 as LONG_PTR)
     {
         (*CheckItem).State = CheckData.NewState;
     }
@@ -787,12 +793,12 @@ unsafe extern "C" fn ChangeCheckBox(
 }
 unsafe extern "C" fn DisplayCaret(infoPtr: *mut _CHECKLISTWND) {
     if IsWindowEnabled((*infoPtr).hSelf) != 0 && (*infoPtr).ShowingCaret == 0 {
-        (*infoPtr).ShowingCaret = TRUE;
+        (*infoPtr).ShowingCaret = (TRUE) as i32;
 
         CreateCaret(
             (*infoPtr).hSelf,
             core::ptr::null_mut(),
-            (*infoPtr).CaretWidth,
+            ((*infoPtr).CaretWidth) as i32,
             (*infoPtr).ItemHeight - (2 * CI_TEXT_MARGIN_HEIGHT),
         );
 
@@ -801,15 +807,15 @@ unsafe extern "C" fn DisplayCaret(infoPtr: *mut _CHECKLISTWND) {
 }
 unsafe extern "C" fn RemoveCaret(infoPtr: *mut CHECKLISTWND) {
     if IsWindowEnabled((*infoPtr).hSelf) != 0 && (*infoPtr).ShowingCaret != 0 {
-        (*infoPtr).ShowingCaret = FALSE;
+        (*infoPtr).ShowingCaret = (FALSE) as i32;
 
         HideCaret((*infoPtr).hSelf);
         DestroyCaret();
     }
 }
 unsafe extern "C" fn KillQuickSearchTimers(infoPtr: *mut _CHECKLISTWND) {
-    KillTimer((*infoPtr).hSelf, TIMER_ID_SETHITFOCUS);
-    KillTimer((*infoPtr).hSelf, TIMER_ID_RESETQUICKSEARCH);
+    KillTimer((*infoPtr).hSelf, TIMER_ID_SETHITFOCUS as UINT_PTR);
+    KillTimer((*infoPtr).hSelf, TIMER_ID_RESETQUICKSEARCH as UINT_PTR);
 }
 unsafe extern "C" fn MapItemToRect(
     infoPtr: *mut _CHECKLISTWND,
@@ -823,7 +829,7 @@ unsafe extern "C" fn MapItemToRect(
 
         GetClientRect((*infoPtr).hSelf, &mut rcClient);
 
-        VisibleFirst = GetScrollPos((*infoPtr).hSelf, SB_VERT);
+        VisibleFirst = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
 
         (*prcItem).left = rcClient.left;
         (*prcItem).right = rcClient.right;
@@ -841,7 +847,7 @@ unsafe extern "C" fn UpdateCaretPos(infoPtr: *mut _CHECKLISTWND) {
         let hDC = GetDC((*infoPtr).hSelf);
         if hDC != core::ptr::null_mut() {
             let mut TextSize: SIZE = core::mem::zeroed();
-            let hOldFont = SelectObject(hDC, (*infoPtr).hFont);
+            let hOldFont = SelectObject(hDC, ((*infoPtr).hFont).cast());
 
             TextSize.cx = 0;
             TextSize.cy = 0;
@@ -850,7 +856,7 @@ unsafe extern "C" fn UpdateCaretPos(infoPtr: *mut _CHECKLISTWND) {
                 GetTextExtentPoint32(
                     hDC,
                     (*(*infoPtr).QuickSearchHitItem).Name.as_ptr(),
-                    wcslen((*infoPtr).QuickSearchText.as_ptr()),
+                    (wcslen((*infoPtr).QuickSearchText.as_ptr())) as i32,
                     &mut TextSize
                 ) != 0
             {
@@ -868,7 +874,7 @@ unsafe extern "C" fn UpdateCaretPos(infoPtr: *mut _CHECKLISTWND) {
                 );
             }
 
-            SelectObject(hDC, hOldFont);
+            SelectObject(hDC, hOldFont as HGDIOBJ);
 
             ReleaseDC((*infoPtr).hSelf, hDC);
         }
@@ -922,13 +928,13 @@ unsafe extern "C" fn ChangeSearchHit(
                     NewHit);
 
     KillTimer((*infoPtr).hSelf,
-              TIMER_ID_RESETQUICKSEARCH);
+              TIMER_ID_RESETQUICKSEARCH as UINT_PTR);
     if (*infoPtr).QuickSearchSetFocusDelay != 0
     {
         SetTimer((*infoPtr).hSelf,
-                 TIMER_ID_SETHITFOCUS,
+                 TIMER_ID_SETHITFOCUS as UINT_PTR,
                  (*infoPtr).QuickSearchSetFocusDelay,
-                 core::ptr::null_mut());
+                 None);
     }
 }
 unsafe extern "C" fn QuickSearchFindHit(
@@ -936,11 +942,11 @@ unsafe extern "C" fn QuickSearchFindHit(
     c: WCHAR,
 ) -> BOOL {
     if (*infoPtr).QuickSearchEnabled != 0 {
-        let mut Ret: BOOL = FALSE;
+        let mut Ret: BOOL = (FALSE) as i32;
         let mut NewHit: PCHECKITEM;
 
         match c {
-            b'\r' as u16 | b'\n' as u16 => {
+            WCHAR_CR | WCHAR_LF => {
                 Ret = ((*infoPtr).QuickSearchHitItem != core::ptr::null_mut()) as BOOL;
                 if Ret != 0 {
                     ChangeCheckItemFocus(
@@ -957,9 +963,9 @@ unsafe extern "C" fn QuickSearchFindHit(
                 }
             }
 
-            VK_BACK => {
+            VK_BACK_WCHAR => {
                 if (*infoPtr).QuickSearchHitItem != core::ptr::null_mut() {
-                    let mut SearchLen: INT = wcslen((*infoPtr).QuickSearchText.as_ptr());
+                    let mut SearchLen: INT = (wcslen((*infoPtr).QuickSearchText.as_ptr())) as i32;
                     if SearchLen > 0 {
                         SearchLen -= 1;
                         (*infoPtr).QuickSearchText[SearchLen as usize] = 0u16;
@@ -973,7 +979,7 @@ unsafe extern "C" fn QuickSearchFindHit(
                             if NewHit != core::ptr::null_mut() {
                                 ChangeSearchHit(infoPtr, NewHit);
 
-                                Ret = TRUE;
+                                Ret = (TRUE) as i32;
                             }
                         }
                     }
@@ -985,7 +991,7 @@ unsafe extern "C" fn QuickSearchFindHit(
             }
 
             _ => {
-                let mut SearchLen: INT = wcslen((*infoPtr).QuickSearchText.as_ptr());
+                let mut SearchLen: INT = (wcslen((*infoPtr).QuickSearchText.as_ptr())) as i32;
                 if SearchLen < (core::mem::size_of_val(&(*infoPtr).QuickSearchText) / core::mem::size_of::<WCHAR>()) as INT - 1 {
                     (*infoPtr).QuickSearchText[SearchLen as usize] = c;
                     SearchLen += 1;
@@ -998,7 +1004,7 @@ unsafe extern "C" fn QuickSearchFindHit(
                     if NewHit != core::ptr::null_mut() {
                         ChangeSearchHit(infoPtr, NewHit);
 
-                        Ret = TRUE;
+                        Ret = (TRUE) as i32;
                     } else {
                         SearchLen -= 1;
                         (*infoPtr).QuickSearchText[SearchLen as usize] = 0u16;
@@ -1009,10 +1015,9 @@ unsafe extern "C" fn QuickSearchFindHit(
         return Ret;
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CheckListWndProc(
+unsafe extern "system" fn CheckListWndProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1054,7 +1059,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
         WM_MOUSEMOVE => {
             let mut pt: POINT = core::mem::zeroed();
-            let mut InCheckBox: BOOL;
+            let mut InCheckBox: BOOL = FALSE;
             let hWndCapture: HWND = GetCapture();
 
             pt.x = LOWORD(lParam) as i32;
@@ -1096,7 +1101,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
                 PtItem = PtToCheckItemBox(infoPtr, &mut pt, &mut PtItemBox, &mut InCheckBox);
 
-                OldPushed = (*infoPtr).FocusedPushed;
+                OldPushed = ((*infoPtr).FocusedPushed) as u32;
                 (*infoPtr).FocusedPushed = if InCheckBox != 0
                     && (*infoPtr).FocusedCheckItem == PtItem
                     && (*infoPtr).FocusedCheckItemBox == PtItemBox
@@ -1106,7 +1111,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                     0
                 };
 
-                if OldPushed != (*infoPtr).FocusedPushed {
+                if OldPushed != ((*infoPtr).FocusedPushed) as u32 {
                     UpdateCheckItemBox(
                         infoPtr,
                         (*infoPtr).FocusedCheckItem,
@@ -1122,7 +1127,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             ScrollInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
             ScrollInfo.fMask = SIF_RANGE | SIF_POS;
 
-            if GetScrollInfo(hwnd, SB_VERT, &mut ScrollInfo) != 0 {
+            if GetScrollInfo(hwnd, (SB_VERT) as i32, &mut ScrollInfo) != 0 {
                 let OldPos: INT = ScrollInfo.nPos;
 
                 match LOWORD(wParam) as u32 {
@@ -1194,7 +1199,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
                     ScrollInfo.nPos = SetScrollInfo(
                         hwnd,
-                        SB_VERT,
+                        (SB_VERT) as i32,
                         &mut ScrollInfo,
                         TRUE,
                     );
@@ -1288,7 +1293,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
         }
 
         CLM_SETCHECKBOXCOLUMN => {
-            (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY {
+            (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY as WPARAM {
                 1
             } else {
                 0
@@ -1298,7 +1303,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
         }
 
         CLM_GETCHECKBOXCOLUMN => {
-            Ret = (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY {
+            Ret = (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY as WPARAM {
                 1
             } else {
                 0
@@ -1371,17 +1376,17 @@ unsafe extern "stdcall" fn CheckListWndProc(
             ScrollDelta = 0 - HIWORD(wParam as u32) as i16;
 
             if ScrollLines != 0
-                && abs(ScrollDelta as i32) >= WHEEL_DELTA
+                && abs(ScrollDelta as i32) >= (WHEEL_DELTA) as i32
             {
                 let mut ScrollInfo: SCROLLINFO = core::mem::zeroed();
 
                 ScrollInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
                 ScrollInfo.fMask = SIF_RANGE | SIF_POS;
 
-                if GetScrollInfo(hwnd, SB_VERT, &mut ScrollInfo) != 0 {
+                if GetScrollInfo(hwnd, (SB_VERT) as i32, &mut ScrollInfo) != 0 {
                     let OldPos: INT = ScrollInfo.nPos;
 
-                    ScrollInfo.nPos += (ScrollDelta / WHEEL_DELTA) as i32
+                    ScrollInfo.nPos += (ScrollDelta / (WHEEL_DELTA) as i16) as i32
                         * ScrollLines as i32;
                     if ScrollInfo.nPos < 0 {
                         ScrollInfo.nPos = 0;
@@ -1394,7 +1399,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
                         ScrollInfo.nPos = SetScrollInfo(
                             hwnd,
-                            SB_VERT,
+                            (SB_VERT) as i32,
                             &mut ScrollInfo,
                             TRUE,
                         );
@@ -1429,7 +1434,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             (*infoPtr).HasFocus = TRUE;
 
             if (*infoPtr).FocusedCheckItem.is_null() {
-                let Shift: BOOL = if GetKeyState(VK_BACK) & 0x8000 != 0
+                let Shift: BOOL = if GetKeyState((VK_SHIFT) as i32) as INT & 0x8000 != 0
                 {
                     1
                 } else {
@@ -1464,7 +1469,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             if IsWindowEnabled(hwnd) != 0 {
                 let mut NewFocus: PCHECKITEM;
                 let mut NewFocusBox: UINT = 0;
-                let mut InCheckBox: BOOL;
+                let mut InCheckBox: BOOL = FALSE;
                 let mut pt: POINT = core::mem::zeroed();
                 let mut ChangeFocus: BOOL;
                 let mut Capture: BOOL = FALSE;
@@ -1545,7 +1550,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                 if !(*infoPtr).FocusedCheckItem.is_null() && (*infoPtr).FocusedPushed != 0 {
                     let mut PtItem: PCHECKITEM;
                     let mut PtItemBox: UINT = 0;
-                    let mut InCheckBox: BOOL;
+                    let mut InCheckBox: BOOL = FALSE;
                     let mut pt: POINT = core::mem::zeroed();
 
                     pt.x = LOWORD(lParam) as i32;
@@ -1607,10 +1612,10 @@ unsafe extern "stdcall" fn CheckListWndProc(
                             && ((*infoPtr).QuickSearchHitItem.is_null()
                                 || (*infoPtr).QuickSearchHitItem == (*infoPtr).FocusedCheckItem)
                         {
-                            let OldPushed: UINT = (*infoPtr).FocusedPushed;
+                            let OldPushed: UINT = ((*infoPtr).FocusedPushed) as u32;
                             (*infoPtr).FocusedPushed = TRUE;
 
-                            if (*infoPtr).FocusedPushed != OldPushed {
+                            if (*infoPtr).FocusedPushed != (OldPushed) as i32 {
                                 MakeCheckItemVisible(infoPtr, (*infoPtr).FocusedCheckItem);
                                 UpdateCheckItemBox(
                                     infoPtr,
@@ -1677,7 +1682,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                         let mut NewFocus: PCHECKITEM;
                         let mut NewFocusBox: UINT = 0;
                         let Shift: BOOL =
-                            if GetKeyState(VK_SHIFT) & 0x8000 != 0 {
+                            if GetKeyState((VK_SHIFT) as i32) as INT & 0x8000 != 0 {
                                 1
                             } else {
                                 0
@@ -1690,7 +1695,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                         SendMessage(
                             GetAncestor(hwnd, GA_PARENT),
                             WM_CHANGEUISTATE,
-                            MAKEWPARAM(UIS_INITIALIZE, 0),
+                            MAKEWPARAM((UIS_INITIALIZE) as u16, 0),
                             0,
                         );
 
@@ -1761,9 +1766,9 @@ unsafe extern "stdcall" fn CheckListWndProc(
                     if (*infoPtr).QuickSearchEnabled != 0
                         && !(*infoPtr).QuickSearchHitItem.is_null()
                     {
-                        Ret |= DLGC_WANTCHARS | DLGC_WANTMESSAGE;
+                        Ret |= (DLGC_WANTCHARS | DLGC_WANTMESSAGE) as LRESULT;
                     } else {
-                        Ret |= DLGC_WANTMESSAGE;
+                        Ret |= DLGC_WANTMESSAGE as LRESULT;
                     }
                 }
 
@@ -1771,7 +1776,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                     let mut CheckBox: UINT = 0;
                     let EnabledBox: BOOL;
                     let Shift: BOOL =
-                        if GetKeyState(VK_SHIFT) & 0x8000 != 0 {
+                        if GetKeyState((VK_SHIFT) as i32) as INT & 0x8000 != 0 {
                             1
                         } else {
                             0
@@ -1783,16 +1788,16 @@ unsafe extern "stdcall" fn CheckListWndProc(
                         } else {
                             0
                         };
-                    Ret |= if EnabledBox != 0 {
+                    Ret |= (if EnabledBox != 0 {
                         DLGC_WANTTAB
                     } else {
                         DLGC_WANTCHARS
-                    };
+                    }) as LRESULT;
                 }
 
                 _ => {
                     if (*infoPtr).QuickSearchEnabled != 0 {
-                        Ret |= DLGC_WANTCHARS;
+                        Ret |= DLGC_WANTCHARS as LRESULT;
                     }
                 }
             }
@@ -1804,9 +1809,9 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
         WM_SYSCOLORCHANGE => {
             (*infoPtr).TextColor[0 as usize] =
-                GetSysColor(COLOR_GRAYTEXT);
+                GetSysColor((COLOR_GRAYTEXT) as i32);
             (*infoPtr).TextColor[1 as usize] =
-                GetSysColor(COLOR_WINDOWTEXT);
+                GetSysColor((COLOR_WINDOWTEXT) as i32);
         }
 
         WM_MOUSELEAVE => {
@@ -1853,7 +1858,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                 CreateCaret(
                     hwnd,
                     core::ptr::null_mut(),
-                    (*infoPtr).CaretWidth,
+                    ((*infoPtr).CaretWidth) as i32,
                     (*infoPtr).ItemHeight - (2 * CI_TEXT_MARGIN_HEIGHT),
                 );
             }
@@ -1868,11 +1873,11 @@ unsafe extern "stdcall" fn CheckListWndProc(
 
             match LOWORD(wParam as u32) as u32 {
                 UIS_SET => {
-                    (*infoPtr).UIState |= HIWORD(wParam as u32);
+                    (*infoPtr).UIState |= HIWORD(wParam) as DWORD;
                 }
 
                 UIS_CLEAR => {
-                    (*infoPtr).UIState &= !(HIWORD(wParam as u32));
+                    (*infoPtr).UIState &= !(HIWORD(wParam) as DWORD);
                 }
 
                 _ => {}
@@ -1892,7 +1897,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
         WM_TIMER => {
             match wParam as u32 {
                 TIMER_ID_SETHITFOCUS => {
-                    KillTimer(hwnd, wParam as UINT);
+                    KillTimer(hwnd, wParam as UINT_PTR);
 
                     if (*infoPtr).QuickSearchEnabled != 0
                         && !(*infoPtr).QuickSearchHitItem.is_null()
@@ -1912,15 +1917,15 @@ unsafe extern "stdcall" fn CheckListWndProc(
                         if (*infoPtr).QuickSearchResetDelay != 0 {
                             SetTimer(
                                 hwnd,
-                                TIMER_ID_RESETQUICKSEARCH,
+                                TIMER_ID_RESETQUICKSEARCH as UINT_PTR,
                                 (*infoPtr).QuickSearchResetDelay,
-                                core::ptr::null_mut(),
+                                None,
                             );
                         }
                     }
                 }
                 TIMER_ID_RESETQUICKSEARCH => {
-                    KillTimer(hwnd, wParam as UINT);
+                    KillTimer(hwnd, wParam as UINT_PTR);
                     EscapeQuickSearch(infoPtr);
                 }
                 _ => {}
@@ -1931,7 +1936,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
             infoPtr = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                core::mem::size_of::<CHECKLISTWND>(),
+                core::mem::size_of::<CHECKLISTWND>() as SIZE_T,
             ) as PCHECKLISTWND;
             if !infoPtr.is_null() {
                 let mut rcClient: RECT = core::mem::zeroed();
@@ -1939,7 +1944,7 @@ unsafe extern "stdcall" fn CheckListWndProc(
                 (*infoPtr).hSelf = hwnd;
                 (*infoPtr).hNotify = (*(lParam as LPCREATESTRUCTW)).hwndParent;
 
-                SetWindowLongPtr(hwnd, 0, infoPtr as DWORD_PTR);
+                SetWindowLongPtr(hwnd, 0, infoPtr as LONG_PTR);
 
                 (*infoPtr).CheckItemListHead = core::ptr::null_mut();
                 (*infoPtr).CheckItemCount = 0;
@@ -1962,9 +1967,9 @@ unsafe extern "stdcall" fn CheckListWndProc(
                 (*infoPtr).FocusedPushed = FALSE;
 
                 (*infoPtr).TextColor[0 as usize] =
-                    GetSysColor(COLOR_GRAYTEXT);
+                    GetSysColor((COLOR_GRAYTEXT) as i32);
                 (*infoPtr).TextColor[1 as usize] =
-                    GetSysColor(COLOR_WINDOWTEXT);
+                    GetSysColor((COLOR_WINDOWTEXT) as i32);
 
                 GetClientRect(hwnd, &mut rcClient);
 
@@ -2038,1032 +2043,6 @@ unsafe extern "stdcall" fn CheckListWndProc(
     Ret
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CheckListWndProc(
-    hwnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    let mut infoPtr: PCHECKLISTWND;
-    let mut Ret: LRESULT;
-
-    infoPtr = GetWindowLongPtr(hwnd, 0) as PCHECKLISTWND;
-
-    if infoPtr.is_null() && uMsg != WM_CREATE {
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    }
-
-    Ret = 0;
-
-    match uMsg {
-        WM_PAINT => {
-            let mut hdc: HDC;
-            let mut rcUpdate: RECT = core::mem::zeroed();
-            let mut ps: PAINTSTRUCT = core::mem::zeroed();
-
-            if GetUpdateRect(hwnd, &mut rcUpdate, FALSE) != 0 {
-                hdc = if wParam != 0 {
-                    wParam as HDC
-                } else {
-                    BeginPaint(hwnd, &mut ps)
-                };
-
-                if !hdc.is_null() {
-                    PaintControl(infoPtr, hdc, &mut rcUpdate);
-
-                    if wParam == 0 {
-                        EndPaint(hwnd, &mut ps);
-                    }
-                }
-            }
-        }
-
-        WM_MOUSEMOVE => {
-            let mut pt: POINT = core::mem::zeroed();
-            let mut InCheckBox: BOOL;
-            let hWndCapture: HWND = GetCapture();
-
-            pt.x = LOWORD(lParam) as i32;
-            pt.y = HIWORD(lParam) as i32;
-
-            if hWndCapture.is_null() && (*infoPtr).ThemeHandle != core::ptr::null_mut() {
-                let mut tme: TRACKMOUSEEVENT = core::mem::zeroed();
-                let mut HotTrackItem: PCHECKITEM;
-                let mut HotTrackItemBox: UINT = 0;
-
-                HotTrackItem = PtToCheckItemBox(
-                    infoPtr,
-                    &mut pt,
-                    &mut HotTrackItemBox,
-                    &mut InCheckBox,
-                );
-                if !HotTrackItem.is_null() && InCheckBox != 0 {
-                    if (*infoPtr).HoveredCheckItem != HotTrackItem
-                        || (*infoPtr).HoveredCheckItemBox != HotTrackItemBox
-                    {
-                        ChangeCheckItemHotTrack(infoPtr, HotTrackItem, HotTrackItemBox);
-                    }
-                } else {
-                    ChangeCheckItemHotTrack(infoPtr, core::ptr::null_mut(), 0);
-                }
-
-                tme.cbSize = core::mem::size_of::<TRACKMOUSEEVENT>() as u32;
-                tme.dwFlags = TME_LEAVE;
-                tme.hwndTrack = hwnd;
-                tme.dwHoverTime = (*infoPtr).HoverTime;
-
-                TrackMouseEvent(&mut tme);
-            }
-
-            if hWndCapture == hwnd && !(*infoPtr).FocusedCheckItem.is_null() {
-                let mut PtItem: PCHECKITEM;
-                let mut PtItemBox: UINT = 0;
-                let OldPushed: UINT;
-
-                PtItem = PtToCheckItemBox(infoPtr, &mut pt, &mut PtItemBox, &mut InCheckBox);
-
-                OldPushed = (*infoPtr).FocusedPushed;
-                (*infoPtr).FocusedPushed = if InCheckBox != 0
-                    && (*infoPtr).FocusedCheckItem == PtItem
-                    && (*infoPtr).FocusedCheckItemBox == PtItemBox
-                {
-                    1
-                } else {
-                    0
-                };
-
-                if OldPushed != (*infoPtr).FocusedPushed {
-                    UpdateCheckItemBox(
-                        infoPtr,
-                        (*infoPtr).FocusedCheckItem,
-                        (*infoPtr).FocusedCheckItemBox,
-                    );
-                }
-            }
-        }
-
-        WM_VSCROLL => {
-            let mut ScrollInfo: SCROLLINFO = core::mem::zeroed();
-
-            ScrollInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
-            ScrollInfo.fMask = SIF_RANGE | SIF_POS;
-
-            if GetScrollInfo(hwnd, SB_VERT, &mut ScrollInfo) != 0 {
-                let OldPos: INT = ScrollInfo.nPos;
-
-                match LOWORD(wParam) as u32 {
-                    SB_BOTTOM => {
-                        ScrollInfo.nPos = ScrollInfo.nMax;
-                    }
-
-                    SB_LINEDOWN => {
-                        if ScrollInfo.nPos < ScrollInfo.nMax {
-                            ScrollInfo.nPos += 1;
-                        }
-                    }
-
-                    SB_LINEUP => {
-                        if ScrollInfo.nPos > 0 {
-                            ScrollInfo.nPos -= 1;
-                        }
-                    }
-
-                    SB_PAGEDOWN => {
-                        let mut rcClient: RECT = core::mem::zeroed();
-                        let ScrollLines: INT;
-
-                        GetClientRect(hwnd, &mut rcClient);
-
-                        ScrollLines = max(
-                            1,
-                            (rcClient.bottom - rcClient.top) / (*infoPtr).ItemHeight,
-                        );
-
-                        if ScrollInfo.nPos + ScrollLines <= ScrollInfo.nMax {
-                            ScrollInfo.nPos += ScrollLines;
-                        } else {
-                            ScrollInfo.nPos = ScrollInfo.nMax;
-                        }
-                    }
-
-                    SB_PAGEUP => {
-                        let mut rcClient: RECT = core::mem::zeroed();
-                        let ScrollLines: INT;
-
-                        GetClientRect(hwnd, &mut rcClient);
-
-                        ScrollLines = max(
-                            1,
-                            (rcClient.bottom - rcClient.top) / (*infoPtr).ItemHeight,
-                        );
-
-                        if ScrollInfo.nPos >= ScrollLines {
-                            ScrollInfo.nPos -= ScrollLines;
-                        } else {
-                            ScrollInfo.nPos = 0;
-                        }
-                    }
-
-                    SB_THUMBPOSITION | SB_THUMBTRACK => {
-                        ScrollInfo.nPos = HIWORD(wParam) as i32;
-                    }
-
-                    SB_TOP => {
-                        ScrollInfo.nPos = 0;
-                    }
-
-                    _ => {}
-                }
-
-                if OldPos != ScrollInfo.nPos {
-                    ScrollInfo.fMask = SIF_POS;
-
-                    ScrollInfo.nPos = SetScrollInfo(
-                        hwnd,
-                        SB_VERT,
-                        &mut ScrollInfo,
-                        TRUE,
-                    );
-
-                    if OldPos != ScrollInfo.nPos {
-                        ScrollWindowEx(
-                            hwnd,
-                            0,
-                            (OldPos - ScrollInfo.nPos) * (*infoPtr).ItemHeight,
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                            SW_INVALIDATE | SW_SCROLLCHILDREN,
-                        );
-
-                        RedrawWindow(
-                            hwnd,
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                            RDW_ERASE | RDW_UPDATENOW | RDW_NOCHILDREN,
-                        );
-                    }
-                }
-            }
-        }
-
-        CLM_ADDITEM => {
-            let mut Index: INT = -1;
-            let Item: PCHECKITEM = AddCheckItem(
-                infoPtr,
-                lParam as LPWSTR,
-                CIS_NONE,
-                wParam as ACCESS_MASK,
-                &mut Index,
-            );
-            if !Item.is_null() {
-                UpdateControl(infoPtr);
-                Ret = Index as LRESULT;
-            } else {
-                Ret = -1 as LRESULT;
-            }
-        }
-
-        CLM_DELITEM => {
-            let Item: PCHECKITEM = FindCheckItemByIndex(infoPtr, wParam as i32);
-            if !Item.is_null() {
-                Ret = DeleteCheckItem(infoPtr, Item) as LRESULT;
-                if Ret != 0 {
-                    UpdateControl(infoPtr);
-                }
-            } else {
-                Ret = FALSE as LRESULT;
-            }
-        }
-
-        CLM_SETITEMSTATE => {
-            let Item: PCHECKITEM = FindCheckItemByIndex(infoPtr, wParam as i32);
-            if !Item.is_null() {
-                let OldState: DWORD = (*Item).State;
-                (*Item).State = lParam as DWORD & CIS_MASK;
-
-                if (*Item).State != OldState {
-                    if Item == (*infoPtr).FocusedCheckItem
-                        && ((*Item).State & CIS_DISABLED) != 0
-                    {
-                        if (*infoPtr).FocusedCheckItemBox == CLB_DENY {
-                            if ((*Item).State & CIS_DENYDISABLED) != 0 {
-                                (*infoPtr).FocusedCheckItem = core::ptr::null_mut();
-                            }
-                        } else {
-                            if ((*Item).State & CIS_ALLOWDISABLED) != 0 {
-                                (*infoPtr).FocusedCheckItem = core::ptr::null_mut();
-                            }
-                        }
-                    }
-
-                    UpdateControl(infoPtr);
-                }
-                Ret = TRUE as LRESULT;
-            }
-        }
-
-        CLM_GETITEMCOUNT => {
-            Ret = (*infoPtr).CheckItemCount as LRESULT;
-        }
-
-        CLM_CLEAR => {
-            ClearCheckItems(infoPtr);
-            UpdateControl(infoPtr);
-        }
-
-        CLM_SETCHECKBOXCOLUMN => {
-            (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY {
-                1
-            } else {
-                0
-            }] = lParam as INT;
-            UpdateControl(infoPtr);
-            Ret = 1 as LRESULT;
-        }
-
-        CLM_GETCHECKBOXCOLUMN => {
-            Ret = (*infoPtr).CheckBoxLeft[if wParam != CLB_DENY {
-                1
-            } else {
-                0
-            }] as LRESULT;
-        }
-
-        CLM_CLEARCHECKBOXES => {
-            Ret = ClearCheckBoxes(infoPtr) as LRESULT;
-            if Ret != 0 {
-                UpdateControl(infoPtr);
-            }
-        }
-
-        CLM_ENABLEQUICKSEARCH => {
-            if wParam == 0 {
-                EscapeQuickSearch(infoPtr);
-            }
-            (*infoPtr).QuickSearchEnabled = if wParam != 0 {
-                1
-            } else {
-                0
-            };
-        }
-
-        CLM_SETQUICKSEARCH_TIMEOUT_RESET => {
-            (*infoPtr).QuickSearchResetDelay = wParam as UINT;
-        }
-
-        CLM_SETQUICKSEARCH_TIMEOUT_SETFOCUS => {
-            (*infoPtr).QuickSearchSetFocusDelay = wParam as UINT;
-        }
-
-        CLM_FINDITEMBYACCESSMASK => {
-            Ret = FindCheckItemIndexByAccessMask(infoPtr, wParam as ACCESS_MASK) as LRESULT;
-        }
-
-        WM_SETFONT => {
-            Ret = RetChangeControlFont(
-                infoPtr,
-                wParam as HFONT,
-                LOWORD(lParam as u32) as BOOL,
-            ) as LRESULT;
-        }
-
-        WM_GETFONT => {
-            Ret = (*infoPtr).hFont as LRESULT;
-        }
-
-        WM_STYLECHANGED => {
-            if wParam == GWL_STYLE as WPARAM {
-                UpdateControl(infoPtr);
-            }
-        }
-
-        WM_ENABLE => {
-            EscapeQuickSearch(infoPtr);
-            UpdateControl(infoPtr);
-        }
-
-        WM_MOUSEWHEEL => {
-            let ScrollDelta: i16;
-            let mut ScrollLines: UINT = 3;
-
-            SystemParametersInfo(
-                SPI_GETWHEELSCROLLLINES,
-                0,
-                &mut ScrollLines as *mut UINT as *mut core::ffi::c_void,
-                0,
-            );
-            ScrollDelta = 0 - HIWORD(wParam as u32) as i16;
-
-            if ScrollLines != 0
-                && abs(ScrollDelta as i32) >= WHEEL_DELTA
-            {
-                let mut ScrollInfo: SCROLLINFO = core::mem::zeroed();
-
-                ScrollInfo.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
-                ScrollInfo.fMask = SIF_RANGE | SIF_POS;
-
-                if GetScrollInfo(hwnd, SB_VERT, &mut ScrollInfo) != 0 {
-                    let OldPos: INT = ScrollInfo.nPos;
-
-                    ScrollInfo.nPos += (ScrollDelta / WHEEL_DELTA) as i32
-                        * ScrollLines as i32;
-                    if ScrollInfo.nPos < 0 {
-                        ScrollInfo.nPos = 0;
-                    } else if ScrollInfo.nPos > ScrollInfo.nMax {
-                        ScrollInfo.nPos = ScrollInfo.nMax;
-                    }
-
-                    if OldPos != ScrollInfo.nPos {
-                        ScrollInfo.fMask = SIF_POS;
-
-                        ScrollInfo.nPos = SetScrollInfo(
-                            hwnd,
-                            SB_VERT,
-                            &mut ScrollInfo,
-                            TRUE,
-                        );
-
-                        if OldPos != ScrollInfo.nPos {
-                            ScrollWindowEx(
-                                hwnd,
-                                0,
-                                (OldPos - ScrollInfo.nPos) * (*infoPtr).ItemHeight,
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                                SW_INVALIDATE | SW_SCROLLCHILDREN,
-                            );
-
-                            RedrawWindow(
-                                hwnd,
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                                RDW_ERASE
-                                    | RDW_UPDATENOW
-                                    | RDW_NOCHILDREN,
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        WM_SETFOCUS => {
-            (*infoPtr).HasFocus = TRUE;
-
-            if (*infoPtr).FocusedCheckItem.is_null() {
-                let Shift: BOOL = if GetKeyState(VK_BACK) & 0x8000 != 0
-                {
-                    1
-                } else {
-                    0
-                };
-                (*infoPtr).FocusedCheckItem = FindEnabledCheckBox(
-                    infoPtr,
-                    Shift,
-                    &mut (*infoPtr).FocusedCheckItemBox,
-                );
-            }
-            if !(*infoPtr).FocusedCheckItem.is_null() {
-                MakeCheckItemVisible(infoPtr, (*infoPtr).FocusedCheckItem);
-                UpdateCheckItem(infoPtr, (*infoPtr).FocusedCheckItem);
-            }
-        }
-
-        WM_KILLFOCUS => {
-            EscapeQuickSearch(infoPtr);
-
-            (*infoPtr).HasFocus = FALSE;
-            if !(*infoPtr).FocusedCheckItem.is_null() {
-                (*infoPtr).FocusedPushed = FALSE;
-                UpdateCheckItem(infoPtr, (*infoPtr).FocusedCheckItem);
-            }
-        }
-
-        WM_LBUTTONDBLCLK
-        | WM_LBUTTONDOWN
-        | WM_MBUTTONDOWN
-        | WM_RBUTTONDOWN => {
-            if IsWindowEnabled(hwnd) != 0 {
-                let mut NewFocus: PCHECKITEM;
-                let mut NewFocusBox: UINT = 0;
-                let mut InCheckBox: BOOL;
-                let mut pt: POINT = core::mem::zeroed();
-                let mut ChangeFocus: BOOL;
-                let mut Capture: BOOL = FALSE;
-
-                pt.x = LOWORD(lParam) as i32;
-                pt.y = HIWORD(lParam) as i32;
-
-                NewFocus = PtToCheckItemBox(
-                    infoPtr,
-                    &mut pt,
-                    &mut NewFocusBox,
-                    &mut InCheckBox,
-                );
-                if !NewFocus.is_null() {
-                    if ((*NewFocus).State
-                        & (if NewFocusBox != CLB_DENY {
-                            CIS_ALLOWDISABLED
-                        } else {
-                            CIS_DENYDISABLED
-                        }))
-                        != 0
-                    {
-                        InCheckBox = FALSE;
-
-                        ChangeFocus = if ((*NewFocus).State & CIS_DISABLED)
-                            != CIS_DISABLED
-                        {
-                            1
-                        } else {
-                            0
-                        };
-                        if ChangeFocus != 0 {
-                            NewFocusBox = if NewFocusBox != CLB_DENY {
-                                CLB_DENY
-                            } else {
-                                CLB_ALLOW
-                            };
-                        }
-                    } else {
-                        ChangeFocus = TRUE;
-                    }
-
-                    if InCheckBox != 0
-                        && ChangeFocus != 0
-                        && GetCapture().is_null()
-                        && (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK)
-                    {
-                        (*infoPtr).FocusedPushed = TRUE;
-                        Capture = TRUE;
-                    }
-                } else {
-                    ChangeFocus = TRUE;
-                }
-
-                if ChangeFocus != 0 {
-                    if (*infoPtr).QuickSearchEnabled != 0
-                        && !(*infoPtr).QuickSearchHitItem.is_null()
-                        && (*infoPtr).QuickSearchHitItem != NewFocus
-                    {
-                        EscapeQuickSearch(infoPtr);
-                    }
-
-                    ChangeCheckItemFocus(infoPtr, NewFocus, NewFocusBox);
-                }
-
-                if (*infoPtr).HasFocus == 0 {
-                    SetFocus(hwnd);
-                }
-
-                if Capture != 0 {
-                    SetCapture(hwnd);
-                }
-            }
-        }
-
-        WM_LBUTTONUP => {
-            if GetCapture() == hwnd {
-                if !(*infoPtr).FocusedCheckItem.is_null() && (*infoPtr).FocusedPushed != 0 {
-                    let mut PtItem: PCHECKITEM;
-                    let mut PtItemBox: UINT = 0;
-                    let mut InCheckBox: BOOL;
-                    let mut pt: POINT = core::mem::zeroed();
-
-                    pt.x = LOWORD(lParam) as i32;
-                    pt.y = HIWORD(lParam) as i32;
-
-                    (*infoPtr).FocusedPushed = FALSE;
-
-                    PtItem = PtToCheckItemBox(
-                        infoPtr,
-                        &mut pt,
-                        &mut PtItemBox,
-                        &mut InCheckBox,
-                    );
-
-                    if PtItem == (*infoPtr).FocusedCheckItem
-                        && InCheckBox != 0
-                        && PtItemBox == (*infoPtr).FocusedCheckItemBox
-                    {
-                        let OtherBox: UINT = if PtItemBox == CLB_ALLOW {
-                            CLB_DENY
-                        } else {
-                            CLB_ALLOW
-                        };
-                        let OtherStateMask: DWORD = if OtherBox == CLB_ALLOW {
-                            CIS_ALLOW | CIS_ALLOWDISABLED
-                        } else {
-                            CIS_DENY | CIS_DENYDISABLED
-                        };
-                        let OtherStateOld: DWORD = (*PtItem).State & OtherStateMask;
-                        if ChangeCheckBox(infoPtr, PtItem, PtItemBox) != 0
-                            && (((*PtItem).State & OtherStateMask) != OtherStateOld)
-                        {
-                            UpdateCheckItemBox(
-                                infoPtr,
-                                (*infoPtr).FocusedCheckItem,
-                                OtherBox,
-                            );
-                        }
-                    }
-
-                    UpdateCheckItemBox(
-                        infoPtr,
-                        (*infoPtr).FocusedCheckItem,
-                        (*infoPtr).FocusedCheckItemBox,
-                    );
-                }
-
-                ReleaseCapture();
-            }
-        }
-
-        WM_KEYDOWN => 'keydown_block: {
-            match wParam as u32 {
-                VK_SPACE => {
-                    if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, ' ' as u16) == 0
-                    {
-                        if !(*infoPtr).FocusedCheckItem.is_null()
-                            && ((*infoPtr).QuickSearchHitItem.is_null()
-                                || (*infoPtr).QuickSearchHitItem == (*infoPtr).FocusedCheckItem)
-                        {
-                            let OldPushed: UINT = (*infoPtr).FocusedPushed;
-                            (*infoPtr).FocusedPushed = TRUE;
-
-                            if (*infoPtr).FocusedPushed != OldPushed {
-                                MakeCheckItemVisible(infoPtr, (*infoPtr).FocusedCheckItem);
-                                UpdateCheckItemBox(
-                                    infoPtr,
-                                    (*infoPtr).FocusedCheckItem,
-                                    (*infoPtr).FocusedCheckItemBox,
-                                );
-                            }
-                        }
-                    }
-                }
-
-                VK_RETURN => {
-                    if GetCapture().is_null()
-                        && QuickSearchFindHit(infoPtr, '\n' as u16) == 0
-                    {
-                        if !(*infoPtr).FocusedCheckItem.is_null()
-                            && (*infoPtr).QuickSearchHitItem.is_null()
-                        {
-                            let OtherBox: UINT;
-                            let OtherStateMask: DWORD;
-                            let OtherStateOld: DWORD;
-
-                            MakeCheckItemVisible(infoPtr, (*infoPtr).FocusedCheckItem);
-
-                            OtherBox = if (*infoPtr).FocusedCheckItemBox == CLB_ALLOW
-                            {
-                                CLB_DENY
-                            } else {
-                                CLB_ALLOW
-                            };
-                            OtherStateMask = if OtherBox == CLB_ALLOW {
-                                CIS_ALLOW | CIS_ALLOWDISABLED
-                            } else {
-                                CIS_DENY | CIS_DENYDISABLED
-                            };
-                            OtherStateOld = (*(*infoPtr).FocusedCheckItem).State & OtherStateMask;
-                            if ChangeCheckBox(
-                                infoPtr,
-                                (*infoPtr).FocusedCheckItem,
-                                (*infoPtr).FocusedCheckItemBox,
-                            ) != 0
-                            {
-                                UpdateCheckItemBox(
-                                    infoPtr,
-                                    (*infoPtr).FocusedCheckItem,
-                                    (*infoPtr).FocusedCheckItemBox,
-                                );
-                                if ((*(*infoPtr).FocusedCheckItem).State & OtherStateMask)
-                                    != OtherStateOld
-                                {
-                                    UpdateCheckItemBox(
-                                        infoPtr,
-                                        (*infoPtr).FocusedCheckItem,
-                                        OtherBox,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-
-                VK_TAB => {
-                    if GetCapture().is_null() {
-                        let mut NewFocus: PCHECKITEM;
-                        let mut NewFocusBox: UINT = 0;
-                        let Shift: BOOL =
-                            if GetKeyState(VK_SHIFT) & 0x8000 != 0 {
-                                1
-                            } else {
-                                0
-                            };
-
-                        EscapeQuickSearch(infoPtr);
-
-                        NewFocus = FindEnabledCheckBox(infoPtr, Shift, &mut NewFocusBox);
-
-                        SendMessage(
-                            GetAncestor(hwnd, GA_PARENT),
-                            WM_CHANGEUISTATE,
-                            MAKEWPARAM(UIS_INITIALIZE, 0),
-                            0,
-                        );
-
-                        ChangeCheckItemFocus(infoPtr, NewFocus, NewFocusBox);
-                    }
-                }
-
-                _ => {
-                    break 'keydown_block;
-                }
-            }
-        }
-
-        WM_KEYUP => {
-            if wParam as u32 == VK_SPACE
-                && IsWindowEnabled(hwnd) != 0
-                && !(*infoPtr).FocusedCheckItem.is_null()
-                && (*infoPtr).FocusedPushed != 0
-            {
-                let OtherBox: UINT = if (*infoPtr).FocusedCheckItemBox == CLB_ALLOW {
-                    CLB_DENY
-                } else {
-                    CLB_ALLOW
-                };
-                let OtherStateMask: DWORD = if OtherBox == CLB_ALLOW {
-                    CIS_ALLOW | CIS_ALLOWDISABLED
-                } else {
-                    CIS_DENY | CIS_DENYDISABLED
-                };
-                let OtherStateOld: DWORD = (*(*infoPtr).FocusedCheckItem).State & OtherStateMask;
-
-                (*infoPtr).FocusedPushed = FALSE;
-
-                if ChangeCheckBox(
-                    infoPtr,
-                    (*infoPtr).FocusedCheckItem,
-                    (*infoPtr).FocusedCheckItemBox,
-                ) != 0
-                {
-                    UpdateCheckItemBox(
-                        infoPtr,
-                        (*infoPtr).FocusedCheckItem,
-                        (*infoPtr).FocusedCheckItemBox,
-                    );
-
-                    if ((*(*infoPtr).FocusedCheckItem).State & OtherStateMask) != OtherStateOld {
-                        UpdateCheckItemBox(
-                            infoPtr,
-                            (*infoPtr).FocusedCheckItem,
-                            OtherBox,
-                        );
-                    }
-                }
-            }
-        }
-
-        WM_GETDLGCODE => {
-            let virtKey: INT;
-
-            Ret = 0;
-            virtKey = if lParam != 0 {
-                (*(lParam as LPMSG)).wParam as INT
-            } else {
-                0
-            };
-            match virtKey as u32 {
-                VK_RETURN => {
-                    if (*infoPtr).QuickSearchEnabled != 0
-                        && !(*infoPtr).QuickSearchHitItem.is_null()
-                    {
-                        Ret |= DLGC_WANTCHARS | DLGC_WANTMESSAGE;
-                    } else {
-                        Ret |= DLGC_WANTMESSAGE;
-                    }
-                }
-
-                VK_TAB => {
-                    let mut CheckBox: UINT = 0;
-                    let EnabledBox: BOOL;
-                    let Shift: BOOL =
-                        if GetKeyState(VK_SHIFT) & 0x8000 != 0 {
-                            1
-                        } else {
-                            0
-                        };
-
-                    EnabledBox =
-                        if !FindEnabledCheckBox(infoPtr, Shift, &mut CheckBox).is_null() {
-                            1
-                        } else {
-                            0
-                        };
-                    Ret |= if EnabledBox != 0 {
-                        DLGC_WANTTAB
-                    } else {
-                        DLGC_WANTCHARS
-                    };
-                }
-
-                _ => {
-                    if (*infoPtr).QuickSearchEnabled != 0 {
-                        Ret |= DLGC_WANTCHARS;
-                    }
-                }
-            }
-        }
-
-        WM_CHAR => {
-            QuickSearchFindHit(infoPtr, wParam as u16);
-        }
-
-        WM_SYSCOLORCHANGE => {
-            (*infoPtr).TextColor[0 as usize] =
-                GetSysColor(COLOR_GRAYTEXT);
-            (*infoPtr).TextColor[1 as usize] =
-                GetSysColor(COLOR_WINDOWTEXT);
-        }
-
-        WM_MOUSELEAVE => {
-            if !(*infoPtr).HoveredCheckItem.is_null() {
-                ChangeCheckItemHotTrack(infoPtr, core::ptr::null_mut(), 0);
-            }
-        }
-
-        WM_THEMECHANGED => {
-            if !(*infoPtr).ThemeHandle.is_null() {
-                CloseThemeData((*infoPtr).ThemeHandle);
-                (*infoPtr).ThemeHandle = core::ptr::null_mut();
-            }
-            if IsAppThemed() != 0 {
-                (*infoPtr).ThemeHandle =
-                    OpenThemeData((*infoPtr).hSelf, w!("BUTTON") as *const u16);
-            }
-        }
-
-        WM_SETTINGCHANGE => {
-            let OldCaretWidth: DWORD = (*infoPtr).CaretWidth;
-
-            if SystemParametersInfo(
-                SPI_GETMOUSEHOVERTIME,
-                0,
-                &mut (*infoPtr).HoverTime as *mut UINT as *mut core::ffi::c_void,
-                0,
-            ) == 0
-            {
-                (*infoPtr).HoverTime = HOVER_DEFAULT;
-            }
-
-            if SystemParametersInfo(
-                SPI_GETCARETWIDTH,
-                0,
-                &mut (*infoPtr).CaretWidth as *mut DWORD as *mut core::ffi::c_void,
-                0,
-            ) == 0
-            {
-                (*infoPtr).CaretWidth = 2;
-            }
-            if OldCaretWidth != (*infoPtr).CaretWidth && (*infoPtr).ShowingCaret != 0 {
-                DestroyCaret();
-                CreateCaret(
-                    hwnd,
-                    core::ptr::null_mut(),
-                    (*infoPtr).CaretWidth,
-                    (*infoPtr).ItemHeight - (2 * CI_TEXT_MARGIN_HEIGHT),
-                );
-            }
-        }
-
-        WM_SIZE => {
-            UpdateControl(infoPtr);
-        }
-
-        WM_UPDATEUISTATE => {
-            let OldUIState: DWORD = (*infoPtr).UIState;
-
-            match LOWORD(wParam as u32) as u32 {
-                UIS_SET => {
-                    (*infoPtr).UIState |= HIWORD(wParam as u32);
-                }
-
-                UIS_CLEAR => {
-                    (*infoPtr).UIState &= !(HIWORD(wParam as u32));
-                }
-
-                _ => {}
-            }
-
-            if OldUIState != (*infoPtr).UIState {
-                if !(*infoPtr).FocusedCheckItem.is_null() {
-                    UpdateCheckItemBox(
-                        infoPtr,
-                        (*infoPtr).FocusedCheckItem,
-                        (*infoPtr).FocusedCheckItemBox,
-                    );
-                }
-            }
-        }
-
-        WM_TIMER => {
-            match wParam as u32 {
-                TIMER_ID_SETHITFOCUS => {
-                    KillTimer(hwnd, wParam as UINT);
-
-                    if (*infoPtr).QuickSearchEnabled != 0
-                        && !(*infoPtr).QuickSearchHitItem.is_null()
-                    {
-                        ChangeCheckItemFocus(
-                            infoPtr,
-                            (*infoPtr).QuickSearchHitItem,
-                            if ((*(*infoPtr).QuickSearchHitItem).State & CIS_ALLOWDISABLED)
-                                == 0
-                            {
-                                CLB_ALLOW
-                            } else {
-                                CLB_DENY
-                            },
-                        );
-
-                        if (*infoPtr).QuickSearchResetDelay != 0 {
-                            SetTimer(
-                                hwnd,
-                                TIMER_ID_RESETQUICKSEARCH,
-                                (*infoPtr).QuickSearchResetDelay,
-                                core::ptr::null_mut(),
-                            );
-                        }
-                    }
-                }
-                TIMER_ID_RESETQUICKSEARCH => {
-                    KillTimer(hwnd, wParam as UINT);
-                    EscapeQuickSearch(infoPtr);
-                }
-                _ => {}
-            }
-        }
-
-        WM_CREATE => {
-            infoPtr = HeapAlloc(
-                GetProcessHeap(),
-                0,
-                core::mem::size_of::<CHECKLISTWND>(),
-            ) as PCHECKLISTWND;
-            if !infoPtr.is_null() {
-                let mut rcClient: RECT = core::mem::zeroed();
-
-                (*infoPtr).hSelf = hwnd;
-                (*infoPtr).hNotify = (*(lParam as LPCREATESTRUCTW)).hwndParent;
-
-                SetWindowLongPtr(hwnd, 0, infoPtr as DWORD_PTR);
-
-                (*infoPtr).CheckItemListHead = core::ptr::null_mut();
-                (*infoPtr).CheckItemCount = 0;
-
-                if SystemParametersInfo(
-                    SPI_GETCARETWIDTH,
-                    0,
-                    &mut (*infoPtr).CaretWidth as *mut DWORD as *mut core::ffi::c_void,
-                    0,
-                ) == 0
-                {
-                    (*infoPtr).CaretWidth = 2;
-                }
-                (*infoPtr).ItemHeight = 10;
-                (*infoPtr).ShowingCaret = FALSE;
-
-                (*infoPtr).HasFocus = FALSE;
-                (*infoPtr).FocusedCheckItem = core::ptr::null_mut();
-                (*infoPtr).FocusedCheckItemBox = 0;
-                (*infoPtr).FocusedPushed = FALSE;
-
-                (*infoPtr).TextColor[0 as usize] =
-                    GetSysColor(COLOR_GRAYTEXT);
-                (*infoPtr).TextColor[1 as usize] =
-                    GetSysColor(COLOR_WINDOWTEXT);
-
-                GetClientRect(hwnd, &mut rcClient);
-
-                (*infoPtr).CheckBoxLeft[0 as usize] =
-                    rcClient.right - 30;
-                (*infoPtr).CheckBoxLeft[1 as usize] =
-                    rcClient.right - 15;
-
-                (*infoPtr).QuickSearchEnabled = FALSE;
-                (*infoPtr).QuickSearchText[0 as usize] = 0;
-
-                (*infoPtr).QuickSearchSetFocusDelay = DEFAULT_QUICKSEARCH_SETFOCUS_DELAY;
-                (*infoPtr).QuickSearchResetDelay = DEFAULT_QUICKSEARCH_RESET_DELAY;
-
-                (*infoPtr).HoveredCheckItem = core::ptr::null_mut();
-                (*infoPtr).HoveredCheckItemBox = 0;
-                if SystemParametersInfo(
-                    SPI_GETMOUSEHOVERTIME,
-                    0,
-                    &mut (*infoPtr).HoverTime as *mut UINT as *mut core::ffi::c_void,
-                    0,
-                ) == 0
-                {
-                    (*infoPtr).HoverTime = HOVER_DEFAULT;
-                }
-
-                if IsAppThemed() != 0 {
-                    (*infoPtr).ThemeHandle = OpenThemeData(
-                        (*infoPtr).hSelf,
-                        w!("BUTTON") as *const u16,
-                    );
-                } else {
-                    (*infoPtr).ThemeHandle = core::ptr::null_mut();
-                }
-
-                (*infoPtr).UIState = SendMessage(
-                    hwnd,
-                    WM_QUERYUISTATE,
-                    0,
-                    0,
-                ) as DWORD;
-            } else {
-                Ret = -1 as LRESULT;
-            }
-        }
-
-        WM_DESTROY => {
-            if (*infoPtr).ShowingCaret != 0 {
-                DestroyCaret();
-            }
-
-            ClearCheckItems(infoPtr);
-
-            if !(*infoPtr).ThemeHandle.is_null() {
-                CloseThemeData((*infoPtr).ThemeHandle);
-            }
-
-            HeapFree(
-                GetProcessHeap(),
-                0,
-                infoPtr as *mut core::ffi::c_void,
-            );
-            SetWindowLongPtr(hwnd, 0, 0);
-        }
-
-        _ => {
-            return DefWindowProc(hwnd, uMsg, wParam, lParam);
-        }
-    }
-
-    Ret
-}
 #[no_mangle]
 pub unsafe extern "C" fn RegisterCheckListControl(hInstance: HINSTANCE) -> BOOL {
     let mut wc: WNDCLASSW = core::mem::zeroed();
@@ -5377,11 +4356,11 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                 {
 //                     if (infoPtr->QuickSearchEnabled && infoPtr->QuickSearchHitItem != NULL)
 //                     {
-//                         Ret |= DLGC_WANTCHARS | DLGC_WANTMESSAGE;
+//                         Ret |= (DLGC_WANTCHARS | DLGC_WANTMESSAGE) as LRESULT;
 //                     }
 //                     else
 //                     {
-//                         Ret |= DLGC_WANTMESSAGE;
+//                         Ret |= DLGC_WANTMESSAGE as LRESULT;
 //                     }
 //                     break;
 //                 }
@@ -5543,7 +4522,7 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 //                         if (infoPtr->QuickSearchResetDelay != 0)
 //                         {
 //                             SetTimer(hwnd,
-//                                      TIMER_ID_RESETQUICKSEARCH,
+//                                      TIMER_ID_RESETQUICKSEARCH as UINT_PTR,
 //                                      infoPtr->QuickSearchResetDelay,
 //                                      NULL);
 //                         }
@@ -5716,3 +4695,286 @@ pub unsafe extern "C" fn UnregisterCheckListControl(hInstance: HINSTANCE) {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// checklist.c:789 — bought separately. rustconv's scanner could not see this function: its
+// body straddles a preprocessor conditional (the `#if SUPPORT_UXTHEME` block at checklist.c:947
+// ENDS mid-statement, with `if (FAILED(hDrawResult))` inside the conditional and the braced body
+// after the `#endif`), so brace matching finds a balanced function that the statement grammar
+// does not. It was dropped from the worklist with NO finding — `scan.unextracted` was empty —
+// and the only thing that caught it was the compiler rejecting a surviving call site.
+// Translated from the SUPPORT_UXTHEME-resolved source, which is the configuration this module
+// actually builds with (dll/win32/aclui/CMakeLists.txt:3 `add_definitions(-DSUPPORT_UXTHEME)`).
+unsafe extern "C" fn PaintControl(
+    infoPtr: *mut CHECKLISTWND,
+    hDC: HDC,
+    rcUpdate: PRECT,
+) {
+    let ScrollPos: INT;
+    let FirstItem: PCHECKITEM;
+    let mut Item: PCHECKITEM;
+    let mut rcClient: RECT = core::mem::zeroed();
+    let VisibleFirstIndex: UINT = ((*rcUpdate).top / (*infoPtr).ItemHeight) as UINT;
+    let LastTouchedIndex: UINT = ((*rcUpdate).bottom / (*infoPtr).ItemHeight) as UINT;
+
+    FillRect(
+        hDC,
+        rcUpdate,
+        (COLOR_WINDOW + 1) as HBRUSH,
+    );
+
+    GetClientRect((*infoPtr).hSelf, &mut rcClient);
+
+    ScrollPos = GetScrollPos((*infoPtr).hSelf, (SB_VERT) as i32);
+
+    FirstItem = FindCheckItemByIndex(infoPtr, ScrollPos + VisibleFirstIndex as INT);
+    if FirstItem != core::ptr::null_mut() {
+        let mut TextRect: RECT = core::mem::zeroed();
+        let mut ItemRect: RECT = core::mem::zeroed();
+        let mut CheckBox: RECT = core::mem::zeroed();
+        let hOldFont: HFONT;
+        let mut CurrentIndex: DWORD;
+        let OldTextColor: COLORREF;
+        let mut Enabled: BOOL;
+        let mut PrevEnabled: BOOL;
+        let mut IsPushed: BOOL;
+        let mut hOldBrushOrg: POINT = core::mem::zeroed();
+        let mut hDrawResult: HRESULT;
+        let mut ItemHovered: BOOL;
+
+        Enabled = IsWindowEnabled((*infoPtr).hSelf);
+        PrevEnabled = Enabled;
+
+        ItemRect.left = 0;
+        ItemRect.right = rcClient.right;
+        ItemRect.top = (VisibleFirstIndex as INT) * (*infoPtr).ItemHeight;
+
+        TextRect.left = ItemRect.left + CI_TEXT_MARGIN_WIDTH;
+        TextRect.right = ItemRect.right - CI_TEXT_MARGIN_WIDTH;
+        TextRect.top = ItemRect.top + CI_TEXT_MARGIN_HEIGHT;
+
+        SetBrushOrgEx(hDC, ItemRect.left, ItemRect.top, &mut hOldBrushOrg);
+
+        OldTextColor = SetTextColor(hDC, (*infoPtr).TextColor[Enabled as usize]);
+
+        hOldFont = SelectObject(hDC, (*infoPtr).hFont as HGDIOBJ) as HFONT;
+
+        Item = FirstItem;
+        CurrentIndex = VisibleFirstIndex;
+        while Item != core::ptr::null_mut() && CurrentIndex <= LastTouchedIndex {
+            TextRect.bottom = TextRect.top + (*infoPtr).ItemHeight - (2 * CI_TEXT_MARGIN_HEIGHT);
+            ItemRect.bottom = ItemRect.top + (*infoPtr).ItemHeight;
+
+            SetBrushOrgEx(hDC, ItemRect.left, ItemRect.top, core::ptr::null_mut());
+
+            if Enabled != 0 && PrevEnabled != (((*Item).State & CIS_DISABLED) != CIS_DISABLED) as BOOL {
+                PrevEnabled = (((*Item).State & CIS_DISABLED) != CIS_DISABLED) as BOOL;
+
+                SetTextColor(hDC, (*infoPtr).TextColor[PrevEnabled as usize]);
+            }
+
+            ItemHovered = (Enabled != 0 && (*infoPtr).HoveredCheckItem == Item) as BOOL;
+
+            if (*infoPtr).QuickSearchHitItem == Item {
+                let mut OldBkColor: COLORREF;
+                let mut OldFgColor: COLORREF;
+                let mut TextSize: SIZE = core::mem::zeroed();
+                let TextLen: SIZE_T;
+                let HighlightLen: SIZE_T = wcslen((*infoPtr).QuickSearchText.as_ptr()) as SIZE_T;
+
+                if GetTextExtentPoint32(hDC, (*Item).Name.as_ptr(), HighlightLen as INT, &mut TextSize) != 0 {
+                    let HighlightTextColor: COLORREF;
+                    let HighlightBackground: COLORREF;
+                    let mut rcHighlight: RECT = TextRect;
+
+                    HighlightTextColor = GetSysColor((COLOR_HIGHLIGHTTEXT) as i32);
+                    HighlightBackground = GetSysColor((COLOR_HIGHLIGHT) as i32);
+
+                    rcHighlight.right = rcHighlight.left + TextSize.cx;
+
+                    InflateRect(&mut rcHighlight, 0, CI_TEXT_SELECTIONMARGIN);
+
+                    OldBkColor = SetBkColor(hDC, HighlightBackground);
+                    OldFgColor = SetTextColor(hDC, HighlightTextColor);
+
+                    DrawText(
+                        hDC,
+                        (*Item).Name.as_ptr(),
+                        HighlightLen as INT,
+                        &mut rcHighlight,
+                        DT_LEFT | DT_NOPREFIX | DT_SINGLELINE | DT_VCENTER,
+                    );
+
+                    SetBkColor(hDC, OldBkColor);
+                    SetTextColor(hDC, OldFgColor);
+
+                    TextLen = wcslen((*Item).Name.as_ptr()) as SIZE_T;
+                    if HighlightLen < TextLen {
+                        rcHighlight.left = rcHighlight.right;
+                        rcHighlight.right = TextRect.right;
+
+                        DrawText(
+                            hDC,
+                            (*Item).Name.as_ptr().offset(HighlightLen as isize),
+                            -1,
+                            &mut rcHighlight,
+                            DT_LEFT | DT_NOPREFIX | DT_SINGLELINE | DT_VCENTER,
+                        );
+                    }
+                }
+            } else {
+                DrawText(
+                    hDC,
+                    (*Item).Name.as_ptr(),
+                    -1,
+                    &mut TextRect,
+                    DT_LEFT | DT_NOPREFIX | DT_SINGLELINE | DT_VCENTER,
+                );
+            }
+
+            CheckBox.top = TextRect.top;
+            CheckBox.bottom = TextRect.bottom;
+
+            IsPushed = (Enabled != 0
+                && Item == (*infoPtr).FocusedCheckItem
+                && (*infoPtr).HasFocus != 0
+                && ((*Item).State & CIS_ALLOWDISABLED) == 0
+                && (*infoPtr).FocusedCheckItemBox != CLB_DENY
+                && (*infoPtr).FocusedPushed != 0) as BOOL;
+
+            CheckBox.left = (*infoPtr).CheckBoxLeft[CLB_ALLOW as usize] - ((TextRect.bottom - TextRect.top) / 2);
+            CheckBox.right = CheckBox.left + (TextRect.bottom - TextRect.top);
+            if (*infoPtr).ThemeHandle != core::ptr::null_mut() {
+                let BtnState: INT = CalculateCheckBoxStyle(
+                    ((*Item).State & CIS_ALLOW) as BOOL,
+                    (Enabled != 0 && ((*Item).State & CIS_ALLOWDISABLED) == 0) as BOOL,
+                    (ItemHovered != 0 && (*infoPtr).HoveredCheckItemBox != CLB_DENY) as BOOL,
+                    IsPushed,
+                );
+
+                hDrawResult = DrawThemeBackground(
+                    (*infoPtr).ThemeHandle,
+                    hDC,
+                    (BP_CHECKBOX) as i32,
+                    BtnState,
+                    &CheckBox,
+                    core::ptr::null(),
+                );
+            } else {
+                hDrawResult = E_FAIL;
+            }
+
+            if (hDrawResult) < 0 {
+                DrawFrameControl(
+                    hDC,
+                    &mut CheckBox,
+                    DFC_BUTTON,
+                    DFCS_BUTTONCHECK
+                        | DFCS_FLAT
+                        | (if ((*Item).State & CIS_ALLOWDISABLED) != 0 || Enabled == 0 {
+                            DFCS_INACTIVE
+                        } else {
+                            0
+                        })
+                        | (if ((*Item).State & CIS_ALLOW) != 0 {
+                            DFCS_CHECKED
+                        } else {
+                            0
+                        })
+                        | (if IsPushed != 0 {
+                            DFCS_PUSHED
+                        } else {
+                            0
+                        }),
+                );
+            }
+            if Item == (*infoPtr).FocusedCheckItem
+                && ((*infoPtr).UIState & UISF_HIDEFOCUS) == 0
+                && (*infoPtr).HasFocus != 0
+                && (*infoPtr).FocusedCheckItemBox != CLB_DENY
+            {
+                let mut rcFocus: RECT = CheckBox;
+
+                InflateRect(&mut rcFocus, CI_TEXT_MARGIN_HEIGHT, CI_TEXT_MARGIN_HEIGHT);
+
+                DrawFocusRect(hDC, &mut rcFocus);
+            }
+
+            IsPushed = (Enabled != 0
+                && Item == (*infoPtr).FocusedCheckItem
+                && (*infoPtr).HasFocus != 0
+                && ((*Item).State & CIS_DENYDISABLED) == 0
+                && (*infoPtr).FocusedCheckItemBox == CLB_DENY
+                && (*infoPtr).FocusedPushed != 0) as BOOL;
+
+            CheckBox.left = (*infoPtr).CheckBoxLeft[CLB_DENY as usize] - ((TextRect.bottom - TextRect.top) / 2);
+            CheckBox.right = CheckBox.left + (TextRect.bottom - TextRect.top);
+            if (*infoPtr).ThemeHandle != core::ptr::null_mut() {
+                let BtnState: INT = CalculateCheckBoxStyle(
+                    ((*Item).State & CIS_DENY) as BOOL,
+                    (Enabled != 0 && ((*Item).State & CIS_DENYDISABLED) == 0) as BOOL,
+                    (ItemHovered != 0 && (*infoPtr).HoveredCheckItemBox == CLB_DENY) as BOOL,
+                    IsPushed,
+                );
+
+                hDrawResult = DrawThemeBackground(
+                    (*infoPtr).ThemeHandle,
+                    hDC,
+                    (BP_CHECKBOX) as i32,
+                    BtnState,
+                    &CheckBox,
+                    core::ptr::null(),
+                );
+            } else {
+                hDrawResult = E_FAIL;
+            }
+
+            if (hDrawResult) < 0 {
+                DrawFrameControl(
+                    hDC,
+                    &mut CheckBox,
+                    DFC_BUTTON,
+                    DFCS_BUTTONCHECK
+                        | DFCS_FLAT
+                        | (if ((*Item).State & CIS_DENYDISABLED) != 0 || Enabled == 0 {
+                            DFCS_INACTIVE
+                        } else {
+                            0
+                        })
+                        | (if ((*Item).State & CIS_DENY) != 0 {
+                            DFCS_CHECKED
+                        } else {
+                            0
+                        })
+                        | (if IsPushed != 0 {
+                            DFCS_PUSHED
+                        } else {
+                            0
+                        }),
+                );
+            }
+            if (*infoPtr).HasFocus != 0
+                && ((*infoPtr).UIState & UISF_HIDEFOCUS) == 0
+                && Item == (*infoPtr).FocusedCheckItem
+                && (*infoPtr).FocusedCheckItemBox == CLB_DENY
+            {
+                let mut rcFocus: RECT = CheckBox;
+
+                InflateRect(&mut rcFocus, CI_TEXT_MARGIN_HEIGHT, CI_TEXT_MARGIN_HEIGHT);
+
+                DrawFocusRect(hDC, &mut rcFocus);
+            }
+
+            TextRect.top += (*infoPtr).ItemHeight;
+            ItemRect.top += (*infoPtr).ItemHeight;
+
+            Item = (*Item).Next;
+            CurrentIndex = CurrentIndex.wrapping_add(1);
+        }
+
+        SelectObject(hDC, hOldFont as HGDIOBJ);
+
+        SetTextColor(hDC, OldTextColor);
+
+        SetBrushOrgEx(hDC, hOldBrushOrg.x, hOldBrushOrg.y, core::ptr::null_mut());
+    }
+}

@@ -2,6 +2,20 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+
+// `typedef struct _X { … } X, *PX;` — the translation kept the tag and the POINTER alias but
+// dropped the value alias that the rest of the crate spells.
+pub type SIDCACHEMGR = _SIDCACHEMGR;
+pub type SIDCACHECALLBACKINFO = _SIDCACHECALLBACKINFO;
+pub type SIDQUEUEENTRY = _SIDQUEUEENTRY;
+pub type SIDCACHEENTRY = _SIDCACHEENTRY;
+
+// sidcache.c:36-37 — plain casts, spelled as macros there.
+#[inline(always)]
+pub fn HandleToScm(handle: HANDLE) -> PSIDCACHEMGR { handle as PSIDCACHEMGR }
+#[inline(always)]
+pub fn ScmToHandle(scm: PSIDCACHEMGR) -> HANDLE { scm as HANDLE }
+
 #[repr(C)]
 pub struct _SIDCACHEMGR {
     pub RefCount: i32,
@@ -81,14 +95,14 @@ unsafe extern "C" fn CleanupSidCacheMgr(scm: PSIDCACHEMGR) {
     CloseHandle((*scm).LookupEvent);
     CloseHandle((*scm).LookupThread);
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*scm).QueueListHead)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*scm).QueueListHead)) {
         let QueueEntry: PSIDQUEUEENTRY;
 
         QueueEntry = (((*scm).QueueListHead.Flink as *mut u8).offset(-(core::mem::offset_of!(SIDQUEUEENTRY, ListEntry) as isize))) as PSIDQUEUEENTRY;
         FreeQueueEntry(scm, QueueEntry);
     }
 
-    while IsListEmpty(core::ptr::addr_of_mut!((*scm).CacheListHead)) == 0 {
+    while !IsListEmpty(core::ptr::addr_of_mut!((*scm).CacheListHead)) {
         let CacheEntry: PSIDCACHEENTRY;
 
         CacheEntry = (((*scm).CacheListHead.Flink as *mut u8).offset(-(core::mem::offset_of!(SIDCACHEENTRY, ListEntry) as isize))) as PSIDCACHEENTRY;
@@ -124,8 +138,8 @@ unsafe extern "C" fn OpenLSAPolicyHandle(
 
     if !SystemName.is_null() && *SystemName.offset(0) != 0 {
         NameLength = wcslen(SystemName);
-        if NameLength > UNICODE_STRING_MAX_CHARS {
-            return FALSE;
+        if NameLength > (UNICODE_STRING_MAX_CHARS) as usize {
+            return (FALSE) as i32;
         }
 
         LsaSystemName.Buffer = SystemName;
@@ -144,14 +158,14 @@ unsafe extern "C" fn OpenLSAPolicyHandle(
     );
     if !NT_SUCCESS(Status) {
         SetLastError(LsaNtStatusToWinError(Status));
-        return FALSE;
+        return (FALSE) as i32;
     }
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 unsafe extern "C" fn LookupSidInformation(
     scm: PSIDCACHEMGR,
-    pSid: PSID,
+    mut pSid: PSID,
     ReqResult: *mut PSIDREQRESULT,
 ) -> BOOL {
     let mut ReferencedDomain: PLSA_REFERENCED_DOMAIN_LIST = core::ptr::null_mut();
@@ -164,12 +178,12 @@ unsafe extern "C" fn LookupSidInformation(
     let mut AccountNameSize: DWORD;
     let mut DomainNameSize: DWORD = 0;
     let mut ReqRet: PSIDREQRESULT = core::ptr::null_mut();
-    let mut Ret: BOOL = FALSE;
+    let mut Ret: BOOL = (FALSE) as i32;
 
     Status = LsaLookupSids(
         (*scm).LsaHandle,
         1,
-        &pSid,
+        &mut pSid,
         &mut ReferencedDomain,
         &mut Names,
     );
@@ -177,8 +191,8 @@ unsafe extern "C" fn LookupSidInformation(
         SidNameUse = (*Names).Use;
 
         if !ReferencedDomain.is_null() && (*Names).DomainIndex >= 0 {
-            Domain = &mut (*ReferencedDomain).Domains[(*Names).DomainIndex as usize];
-            DomainName = &mut (*Domain).Name;
+            Domain = (*ReferencedDomain).Domains.add((*Names).DomainIndex as usize);
+            DomainName = core::ptr::addr_of_mut!((*Domain).Name);
         } else {
             Domain = core::ptr::null_mut();
             DomainName = core::ptr::null_mut();
@@ -213,13 +227,13 @@ unsafe extern "C" fn LookupSidInformation(
             DomainNameSize = (*DomainName).Length as DWORD;
         }
 
-        ReqRet = HeapAlloc(
+        ReqRet = (HeapAlloc(
             (*scm).Heap,
             0,
-            core::mem::size_of::<SIDREQRESULT>()
+            (core::mem::size_of::<SIDREQRESULT>()
                 + (((AccountNameSize + DomainNameSize) + 2) as usize
-                    * core::mem::size_of::<WCHAR>()),
-        );
+                    * core::mem::size_of::<WCHAR>())) as SIZE_T,
+        )).cast();
         if !ReqRet.is_null() {
             (*ReqRet).RefCount = 1;
             (*ReqRet).AccountName = (ReqRet.offset(1)) as LPWSTR;
@@ -261,9 +275,9 @@ unsafe extern "C" fn LookupSidInformation(
         LsaFreeMemory(ReferencedDomain as PVOID);
         LsaFreeMemory(Names as PVOID);
 
-        Ret = TRUE;
+        Ret = (TRUE) as i32;
     } else if Status == STATUS_NONE_MAPPED {
-        Ret = TRUE;
+        Ret = (TRUE) as i32;
     }
 
     if Ret != 0 {
@@ -274,13 +288,13 @@ unsafe extern "C" fn LookupSidInformation(
 }
 unsafe extern "C" fn FindSidInCache(
     scm: PSIDCACHEMGR,
-    pSid: PSID,
+    mut pSid: PSID,
     ReqResult: *mut PSIDREQRESULT,
 ) -> BOOL {
     let mut CacheEntry: PSIDCACHEENTRY;
     let mut CurrentEntry: PLIST_ENTRY;
     let mut ReqRes: PSIDREQRESULT;
-    let mut Ret: BOOL = FALSE;
+    let mut Ret: BOOL = (FALSE) as i32;
 
     CurrentEntry = (*scm).CacheListHead.Flink;
     while CurrentEntry != core::ptr::addr_of_mut!((*scm).CacheListHead) {
@@ -297,17 +311,17 @@ unsafe extern "C" fn FindSidInCache(
             let mut AccountNameLen: u32;
             let mut DomainNameLen: u32;
 
-            Ret = TRUE;
+            Ret = (TRUE) as i32;
 
-            AccountNameLen = wcslen((*CacheEntry).AccountName);
-            DomainNameLen = wcslen((*CacheEntry).DomainName);
+            AccountNameLen = (wcslen((*CacheEntry).AccountName)) as u32;
+            DomainNameLen = (wcslen((*CacheEntry).DomainName)) as u32;
 
             ReqResultSize = core::mem::size_of::<SIDREQRESULT>()
                 + (((AccountNameLen + 1)
                     + (DomainNameLen + 1)) as usize
                     * core::mem::size_of::<u16>());
 
-            ReqRes = HeapAlloc((*scm).Heap, 0, ReqResultSize);
+            ReqRes = (HeapAlloc((*scm).Heap, 0, ReqResultSize as SIZE_T)).cast();
             if !ReqRes.is_null() {
                 let mut Buffer: PWSTR = ReqRes.offset(1) as PWSTR;
 
@@ -350,11 +364,11 @@ unsafe extern "C" fn CacheLookupResults(
     DomainNameLen = wcslen((*ReqResult).DomainName);
     CacheEntrySize += (wcslen((*ReqResult).DomainName) + 1) * core::mem::size_of::<u16>();
 
-    CacheEntry = HeapAlloc(
+    CacheEntry = (HeapAlloc(
         (*scm).Heap,
         0,
-        CacheEntrySize,
-    );
+        CacheEntrySize as SIZE_T,
+    )).cast();
     if CacheEntry != core::ptr::null_mut() {
         let mut lpBuf: PWSTR = ((CacheEntry.offset(1) as usize) + SidLen as usize) as PWSTR;
 
@@ -386,8 +400,7 @@ unsafe extern "C" fn CacheLookupResults(
         );
     }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
+unsafe extern "system" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
     let mut hModule: HMODULE = core::ptr::null_mut();
     let scm: PSIDCACHEMGR = lpParameter as PSIDCACHEMGR;
 
@@ -439,7 +452,7 @@ unsafe extern "stdcall" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
                 }
             } else {
                 if ReqResult != core::ptr::null_mut() {
-                    DereferenceSidReqResult(scm, ReqResult);
+                    DereferenceSidReqResult((scm).cast(), ReqResult);
                 }
 
                 ReqResult = FoundReqResult;
@@ -457,7 +470,7 @@ unsafe extern "stdcall" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
 
                     LeaveCriticalSection(&mut (*scm).Lock);
 
-                    CompletionProc(ScmToHandle(scm), pSid, ReqResult, Context);
+                    CompletionProc.unwrap_unchecked()(ScmToHandle(scm), pSid, ReqResult, Context);
 
                     EnterCriticalSection(&mut (*scm).Lock);
 
@@ -484,103 +497,6 @@ unsafe extern "stdcall" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn LookupThreadProc(lpParameter: LPVOID) -> u32 {
-    let mut hModule: HMODULE = core::ptr::null_mut();
-    let scm: PSIDCACHEMGR = lpParameter as PSIDCACHEMGR;
-
-    if GetModuleHandleExW(
-        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-        hDllInstance as LPCWSTR,
-        &mut hModule,
-    ) == 0
-    {
-        hModule = core::ptr::null_mut();
-    }
-
-    while (*scm).RefCount != 0 {
-        let mut QueueEntry: PSIDQUEUEENTRY = core::ptr::null_mut();
-
-        EnterCriticalSection(&mut (*scm).Lock);
-
-        if (*scm).QueueListHead.Flink != &mut (*scm).QueueListHead as *mut _ {
-            QueueEntry = ((*scm).QueueListHead.Flink as *const u8).offset(
-                -(core::mem::offset_of!(SIDQUEUEENTRY, ListEntry) as isize)
-            ) as PSIDQUEUEENTRY;
-            RemoveEntryList(&mut (*QueueEntry).ListEntry);
-            (*QueueEntry).ListEntry.Flink = core::ptr::null_mut();
-        } else {
-            LeaveCriticalSection(&mut (*scm).Lock);
-
-            WaitForSingleObject((*scm).LookupEvent, INFINITE);
-            continue;
-        }
-
-        (*scm).QueueLookingUp = QueueEntry;
-
-        LeaveCriticalSection(&mut (*scm).Lock);
-
-        if QueueEntry != core::ptr::null_mut() {
-            let mut ReqResult: PSIDREQRESULT = core::ptr::null_mut();
-            let mut FoundReqResult: PSIDREQRESULT = core::ptr::null_mut();
-            let pSid: PSID = QueueEntry.offset(1) as PSID;
-
-            if LookupSidInformation(scm, pSid, &mut ReqResult) == 0 {
-                ReqResult = core::ptr::null_mut();
-            }
-
-            EnterCriticalSection(&mut (*scm).Lock);
-
-            if FindSidInCache(scm, pSid, &mut FoundReqResult) == 0 {
-                if ReqResult != core::ptr::null_mut() {
-                    CacheLookupResults(scm, pSid, ReqResult);
-                }
-            } else {
-                if ReqResult != core::ptr::null_mut() {
-                    DereferenceSidReqResult(scm, ReqResult);
-                }
-
-                ReqResult = FoundReqResult;
-            }
-
-            if (*scm).QueueLookingUp != core::ptr::null_mut() {
-                let mut i: u32 = 0;
-
-                while (*scm).QueueLookingUp != core::ptr::null_mut()
-                    && i < (*QueueEntry).CallbackCount
-                {
-                    let Context: PVOID = (*(*QueueEntry).Callbacks.offset(i as isize)).Context;
-                    let CompletionProc: PSIDREQCOMPLETIONPROC =
-                        (*(*QueueEntry).Callbacks.offset(i as isize)).CompletionProc;
-
-                    LeaveCriticalSection(&mut (*scm).Lock);
-
-                    CompletionProc(ScmToHandle(scm), pSid, ReqResult, Context);
-
-                    EnterCriticalSection(&mut (*scm).Lock);
-
-                    i += 1;
-                }
-
-                (*scm).QueueLookingUp = core::ptr::null_mut();
-            }
-
-            LeaveCriticalSection(&mut (*scm).Lock);
-
-            FreeQueueEntry(scm, QueueEntry);
-        }
-    }
-
-    CleanupSidCacheMgr(scm);
-
-    HeapFree((*scm).Heap, 0, scm as LPVOID);
-
-    if hModule != core::ptr::null_mut() {
-        FreeLibraryAndExitThread(hModule, 0);
-    }
-
-    0
-}
 #[no_mangle]
 pub unsafe extern "C" fn CreateSidCacheMgr(
     Heap: HANDLE,
@@ -597,16 +513,18 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
     scm = HeapAlloc(
         Heap,
         0,
-        FIELD_OFFSET(
-            SIDCACHEMGR,
-            SystemName[wcslen(SystemName) + 1]
-        ),
+        // sidcache.c:606 `FIELD_OFFSET(SIDCACHEMGR, SystemName[wcslen(SystemName) + 1])` —
+        // C's offsetof-of-an-array-ELEMENT, i.e. the struct up to the flexible tail plus room
+        // for the string and its NUL. offset_of! takes a field, not an index, so the element
+        // arithmetic is spelled out.
+        (FIELD_OFFSET!(SIDCACHEMGR, SystemName) as usize
+            + (wcslen(SystemName) + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as PSIDCACHEMGR;
 
     if !scm.is_null() {
         ZeroMemory(
             scm as LPVOID,
-            FIELD_OFFSET(SIDCACHEMGR, SystemName),
+            FIELD_OFFSET!(SIDCACHEMGR, SystemName) as usize,
         );
 
         (*scm).RefCount = 1;
@@ -623,8 +541,8 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
 
         (*scm).LookupEvent = CreateEvent(
             core::ptr::null_mut(),
-            FALSE,
-            FALSE,
+            (FALSE) as i32,
+            (FALSE) as i32,
             core::ptr::null_mut(),
         );
 
@@ -673,7 +591,7 @@ pub unsafe extern "C" fn CreateSidCacheMgr(
                 (*scm).LookupThread = CreateThread(
                     core::ptr::null_mut(),
                     0,
-                    LookupThreadProc as LPVOID,
+                    Some(LookupThreadProc),
                     scm as LPVOID,
                     0,
                     core::ptr::null_mut(),
@@ -723,7 +641,7 @@ unsafe extern "C" fn QueueSidLookup(
     let mut CurrentEntry: PLIST_ENTRY;
     let mut QueueEntry: *mut SIDQUEUEENTRY;
     let mut FoundEntry: *mut SIDQUEUEENTRY = core::ptr::null_mut();
-    let mut Ret: i32 = FALSE;
+    let mut Ret: i32 = (FALSE) as i32;
 
     if (*scm).QueueLookingUp != core::ptr::null_mut()
         && EqualSid(
@@ -757,7 +675,7 @@ unsafe extern "C" fn QueueSidLookup(
         FoundEntry = HeapAlloc(
             (*scm).Heap,
             0,
-            (core::mem::size_of::<SIDQUEUEENTRY>() as u32).wrapping_add(SidLength) as usize,
+            (core::mem::size_of::<SIDQUEUEENTRY>() as u32).wrapping_add(SidLength) as SIZE_T,
         ) as *mut SIDQUEUEENTRY;
         if FoundEntry != core::ptr::null_mut() {
             CopySid(
@@ -770,7 +688,7 @@ unsafe extern "C" fn QueueSidLookup(
             (*FoundEntry).Callbacks = HeapAlloc(
                 (*scm).Heap,
                 0,
-                core::mem::size_of::<SIDCACHECALLBACKINFO>(),
+                core::mem::size_of::<SIDCACHECALLBACKINFO>() as SIZE_T,
             ) as *mut SIDCACHECALLBACKINFO;
 
             if (*FoundEntry).Callbacks != core::ptr::null_mut() {
@@ -785,7 +703,7 @@ unsafe extern "C" fn QueueSidLookup(
 
                 SetEvent((*scm).LookupEvent);
 
-                Ret = TRUE;
+                Ret = (TRUE) as i32;
             } else {
                 HeapFree((*scm).Heap, 0, FoundEntry as LPVOID);
             }
@@ -798,7 +716,8 @@ unsafe extern "C" fn QueueSidLookup(
             ((*FoundEntry)
                 .CallbackCount
                 .wrapping_add(1) as usize)
-                .wrapping_mul(core::mem::size_of::<SIDCACHECALLBACKINFO>()),
+                .wrapping_mul(core::mem::size_of::<SIDCACHECALLBACKINFO>())
+                as SIZE_T,
         ) as *mut SIDCACHECALLBACKINFO;
         if Sidccb != core::ptr::null_mut() {
             (*FoundEntry).Callbacks = Sidccb;
@@ -810,7 +729,7 @@ unsafe extern "C" fn QueueSidLookup(
             (*FoundEntry).CallbackCount = (*FoundEntry).CallbackCount.wrapping_add(1);
             (*(*FoundEntry).Callbacks.offset(idx as isize)).Context = Context;
 
-            Ret = TRUE;
+            Ret = (TRUE) as i32;
         }
     }
 
@@ -899,7 +818,7 @@ pub unsafe extern "C" fn LookupSidCache(
     CompletionProc: PSIDREQCOMPLETIONPROC,
     Context: PVOID,
 ) -> BOOL {
-    let mut Found: BOOL = FALSE;
+    let mut Found: BOOL = (FALSE) as i32;
     let mut ReqResult: PSIDREQRESULT = core::ptr::null_mut();
     let scm: PSIDCACHEMGR;
 
@@ -927,7 +846,7 @@ pub unsafe extern "C" fn LookupSidCache(
                     }
                 } else {
                     if ReqResult != core::ptr::null_mut() {
-                        DereferenceSidReqResult(scm, ReqResult);
+                        DereferenceSidReqResult((scm).cast(), ReqResult);
                     }
 
                     ReqResult = FoundReqResult;
@@ -940,7 +859,7 @@ pub unsafe extern "C" fn LookupSidCache(
         LeaveCriticalSection(core::ptr::addr_of_mut!((*scm).Lock));
 
         if Found != 0 {
-            CompletionProc(SidCacheMgr, pSid, ReqResult, Context);
+            CompletionProc.unwrap_unchecked()(SidCacheMgr, pSid, ReqResult, Context);
 
             if ReqResult != core::ptr::null_mut() {
                 HeapFree((*scm).Heap, 0, ReqResult as LPVOID);
@@ -1188,7 +1107,7 @@ pub unsafe extern "C" fn LookupSidCache(
 //
 //     Status = LsaLookupSids(scm->LsaHandle,
 //                            1,
-//                            &pSid,
+//                            &mut pSid,
 //                            &ReferencedDomain,
 //                            &Names);
 //     if (NT_SUCCESS(Status))

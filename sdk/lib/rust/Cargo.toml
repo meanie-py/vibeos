@@ -81,6 +81,10 @@ members = [
     # Tier-3 batch D, the security/auth cluster. All plain C, no COM substrate.
     "ntmarta-rust",
     "authz-rust",
+    # aclui-rust joins as a COMPILING crate; it is not cohab-flipped yet, so it is linked into
+    # nothing and cannot affect a boot. msv1_0-rust stays OUT until it compiles too — membership
+    # is what puts a crate in everyone's `cargo check`, so a red member breaks every other lane.
+    "aclui-rust",
     # Network-configuration COM server (the "Network Connections" installer/property sheets).
     # C-style COM: every vtable method is a plain `extern "C"` fn, so the whole 11-TU module
     # translates as plain C — no C++ substrate.
