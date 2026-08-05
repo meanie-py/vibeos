@@ -23,9 +23,6 @@
       "dll/win32/shell32/COpenWithMenu.cpp",
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
     ],
-    "leaf": [
-      "dll/win32/shell32/CDefViewUtil.cpp"
-    ],
     "monolith": [
       "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/utils.cpp",
@@ -91,6 +88,9 @@
       "dll/win32/shell32/folders/CNetFolder.cpp",
       "dll/win32/shell32/folders/CPrinterFolder.cpp",
       "dll/win32/shell32/folders/CRecycleBin.cpp"
+    ],
+    "leaf": [
+      "dll/win32/shell32/CDefViewUtil.cpp"
     ]
   },
   "sanctioned": {

@@ -220,6 +220,36 @@ Both are now derived, and raise `TargetResolveError` rather than guessing:
   hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
   are `cdecl` on every arch including i386.
 
+## An SDK enum's width is an ABI fact — prove it from all three islands (2026-08-04)
+
+The `--cpp-com` scaffold refuses any state field whose type it cannot prove is scalar,
+pointer, or a source-visible POD. `FOLDERVIEWMODE m_FVM` (CDefViewUtil's
+`CShellFolderViewCBWrapper`) is none of those from the header's point of view: a C
+`typedef enum { … } NAME;` has **no fixed underlying type**, so reading shobjidl.h cannot
+settle whether it is 4 bytes on every target. Reading it and assuming `int` would have been
+the guess the rest of this pipeline exists to refuse.
+
+`cpp_com.island_integer_aliases` settles it from evidence instead. bindgen renders each
+per-arch island against the real target, so `island_<arch>.rs` already *contains* the answer —
+`pub type __WIDL_shobjidl_generated_name_00000025 = ::core::ffi::c_int;` plus
+`pub use self::__WIDL_… as FOLDERVIEWMODE;`. The prover follows that re-export chain in
+**i386, amd64 and arm64** and accepts the name only when all three resolve to the *same*
+primitive. 176 SDK names qualify; `SIZE_T`, `ULONG_PTR` and `LPARAM` deliberately do not,
+because their widths diverge — accepting one arch's answer is exactly how a cast inferred from
+i386 has shipped a wrong width before.
+
+Two consequences worth keeping straight:
+
+- **The scaffold never re-declares a proven name.** It emits `pub m_FVM: FOLDERVIEWMODE`, which
+  resolves through the prelude's `pub use crate::island::*` to the island's own alias. A local
+  `pub type FOLDERVIEWMODE = INT;` would compile (a local item shadows a glob) and would be a
+  second source of truth for a width — the thing `scan_type_alias_contradictions` exists to catch.
+- **No islands means no proof, not a default.** `island_files=()` yields an empty set and the
+  field stays a loud preflight failure. `cpp_tu` resolves the island paths from the caller's
+  `repo`, never from config's install-time root, because `pip install -e` bakes the *main*
+  checkout into site-packages and a sibling worktree's island would prove this tree's layout
+  against another lane's headers.
+
 ## Key Files
 
 ```

@@ -272,6 +272,13 @@ SHELL32_COM_FILES = {
     "amd64": SHELL32_RUST_SRC / "shellcom.rs",
     "i386": SHELL32_RUST_SRC / "shellcom.rs",
 }
+# The per-arch bindgen islands. Distinct from SHELL32_COM_FILES above, which is the
+# hand-written vtable-ABI module and is arch-independent by construction. Only these
+# carry per-arch type widths, so only these can settle whether an SDK typedef is an
+# integer of the same width on every target (cpp_com.island_integer_aliases).
+SHELL32_ISLAND_FILES = {
+    arch: SHELL32_RUST_SRC / f"island_{arch}.rs" for arch in ("i386", "amd64", "arm64")
+}
 
 # winlogon.exe — the logon manager (winlogon → userinit → explorer). GINA-
 # independent LEAF files only (setup/environment/shutdown/screensaver/security);

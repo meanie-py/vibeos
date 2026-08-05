@@ -20,6 +20,7 @@ import json
 import re
 import subprocess
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -154,6 +155,10 @@ class CppComClass:
     # in C++ base-destruction order. Scan extension renames them into ordinary
     # workers and records those worker names here for Release sequencing.
     base_dtor_workers: list[str] = field(default_factory=list)
+    # SDK type names the per-arch bindgen islands agree are plain integer aliases
+    # (see island_integer_aliases). Empty when no islands were supplied, which keeps
+    # an unproven type a loud preflight failure rather than an assumed int.
+    island_scalar_types: frozenset[str] = frozenset()
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -166,7 +171,10 @@ class CppComClass:
         pod_names = {item.name for item in self.pod_state_types}
         return [
             _parse_plain_state_field(
-                item, allowed_pod_types=pod_names, array_constants=self.array_constants
+                item,
+                allowed_pod_types=pod_names,
+                array_constants=self.array_constants,
+                island_scalar_types=self.island_scalar_types,
             )
             for item in self.state_fields
         ]
@@ -197,6 +205,7 @@ class CppComClass:
                     declaration,
                     allowed_pod_types={item.name for item in self.pod_state_types},
                     array_constants=self.array_constants,
+                    island_scalar_types=self.island_scalar_types,
                 )
             except CppComError as exc:
                 problems.append(str(exc))
@@ -448,6 +457,81 @@ def _state_fields(body: str) -> list[str]:
 _POD_LEAF_TYPES = frozenset(
     {"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "STGMEDIUM", "ULARGE_INTEGER"}
 )
+
+# Rust spellings bindgen emits for an integer primitive on the right of a type alias.
+_ISLAND_INTEGER_PRIMITIVES = frozenset(
+    {
+        "::core::ffi::c_char",
+        "::core::ffi::c_int",
+        "::core::ffi::c_long",
+        "::core::ffi::c_schar",
+        "::core::ffi::c_short",
+        "::core::ffi::c_uchar",
+        "::core::ffi::c_uint",
+        "::core::ffi::c_ulong",
+        "::core::ffi::c_ushort",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+    }
+)
+_ISLAND_TYPE_ALIAS = re.compile(r"^pub type (?P<name>\w+) = (?P<rhs>[^;]+);", re.M)
+_ISLAND_TYPE_REEXPORT = re.compile(r"^pub use self::(?P<target>\w+) as (?P<name>\w+);", re.M)
+_ISLAND_ALIAS_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
+
+
+def island_integer_aliases(islands: Sequence[Path]) -> frozenset[str]:
+    """Type names every per-arch bindgen island proves to be a plain integer alias.
+
+    A C ``typedef enum { ... } NAME;`` has no fixed underlying type, so its width is
+    an ABI fact rather than a source fact and reading the header cannot settle it.
+    bindgen renders each island against the real per-arch target, so the islands DO
+    settle it -- and a name is only accepted when EVERY arch resolves it to the SAME
+    primitive. Trusting one arch would bake that arch's width into the scaffold,
+    which is exactly how a cast inferred from i386 has shipped a wrong width before.
+
+    Names that survive are used as-is in the generated Rust: they resolve through the
+    prelude's ``pub use crate::island::*`` to the island's own alias, so the scaffold
+    never re-declares them and there is no second source of truth for the width.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_ALIAS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    resolved: list[dict[str, str]] = []
+    for path in islands:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return frozenset()
+        aliases = {
+            m.group("name"): " ".join(m.group("rhs").split())
+            for m in _ISLAND_TYPE_ALIAS.finditer(text)
+        }
+        names = {m.group("name"): m.group("target") for m in _ISLAND_TYPE_REEXPORT.finditer(text)}
+        # A re-export chains onto an alias (`pub use self::__WIDL_..._00000025 as
+        # FOLDERVIEWMODE;` over `pub type __WIDL_..._00000025 = c_int;`). Direct
+        # aliases count too, so seed with them and let re-exports resolve through.
+        arch: dict[str, str] = {
+            name: rhs for name, rhs in aliases.items() if rhs in _ISLAND_INTEGER_PRIMITIVES
+        }
+        for name, target in names.items():
+            rhs = aliases.get(target)
+            if rhs in _ISLAND_INTEGER_PRIMITIVES:
+                arch[name] = rhs
+        resolved.append(arch)
+    if not resolved:
+        return frozenset()
+    shared = set(resolved[0])
+    for arch in resolved[1:]:
+        shared &= {name for name in arch if arch[name] == resolved[0][name]}
+    _ISLAND_ALIAS_CACHE[key] = frozenset(shared)
+    return _ISLAND_ALIAS_CACHE[key]
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -495,6 +579,7 @@ def _parse_plain_state_field(
     *,
     allowed_pod_types: set[str] | frozenset[str] = frozenset(),
     array_constants: dict[str, int] | None = None,
+    island_scalar_types: set[str] | frozenset[str] = frozenset(),
 ) -> PlainStateField:
     """Parse the deliberately small C-layout state subset.
 
@@ -599,7 +684,12 @@ def _parse_plain_state_field(
         pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
             re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
         )
-        if base not in scalar_types and not pointer_typedef and base not in allowed_pod_types:
+        if (
+            base not in scalar_types
+            and not pointer_typedef
+            and base not in allowed_pod_types
+            and base not in island_scalar_types
+        ):
             raise CppComError(f"state field array element type is not proven scalar: {declaration}")
         count_text = fixed_array.group("count")
         if count_text.isdigit():
@@ -663,6 +753,7 @@ def _parse_plain_state_field(
         and base not in scalar_types
         and base not in allowed_pod_types
         and base not in _POD_LEAF_TYPES
+        and base not in island_scalar_types
         and not pointer_typedef
     ):
         raise CppComError(f"state field type is not proven C scalar/pointer state: {declaration}")
@@ -962,6 +1053,7 @@ def analyze_class(
     *,
     object_map_source: Path | None = None,
     method_names: list[str] | None = None,
+    island_files: Sequence[Path] = (),
 ) -> CppComClass:
     source = source.resolve()
     source_text = source.read_text(encoding="utf-8", errors="replace")
@@ -1181,6 +1273,7 @@ def analyze_class(
         unsupported=unsupported,
         layout_bases=layout_bases,
         local_base_classes=local_base_classes,
+        island_scalar_types=island_integer_aliases(island_files),
     )
 
 
