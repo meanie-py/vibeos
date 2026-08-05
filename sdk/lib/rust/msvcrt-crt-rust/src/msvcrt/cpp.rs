@@ -814,7 +814,10 @@ pub unsafe extern "C" fn _set_se_translator(func: _se_translator_function) -> _s
 pub unsafe extern "C" fn terminate() {
     let data = msvcrt_get_thread_data();
     if (*data).terminate_handler.is_some() {
-        (*data).terminate_handler.unwrap()();
+        // `unwrap_unchecked`, not `unwrap`: the C is a plain `if (p) p();` with no
+        // failure path, and `unwrap` would add a panic branch this function does not
+        // have. The `is_some` above is the null check, already done.
+        (*data).terminate_handler.unwrap_unchecked()();
     }
     abort();
 }
@@ -823,7 +826,10 @@ pub unsafe extern "C" fn terminate() {
 pub unsafe extern "C" fn unexpected() {
     let data = msvcrt_get_thread_data();
     if (*data).unexpected_handler.is_some() {
-        (*data).unexpected_handler.unwrap()();
+        // `unwrap_unchecked`, not `unwrap`: the C is a plain `if (p) p();` with no
+        // failure path, and `unwrap` would add a panic branch this function does not
+        // have. The `is_some` above is the null check, already done.
+        (*data).unexpected_handler.unwrap_unchecked()();
     }
     terminate();
 }

@@ -332,9 +332,65 @@ def strip_rust_attributes(text: str) -> str:
     return "".join(out)
 
 
+
+_ARCH_ARM = re.compile(
+    r'#\[cfg\((not\()?target_arch\s*=\s*"[^"]+"\)?\)\]\s*\n'
+    r'(?:\s*#\[[^\]]*\]\s*\n)*'
+    r'\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]*"\s+)?fn\s+(\w+)'
+)
+
+
+def _collapse_arch_duals(text: str) -> str:
+    """Blank the `not(target_arch)` twin of a per-arch DUAL, so its literals count once.
+
+    A dual is two definitions of the SAME function name, one under
+    `#[cfg(target_arch = "x86")]` and one under `#[cfg(not(target_arch = "x86"))]`, holding
+    the same body. The C has one body, so counting both makes every string in it look
+    duplicated: msvcrt's cpp.c reported `'bad cast' appears 2x here and 1x in cpp.c` for
+    thirty-two C++ methods, none of which is a defect.
+
+    Only a matched PAIR is collapsed. A lone `#[cfg(not(target_arch = ...))]` item is real
+    arch-conditional code with its own `#ifdef` in the C (cpp.c's RVA-only RTTI arm is one),
+    and blanking that would invent a MISSING finding for every string in it.
+    """
+    spans = {}
+    for m in _ARCH_ARM.finditer(text):
+        spans.setdefault(m.group(2), []).append((bool(m.group(1)), m.start()))
+    kill = []
+    for _name, arms in spans.items():
+        if len(arms) != 2:
+            continue
+        kinds = {is_not for is_not, _ in arms}
+        if kinds != {True, False}:
+            continue
+        start = next(pos for is_not, pos in arms if is_not)
+        brace = text.find("{", start)
+        if brace < 0:
+            continue
+        depth, k = 0, brace
+        while k < len(text):
+            if text[k] == "{":
+                depth += 1
+            elif text[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        kill.append((start, k + 1))
+    out, i = [], 0
+    for s, e in sorted(kill):
+        if s < i:
+            continue
+        out.append(text[i:s])
+        i = e
+    out.append(text[i:])
+    return "".join(out)
+
+
 def rust_literals(path: Path) -> Counter:
     text = strip_rust_comments(path.read_text(errors="replace"))
     text = _skip_cfg_any_items(text)
+    text = _collapse_arch_duals(text)
     # The no-op debug macros keep their format string as a token even though they expand to
     # nothing; the C side has the matching call stripped, so strip it here too.
     text = strip_calls(text, RUST_NOOP_CHANNELS + RUST_ASM_MACROS)
@@ -353,16 +409,29 @@ def rust_literals(path: Path) -> Counter:
     return Counter(lits)
 
 
-def check_pair(rs: Path, c: Path) -> list[str]:
+def check_pair(rs: Path, c: Path, companions: list[Path] | None = None) -> list[str]:
     cl, rl = c_literals(c), rust_literals(rs)
     findings = []
+    # A hand-written SUBSTRATE COMPANION (`<stem>_<suffix>.rs` with no `.c` of its own) is
+    # part of the same port and can legitimately carry a literal the C spells in <stem>.c:
+    # cpp.c's `DEFINE_RTTI_DATA1(bad_cast, …, ".?AVbad_cast@@")` lines are macro invocations,
+    # so their mangled names live in the hand-written cpp_rtti.rs beside the descriptors they
+    # initialise, not in the translated cpp.rs.
+    #
+    # It only ever CANCELS a MISSING -- a companion's own literals are never counted as EXTRA.
+    # That asymmetry is deliberate: the companion exists precisely because its content comes
+    # from MACROS IN HEADERS (cppexcept.h's "Unknown exception"), which `c_literals(<stem>.c)`
+    # cannot see, so its extras are unverifiable against this pair rather than wrong.
+    rl_seen = rl.copy()  # rl + companions: used ONLY to cancel MISSING, never to add EXTRA
+    for comp in companions or []:
+        rl_seen = rl_seen + rust_literals(comp)
     # Repo-relative when it can be (findings must match a baseline captured in any
     # worktree), raw otherwise -- a fixture pair under /tmp is how the controls exercise
     # this, and a checker that cannot be pointed at a fixture cannot be shown to work.
     rel = rs.relative_to(REPO) if rs.is_relative_to(REPO) else rs
-    for lit in sorted(cl - rl):
+    for lit in sorted(cl - rl_seen):
         findings.append(
-            f"MISSING: {rel}: {lit!r} appears {cl[lit]}x in {c.name} and {rl[lit]}x here"
+            f"MISSING: {rel}: {lit!r} appears {cl[lit]}x in {c.name} and {rl_seen[lit]}x here"
         )
     for lit in sorted(rl - cl):
         findings.append(f"EXTRA: {rel}: {lit!r} appears {rl[lit]}x here and {cl[lit]}x in {c.name}")
@@ -390,8 +459,15 @@ def main() -> int:
                 print(f"  skip {rs.relative_to(REPO)} — no {c_dir}/{rs.stem}.c", file=sys.stderr)
                 skipped += 1
                 continue
+            # `<stem>_*.rs` files with no `.c` of their own are this pair's substrate
+            # companions -- see check_pair.
+            companions = [
+                o
+                for o in sorted(rs.parent.glob(f"{rs.stem}_*.rs"))
+                if not (REPO / c_dir / f"{o.stem}.c").is_file()
+            ]
             checked += 1
-            findings += check_pair(rs, c)
+            findings += check_pair(rs, c, companions)
 
     for f in findings:
         print(f)
