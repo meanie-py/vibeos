@@ -632,6 +632,37 @@ def test_helper_closure_binds_overloads_and_excludes_unrelated_functions():
     assert "[WCHAR;" in statics
 
 
+def test_helper_closure_resolves_a_free_helper_against_a_method_of_the_same_name():
+    """CDefaultContextMenu has BOTH a static `MapVerbToCmdId/5` and a method
+    `MapVerbToCmdId/3`, and C++ tells them apart by scope: the method body calls the
+    member unqualified, and reaches the free one as `::MapVerbToCmdId`.
+
+    The reachability walk only knew the free helper, so the 3-argument member call read
+    as an unbindable arity and hard-failed the whole 2,024-line TU before payment — even
+    though the rewrite pass right below it already skipped these to let the method pass
+    take them. The asymmetry was the bug; both spellings must survive.
+    """
+    source = SHELL32 / "CDefaultContextMenu.cpp"
+    cls = analyze_class(source, "CDefaultContextMenu")
+    plan = prepare_helper_closure(
+        extract_call_graph(scan_file(source)),
+        "CDefaultContextMenu",
+        cls.plain_state_fields(),
+    )
+    by_name = {dep.name: dep for dep in plan}
+    assert "MapVerbToCmdId" in by_name, "the free static helper"
+    assert "CDefaultContextMenu_MapVerbToCmdId" in by_name, "the member of the same name"
+    assert len(by_name["MapVerbToCmdId"].params) == 5
+    assert len(by_name["CDefaultContextMenu_MapVerbToCmdId"].params) == 3
+    # The `::`-qualified call keeps the free helper; the unqualified one takes the member.
+    dynamic = by_name["CDefaultContextMenu_GetDynamicEntry"]
+    invoke = by_name["CDefaultContextMenu_InvokeCommand"]
+    assert "MapVerbToCmdId_body" in " ".join(
+        dep.body_text for dep in (dynamic, invoke)
+    ), "at least one call site is bound"
+    assert "CDefaultContextMenu_MapVerbToCmdId_body" in invoke.body_text
+
+
 def test_helper_closure_makes_ccomptr_assignment_and_access_explicit():
     source = SHELL32 / "CCopyAsPathMenu.cpp"
     cls = analyze_class(source, "CCopyAsPathMenu", object_map_source=SHELL32 / "shell32.cpp")

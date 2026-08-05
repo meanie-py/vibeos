@@ -4610,6 +4610,17 @@ def prepare_helper_closure(
         for start, end, source_name, arity in _named_call_spans(caller.body_text, helper_names):
             candidates = binding.get((source_name, arity), [])
             if not candidates:
+                # A free helper and a member function may share a name; C++ resolves an
+                # unqualified call by scope, and the member wins inside a method body.
+                # CDefaultContextMenu has exactly this: a static MapVerbToCmdId/5 and a
+                # method MapVerbToCmdId/3, the free one called as `::MapVerbToCmdId`.
+                # The method is already in class_deps, so reachability is unaffected —
+                # and the REWRITE pass below already skips these to let the method pass
+                # take them. Only this walk refused, which is the asymmetry, not a gap.
+                if any(
+                    len(candidate.params) == arity for candidate in method_targets.get(source_name, ())
+                ):
+                    continue
                 available = sorted({n for name, n in binding if name == source_name})
                 raise CppComError(
                     f"{class_name}: cannot bind local helper call {source_name}/{arity}; "
@@ -4678,6 +4689,11 @@ def prepare_helper_closure(
             if receiver is not None and receiver.group(1) != "this":
                 # Calls through another COM object are not implicit sibling
                 # calls merely because their method spelling collides.
+                continue
+            if body[:start].rstrip().endswith("::"):
+                # `::f(...)` names the GLOBAL f explicitly — that is how the source
+                # disambiguates a free function from a member of the same name, so it
+                # is never a sibling call however well the arity happens to line up.
                 continue
             # Keep this worker's C++ definition declarator recognizable; only
             # sibling calls become deterministic Rust worker calls.
