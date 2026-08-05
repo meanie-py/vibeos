@@ -32,3 +32,16 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 }
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
+
+// ================= constants bindgen cannot fold ==============================================
+// commctrl.h:137 `#define NM_CUSTOMDRAW (NM_FIRST-12)` where NM_FIRST is `(0U- 0U)`. bindgen
+// emits NM_FIRST but NOT this one — a macro whose body is an EXPRESSION does not always fold —
+// so the name was absent from the island and `NM_CUSTOMDRAW =>` in background.rs was a fresh
+// BINDING that matched every notification and made all seven arms below it dead code (§9.112,
+// the single largest and least visible translation bug class). `profile_derive` had already
+// flagged this exact risk as SWITCH_CONST_EXPRESSION: "bindgen may not fold it — verify it
+// lands in the island". That finding is a TODO, not a note.
+//
+// Built from the header's own macro rather than a pasted 0xFFFFFFF4, so it stays checkable:
+// the C arithmetic is UNSIGNED (`0U-0U`, then `-12`), which wraps.
+pub const NM_CUSTOMDRAW: UINT = NM_FIRST.wrapping_sub(12);

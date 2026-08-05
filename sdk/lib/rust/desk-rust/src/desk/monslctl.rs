@@ -303,7 +303,7 @@ unsafe extern "C" fn MonSelRepaintMonitor(
         } else {
             MonSelRectToScreen(
                 infoPtr,
-                &(*infoPtr).Monitors.offset(Index as isize).as_ref().unwrap().rc,
+                &(*(*infoPtr).Monitors.offset(Index as isize)).rc,
                 &mut rc,
             );
         }
@@ -705,7 +705,7 @@ unsafe extern "C" fn MonSelGetMonitorFont(
     let hPrevFont: HFONT;
     let mut hFont: HFONT;
 
-    hFont = (*infoPtr).Monitors.offset(Index as isize).as_mut().unwrap().hFont;
+    hFont = (*(*infoPtr).Monitors.offset(Index as isize)).hFont;
     if hFont.is_null()
         && GetObject(
             (*infoPtr).hFont,
