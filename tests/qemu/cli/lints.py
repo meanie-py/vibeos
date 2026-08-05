@@ -338,6 +338,34 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # msvcrt's two 257-entry ctype tables are GENERATED from dll/win32/msvcrt/ctype.c, not
+    # copied — 514 numbers with no compiler check is the one shape where a single wrong
+    # entry misclassifies exactly one character and nothing anywhere says so. This is the
+    # drift half: if ctype.c or the msvcrt-sys island moves, the committed Rust block is
+    # stale and that is a NEW finding here. The stronger half — every value proven equal to
+    # the bytes in ctype.c.obj's `.data` — needs an i386 build, so it runs whenever this
+    # worktree has one and announces on stderr when it cannot. Baseline EMPTY = strict.
+    # Every whole-file msvcrt translation, string literals compared with its C as a
+    # MULTISET. The only oracle that sees a literal which is real, correctly spelled and in
+    # the WRONG SLOT -- `undname.c`'s `case 'C': "pascal"` shipped as `"__stdcall"`, a
+    # genuine member of that same switch, and `time.c`'s `L"HH':'mm':'ss"` shipped with the
+    # quotes transposed. Neither fails to compile, fails a sealed-constant check, or fails a
+    # boot. Baselined because a few differences are representation, not content (asm text
+    # spelled `global_asm!`, a `static char[64]` built rather than written): those are
+    # recorded and visible, and anything NEW is a finding.
+    vtl = repo / "tools" / "verify_translation_literals.py"
+    specs.append(
+        ("verify_translation_literals", [py, str(vtl)] if vtl.is_file() else ["MISSING"], "stdout")
+    )
+    gct = repo / "tools" / "gen_ctype_tables.py"
+    ctype_rs = "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/ctype.rs"
+    specs.append(
+        (
+            "gen_ctype_tables",
+            [py, str(gct), "--check", str(repo / ctype_rs)] if gct.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A cohab flip that DROPS a function removes the DLL's export silently: rustc is happy
     # (nothing calls it), the link is happy (a .spec export with no impl is not an error —
     # the DLL just ships a smaller export table), and the boot is happy unless the boot path

@@ -825,6 +825,49 @@ and `msvcrt_wstrdupa` itself.
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
+**Wave 25 (2026-08-04) — undname.c FLIPPED (1,788 lines, $0.55), and ctype.c CLOSED.**
+
+`undname.c` is the Visual C++ symbol demangler behind `__unDName`/`__unDNameEx`, and the
+ratio is the story: 1,788 lines, 27 functions, and exactly **two** exports. Everything else
+is `static`, so defining those two means the C object is never pulled from the archive and
+all 27 helpers go dead in one step — no partial-flip subtlety of any kind. It is also the
+most self-contained file in msvcrt: no locale, no fd table, no global state, no Win32 beyond
+the caller-supplied malloc/free in `parsed_symbol`. A recursive-descent parser with its own
+bump arena.
+
+Three rejected workers (`str_array_push`, `get_args`, `symbol_demangle` all damaged their
+fact envelope) passed on `--retry-rejects 2` for $0.17, with the other 24 replayed from the
+resume cache for $0. `str_printf` is HAND-WRITTEN and is the only one: it is a `static
+WINAPIV` variadic, so the C-shim trampoline answer that file.c and process.c use for their
+twenty cannot reach it — a shim cannot name a `static`, and it calls the equally-static
+`und_alloc`. The variadic list becomes an explicit `&[PArg]` slice behind a `str_printf!`
+macro, so the 52 call sites still read as they do in the C.
+
+**Two literal permutations, one of them in already-landed code.** `case 'C'/'D'` shipped as
+`"__stdcall"` where the C says `"pascal"`; and time.c's `GetTimeFormatW` picture string
+`L"HH':'mm':'ss"` had shipped as `HH:'mm:'ss` — `'` quotes the character it surrounds, so
+that asks for the locale's separator instead of a forced colon. Neither is invented, neither
+fails to build, and neither is reachable by the constant-vs-header diff, because both are
+STRING literals. `tools/verify_translation_literals.py` compares them as a multiset per file
+and is now in `vibeos-cli check` with a baseline; field manual, the sealing/RECALL entry.
+Also made inert: undname.c's two `#ifdef _UCRT` match arms, which this DLL does not compile.
+
+`ctype.c` is now fully Rust. Its 44 functions were already hand-written in waves 9/10 — a
+rustconv pass over the file re-derived 23 of them independently and agreed with every mask,
+which is a free confirmation rather than a replacement, so it is archived and not assembled.
+What was left was `_ispunct_l` (an object export that a comment here claimed did not exist —
+the DLL export list is not the object's symbol table, and it is the object that decides
+whether the C body stays live) and the three DATA symbols. Those two 257-entry tables are
+**generated, not copied**, by `tools/gen_ctype_tables.py`: it parses ctype.c's initializers,
+resolves the `_MSVCR_VER`-gated arms, evaluates every entry against the msvcrt-sys island's
+masks, and refuses to emit unless all 514 match the bytes in `ctype.c.obj`'s `.data`. Two
+independent derivations agreeing is a stronger check than a differential test, which is why
+the `ctype-tables` feature costs no gradeable coverage when the harness drops it.
+
+`UNDNAME_*` is now derived in the island (imagehlp.h added to the bindgen wrapper) — 17
+constants that are pure bit positions, where an invented value demangles with the wrong
+options rather than failing.
+
 ### Driver fleet detail
 Essentially the entire boot/smoke driver fleet is Rust. **`netstack.sys` is the only
 from-scratch Rust rewrite (100%, zero C, replacing the legacy NDIS/tcpip stack).**

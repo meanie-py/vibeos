@@ -293,6 +293,8 @@ extern "C" {
     fn __iscsymf(c: i32) -> i32;
     fn ref__isblank_l(c: i32, l: *mut core::ffi::c_void) -> i32;
     fn _isblank_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn ref__ispunct_l(c: i32, l: *mut core::ffi::c_void) -> i32;
+    fn _ispunct_l(c: i32, l: *mut core::ffi::c_void) -> i32;
     // the thread_data_t tokenizers (wave 10)
     fn ref_strtok(s: *mut u8, delim: *const u8) -> *mut u8;
     fn strtok(s: *mut u8, delim: *const u8) -> *mut u8;
@@ -1994,6 +1996,11 @@ unsafe fn run() {
     // normalises to 0/1. Same file, three lines apart, different contracts.
     nctype_row!("_isblank_l", |c| _isblank_l(c, core::ptr::null_mut()),
                               |c| ref__isblank_l(c, core::ptr::null_mut()));
+    // `_ispunct_l` is (MSVCR80.@) — compiled and exported by the object, absent from
+    // msvcrt.spec. It was C until wave 25 and the reference TU owned its plain name, so
+    // this row could not exist; renaming it in build.rs is what made it gradeable.
+    nctype_row!("_ispunct_l", |c| _ispunct_l(c, core::ptr::null_mut()),
+                              |c| ref__ispunct_l(c, core::ptr::null_mut()));
     nctype_row!("isleadbyte", isleadbyte, ref_isleadbyte);
     nctype_row!("__isascii",  __isascii,  ref___isascii);
     nctype_row!("__toascii",  __toascii,  ref___toascii);

@@ -2003,6 +2003,44 @@ of them were **ours**, not the model's:
   `#define`s it to `SystemFunction036`, so the prototype bindgen sees is already renamed and
   allowlisting the documented name matched nothing.)
 
+  **STRING LITERALS are the same class and were the blind spot: compare them as a MULTISET
+  against the C, per file.** The constant diff above only reaches things spelled as
+  constants. A demangler, a formatter or a path builder carries its behaviour in string
+  literals instead, and there a permutation is invisible to every other check — the SET of
+  strings in the file is unchanged, so nothing is missing, invented, or out of range.
+  `tools/verify_translation_literals.py` is that comparison, and it found two the first time
+  it ran:
+
+  * `undname.c`'s calling-convention switch shipped `case 'C'/'D'` as `"__stdcall"` where the
+    C says `"pascal"` — and `"__stdcall"` is a genuine member of that very switch, eight
+    lines down in its `else` twin. Every `?f@@YCXXZ` would demangle wrong, forever, silently.
+  * `time.c`'s `GetTimeFormatW(..., L"HH':'mm':'ss", ...)` shipped as `HH:'mm:'ss` — in a
+    picture string `'` QUOTES the character it surrounds, so the C forces a literal colon and
+    the translation asked for the locale's separator, with an unbalanced quote left over.
+    This one had already LANDED and was green on every gate it ever ran.
+
+  For a LOOKUP TABLE the multiset is not enough, and undname.c is the worked example: 155
+  `case 'X': ... "name"` pairs, and a translation that swapped two of them leaves the
+  literal multiset *and* the case-label set both perfectly intact. The sharper check is to
+  extract the ordered `(case label, first string literal in the arm)` sequence from both
+  files and `difflib` them — 155 pairs, and the only diffs were an extractor artifact
+  (grouped `case 'A': case 'B':` reports its LAST label while a Rust `b'A' | b'B' =>` arm
+  reports its first). Same idea for a pure `code -> string` function like `get_simple_type`:
+  build the map on both sides and compare it, not its values. Worth ten minutes on any file
+  whose job IS a table.
+
+  Multiset, not set, is the whole point for the file-wide check: a literal moved from one arm
+  to another leaves the set identical and changes exactly two counts. Make it usable rather than noisy by teaching
+  it what is representation instead of content — assembly text (`__ASM_GLOBAL_FUNC` vs
+  `global_asm!`), no-op debug channels, `L"..."` spelled as interleaved bytes, `\0` vs
+  `\x00`, a `static char[64]` built rather than written — and above all the C arms this build
+  does NOT compile. That last one is not optional: `asctime`'s `"%s %s %2d ..."` is the
+  `_MSVCR_VER>=140` arm and the shipping one is `%02d`, so a checker blind to `#if` sends you
+  hunting a bug that is not there. Two smaller traps in writing the checker itself, both of
+  which silently UN-skip content: Rust loop labels (`'fail:`) look like the start of a char
+  literal and desynchronise a naive comment scanner for the rest of the file, and a `;` in a
+  `#[cfg(any())]` attribute's own trailing comment ends the "find this item" scan early.
+
 **Retry, because the blast radius is the whole file.** What survives the deterministic fixes is
 sampling noise on the biggest bodies, and one rejected worker still assembles *nothing*.
 `--retry-rejects N` re-rolls a rejected worker under identical acceptance checks (each retry is
