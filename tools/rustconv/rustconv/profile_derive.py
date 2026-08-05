@@ -1519,7 +1519,29 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
     return out
 
 
-def sys_crate_consts(repo_root: Path, usermode: bool, arch: str = "i386") -> dict[str, str]:
+def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
+    """The -sys crate the TRANSLATED CODE will actually glob-import.
+
+    `ntdll-sys`/`ntkrnl-sys` is only the default. A module with its own bindgen island —
+    msvcrt, win32k, shell32 — imports THAT, and checking its constants against ntdll-sys
+    says "not in the -sys crate" about every single one. Those findings are marked
+    BLOCKING (§9.112), so getting the crate wrong does not merely add noise: it makes the
+    gate that exists to catch silent catch-all `match` arms unable to be satisfied. msvcrt
+    reported six of them with all six constants already sitting in `msvcrt-sys`.
+
+    Resolution is by EXISTENCE on disk, in the same order rustconv's own `--target` proves
+    an output crate: `<module>-sys` if there is one, else the mode default.
+    """
+    stem = Path(module_name).name
+    for cand in (f"{stem}-sys", f"{stem.replace('_static', '')}-sys"):
+        if (repo_root / "sdk/lib/rust" / cand / "src").is_dir():
+            return cand
+    return "ntdll-sys" if usermode else "ntkrnl-sys"
+
+
+def sys_crate_consts(
+    repo_root: Path, usermode: bool, arch: str = "i386", crate: str | None = None
+) -> dict[str, str]:
     """``{const name: providing file stem}`` for the sibling -sys crate's exports.
 
     ``ntdll-sys`` for usermode, ``ntkrnl-sys`` for kernel — the same choice
@@ -1530,7 +1552,7 @@ def sys_crate_consts(repo_root: Path, usermode: bool, arch: str = "i386") -> dic
     generated island re-exports. Reporting the difference is what separates "already
     covered" from "covered only if you add the right import".
     """
-    crate = "ntdll-sys" if usermode else "ntkrnl-sys"
+    crate = crate or ("ntdll-sys" if usermode else "ntkrnl-sys")
     base = repo_root / "sdk/lib/rust" / crate / "src"
     primary = {f"bindgen_{arch}", "bindgen_common"}
     out: dict[str, str] = {}
@@ -1935,7 +1957,10 @@ def derive(
 
     # ---- switch-constant audit (§9.112) ----
     switch_consts = find_switch_constants(tus, repo_root)
-    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch)
+    sys_crate = getattr(module, "sys_crate", None) or resolve_sys_crate(
+        repo_root, module.name, module.is_usermode
+    )
+    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
     owners = own_constants(switch_consts, closure, tus, sys_consts)
 
     # ---- allowlist decisions ----
@@ -2023,7 +2048,7 @@ def derive(
                     "error",
                     "SWITCH_CONST_IN_BASE_HEADER",
                     f"`{o.ident}` is owned by the BASE header {ref.name} and is NOT in the -sys "
-                    f"crate ({'ntdll-sys' if module.is_usermode else 'ntkrnl-sys'}), so the "
+                    f"crate ({sys_crate}), so the "
                     "island will not carry it and the match arm becomes a silent catch-all "
                     "(§9.112). Fix by transcribing it into the crate prelude, or by adding its "
                     f"owning enum/#define to the -sys bindgen — NOT by allowlisting {ref.name}, "

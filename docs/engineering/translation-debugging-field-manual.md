@@ -2345,6 +2345,27 @@ instruction, same as the C, and it keeps the handler compiling so it cannot rot.
 handler as "unreachable" is the other wrong answer — it throws away the only record of what
 the C intends to do when the walk faults.
 
+### `profile_derive`'s BLOCKING constant findings were checked against the wrong `-sys` crate
+**Symptom.** `profile_derive <module> --emit report` reports `✗ ERROR SWITCH_CONST_IN_BASE_HEADER`
+for constants you can see with your own eyes in the module's island, and the finding cannot be
+satisfied by adding them — because they are already there. Read the crate name in the message:
+*"is NOT in the -sys crate (**ntdll-sys**)"*.
+
+**Cause.** `sys_crate_consts` hard-coded `ntdll-sys` for usermode and `ntkrnl-sys` for kernel.
+That is only the DEFAULT. A module with its own bindgen island — msvcrt, win32k, shell32-com —
+glob-imports THAT crate, so every constant in it reads as absent. msvcrt reported six, all six
+already in `msvcrt-sys`.
+
+This is worse than noise because these findings are **BLOCKING** and are step 1 of the plain-C
+protocol: a gate that cannot be satisfied is a gate that gets ignored, and the next real
+`SWITCH_CONST_IN_BASE_HEADER` — the class that shipped a BUGCHECK 0x1E — scrolls past with it.
+
+**Fix.** `resolve_sys_crate()` picks `<module>-sys` when one exists on disk and falls back to the
+mode default, the same existence-proof `rustconv translate --target` uses for the output crate.
+After it, msvcrt goes 6 blocking errors → 0, and `shell32`/`afd` still resolve to the defaults.
+**Whenever a deterministic gate reports something you are confident is false, check what it is
+comparing against before you argue with the finding.**
+
 ### A bindgen enum member's BARE name is missing even when its header IS allowlisted
 
 **Symptom.** `verify_match_consts` reports `[HIGH] <Name> -- not defined in-file and not defined
