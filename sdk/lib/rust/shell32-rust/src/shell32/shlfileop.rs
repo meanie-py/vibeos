@@ -2137,7 +2137,7 @@ unsafe extern "C" fn move_files(
         return ERROR_CANCELLED;
     }
 
-    if PathFileExistsW((*flTo).feFiles.offset(0 as isize).as_ref().unwrap().szDirectory)
+    if PathFileExistsW((*(*flTo).feFiles.offset(0 as isize)).szDirectory)
         == 0
     {
         return ERROR_CANCELLED;
@@ -2162,7 +2162,7 @@ unsafe extern "C" fn move_files(
             }
             fileDest = (*flTo).feFiles.offset(i as isize);
             if mismatched != 0 && (*fileDest).bExists == 0 {
-                create_dest_dirs((*flTo).feFiles.offset(i as isize).as_ref().unwrap().szFullPath);
+                create_dest_dirs((*(*flTo).feFiles.offset(i as isize)).szFullPath);
                 (*fileDest).bExists = TRUE;
                 (*fileDest).attributes = FILE_ATTRIBUTE_DIRECTORY;
             }
