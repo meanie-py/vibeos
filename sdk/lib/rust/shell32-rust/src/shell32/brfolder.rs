@@ -1,9 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_731D7EC48EEF: [WCHAR; 3] = [0x0020, 0x0009, 0x0000];
 
