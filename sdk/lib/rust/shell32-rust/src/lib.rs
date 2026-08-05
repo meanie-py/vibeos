@@ -203,6 +203,16 @@ pub mod file_def_ext_tu;
 pub mod drives_folder_tu;
 #[path = "folders/CDrivesFolderEnum.rs"]
 pub mod drives_folder_enum;
+// folders/CRecycleBin.cpp: CRecycleBin itself was already `recycle_bin.rs`. These are its free
+// helpers plus BOTH of its file-local COM classes. The two companions that this TU only *calls*
+// — CRecyclerDropTarget and CRecycleBinFolderViewCB — stay C++; see
+// dll/win32/shell32/rust_recyclebin_bridges_stub.cpp for why neither could come across.
+#[path = "folders/CRecycleBin.rs"]
+pub mod recycle_bin_tu;
+#[path = "folders/CRecycleBinEnum.rs"]
+pub mod recycle_bin_enum;
+#[path = "folders/CRecycleBinItemContextMenu.rs"]
+pub mod recycle_bin_item_context_menu;
 #[path = "folders/CDesktopFolder.rs"]
 pub mod desktop_folder_tu;
 #[path = "folders/CDesktopFolderEnum.rs"]

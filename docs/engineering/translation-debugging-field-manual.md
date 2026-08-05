@@ -247,6 +247,22 @@ replace them stay `extern "system"`), while the helpers they forward to —
 `PathIsDotOrDotDotW`, `SHELL_DisplayNameOf`, `SHELL32_GetDllFromRundll32CommandLine` — are
 plain `EXTERN_C` and so need `extern "C"`. Same file, both answers.
 
+It cuts **both** ways, so "assume cdecl" is not the fix either. `CRecycleBin.cpp`'s flip
+declared `DeleteFileToRecycleBinW` as `extern "C"` on the strength of the header's
+`extern "C" {` block — but `recyclebin.h:94` spells it `BOOL WINAPI DeleteFileToRecycleBinW(…)`,
+so the symbol is `_DeleteFileToRecycleBinW@4` and i386 reported the mirror-image failure. The
+`extern "C" {` block controls MANGLING; `WINAPI` controls the CONVENTION; they are independent
+and you have to read both.
+
+### A `#define` in precomp.h means the C never called the function it names
+`precomp.h:63` is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so every `ShellMessageBoxW(…)`
+in shell32's C++ is really a call to the Wrap twin — shell32 does not import the exported name at
+all. A translation takes the source spelling literally, the island happily declares
+`ShellMessageBoxW`, and i386 reports `undefined symbol: _ShellMessageBoxW`. Three TUs have now
+hit this one (shlfileop.cpp, drive.cpp, CRecycleBin.cpp). Before believing a "missing export,"
+grep `precomp.h` for the name: a `#define` there beats every other explanation, and the fix is
+to call the macro's *expansion*.
+
 ### A typedef that is ALREADY a pointer, given a second star
 The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
 the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
@@ -4428,6 +4444,25 @@ per-arch bugcheck.
 ### Cohab link-clean ≠ runtime-correct
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
+
+### A C++ `static_cast` back to a Rust-owned class is already wrong, and it links
+**Symptom.** None. It compiles, links, and runs — until the class's C++ half leaves CMake, at
+which point you get an undefined symbol and discover the bug on the way past.
+
+**Cause.** Once a class is Rust-owned, the object's layout is Rust's. A C++ TU that still holds
+a `CFoo *` and calls a **non-virtual** method on it is doing two wrong things at once: the
+`static_cast<CFoo *>(pInterface)` applies the *C++* class's base-subobject offset to a
+Rust-laid-out object, and the method it reaches is the DEAD C++ copy that the cohab left
+compiled but unactivated. Virtual calls are fine — those go through the vtable the Rust object
+actually carries — so the bug hides in exactly the methods that don't. `CRecycleBinFolderViewCB`
+held a `CRecycleBin *` this way and called `ParseRecycleBinPath` on it for as long as the cohab
+existed.
+
+**Fix.** Keep the interface pointer you were *given* (`IShellFolder2 *`, not `CFoo *`) and reach
+the method through a `_RustBridge` that does its own `offset_of!` against the Rust struct. Grep
+a flip's remaining C++ for `static_cast<`/`reinterpret_cast<` naming a Rust-owned class before
+you believe the flip is closure-complete — the retained closure will not show it, because a
+`static_cast` demands no symbol.
 
 ### A cohab shim declared VOID SWALLOWS the real function's return value
 
