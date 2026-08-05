@@ -1173,6 +1173,22 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   measured surface: GetHeadPosition/GetNext ×7, IsEmpty ×5, RemoveAll/GetAt/FindIndex/AddTail
   ×2, AddHead ×1) and returns a null POSITION on OOM where ATL throws, which is stated at the
   type because it silently drops an entry rather than abandoning the operation.
+  **`CIDLDataObj.cpp` is flipped on the back of it** (2026-08-05, $0.16) — the shell's
+  `IDataObject`/`IAsyncOperation` for a PIDL selection, its `IEnumFORMATETC`, and the TU's four
+  constructors, as three modules: the assembler writes one file per class slice, and a TU only
+  leaves CMake when every slice has an owner. No bridge was needed (both constructors sit inside
+  `wine/shell32_main.h`'s own `extern "C"`; both `SHCreate*DataObject` are WINAPI in shlobj.h).
+  The container contract held — the model wrote `m_Formats.GetAt(n)` from the sealed usage
+  mapping instead of inventing a wrapper. Three tool fixes fell out of the grind, each of which
+  had been paid by hand before: `--seal-facts` was sealing the function's OWN parameter TYPES
+  (unsatisfiable for a COM method, whose signature comes from the vtable authority — the whole
+  parameter list is excluded now); the SDK-record renderer emitted a template-erased SHADOW of
+  `CSimpleArray` that beat the real one by scope; and the stitcher's substrate globs collide
+  with the scaffold's prelude glob on every shared name, which is what those 339/339/399 opening
+  error counts were. Defects worth naming in the paid bodies: the free-function slice INVENTED a
+  `CIDLDataObj` struct (it cannot see the slice that owns the real one), `Clone` used the
+  generated worker name as a VTABLE SLOT, and `SHAlloc(size)` passed a DWORD to a SIZE_T
+  parameter — invisible on i386, caught by both 64-bit targets.
   Gap (2), inherited layout, blocks
   `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
   and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes

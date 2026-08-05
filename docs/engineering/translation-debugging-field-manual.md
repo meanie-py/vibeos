@@ -1217,6 +1217,21 @@ Two traps specific to this move:
   reduce the error count, it MOVES the mismatch from the vtable slots to the statics — measured
   on CFSDropTarget, where importing `GUID`/`IID` without `REFIID` sat at exactly the same 89
   errors as importing none of them.
+- **A local DEFINITION shadows a glob import; a second GLOB collides with it.** The distinction
+  is worth stating because the assembler's comment got it wrong and three TUs paid for it. A
+  crate that has adopted an island opens its modules with `use crate::prelude::*;` (which globs
+  the island), while the stitcher adds `use crate::{shellcom,types,win32}::*;` — and every name
+  the two share (`REFIID`, `HRESULT`, `ULONG`, ...) is then `E0659: ambiguous`. It presents as a
+  catastrophic count that is pure import noise: CRecyclerDropTarget, CDefViewBckgrndMenu and
+  CIDLDataObj opened with 339, 339 and 399 errors, of which collapsing to the prelude alone
+  removed 339, 339 and 351. **A three-digit error count on a freshly assembled module is an
+  import question until proven otherwise** — read the `use` block before reading a single
+  finding. Fixed in `__main__.py` now, on the composed text rather than in the stitcher, because
+  the prelude line comes from the scaffold, which the stitcher never sees.
+  A related asymmetry to know about when a TU holds more than one class: the prelude line is
+  added by `crate_integrate`, which only runs on the crate-assembly path, so every slice written
+  with `-o` (mandatory for the second and later classes of a TU — the assembler refuses to let
+  two classes overwrite one file) used to land on a *different* substrate from its siblings.
 - **A duplicate layout in your vtable module is a real cost, but check WHO ELSE COMPILES THAT
   FILE before collapsing it.** shell32's `shellcom.rs` hand-writes `SHITEMID`/`ITEMIDLIST`
   beside the island's `_ITEMIDLIST`; two structurally identical `#[repr(C, packed)]`
@@ -1991,7 +2006,20 @@ of them were **ours**, not the model's:
   rejected the worker for `const`-defining it "instead of using substrate" — but no island can
   carry a function-local macro, so defining it *is* the translation. Exempt what the body
   `#define`s; the operands stay sealed and the dropped-constant check still demands the name.
-  Generalisation worth carrying: **every one of these four is the audit demanding something that
+  **A third member, and the one that generalised the helper: a PARAMETER TYPE.**
+  `IEnumFORMATETCImpl::Clone(LPENUMFORMATETC* ppenum)` sealed `LPENUMFORMATETC`, and a COM
+  method's Rust signature comes from the flattened vtable authority rather than from the C
+  declaration — the model never writes that line at all, so the token had nowhere to land on any
+  sample, including the sanctioned retry. Once you have seen three of these the rule is obvious
+  and the special cases are the wrong shape: a parameter list holds types, parameter names, array
+  bounds and default arguments, and **none of those is a value**, so `fact_seal` now excludes the
+  whole list rather than two constructs inside it. Two things make that safe to widen. Prove it
+  is a definition header first — the balanced `(...)` must be followed by `{` or a ctor `:`, or
+  else `Call(TRUE); Call(FALSE);` unseals `TRUE` and `sizeof(UNICODE_NULL)` unseals a real value.
+  And it costs nothing already paid for: the resume cache compares seals **directionally**, so a
+  banked entry sealed more tightly than the run wants is still a hit — the five bodies banked
+  under the old rule replayed at $0 on the very next run.
+  Generalisation worth carrying: **every one of these five is the audit demanding something that
   cannot exist.** If a rejection names a token whose only home is C declarator syntax or a
   TU-local directive, suspect the envelope before the model.
 - **Compiled is not executed** (found on plain C, Tier 3 — `rustconv/dead_regions.py`). The seal
