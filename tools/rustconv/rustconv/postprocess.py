@@ -864,33 +864,72 @@ def fix_global_exports(code: str, globals: list[CGlobal]) -> str:
     return code
 
 
+# The conventions that exist ONLY on i386 and are plain cdecl everywhere else, mapped to
+# the Rust `extern` string each needs on x86. Both are spelled per-arch in the .spec
+# itself -- msvcrt.spec carries `thiscall -arch=i386` beside `cdecl -arch=win64` and
+# `cdecl -arch=arm` for the very same export -- so this dual is transcribing the spec, not
+# inventing a rule.
+_X86_ONLY_CONVENTIONS = {"fastcall": "fastcall", "thiscall": "thiscall"}
+
+# Poison value for `_import_abi_map`: deliberately not a Rust extern string. See the note
+# at its `conv` table for why a thiscall name is dropped rather than mapped.
+_THISCALL_X86_ONLY = "<thiscall: x86-only, no single ABI string>"
+
+
 def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
-    """Duplicate fastcall exports into dual cfg blocks for i386 vs others.
+    """Duplicate fastcall/thiscall exports into dual cfg blocks for i386 vs others.
 
     Functions with `@ fastcall` in ntoskrnl.spec need different calling
     conventions on i386 (extern "fastcall") vs amd64/arm64 (extern "C").
     The LLM generates a single extern "system" version.
+
+    `thiscall` rides the same path, and NOT the `_SPEC_EXPORT_ABI` collapse below, because
+    the two are not the same ABI: stdcall passes `this` on the stack, thiscall passes it in
+    ECX. Mapping msvcrt's 40-odd C++ methods to `extern "system"` would compile, link and
+    export correctly, and every one of them would read `this` from the wrong place on i386
+    only. `extern "thiscall"` is stable (rustc 1.92) but x86-ONLY -- naming it on amd64 is
+    a hard E0570 -- which is the other half of why this dual is required rather than nice.
+
+    Keyed on `impl_symbol`, not on the export name, and that is not a detail: msvcrt's C++
+    methods are exported under their MANGLED names (`??0bad_cast@@QAE@ABQBD@Z`) while the
+    Rust fn is called `bad_cast_ctor`, so a dict-key match finds nothing and this whole pass
+    silently does not run. It is also why the convention cannot be read off "the" entry --
+    one impl has THREE spec lines, `thiscall -arch=i386` beside two `cdecl` ones, and only
+    the i386 line carries the convention that needs a dual. Take the x86 line where one
+    exists; a name whose only lines are cdecl is left alone.
     """
-    fastcall_names = [name for name, entry in exports.items() if entry.convention == "fastcall"]
-    if not fastcall_names:
+    x86_abi_of: dict[str, str] = {}
+    for entry in exports.values():
+        abi = _X86_ONLY_CONVENTIONS.get(entry.convention)
+        if abi is None:
+            continue
+        arches = getattr(entry, "arch_filter", None) or []
+        if arches and "i386" not in arches:
+            continue
+        x86_abi_of[getattr(entry, "impl_symbol", None) or entry.name] = abi
+    if not x86_abi_of:
         return code
 
-    for name in fastcall_names:
-        # Find the function definition — may have #[no_mangle] above it
-        # Match pattern: optional #[no_mangle]\n pub unsafe extern "..." fn Name(...) { body }
+    for name, x86_abi in x86_abi_of.items():
+        # Find the function definition — may have #[no_mangle] above it.
+        # Match only as far as the NAME: the parameter list is then walked with a paren
+        # counter rather than matched. `\([^)]*\)` cannot see a parameter that itself
+        # contains parens, and every nullable C callback translates to exactly that
+        # (`Option<unsafe extern "C" fn()>`), so the regex form silently skipped them.
         pattern = re.compile(
             rf"^([ \t]*#\[no_mangle\]\n)?"
-            rf'([ \t]*)(pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*\([^)]*\))',
+            rf'([ \t]*)pub\s+unsafe\s+extern\s+"[^"]+"\s+fn\s+{re.escape(name)}\s*(?=\()',
             re.MULTILINE,
         )
         m = pattern.search(code)
         if not m:
             continue
 
-        # Find the complete function body by matching braces
         fn_start = m.start()
-        # Find the opening brace
-        brace_pos = code.index("{", m.end())
+        params_start = code.index("(", m.end() - 1)
+
+        # Find the complete function body by matching braces.
+        brace_pos = code.index("{", params_start)
         depth = 1
         pos = brace_pos + 1
         while depth > 0 and pos < len(code):
@@ -902,22 +941,20 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
         fn_end = pos
 
         indent = m.group(2)
-        # Extract just the params and return type
-        # Re-parse the signature to get params
-        sig_match = re.search(
-            rf"fn\s+{re.escape(name)}\s*(\([^)]*\)(?:\s*->\s*\S+)?)",
-            code[m.start() : brace_pos],
-        )
-        if not sig_match:
-            continue
-        params_and_ret = sig_match.group(1)
+        # Everything between the '(' and the body IS the params-and-return-type, taken as
+        # a SLICE rather than re-matched. The old `->\s*\S+` stopped at the first space, so
+        # `-> *mut exception` was rewritten as `-> *mut` and the file no longer parsed.
+        # It never fired before because ntoskrnl's fastcall exports return single tokens
+        # (VOID/BOOLEAN/PVOID); msvcrt's C++ ctors are the first pointer returns to reach
+        # this pass.
+        params_and_ret = code[params_start:brace_pos].rstrip()
         body = code[brace_pos:fn_end]
 
         # Build the dual-cfg version
         x86_block = (
             f'{indent}#[cfg(target_arch = "x86")]\n'
             f"{indent}#[no_mangle]\n"
-            f'{indent}pub unsafe extern "fastcall" fn {name}{params_and_ret} {body}'
+            f'{indent}pub unsafe extern "{x86_abi}" fn {name}{params_and_ret} {body}'
         )
         other_block = (
             f'\n\n{indent}#[cfg(not(target_arch = "x86"))]\n'
@@ -931,12 +968,15 @@ def fix_fastcall_exports(code: str, exports: dict[str, SpecEntry]) -> str:
 
 
 # spec convention -> the single Rust `extern` spelling for a uniform-per-arch export.
-# fastcall is intentionally ABSENT: it needs the per-arch dual cfg that
-# `fix_fastcall_exports` emits, so this pass must not collapse it to one ABI. `extern`
+# fastcall AND thiscall are intentionally ABSENT: both need the per-arch dual cfg that
+# `fix_fastcall_exports` emits, so this pass must not collapse either to one ABI. `extern`
 # (a pure .spec forwarder) and `stub` have no Rust body to touch.
+# `thiscall` used to sit here mapped to "system", which is stdcall — a DIFFERENT ABI, not a
+# spelling of the same one: stdcall takes `this` as the first stack argument, thiscall takes
+# it in ECX. Nothing downstream could catch it, because the export name, the arity and the
+# stack cleanup all still agree; only the register does not, and only on i386.
 _SPEC_EXPORT_ABI = {
     "stdcall": "system",
-    "thiscall": "system",
     "cdecl": "C",
     "varargs": "C",
 }
@@ -1694,17 +1734,36 @@ def _import_abi_map() -> dict[str, str]:
     all kernel Ke*/Rtl* arch-variants) are DROPPED from the map rather than guessed. Fail
     safe: an unknown name is left exactly as the model wrote it.
 
-    `varargs` is cdecl (that is how a variadic C fn is called); `thiscall`/`fastcall` are
-    grouped with stdcall under Rust's "system" for our targets.
+    `varargs` is cdecl (that is how a variadic C fn is called).
+
+    `thiscall` is DROPPED rather than mapped, and the reason is the same one that took it
+    out of `_SPEC_EXPORT_ABI`: it is not a spelling of stdcall, it is a different ABI
+    (`this` in ECX, not on the stack) that exists only on i386, so no single `extern`
+    string is right on all three arches. This pass emits one string, so for these names it
+    must emit none and leave the model's text alone -- the documented fail-safe above.
+    An imported thiscall method needs the per-arch dual `fix_fastcall_exports` writes for
+    definitions; nothing emits that for imports yet (task #47).
+
+    `fastcall` is left mapped to "system" DELIBERATELY and is the same hazard: it is
+    correct on amd64/arm64 (where the spec says cdecl and the two coincide for the
+    kernel's Ke*/Rtl* fastcall pairs) and wrong on i386. It stays until someone has an
+    ntoskrnl case in hand to test the change against -- changing it blind would move a
+    known-shaped bug into a lane that cannot see it.
     """
     from .config import REACTOS_ROOT
 
     conv = {
         "stdcall": "system",
         "fastcall": "system",
-        "thiscall": "system",
         "cdecl": "C",
         "varargs": "C",
+        # Not a Rust extern string and not meant to be one: it is a poison value. Any name
+        # a .spec exports as thiscall ANYWHERE picks it up, and the filter below then drops
+        # that name from the map entirely -- the same treatment a genuine cross-DLL conflict
+        # gets. Dropping the name from the regex instead would be subtly worse: msvcrt
+        # exports these under three per-arch spec lines, so the cdecl-arch=win64 line would
+        # survive alone and force `extern "C"` onto an i386 import that must be thiscall.
+        "thiscall": _THISCALL_X86_ONLY,
     }
     pat = re.compile(
         r"^@\s+(stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+\s+)*([A-Za-z_]\w*)\s*\("
@@ -1722,8 +1781,12 @@ def _import_abi_map() -> dict[str, str]:
             m = pat.match(line.strip())
             if m:
                 seen.setdefault(m.group(2), set()).add(conv[m.group(1)])
-    # Unambiguous names only.
-    return {name: next(iter(cs)) for name, cs in seen.items() if len(cs) == 1}
+    # Unambiguous names only, and never a name any .spec calls thiscall.
+    return {
+        name: next(iter(cs))
+        for name, cs in seen.items()
+        if len(cs) == 1 and _THISCALL_X86_ONLY not in cs
+    }
 
 
 def enforce_import_abi(code: str, exports: dict | None = None) -> str:

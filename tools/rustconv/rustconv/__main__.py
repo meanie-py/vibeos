@@ -4342,6 +4342,11 @@ def main():
     p.add_argument(
         "--skip-fn",
         dest="skip_fn",
+        # `extend`, not the bare `nargs="*"` this used to be: with plain nargs a REPEATED
+        # `--skip-fn a --skip-fn b` silently keeps only `b`, so ten of eleven names asked
+        # for were dropped with no message. That is the one failure this flag is not
+        # allowed to have -- its whole contract below is "never silent".
+        action="extend",
         nargs="*",
         default=[],
         metavar="NAME",
@@ -4350,7 +4355,8 @@ def main():
             "assembles (--exclude filters FILE stems and cannot do this). For a body the "
             "model cannot get past the call/fact envelope: skip it, ship the other "
             "functions, hand-write this one. Never silent — each name becomes an audit "
-            "finding, and an unknown name is an error rather than a no-op."
+            "finding, and an unknown name is an error rather than a no-op. Repeatable, "
+            "and accepts several names per flag."
         ),
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")

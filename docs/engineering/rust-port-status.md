@@ -827,6 +827,89 @@ and `msvcrt_wstrdupa` itself.
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
+**Wave 27 (2026-08-05) — cpp.c FLIPPED ($0.21). The C++ RTTI/exception subsystem.**
+
+47 spec exports, 51 compiled functions: the `type_info` / `exception` / `bad_cast` /
+`bad_typeid` / `__non_rtti_object` family, the three RTTI entry points (`__RTtypeid`,
+`__RTDynamicCast`, `__RTCastToVoid`), `_CxxThrowException`, and the terminate/unexpected/
+se_translator handler slots. The largest single block of C left in msvcrt. 49 functions
+translated; the macro-generated half is hand-written in `src/msvcrt/cpp_rtti.rs`.
+
+**Two feasibility questions, both answered NO-BLOCKER, and both worth recording because the
+opposite is widely assumed:**
+
+* `extern "thiscall"` **is stable** on our pinned rustc 1.92, and lowers exactly like the C on
+  i386: `this` in ECX, `retl $N` callee-cleanup, undecorated symbol. It is **x86-only**
+  (`E0570` on amd64), so every method needs the per-arch dual — which is what msvcrt.spec
+  already spells out, `thiscall -arch=i386` beside `cdecl -arch=win64`/`-arch=arm`.
+* The `__TRY`/`__EXCEPT_PAGE_FAULT` in the three RTTI entry points is **not real SEH here**.
+  msvcrt compiles with DUMMY_PSEH, where `_SEH2_EXCEPT(f)` is `if (_SEH2_Volatile0 || (0 && f))`
+  — compiled, never taken (the tell: `_SEH2_Volatile0` undefined in the object, no
+  `__C_specific_handler`, no scope table). So they translate to straight-line Rust plus a
+  runtime-false branch. **Rust needing SEH was not the blocker anyone expects it to be.**
+
+**Substrate: cxx.h and cppexcept.h joined the msvcrt-sys island**, and deriving rather than
+transcribing mattered more here than anywhere so far. cxx.h defines every RTTI struct TWICE
+under `#ifndef RTTI_USE_RVA`, and the two arms differ in **field TYPE, not field name**: i386
+holds real `const type_info *` pointers where amd64/arm64 hold 32-bit RVAs off the image base.
+A hand-written Rust struct necessarily picks one arm and is silently wrong on the other two,
+and "wrong" means dereferencing an image offset as an address. `CXX_EXCEPTION_PARAMS` came back
+**3 on i386 and 4 elsewhere** — simultaneously the length of `_CxxThrowException`'s argument
+array and the count handed to `RaiseException`, i.e. exactly the constant a transcription gets
+wrong. Five new `GUARDED` pairs (`__exception.vtable/name/do_free`, `__type_info.name/mangled`),
+27 total.
+
+`cpp_rtti.rs` holds what rustconv **structurally cannot see** — not functions it missed, but
+text that is not in the file: five `global_asm!` vtables (the RTTI pointer lives at
+`vtable[-1]`, so a Rust `static`, which gives one symbol at its START, cannot express it), the
+RTTI and throw descriptors with their RVA fixups, and the seven bodies
+`CREATE_EXCEPTION_OBJECT`/`CREATE_TYPE_INFO_VTABLE` expand to.
+
+**Four tool bugs, three of them silent, all fixed rather than worked around:**
+
+* **The scanner dropped 25 of 62 bodies without saying so.** `TYPE * __thiscall name(...)` is
+  the position tree-sitter cannot parse in any spelling — the documented `FILE * CDECL
+  fopen(...)` class that cost file.c 15 functions — and `__thiscall` was simply never in the
+  convention table the repair regex is built from. The split fell along the RETURN TYPE, so
+  `void __thiscall bad_typeid_dtor` parsed while `bad_typeid * __thiscall bad_typeid_ctor`
+  beside it did not, and the plan read as *partly* translatable rather than broken. Audited the
+  tree: no shipped translation lost anything to it.
+* **`thiscall` was collapsed to `extern "system"`** in three places. Not a spelling of the same
+  ABI — stdcall takes `this` on the stack, thiscall in ECX — and every downstream check still
+  agrees (same export name, arity, cleanup). Only the register differs, only on i386.
+* **`fix_fastcall_exports` rewrote `-> *mut exception` as `-> *mut`** (return-type regex stopped
+  at the first space) and could not see a parameter containing parens, i.e. every `Option<fn>`.
+  Both invisible until now because ntoskrnl's fastcall exports return single tokens.
+* **`--skip-fn` silently kept only the last name** when the flag was repeated — ten of eleven
+  skips dropped, from the one flag whose stated contract is "never silent".
+
+**Three defects in the translated output:**
+
+* **An INVENTED `#if` again** (wave 26's class, next file): `get_obj_locator_base` got
+  `all(target_pointer_width = "32", feature = "rtti_rva")` for `#ifdef RTTI_USE_RVA` — inverted
+  AND gated on a feature that does not exist, so the arm was dead on all three arches and every
+  64-bit RTTI lookup would resolve against base 0. An undeclared feature is not an error; it is
+  a permanent `#[cfg(false)]`. `msvcrt_init_exception` keyed the same condition on pointer
+  width — accidentally right on the three arches we build, still the wrong term.
+* **The dead `__EXCEPT_PAGE_FAULT` arms shipped as unconditional code**, so all three RTTI
+  queries would throw `__non_rtti_object` on every call. This is `--seal-calls` pushing the
+  wrong way: its invariant is "every call appears and is executable", and the model satisfied it
+  by deleting the branch condition. All three were rejected once and came back this way — so
+  **when a rejected body returns accepted, diff its control flow, not its calls.**
+* `InterlockedCompareExchangePointer` was missing from `prelude.rs` — same intrinsic story as
+  the rest of its family, and it needs its own lowering rather than a cast (64-bit CAS).
+
+**Verification beyond `cargo check` ×3:** every `#[cfg]` diffed against every `#if`; the
+intra-family call set of all 43 bodies present on both sides diffed C-vs-Rust (zero divergence);
+and the vtable argument each ctor hands the shared `__exception_ctor` checked as a table, since
+that is the permutation class the fact-seal cannot see — a swap there compiles, links, and
+constructs an object of the wrong class.
+
+The 11 `_MSVCR_VER >= 80/140 || defined(__UCRTSUPPORT__)` bodies are deliberately untranslated:
+msvcrt compiles at `_MSVCR_VER = 0` without `__UCRTSUPPORT__`, so nothing builds them. Each is
+recorded as an audit finding. **Also: `concurrency.c` is 3,839 lines that compile to ZERO
+functions here — the largest dead file in the module. Do not pay to translate it.**
+
 **Wave 26 (2026-08-04) — heap.c FLIPPED ($0.18). The allocator is Rust; 87.8% of msvcrt.**
 
 37 functions, 855 lines, and the file every other translated module in this crate already
@@ -848,10 +931,20 @@ Picking the wrong one is not a compile error; it is an allocator reading its hea
 the wrong offset. Both hops are in `GUARDED`, so the two guardians now fail the build if
 either struct moves.
 
-Three defect classes the compiler could not see, all in this one file:
+Four defect classes the compiler could not see, all in this one file:
 
-* **`NtCurrentTeb()->Peb->ProcessHeap` appears 4 times and was translated 4 different ways,
-  3 of them wrong** — two stopped one hop short and used the PEB pointer itself as the heap
+* **An INVENTED `#if` condition, and it is the one that cost a gate.** The C guards
+  `msvcrt_init_heap` with `#if _MSVCR_VER <= 100 && !defined(__REACTOS__)` — false here, so
+  the `#else` (`heap = NtCurrentTeb()->Peb->ProcessHeap`) compiles on all three arches. The
+  translation mapped that onto `target_pointer_width`. i386 ran the DEAD `HeapCreate` arm and
+  **booted green** (a private heap is still a valid heap — that is what hid it); amd64 and
+  arm64 got the PEB pointer as their heap handle, so every allocation failed and user-mode
+  starved with 15 threads parked on `WrFreePage`/`WrQueue`/`WrLpcReceive`. `msvcrt_destroy_heap`
+  had the same invented condition, which on i386 would `HeapDestroy` the process heap.
+  The free check, now standing practice: **diff the `#[cfg]` list against the `#if` list** and
+  require correspondence. Field manual, the build-configuration `#ifdef` entry.
+* **`NtCurrentTeb()->Peb->ProcessHeap` appears 5 times and was translated 5 different ways,
+  4 of them wrong** — two stopped one hop short and used the PEB pointer itself as the heap
   handle; a third walked the PEB by a hard-coded `0x18`, which is ProcessHeap's **i386**
   offset, so it read a neighbouring field on amd64 and arm64. The guarded offsets cannot
   catch this: they prove where the fields LIVE, not how many times a body dereferenced.

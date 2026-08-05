@@ -71,6 +71,17 @@ KW_TO_CONV: dict[str, str] = {
     "_cdecl": "cdecl",
     "__fastcall": "fastcall",
     "_fastcall": "fastcall",
+    # `this` in ECX on i386, and the DEFAULT C convention everywhere else — the compiler
+    # accepts and ignores the keyword off x86. Absent from this table, msvcrt's cpp.c lost
+    # 25 of its 62 bodies from the translation plan, SILENTLY: the drop is the documented
+    # `TYPE * <conv> name(...)` shape that tree-sitter-c cannot parse in any spelling, and
+    # scanner.RE_CC_AFTER_PTR (which repairs it) is built from the keys of THIS dict. The
+    # split was invisible because it fell along the return type — `void __thiscall
+    # bad_typeid_dtor(...)` parsed while `bad_typeid * __thiscall bad_typeid_ctor(...)`
+    # next to it did not, so the file looked partially translatable rather than broken.
+    # Same class as the `FILE * CDECL fopen(...)` drop that cost file.c 15 functions.
+    "__thiscall": "thiscall",
+    "_thiscall": "thiscall",
     # --- __stdcall ("system") ---
     "NTAPI": "system",
     "WINAPI": "system",  # psdk/minwindef.h

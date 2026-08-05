@@ -578,6 +578,31 @@ pub unsafe fn InterlockedExchange(target: *mut c_int, value: c_int) -> c_int {
 
 #[inline]
 #[allow(non_snake_case)]
+/// The POINTER-width member of the family. Same intrinsic story as its `c_int` sibling
+/// below (`__INTRIN_INLINE`, no symbol to import), and it needs a separate lowering rather
+/// than a cast because on 64-bit it is a 64-bit CAS and the `c_int` one is 32-bit.
+/// cpp.c's `type_info_name` uses it as a publish-once guard: two threads may both demangle
+/// a name, and exactly the loser frees its copy — so the return value is not decoration.
+#[inline]
+#[allow(non_snake_case)]
+pub unsafe fn InterlockedCompareExchangePointer(
+    dest: *mut *mut c_void,
+    exchange: *mut c_void,
+    comperand: *mut c_void,
+) -> *mut c_void {
+    use core::sync::atomic::{AtomicPtr, Ordering};
+    // Win32 returns the INITIAL value either way — same shape as InterlockedCompareExchange.
+    match (*(dest as *const AtomicPtr<c_void>)).compare_exchange(
+        comperand,
+        exchange,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(prev) => prev,
+        Err(prev) => prev,
+    }
+}
+
 pub unsafe fn InterlockedCompareExchange(
     dest: *mut c_int,
     exchange: c_int,
