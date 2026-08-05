@@ -31848,9 +31848,6 @@ pub struct _DESK_EXT_INTERFACE {
 }
 pub type DESK_EXT_INTERFACE = _DESK_EXT_INTERFACE;
 pub type PDESK_EXT_INTERFACE = *mut _DESK_EXT_INTERFACE;
-unsafe extern "C" {
-    pub fn DisplaySaveSettings(pContext: PVOID, hwndPropSheet: HWND) -> LONG;
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct EFFECTS {
@@ -31999,84 +31996,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ActivateThemeFile(pwszFile: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
-    pub fn AppearancePageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn AdvAppearanceDlgProc(
-        hwndDlg: HWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn EffAppearanceDlgProc(
-        hwndDlg: HWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn RegisterPreviewControl(hInstance: HINSTANCE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn UnregisterPreviewControl(hInstance: HINSTANCE);
-}
-unsafe extern "C" {
-    pub fn MyDrawFrameControl(
-        hDC: HDC,
-        rc: LPRECT,
-        uType: UINT,
-        uState: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawEdge(
-        hDC: HDC,
-        rc: LPRECT,
-        edge: UINT,
-        flags: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawCaptionButtons(
-        hdc: HDC,
-        lpRect: LPRECT,
-        bMinMax: BOOL,
-        x: ::core::ffi::c_int,
-        scheme: *mut COLOR_SCHEME,
-    );
-}
-unsafe extern "C" {
-    pub fn MyDrawScrollbar(hdc: HDC, rc: LPRECT, hbrScrollbar: HBRUSH, scheme: *mut COLOR_SCHEME);
-}
-unsafe extern "C" {
-    pub fn MyDrawCaptionTemp(
-        hwnd: HWND,
-        hdc: HDC,
-        rect: *const RECT,
-        hFont: HFONT,
-        hIcon: HICON,
-        str_: LPCWSTR,
-        uFlags: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawMenuBarTemp(
-        Wnd: HWND,
-        DC: HDC,
-        Rect: LPRECT,
-        Menu: HMENU,
-        Font: HFONT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> DWORD;
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MONSL_MONINFO {
@@ -32113,12 +32032,6 @@ pub struct _MONSL_MONNMMONITORCHANGING {
 }
 pub type MONSL_MONNMMONITORCHANGING = _MONSL_MONNMMONITORCHANGING;
 pub type PMONSL_MONNMMONITORCHANGING = *mut _MONSL_MONNMMONITORCHANGING;
-unsafe extern "C" {
-    pub fn RegisterMonitorSelectionControl(hInstance: HINSTANCE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn UnregisterMonitorSelectionControl(hInstance: HINSTANCE);
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _APPLET {
@@ -32141,21 +32054,6 @@ pub type DIBITMAP = _DIBITMAP;
 pub type PDIBITMAP = *mut _DIBITMAP;
 unsafe extern "C" {
     pub static mut hApplet: HINSTANCE;
-}
-unsafe extern "C" {
-    pub fn LoadPopupMenu(hInstance: HINSTANCE, lpMenuName: LPCTSTR) -> HMENU;
-}
-unsafe extern "C" {
-    pub fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP;
-}
-unsafe extern "C" {
-    pub fn DibFreeImage(lpBitmap: PDIBITMAP);
-}
-unsafe extern "C" {
-    pub fn AllocAndLoadString(lpTarget: *mut LPTSTR, hInst: HINSTANCE, uID: UINT) -> INT;
-}
-unsafe extern "C" {
-    pub fn ClrBtn_CustomDraw(pCD: *mut NMCUSTOMDRAW, Color: COLORREF) -> UINT;
 }
 unsafe extern "C" {
     pub fn DbgPrint(Format: PCCH, ...) -> ULONG;
@@ -32255,16 +32153,6 @@ unsafe extern "C" {
     pub static mut hCPLWindow: HWND;
 }
 unsafe extern "C" {
-    pub fn DisplayAdvancedSettings(hWndParent: HWND, DisplayDevice: PDISPLAY_DEVICE_ENTRY) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn CreateDevSettings(DisplayDeviceInfo: PDISPLAY_DEVICE_ENTRY) -> *mut IDataObject;
-}
-unsafe extern "C" {
-    pub fn AdvGeneralPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "C" {
     pub fn SwitchDisplayMode(
         hwndDlg: HWND,
         DeviceName: PWSTR,
@@ -32272,29 +32160,6 @@ unsafe extern "C" {
         seNew: PSETTINGS_ENTRY,
         rc: PLONG,
     ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn DesktopPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn InitDesktopSettings(pData: PDESKTOP_DATA);
-}
-unsafe extern "C" {
-    pub fn SaveDesktopSettings(pData: PDESKTOP_DATA) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn SetDesktopSettings(pData: PDESKTOP_DATA);
-}
-unsafe extern "C" {
-    pub fn RegLoadMUIStringW(
-        hKey: HKEY,
-        pszValue: LPCWSTR,
-        pszOutBuf: LPWSTR,
-        cbOutBuf: DWORD,
-        pcbData: LPDWORD,
-        Flags: DWORD,
-        pszDirectory: LPCWSTR,
-    ) -> LONG;
 }
 #[derive(Copy, Clone)]
 #[repr(C)]

@@ -36,7 +36,12 @@ pub mod desk {
     pub mod draw;
     pub mod theme;
     pub mod muireg;
-    pub mod guid;
+    // NO `pub mod guid;` — guid.c is an `initguid.h` TU whose whole job is EMITTING the
+    // CLSIDs as data. It declares zero functions, so there is nothing to translate and it
+    // stays C in the CMake source list (same call as ole32 and aclui). It was declared here
+    // against a file that never existed, which is invisible to every gate: a parked crate is
+    // not compiled, and no scanner opens a path that is absent. `scan_module_files` now
+    // fails on exactly this.
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.
