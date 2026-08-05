@@ -2,6 +2,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// aclui.c:38 `HINSTANCE hDllInstance;` has EXTERNAL linkage, and sibling TUs reach it by
+// name. Without #[no_mangle] the definition is mangled while the reference stays plain, so
+// the crate links against an undefined `hDllInstance` — i386 happened to resolve it, amd64
+// did not.
+#[no_mangle]
 pub static mut hDllInstance: HINSTANCE = core::ptr::null_mut();
 pub const SIDN_LOOKUPSUCCEEDED: u32 = 0x101;
 

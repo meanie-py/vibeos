@@ -248,10 +248,23 @@ pub use crate::{
     ZeroMemory, max, min,
 };
 
-// msvcrt's intrinsic spellings — the C reaches these through the winbase.h macros above.
-extern "system" {
-    pub fn _InterlockedIncrement(addend: *mut LONG) -> LONG;
-    pub fn _InterlockedDecrement(addend: *mut LONG) -> LONG;
+// winbase.h's InterlockedIncrement/Decrement are COMPILER INTRINSICS, not library symbols, and
+// which library happens to carry a `_Interlocked*` symbol differs per arch: the i386 link found
+// one and amd64 did not (LINK_FAIL, `_InterlockedIncrement: missing symbol`). That is the
+// per-arch-provider trap — a single-arch link check cannot see it. Implemented here instead of
+// declared, so no arch depends on someone else exporting it. Semantics per winbase.h: atomic,
+// and returns the NEW value.
+#[inline(always)]
+pub unsafe fn _InterlockedIncrement(addend: *mut LONG) -> LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+#[inline(always)]
+pub unsafe fn _InterlockedDecrement(addend: *mut LONG) -> LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
 }
 
 // ================= the crate's own cross-TU surface ===========================================
