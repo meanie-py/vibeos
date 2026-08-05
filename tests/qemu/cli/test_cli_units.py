@@ -4413,6 +4413,204 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
     assert q_mod.pending(repo) == [], "every submission must leave the queue with a verdict"
 
 
+def _stamp_scenario(repo, monkeypatch, *, lanes=("a", "b"), dirt="", stages=None, locks=()):
+    """One submitted batch, with the integration tree's dirt and the gate's stamp verdict
+    dialled in. Returns (submissions, gates, pushes) — `gates`/`pushes` record what the drain
+    actually spent, which is the point of every assertion below."""
+    subs = []
+    for lane in lanes:
+        subprocess.run(
+            ["git", "checkout", "-q", "-b", f"s{lane}", "master"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        _commit(repo, f"s{lane}.txt")
+        subs.append(q_mod.submit(repo, lane=f"lane-{lane}"))
+    gates: list[int] = []
+    pushes: list[tuple] = []
+
+    # Delegate anything not explicitly faked: `pending()`/`results()` locate the queue through
+    # `rev-parse --git-common-dir`, so a blanket `lambda: ""` would make every "who is still
+    # queued?" assertion below pass vacuously against an empty directory.
+    real_git = q_mod.git
+
+    def fake_git(_repo, *args, **kw):
+        if args[:1] == ("status",):
+            return dirt
+        if args[:1] == ("push",):
+            pushes.append(args)
+            return ""
+        if args[0] in ("commit", "add", "fetch", "reset", "clean", "merge"):
+            return ""
+        if args[:2] == ("rev-parse", "HEAD"):
+            return "n" * 40
+        return real_git(_repo, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", fake_git)
+    monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
+    monkeypatch.setattr(q_mod, "settle_cargo_locks", lambda wt, log: list(locks))
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+    )
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: (
+            gates.append(1),
+            q_mod.GateVerdict(True, "", "/tmp/art", "", stages or {}),
+        )[1],
+    )
+    return subs, gates, pushes
+
+
+def test_queue_dirty_integration_tree_halts_before_paying_for_a_gate(queue_repo, monkeypatch):
+    """The wedge this replaces: three conductors each burned a full COLD gate (3 builds +
+    4 boots) and then failed identically at the push, because a dirty tree mints no stamp and
+    re-gating can never fix it. The dirt is knowable in ~0.2s, BEFORE the gate."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(repo, monkeypatch, dirt=" M sdk/lib/rust/Cargo.lock\n")
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "Cargo.lock" in str(e.value), "the error must NAME the path, not just say 'dirty'"
+    assert gates == [], "a 30-minute gate must not be spent on a tree that cannot be stamped"
+    assert pushes == []
+    assert len(q_mod.pending(repo)) == len(subs), "nobody is at fault — all stay QUEUED"
+    assert q_mod.results(repo, limit=50) == [], "and nobody is rejected"
+
+
+def test_queue_clean_tree_still_gates_and_lands(queue_repo, monkeypatch):
+    """The must-NOT-fire half: the preflight is a guard, not a new way to refuse work."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "ok"})
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1 and len(pushes) == 1
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_settles_a_build_rewritten_lock_into_the_tip_it_gates(queue_repo, monkeypatch):
+    """Settling BEFORE the gate is what makes it safe: the tree that is gated is then the tree
+    that is pushed, so the stamp never certifies something other than what booted."""
+    repo, _ = queue_repo
+    subs, gates, pushes = _stamp_scenario(
+        repo, monkeypatch, stages={"stamp": "ok"}, locks=["sdk/lib/rust/Cargo.lock"]
+    )
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(gates) == 1, "settling is a preflight, not a reason to re-gate"
+    assert pushes and pushes[0][2].startswith("n" * 40), (
+        "the push must carry the SETTLED tip, not the pre-settle one — otherwise the "
+        "regenerated lock is gated and then thrown away"
+    )
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_green_gate_that_minted_no_stamp_halts_instead_of_pushing(queue_repo, monkeypatch):
+    """The backstop, for a cause the preflight did not anticipate. Without it the only signal
+    is one `warn` on the last line of an all-green summary, and the failure resurfaces 30
+    minutes later as a bare pre-push rejection the conductor dies on."""
+    repo, _ = queue_repo
+    subs, _gates, pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "warn"})
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "stamp" in str(e.value)
+    assert pushes == [], "a push that the hook will refuse must not be attempted"
+    assert len(q_mod.pending(repo)) == len(subs)
+    assert q_mod.results(repo, limit=50) == [], "a missing stamp is nobody's fault to be judged"
+
+
+def test_queue_unparsed_gate_summary_does_not_block_the_push(queue_repo, monkeypatch):
+    """REJECT ONLY ON EVIDENCE, applied to the backstop itself: an empty `stages` map means
+    the summary could not be read, which is not proof that no stamp was minted."""
+    repo, _ = queue_repo
+    subs, _gates, pushes = _stamp_scenario(repo, monkeypatch, stages={})
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(pushes) == 1
+    assert all(r["outcome"] == "landed" for r in q_mod.results(repo, limit=50))
+
+
+def test_queue_refused_push_halts_the_train_instead_of_escaping(queue_repo, monkeypatch):
+    """A push that cannot happen must leave the submissions QUEUED and halt like every other
+    no-verdict, not escape as an unhandled error that resolves nobody."""
+    repo, _ = queue_repo
+    subs, _gates, _pushes = _stamp_scenario(repo, monkeypatch, stages={"stamp": "ok"})
+    real_git = q_mod.git
+
+    def refusing_git(_repo, *args, **kw):
+        if args[:1] == ("push",):
+            raise q_mod.QueueError("git push failed (1): pre-push: no fresh gate stamp")
+        return real_git(_repo, *args, **kw)
+
+    monkeypatch.setattr(q_mod, "git", refusing_git)
+    with pytest.raises(q_mod.Inconclusive) as e:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert "no fresh gate stamp" in str(e.value), "the git error must survive into the message"
+    assert len(q_mod.pending(repo)) == len(subs)
+
+
+def test_dirty_paths_keeps_the_first_path_intact(monkeypatch):
+    """`git()` strips its whole stdout, so the first porcelain line arrives WITHOUT the leading
+    space the rest keep. Slicing a fixed `[3:]` therefore eats a character of exactly one
+    path — and a guard that names `ests/qemu/...` is a guard nobody can act on."""
+    monkeypatch.setattr(
+        q_mod,
+        "git",
+        lambda r, *a, **k: (
+            "M  tests/qemu/cli/queue.py\n M sdk/lib/rust/Cargo.lock\nR  old/name.rs -> new/name.rs"
+        ),
+    )
+    assert q_mod.dirty_paths(Path("/nowhere")) == [
+        "tests/qemu/cli/queue.py",
+        "sdk/lib/rust/Cargo.lock",
+        "old/name.rs -> new/name.rs",
+    ]
+
+
+def test_settle_cargo_locks_reports_a_cargo_failure_rather_than_reading_as_clean(monkeypatch):
+    """A preflight that silently skips is worse than none: it reads as 'checked, and clean'."""
+    monkeypatch.setattr(q_mod, "git", lambda r, *a, **k: "sdk/lib/rust/Cargo.lock\n")
+    monkeypatch.setattr(
+        q_mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 101, "", "error: no such subcommand"),
+    )
+    logs: list[str] = []
+    assert q_mod.settle_cargo_locks(Path("/nowhere"), logs.append) == []
+    assert any("could not resolve" in m for m in logs), logs
+
+
+@pytest.mark.parametrize(
+    ("exc", "want_class", "want_detail"),
+    [
+        (q_mod.BaseRed("fltmgr-rust fails to compile for i386"), "BASE_RED", "mainline itself"),
+        (q_mod.Inconclusive("dirty: sdk/lib/rust/Cargo.lock"), "NO_VERDICT", "NO VERDICT"),
+    ],
+)
+def test_conduct_does_not_report_every_no_verdict_as_a_red_mainline(
+    queue_repo, tmp_path, monkeypatch, exc, want_class, want_detail
+):
+    """BaseRed is one of several ways a train renders no verdict. Reporting them all as
+    "mainline itself is red" sends the lane hunting a mainline break that does not exist —
+    the misattribution BaseCheck exists to prevent, committed by the reporter instead."""
+    repo, _ = queue_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+
+    def boom(*a, **k):
+        raise exc
+
+    monkeypatch.setattr(q_mod, "try_become_conductor", boom)
+    run = Run("land", "queue")
+    conducted, note = land_mod._conduct(repo, run, _Args(foreground=True, drain=True))
+    assert conducted
+    assert note == ("base-red" if want_class == "BASE_RED" else "no-verdict")
+    assert run.classification == want_class
+    stage = next(s for s in run.stages if s.name == "conduct")
+    assert want_detail in stage.detail, stage.detail
+    assert str(exc) in " ".join(stage.salient), "the reason must survive into the report"
+
+
 def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch):
     repo, _ = queue_repo
     subs = []
