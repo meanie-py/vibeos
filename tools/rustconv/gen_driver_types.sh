@@ -1651,6 +1651,101 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
 
+  # ---- Tier-3 batch F: syssetup, the system setup DLL. Plain C, no COM substrate: the
+  # second-stage GUI installer (the wizard), the device/DLL registration pass, the account
+  # and security-policy setup, and the mouse property page. ----
+  syssetup)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-04 from dll/win32/syssetup/CMakeLists.txt
+    # (8 compiled TU(s), 203 headers in the include closure, 44 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    # Emit the header function surface, minus what the crate defines. syssetup is a thin driver
+    # of other people's APIs — setupapi/samlib/advapi32/userenv/comctl32/shell32 — so
+    # BLOCKLIST_FUNCS=1 would mean hand-writing several hundred prototypes, and a hand-written
+    # prototype wrong by one pointer level links and then corrupts silently.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MACRO_SIGNED=0, and that was MEASURED, not reasoned — the reasoning was WRONG. syssetup
+    # looks exactly like aclui and netcfgx (wizard.c alone is 3.4K lines of property-sheet page
+    # procs, so its constants are `int` control ids and PSN_*/DTN_* codes compared against
+    # NMHDR.code) and I set it to 1 on that resemblance. Whole-crate check on i386: 483 errors
+    # SIGNED against 432 UNSIGNED. What the resemblance misses is that syssetup spends more of
+    # its time handing constants to UNSIGNED Win32 and setupapi parameters than comparing them.
+    # Second module in a row where the shape argument lost to the measurement (see umpnpmgr):
+    # generate both islands and count, it costs one cargo check.
+    MACRO_SIGNED=0
+    # UNBLOCK so THIS island owns every callback type syssetup INSTALLS: ntdll-sys spells each
+    # with the arch's literal convention, and normalize_island_abi only rewrites a crate's OWN
+    # islands, so an -sys-owned slot would stay `stdcall` while the Rust body is `extern "system"`
+    # (Rust compares fn-pointer ABIs NOMINALLY). The containers have to come too — a struct whose
+    # field type still resolves to the -sys typedef reintroduces the mismatch at the assignment.
+    #   DLGPROC                    — PROPSHEETPAGE.pfnDlgProc, every wizard page
+    #   LPFNPSPCALLBACKW           — PROPSHEETPAGE.pfnCallback (proppage.c's MouseCallback)
+    #   PFNPROPSHEETCALLBACK       — PROPSHEETHEADER.pfnCallback
+    #   PSP_FILE_CALLBACK_W        — wizard.c's RegistrationNotificationProc, install.c's queue
+    #   *THREAD_START_ROUTINE      — install.c's two CreateThread bodies
+    UNBLOCK="DLGPROC WNDPROC LPFNPSPCALLBACKW LPFNPSPCALLBACKA PFNPROPSHEETCALLBACK
+             PSP_FILE_CALLBACK_W PSP_FILE_CALLBACK_A LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE
+             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW"
+    # syssetup.h forward-declares `struct _TIMEZONE_ENTRY*` for two SETUPDATA fields and never
+    # completes it; the definition lives in wizard.c. bindgen therefore emits an OPAQUE
+    # `_TIMEZONE_ENTRY { _address: u8 }`, which is a different Rust type from the real one the
+    # translation carries — every assignment to SetupData.TimeZoneListHead is then an E0308 and
+    # nothing says why. Block the placeholder and point the island's own field types at the
+    # crate's definition, so there is exactly ONE _TIMEZONE_ENTRY (same shape as shell32's
+    # EXTRA_RAW_LINES for its COM interfaces).
+    EXTRA_BL_ITEMS=( _TIMEZONE_ENTRY TIMEZONE_ENTRY PTIMEZONE_ENTRY )
+    EXTRA_RAW_LINES=( 'pub use crate::syssetup::wizard::_TIMEZONE_ENTRY;' )
+    DRIVER_DIR="${SRC}/dll/win32/syssetup"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>\n#define COBJMACROS\n#include <io.h>\n#include <wincon.h>\n#include <winnls.h>\n#include <winsvc.h>\n#include <userenv.h>\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <shobjidl.h>\n#include <rpcproxy.h>\n#include <ndk/cmfuncs.h>\n#include <stdarg.h>\n#include <rpc.h>\n#include <ntlsa.h>\n#include <ntsecapi.h>\n#include <ntsam.h>\n#include <sddl.h>\n#include <stdlib.h>\n#include <time.h>\n#include <windowsx.h>\n#include <tzlib.h>\n#include <strsafe.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]ntlsa\.h'
+                  --allowlist-file '.*[/\\]ntsam\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]rpcproxy\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]syssetup[/\\]syssetup\.h'
+                  --allowlist-file '.*[/\\]tzlib\.h'
+                  --allowlist-file '.*[/\\]userenv\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  # The two headers that own the module's actual Win32 surface. The derive adds a
+                  # header only when it owns a `case` label, and syssetup reaches kernel32/user32
+                  # through ordinary calls — CreateThread/SetTimer/GetDlgItem/SendDlgItemMessageW
+                  # and ~200 more.
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  # The account/logon surface security.c IS: NetUserAdd, NetLocalGroupAddMembers.
+                  --allowlist-file '.*[/\\]lmaccess\.h'
+                  # install.c drives IShellLink/IPersistFile through COBJMACROS, and wizard.c
+                  # creates RPC UUIDs. The derive misses both because it only pulls in a header
+                  # that owns a `case` label. Emitting them beats hand-writing ~25 COM/RPC
+                  # prototypes and two IIDs: a hand-written vtable is a silent-corruption risk in
+                  # a way a hand-written function declaration is not.
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h'
+                  --allowlist-file '.*syssetup[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/syssetup" -I"${SRC}/build-i386/dll/win32/syssetup" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/lib/tzlib" -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+
   shell32)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-07-25 from dll/win32/shell32/CMakeLists.txt
     # (43 compiled TUs, 299 headers in the include closure, 280 switch constants), then adjusted

@@ -1,0 +1,15 @@
+# syssetup-rust — see src/lib.rs for the module map.
+[package]
+name = "syssetup-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "syssetup_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

@@ -71,6 +71,36 @@ def _strip_if_zero(text: str) -> str:
     return "".join(out)
 
 
+_IF_DBG = re.compile(r"#\s*if\s+DBG\b")
+
+
+def _inside_if_dbg(text: str) -> str:
+    """Just the text INSIDE `#if DBG ... #endif` regions.
+
+    A body that exists only under DBG is not in the build the smoke tests gate on, so calling it
+    "dropped" reads as a defect when it is a configuration. It is not nothing either — a DBG
+    build would want it — so it gets its own bucket instead of being silently discarded.
+    """
+    out, depth = [], 0
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if depth:
+            if s.startswith("#if"):
+                depth += 1
+            elif s.startswith("#endif"):
+                depth -= 1
+                continue
+            elif depth == 1 and s.startswith("#else"):
+                depth = 0  # the non-DBG branch starts here
+                continue
+            if depth:
+                out.append(line)
+            continue
+        if _IF_DBG.match(s):
+            depth = 1
+    return "".join(out)
+
+
 def _after_params(text: str, open_paren: int) -> str:
     """The first meaningful characters after the parameter list that opens at `open_paren`."""
     depth = 0
@@ -116,24 +146,61 @@ def c_functions(text: str) -> set[str]:
         # definition. The macro is followed by a body, so it passes the test above, but the
         # function the C actually defines is its first argument. winsrv writes every one of its
         # ~40 server routines this way.
+        # The first argument must be a BARE identifier that ends right there (`,` or `)`).
+        # An ordinary function whose name is merely SHOUTY looks identical up to this point,
+        # and its first parameter is a DECLARATION — `GDI_ROUND(FLOAT val)`,
+        # `INTERNAL_YDSTOWS(XFORM *xForm, ..)`. Without the terminator test those two report
+        # `FLOAT` and `XFORM` as dropped functions, and the real name is never checked at all.
         if n.isupper() and "_" in n:
-            arg = re.match(r"\([ \t\n]*(\w+)", text[m.end() - 1 :])
-            if arg:
+            arg = re.match(r"\([ \t\n]*(\w+)[ \t\n]*[,)]", text[m.end() - 1 :])
+            if arg and arg.group(1) not in ("void", "VOID"):
                 names.add(arg.group(1))
                 continue
         names.add(n)
     return names
 
 
-# rpc.h spells the MIDL allocator hooks lowercase and `#define`s them onto the uppercase pair
-# the RPC runtime actually calls, so a crate that defines MIDL_user_free HAS covered
-# midl_user_free. Without this the alias reads as a dropped function in every RPC server.
-_C_ALIASES = {"midl_user_allocate": "MIDL_user_allocate", "midl_user_free": "MIDL_user_free"}
+# A C name the linker never actually sees, because a macro renamed it. Each maps to the Rust
+# name(s) that DO cover it; defining any one of them is enough.
+_C_ALIASES = {
+    # rpc.h spells the MIDL allocator hooks lowercase and `#define`s them onto the uppercase
+    # pair the RPC runtime actually calls, so a crate that defines MIDL_user_free HAS covered
+    # midl_user_free. Without this the alias reads as a dropped function in every RPC server.
+    "midl_user_allocate": ("MIDL_user_allocate",),
+    "midl_user_free": ("MIDL_user_free",),
+    # tchar.h: `_tmain` IS `wmain` under UNICODE and `main` without it. Nothing named `_tmain`
+    # ever reaches the linker, so a crate exporting either has covered the entry point.
+    "_tmain": ("wmain", "main"),
+    "_tWinMain": ("wWinMain", "WinMain"),
+    # winbase.h: `#define GetEnvironmentStringsA GetEnvironmentStrings`. The C source spells
+    # the A suffix, the object file carries the unsuffixed symbol, and the .spec forwards the
+    # A export onto it — so the crate covers it by defining GetEnvironmentStrings.
+    "GetEnvironmentStringsA": ("GetEnvironmentStrings",),
+}
 
+# The attribute may share the line with the signature — `#[no_mangle] pub unsafe extern "C" fn
+# Foo(` is how the assembler emits every export. Anchoring at `pub` without allowing it made
+# EVERY exported function invisible on the Rust side and reported it as dropped: that is how
+# cabinet's FDIIsCabinet and dnsrslvr's CRrReadCache read as missing while sitting in the file.
+# Non-greedy to the first `]` so a `[u8; 4]` later in the signature cannot swallow the match.
 _RS_FN = re.compile(
-    r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?(?:extern[ \t]+\"\w+\"[ \t]+)?fn[ \t]+(\w+)", re.M
+    r"^[ \t]*(?:#\[[^\n]*?\][ \t]*)*"
+    # `extern $abi` — the ABI is a macro parameter in the per-arch `macro_rules!` twins that
+    # emit one body under both conventions (kernel32's BasepUnicodeStringToAnsiSize).
+    r"(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?(?:extern[ \t]+(?:\"\w+\"|\$\w+)[ \t]+)?fn[ \t]+(\w+)",
+    re.M,
 )
 _RS_MACRO = re.compile(r"^[ \t]*macro_rules![ \t]+(\w+)", re.M)
+# A function DEFINED by invoking a macro that takes `fn NAME(..)` as its argument. ole32 and
+# oleaut32 emit every COM vtbl thunk this way (`stdmethod! { fn IErrorInfoImpl_AddRef(..) }`),
+# which is how all 20 of errorinfo.rs's methods read as dropped while the file implements them.
+_RS_MACRO_FN = re.compile(r"\w+!\s*[{(\[]\s*(?:#\[[^\n]*?\]\s*)*fn[ \t]+(\w+)")
+# An EXPLICIT provenance claim: `/// GdiEntry1 — C source name DdCreateDirectDrawObject`.
+# A header `#define` can rename a function between the C source and the symbol, and only the
+# translator knows which way (gdi32's whole DirectDraw entry surface is DdXxx in the .c and
+# GdiEntryN in the object file). This is deliberately not a fuzzy match on the file text: the
+# name counts as covered only because someone wrote down that it is.
+_RS_PROVENANCE = re.compile(r"C source name[ \t]+(\w+)")
 
 
 def rust_functions(paths: list[pathlib.Path]) -> set[str]:
@@ -142,6 +209,8 @@ def rust_functions(paths: list[pathlib.Path]) -> set[str]:
         t = p.read_text(encoding="utf-8", errors="replace")
         names |= {m.group(1) for m in _RS_FN.finditer(t)}
         names |= {m.group(1) for m in _RS_MACRO.finditer(t)}
+        names |= {m.group(1) for m in _RS_MACRO_FN.finditer(t)}
+        names |= {m.group(1) for m in _RS_PROVENANCE.finditer(t)}
     return names
 
 
@@ -166,6 +235,24 @@ def active_c_tus(c_dir: pathlib.Path) -> set[str] | None:
         for m in _CM_C_FILE.finditer(code):
             active.add(pathlib.PurePosixPath(m.group(1)).name)
     return active
+
+
+def c_provided_names(c_dir: pathlib.Path, active: set[str]) -> set[str]:
+    """Functions the module's STILL-COMPILED C provides, so the crate does not have to.
+
+    A cohab flip routinely leaves one hand-written C TU behind ON PURPOSE: the C-variadic
+    trampoline stable Rust cannot define (`rust_varargs_shim.c`, `acpi_printf_shim.c`). Its
+    entry point was DEFINED in a .c that got flipped out — acpi's `AcpiOsPrintf` is in osl.c —
+    so without this it reads as a dropped function forever, in every module with a shim.
+
+    Scoped to the still-compiled TUs deliberately: a name only counts as provided if something
+    the build actually compiles defines it.
+    """
+    names: set[str] = set()
+    for c in sorted(c_dir.rglob("*.c")):
+        if c.name in active:
+            names |= c_functions(c.read_text(encoding="utf-8", errors="replace"))
+    return names
 
 
 def _pair(c_dir: pathlib.Path, rs: pathlib.Path) -> pathlib.Path | None:
@@ -194,9 +281,13 @@ def audit(c_dir: pathlib.Path, crate: pathlib.Path) -> tuple[int, list[str]]:
     # what was actually translated instead of flagging files that were never in scope.
     mod_dirs = [d for d in src.iterdir() if d.is_dir()] or [src]
     rs_files = [f for d in mod_dirs for f in sorted(d.glob("*.rs"))]
-    # The prelude legitimately holds lowered macros and CRT/inline stand-ins.
-    substrate = [f for f in (src / "prelude.rs", src / "lib.rs") if f.exists()]
-    rfns = rust_functions(rs_files + substrate)
+    # COVERAGE reads the WHOLE crate, not just the paired module dirs. A crate with
+    # subdirectories still keeps hand-written modules at src/ top level — kernel32's
+    # interlocked.rs holds the four Interlocked* the spec exports — and scanning only the
+    # module dirs reported every one of them as dropped while they sat one directory up.
+    rfns = rust_functions(sorted(src.rglob("*.rs")))
+    # A name the still-compiled C provides is covered, whichever language provides it.
+    covered = rfns | (c_provided_names(c_dir, active) if active else set())
 
     out: list[str] = []
     missing_total = 0
@@ -220,15 +311,22 @@ def audit(c_dir: pathlib.Path, crate: pathlib.Path) -> tuple[int, list[str]]:
         own = {n for n in own if n not in ctokens}
         missing = sorted(
             n
-            for n in cfns - rfns
+            for n in cfns - covered
             # a variadic entry point becomes a `_v` twin plus a C trampoline
-            if f"{n}_v" not in rfns and _C_ALIASES.get(n) not in rfns
+            if f"{n}_v" not in covered and not set(_C_ALIASES.get(n, ())) & covered
         )
         invented |= own - cfns
+        # A DBG-only body is a configuration, not a defect: the shipping build the smoke tests
+        # gate on never compiled it. Listed, but out of the count that decides CLEAN.
+        dbg_only = c_functions(_inside_if_dbg(ctext))
+        dbg = [n for n in missing if n in dbg_only]
+        missing = [n for n in missing if n not in dbg_only]
         if missing:
             missing_total += len(missing)
             out.append(f"  MISSING from {rs.relative_to(crate)} (defined in {c.name}):")
             out += [f"    {n}" for n in missing]
+        if dbg:
+            out.append(f"  #if DBG only in {c.name} (not in the shipping build): {', '.join(dbg)}")
     if still_c:
         out.append(f"  ({len(still_c)} TU(s) still compiled as C, not audited: {', '.join(still_c)})")
     extra = sorted(n for n in invented if not n.endswith("_v"))

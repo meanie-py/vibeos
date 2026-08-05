@@ -97,6 +97,11 @@ members = [
     # The user-mode PnP manager service — the SERVER half of pnp.idl, which cfgmgr32/setupapi
     # speak as clients.
     "umpnpmgr-rust",
+    # PARKED (2026-08-05): syssetup-rust is translated in full but still RED — 275 cargo-check
+    # errors on i386, 177 on amd64/arm64, down from 1392. It stays OUT of members until it is
+    # green: a red member turns every other lane's workspace check red too. Re-add this line to
+    # resume (crate-repair needs membership, it drives `cargo check -p`).
+    #   "syssetup-rust",
     "access",
     "avltable",
     "bitmap",

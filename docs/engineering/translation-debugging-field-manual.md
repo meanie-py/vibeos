@@ -2419,8 +2419,32 @@ already been met the note is describing a bug, not a plan.
   provides its own functions and is skipped), understands `#if 0`, SAL annotations and
   macro-expanded definitions (`CSR_API(SrvFoo)`), and reports the reverse direction — a Rust fn
   whose name the C never mentions — as a possible INVENTED callee. It does not evaluate
-  `#if`/`#ifdef` generally, so a config-gated function is the known residual false positive.
+  `#if`/`#ifdef` generally, so a config-gated function is the known residual false positive
+  (`#if DBG` bodies get their own bucket and do not count; a function alive only in the `#else`
+  of `#if defined(_USE_DUMMY_PSEH)`, like winlogon's `GinaLoadFailedWindowProc`, still shows).
   **Run it after every flip.**
+- **A coverage tool's false positives are the whole game — six defects hid the one real bug.**
+  The first sweep over 11 modules produced ~110 rows, of which two were real; the rest were the
+  tool failing to SEE a Rust definition, and any of them could have buried a genuine drop in
+  noise. Each is a distinct way a definition does not look like `fn NAME`:
+  **(1)** the `#[no_mangle]` attribute shares the line with the signature, which is how every
+  export is emitted — an anchor at `pub` missed all of them (cabinet `FDIIsCabinet`, dnsrslvr
+  `CRrReadCache`); **(2)** the crate keeps hand-written modules at `src/` top level while the
+  scan only walked the module SUBDIRECTORIES (kernel32's `interlocked.rs` — all four
+  `Interlocked*` the spec exports); **(3)** the ABI is a macro parameter, `extern $abi fn`, in
+  the per-arch twin macros; **(4)** the body is emitted by INVOKING a macro that takes
+  `fn NAME(..)` as its argument — ole32/oleaut32 write every COM vtbl thunk as
+  `stdmethod! { fn IErrorInfoImpl_AddRef(..) }`, so all 20 of errorinfo.rs's methods read as
+  dropped; **(5)** a header `#define` renames the function between the C source and the symbol
+  (gdi32's whole DirectDraw surface is `DdXxx` in the .c and `GdiEntryN` in the object file;
+  `GetEnvironmentStringsA` IS `GetEnvironmentStrings`; `_tmain` IS `wmain`) — honoured only via
+  an explicit `C source name <X>` provenance comment, never a fuzzy text match; **(6)** the
+  `CSR_API(SrvFoo)` heuristic fired on any SHOUTY function name and took its first PARAMETER'S
+  TYPE as the definition — `GDI_ROUND(FLOAT val)` reported `FLOAT` as a dropped function.
+  Requiring the first argument to be a bare identifier terminated by `,` or `)` separates the
+  macro from the merely-uppercase function. Also: a name provided by a still-compiled C TU is
+  covered whichever language provides it — that is the varargs trampoline every flip leaves
+  behind (`acpi_printf_shim.c` defines `AcpiOsPrintf`, whose home osl.c was flipped out).
 
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
