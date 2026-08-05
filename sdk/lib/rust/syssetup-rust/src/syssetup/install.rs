@@ -951,7 +951,7 @@ unsafe extern "stdcall" fn StatusMessageWindowProc(
                         // DPRINT removed
                     }
 
-                    (*pDlgData).hWndBarCtrl = GetDlgItem(hwndDlg, IDC_BAR);
+                    (*pDlgData).hWndBarCtrl = GetDlgItem(hwndDlg, (IDC_BAR) as i32);
                 }
             }
 
@@ -959,12 +959,12 @@ unsafe extern "stdcall" fn StatusMessageWindowProc(
                 hDllInstance,
                 IDS_STATUS_INSTALL_DEV,
                 szMsg.as_mut_ptr(),
-                ARRAYSIZE!(szMsg.as_ref()),
+                (ARRAYSIZE!(szMsg.as_ref())) as i32,
             ) == 0
             {
                 return FALSE;
             }
-            SetDlgItemTextW(hwndDlg, IDC_STATUSLABEL, szMsg.as_ptr());
+            SetDlgItemTextW(hwndDlg, (IDC_STATUSLABEL) as i32, szMsg.as_ptr());
 
             AdjustStatusMessageWindow(hwndDlg, pDlgData);
             return TRUE;
@@ -1228,7 +1228,7 @@ unsafe extern "stdcall" fn ShowStatusMessageThread(
         return 0;
     }
 
-    ShowWindow(hWnd, SW_SHOW);
+    ShowWindow(hWnd, (SW_SHOW) as i32);
 
     while GetMessage(&mut Msg, core::ptr::null_mut(), 0, 0) != 0 {
         TranslateMessage(&Msg);

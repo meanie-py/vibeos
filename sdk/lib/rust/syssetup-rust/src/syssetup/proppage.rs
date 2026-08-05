@@ -93,7 +93,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         return (FALSE) as i32;
     }
 
-    SetWindowLongPtr(hwndDlg, GWLP_USERDATA, pMouseInfo as DWORD_PTR);
+    SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (pMouseInfo as DWORD_PTR) as i32);
 
     i = 0;
     while i < ARRAYSIZE!(MouseSampleRates) {
@@ -198,7 +198,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         (IDC_PS2MOUSEINPUTUPDN) as i32,
         UDM_SETPOS32,
         0,
-        (*pMouseInfo).dwInputBufferLength,
+        ((*pMouseInfo).dwInputBufferLength) as i32,
     );
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
@@ -263,7 +263,7 @@ unsafe extern "C" fn MouseOnCommand(
                                     (IDC_PS2MOUSEINPUTUPDN) as i32,
                                     UDM_SETPOS32,
                                     0,
-                                    DEFAULT_INPUTBUFFERSIZE);
+                                    (DEFAULT_INPUTBUFFERSIZE) as i32);
 
                 SendDlgItemMessage(hwndDlg,
                                    (IDC_PS2MOUSEFASTINIT) as i32,
