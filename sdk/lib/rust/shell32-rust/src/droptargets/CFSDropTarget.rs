@@ -1,3 +1,14 @@
+//! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip. All 21 bodies are here — 19
+//! bought, `_RepositionItems` on the sanctioned retry, `_DoDrop` hand-written — but the file is
+//! deliberately in no `mod` chain so shell32-rust keeps compiling. What blocks it is one
+//! substrate decision, not a grind: this file declares its own IDataObject / IUnknown /
+//! IShellFolderView / STGMEDIUM / CFSDropTarget, the bindgen island declares a second set and
+//! `shellcom` a third, and the ~78 remaining errors are that identity mismatch plus its
+//! knock-on. Measured both ways — prelude glob alone leaves 80, types/win32/shellcom alone
+//! leaves 78 — so neither glob is close; the work is choosing per interface which module OWNS
+//! it. Guessing a vtable shape there does not fail loudly, it corrupts on drag-and-drop.
+//! Owner: task #48. Do NOT delete: re-translating costs a real API call.
+
 // rustconv-assembly: class:CFSDropTarget
 // Deterministic from oleidl.h
 // ONE glob only. The scaffold header emits `use crate::prelude::*` and the body assembly emits

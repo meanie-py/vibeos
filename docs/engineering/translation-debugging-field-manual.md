@@ -2809,6 +2809,17 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **A dropped `!` on a predicate, with the second operand garbled into the wreckage.**
+  `CFSDropTarget::_QueryDrop` reads
+  `if (!PathIsSameDrive(wstrFirstFile, m_sPathTarget) && m_dwDefaultEffect != D_LINK)`;
+  the reply came back as
+  `if PathIsSameDrive_body(..) && (*this) == FALSE.m_dwDefaultEffect != D_LINK`. The negation is
+  gone, so the cross-drive rule INVERTS — a drag to a different drive stops defaulting to copy —
+  and the tell is only the second half, which is not a condition at all. The lesson is the
+  ordering: the garbled operand is what rustc reports (`comparison operators cannot be chained`),
+  so it reads like a syntax slip; the semantic flip sits on the SAME line and passes unremarked
+  once you fix the syntax. When a condition fails to parse, re-read the whole condition against
+  the C rather than repairing the fragment rustc pointed at.
 - **`SUCCEEDED(hr)` → `(hr as u32) >= 0`** — unconditionally true, so the FAILURE branch is
   unreachable. `SUCCEEDED` is `hr >= 0` on the SIGNED HRESULT; cast to unsigned first and every
   error becomes a success. Sibling of the `!`-on-an-integer bug below and just as silent: it
@@ -2949,6 +2960,21 @@ Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ 
 Rust equivalent. Two are loud, one is silent, and the silent one is the reason to check for all
 three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
 
+- **A STATIC member function given a `this` it never had.** The COM scaffold hands every method
+  body a `this` parameter, including one the C++ declares `static`. `CFSDropTarget::_DoDropThreadProc`
+  is a static used as a raw `LPTHREAD_START_ROUTINE`; the C recovers the object from its parameter
+  block (`data->This->_DoDrop(...)`). The reply kept the scaffold's `this` AND passed `data->This`,
+  so the call had one argument too many and the wrong receiver. Loud here only because the arity
+  was also wrong — with a matching arity it would have dispatched a real method on a bogus
+  receiver. Check every `static` member the scaffold gave a receiver to, and make the raw thread/
+  callback entry point a separate `extern "system"` fn that recovers `this` the way the C does.
+- **A local RAII type whose sealed FACT token is a template argument has nowhere to land.**
+  `CComHeapPtr<ITEMIDLIST_ABSOLUTE> pidlFull;` — the constant `--seal-facts` protects is the type
+  ARGUMENT, and the faithful Rust (a raw pointer plus an explicit free, or the file's own
+  `CComHeapPtr`) does not spell it, so the fact envelope reports it missing however the body is
+  written. `CFSDropTarget::_DoDrop` was refused twice on exactly this and had to be hand-written.
+  Same root as the `--local-raii` gap; the sanctioned CComPtr lowering is the assembly's own
+  `CppComPtrGuard`, and a reply reaching for `scopeguard::` is rejected by design.
 - **Overloads collapse to whichever one the model translated.** C++ had two
   `BrFolder_GetName`s — `(IShellFolder*, PCIDL, ...)` and `(BrFolder*, HTREEITEM, ...)`, the
   second delegating to the first. Rust has no overloading, so only one survived, and the call
