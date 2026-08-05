@@ -532,6 +532,8 @@ def island_integer_aliases(islands: Sequence[Path]) -> frozenset[str]:
         shared &= {name for name in arch if arch[name] == resolved[0][name]}
     _ISLAND_ALIAS_CACHE[key] = frozenset(shared)
     return _ISLAND_ALIAS_CACHE[key]
+
+
 _RUST_KEYWORDS = frozenset(
     {
         "as",
