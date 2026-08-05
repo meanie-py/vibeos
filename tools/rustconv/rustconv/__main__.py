@@ -2185,6 +2185,23 @@ def cmd_translate(args):
             if call_seal_enabled
             else frozenset()
         )
+        # Sibling-method callees of the class under --cpp-com. Their `_body` lowerings take an
+        # explicit leading `this`, so the sealed arity has to expect one more argument than the
+        # C call site shows (see seal_calls). A class STATIC would not take a receiver and would
+        # now be rejected rather than accepted -- deliberately the safe direction, since a
+        # rejection is loud and re-runs from cache for $0 while a wrong accept ships silently.
+        # `dep.callees` already carries the `_body` suffix for a method lowering, so these are
+        # taken as-is; appending another one yields `_body_body` and matches nothing.
+        receiver_callees = (
+            frozenset(
+                callee
+                for dep in sorted_deps
+                for callee in dep.callees
+                if callee.startswith(f"{args.class_name}_") and callee.endswith("_body")
+            )
+            if cpp_com_mode and getattr(args, "class_name", None)
+            else frozenset()
+        )
         call_seals = (
             {
                 dep.name: seal_calls(
@@ -2192,6 +2209,7 @@ def cmd_translate(args):
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
                     seal_macros,
                     tu_source=scan.raw_source,
+                    receiver_callees=receiver_callees,
                 )
                 for dep in sorted_deps
             }

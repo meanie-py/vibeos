@@ -233,6 +233,20 @@ change stops the caller being dead-stripped.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
+### `EXTERN_C` without `WINAPI` is cdecl, and only i386 says so
+Giving a C++ function C linkage so Rust can call it is the standard fix when a hybrid TU flips
+and the C-linkage forwarders it published go away with it (`precomp.h` documents the
+`DataObject_GetHIDACount` group). The trap is the *convention*: `EXTERN_C HRESULT Foo(...)` with
+no `WINAPI` is **cdecl** (`_Foo`), not stdcall (`_Foo@N`). Declaring it `extern "system"` in Rust
+compiles everywhere and links on amd64/arm64, where the two conventions coincide — it fails only
+on i386, as `undefined symbol: _Foo@N`.
+
+Read the C declaration for `WINAPI`/`STDAPI` rather than assuming: within one file the two mix
+freely. `filedefext.cpp`'s bridges are `extern "C" ... WINAPI` (stdcall, so the Rust bridges that
+replace them stay `extern "system"`), while the helpers they forward to —
+`PathIsDotOrDotDotW`, `SHELL_DisplayNameOf`, `SHELL32_GetDllFromRundll32CommandLine` — are
+plain `EXTERN_C` and so need `extern "C"`. Same file, both answers.
+
 ### A typedef that is ALREADY a pointer, given a second star
 The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
 the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
@@ -2122,6 +2136,31 @@ the counts are not comparable — a C argument mentioning a macro (`IID_PPV_ARG`
 argument and two Rust ones), a turbofish, and rustfmt's trailing comma, which reads a
 six-argument call spread over seven lines as seven.
 
+**Two more places the two counts are not directly comparable, both found the expensive way.** A
+C++ **default argument** (`SHELL_GetAutoRunInfPath(PCWSTR, PWSTR, BOOL ForInvoke = FALSE)`) lets
+the C site pass two where a faithful Rust lowering must pass three, so such a callee needs a
+RANGE and the declaration has to be read from the whole TU, not the sealed body. A C++ **method**
+call carries an implicit receiver that `--cpp-com` spells as an explicit leading `this`, so the
+Rust site has exactly one MORE argument than the C one. The tell for both is the documented one:
+two different functions failing identically on one callee means the checker is at fault.
+
+**The receiver case is the one to internalise, because it failed in BOTH directions at once.**
+On `CDrivesFolderEnum` it rejected `AppendItemsFromEnumerator`, which had written the correct
+`CALL_0000(this, pidl)`, twice — burning two paid calls and voiding the whole TU's assembly. And
+on the destructor it did worse: attempt 1 wrote the correct `DeleteList_body(this)` and was
+rejected, attempt 2 wrote `DeleteList_body()` — no receiver, against a fn whose first parameter
+is `this` — and was ACCEPTED and shipped. **The retry loop drove the model from right to wrong
+in order to satisfy a broken check.** A too-strict envelope does not merely cost money; with a
+retry behind it, it manufactures corruption. When you loosen one, check what the *previously
+accepted* bodies did at that site — the `__rejected__/` forensic copies are how the correct
+destructor was recovered, at $0.
+
+**And a banked body is replayed WITHOUT re-running the audit**, so fixing an envelope is
+retroactively inert: the broken destructor above still replayed as `CACHED ($0)` and still
+shipped, until its cache entry was repaired by hand. Re-auditing on replay costs nothing (the
+audit is deterministic); what it needs is a measured sweep of which banked modules it would
+newly flag, because with `--retry-rejects 0` a newly-failing body refuses to assemble.
+
 **Cause 3: the retry re-sent the identical prompt.** That is a re-roll, not a repair, and the
 rejects that survive to a second attempt are systematic rather than noisy: the model is
 IMPROVING on the C. `ScanForInfFile` refused three samplings to reproduce a `continue` that
@@ -2776,6 +2815,12 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   first argument, which is exactly what makes it look deliberate. Loud (`E0308`/`E0061`), but
   read the C before "fixing" the call: the answer is to write the missing overload under a new
   name, not to bend the arguments until they typecheck.
+  Again in `filedefext.cpp` (2026-08-04): `GetFileStats(HANDLE, ...)` and
+  `GetFileStats(PCWSTR, ...)`, the path form opening the handle and delegating. Only the HANDLE
+  form was translated, so the surviving call site — the `else` branch of `ProcessDirStatsItem`,
+  i.e. every non-directory item in a folder's Properties size calculation — had no callee at
+  all. Written by hand as `GetFileStats_Path`. Worth grepping the C for a duplicated signature
+  before assuming a "missing" callee was simply dropped.
 - **A default argument is not carried to the call site.** `BrFolder_FindTreeItemOfAbsoluteItem(
   BrFolder&, PCIDLIST_ABSOLUTE, HTREEITEM hItem = NULL)` called with two arguments in C++ needs
   three in Rust. Loud (`E0061`), trivial to fix, easy to mis-fix by deleting the parameter.
@@ -3025,6 +3070,31 @@ returning `Result`, with the finally path on both exits. `try_return` must actua
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
+
+### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
+ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
+leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
+its undefined side, so those leftovers keep counting as consumers and invent demand that no
+longer exists: `filedefext.cpp`'s closure reported `SH_FormatByteSize` as still needed by
+`drvdefext.cpp.obj` months after drvdefext.cpp became Rust, and `CDrivesFolder.cpp`'s reported
+two `cxx_free` symbols needed by that same dead object and by `CDesktopFolder.cpp.obj`.
+
+**The direction of the error is what makes it costly**: phantom demand makes the next flip look
+*harder* than it is. It argues for keeping C++ linkage on a symbol nothing in the build calls,
+or for a forwarder nobody needs. filedefext.cpp's real closure is 10 symbols, all already
+`_RustBridge` free functions; the phantom 11th was the only thing that looked like a blocker.
+
+The tool now filters by CMake liveness, conservatively — an object is dropped only when its
+source is provably flipped (present under the target dir, absent from every live list). An
+object whose source is not under the target dir belongs to another target and is always kept,
+because *understating* a closure is the dangerous direction: it reads as "this TU is free to
+leave" right up until the link fails.
+
+**Do not confuse the two analyses.** A retained closure measures OUTBOUND demand — what the Rust
+must publish once the `.cpp` goes. It says nothing about whether the Rust bridges can REACH the
+functions they forward to; those targets may be C++-mangled and reachable today only through the
+very forwarders that are leaving. Answering "zero C++ edits needed" from the closure alone is a
+mistake — see the `EXTERN_C`-without-`WINAPI` entry for the link failure it produces.
 
 ### The cargo kernel does not relink on a `.rs` edit `[§9.6b]`
 `ninja livecd` silently ships the previous kernel: the cargo edge's DEPENDS list doesn't see

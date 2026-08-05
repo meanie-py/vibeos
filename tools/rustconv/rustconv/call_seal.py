@@ -170,6 +170,7 @@ def seal_calls(
     required_calls: set[str],
     function_like_macros: frozenset[str] = frozenset(),
     tu_source: str = "",
+    receiver_callees: frozenset[str] = frozenset(),
 ) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token.
 
@@ -241,13 +242,25 @@ def seal_calls(
             if counted is None or any(i in untokenized for i in _IDENT_RE.findall(counted[1]))
             else counted[0]
         )
+        argc_max = _defaulted_param_count(decl_scope, original)
+        # A C++ METHOD call carries an implicit receiver that the Rust lowering spells as an
+        # explicit leading `this`, so a faithful Rust call site has exactly one MORE argument
+        # than the C one. Counting the C site alone both rejects correct output and -- the
+        # reason this matters -- ACCEPTS a body that dropped `this`: `CDrivesFolderEnum_dtor`
+        # shipped `DeleteList_body()` against a fn whose first parameter is `this`, and the
+        # envelope called it good because 0 matched the C site's 0.
+        if original in receiver_callees:
+            if argc is not None:
+                argc += 1
+            if argc_max is not None:
+                argc_max += 1
         calls.append(
             SealedCall(
                 placeholder,
                 original,
                 in_dead_region(dead_spans, start, end),
                 argc,
-                _defaulted_param_count(decl_scope, original),
+                argc_max,
             )
         )
         result = result[:start] + placeholder + result[end:]

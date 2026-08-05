@@ -1184,7 +1184,9 @@ unsafe fn StringCchCopyNW(dst: LPWSTR, capacity: usize, src: LPCWSTR, count: usi
     if copied < count || copied + 1 < capacity { S_OK } else { E_FAIL }
 }
 
-unsafe fn StringCchCopyExW(dst: LPWSTR, capacity: usize, src: LPCWSTR, end: *mut LPWSTR, remaining: *mut usize, _flags: DWORD) -> HRESULT {
+// `pub` so the free-function slice of this same TU (`file_def_ext_tu`) can use this one
+// definition rather than re-emitting the shared preamble a second time.
+pub unsafe fn StringCchCopyExW(dst: LPWSTR, capacity: usize, src: LPCWSTR, end: *mut LPWSTR, remaining: *mut usize, _flags: DWORD) -> HRESULT {
     let hr = StringCchCopyW(dst, capacity, src);
     let used = if hr >= 0 { lstrlenW(dst) as usize } else { 0 };
     if !end.is_null() { *end = dst.add(used); }
