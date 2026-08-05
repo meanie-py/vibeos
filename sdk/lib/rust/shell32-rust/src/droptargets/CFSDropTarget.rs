@@ -1,50 +1,46 @@
-//! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip. All 21 bodies are here — 19
-//! bought, `_RepositionItems` on the sanctioned retry, `_DoDrop` hand-written — but the file is
-//! deliberately in no `mod` chain so shell32-rust keeps compiling. Owner: task #48.
+//! CFSDropTarget — the file-system folder's IDropTarget. Whole-TU flip of
+//! `dll/win32/shell32/droptargets/CFSDropTarget.cpp` (commented out of the CMake source list);
+//! 19 of the 21 bodies were bought, `_RepositionItems` came back on the sanctioned retry, and
+//! `_DoDrop` is hand-written because the model refused it twice on the fact/call envelope.
 //!
-//! THE SUBSTRATE QUESTION IS SETTLED; what is left is an ordinary grind. `shellcom` owns the
-//! three interfaces this file used to re-declare (IDropTarget/IDataObject/IUnknown): its
-//! IDropTargetVtbl was already slot-for-slot identical, and its IDataObject's `QueryInterface`/
-//! `AddRef`/`QueryGetData` were `usize` placeholders that have since been typed — additive,
-//! because a `usize` slot cannot be called, so no caller could have been reading them. The local
-//! copies are gone and the identity comes from the explicit `use crate::shellcom::{...}` below,
-//! which outranks the prelude's island glob. The other thirteen interfaces shellcom does not
-//! have, so this file's declarations of those stay.
+//! WHICH MODULE OWNS A TYPE is the whole story of this file, and it has three answers, all
+//! load-bearing:
+//!   * `shellcom` owns the COM vtable ABI — IDropTarget / IDataObject / IUnknown come from the
+//!     explicit `use crate::shellcom::{...}` below, which outranks the prelude's island glob.
+//!     The GUID family has to move WITH them: the slots are spelled with shellcom's `GUID`, the
+//!     `IID_*` statics with `IID`, the signatures with `REFIID`, so taking some and not the rest
+//!     merely moves the mismatch from the slots to the statics (measured: importing GUID/IID
+//!     without REFIID left the error count exactly where importing none of them did).
+//!   * The ISLAND owns data layouts, so every PIDL, POINT, STRRET and GUID that crosses INTO a
+//!     shellcom vtable slot gets a `.cast()` at the call site. shellcom.rs:91 says why it keeps
+//!     its own layout-identical copies (it is `#[path]`-included into menuband-rust, which has
+//!     no island) and that the cast is the price.
+//!   * This file owns the fourteen interfaces neither of the other two declares — including
+//!     `IShellFolderView`, whose island form is bindgen's OPAQUE shape with no callable slots,
+//!     and `_DoDropData`, whose island form names the island's ATL-shaped `CFSDropTarget` and
+//!     so would read `data->This` at the wrong offsets on the receiving thread.
 //!
-//! Remaining: **82 errors, identical on all three arches, and NOT ONE of them is about type
-//! identity any more** — they are numeric widths (`usize` vs `u32` vs `i32` at length/count
-//! arguments), three struct initializers missing fields (`QCMINFO.pIdMap`, `CMINVOKECOMMANDINFO`),
-//! one mutability, and a `*mut c_void` that wants `*mut HKEY__`. Ordinary grind; cast by NAMED
-//! type (`as UINT`, `as DWORD`, `as INT`), never by concrete width.
+//! Two trailing-slot extensions made this compile, and both are additive for the same reason:
+//! a `usize` slot is the same SIZE as a fn pointer and cannot be called, so typing one changes
+//! the vtable's type and not its layout — and nothing in the tree constructs either vtable as a
+//! literal. shellcom's `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
+//! its `IFolderViewVtbl` — which stopped dead at `GetFolder` — got the remaining eleven slots
+//! from shobjidl.idl:866 so `GetItemPosition` and `SelectAndPositionItems` sit at the offsets
+//! the C++ vtable puts them at.
 //!
-//! Getting there took aligning two type families, and both are the same trap: the SAME struct
-//! declared in two `-sys` crates, which Rust compares NOMINALLY.
-//!   * `POINTL` — `com_sys::_POINTL` via `crate::types` (what shellcom's vtables use) vs
-//!     `ntdll_sys::nt::_POINTL` via the island glob. One explicit import closed it.
-//!   * The GUID family — and this one is ALL-OR-NOTHING. The vtable slots are spelled with
-//!     shellcom's `GUID`, the `IID_*` statics below are declared with `IID`, and the fn
-//!     signatures use `REFIID`. Import some of those from shellcom and not the rest and the
-//!     mismatch just moves from the slots to the statics: importing `GUID`/`IID` WITHOUT
-//!     `REFIID` sat at 89 errors, the same number as importing none of them.
-//!
-//! Note the count ROSE from 2 to 89 when the last two name-resolution errors were fixed: name
-//! resolution was aborting before type checking ever ran, so the low number was masking, not
-//! progress (AGENTS.md's "a rising count after fixing one is progress"). Do NOT read it as a
-//! regression, and do not celebrate a low count that comes with unresolved names.
-//!
-//! Do NOT delete: re-translating costs a real API call.
+//! One measurement worth keeping: the error count ROSE from 2 to 89 when the last two
+//! name-resolution errors were fixed, because name resolution aborts before type checking ever
+//! runs. A low count that comes with unresolved names is masking, not progress.
 
 // rustconv-assembly: class:CFSDropTarget
 // Deterministic from oleidl.h
 // ONE glob only. The scaffold header emits `use crate::prelude::*` and the body assembly emits
 // `use crate::{shellcom,types,win32}::*`; having both makes all 311 shared names E0659-
 // ambiguous (846 errors), which is precisely what prelude.rs's own header warns about.
-// Measured both ways on this file: prelude alone leaves 80 errors, types/win32/shellcom alone
-// leaves 78 -- neither closes it, because they fail differently. The prelude glob resolves
-// far more names but binds the ISLAND's CFSDropTarget/IShellFolderView/IDataObject/STGMEDIUM,
-// which are different nominal types from the ones this file and shellcom declare, so the
-// remaining work is deciding per interface which module OWNS it. See the parking note in
-// lib.rs.
+// Glob choice controls NAME resolution and declarations control TYPE identity, and the two are
+// orthogonal: prelude-alone left 80 errors and types/win32/shellcom-alone left 78, because they
+// fail differently. The prelude glob resolves far more names, so it is the one kept, and the
+// per-type ownership is then stated explicitly below.
 use crate::prelude::*;
 // Explicit, not a glob: prelude globs the ISLAND, which declares its own IDataObject /
 // IDropTarget / IUnknown. An explicit import outranks a glob, so naming these three here is
@@ -74,6 +70,11 @@ use crate::shell32::shldataobject::SHGetAttributesFromDataObject;
 use crate::shell32::shlfileop::SHFileOperationW;
 use crate::shell_link::CShellLink_CreateInstance;
 use crate::shellutils::CFSTR_SHELLIDLISTW;
+// SHELL_ErrorBox is a C++ TEMPLATE in shellutils.h, so it has no linkable symbol of its own —
+// utils.cpp publishes SHELL_ErrorBox_RustBridge instead, and win32.rs owns the one `#[link_name]`
+// declaration the whole crate shares. Declaring it locally as a plain `SHELL_ErrorBox` links
+// against a symbol that does not exist (i386: `_SHELL_ErrorBox@8` undefined).
+use crate::win32::SHELL_ErrorBox;
 use crate::wine::pidl::{SHELL32_CreateSimpleIDListFromPath, _ILCopyCidaToaPidl, _ILFreeaPidl};
 use crate::wine::shellole::DragQueryFileW;
 
@@ -101,6 +102,18 @@ unsafe fn KeyStateToDropEffect(kst: DWORD) -> DWORD {
     }
 }
 
+// shell32_main.h:144 — a #define, so it is in no header the island reads. An out-of-line fn
+// is safe here where it would not be for a debug macro: this one has a real body, so it is
+// not the no-op-optimization-barrier shape that uncloaks ABI mismatches.
+#[inline]
+unsafe fn InitFormatEtc(fe: *mut FORMATETC, cf: UINT, med: DWORD) {
+    (*fe).cfFormat = cf as CLIPFORMAT;
+    (*fe).dwAspect = DVASPECT_CONTENT;
+    (*fe).ptd = core::ptr::null_mut();
+    (*fe).tymed = med;
+    (*fe).lindex = -1;
+}
+
 // utils.h:124 / precomp.h:198 — both are `#define X_Create() (HDSA)DSA_Create(sizeof(T), 4)`.
 type HDCIA = HDSA;
 type HDCMA = HDSA;
@@ -113,10 +126,25 @@ unsafe fn DCMA_Create() -> HDCMA {
     DSA_Create(core::mem::size_of::<DCMENTRY>() as INT, 4)
 }
 
-extern "C" {
-    fn DSA_Create(cbItem: INT, cItemGrow: INT) -> HDSA;
-    // Still C++ (utils.cpp / CDefaultContextMenu.cpp); declared, not translated.
+// utils.h:125 — `#define DCIA_Destroy(h) DSA_Destroy((HDSA)(h))`, so there is no symbol.
+#[inline]
+unsafe fn DCIA_Destroy(hDCIA: HDCIA) {
+    DSA_Destroy(hDCIA);
+}
+
+// DSA_Create/DSA_Destroy are NOT declared here: they are comctl32 exports spelled `WINAPI`, so
+// the island's `extern "stdcall"` declarations (reached through the prelude glob) are the
+// correct ones. A local `extern "C"` redeclaration compiles and then fails the i386 link on
+// `_DSA_Create`, because cdecl and stdcall decorate the name differently.
+//
+// The four below are the opposite problem: they are ordinary C++ functions in utils.cpp and
+// CDefaultContextMenu.cpp — no EXTERN_C, no WINAPI — so their real symbols are MANGLED and no
+// spelling of an extern block reaches them. Each gets a `_RustBridge` shim on the C++ side,
+// the same treatment SHELL_ErrorBox and the other cross-language helpers already have.
+extern "system" {
+    #[link_name = "DCIA_AddShellExSubkey_RustBridge"]
     fn DCIA_AddShellExSubkey(hDCIA: HDCIA, hProgId: HKEY, pszSubkey: PCWSTR);
+    #[link_name = "DCMA_InsertMenuItems_RustBridge"]
     fn DCMA_InsertMenuItems(
         hDCMA: HDCMA,
         hDCIA: HDCIA,
@@ -128,9 +156,10 @@ extern "C" {
         fCmf: UINT,
         pUnkSite: *mut IUnknown,
     ) -> UINT;
+    #[link_name = "DCMA_InvokeCommand_RustBridge"]
     fn DCMA_InvokeCommand(hDCMA: HDCMA, pICI: *mut CMINVOKECOMMANDINFO) -> HRESULT;
+    #[link_name = "DCMA_Destroy_RustBridge"]
     fn DCMA_Destroy(hDCMA: HDCMA);
-    fn DCIA_Destroy(hDCIA: HDCIA);
 }
 
 extern "C" {
@@ -152,6 +181,53 @@ pub struct IObjectWithSiteVtbl {
 }
 extern "C" {
     pub static IID_IObjectWithSite: IID;
+}
+
+// Deterministic from shlobj.h:893 (DECLARE_INTERFACE_(IShellFolderView, IUnknown)).
+// The island's IShellFolderView is bindgen's OPAQUE form — a bare `vtable_: *const c_void`
+// with no callable slots — so it cannot express `psfv->GetDragPoint(...)`. A local
+// declaration outranks the glob, same as the thirteen other interfaces above. Slot ORDER is
+// the whole contract here: everything up to `SetAutomationObject` is listed so the four slots
+// this file calls sit at the offsets the C++ vtable puts them at. Untyped slots are `usize`
+// placeholders — same size as a fn pointer, so the layout is identical either way, and a
+// `usize` cannot be called by accident.
+#[repr(C)]
+pub struct IShellFolderView {
+    pub lpVtbl: *const IShellFolderViewVtbl,
+}
+#[repr(C)]
+pub struct IShellFolderViewVtbl {
+    pub QueryInterface: unsafe extern "system" fn(This: *mut IShellFolderView, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
+    pub AddRef: unsafe extern "system" fn(This: *mut IShellFolderView) -> ULONG,
+    pub Release: unsafe extern "system" fn(This: *mut IShellFolderView) -> ULONG,
+    pub Rearrange: usize,
+    pub GetArrangeParam: usize,
+    pub ArrangeGrid: usize,
+    pub AutoArrange: usize,
+    pub GetAutoArrange: usize,
+    pub AddObject: usize,
+    pub GetObject: usize,
+    pub RemoveObject: usize,
+    pub GetObjectCount: usize,
+    pub SetObjectCount: usize,
+    pub UpdateObject: usize,
+    pub RefreshObject: usize,
+    pub SetRedraw: usize,
+    pub GetSelectedCount: usize,
+    pub GetSelectedObjects: usize,
+    pub IsDropOnSource: unsafe extern "system" fn(This: *mut IShellFolderView, pDropTarget: *mut IDropTarget) -> HRESULT,
+    pub GetDragPoint: unsafe extern "system" fn(This: *mut IShellFolderView, ppt: *mut POINT) -> HRESULT,
+    pub GetDropPoint: usize,
+    pub MoveIcons: usize,
+    pub SetItemPos: usize,
+    pub IsBkDropTarget: usize,
+    pub SetClipboard: usize,
+    pub SetPoints: usize,
+    pub GetItemSpacing: usize,
+    pub SetCallback: usize,
+    pub Select: usize,
+    pub QuerySupport: usize,
+    pub SetAutomationObject: usize,
 }
 
 // Deterministic from objidl.h
@@ -403,6 +479,20 @@ pub struct CFSDropTarget {
     pub m_site: *mut IUnknown,
 }
 
+// CFSDropTarget.h:78 — the async-drop thread's argument block. It MUST be declared here and
+// not taken from the island glob: the island's copy names the island's own `CFSDropTarget`
+// (bindgen's ATL-shaped `vtable_ + _base: ATL_CComObjectRootEx + ...`), which is a different
+// nominal type from the one above and, worse, a different LAYOUT — so `data->This` would be
+// read at the wrong offsets on the receiving thread.
+#[repr(C)]
+pub struct _DoDropData {
+    pub This: *mut CFSDropTarget,
+    pub pStream: *mut IStream,
+    pub dwKeyState: DWORD,
+    pub pt: POINTL,
+    pub pdwEffect: DWORD,
+}
+
 unsafe fn CFSDropTarget_cpp_com_assign_m_site(this: *mut CFSDropTarget, value: *mut IUnknown) {
     let old = (*this).m_site;
     if old == value { return; }
@@ -540,7 +630,9 @@ pub unsafe extern "C" fn CFSDropTarget_CreateInstance(
     let this = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<CFSDropTarget>()) as *mut CFSDropTarget;
     if this.is_null() { return E_OUTOFMEMORY; }
     core::ptr::write(this, CFSDropTarget {
-        IDropTarget_iface: IDropTarget { lpVtbl: core::ptr::addr_of!(CFSDROPTARGET_IDROPTARGET_VTBL) },
+        // `.cast_mut()` because shellcom spells IDropTarget's slot `*mut`, not `*const`.
+        // The vtable itself stays immutable; only the pointer's constness is adjusted.
+        IDropTarget_iface: IDropTarget { lpVtbl: core::ptr::addr_of!(CFSDROPTARGET_IDROPTARGET_VTBL).cast_mut() },
         IObjectWithSite_iface: IObjectWithSite { lpVtbl: core::ptr::addr_of!(CFSDROPTARGET_IOBJECTWITHSITE_VTBL) },
         ref_count: core::sync::atomic::AtomicI32::new(1),
         m_cfShellIDList: core::mem::zeroed(),
@@ -836,6 +928,13 @@ extern "system" {
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
     fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
+    // Redeclared rather than taken from the island, which spells the thread proc as bindgen's
+    // per-target concrete ABI (`extern "stdcall"` on i386). `extern "system"` IS that same
+    // calling convention on every target we build, but rustc keeps the two SPELLINGS as
+    // distinct fn types, so an `extern "system"` fn item will not coerce into the island's
+    // slot. Same shape as dialogs/filedefext.rs:1025. Both `pfnCallback` args are NULL at
+    // every call site here, so LPVOID is enough.
+    fn SHCreateThread(proc_: unsafe extern "system" fn(LPVOID) -> DWORD, data: LPVOID, flags: DWORD, callback: LPVOID) -> BOOL;
 }
 
 extern "C" {
@@ -938,7 +1037,7 @@ pub unsafe fn SHELL_StripIllegalFsNameCharacters_body(Buf: LPWSTR) -> () {
         *dst = *src;
         if *dst == 0 {
             break;
-        } else if wcschr(INVALID_FILETITLE_CHARACTERSW, *dst as i32) != core::ptr::null_mut() {
+        } else if wcschr(INVALID_FILETITLE_CHARACTERSW.as_ptr(), *dst) != core::ptr::null_mut() {
             src = CharNextW(src);
         } else {
             src = src.offset(1);
@@ -972,8 +1071,8 @@ pub unsafe fn GetDefaultCopyMoveEffect_body() -> () {}
 
 pub unsafe fn CFSDropTarget__CopyItems_body(this: *mut CFSDropTarget, pSFFrom: *mut IShellFolder, cidl: UINT, apidl: *mut LPCITEMIDLIST, bCopy: BOOL) -> HRESULT {
     let mut ret: HRESULT;
-    let mut wszDstPath: [WCHAR; MAX_PATH + 1] = [0; MAX_PATH + 1];
-    let pwszSrcPathsList: PWSTR = HeapAlloc(GetProcessHeap(), 0, MAX_PATH * core::mem::size_of::<WCHAR>() * cidl as usize + 1) as PWSTR;
+    let mut wszDstPath: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
+    let pwszSrcPathsList: PWSTR = HeapAlloc(GetProcessHeap(), 0, MAX_PATH as usize * core::mem::size_of::<WCHAR>() * cidl as usize + 1) as PWSTR;
     if pwszSrcPathsList.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -984,7 +1083,9 @@ pub unsafe fn CFSDropTarget__CopyItems_body(this: *mut CFSDropTarget, pSFFrom: *
     let mut bRenameOnCollision: BOOL = FALSE;
 
     for i in 0..cidl {
-        ret = ((*(*pSFFrom).lpVtbl).GetDisplayNameOf)(pSFFrom, *apidl.add(i as usize), SHGDN_FORPARSING, &mut strretFrom);
+        // shellcom owns the vtable ABI and declares its own PIDL/STRRET layouts (see the note
+        // at shellcom.rs:91), so island-typed locals cross the boundary with a `.cast()`.
+        ret = ((*(*pSFFrom).lpVtbl).GetDisplayNameOf)(pSFFrom, (*apidl.add(i as usize)).cast(), SHGDN_FORPARSING, core::ptr::addr_of_mut!(strretFrom).cast());
         if ret < 0 {
             HeapFree(GetProcessHeap(), 0, pwszSrcPathsList as *mut _);
             return ret;
@@ -1001,7 +1102,7 @@ pub unsafe fn CFSDropTarget__CopyItems_body(this: *mut CFSDropTarget, pSFFrom: *
 
     *pwszListPos = 0x0000u16;
 
-    ret = StringCchCopyW(wszDstPath.as_mut_ptr(), MAX_PATH, (*this).m_sPathTarget);
+    ret = StringCchCopyW(wszDstPath.as_mut_ptr(), MAX_PATH as usize, (*this).m_sPathTarget);
     if ret < 0 {
         HeapFree(GetProcessHeap(), 0, pwszSrcPathsList as *mut _);
         return ret;
@@ -1010,8 +1111,8 @@ pub unsafe fn CFSDropTarget__CopyItems_body(this: *mut CFSDropTarget, pSFFrom: *
     wszDstPath[lstrlenW(wszDstPath.as_ptr()) as usize + 1] = UNICODE_NULL;
 
     if bCopy != 0 {
-        let mut szPath1: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-        let mut szPath2: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+        let mut szPath1: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut szPath2: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
         GetFullPathNameW(pwszSrcPathsList, szPath1.len() as DWORD, szPath1.as_mut_ptr(), core::ptr::null_mut());
         GetFullPathNameW(wszDstPath.as_ptr(), szPath2.len() as DWORD, szPath2.as_mut_ptr(), core::ptr::null_mut());
         PathRemoveFileSpecW(szPath1.as_mut_ptr());
@@ -1168,11 +1269,11 @@ pub unsafe fn CFSDropTarget__GetEffectFromMenu_body(this: *mut CFSDropTarget, pD
 
     GetDefaultCopyMoveEffect_body();
     if (*pdwEffect & dwAvailableEffects & DROPEFFECT_COPY) != 0 {
-        SetMenuDefaultItem(hpopupmenu, IDM_COPYHERE as UINT, FALSE);
+        SetMenuDefaultItem(hpopupmenu, IDM_COPYHERE as UINT, FALSE as UINT);
     } else if (*pdwEffect & dwAvailableEffects & DROPEFFECT_MOVE) != 0 {
-        SetMenuDefaultItem(hpopupmenu, IDM_MOVEHERE as UINT, FALSE);
+        SetMenuDefaultItem(hpopupmenu, IDM_MOVEHERE as UINT, FALSE as UINT);
     } else if (dwAvailableEffects & DROPEFFECT_LINK) != 0 {
-        SetMenuDefaultItem(hpopupmenu, IDM_LINKHERE as UINT, FALSE);
+        SetMenuDefaultItem(hpopupmenu, IDM_LINKHERE as UINT, FALSE as UINT);
     }
 
     let mut keys = CRegKeyHandleArray::default();
@@ -1180,20 +1281,26 @@ pub unsafe fn CFSDropTarget__GetEffectFromMenu_body(this: *mut CFSDropTarget, pD
     let hDCMA = DCMA_Create();
     let pidlFolder = CComHeapPtr::new(SHELL32_CreateSimpleIDListFromPath((*this).m_sPathTarget, FILE_ATTRIBUTE_DIRECTORY));
     if !hDCMA.is_null() && !hDCIA.is_null() && !pidlFolder.as_raw().is_null() {
-        AddPidlClassKeysToArray(pidlFolder.as_raw(), keys.hKeys.as_mut_ptr(), &mut keys.cKeys);
+        // Two casts per call, both nominal-only: shfldr's HKEY is `*mut c_void` where the
+        // island's is `*mut HKEY__`, and `SHELL32_CreateSimpleIDListFromPath` hands back
+        // shellcom's ITEMIDLIST where shlfolder/the C externs want the island's.
+        AddPidlClassKeysToArray(pidlFolder.as_raw().cast(), keys.hKeys.as_mut_ptr().cast(), &mut keys.cKeys);
         let mut i = 0;
         while i < keys.len() {
-            DCIA_AddShellExSubkey(hDCIA, keys.hKeys[i], CPP_COM_WSTR_0E3E6B83CD96.as_ptr());
+            DCIA_AddShellExSubkey(hDCIA, keys.hKeys[i].cast(), CPP_COM_WSTR_0E3E6B83CD96.as_ptr());
             i += 1;
         }
 
+        // The C aggregate-initializes only four members; the trailing `pIdMap` is zero-filled
+        // by the language, so spell that zero out rather than leaving it to look deliberate.
         let mut qcmi = QCMINFO {
             hmenu: hpopupmenu,
             indexMenu: 0,
             idCmdFirst: DROPIDM_EXTFIRST,
             idCmdLast: DROPIDM_EXTLAST,
+            pIdMap: core::ptr::null(),
         };
-        DCMA_InsertMenuItems(hDCMA, hDCIA, pidlFolder.as_raw(), pDataObject, keys.hKeys.as_mut_ptr(), keys.cKeys, &mut qcmi, 0, (*this).m_site);
+        DCMA_InsertMenuItems(hDCMA, hDCIA, pidlFolder.as_raw().cast(), pDataObject, keys.hKeys.as_mut_ptr().cast(), keys.cKeys, &mut qcmi, 0, (*this).m_site);
     }
 
     let hwndDummy = CreateWindowExW(
@@ -1212,7 +1319,9 @@ pub unsafe fn CFSDropTarget__GetEffectFromMenu_body(this: *mut CFSDropTarget, pD
     );
 
     SetForegroundWindow(hwndDummy);
-    let uCommand = TrackPopupMenu(
+    // `UINT uCommand` in the C (CFSDropTarget.cpp:439); the island types TrackPopupMenu's
+    // return as BOOL, so pin the width HERE rather than at each of the six comparisons.
+    let uCommand: UINT = TrackPopupMenu(
         hpopupmenu,
         TPM_LEFTALIGN | TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_RIGHTBUTTON | TPM_NONOTIFY,
         pt.x,
@@ -1220,7 +1329,7 @@ pub unsafe fn CFSDropTarget__GetEffectFromMenu_body(this: *mut CFSDropTarget, pD
         0,
         hwndDummy,
         core::ptr::null_mut(),
-    );
+    ) as UINT;
 
     DestroyWindow(hwndDummy);
 
@@ -1233,11 +1342,13 @@ pub unsafe fn CFSDropTarget__GetEffectFromMenu_body(this: *mut CFSDropTarget, pD
             && DROPIDM_EXTFIRST > 0
     );
     if uCommand >= DROPIDM_EXTFIRST as UINT && uCommand <= DROPIDM_EXTLAST as UINT {
+        // C aggregate init names four members and zero-fills the other five.
         let mut ici = CMINVOKECOMMANDINFO {
             cbSize: core::mem::size_of::<CMINVOKECOMMANDINFO>() as DWORD,
             fMask: 0,
             hwnd: (*this).m_hwndSite,
-            lpVerb: MAKEINTRESOURCEA((uCommand - DROPIDM_EXTFIRST as UINT) as INT),
+            lpVerb: MAKEINTRESOURCEA(uCommand - DROPIDM_EXTFIRST as UINT),
+            ..core::mem::zeroed()
         };
         ici.nShow = SW_SHOW as INT;
         if ((*this).m_grfKeyState & MK_SHIFT) != 0 {
@@ -1303,27 +1414,30 @@ pub unsafe fn CFSDropTarget__RepositionItems_body(this: *mut CFSDropTarget, psfv
     }
 
     let apt = CoTaskMemAlloc(
-        (cidl as usize) * core::mem::size_of::<POINT>()
+        ((cidl as usize) * core::mem::size_of::<POINT>()) as SIZE_T
     ) as *mut POINT;
     if apt.is_null() {
         SHFree(pidlFolder);
-        _ILFreeaPidl(apidl, cidl);
+        _ILFreeaPidl(apidl.cast(), cidl);
         ((*(*pfv).lpVtbl).Release)(pfv);
         pfv = core::ptr::null_mut();
         return E_OUTOFMEMORY;
     }
 
+    // `.cast()` on every PIDL and POINT crossing into shellcom's vtable: the locals are
+    // island-typed (prelude), the slots are spelled in shellcom's own layout-identical
+    // copies. Layout matches; only the nominal type differs.
     for i in 0..cidl {
-        ((*(*pfv).lpVtbl).GetItemPosition)(pfv, *apidl.offset(i as isize), &mut *apt.offset(i as isize));
+        ((*(*pfv).lpVtbl).GetItemPosition)(pfv, (*apidl.offset(i as isize)).cast(), apt.offset(i as isize).cast());
         (*apt.offset(i as isize)).x += pt.x - ptDrag.x;
         (*apt.offset(i as isize)).y += pt.y - ptDrag.y;
     }
 
-    ((*(*pfv).lpVtbl).SelectAndPositionItems)(pfv, cidl, apidl, apt, SVSI_SELECT);
+    ((*(*pfv).lpVtbl).SelectAndPositionItems)(pfv, cidl, apidl.cast(), apt.cast(), SVSI_SELECT);
 
     CoTaskMemFree(apt as *mut core::ffi::c_void);
     SHFree(pidlFolder);
-    _ILFreeaPidl(apidl, cidl);
+    _ILFreeaPidl(apidl.cast(), cidl);
     ((*(*pfv).lpVtbl).Release)(pfv);
     pfv = core::ptr::null_mut();
     S_OK
@@ -1344,9 +1458,9 @@ pub unsafe fn CFSDropTarget_DragEnter_body(this: *mut CFSDropTarget, pDataObject
     InitFormatEtc(&mut fmt, (*this).m_cfShellIDList, TYMED_HGLOBAL);
     InitFormatEtc(&mut fmt2, CF_HDROP, TYMED_HGLOBAL);
 
-    if ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, &fmt) >= 0 {
+    if ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, core::ptr::addr_of_mut!(fmt).cast()) >= 0 {
         (*this).m_fAcceptFmt = TRUE;
-    } else if ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, &fmt2) >= 0 {
+    } else if ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, core::ptr::addr_of_mut!(fmt2).cast()) >= 0 {
         (*this).m_fAcceptFmt = TRUE;
     }
 
@@ -1390,9 +1504,9 @@ pub unsafe fn CFSDropTarget_DragEnter_body(this: *mut CFSDropTarget, pDataObject
     }
 
     let mut medium: STGMEDIUM = core::mem::zeroed();
-    if ((*(*pDataObject).lpVtbl).GetData)(pDataObject, &fmt2, &mut medium) >= 0 {
-        let mut wstrFirstFile: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-        if DragQueryFileW(medium.hGlobal as HDROP, 0, wstrFirstFile.as_mut_ptr(), wstrFirstFile.len() as UINT) != 0 {
+    if ((*(*pDataObject).lpVtbl).GetData)(pDataObject, core::ptr::addr_of_mut!(fmt2).cast(), core::ptr::addr_of_mut!(medium).cast()) >= 0 {
+        let mut wstrFirstFile: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        if DragQueryFileW(medium.__bindgen_anon_1.hGlobal.cast(), 0, wstrFirstFile.as_mut_ptr(), wstrFirstFile.len() as UINT) != 0 {
             if !PathIsSameDrive_body(wstrFirstFile.as_ptr(), (*this).m_sPathTarget)
                 && (*this).m_dwDefaultEffect != D_LINK
             {
@@ -1439,7 +1553,7 @@ pub unsafe fn CFSDropTarget_Drop_body(this: *mut CFSDropTarget, pDataObject: *mu
         return E_INVALIDARG;
     }
 
-    IUnknown_GetWindow((*this).m_site, &mut (*this).m_hwndSite);
+    IUnknown_GetWindow((*this).m_site.cast(), &mut (*this).m_hwndSite);
 
     let dwAvailableEffects = *pdwEffect;
 
@@ -1455,9 +1569,14 @@ pub unsafe fn CFSDropTarget_Drop_body(this: *mut CFSDropTarget, pDataObject: *mu
     if *pdwEffect == DROPEFFECT_MOVE && !(*this).m_site.is_null() {
         let mut psfv: *mut IShellFolderView = core::ptr::null_mut();
         let _psfv_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(psfv));
-        let hr = IUnknown_QueryService((*this).m_site, IID_IFolderView, core::ptr::addr_of!(IID_IShellFolderView), core::ptr::addr_of_mut!(psfv).cast());
+        // `SID_SFolderView` is `#define`d to IID_IFolderView (shobjidl.idl:904) — a REFGUID,
+        // so it goes in by address, not by value.
+        let hr = IUnknown_QueryService((*this).m_site, core::ptr::addr_of!(IID_IFolderView), core::ptr::addr_of!(IID_IShellFolderView), core::ptr::addr_of_mut!(psfv).cast());
         if hr >= 0 {
-            let is_drop_result = ((*(*psfv).lpVtbl).IsDropOnSource)(psfv, this);
+            // C++ passes `this` and lets the compiler upcast CFSDropTarget* -> IDropTarget*.
+            // Rust has no implicit upcast, so name the embedded interface explicitly; the
+            // offset is what the C++ adjustor thunk would have added.
+            let is_drop_result = ((*(*psfv).lpVtbl).IsDropOnSource)(psfv, core::ptr::addr_of_mut!((*this).IDropTarget_iface));
             if is_drop_result == S_OK {
                 CFSDropTarget__RepositionItems_body(this, psfv, pDataObject, pt);
                 if !psfv.is_null() {
@@ -1485,8 +1604,10 @@ pub unsafe fn CFSDropTarget_Drop_body(this: *mut CFSDropTarget, pDataObject: *mu
             (*data).This = this;
             ((*(*pDataObject).lpVtbl).AddRef)(pDataObject);
             ((*(*pAsyncOperation).lpVtbl).StartOperation)(pAsyncOperation, core::ptr::null_mut());
-            CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pDataObject, &mut (*data).pStream);
-            ((*this).lpVtbl.AddRef)(this);
+            CoMarshalInterThreadInterfaceInStream(core::ptr::addr_of!(IID_IDataObject).cast(), pDataObject.cast(), core::ptr::addr_of_mut!((*data).pStream).cast());
+            // `this->AddRef()` in the C++ is the CLASS's AddRef, not a vtable dispatch —
+            // CFSDropTarget has no `lpVtbl` of its own, its two embedded interfaces do.
+            CFSDropTarget_AddRef(this);
             (*data).dwKeyState = dwKeyState;
             (*data).pt = pt;
             (*data).pdwEffect = *pdwEffect;
@@ -1519,7 +1640,7 @@ pub unsafe fn CFSDropTarget__DoDropThreadProc_body(this: *mut CFSDropTarget, lpP
     let data = lpParameter as *mut _DoDropData;
     let mut pDataObject: *mut IDataObject = core::ptr::null_mut();
     let _pDataObject_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pDataObject));
-    let hr = CoGetInterfaceAndReleaseStream((*data).pStream, core::ptr::addr_of!(IID_IDataObject), core::ptr::addr_of_mut!(pDataObject).cast());
+    let hr = CoGetInterfaceAndReleaseStream((*data).pStream.cast(), core::ptr::addr_of!(IID_IDataObject).cast(), core::ptr::addr_of_mut!(pDataObject).cast());
 
     if hr >= 0 {
         let mut pAsyncOperation: *mut IAsyncOperation = core::ptr::null_mut();
@@ -1538,7 +1659,8 @@ pub unsafe fn CFSDropTarget__DoDropThreadProc_body(this: *mut CFSDropTarget, lpP
         pDataObject = core::ptr::null_mut();
     }
 
-    ((*(*(*data).This).lpVtbl).Release)((*data).This);
+    // `data->This->Release()` — again the class's own Release, not a vtable slot.
+    CFSDropTarget_Release((*data).This);
     HeapFree(GetProcessHeap(), 0, data as LPVOID);
     0
 }
@@ -1580,7 +1702,6 @@ extern "system" {
         pszBuf: LPWSTR,
         cchBuf: UINT,
     ) -> HRESULT;
-    fn SHELL_ErrorBox(hwndOwner: HWND, Error: UINT) -> UINT;
     fn PathCombineW(lpszDest: LPWSTR, lpszDir: LPCWSTR, lpszFile: LPCWSTR) -> LPWSTR;
     fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
     fn PathRemoveExtensionW(pszPath: LPWSTR);
@@ -1622,14 +1743,14 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
         }
     }
 
-    hr = ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, &mut fmt);
+    hr = ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, core::ptr::addr_of_mut!(fmt).cast());
     if hr >= 0 {
         // The C only ERR()s on failure here and keeps going; medium stays zeroed and the
         // GlobalLock below is what actually turns it into E_FAIL.
-        hr = ((*(*pDataObject).lpVtbl).GetData)(pDataObject, &mut fmt, &mut medium);
+        hr = ((*(*pDataObject).lpVtbl).GetData)(pDataObject, core::ptr::addr_of_mut!(fmt).cast(), core::ptr::addr_of_mut!(medium).cast());
 
         /* lock the handle */
-        let lpcida = GlobalLock(medium.hGlobal) as *mut CIDA;
+        let lpcida = GlobalLock(medium.__bindgen_anon_1.hGlobal) as *mut CIDA;
         if lpcida.is_null() {
             ReleaseStgMedium(&mut medium);
             return E_FAIL;
@@ -1637,7 +1758,7 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
 
         /* convert the data into pidl */
         let mut pidl: LPITEMIDLIST = core::ptr::null_mut();
-        let apidl = _ILCopyCidaToaPidl(&mut pidl, lpcida);
+        let apidl = _ILCopyCidaToaPidl(core::ptr::addr_of_mut!(pidl).cast(), lpcida.cast());
         if apidl.is_null() {
             ReleaseStgMedium(&mut medium);
             return E_FAIL;
@@ -1666,7 +1787,7 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
         } else {
             hr = ((*(*psfDesktop).lpVtbl).BindToObject)(
                 psfDesktop,
-                pidl,
+                pidl.cast(),
                 core::ptr::null_mut(),
                 core::ptr::addr_of!(IID_IShellFolder),
                 core::ptr::addr_of_mut!(psfFrom).cast(),
@@ -1680,20 +1801,20 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
         }
 
         if bLinking != 0 {
-            let mut wszNewLnk: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+            let mut wszNewLnk: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
             /* We need to create a link for each pidl in the copied items, so step
              * through the pidls from the clipboard */
             for i in 0..(*lpcida).cidl {
                 let att: SFGAOF = SHGetAttributes(
                     psfFrom,
-                    *apidl.add(i as usize),
+                    (*apidl.add(i as usize)).cast(),
                     SFGAO_FOLDER | SFGAO_STREAM | SFGAO_FILESYSTEM,
                 );
                 let mut pidlFull: CComHeapPtr<ITEMIDLIST> = CComHeapPtr::empty();
-                hr = SHILCombine(pidl, *apidl.add(i as usize), pidlFull.as_mut_slot());
+                hr = SHILCombine(pidl, (*apidl.add(i as usize)).cast(), pidlFull.as_mut_slot());
 
-                let mut targetName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+                let mut targetName: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
                 if hr >= 0 {
                     // If the target is a file, we use SHGDN_FORPARSING because "NeverShowExt"
                     // will hide the ".lnk" extension. If the target is a virtual item, we ask
@@ -1711,19 +1832,19 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
                     };
                     hr = DisplayNameOfW(
                         psfFrom,
-                        *apidl.add(i as usize),
+                        (*apidl.add(i as usize)).cast(),
                         ShgdnFor | SHGDN_INFOLDER,
                         targetName.as_mut_ptr(),
                         targetName.len() as UINT,
                     );
                 }
                 if hr < 0 {
-                    SHELL_ErrorBox((*this).m_hwndSite, hr as UINT);
+                    SHELL_ErrorBox((*this).m_hwndSite.cast(), hr as UINT);
                     break;
                 }
                 SHELL_StripIllegalFsNameCharacters_body(targetName.as_mut_ptr());
 
-                let mut wszCombined: [WCHAR; MAX_PATH + MAX_PATH] = [0; MAX_PATH + MAX_PATH];
+                let mut wszCombined: [WCHAR; MAX_PATH as usize + MAX_PATH as usize] = [0; MAX_PATH as usize + MAX_PATH as usize];
                 PathCombineW(
                     wszCombined.as_mut_ptr(),
                     (*this).m_sPathTarget,
@@ -1806,11 +1927,11 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
                     hr = ((*(*ppf).lpVtbl).Save)(ppf, wszNewLnk.as_ptr(), fRemember);
                 }
                 if hr < 0 {
-                    SHELL_ErrorBox((*this).m_hwndSite, hr as UINT);
+                    SHELL_ErrorBox((*this).m_hwndSite.cast(), hr as UINT);
                     break;
                 }
                 SHChangeNotify(
-                    SHCNE_CREATE,
+                    SHCNE_CREATE as LONG,
                     SHCNF_PATHW,
                     wszNewLnk.as_ptr() as LPCVOID,
                     core::ptr::null(),
@@ -1830,20 +1951,20 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
         _ILFreeaPidl(apidl, (*lpcida).cidl);
         ReleaseStgMedium(&mut medium);
     } else {
-        hr = ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, &mut fmt2);
+        hr = ((*(*pDataObject).lpVtbl).QueryGetData)(pDataObject, core::ptr::addr_of_mut!(fmt2).cast());
         if hr >= 0 {
             // The C re-declares and re-inits a local `fmt2` here, shadowing the outer one.
             let mut fmt2_inner: FORMATETC = core::mem::zeroed();
             InitFormatEtc(&mut fmt2_inner, CF_HDROP, TYMED_HGLOBAL);
-            hr = ((*(*pDataObject).lpVtbl).GetData)(pDataObject, &mut fmt2_inner, &mut medium);
+            hr = ((*(*pDataObject).lpVtbl).GetData)(pDataObject, core::ptr::addr_of_mut!(fmt2_inner).cast(), core::ptr::addr_of_mut!(medium).cast());
             if hr >= 0 {
-                let mut wszTargetPath: [WCHAR; MAX_PATH + 1] = [0; MAX_PATH + 1];
+                let mut wszTargetPath: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
 
                 wcscpy(wszTargetPath.as_mut_ptr(), (*this).m_sPathTarget);
                 //Double NULL terminate.
                 wszTargetPath[wcslen(wszTargetPath.as_ptr()) + 1] = 0;
 
-                let lpdf = GlobalLock(medium.hGlobal) as LPDROPFILES;
+                let lpdf = GlobalLock(medium.__bindgen_anon_1.hGlobal) as LPDROPFILES;
                 if lpdf.is_null() {
                     return E_FAIL;
                 }
@@ -2279,7 +2400,7 @@ pub unsafe fn CFSDropTarget__DoDrop_body(
 //     if (SUCCEEDED(pDataObject->GetData(&fmt2, &medium)))
 //     {
 //         WCHAR wstrFirstFile[MAX_PATH];
-//         if (DragQueryFileW((HDROP)medium.hGlobal, 0, wstrFirstFile, _countof(wstrFirstFile)))
+//         if (DragQueryFileW((HDROP)medium.__bindgen_anon_1.hGlobal, 0, wstrFirstFile, _countof(wstrFirstFile)))
 //         {
 //             if (!PathIsSameDrive(wstrFirstFile, m_sPathTarget) && m_dwDefaultEffect != D_LINK)
 //             {

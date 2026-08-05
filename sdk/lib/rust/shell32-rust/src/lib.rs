@@ -80,15 +80,9 @@ pub mod file_def_ext;
 #[path = "dialogs/view.rs"]
 pub mod dialogs_view;
 pub mod drop_target_helper;
-// droptargets/CFSDropTarget.rs is TRANSLATED AND ON DISK but deliberately NOT a module yet, so
-// this crate keeps compiling. 19 of its 21 bodies are paid artifact, `_RepositionItems` came back
-// on the sanctioned retry, and `_DoDrop` is hand-written (the model refused it twice on the
-// envelope). What is left is not a grind but one decision: the file declares its own
-// IDataObject/IUnknown/IShellFolderView/STGMEDIUM/CFSDropTarget while the island declares another
-// set and shellcom a third, and ~78 errors are that identity mismatch plus its knock-on. Enabling
-// it before that is settled would mean guessing a vtable shape, which does not fail loudly.
-// #[path = "droptargets/CFSDropTarget.rs"]
-// pub mod fs_drop_target;
+// Assembled at the C tree's path (droptargets/) by rustconv; keep that path stable for re-runs.
+#[path = "droptargets/CFSDropTarget.rs"]
+pub mod fs_drop_target;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;

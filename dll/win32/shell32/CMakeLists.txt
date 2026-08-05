@@ -152,7 +152,13 @@ list(APPEND SOURCE
     folders/CRegFolder.cpp
     # droptargets/CexeDropHandler.cpp — replaced by Rust
     # (shell32-rust/src/exe_drop_handler.rs).
-    droptargets/CFSDropTarget.cpp
+    # droptargets/CFSDropTarget.cpp — replaced by Rust
+    # (shell32-rust/src/droptargets/CFSDropTarget.rs); cohab via libshell32_rust.a. Whole-TU
+    # flip: CFSDropTarget is an internal ShellObjectCreator class with no OBJECT_ENTRY, and the
+    # only outside entry point was CFSDropTarget_CreateInstance, whose sole callers are the
+    # already-flipped CFSFolder. Rust now publishes the
+    # CFSDropTarget_CreateInstance_RustBridge that cfs_folder.rs links against, so the C++
+    # bridge here would have been a duplicate symbol rather than a peer.
     droptargets/CRecyclerDropTarget.cpp
     # shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
     # shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
