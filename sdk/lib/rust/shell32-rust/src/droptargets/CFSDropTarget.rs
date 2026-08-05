@@ -11,12 +11,18 @@
 //! which outranks the prelude's island glob. The other thirteen interfaces shellcom does not
 //! have, so this file's declarations of those stay.
 //!
-//! Remaining: **89 ordinary type errors, identical on all three arches** — fn-item-vs-fn-pointer
-//! at the vtable constants, a few mutability mismatches, and the usual numeric widths. None of
-//! them is a layout or ABI question any more. Note the count ROSE from 2 to 89 when the last two
-//! name-resolution errors were fixed: name resolution was aborting before type checking, so the
-//! low number was masking, not progress (AGENTS.md's "a rising count after fixing one is
-//! progress"). Do NOT read 89 as a regression.
+//! Remaining: **87 ordinary type errors, identical on all three arches**, on two axes and a tail.
+//! The axes are the SAME struct declared in two `-sys` crates, which Rust compares nominally:
+//! `POINTL` is `com_sys::_POINTL` through `crate::types` (what shellcom's vtables use) and
+//! `ntdll_sys::nt::_POINTL` through the island glob. Importing `crate::types::POINTL` explicitly
+//! fixed that axis outright. `GUID` is the same story but pulls the OTHER way — the `IID_*`
+//! statics are island-typed, so importing shellcom's made things worse, not better; it has to be
+//! aligned per site rather than globally. The tail is mutability and numeric widths.
+//!
+//! Note the count ROSE from 2 to 89 when the last two name-resolution errors were fixed: name
+//! resolution was aborting before type checking ever ran, so the low number was masking, not
+//! progress (AGENTS.md's "a rising count after fixing one is progress"). Do NOT read it as a
+//! regression, and do not celebrate a low count that comes with unresolved names.
 //!
 //! Do NOT delete: re-translating costs a real API call.
 
@@ -40,6 +46,12 @@ use crate::shellcom::{
     IDataObject, IDataObjectVtbl, IDropTarget, IDropTargetVtbl, IUnknown, IUnknownVtbl,
     REFGUID, SIGDN_DESKTOPABSOLUTEPARSING,
 };
+// The vtable slots above are spelled with `crate::types`' POINTL, and
+// the island's POINTL is a DIFFERENT nominal type (ntdll_sys::nt::_POINTL vs
+// com_sys::_POINTL), so the fn items would not coerce into the slots. GUID is the same
+// story but pulls the OTHER way — the IID_* statics are island-typed — so it is left to
+// the glob and aligned per site instead.
+use crate::types::POINTL;
 
 // ---- integration substrate (hand-added; the assembly references these but declares none) ----
 // Explicit imports, not a second glob: prelude.rs owns the one glob in this module and says so.
