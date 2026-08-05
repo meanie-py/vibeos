@@ -49,3 +49,26 @@ void FatalError(char *pszFmt, ...)
     FatalError_v(pszFmt, (void *)ap);
     va_end(ap);
 }
+
+/* strsafe.h's StringCchPrintfW. The other bounded string ops the module uses (StringCchCopyW,
+ * StringCchCatW, StringCbCopyW) are ported into syssetup-rust (src/syssetup/strsafe.rs), because
+ * nothing in the tree defines a `static __inline` -- but this one is variadic, so its ENTRY has
+ * to be here for the same c_variadic reason as the two above. The body is in
+ * StringCchPrintfW_v; this is only the va_start.
+ *
+ * Deliberately NOT #include <strsafe.h>: the header's own `static __inline` definition has
+ * internal linkage and would be a redefinition of the external one this file provides. */
+#include <windows.h>
+
+extern HRESULT StringCchPrintfW_v(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, void *ap);
+
+HRESULT WINAPI StringCchPrintfW(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, ...)
+{
+    HRESULT hr;
+    va_list ap;
+
+    va_start(ap, pszFormat);
+    hr = StringCchPrintfW_v(pszDest, cchDest, pszFormat, (void *)ap);
+    va_end(ap);
+    return hr;
+}

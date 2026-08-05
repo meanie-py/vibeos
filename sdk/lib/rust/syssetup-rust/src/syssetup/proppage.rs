@@ -93,7 +93,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         return (FALSE) as i32;
     }
 
-    SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (pMouseInfo as DWORD_PTR) as i32);
+    SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, (pMouseInfo as DWORD_PTR) as LONG_PTR);
 
     i = 0;
     while i < ARRAYSIZE!(MouseSampleRates) {
@@ -134,7 +134,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         hwndDlg,
         (IDC_PS2MOUSESAMPLERATE) as i32,
         CB_SETCURSEL,
-        ((*pMouseInfo).dwSampleRateIndex) as u64,
+        ((*pMouseInfo).dwSampleRateIndex) as WPARAM,
         0,
     );
 
@@ -168,7 +168,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         hwndDlg,
         (IDC_PS2MOUSEWHEEL) as i32,
         CB_SETCURSEL,
-        ((*pMouseInfo).dwWheelDetection) as u64,
+        ((*pMouseInfo).dwWheelDetection) as WPARAM,
         0,
     );
 
@@ -176,8 +176,8 @@ unsafe extern "C" fn MouseOnDialogInit(
         hwndDlg,
         (IDC_PS2MOUSEINPUTUPDN) as i32,
         UDM_SETRANGE32,
-        (DEFAULT_MINBUFFERSIZE) as u64,
-        (DEFAULT_MAXBUFFERSIZE) as i64,
+        (DEFAULT_MINBUFFERSIZE) as WPARAM,
+        (DEFAULT_MAXBUFFERSIZE) as LPARAM,
     );
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
@@ -198,7 +198,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         (IDC_PS2MOUSEINPUTUPDN) as i32,
         UDM_SETPOS32,
         0,
-        ((*pMouseInfo).dwInputBufferLength) as i32,
+        ((*pMouseInfo).dwInputBufferLength) as LPARAM,
     );
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
@@ -219,7 +219,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         (IDC_PS2MOUSEFASTINIT) as i32,
         (BM_SETCHECK) as u32,
         if (*pMouseInfo).dwInitPolled == 0 {
-            (BST_CHECKED) as u64
+            BST_CHECKED as WPARAM
         } else {
             0
         },
@@ -250,20 +250,20 @@ unsafe extern "C" fn MouseOnCommand(
                 SendDlgItemMessageW(hwndDlg,
                                     (IDC_PS2MOUSESAMPLERATE) as i32,
                                     CB_SETCURSEL,
-                                    (DEFAULT_SAMPLERATEINDEX) as u64,
+                                    (DEFAULT_SAMPLERATEINDEX) as WPARAM,
                                     0);
 
                 SendDlgItemMessageW(hwndDlg,
                                     (IDC_PS2MOUSEWHEEL) as i32,
                                     CB_SETCURSEL,
-                                    (DEFAULT_WHEELDETECTION) as u64,
+                                    (DEFAULT_WHEELDETECTION) as WPARAM,
                                     0);
 
                 SendDlgItemMessageW(hwndDlg,
                                     (IDC_PS2MOUSEINPUTUPDN) as i32,
                                     UDM_SETPOS32,
                                     0,
-                                    (DEFAULT_INPUTBUFFERSIZE) as i32);
+                                    (DEFAULT_INPUTBUFFERSIZE) as LPARAM);
 
                 SendDlgItemMessage(hwndDlg,
                                    (IDC_PS2MOUSEFASTINIT) as i32,
@@ -286,7 +286,7 @@ unsafe extern "C" fn MouseOnApply(hwndDlg: HWND) {
     let mut dwInputBufferLength: DWORD;
     let mut dwInitPolled: DWORD;
     let mut uValue: u32;
-    let mut bFailed: i32;
+    let mut bFailed: i32 = 0;
     let mut nIndex: i32;
 
     pMouseInfo = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as *mut MOUSE_INFO;
@@ -395,7 +395,7 @@ unsafe extern "C" fn MouseOnNotify(
 ) -> i32 {
     match ((*(lParam as LPNMHDR)).code) as i32 {
         UDN_DELTAPOS => {
-            if (*(lParam as LPNMHDR)).idFrom == (IDC_PS2MOUSEINPUTUPDN) as u64 {
+            if (*(lParam as LPNMHDR)).idFrom == IDC_PS2MOUSEINPUTUPDN as UINT_PTR {
                 (*(lParam as LPNMUPDOWN)).iDelta *= 10;
                 return (FALSE) as i32;
             }
@@ -423,7 +423,7 @@ unsafe extern "C" fn MouseOnCtrlColorStatic(
     return GetSysColorBrush((COLOR_WINDOW) as i32) as INT_PTR;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MouseDlgProc(
+unsafe extern "system" fn MouseDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -455,7 +455,7 @@ unsafe extern "stdcall" fn MouseDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MouseDlgProc(
+unsafe extern "system" fn MouseDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -486,7 +486,7 @@ unsafe extern "C" fn MouseDlgProc(
     return (FALSE) as i64;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MouseCallback(
+unsafe extern "system" fn MouseCallback(
     hWnd: HWND,
     uMsg: u32,
     ppsp: *mut PROPSHEETPAGEW,
@@ -506,7 +506,7 @@ unsafe extern "stdcall" fn MouseCallback(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MouseCallback(
+unsafe extern "system" fn MouseCallback(
     hWnd: HWND,
     uMsg: u32,
     ppsp: *mut PROPSHEETPAGEW,
@@ -544,7 +544,7 @@ pub unsafe extern "system" fn PS2MousePropPageProvider(
     pMouseInfo = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<MOUSE_INFO>(),
+        (core::mem::size_of::<MOUSE_INFO>()) as SIZE_T,
     ) as PMOUSE_INFO;
     if pMouseInfo == core::ptr::null_mut() {
         return (FALSE) as i32;
@@ -571,7 +571,7 @@ pub unsafe extern "system" fn PS2MousePropPageProvider(
     PropSheetPage.dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as DWORD;
     PropSheetPage.dwFlags = 0;
     PropSheetPage.hInstance = hDllInstance;
-    PropSheetPage.pszTemplate = MAKEINTRESOURCE!(IDD_PS2MOUSEPROPERTIES);
+    PropSheetPage.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_PS2MOUSEPROPERTIES);
     PropSheetPage.pfnDlgProc = Some(MouseDlgProc);
     PropSheetPage.lParam = pMouseInfo as LPARAM;
     PropSheetPage.pfnCallback = Some(MouseCallback);
@@ -587,7 +587,7 @@ pub unsafe extern "system" fn PS2MousePropPageProvider(
         return (FALSE) as i32;
     }
 
-    if (*lpfnAddPropSheetPageProc)(hPropSheetPage, lParam) == 0 {
+    if lpfnAddPropSheetPageProc.map_or(0, |f| f(hPropSheetPage, lParam)) == 0 {
         // DPRINT removed
         DestroyPropertySheetPage(hPropSheetPage);
         HeapFree(

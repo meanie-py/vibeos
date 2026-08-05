@@ -27,63 +27,23 @@ pub struct _TIMEZONE_ENTRY {
 pub type TIMEZONE_ENTRY = _TIMEZONE_ENTRY;
 pub type PTIMEZONE_ENTRY = *mut _TIMEZONE_ENTRY;
 
-pub static s_szProductOptions: [WCHAR; 59] = [
-    'S' as u16, 'Y' as u16, 'S' as u16, 'T' as u16, 'E' as u16, 'M' as u16, '\\' as u16,
-    'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16, 'n' as u16, 't' as u16,
-    'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'r' as u16, 'o' as u16, 'l' as u16,
-    'S' as u16, 'e' as u16, 't' as u16, '\\' as u16, 'C' as u16, 'o' as u16, 'n' as u16,
-    't' as u16, 'r' as u16, 'o' as u16, 'l' as u16, '\\' as u16, 'P' as u16, 'r' as u16,
-    'o' as u16, 'd' as u16, 'u' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'p' as u16,
-    't' as u16, 'i' as u16, 'o' as u16, 'n' as u16, 's' as u16, 0,
-];
+// wizard.c:381
+pub static s_szProductOptions: [WCHAR; 48] = wide!("SYSTEM\\CurrentControlSet\\Control\\ProductOptions");
 
-pub static s_szRosVersion: [WCHAR; 61] = [
-    'S' as u16, 'Y' as u16, 'S' as u16, 'T' as u16, 'E' as u16, 'M' as u16, '\\' as u16,
-    'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16, 'n' as u16, 't' as u16,
-    'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'r' as u16, 'o' as u16, 'l' as u16,
-    'S' as u16, 'e' as u16, 't' as u16, '\\' as u16, 'C' as u16, 'o' as u16, 'n' as u16,
-    't' as u16, 'r' as u16, 'o' as u16, 'l' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-    'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '\\' as u16, 'S' as u16,
-    'e' as u16, 't' as u16, 't' as u16, 'i' as u16, 'n' as u16, 'g' as u16, 's' as u16,
-    '\\' as u16, 'V' as u16, 'e' as u16, 'r' as u16, 's' as u16, 'i' as u16, 'o' as u16,
-    'n' as u16, 0,
-];
+// wizard.c:382
+pub static s_szRosVersion: [WCHAR; 58] = wide!("SYSTEM\\CurrentControlSet\\Control\\ReactOS\\Settings\\Version");
 
-pub static s_szControlWindows: [WCHAR; 45] = [
-    'S' as u16, 'Y' as u16, 'S' as u16, 'T' as u16, 'E' as u16, 'M' as u16, '\\' as u16,
-    'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16, 'n' as u16, 't' as u16,
-    'C' as u16, 'o' as u16, 'n' as u16, 't' as u16, 'r' as u16, 'o' as u16, 'l' as u16,
-    'S' as u16, 'e' as u16, 't' as u16, '\\' as u16, 'C' as u16, 'o' as u16, 'n' as u16,
-    't' as u16, 'r' as u16, 'o' as u16, 'l' as u16, '\\' as u16, 'W' as u16, 'i' as u16,
-    'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 's' as u16, 0,
-];
+// wizard.c:383
+pub static s_szControlWindows: [WCHAR; 41] = wide!("SYSTEM\\CurrentControlSet\\Control\\Windows");
 
-pub static s_szWinlogon: [WCHAR; 52] = [
-    'S' as u16, 'O' as u16, 'F' as u16, 'T' as u16, 'W' as u16, 'A' as u16, 'R' as u16,
-    'E' as u16, '\\' as u16, 'M' as u16, 'i' as u16, 'c' as u16, 'r' as u16, 'o' as u16,
-    's' as u16, 'o' as u16, 'f' as u16, 't' as u16, '\\' as u16, 'W' as u16, 'i' as u16,
-    'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 's' as u16, ' ' as u16, 'N' as u16,
-    'T' as u16, '\\' as u16, 'C' as u16, 'u' as u16, 'r' as u16, 'r' as u16, 'e' as u16,
-    'n' as u16, 't' as u16, 'V' as u16, 'e' as u16, 'r' as u16, 's' as u16, 'i' as u16,
-    'o' as u16, 'n' as u16, '\\' as u16, 'W' as u16, 'i' as u16, 'n' as u16, 'l' as u16,
-    'o' as u16, 'g' as u16, 'o' as u16, 'n' as u16, 0,
-];
+// wizard.c:384
+pub static s_szWinlogon: [WCHAR; 54] = wide!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon");
 
-pub static s_szDefaultSoundEvents: [WCHAR; 40] = [
-    'A' as u16, 'p' as u16, 'p' as u16, 'E' as u16, 'v' as u16, 'e' as u16, 'n' as u16,
-    't' as u16, 's' as u16, '\\' as u16, 'S' as u16, 'c' as u16, 'h' as u16, 'e' as u16,
-    'm' as u16, 'e' as u16, 's' as u16, '\\' as u16, 'A' as u16, 'p' as u16, 'p' as u16,
-    's' as u16, '\\' as u16, '.' as u16, 'D' as u16, 'e' as u16, 'f' as u16, 'a' as u16,
-    'u' as u16, 'l' as u16, 't' as u16, 0,
-];
+// wizard.c:385
+pub static s_szDefaultSoundEvents: [WCHAR; 32] = wide!("AppEvents\\Schemes\\Apps\\.Default");
 
-pub static s_szExplorerSoundEvents: [WCHAR; 41] = [
-    'A' as u16, 'p' as u16, 'p' as u16, 'E' as u16, 'v' as u16, 'e' as u16, 'n' as u16,
-    't' as u16, 's' as u16, '\\' as u16, 'S' as u16, 'c' as u16, 'h' as u16, 'e' as u16,
-    'm' as u16, 'e' as u16, 's' as u16, '\\' as u16, 'A' as u16, 'p' as u16, 'p' as u16,
-    's' as u16, '\\' as u16, 'E' as u16, 'x' as u16, 'p' as u16, 'l' as u16, 'o' as u16,
-    'r' as u16, 'e' as u16, 'r' as u16, 0,
-];
+// wizard.c:386
+pub static s_szExplorerSoundEvents: [WCHAR; 32] = wide!("AppEvents\\Schemes\\Apps\\Explorer");
 
 #[repr(C)]
 pub struct _PRODUCT_OPTION_DATA {
@@ -95,388 +55,136 @@ pub struct _PRODUCT_OPTION_DATA {
 }
 pub type PRODUCT_OPTION_DATA = _PRODUCT_OPTION_DATA;
 
-pub static s_ProductOptionData: [PRODUCT_OPTION_DATA; 2] = [
+pub static s_ProductOptionData: SyncTable<[PRODUCT_OPTION_DATA; 2]> = SyncTable([
     PRODUCT_OPTION_DATA {
-        ProductSuite: [
-            'T' as u16, 'e' as u16, 'r' as u16, 'm' as u16, 'i' as u16, 'n' as u16, 'a' as u16,
-            'l' as u16, ' ' as u16, 'S' as u16, 'e' as u16, 'r' as u16, 'v' as u16, 'e' as u16,
-            'r' as u16, 0, 0,
-        ].as_ptr(),
-        ProductType: [
-            'S' as u16, 'e' as u16, 'r' as u16, 'v' as u16, 'e' as u16, 'r' as u16, 'N' as u16,
-            'T' as u16, 0,
-        ].as_ptr(),
+        ProductSuite: w!("Terminal Server\0"),
+        ProductType: w!("ServerNT"),
         ReportAsWorkstation: 0,
         CSDVersion: 0x200,
         LogonType: 0,
     },
     PRODUCT_OPTION_DATA {
-        ProductSuite: [0, 0].as_ptr(),
-        ProductType: [
-            'W' as u16, 'i' as u16, 'n' as u16, 'N' as u16, 'T' as u16, 0,
-        ].as_ptr(),
+        ProductSuite: w!("\0"),
+        ProductType: w!("WinNT"),
         ReportAsWorkstation: 1,
         CSDVersion: 0x300,
         LogonType: 1,
     },
-];
+]);
 
-pub static s_DefaultSoundEvents: [[LPCWSTR; 2]; 25] = [
+pub static s_DefaultSoundEvents: SyncTable<[[LPCWSTR; 2]; 25]> = SyncTable([
     [
-        [
-            '.' as u16, 'D' as u16, 'e' as u16, 'f' as u16, 'a' as u16, 'u' as u16, 'l' as u16,
-            't' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'D' as u16,
-            'e' as u16, 'f' as u16, 'a' as u16, 'u' as u16, 'l' as u16, 't' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!(".Default"),
+        w!("%SystemRoot%\\Media\\ReactOS_Default.wav"),
     ],
     [
-        [
-            'A' as u16, 'p' as u16, 'p' as u16, 'G' as u16, 'P' as u16, 'F' as u16, 'a' as u16,
-            'u' as u16, 'l' as u16, 't' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("AppGPFault"),
+        w!(""),
     ],
     [
-        [
-            'C' as u16, 'l' as u16, 'o' as u16, 's' as u16, 'e' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("Close"),
+        w!(""),
     ],
     [
-        [
-            'C' as u16, 'r' as u16, 'i' as u16, 't' as u16, 'i' as u16, 'c' as u16, 'a' as u16,
-            'l' as u16, 'B' as u16, 'a' as u16, 't' as u16, 't' as u16, 'e' as u16, 'r' as u16,
-            'y' as u16, 'A' as u16, 'l' as u16, 'a' as u16, 'r' as u16, 'm' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'B' as u16,
-            'a' as u16, 't' as u16, 't' as u16, 'e' as u16, 'r' as u16, 'y' as u16, '_' as u16,
-            'C' as u16, 'r' as u16, 'i' as u16, 't' as u16, 'i' as u16, 'c' as u16, 'a' as u16,
-            'l' as u16, '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("CriticalBatteryAlarm"),
+        w!("%SystemRoot%\\Media\\ReactOS_Battery_Critical.wav"),
     ],
     [
-        [
-            'D' as u16, 'e' as u16, 'v' as u16, 'i' as u16, 'c' as u16, 'e' as u16, 'C' as u16,
-            'o' as u16, 'n' as u16, 'n' as u16, 'e' as u16, 'c' as u16, 't' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'H' as u16,
-            'a' as u16, 'r' as u16, 'd' as u16, 'w' as u16, 'a' as u16, 'r' as u16, 'e' as u16,
-            '_' as u16, 'I' as u16, 'n' as u16, 's' as u16, 'e' as u16, 'r' as u16, 't' as u16,
-            '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("DeviceConnect"),
+        w!("%SystemRoot%\\Media\\ReactOS_Hardware_Insert.wav"),
     ],
     [
-        [
-            'D' as u16, 'e' as u16, 'v' as u16, 'i' as u16, 'c' as u16, 'e' as u16, 'D' as u16,
-            'i' as u16, 's' as u16, 'c' as u16, 'o' as u16, 'n' as u16, 'n' as u16, 'e' as u16,
-            'c' as u16, 't' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'H' as u16,
-            'a' as u16, 'r' as u16, 'd' as u16, 'w' as u16, 'a' as u16, 'r' as u16, 'e' as u16,
-            '_' as u16, 'R' as u16, 'e' as u16, 'm' as u16, 'o' as u16, 'v' as u16, 'e' as u16,
-            '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("DeviceDisconnect"),
+        w!("%SystemRoot%\\Media\\ReactOS_Hardware_Remove.wav"),
     ],
     [
-        [
-            'D' as u16, 'e' as u16, 'v' as u16, 'i' as u16, 'c' as u16, 'e' as u16, 'F' as u16,
-            'a' as u16, 'i' as u16, 'l' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'H' as u16,
-            'a' as u16, 'r' as u16, 'd' as u16, 'w' as u16, 'a' as u16, 'r' as u16, 'e' as u16,
-            '_' as u16, 'F' as u16, 'a' as u16, 'i' as u16, 'l' as u16, '.' as u16, 'w' as u16,
-            'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("DeviceFail"),
+        w!("%SystemRoot%\\Media\\ReactOS_Hardware_Fail.wav"),
     ],
     [
-        [
-            'L' as u16, 'o' as u16, 'w' as u16, 'B' as u16, 'a' as u16, 't' as u16, 't' as u16,
-            'e' as u16, 'r' as u16, 'y' as u16, 'A' as u16, 'l' as u16, 'a' as u16, 'r' as u16,
-            'm' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'B' as u16,
-            'a' as u16, 't' as u16, 't' as u16, 'e' as u16, 'r' as u16, 'y' as u16, '_' as u16,
-            'L' as u16, 'o' as u16, 'w' as u16, '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16,
-            0,
-        ].as_ptr(),
+        w!("LowBatteryAlarm"),
+        w!("%SystemRoot%\\Media\\ReactOS_Battery_Low.wav"),
     ],
     [
-        [
-            'M' as u16, 'a' as u16, 'i' as u16, 'l' as u16, 'B' as u16, 'e' as u16, 'e' as u16,
-            'p' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'N' as u16,
-            'o' as u16, 't' as u16, 'i' as u16, 'f' as u16, 'y' as u16, '.' as u16, 'w' as u16,
-            'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("MailBeep"),
+        w!("%SystemRoot%\\Media\\ReactOS_Notify.wav"),
     ],
     [
-        [
-            'M' as u16, 'a' as u16, 'x' as u16, 'i' as u16, 'm' as u16, 'i' as u16, 'z' as u16,
-            'e' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'R' as u16,
-            'e' as u16, 's' as u16, 't' as u16, 'o' as u16, 'r' as u16, 'e' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("Maximize"),
+        w!("%SystemRoot%\\Media\\ReactOS_Restore.wav"),
     ],
     [
-        [
-            'M' as u16, 'e' as u16, 'n' as u16, 'u' as u16, 'C' as u16, 'o' as u16, 'm' as u16,
-            'm' as u16, 'a' as u16, 'n' as u16, 'd' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'M' as u16,
-            'e' as u16, 'n' as u16, 'u' as u16, '_' as u16, 'C' as u16, 'o' as u16, 'm' as u16,
-            'm' as u16, 'a' as u16, 'n' as u16, 'd' as u16, '.' as u16, 'w' as u16, 'a' as u16,
-            'v' as u16, 0,
-        ].as_ptr(),
+        w!("MenuCommand"),
+        w!("%SystemRoot%\\Media\\ReactOS_Menu_Command.wav"),
     ],
     [
-        [
-            'M' as u16, 'e' as u16, 'n' as u16, 'u' as u16, 'P' as u16, 'o' as u16, 'p' as u16,
-            'u' as u16, 'p' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("MenuPopup"),
+        w!(""),
     ],
     [
-        [
-            'M' as u16, 'i' as u16, 'n' as u16, 'i' as u16, 'm' as u16, 'i' as u16, 'z' as u16,
-            'e' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'M' as u16,
-            'i' as u16, 'n' as u16, 'i' as u16, 'm' as u16, 'i' as u16, 'z' as u16, 'e' as u16,
-            '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("Minimize"),
+        w!("%SystemRoot%\\Media\\ReactOS_Minimize.wav"),
     ],
     [
-        [
-            'O' as u16, 'p' as u16, 'e' as u16, 'n' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("Open"),
+        w!(""),
     ],
     [
-        [
-            'P' as u16, 'r' as u16, 'i' as u16, 'n' as u16, 't' as u16, 'C' as u16, 'o' as u16,
-            'm' as u16, 'p' as u16, 'l' as u16, 'e' as u16, 't' as u16, 'e' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'P' as u16,
-            'r' as u16, 'i' as u16, 'n' as u16, 't' as u16, '_' as u16, 'C' as u16, 'o' as u16,
-            'm' as u16, 'p' as u16, 'l' as u16, 'e' as u16, 't' as u16, 'e' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("PrintComplete"),
+        w!("%SystemRoot%\\Media\\ReactOS_Print_Complete.wav"),
     ],
     [
-        [
-            'R' as u16, 'e' as u16, 's' as u16, 't' as u16, 'o' as u16, 'r' as u16, 'e' as u16,
-            'D' as u16, 'o' as u16, 'w' as u16, 'n' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("RestoreDown"),
+        w!(""),
     ],
     [
-        [
-            'R' as u16, 'e' as u16, 's' as u16, 't' as u16, 'o' as u16, 'r' as u16, 'e' as u16,
-            'U' as u16, 'p' as u16, 0,
-        ].as_ptr(),
-        [0].as_ptr(),
+        w!("RestoreUp"),
+        w!(""),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'A' as u16,
-            's' as u16, 't' as u16, 'e' as u16, 'r' as u16, 'i' as u16, 's' as u16, 'k' as u16,
-            0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'D' as u16,
-            'i' as u16, 'n' as u16, 'g' as u16, '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16,
-            0,
-        ].as_ptr(),
+        w!("SystemAsterisk"),
+        w!("%SystemRoot%\\Media\\ReactOS_Ding.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'E' as u16,
-            'x' as u16, 'c' as u16, 'l' as u16, 'a' as u16, 'm' as u16, 'a' as u16, 't' as u16,
-            'i' as u16, 'o' as u16, 'n' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'E' as u16,
-            'x' as u16, 'c' as u16, 'l' as u16, 'a' as u16, 'm' as u16, 'a' as u16, 't' as u16,
-            'i' as u16, 'o' as u16, 'n' as u16, '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16,
-            0,
-        ].as_ptr(),
+        w!("SystemExclamation"),
+        w!("%SystemRoot%\\Media\\ReactOS_Exclamation.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'E' as u16,
-            'x' as u16, 'i' as u16, 't' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'S' as u16,
-            'h' as u16, 'u' as u16, 't' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 'n' as u16,
-            '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("SystemExit"),
+        w!("%SystemRoot%\\Media\\ReactOS_Shutdown.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'H' as u16,
-            'a' as u16, 'n' as u16, 'd' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'C' as u16,
-            'r' as u16, 'i' as u16, 't' as u16, 'i' as u16, 'c' as u16, 'a' as u16, 'l' as u16,
-            '_' as u16, 'S' as u16, 't' as u16, 'o' as u16, 'p' as u16, '.' as u16, 'w' as u16,
-            'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("SystemHand"),
+        w!("%SystemRoot%\\Media\\ReactOS_Critical_Stop.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'N' as u16,
-            'o' as u16, 't' as u16, 'i' as u16, 'f' as u16, 'i' as u16, 'c' as u16, 'a' as u16,
-            't' as u16, 'i' as u16, 'o' as u16, 'n' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'B' as u16,
-            'a' as u16, 'l' as u16, 'l' as u16, 'o' as u16, 'o' as u16, 'n' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("SystemNotification"),
+        w!("%SystemRoot%\\Media\\ReactOS_Balloon.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'Q' as u16,
-            'u' as u16, 'e' as u16, 's' as u16, 't' as u16, 'i' as u16, 'o' as u16, 'n' as u16,
-            0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'D' as u16,
-            'i' as u16, 'n' as u16, 'g' as u16, '.' as u16, 'w' as u16, 'a' as u16, 'v' as u16,
-            0,
-        ].as_ptr(),
+        w!("SystemQuestion"),
+        w!("%SystemRoot%\\Media\\ReactOS_Ding.wav"),
     ],
     [
-        [
-            'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16, 'S' as u16,
-            't' as u16, 'a' as u16, 'r' as u16, 't' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'S' as u16,
-            't' as u16, 'a' as u16, 'r' as u16, 't' as u16, 'u' as u16, 'p' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("SystemStart"),
+        w!("%SystemRoot%\\Media\\ReactOS_Startup.wav"),
     ],
     [
-        [
-            'W' as u16, 'i' as u16, 'n' as u16, 'd' as u16, 'o' as u16, 'w' as u16, 's' as u16,
-            'L' as u16, 'o' as u16, 'g' as u16, 'o' as u16, 'f' as u16, 'f' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'L' as u16,
-            'o' as u16, 'g' as u16, 'O' as u16, 'f' as u16, 'f' as u16, '.' as u16, 'w' as u16,
-            'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("WindowsLogoff"),
+        w!("%SystemRoot%\\Media\\ReactOS_LogOff.wav"),
     ],
-];
+]);
 
-pub static s_ExplorerSoundEvents: [[LPCWSTR; 2]; 2] = [
+pub static s_ExplorerSoundEvents: SyncTable<[[LPCWSTR; 2]; 2]> = SyncTable([
     [
-        [
-            'E' as u16, 'm' as u16, 'p' as u16, 't' as u16, 'y' as u16, 'R' as u16, 'e' as u16,
-            'c' as u16, 'y' as u16, 'c' as u16, 'l' as u16, 'e' as u16, 'B' as u16, 'i' as u16,
-            'n' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'R' as u16,
-            'e' as u16, 'c' as u16, 'y' as u16, 'c' as u16, 'l' as u16, 'e' as u16, '.' as u16,
-            'w' as u16, 'a' as u16, 'v' as u16, 0,
-        ].as_ptr(),
+        w!("EmptyRecycleBin"),
+        w!("%SystemRoot%\\Media\\ReactOS_Recycle.wav"),
     ],
     [
-        [
-            'N' as u16, 'a' as u16, 'v' as u16, 'i' as u16, 'g' as u16, 'a' as u16, 't' as u16,
-            'i' as u16, 'n' as u16, 'g' as u16, 0,
-        ].as_ptr(),
-        [
-            '%' as u16, 'S' as u16, 'y' as u16, 's' as u16, 't' as u16, 'e' as u16, 'm' as u16,
-            'R' as u16, 'o' as u16, 'o' as u16, 't' as u16, '%' as u16, '\\' as u16, 'M' as u16,
-            'e' as u16, 'd' as u16, 'i' as u16, 'a' as u16, '\\' as u16, 'R' as u16, 'e' as u16,
-            'a' as u16, 'c' as u16, 't' as u16, 'O' as u16, 'S' as u16, '_' as u16, 'S' as u16,
-            't' as u16, 'a' as u16, 'r' as u16, 't' as u16, '.' as u16, 'w' as u16, 'a' as u16,
-            'v' as u16, 0,
-        ].as_ptr(),
+        w!("Navigating"),
+        w!("%SystemRoot%\\Media\\ReactOS_Start.wav"),
     ],
-];
+]);
 
 #[repr(C)]
 pub struct ThemeInfo {
@@ -485,7 +193,7 @@ pub struct ThemeInfo {
     pub ThemeFile: LPCWSTR,
 }
 
-pub static Themes: [ThemeInfo; 4] = [
+pub static Themes: SyncTable<[ThemeInfo; 4]> = SyncTable([
     ThemeInfo {
         PreviewBitmap: 100 as LPCWSTR,
         DisplayName: 4101,
@@ -494,37 +202,21 @@ pub static Themes: [ThemeInfo; 4] = [
     ThemeInfo {
         PreviewBitmap: 101 as LPCWSTR,
         DisplayName: 4102,
-        ThemeFile: [
-            't' as u16, 'h' as u16, 'e' as u16, 'm' as u16, 'e' as u16, 's' as u16, '\\' as u16,
-            'l' as u16, 'a' as u16, 'u' as u16, 't' as u16, 'u' as u16, 's' as u16, '\\' as u16,
-            'l' as u16, 'a' as u16, 'u' as u16, 't' as u16, 'u' as u16, 's' as u16, '.' as u16,
-            'm' as u16, 's' as u16, 's' as u16, 't' as u16, 'y' as u16, 'l' as u16, 'e' as u16,
-            's' as u16, 0,
-        ].as_ptr(),
+        ThemeFile: w!("themes\\lautus\\lautus.msstyles"),
     },
     ThemeInfo {
         PreviewBitmap: 102 as LPCWSTR,
         DisplayName: 4103,
-        ThemeFile: [
-            't' as u16, 'h' as u16, 'e' as u16, 'm' as u16, 'e' as u16, 's' as u16, '\\' as u16,
-            'l' as u16, 'u' as u16, 'n' as u16, 'a' as u16, 'r' as u16, '\\' as u16, 'l' as u16,
-            'u' as u16, 'n' as u16, 'a' as u16, 'r' as u16, '.' as u16, 'm' as u16, 's' as u16,
-            's' as u16, 't' as u16, 'y' as u16, 'l' as u16, 'e' as u16, 's' as u16, 0,
-        ].as_ptr(),
+        ThemeFile: w!("themes\\lunar\\lunar.msstyles"),
     },
     ThemeInfo {
         PreviewBitmap: 103 as LPCWSTR,
         DisplayName: 4104,
-        ThemeFile: [
-            't' as u16, 'h' as u16, 'e' as u16, 'm' as u16, 'e' as u16, 's' as u16, '\\' as u16,
-            'm' as u16, 'i' as u16, 'z' as u16, 'u' as u16, '\\' as u16, 'm' as u16, 'i' as u16,
-            'z' as u16, 'u' as u16, '.' as u16, 'm' as u16, 's' as u16, 's' as u16, 't' as u16,
-            'y' as u16, 'l' as u16, 'e' as u16, 's' as u16, 0,
-        ].as_ptr(),
+        ThemeFile: w!("themes\\mizu\\mizu.msstyles"),
     },
-];
+]);
 
-pub type PFNREQUESTWIZARDPAGES = Option<unsafe extern "system" fn(PDWORD, HPROPSHEETPAGE, PSETUPDATA) -> DWORD>;
+pub type PFNREQUESTWIZARDPAGES = Option<unsafe extern "system" fn(PDWORD, *mut HPROPSHEETPAGE, PSETUPDATA) -> DWORD>;
 unsafe extern "C" fn CenterWindow(hWnd: HWND) {
     let mut hWndParent: HWND;
     let mut rcParent: RECT = core::mem::zeroed();
@@ -583,7 +275,7 @@ unsafe extern "C" fn CreateBoldFont() -> HFONT {
     return hBoldFont;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn GplDlgProc(
+unsafe extern "system" fn GplDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -645,7 +337,7 @@ unsafe extern "stdcall" fn GplDlgProc(
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (BN_CLICKED) as u16 && IDOK == LOWORD!(wParam) {
+            if HIWORD!(wParam) == (BN_CLICKED) as u16 && IDOK == LOWORD!(wParam) as u32 {
                 EndDialog(hwndDlg, (IDOK) as i32);
             }
         }
@@ -657,7 +349,7 @@ unsafe extern "stdcall" fn GplDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn GplDlgProc(
+unsafe extern "system" fn GplDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -719,7 +411,7 @@ unsafe extern "C" fn GplDlgProc(
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (BN_CLICKED) as u16 && IDOK == LOWORD!(wParam) {
+            if HIWORD!(wParam) == (BN_CLICKED) as u16 && IDOK == LOWORD!(wParam) as u32 {
                 EndDialog(hwndDlg, (IDOK) as i64);
             }
         }
@@ -730,7 +422,7 @@ unsafe extern "C" fn GplDlgProc(
     (FALSE) as i64
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn WelcomeDlgProc(
+unsafe extern "system" fn WelcomeDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -746,14 +438,14 @@ unsafe extern "stdcall" fn WelcomeDlgProc(
             let mut dwStyle: DWORD;
 
             pSetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             hwndControl = GetParent(hwndDlg);
 
             CenterWindow(hwndControl);
 
             dwStyle = GetWindowLongPtr(hwndControl, GWL_STYLE) as DWORD;
-            SetWindowLongPtr(hwndControl, GWL_STYLE, (dwStyle & !WS_SYSMENU) as LONG_PTR);
+            SetWindowLongPtr(hwndControl, (GWL_STYLE) as c_int, ((dwStyle & !WS_SYSMENU)) as LONG_PTR);
 
             hwndControl = GetDlgItem(GetParent(hwndDlg), (IDCANCEL) as i32);
             ShowWindow(hwndControl, (SW_HIDE) as i32);
@@ -776,7 +468,7 @@ unsafe extern "stdcall" fn WelcomeDlgProc(
                     LogItem!(w!("BEGIN") as LPCWSTR, w!("WelcomePage") as LPCWSTR);
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_ACKPAGE);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_ACKPAGE) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -800,7 +492,7 @@ unsafe extern "stdcall" fn WelcomeDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn WelcomeDlgProc(
+unsafe extern "system" fn WelcomeDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -816,14 +508,14 @@ unsafe extern "C" fn WelcomeDlgProc(
             let mut dwStyle: DWORD;
 
             pSetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             hwndControl = GetParent(hwndDlg);
 
             CenterWindow(hwndControl);
 
             dwStyle = GetWindowLongPtr(hwndControl, GWL_STYLE) as DWORD;
-            SetWindowLongPtr(hwndControl, GWL_STYLE, (dwStyle & (!WS_SYSMENU) as u32) as LONG_PTR);
+            SetWindowLongPtr(hwndControl, (GWL_STYLE) as c_int, ((dwStyle & (!WS_SYSMENU) as u32)) as LONG_PTR);
 
             hwndControl = GetDlgItem(GetParent(hwndDlg), (IDCANCEL) as i32);
             ShowWindow(hwndControl, (SW_HIDE) as i32);
@@ -841,12 +533,12 @@ unsafe extern "C" fn WelcomeDlgProc(
         WM_NOTIFY => {
             let lpnm: LPNMHDR = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     LogItem!(w!("BEGIN") as LPCWSTR, w!("WelcomePage") as LPCWSTR);
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_ACKPAGE) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_ACKPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -869,7 +561,7 @@ unsafe extern "C" fn WelcomeDlgProc(
     (FALSE) as i64
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AckPageDlgProc(
+unsafe extern "system" fn AckPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -888,7 +580,7 @@ unsafe extern "stdcall" fn AckPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             Projects = core::ptr::null_mut();
             ProjectsSize = 256;
@@ -896,7 +588,7 @@ unsafe extern "stdcall" fn AckPageDlgProc(
                 Projects = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (ProjectsSize as usize) * core::mem::size_of::<WCHAR>(),
+                    ((ProjectsSize as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T,
                 ) as PWSTR;
                 if Projects.is_null() {
                     return FALSE;
@@ -939,13 +631,13 @@ unsafe extern "stdcall" fn AckPageDlgProc(
 
         WM_COMMAND => {
             if HIWORD!(wParam as DWORD) == (BN_CLICKED) as u16
-                && IDC_VIEWGPL == LOWORD!(wParam as DWORD)
+                && IDC_VIEWGPL == LOWORD!(wParam as DWORD) as u32
             {
                 DialogBox!(
                     hDllInstance,
                     MAKEINTRESOURCE!(IDD_GPL),
                     core::ptr::null_mut(),
-                    GplDlgProc,
+                    Some(GplDlgProc),
                 );
                 SetForegroundWindow(GetParent(hwndDlg));
             }
@@ -961,7 +653,7 @@ unsafe extern "stdcall" fn AckPageDlgProc(
                         PSWIZB_BACK | PSWIZB_NEXT,
                     );
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_PRODUCT);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_PRODUCT) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -981,7 +673,7 @@ unsafe extern "stdcall" fn AckPageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AckPageDlgProc(
+unsafe extern "system" fn AckPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1000,7 +692,7 @@ unsafe extern "C" fn AckPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             Projects = core::ptr::null_mut();
             ProjectsSize = 256;
@@ -1051,13 +743,13 @@ unsafe extern "C" fn AckPageDlgProc(
 
         WM_COMMAND => {
             if HIWORD!(wParam as DWORD) == (BN_CLICKED) as u16
-                && IDC_VIEWGPL == LOWORD!(wParam as DWORD)
+                && IDC_VIEWGPL == LOWORD!(wParam as DWORD) as u32
             {
                 DialogBox!(
                     hDllInstance,
                     MAKEINTRESOURCE!(IDD_GPL),
                     core::ptr::null_mut(),
-                    GplDlgProc,
+                    Some(GplDlgProc),
                 );
                 SetForegroundWindow(GetParent(hwndDlg));
             }
@@ -1066,14 +758,14 @@ unsafe extern "C" fn AckPageDlgProc(
         WM_NOTIFY => {
             let lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(
                         GetParent(hwndDlg),
                         PSWIZB_BACK | PSWIZB_NEXT,
                     );
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_PRODUCT) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_PRODUCT)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -1295,7 +987,7 @@ unsafe extern "C" fn OnChooseOption(hwndDlg: HWND, nOption: PRODUCT_OPTION) {
     SetDlgItemTextW(hwndDlg, (IDC_PRODUCT_DESCRIPTION) as i32, szText.as_ptr());
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut lpnm: LPNMHDR;
     let mut pSetupData: PSETUPDATA;
     let mut iItem: INT;
@@ -1308,7 +1000,7 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             LoadStringW(hDllInstance, IDS_DEFAULT, szDefault.as_mut_ptr(), (_countof!(szDefault)) as i32);
 
@@ -1335,7 +1027,7 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32 {
                 iItem = SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_GETCURSEL, 0, 0);
                 OnChooseOption(hwndDlg, iItem as PRODUCT_OPTION);
             }
@@ -1350,7 +1042,7 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
                     if (*pSetupData).UnattendSetup != 0 {
                         OnChooseOption(hwndDlg, (*pSetupData).ProductOption);
                         DoWriteProductOption((*pSetupData).ProductOption);
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_LOCALEPAGE);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_LOCALEPAGE) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -1376,7 +1068,7 @@ unsafe extern "stdcall" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam:
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut lpnm: LPNMHDR;
     let mut pSetupData: PSETUPDATA;
     let mut iItem: INT;
@@ -1389,7 +1081,7 @@ unsafe extern "C" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARA
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             LoadStringW(hDllInstance, (IDS_DEFAULT) as u32, szDefault.as_mut_ptr(), (_countof!(szDefault)) as i32);
 
@@ -1416,7 +1108,7 @@ unsafe extern "C" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARA
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32 {
                 iItem = (SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, (CB_GETCURSEL) as u32, 0, 0)) as i32;
                 OnChooseOption(hwndDlg, iItem as PRODUCT_OPTION);
             }
@@ -1425,13 +1117,13 @@ unsafe extern "C" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARA
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
                         OnChooseOption(hwndDlg, (*pSetupData).ProductOption);
                         DoWriteProductOption((*pSetupData).ProductOption);
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_LOCALEPAGE) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_LOCALEPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -1501,7 +1193,7 @@ unsafe extern "C" fn WriteOwnerSettings(
     return (res == (ERROR_SUCCESS) as i32) as BOOL;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn OwnerPageDlgProc(
+unsafe extern "system" fn OwnerPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1519,7 +1211,7 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             if LoadStringW(hDllInstance, IDS_MACHINE_OWNER_NAME, OwnerName.as_mut_ptr(), (_countof!(OwnerName)) as i32) != 0 {
                 SendDlgItemMessage(hwndDlg, (IDC_OWNERNAME) as i32, WM_SETTEXT, 0, OwnerName.as_ptr() as LPARAM);
@@ -1540,10 +1232,10 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerName as LPARAM);
-                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERORGANIZATION) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerOrganization as LPARAM);
-                        if WriteOwnerSettings((*pSetupData).OwnerName, (*pSetupData).OwnerOrganization) != 0 {
-                            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_COMPUTERPAGE);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerName.as_ptr() as LPARAM);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERORGANIZATION) as i32), WM_SETTEXT, 0, (*pSetupData).OwnerOrganization.as_ptr() as LPARAM);
+                        if WriteOwnerSettings((*pSetupData).OwnerName.as_mut_ptr(), (*pSetupData).OwnerOrganization.as_mut_ptr()) != 0 {
+                            SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_COMPUTERPAGE) as LONG_PTR);
                             return TRUE;
                         }
                     }
@@ -1561,7 +1253,7 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
                         MessageBoxW(hwndDlg, ErrorName.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
 
                         SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((-1)) as LONG_PTR);
 
                         return TRUE;
                     }
@@ -1571,7 +1263,7 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
 
                     if WriteOwnerSettings(OwnerName.as_mut_ptr(), OwnerOrganization.as_mut_ptr()) == 0 {
                         SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((-1)) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -1591,7 +1283,7 @@ unsafe extern "stdcall" fn OwnerPageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn OwnerPageDlgProc(
+unsafe extern "system" fn OwnerPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1609,7 +1301,7 @@ unsafe extern "C" fn OwnerPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             if LoadStringW(hDllInstance, (IDS_MACHINE_OWNER_NAME) as u32, OwnerName.as_mut_ptr(), (_countof!(OwnerName)) as i32) != 0 {
                 SendDlgItemMessage(hwndDlg, (IDC_OWNERNAME) as i32, (WM_SETTEXT) as u32, 0, OwnerName.as_ptr() as LPARAM);
@@ -1626,14 +1318,14 @@ unsafe extern "C" fn OwnerPageDlgProc(
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).OwnerName as LPARAM);
-                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERORGANIZATION) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).OwnerOrganization as LPARAM);
-                        if WriteOwnerSettings((*pSetupData).OwnerName, (*pSetupData).OwnerOrganization) != 0 {
-                            SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_COMPUTERPAGE) as i64);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).OwnerName.as_ptr() as LPARAM);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_OWNERORGANIZATION) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).OwnerOrganization.as_ptr() as LPARAM);
+                        if WriteOwnerSettings((*pSetupData).OwnerName.as_mut_ptr(), (*pSetupData).OwnerOrganization.as_mut_ptr()) != 0 {
+                            SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_COMPUTERPAGE)) as LONG_PTR);
                             return (TRUE) as i64;
                         }
                     }
@@ -1651,7 +1343,7 @@ unsafe extern "C" fn OwnerPageDlgProc(
                         MessageBoxW(hwndDlg, ErrorName.as_ptr(), Title.as_ptr(), (MB_ICONERROR | MB_OK) as u32);
 
                         SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((-1)) as LONG_PTR);
 
                         return (TRUE) as i64;
                     }
@@ -1661,7 +1353,7 @@ unsafe extern "C" fn OwnerPageDlgProc(
 
                     if WriteOwnerSettings(OwnerName.as_mut_ptr(), OwnerOrganization.as_mut_ptr()) == 0 {
                         SetFocus(GetDlgItem(hwndDlg, (IDC_OWNERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (-1) as LPARAM);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((-1)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -1796,7 +1488,7 @@ unsafe extern "C" fn GenerateComputerName(lpBuffer: LPWSTR) {
     let cChars: u32 = (core::mem::size_of_val(Chars) / core::mem::size_of::<u16>() - 1) as u32;
     let mut i: u32;
 
-    wcscpy(lpBuffer, ['R' as u16, 'E' as u16, 'A' as u16, 'C' as u16, 'T' as u16, 'O' as u16, 'S' as u16, '-' as u16, 0].as_ptr());
+    wcscpy(lpBuffer, w!("REACTOS-"));
 
     srand(GetTickCount());
 
@@ -1809,7 +1501,7 @@ unsafe extern "C" fn GenerateComputerName(lpBuffer: LPWSTR) {
     *lpBuffer.offset(15 as isize) = UNICODE_NULL;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ComputerPageDlgProc(
+unsafe extern "system" fn ComputerPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1835,7 +1527,7 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             GenerateComputerName(ComputerName.as_mut_ptr());
 
@@ -1847,14 +1539,14 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
 
             SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
             if (*pSetupData).UnattendSetup != 0 {
-                SendMessage(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).ComputerName as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD1) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD2) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword as LPARAM);
-                WriteComputerSettings((*pSetupData).ComputerName, core::ptr::null_mut());
-                SetAdministratorPassword((*pSetupData).AdminPassword);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32), WM_SETTEXT, 0, (*pSetupData).ComputerName.as_ptr() as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD1) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword.as_ptr() as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD2) as i32), WM_SETTEXT, 0, (*pSetupData).AdminPassword.as_ptr() as LPARAM);
+                WriteComputerSettings((*pSetupData).ComputerName.as_mut_ptr(), core::ptr::null_mut());
+                SetAdministratorPassword((*pSetupData).AdminPassword.as_ptr());
             }
 
-            WriteDefaultLogonData((*pSetupData).ComputerName);
+            WriteDefaultLogonData((*pSetupData).ComputerName.as_mut_ptr());
         }
 
         WM_NOTIFY => {
@@ -1863,26 +1555,26 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
             match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
-                    if (*pSetupData).UnattendSetup != 0 && WriteComputerSettings((*pSetupData).ComputerName, hwndDlg) != 0 {
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_DATETIMEPAGE);
+                    if (*pSetupData).UnattendSetup != 0 && WriteComputerSettings((*pSetupData).ComputerName.as_mut_ptr(), hwndDlg) != 0 {
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_DATETIMEPAGE) as LONG_PTR);
                         return TRUE;
                     }
                 }
 
                 PSN_WIZNEXT => {
-                    if 0 == GetDlgItemTextW(hwndDlg, IDC_COMPUTERNAME, ComputerName.as_mut_ptr(), MAX_COMPUTERNAME_LENGTH + 1) {
-                        if 0 == LoadStringW(hDllInstance, IDS_WZD_COMPUTERNAME, EmptyComputerName.as_mut_ptr(), (ARRAYSIZE!(EmptyComputerName)) as i32) {
+                    if 0 == GetDlgItemTextW(hwndDlg, IDC_COMPUTERNAME as i32, ComputerName.as_mut_ptr(), (MAX_COMPUTERNAME_LENGTH + 1) as i32) {
+                        if 0 == LoadStringW(hDllInstance, IDS_WZD_COMPUTERNAME as u32, EmptyComputerName.as_mut_ptr(), (ARRAYSIZE!(EmptyComputerName)) as i32) {
                             wcscpy(EmptyComputerName.as_mut_ptr(), w!("Setup cannot continue until you enter the name of your computer.") as PWSTR);
                         }
                         MessageBoxW(hwndDlg, EmptyComputerName.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
                         SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return TRUE;
                     }
 
                     if WriteComputerSettings(ComputerName.as_mut_ptr(), hwndDlg) == 0 {
                         SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return TRUE;
                     }
 
@@ -1894,7 +1586,7 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
                             wcscpy(NotMatchPassword.as_mut_ptr(), w!("The passwords you entered do not match. Please enter the desired password again.") as PWSTR);
                         }
                         MessageBoxW(hwndDlg, NotMatchPassword.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return TRUE;
                     }
 
@@ -1905,7 +1597,7 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
                                 wcscpy(WrongPassword.as_mut_ptr(), w!("The password you entered contains invalid characters. Please enter a cleaned password.") as PWSTR);
                             }
                             MessageBoxW(hwndDlg, WrongPassword.as_ptr(), Title.as_ptr(), MB_ICONERROR | MB_OK);
-                            SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                            SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                             return TRUE;
                         }
                         Password = Password.offset(1);
@@ -1929,7 +1621,7 @@ unsafe extern "stdcall" fn ComputerPageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ComputerPageDlgProc(
+unsafe extern "system" fn ComputerPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1955,7 +1647,7 @@ unsafe extern "C" fn ComputerPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             pSetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pSetupData as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pSetupData) as LONG_PTR);
 
             GenerateComputerName(ComputerName.as_mut_ptr());
 
@@ -1967,24 +1659,24 @@ unsafe extern "C" fn ComputerPageDlgProc(
 
             SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
             if (*pSetupData).UnattendSetup != 0 {
-                SendMessage(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).ComputerName as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD1) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).AdminPassword as LPARAM);
-                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD2) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).AdminPassword as LPARAM);
-                WriteComputerSettings((*pSetupData).ComputerName, core::ptr::null_mut());
-                SetAdministratorPassword((*pSetupData).AdminPassword);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).ComputerName.as_ptr() as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD1) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).AdminPassword.as_ptr() as LPARAM);
+                SendMessage(GetDlgItem(hwndDlg, (IDC_ADMINPASSWORD2) as i32), (WM_SETTEXT) as u32, 0, (*pSetupData).AdminPassword.as_ptr() as LPARAM);
+                WriteComputerSettings((*pSetupData).ComputerName.as_mut_ptr(), core::ptr::null_mut());
+                SetAdministratorPassword((*pSetupData).AdminPassword.as_ptr());
             }
 
-            WriteDefaultLogonData((*pSetupData).ComputerName);
+            WriteDefaultLogonData((*pSetupData).ComputerName.as_mut_ptr());
         }
 
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
-                    if (*pSetupData).UnattendSetup != 0 && WriteComputerSettings((*pSetupData).ComputerName, hwndDlg) != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_DATETIMEPAGE) as i64);
+                    if (*pSetupData).UnattendSetup != 0 && WriteComputerSettings((*pSetupData).ComputerName.as_mut_ptr(), hwndDlg) != 0 {
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_DATETIMEPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -1996,13 +1688,13 @@ unsafe extern "C" fn ComputerPageDlgProc(
                         }
                         MessageBoxW(hwndDlg, EmptyComputerName.as_ptr(), Title.as_ptr(), (MB_ICONERROR | MB_OK) as u32);
                         SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
 
                     if WriteComputerSettings(ComputerName.as_mut_ptr(), hwndDlg) == 0 {
                         SetFocus(GetDlgItem(hwndDlg, (IDC_COMPUTERNAME) as i32));
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
 
@@ -2014,7 +1706,7 @@ unsafe extern "C" fn ComputerPageDlgProc(
                             wcscpy(NotMatchPassword.as_mut_ptr(), w!("The passwords you entered do not match. Please enter the desired password again.") as PWSTR);
                         }
                         MessageBoxW(hwndDlg, NotMatchPassword.as_ptr(), Title.as_ptr(), (MB_ICONERROR | MB_OK) as u32);
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
 
@@ -2025,7 +1717,7 @@ unsafe extern "C" fn ComputerPageDlgProc(
                                 wcscpy(WrongPassword.as_mut_ptr(), w!("The password you entered contains invalid characters. Please enter a cleaned password.") as PWSTR);
                             }
                             MessageBoxW(hwndDlg, WrongPassword.as_ptr(), Title.as_ptr(), (MB_ICONERROR | MB_OK) as u32);
-                            SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, -(1 as i32) as LRESULT);
+                            SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (-(1 as i32)) as LONG_PTR);
                             return (TRUE) as i64;
                         }
                         Password = Password.offset(1);
@@ -2080,13 +1772,13 @@ unsafe extern "C" fn SetKeyboardLayoutName(hwnd: HWND) {
     }
 
     if (HIWORD!(hkl as u32) & 0xF000) == 0xF000 {
-        StringCchPrintfW(SpecialId.as_mut_ptr(), (ARRAYSIZE!(SpecialId)) as usize, w!("%04x") as PCWSTR, (HIWORD!(hkl as u32) & 0x0FFF));
+        StringCchPrintfW(SpecialId.as_mut_ptr(), (ARRAYSIZE!(SpecialId)) as usize, w!("%04x") as PCWSTR, ((HIWORD!(hkl as u32) & 0x0FFF) as c_uint));
         LayoutSpecial = (TRUE) as i32;
     }
 
     i = 0;
     while i < (if LayoutSpecial != 0 { MAX_LAYOUTS_PER_LANGID } else { 1 }) {
-        StringCchPrintfW(LocaleName.as_mut_ptr(), (ARRAYSIZE!(LocaleName)) as usize, w!("%08lx") as PCWSTR, (i << 16) | LOWORD!(hkl as u32));
+        StringCchPrintfW(LocaleName.as_mut_ptr(), (ARRAYSIZE!(LocaleName)) as usize, w!("%08lx") as PCWSTR, (i << 16) | LOWORD!(hkl as u32) as u32);
 
         StringCchCopyW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, w!("SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\") as PCWSTR);
         StringCchCatW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, LocaleName.as_ptr());
@@ -2261,7 +1953,7 @@ unsafe extern "C" fn WriteUserLocale() {
     }
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn LocalePageDlgProc(
+unsafe extern "system" fn LocalePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2274,7 +1966,7 @@ unsafe extern "stdcall" fn LocalePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             WriteUserLocale();
 
             SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
@@ -2310,7 +2002,7 @@ unsafe extern "stdcall" fn LocalePageDlgProc(
                             RunControlPanelApplet(hwndDlg, w!("intl.cpl,,/f:\"$winnt$.inf\"") as PCWSTR);
                         }
 
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_OWNERPAGE);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_OWNERPAGE) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -2332,7 +2024,7 @@ unsafe extern "stdcall" fn LocalePageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn LocalePageDlgProc(
+unsafe extern "system" fn LocalePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2345,7 +2037,7 @@ unsafe extern "C" fn LocalePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i64);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             WriteUserLocale();
 
             SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
@@ -2354,7 +2046,7 @@ unsafe extern "C" fn LocalePageDlgProc(
 
         WM_COMMAND => {
             if HIWORD!(wParam) == (BN_CLICKED) as u16 {
-                match LOWORD!(wParam) {
+                match LOWORD!(wParam) as u32 {
                     IDC_CUSTOMLOCALE => {
                         RunControlPanelApplet(hwndDlg, w!("intl.cpl,,5") as PCWSTR);
                         SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
@@ -2373,7 +2065,7 @@ unsafe extern "C" fn LocalePageDlgProc(
         WM_NOTIFY => {
             let lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*SetupData).UnattendSetup != 0 {
@@ -2381,7 +2073,7 @@ unsafe extern "C" fn LocalePageDlgProc(
                             RunControlPanelApplet(hwndDlg, w!("intl.cpl,,/f:\"$winnt$.inf\"") as PCWSTR);
                         }
 
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_OWNERPAGE) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_OWNERPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -2423,7 +2115,7 @@ unsafe extern "C" fn RetrieveTimeZone(
     let mut StandardNameSize: ULONG;
     let mut DaylightNameSize: ULONG;
 
-    Entry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<TIMEZONE_ENTRY>()) as PTIMEZONE_ENTRY;
+    Entry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<TIMEZONE_ENTRY>()) as SIZE_T) as PTIMEZONE_ENTRY;
     if Entry == core::ptr::null_mut()
     {
         return (ERROR_NOT_ENOUGH_MEMORY) as i32;
@@ -2488,7 +2180,7 @@ unsafe extern "C" fn RetrieveTimeZone(
     return (ERROR_SUCCESS) as i32;
 }
 unsafe extern "C" fn CreateTimeZoneList(SetupData: PSETUPDATA) {
-    EnumerateTimeZoneList(SetupData, core::ptr::null_mut());
+    EnumerateTimeZoneList(Some(RetrieveTimeZone), SetupData as PVOID);
 }
 unsafe extern "C" fn DestroyTimeZoneList(SetupData: PSETUPDATA) {
     let mut Entry: PTIMEZONE_ENTRY;
@@ -2506,12 +2198,12 @@ unsafe extern "C" fn DestroyTimeZoneList(SetupData: PSETUPDATA) {
 
     (*SetupData).TimeZoneListTail = core::ptr::null_mut();
 }
-unsafe extern "C" fn ShowTimeZoneList(hwnd: HWND, SetupData: PSETUPDATA, dwEntryIndex: DWORD) {
+unsafe extern "C" fn ShowTimeZoneList(hwnd: HWND, SetupData: PSETUPDATA, mut dwEntryIndex: DWORD) {
     let mut Entry: PTIMEZONE_ENTRY;
     let mut dwIndex: DWORD = 0;
-    let dwCount: DWORD;
+    let mut dwCount: DWORD;
 
-    GetTimeZoneListIndex(&dwEntryIndex);
+    GetTimeZoneListIndex(&mut dwEntryIndex);
 
     Entry = (*SetupData).TimeZoneListHead;
     while !Entry.is_null() {
@@ -2629,8 +2321,10 @@ unsafe extern "C" fn WriteDateTimeSettings(hwndDlg: HWND, SetupData: PSETUPDATA)
     SetLocalTimeZone(GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                      SetupData);
 
-    SetAutoDaylight(SendDlgItemMessage(hwndDlg, (IDC_AUTODAYLIGHT) as i32,
-                                       (BM_GETCHECK) as u32, 0, 0) != (BST_UNCHECKED) as i64);
+    SetAutoDaylight(
+        (SendDlgItemMessage(hwndDlg, (IDC_AUTODAYLIGHT) as i32, (BM_GETCHECK) as u32, 0, 0)
+            != BST_UNCHECKED as LRESULT) as BOOL,
+    );
     if SetSystemLocalTime(hwndDlg, SetupData) == 0 {
         if 0 == LoadStringW(hDllInstance, (IDS_REACTOS_SETUP) as u32, Title.as_mut_ptr(), (ARRAYSIZE!(Title)) as i32) {
             wcscpy(Title.as_mut_ptr(), w!("ReactOS Setup") as LPWSTR);
@@ -2646,7 +2340,7 @@ unsafe extern "C" fn WriteDateTimeSettings(hwndDlg: HWND, SetupData: PSETUPDATA)
     return (TRUE) as i32;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DateTimePageDlgProc(
+unsafe extern "system" fn DateTimePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2657,7 +2351,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let SetupData: PSETUPDATA = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             CreateTimeZoneList(SetupData);
 
@@ -2704,7 +2398,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
                 hwndDlg,
                 1,
                 1000 - LocalTime.wMilliseconds as u32,
-                core::ptr::null_mut(),
+                None,
             );
         }
 
@@ -2722,7 +2416,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
                     );
 
                     if (*SetupData).UnattendSetup != 0 && WriteDateTimeSettings(hwndDlg, SetupData) != 0 {
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_THEMEPAGE);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_THEMEPAGE) as LONG_PTR);
                         return TRUE;
                     }
 
@@ -2730,7 +2424,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
                         hwndDlg,
                         1,
                         1000 - LocalTime.wMilliseconds as u32,
-                        core::ptr::null_mut(),
+                        None,
                     );
                 }
 
@@ -2761,7 +2455,7 @@ unsafe extern "stdcall" fn DateTimePageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DateTimePageDlgProc(
+unsafe extern "system" fn DateTimePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2772,7 +2466,7 @@ unsafe extern "C" fn DateTimePageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let SetupData: PSETUPDATA = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i64);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             CreateTimeZoneList(SetupData);
 
@@ -2819,12 +2513,12 @@ unsafe extern "C" fn DateTimePageDlgProc(
                 hwndDlg,
                 1,
                 1000 - LocalTime.wMilliseconds as u32,
-                core::ptr::null_mut(),
+                None,
             );
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match ((*(lParam as LPNMHDR)).code) as i32 {
                 PSN_SETACTIVE => {
                     let mut LocalTime: SYSTEMTIME = core::mem::zeroed();
 
@@ -2837,7 +2531,7 @@ unsafe extern "C" fn DateTimePageDlgProc(
                     );
 
                     if (*SetupData).UnattendSetup != 0 && WriteDateTimeSettings(hwndDlg, SetupData) != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, (IDD_THEMEPAGE) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_THEMEPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
 
@@ -2845,7 +2539,7 @@ unsafe extern "C" fn DateTimePageDlgProc(
                         hwndDlg,
                         1,
                         1000 - LocalTime.wMilliseconds as u32,
-                        core::ptr::null_mut(),
+                        None,
                     );
                 }
 
@@ -2875,7 +2569,7 @@ unsafe extern "C" fn DateTimePageDlgProc(
     (FALSE) as i64
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ThemePageDlgProc(
+unsafe extern "system" fn ThemePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2894,7 +2588,7 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
             let mut lvi: LVITEM = core::mem::zeroed();
 
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             hListView = GetDlgItem(hwndDlg, (IDC_THEMEPICKER) as i32);
 
@@ -2926,7 +2620,7 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
                     DisplayName.as_mut_ptr(),
                     (ARRAYSIZE!(DisplayName)) as i32,
                 );
-                DisplayName[ARRAYSIZE!(DisplayName) - 1] = UNICODE_NULL;
+                DisplayName[(ARRAYSIZE!(DisplayName) - 1) as usize] = UNICODE_NULL;
 
                 lvi.iItem = n as i32;
                 lvi.iImage = n as i32;
@@ -2955,10 +2649,10 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
                         if !Themes[iTheme as usize].ThemeFile.is_null() {
                             let mut wszTheme: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
                             SHGetFolderPathAndSubDirW(
-                                0,
-                                CSIDL_RESOURCES,
                                 core::ptr::null_mut(),
-                                SHGFP_TYPE_DEFAULT,
+                                CSIDL_RESOURCES as i32,
+                                core::ptr::null_mut(),
+                                (SHGFP_TYPE_DEFAULT) as DWORD,
                                 Themes[iTheme as usize].ThemeFile,
                                 wszTheme.as_mut_ptr(),
                             );
@@ -2971,7 +2665,7 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*SetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (*SetupData).uFirstNetworkWizardPage);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, ((*SetupData).uFirstNetworkWizardPage) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -2990,7 +2684,7 @@ unsafe extern "stdcall" fn ThemePageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ThemePageDlgProc(
+unsafe extern "system" fn ThemePageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -3009,7 +2703,7 @@ unsafe extern "C" fn ThemePageDlgProc(
             let mut lvi: LVITEM = core::mem::zeroed();
 
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i64);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             hListView = GetDlgItem(hwndDlg, (IDC_THEMEPICKER) as i32);
 
@@ -3041,7 +2735,7 @@ unsafe extern "C" fn ThemePageDlgProc(
                     DisplayName.as_mut_ptr(),
                     (ARRAYSIZE!(DisplayName)) as i32,
                 );
-                DisplayName[ARRAYSIZE!(DisplayName) - 1] = UNICODE_NULL;
+                DisplayName[(ARRAYSIZE!(DisplayName) - 1) as usize] = UNICODE_NULL;
 
                 lvi.iItem = n as i32;
                 lvi.iImage = n as i32;
@@ -3058,7 +2752,7 @@ unsafe extern "C" fn ThemePageDlgProc(
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match ((*(lParam as LPNMHDR)).code) as i32 {
                 LVN_ITEMCHANGED => {
                     pnmv = lParam as LPNMLISTVIEW;
                     if ((*pnmv).uChanged & (LVIF_STATE) as u32) != 0
@@ -3070,7 +2764,7 @@ unsafe extern "C" fn ThemePageDlgProc(
                         if !Themes[iTheme as usize].ThemeFile.is_null() {
                             let mut wszTheme: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
                             SHGetFolderPathAndSubDirW(
-                                0,
+                                core::ptr::null_mut(),
                                 (CSIDL_RESOURCES) as i32,
                                 core::ptr::null_mut(),
                                 (SHGFP_TYPE_DEFAULT) as u32,
@@ -3086,7 +2780,7 @@ unsafe extern "C" fn ThemePageDlgProc(
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*SetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as i32, ((*SetupData).uFirstNetworkWizardPage) as i64);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, (((*SetupData).uFirstNetworkWizardPage)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -3104,7 +2798,7 @@ unsafe extern "C" fn ThemePageDlgProc(
     (FALSE) as i64
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RegistrationNotificationProc(
+unsafe extern "system" fn RegistrationNotificationProc(
     Context: PVOID,
     Notification: UINT,
     Param1: UINT_PTR,
@@ -3170,7 +2864,7 @@ unsafe extern "stdcall" fn RegistrationNotificationProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn RegistrationNotificationProc(
+unsafe extern "system" fn RegistrationNotificationProc(
     Context: PVOID,
     Notification: UINT,
     Param1: UINT_PTR,
@@ -3289,8 +2983,8 @@ unsafe extern "C" fn RegisterDlls(
         hSysSetupInf,
         w!("RegistrationPhase2") as PCWSTR,
         (SPINST_REGISTRY | ((SPINST_REGISTERCALLBACKAWARE) as i32) as u32 | SPINST_REGSVR) as u32,
-        0,
         core::ptr::null_mut(),
+        core::ptr::null(),
         0,
         Some(RegistrationNotificationProc),
         &mut RegistrationData as *mut _ as PVOID,
@@ -3345,7 +3039,7 @@ unsafe extern "C" fn RegisterComponents(
     SendMessage((*pItemsData).hwndDlg, (PM_ITEM_END) as u32, 0, Error as LPARAM);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ItemCompletionThread(
+unsafe extern "system" fn ItemCompletionThread(
     Parameter: LPVOID,
 ) -> DWORD {
     let pItemsData: PITEMSDATA;
@@ -3368,7 +3062,7 @@ unsafe extern "stdcall" fn ItemCompletionThread(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ItemCompletionThread(
+unsafe extern "system" fn ItemCompletionThread(
     Parameter: LPVOID,
 ) -> DWORD {
     let pItemsData: PITEMSDATA;
@@ -3394,7 +3088,7 @@ unsafe extern "C" fn RunItemCompletionThread(
     let hCompletionThread: HANDLE;
     let pItemsData: PITEMSDATA;
 
-    pItemsData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<ITEMSDATA>()) as PITEMSDATA;
+    pItemsData = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<ITEMSDATA>()) as SIZE_T) as PITEMSDATA;
     if pItemsData == core::ptr::null_mut()
     {
         return (FALSE) as i32;
@@ -3508,7 +3202,7 @@ unsafe extern "C" fn ShowStepError(
     }
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ProcessPageDlgProc(
+unsafe extern "system" fn ProcessPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -3526,7 +3220,7 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i32);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT3) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT4) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK3) as i32), (SW_HIDE) as i32);
@@ -3590,7 +3284,7 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
                 if (*RegistrationNotify).CurrentItem != core::ptr::null_mut() {
                     (*RegistrationNotify).CurrentItem
                 } else {
-                    b"\0".as_ptr() as LPARAM
+                    w!("")
                 } as LPARAM,
             );
         }
@@ -3615,7 +3309,7 @@ unsafe extern "stdcall" fn ProcessPageDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ProcessPageDlgProc(
+unsafe extern "system" fn ProcessPageDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -3633,7 +3327,7 @@ unsafe extern "C" fn ProcessPageDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, GWLP_USERDATA, (SetupData as DWORD_PTR) as i64);
+            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT3) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT4) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK3) as i32), (SW_HIDE) as i32);
@@ -3651,7 +3345,7 @@ unsafe extern "C" fn ProcessPageDlgProc(
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match ((*(lParam as LPNMHDR)).code) as i32 {
                 PSN_SETACTIVE => {
                     LogItem!(w!("BEGIN") as LPCWSTR, w!("ProcessPage") as LPCWSTR);
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), 0);
@@ -3697,7 +3391,7 @@ unsafe extern "C" fn ProcessPageDlgProc(
                 if (*RegistrationNotify).CurrentItem != core::ptr::null_mut() {
                     (*RegistrationNotify).CurrentItem
                 } else {
-                    b"\0".as_ptr() as LPARAM
+                    w!("")
                 } as LPARAM,
             );
         }
@@ -3721,7 +3415,7 @@ unsafe extern "C" fn ProcessPageDlgProc(
     (FALSE) as i64
 }
 unsafe extern "C" fn SetInstallationCompleted() {
-    let mut hKey: HKEY = 0;
+    let mut hKey: HKEY = core::ptr::null_mut();
     let InProgress: DWORD = 0;
     let mut InstallDate: DWORD;
 
@@ -3747,7 +3441,7 @@ unsafe extern "C" fn SetInstallationCompleted() {
     }
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn FinishDlgProc(
+unsafe extern "system" fn FinishDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -3760,9 +3454,9 @@ unsafe extern "stdcall" fn FinishDlgProc(
             if (*SetupData).UnattendSetup == 0 || (*SetupData).DisableGeckoInst == 0 {
                 Control_RunDLLW(
                     hwndDlg,
-                    0,
+                    core::ptr::null_mut(),
                     w!("appwiz.cpl,,install_gecko") as LPCWSTR,
-                    SW_SHOW,
+                    SW_SHOW as i32,
                 );
             }
 
@@ -3833,7 +3527,7 @@ unsafe extern "stdcall" fn FinishDlgProc(
                         hwndDlg,
                         1,
                         50,
-                        core::ptr::null_mut(),
+                        None,
                     );
                 }
 
@@ -3852,7 +3546,7 @@ unsafe extern "stdcall" fn FinishDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn FinishDlgProc(
+unsafe extern "system" fn FinishDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -3865,7 +3559,7 @@ unsafe extern "C" fn FinishDlgProc(
             if (*SetupData).UnattendSetup == 0 || (*SetupData).DisableGeckoInst == 0 {
                 Control_RunDLLW(
                     hwndDlg,
-                    0,
+                    core::ptr::null_mut(),
                     w!("appwiz.cpl,,install_gecko") as LPCWSTR,
                     (SW_SHOW) as i32,
                 );
@@ -3916,7 +3610,7 @@ unsafe extern "C" fn FinishDlgProc(
         WM_NOTIFY => {
             let lpnm = lParam as LPNMHDR;
 
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_FINISH);
 
@@ -3938,7 +3632,7 @@ unsafe extern "C" fn FinishDlgProc(
                         hwndDlg,
                         1,
                         50,
-                        core::ptr::null_mut(),
+                        None,
                     );
                 }
 
@@ -4089,23 +3783,23 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
         }
         // DPRINT removed
         if _wcsicmp(szName.as_ptr(), w!("FullName") as LPCWSTR) == 0 {
-            if ARRAYSIZE!((*pSetupData).OwnerName.as_ptr() as _) > LineLength {
+            if ARRAYSIZE!((*pSetupData).OwnerName) > LineLength {
                 wcscpy((*pSetupData).OwnerName.as_mut_ptr(), szValue.as_ptr());
             }
         } else if _wcsicmp(szName.as_ptr(), w!("OrgName") as LPCWSTR) == 0 {
-            if ARRAYSIZE!((*pSetupData).OwnerOrganization.as_ptr() as _) > LineLength {
+            if ARRAYSIZE!((*pSetupData).OwnerOrganization) > LineLength {
                 wcscpy((*pSetupData).OwnerOrganization.as_mut_ptr(), szValue.as_ptr());
             }
         } else if _wcsicmp(szName.as_ptr(), w!("ComputerName") as LPCWSTR)
             == 0
         {
-            if ARRAYSIZE!((*pSetupData).ComputerName.as_ptr() as _) > LineLength {
+            if ARRAYSIZE!((*pSetupData).ComputerName) > LineLength {
                 wcscpy((*pSetupData).ComputerName.as_mut_ptr(), szValue.as_ptr());
             }
         } else if _wcsicmp(szName.as_ptr(), w!("AdminPassword") as LPCWSTR)
             == 0
         {
-            if ARRAYSIZE!((*pSetupData).AdminPassword.as_ptr() as _) > LineLength {
+            if ARRAYSIZE!((*pSetupData).AdminPassword) > LineLength {
                 wcscpy((*pSetupData).AdminPassword.as_mut_ptr(), szValue.as_ptr());
             }
         } else if _wcsicmp(szName.as_ptr(), w!("TimeZoneIndex") as LPCWSTR)
@@ -4370,7 +4064,7 @@ unsafe extern "C" fn PathIsEqual(
         return (TRUE) as i32;
     }
 
-    if PathAddBackslashW(szPath1.as_mut_ptr()) == 0 {
+    if PathAddBackslashW(szPath1.as_mut_ptr()).is_null() {
         return (TRUE) as i32;
     }
 
@@ -4378,7 +4072,7 @@ unsafe extern "C" fn PathIsEqual(
         return (TRUE) as i32;
     }
 
-    if PathAddBackslashW(szPath2.as_mut_ptr()) == 0 {
+    if PathAddBackslashW(szPath2.as_mut_ptr()).is_null() {
         return (TRUE) as i32;
     }
 
@@ -4397,7 +4091,7 @@ unsafe extern "C" fn AddInstallationSource(
     let mut dwPathLength: DWORD = 0;
     let mut dwNewLength: DWORD = 0;
     let mut Buffer: LPWSTR = core::ptr::null_mut();
-    let mut Path: LPWSTR;
+    let mut Path: LPWSTR = core::ptr::null_mut();
 
     res = RegQueryValueExW(
         hKey,
@@ -4418,7 +4112,7 @@ unsafe extern "C" fn AddInstallationSource(
             if dwPathLength == 0 {
                 dwNewLength = ((wcslen(lpPath) + 1 + 1)
                     * (core::mem::size_of::<WCHAR>() as u32) as usize) as u32;
-                Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as u64)).cast();
+                Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as SIZE_T)).cast();
                 if Buffer.is_null() {
                     return;
                 }
@@ -4450,7 +4144,7 @@ unsafe extern "C" fn AddInstallationSource(
     }
 
     dwNewLength = dwPathLength + ((wcslen(lpPath) + 1) * (core::mem::size_of::<WCHAR>() as u32) as usize) as u32;
-    Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as u64)).cast();
+    Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as SIZE_T)).cast();
     if Buffer.is_null() {
         return;
     }
@@ -4473,7 +4167,7 @@ unsafe extern "C" fn AddInstallationSource(
             if dwPathLength == 0 {
                 dwNewLength = ((wcslen(lpPath) + 1 + 1)
                     * (core::mem::size_of::<WCHAR>() as u32) as usize) as u32;
-                Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as u64)).cast();
+                Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as SIZE_T)).cast();
                 if Buffer.is_null() {
                     return;
                 }
@@ -4524,7 +4218,7 @@ unsafe extern "C" fn AddInstallationSource(
         if dwPathLength == 0 {
             dwNewLength = ((wcslen(lpPath) + 1 + 1)
                 * (core::mem::size_of::<WCHAR>() as u32) as usize) as u32;
-            Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as u64)).cast();
+            Buffer = (HeapAlloc(GetProcessHeap(), 0, (dwNewLength) as SIZE_T)).cast();
             if Buffer.is_null() {
                 return;
             }
@@ -4691,7 +4385,7 @@ pub unsafe extern "C" fn InstallWizard() {
     let mut msg: MSG = core::mem::zeroed();
     let mut pSetupData: PSETUPDATA = core::ptr::null_mut();
     let mut hNetShell: HMODULE = core::ptr::null_mut();
-    let mut pfn: PFNREQUESTWIZARDPAGES = core::mem::transmute(core::ptr::null::<()>());
+    let mut pfn: PFNREQUESTWIZARDPAGES = None;
     let mut dwPageCount: DWORD = 10;
     let mut dwNetworkPageCount: DWORD = 0;
 
@@ -4703,7 +4397,7 @@ pub unsafe extern "C" fn InstallWizard() {
     pSetupData = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<SETUPDATA>(),
+        (core::mem::size_of::<SETUPDATA>()) as SIZE_T,
     ) as PSETUPDATA;
     if pSetupData.is_null() {
         LogItem!(
@@ -4744,7 +4438,7 @@ pub unsafe extern "C" fn InstallWizard() {
             hNetShell,
             b"NetSetupRequestWizardPages\0".as_ptr() as PCHAR,
         ));
-        if pfn as usize != 0 {
+        if let Some(pfn) = pfn {
             pfn(&mut dwNetworkPageCount, core::ptr::null_mut(), core::ptr::null_mut());
             dwPageCount += dwNetworkPageCount;
         }
@@ -4755,7 +4449,7 @@ pub unsafe extern "C" fn InstallWizard() {
     phpage = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (dwPageCount * core::mem::size_of::<HPROPSHEETPAGE>() as DWORD) as u64,
+        (dwPageCount * core::mem::size_of::<HPROPSHEETPAGE>() as DWORD) as SIZE_T,
     ) as *mut HPROPSHEETPAGE;
     if phpage.is_null() {
         LogItem!(
@@ -4857,8 +4551,8 @@ pub unsafe extern "C" fn InstallWizard() {
     (*pSetupData).uFirstNetworkWizardPage = (IDD_PROCESSPAGE) as u32;
     (*pSetupData).uPostNetworkWizardPage = (IDD_PROCESSPAGE) as u32;
 
-    if pfn as usize != 0 {
-        pfn(&mut dwNetworkPageCount, &mut *phpage.offset(nPages as isize), pSetupData);
+    if let Some(pfn) = pfn {
+        pfn(&mut dwNetworkPageCount, phpage.offset(nPages as isize), pSetupData);
         nPages += dwNetworkPageCount;
     }
 
@@ -4883,8 +4577,8 @@ pub unsafe extern "C" fn InstallWizard() {
     psh.nPages = nPages;
     psh.__bindgen_anon_2.nStartPage = 0;
     psh.__bindgen_anon_3.phpage = phpage;
-    psh.u4.pszbmWatermark = MAKEINTRESOURCE!(IDB_WATERMARK);
-    psh.u5.pszbmHeader = MAKEINTRESOURCE!(IDB_HEADER);
+    psh.__bindgen_anon_4.pszbmWatermark = MAKEINTRESOURCE!(IDB_WATERMARK);
+    psh.__bindgen_anon_5.pszbmHeader = MAKEINTRESOURCE!(IDB_HEADER);
 
     (*pSetupData).hTitleFont = CreateTitleFont();
     (*pSetupData).hBoldFont = CreateBoldFont();
@@ -5104,7 +4798,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //             break;
 //
 //         case WM_COMMAND:
-//             if (HIWORD!(wParam) == BN_CLICKED && IDOK == LOWORD!(wParam))
+//             if (HIWORD!(wParam) == BN_CLICKED && IDOK == LOWORD!(wParam) as u32)
 //             {
 //                 EndDialog(hwndDlg, IDOK);
 //             }
@@ -5269,7 +4963,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //         break;
 //
 //         case WM_COMMAND:
-//             if (HIWORD!(wParam) == BN_CLICKED && IDC_VIEWGPL == LOWORD!(wParam))
+//             if (HIWORD!(wParam) == BN_CLICKED && IDC_VIEWGPL == LOWORD!(wParam) as u32)
 //             {
 //                 DialogBox!(hDllInstance, MAKEINTRESOURCE!(IDD_GPL), NULL, GplDlgProc);
 //                 SetForegroundWindow(GetParent(hwndDlg));
@@ -5630,7 +5324,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //         }
 //
 //         case WM_COMMAND:
-//             if (HIWORD!(wParam) == CBN_SELCHANGE && IDC_PRODUCT_OPTIONS == LOWORD!(wParam))
+//             if (HIWORD!(wParam) == CBN_SELCHANGE && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32)
 //             {
 //                 iItem = SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_GETCURSEL, 0, 0);
 //                 OnChooseOption(hwndDlg, (PRODUCT_OPTION)iItem);
@@ -6620,7 +6314,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //     DWORD dwIndex = 0;
 //     DWORD dwCount;
 //
-//     GetTimeZoneListIndex(&dwEntryIndex);
+//     GetTimeZoneListIndex(&mut dwEntryIndex);
 //
 //     Entry = SetupData->TimeZoneListHead;
 //     while (Entry != NULL)

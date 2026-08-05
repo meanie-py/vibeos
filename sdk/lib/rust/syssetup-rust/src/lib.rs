@@ -24,6 +24,9 @@ pub mod syssetup {
     pub mod netinstall;
     pub mod proppage;
     pub mod security;
+    // Not a TU: strsafe.h's `static __inline` bounded string ops, which no object file in
+    // the tree defines. See the module docstring.
+    pub mod strsafe;
     pub mod wizard;
 }
 

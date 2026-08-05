@@ -3,11 +3,13 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+#[no_mangle]
 pub static mut hSysSetupInf: HINF = INVALID_HANDLE_VALUE;
+#[no_mangle]
 pub static mut AdminInfo: ADMIN_INFO = ADMIN_INFO {
-    Name: [0; 256],
-    Password: [0; 256],
-    Domain: [0; 256],
+    Name: core::ptr::null_mut(),
+    Domain: core::ptr::null_mut(),
+    Password: core::ptr::null_mut(),
 };
 
 #[repr(C)]
@@ -572,7 +574,7 @@ unsafe extern "C" fn InstallSysSetupInfComponents() -> u32 {
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 (SP_COPY_NEWER) as u32,
-                SetupDefaultQueueCallbackW,
+                Some(SetupDefaultQueueCallbackW),
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 core::ptr::null_mut()
@@ -608,7 +610,7 @@ pub unsafe extern "C" fn RegisterTypeLibraries(
     let mut res: BOOL;
     let mut szName: [u16; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut szPath: [u16; (MAX_PATH) as usize] = core::mem::zeroed();
-    let mut csidl: INT;
+    let mut csidl: INT = 0;
     let mut p: LPWSTR;
     let mut hmod: HMODULE;
     let mut hret: HRESULT;
@@ -887,7 +889,7 @@ unsafe extern "C" fn AdjustStatusMessageWindow(hwndDlg: HWND, pDlgData: *mut DLG
     MoveWindow(hwndDlg, xNew, yNew, cxNew, cyNew, (TRUE) as i32);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn StatusMessageWindowProc(
+unsafe extern "system" fn StatusMessageWindowProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -910,10 +912,10 @@ unsafe extern "stdcall" fn StatusMessageWindowProc(
             pDlgData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<DLG_DATA>(),
+                (core::mem::size_of::<DLG_DATA>()) as SIZE_T,
             ) as *mut DLG_DATA;
             if !pDlgData.is_null() {
-                SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, pDlgData as isize);
+                SetWindowLongPtrW(hwndDlg, (GWLP_USERDATA) as c_int, ((pDlgData)) as LONG_PTR);
 
                 (*pDlgData).hLogoBitmap = LoadImageW(
                     hDllInstance,
@@ -945,7 +947,7 @@ unsafe extern "stdcall" fn StatusMessageWindowProc(
                         hwndDlg,
                         IDT_BAR,
                         20,
-                        core::ptr::null_mut(),
+                        None,
                     ) == 0
                     {
                         // DPRINT removed
@@ -1050,7 +1052,7 @@ unsafe extern "stdcall" fn StatusMessageWindowProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn StatusMessageWindowProc(
+unsafe extern "system" fn StatusMessageWindowProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -1076,7 +1078,7 @@ unsafe extern "C" fn StatusMessageWindowProc(
                 (core::mem::size_of::<DLG_DATA>()) as u64,
             ) as *mut DLG_DATA;
             if !pDlgData.is_null() {
-                SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (pDlgData as isize) as i64);
+                SetWindowLongPtrW(hwndDlg, (GWLP_USERDATA) as c_int, ((pDlgData as isize)) as LONG_PTR);
 
                 (*pDlgData).hLogoBitmap = LoadImageW(
                     hDllInstance,
@@ -1108,7 +1110,7 @@ unsafe extern "C" fn StatusMessageWindowProc(
                         hwndDlg,
                         (IDT_BAR) as u64,
                         20,
-                        core::ptr::null_mut(),
+                        None,
                     ) == 0
                     {
                         // DPRINT removed
@@ -1212,7 +1214,7 @@ unsafe extern "C" fn StatusMessageWindowProc(
     return (FALSE) as i64;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ShowStatusMessageThread(
+unsafe extern "system" fn ShowStatusMessageThread(
     lpParameter: LPVOID
 ) -> u32 {
     let mut hWnd: HWND;
@@ -1222,7 +1224,7 @@ unsafe extern "stdcall" fn ShowStatusMessageThread(
     hWnd = CreateDialogParam(hDllInstance,
                              MAKEINTRESOURCE!(IDD_STATUSWINDOW_DLG),
                              GetDesktopWindow(),
-                             StatusMessageWindowProc,
+                             Some(StatusMessageWindowProc),
                              0 as LPARAM);
     if hWnd.is_null() {
         return 0;
@@ -1241,7 +1243,7 @@ unsafe extern "stdcall" fn ShowStatusMessageThread(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ShowStatusMessageThread(
+unsafe extern "system" fn ShowStatusMessageThread(
     lpParameter: LPVOID
 ) -> u32 {
     let mut hWnd: HWND;
@@ -1251,7 +1253,7 @@ unsafe extern "C" fn ShowStatusMessageThread(
     hWnd = CreateDialogParam(hDllInstance,
                              MAKEINTRESOURCE!(IDD_STATUSWINDOW_DLG),
                              GetDesktopWindow(),
-                             StatusMessageWindowProc,
+                             Some(StatusMessageWindowProc),
                              0 as LPARAM);
     if hWnd.is_null() {
         return 0;
@@ -1290,7 +1292,7 @@ unsafe extern "C" fn ReadRegSzKey(
     if dwType != (REG_SZ) as u32 {
         return (ERROR_FILE_NOT_FOUND) as i32;
     }
-    pwszValue = HeapAlloc(GetProcessHeap(), 0, (cbData + core::mem::size_of::<u16>() as u32) as u64) as LPWSTR;
+    pwszValue = HeapAlloc(GetProcessHeap(), 0, (cbData + core::mem::size_of::<u16>() as u32) as SIZE_T) as LPWSTR;
     if pwszValue.is_null() {
         return (ERROR_NOT_ENOUGH_MEMORY) as i32;
     }
@@ -1455,7 +1457,7 @@ unsafe extern "C" fn CommonInstall() -> BOOL {
             hThread = CreateThread(
                 core::ptr::null_mut(),
                 0,
-                ShowStatusMessageThread,
+                Some(ShowStatusMessageThread),
                 core::ptr::null_mut(),
                 0,
                 core::ptr::null_mut(),
@@ -1508,7 +1510,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         return 0;
     }
 
-    let bRes = InstallNetworkComponent(w!("MS_TCPIP") as LPCWSTR);
+    let mut bRes = InstallNetworkComponent(w!("MS_TCPIP") as PWSTR);
     if bRes == 0 && GetLastError() != ERROR_FILE_NOT_FOUND {
         // DPRINT removed
     } else {
@@ -1523,10 +1525,10 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
             hSysSetupInf,
             w!("RegistrationPhase2") as LPCWSTR,
             (SPINST_ALL) as u32,
-            0,
             core::ptr::null_mut(),
+            core::ptr::null(),
             0,
-            core::ptr::null_mut(),
+            None,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -1608,19 +1610,19 @@ unsafe extern "C" fn SetSetupType(dwSetupType: u32) -> i32 {
     (TRUE) as i32
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn HotkeyThread(Parameter: LPVOID) -> u32 {
+unsafe extern "system" fn HotkeyThread(Parameter: LPVOID) -> u32 {
     let mut hotkey: ATOM;
     let mut msg: MSG = core::mem::zeroed();
 
     // DPRINT removed
 
     hotkey = GlobalAddAtomW(w!("Setup Shift+F10 Hotkey") as PCWSTR);
-    if RegisterHotKey(core::ptr::null_mut(), hotkey, MOD_SHIFT, VK_F10) == 0 {
+    if RegisterHotKey(core::ptr::null_mut(), hotkey as i32, MOD_SHIFT, VK_F10) == 0 {
         // DPRINT removed
     }
 
     while GetMessageW(&mut msg, core::ptr::null_mut(), 0, 0) != 0 {
-        if msg.hwnd.is_null() && msg.message == WM_HOTKEY && msg.wParam == hotkey as usize {
+        if msg.hwnd.is_null() && msg.message == WM_HOTKEY && msg.wParam == hotkey as WPARAM {
             let mut CmdLine: [u16; 8] = [b'c' as u16, b'm' as u16, b'd' as u16, b'.' as u16, b'e' as u16, b'x' as u16, b'e' as u16, 0];
             let mut si: STARTUPINFOW = core::mem::zeroed();
             si.cb = core::mem::size_of::<STARTUPINFOW>() as u32;
@@ -1647,7 +1649,7 @@ unsafe extern "stdcall" fn HotkeyThread(Parameter: LPVOID) -> u32 {
         }
     }
 
-    UnregisterHotKey(core::ptr::null_mut(), hotkey);
+    UnregisterHotKey(core::ptr::null_mut(), hotkey as i32);
     GlobalDeleteAtom(hotkey);
 
     // DPRINT removed
@@ -1655,7 +1657,7 @@ unsafe extern "stdcall" fn HotkeyThread(Parameter: LPVOID) -> u32 {
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn HotkeyThread(Parameter: LPVOID) -> u32 {
+unsafe extern "system" fn HotkeyThread(Parameter: LPVOID) -> u32 {
     let mut hotkey: ATOM;
     let mut msg: MSG = core::mem::zeroed();
 
@@ -2041,7 +2043,7 @@ unsafe extern "C" fn InstallReactOS() -> u32 {
         return 0;
     }
 
-    hHotkeyThread = CreateThread(core::ptr::null_mut(), 0, HotkeyThread, core::ptr::null_mut(), 0, core::ptr::null_mut());
+    hHotkeyThread = CreateThread(core::ptr::null_mut(), 0, Some(HotkeyThread), core::ptr::null_mut(), 0, core::ptr::null_mut());
 
     PreprocessUnattend((TRUE) as i32);
     if CommonInstall() == 0 {
@@ -2083,7 +2085,7 @@ unsafe extern "C" fn InstallReactOS() -> u32 {
     }
     if LookupPrivilegeValue(
         core::ptr::null_mut(),
-        SE_SHUTDOWN_NAME,
+        SE_SHUTDOWN_NAME!(),
         &mut privs.Privileges[0].Luid
     ) == 0 {
         FatalError(b"LookupPrivilegeValue() failed!\0".as_ptr() as *mut i8);
@@ -2144,7 +2146,11 @@ pub unsafe extern "system" fn SetupChangeLocaleEx(
     hWnd: HWND,
     Lcid: LCID,
     lpSrcRootPath: LPCWSTR,
-    (Unknown) as i8: i8,
+    // install.c:1751 names this `char Unknown`, but `Unknown` is ALSO a glob-imported constant
+    // (ntdll-sys re-exports `pub const Unknown: _MEDIA_TYPE`), and an identifier pattern that
+    // resolves to a constant is a CONSTANT PATTERN, not a binding — the same shape as the
+    // §9.112 catch-all match arm, in parameter position. Renamed so it binds.
+    _Unknown: c_char,
     dwUnused1: u32,
     dwUnused2: u32,
 ) -> u32 {
@@ -2154,7 +2160,7 @@ pub unsafe extern "system" fn SetupChangeLocaleEx(
 
 #[no_mangle]
 pub unsafe extern "system" fn SetupChangeLocale(hWnd: HWND, Lcid: LCID) -> u32 {
-    SetupChangeLocaleEx(hWnd, Lcid, core::ptr::null(), 0, 0, 0)
+    SetupChangeLocaleEx(hWnd, Lcid, core::ptr::null(), 0 as c_char, 0, 0)
 }
 
 #[no_mangle]

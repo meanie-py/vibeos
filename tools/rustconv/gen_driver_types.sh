@@ -1697,6 +1697,12 @@ case "$DRIVER" in
     # EXTRA_RAW_LINES for its COM interfaces).
     EXTRA_BL_ITEMS=( _TIMEZONE_ENTRY TIMEZONE_ENTRY PTIMEZONE_ENTRY )
     EXTRA_RAW_LINES=( 'pub use crate::syssetup::wizard::_TIMEZONE_ENTRY;' )
+    # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union: pszTemplate/pResource,
+    # nStartPage/pStartPage, hbmWatermark/pszbmWatermark, hbmHeader/pszbmHeader. In the C those
+    # are FLATTENED (`psp.pszTemplate = ..`), so the translation writes plain field assignments
+    # and the `__BindgenUnionField<T>` emulation cannot accept one. New crate, so this is the
+    # opt-in case the knob is for.
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/dll/win32/syssetup"
     WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>\n#define COBJMACROS\n#include <io.h>\n#include <wincon.h>\n#include <winnls.h>\n#include <winsvc.h>\n#include <userenv.h>\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <shobjidl.h>\n#include <rpcproxy.h>\n#include <ndk/cmfuncs.h>\n#include <stdarg.h>\n#include <rpc.h>\n#include <ntlsa.h>\n#include <ntsecapi.h>\n#include <ntsam.h>\n#include <sddl.h>\n#include <stdlib.h>\n#include <time.h>\n#include <windowsx.h>\n#include <tzlib.h>\n#include <strsafe.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'

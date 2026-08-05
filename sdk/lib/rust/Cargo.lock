@@ -2269,6 +2269,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "syssetup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "tcpsvcs-rust"
 version = "0.1.0"
 dependencies = [

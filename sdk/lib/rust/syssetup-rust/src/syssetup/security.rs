@@ -25,8 +25,8 @@ pub unsafe extern "system" fn SetAccountsDomainSid(
     // DPRINT removed
 
     if DomainName != core::ptr::null() {
-        DomainNameLength = wcslen(DomainName);
-        if DomainNameLength > (UNICODE_STRING_MAX_CHARS) as u64 {
+        DomainNameLength = wcslen(DomainName) as SIZE_T;
+        if DomainNameLength > UNICODE_STRING_MAX_CHARS as SIZE_T {
             return STATUS_INVALID_PARAMETER;
         }
     }
@@ -61,7 +61,7 @@ pub unsafe extern "system" fn SetAccountsDomainSid(
             Info.DomainName.MaximumLength = (*OrigInfo).DomainName.MaximumLength;
         } else {
             Info.DomainName.Buffer = DomainName as LPWSTR;
-            Info.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>()) as u16;
+            Info.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>() as SIZE_T) as u16;
             Info.DomainName.MaximumLength = Info.DomainName.Length + core::mem::size_of::<WCHAR>() as u16;
         }
 
@@ -72,7 +72,7 @@ pub unsafe extern "system" fn SetAccountsDomainSid(
         }
     } else {
         Info.DomainName.Buffer = DomainName as LPWSTR;
-        Info.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>()) as u16;
+        Info.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>() as SIZE_T) as u16;
         Info.DomainName.MaximumLength = Info.DomainName.Length + core::mem::size_of::<WCHAR>() as u16;
         Info.DomainSid = DomainSid;
     }
@@ -92,7 +92,7 @@ pub unsafe extern "system" fn SetAccountsDomainSid(
 
     LsaClose(PolicyHandle);
 
-    DomainNameInfo.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>()) as u16;
+    DomainNameInfo.DomainName.Length = (DomainNameLength * core::mem::size_of::<WCHAR>() as SIZE_T) as u16;
     DomainNameInfo.DomainName.MaximumLength = DomainNameInfo.DomainName.Length + core::mem::size_of::<WCHAR>() as u16;
     DomainNameInfo.DomainName.Buffer = DomainName as LPWSTR;
 
@@ -137,14 +137,14 @@ unsafe extern "C" fn SetPrimaryDomain(
     let mut Info: POLICY_PRIMARY_DOMAIN_INFO = core::mem::zeroed();
     let mut ObjectAttributes: LSA_OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut PolicyHandle: LSA_HANDLE = core::mem::zeroed();
-    let mut DomainNameLength: usize = 0;
+    let mut DomainNameLength: SIZE_T = 0;
     let mut Status: NTSTATUS;
 
     // DPRINT removed
 
     if DomainName != core::ptr::null() {
-        DomainNameLength = wcslen(DomainName);
-        if DomainNameLength > (UNICODE_STRING_MAX_CHARS) as usize {
+        DomainNameLength = wcslen(DomainName) as SIZE_T;
+        if DomainNameLength > UNICODE_STRING_MAX_CHARS as SIZE_T {
             return STATUS_INVALID_PARAMETER;
         }
     }
@@ -179,7 +179,7 @@ unsafe extern "C" fn SetPrimaryDomain(
             Info.Name.MaximumLength = (*OrigInfo).Name.MaximumLength;
         } else {
             Info.Name.Buffer = DomainName as LPWSTR;
-            Info.Name.Length = (DomainNameLength * core::mem::size_of::<WCHAR>()) as u16;
+            Info.Name.Length = (DomainNameLength * core::mem::size_of::<WCHAR>() as SIZE_T) as u16;
             Info.Name.MaximumLength = Info.Name.Length + core::mem::size_of::<WCHAR>() as u16;
         }
 
@@ -190,7 +190,7 @@ unsafe extern "C" fn SetPrimaryDomain(
         }
     } else {
         Info.Name.Buffer = DomainName as LPWSTR;
-        Info.Name.Length = (DomainNameLength * core::mem::size_of::<WCHAR>()) as u16;
+        Info.Name.Length = (DomainNameLength * core::mem::size_of::<WCHAR>() as SIZE_T) as u16;
         Info.Name.MaximumLength = Info.Name.Length + core::mem::size_of::<WCHAR>() as u16;
         Info.Sid = DomainSid;
     }
@@ -229,10 +229,10 @@ unsafe extern "C" fn InstallBuiltinAccounts() {
     let mut Status: NTSTATUS;
     let mut PolicyHandle: LSA_HANDLE = core::ptr::null_mut();
     let mut AccountHandle: LSA_HANDLE = core::ptr::null_mut();
-    let mut AccountSid: PSID;
+    let mut AccountSid: PSID = core::ptr::null_mut();
     let mut i: ULONG;
 
-    memset(&mut ObjectAttributes, 0, core::mem::size_of::<LSA_OBJECT_ATTRIBUTES>());
+    memset(core::ptr::addr_of_mut!(ObjectAttributes) as *mut c_void, 0, core::mem::size_of::<LSA_OBJECT_ATTRIBUTES>());
 
     Status = LsaOpenPolicy(
         core::ptr::null_mut(),
@@ -441,7 +441,7 @@ unsafe extern "C" fn InstallPrivileges(hSecurityInf: HINF) {
             i += 1;
         }
 
-        if SetupFindNextLine(&InfContext, &mut InfContext) == 0 {
+        if SetupFindNextLine(core::ptr::addr_of_mut!(InfContext), core::ptr::addr_of_mut!(InfContext)) == 0 {
             break;
         }
     }
@@ -457,7 +457,7 @@ unsafe extern "C" fn ApplyRegistryValues(hSecurityInf: HINF) {
     let mut szValueName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
     let mut dwLength: u32;
-    let mut dwType: u32;
+    let mut dwType: u32 = 0;
     let mut hRootKey: HKEY;
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut Ptr1: PWSTR;
@@ -590,7 +590,7 @@ unsafe extern "C" fn ApplyRegistryValues(hSecurityInf: HINF) {
             pBuffer = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (dwLength) as u64,
+                (dwLength) as SIZE_T,
             );
             if !pBuffer.is_null() {
                 match dwType {
@@ -764,7 +764,7 @@ unsafe extern "C" fn ApplyEventlogSettings(
                 bValueSet = (TRUE) as i32;
             }
         } else if dwValue == 2 {
-            dwValue = (-1) as DWORD;
+            dwValue = (-1i32) as DWORD;
             bValueSet = (TRUE) as i32;
         }
 
@@ -964,7 +964,7 @@ unsafe extern "C" fn ApplyPasswordSettings(
         if SetupGetIntField(&mut InfContext, 1, &mut nValue) != 0 {
             // DPRINT removed
             if nValue == -1 {
-                (*PasswordInfo).MaxPasswordAge.QuadPart = 0x8000000000000000;
+                (*PasswordInfo).MaxPasswordAge.QuadPart = 0x8000000000000000u64 as i64;
             } else if (nValue >= 1) && (nValue < 1000) {
                 (*PasswordInfo).MaxPasswordAge.QuadPart = (nValue as LONGLONG) * TICKS_PER_DAY;
             }
@@ -1179,7 +1179,7 @@ unsafe extern "C" fn ApplyLockoutSettings(
         {
             if nValue == -1
             {
-                (*LockoutInfo).LockoutDuration.QuadPart = 0x8000000000000000LL;
+                (*LockoutInfo).LockoutDuration.QuadPart = 0x8000000000000000u64 as i64;
             }
             else if (nValue >= 0) && (nValue < 100000)
             {
@@ -1369,7 +1369,7 @@ unsafe extern "C" fn SetNewAccountName(
     pszName = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (dwLength * core::mem::size_of::<WCHAR>() as u32) as u64,
+        (dwLength * core::mem::size_of::<WCHAR>() as u32) as SIZE_T,
     ) as PWSTR;
     if pszName.is_null() {
         // DPRINT removed
@@ -1631,7 +1631,7 @@ unsafe extern "C" fn ApplyAuditEvents(
     }
 
     AuditOptions = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                             ((AuditCategoryAccountLogon + 1) * (core::mem::size_of::<ULONG>()) as u32) as u64) as PULONG;
+                             ((AuditCategoryAccountLogon + 1) * (core::mem::size_of::<ULONG>()) as u32) as SIZE_T) as PULONG;
     if AuditOptions == core::ptr::null_mut()
     {
         // DPRINT removed
@@ -1659,7 +1659,7 @@ unsafe extern "C" fn ApplyAuditEvents(
                                   core::ptr::null_mut()) == 0
         {
             // DPRINT removed
-            if SetupFindNextLine(&InfContext, &mut InfContext) == 0 {
+            if SetupFindNextLine(core::ptr::addr_of_mut!(InfContext), core::ptr::addr_of_mut!(InfContext)) == 0 {
                 break;
             }
             continue;
@@ -1672,7 +1672,7 @@ unsafe extern "C" fn ApplyAuditEvents(
                               &mut nValue) == 0
         {
             // DPRINT removed
-            if SetupFindNextLine(&InfContext, &mut InfContext) == 0 {
+            if SetupFindNextLine(core::ptr::addr_of_mut!(InfContext), core::ptr::addr_of_mut!(InfContext)) == 0 {
                 break;
             }
             continue;
@@ -1683,7 +1683,7 @@ unsafe extern "C" fn ApplyAuditEvents(
         if (nValue < (POLICY_AUDIT_EVENT_UNCHANGED) as i32) || (nValue > (POLICY_AUDIT_EVENT_NONE) as i32)
         {
             // DPRINT removed
-            if SetupFindNextLine(&InfContext, &mut InfContext) == 0 {
+            if SetupFindNextLine(core::ptr::addr_of_mut!(InfContext), core::ptr::addr_of_mut!(InfContext)) == 0 {
                 break;
             }
             continue;
@@ -1730,7 +1730,7 @@ unsafe extern "C" fn ApplyAuditEvents(
             // DPRINT removed
         }
 
-        if SetupFindNextLine(&InfContext, &mut InfContext) == 0 {
+        if SetupFindNextLine(core::ptr::addr_of_mut!(InfContext), core::ptr::addr_of_mut!(InfContext)) == 0 {
             break;
         }
     }
@@ -1898,7 +1898,7 @@ pub unsafe extern "C" fn SetAdministratorPassword(Password: LPCWSTR) -> NTSTATUS
         AdminInfo.Name = RtlAllocateHeap(
             RtlGetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            (*AccountNameInfo).UserName.Length as usize + core::mem::size_of::<WCHAR>(),
+            ((*AccountNameInfo).UserName.Length as usize + core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as LPWSTR;
         if !AdminInfo.Name.is_null() {
             RtlCopyMemory!(
@@ -1911,7 +1911,7 @@ pub unsafe extern "C" fn SetAdministratorPassword(Password: LPCWSTR) -> NTSTATUS
         AdminInfo.Domain = RtlAllocateHeap(
             RtlGetProcessHeap(),
             HEAP_ZERO_MEMORY,
-            (*OrigInfo).DomainName.Length as usize + core::mem::size_of::<WCHAR>(),
+            ((*OrigInfo).DomainName.Length as usize + core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as LPWSTR;
         if !AdminInfo.Domain.is_null() {
             RtlCopyMemory!(
@@ -1924,7 +1924,7 @@ pub unsafe extern "C" fn SetAdministratorPassword(Password: LPCWSTR) -> NTSTATUS
         AdminInfo.Password = RtlAllocateHeap(
             RtlGetProcessHeap(),
             0,
-            (wcslen(Password) + 1) * core::mem::size_of::<WCHAR>(),
+            ((wcslen(Password) + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as LPWSTR;
         if !AdminInfo.Password.is_null() {
             wcscpy(AdminInfo.Password, Password);
@@ -2000,8 +2000,8 @@ pub unsafe extern "C" fn SetAutoAdminLogon() {
                 w!("DefaultDomainName") as LPCWSTR,
                 0,
                 (REG_SZ) as u32,
-                AdminInfo.Domain.as_ptr() as LPBYTE,
-                ((wcslen(AdminInfo.Domain.as_ptr()) + 1)
+                AdminInfo.Domain as LPBYTE,
+                ((wcslen(AdminInfo.Domain) + 1)
                     * (core::mem::size_of::<u16>() as u32) as usize) as u32,
             );
 
@@ -2010,8 +2010,8 @@ pub unsafe extern "C" fn SetAutoAdminLogon() {
                 w!("DefaultUserName") as LPCWSTR,
                 0,
                 (REG_SZ) as u32,
-                AdminInfo.Name.as_ptr() as LPBYTE,
-                ((wcslen(AdminInfo.Name.as_ptr()) + 1)
+                AdminInfo.Name as LPBYTE,
+                ((wcslen(AdminInfo.Name) + 1)
                     * (core::mem::size_of::<u16>() as u32) as usize) as u32,
             );
 
@@ -2020,8 +2020,8 @@ pub unsafe extern "C" fn SetAutoAdminLogon() {
                 w!("DefaultPassword") as LPCWSTR,
                 0,
                 (REG_SZ) as u32,
-                AdminInfo.Password.as_ptr() as LPBYTE,
-                ((wcslen(AdminInfo.Password.as_ptr()) + 1)
+                AdminInfo.Password as LPBYTE,
+                ((wcslen(AdminInfo.Password) + 1)
                     * (core::mem::size_of::<u16>() as u32) as usize) as u32,
             );
         }
@@ -2086,7 +2086,7 @@ pub unsafe extern "C" fn SetAutoAdminLogon() {
 //
 //     if (DomainName != NULL)
 //     {
-//         DomainNameLength = wcslen(DomainName);
+//         DomainNameLength = wcslen(DomainName) as SIZE_T;
 //         if (DomainNameLength > UNICODE_STRING_MAX_CHARS)
 //         {
 //             return STATUS_INVALID_PARAMETER;
@@ -2205,7 +2205,7 @@ pub unsafe extern "C" fn SetAutoAdminLogon() {
 //
 //     if (DomainName != NULL)
 //     {
-//         DomainNameLength = wcslen(DomainName);
+//         DomainNameLength = wcslen(DomainName) as SIZE_T;
 //         if (DomainNameLength > UNICODE_STRING_MAX_CHARS)
 //         {
 //             return STATUS_INVALID_PARAMETER;

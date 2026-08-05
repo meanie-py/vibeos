@@ -397,7 +397,7 @@ pub unsafe extern "system" fn StorageCoInstaller(
         }
 
         pszDeviceDescription =
-            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (dwBufferSize) as u64)
+            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (dwBufferSize) as SIZE_T)
                 as PWSTR;
         if pszDeviceDescription == core::ptr::null_mut() {
             return ERROR_SUCCESS;
