@@ -1,29 +1,24 @@
 //! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip. All 21 bodies are here — 19
 //! bought, `_RepositionItems` on the sanctioned retry, `_DoDrop` hand-written — but the file is
-//! deliberately in no `mod` chain so shell32-rust keeps compiling. ~78 errors remain, and they
-//! are ONE substrate decision rather than a grind — measured both ways, the prelude glob alone
-//! leaves 80 and types/win32/shellcom alone leaves 78, so neither is close.
+//! deliberately in no `mod` chain so shell32-rust keeps compiling. Owner: task #48.
 //!
-//! Diffing the vtables (not guessing) splits the interfaces three ways:
-//!   * `IDropTarget` — shellcom's is SLOT-FOR-SLOT IDENTICAL to the copy below; only parameter
-//!     names and formatting differ. Delete this one and take shellcom's.
-//!   * `IDataObject` — the actual blocker. shellcom's vtable is a deliberately PARTIAL view:
-//!     right slot count and order, but `QueryInterface`/`AddRef`/`GetDataHere`/`QueryGetData`/
-//!     `GetCanonicalFormatEtc`/`EnumFormatEtc`/`DAdvise`/`DUnadvise`/`EnumDAdvise` are `usize`
-//!     placeholders and `GetData`/`SetData` take `*mut c_void` (deliberately, per its own
-//!     comment, so one shape serves island and hand-written callers alike). This TU CALLS
-//!     `QueryGetData` and passes real `FORMATETC`/`STGMEDIUM`, so it cannot use shellcom's
-//!     as-is. Typing those slots is not a local edit: ~40 landed COM modules compile against
-//!     shellcom.
-//!   * `IObjectWithSite`/`IPersistFile`/`IShellLinkW`/`IAsyncOperation`/`IAdviseSink`/
-//!     `IEnumFORMATETC`/`IEnumSTATDATA`/`IMoniker`/`IBindCtx`/`IEnumMoniker`/`IStream`/
-//!     `IEnumString`/`IRunningObjectTable` — shellcom has none of these; the copies below are
-//!     the only ones and stay.
+//! THE SUBSTRATE QUESTION IS SETTLED; what is left is an ordinary grind. `shellcom` owns the
+//! three interfaces this file used to re-declare (IDropTarget/IDataObject/IUnknown): its
+//! IDropTargetVtbl was already slot-for-slot identical, and its IDataObject's `QueryInterface`/
+//! `AddRef`/`QueryGetData` were `usize` placeholders that have since been typed — additive,
+//! because a `usize` slot cannot be called, so no caller could have been reading them. The local
+//! copies are gone and the identity comes from the explicit `use crate::shellcom::{...}` below,
+//! which outranks the prelude's island glob. The other thirteen interfaces shellcom does not
+//! have, so this file's declarations of those stay.
 //!
-//! `exe_drop_handler.rs` is the landed sibling that globs shellcom+types and declares only what
-//! shellcom lacks — but it never calls `QueryGetData`, which is exactly why it never hit this.
-//! Guessing a vtable shape here does not fail loudly; it corrupts on drag-and-drop.
-//! Owner: task #48. Do NOT delete: re-translating costs a real API call.
+//! Remaining: **89 ordinary type errors, identical on all three arches** — fn-item-vs-fn-pointer
+//! at the vtable constants, a few mutability mismatches, and the usual numeric widths. None of
+//! them is a layout or ABI question any more. Note the count ROSE from 2 to 89 when the last two
+//! name-resolution errors were fixed: name resolution was aborting before type checking, so the
+//! low number was masking, not progress (AGENTS.md's "a rising count after fixing one is
+//! progress"). Do NOT read 89 as a regression.
+//!
+//! Do NOT delete: re-translating costs a real API call.
 
 // rustconv-assembly: class:CFSDropTarget
 // Deterministic from oleidl.h
@@ -37,6 +32,14 @@
 // remaining work is deciding per interface which module OWNS it. See the parking note in
 // lib.rs.
 use crate::prelude::*;
+// Explicit, not a glob: prelude globs the ISLAND, which declares its own IDataObject /
+// IDropTarget / IUnknown. An explicit import outranks a glob, so naming these three here is
+// what makes shellcom's the one nominal identity in this file — the same three whose local
+// copies were deleted above.
+use crate::shellcom::{
+    IDataObject, IDataObjectVtbl, IDropTarget, IDropTargetVtbl, IUnknown, IUnknownVtbl,
+    REFGUID, SIGDN_DESKTOPABSOLUTEPARSING,
+};
 
 // ---- integration substrate (hand-added; the assembly references these but declares none) ----
 // Explicit imports, not a second glob: prelude.rs owns the one glob in this module and says so.
@@ -104,20 +107,6 @@ extern "C" {
     fn DCIA_Destroy(hDCIA: HDCIA);
 }
 
-#[repr(C)]
-pub struct IDropTarget {
-    pub lpVtbl: *const IDropTargetVtbl,
-}
-#[repr(C)]
-pub struct IDropTargetVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDropTarget, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDropTarget) -> ULONG,
-    pub DragEnter: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragOver: unsafe extern "system" fn(This: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-    pub DragLeave: unsafe extern "system" fn(This: *mut IDropTarget) -> HRESULT,
-    pub Drop: unsafe extern "system" fn(This: *mut IDropTarget, pDataObj: *mut IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDropTarget: IID;
 }
@@ -140,40 +129,11 @@ extern "C" {
 }
 
 // Deterministic from objidl.h
-#[repr(C)]
-pub struct IDataObject {
-    pub lpVtbl: *const IDataObjectVtbl,
-}
-#[repr(C)]
-pub struct IDataObjectVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IDataObject, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IDataObject) -> ULONG,
-    pub GetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetcIn: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub GetDataHere: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT,
-    pub QueryGetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC) -> HRESULT,
-    pub GetCanonicalFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, pformatectIn: *mut FORMATETC, pformatetcOut: *mut FORMATETC) -> HRESULT,
-    pub SetData: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM, fRelease: BOOL) -> HRESULT,
-    pub EnumFormatEtc: unsafe extern "system" fn(This: *mut IDataObject, dwDirection: DWORD, ppenumFormatEtc: *mut *mut IEnumFORMATETC) -> HRESULT,
-    pub DAdvise: unsafe extern "system" fn(This: *mut IDataObject, pformatetc: *mut FORMATETC, advf: DWORD, pAdvSink: *mut IAdviseSink, pdwConnection: *mut DWORD) -> HRESULT,
-    pub DUnadvise: unsafe extern "system" fn(This: *mut IDataObject, dwConnection: DWORD) -> HRESULT,
-    pub EnumDAdvise: unsafe extern "system" fn(This: *mut IDataObject, ppenumAdvise: *mut *mut IEnumSTATDATA) -> HRESULT,
-}
 extern "C" {
     pub static IID_IDataObject: IID;
 }
 
 // Deterministic from unknwn.h
-#[repr(C)]
-pub struct IUnknown {
-    pub lpVtbl: *const IUnknownVtbl,
-}
-#[repr(C)]
-pub struct IUnknownVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IUnknown) -> ULONG,
-}
 extern "C" {
     pub static IID_IUnknown: IID;
 }
