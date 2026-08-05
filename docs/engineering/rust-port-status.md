@@ -986,6 +986,24 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `dialogs/folder_options.cpp` and `dialogs/item_prop.cpp` on 2026-08-02; the tail is tracked by
   `rustconv shell32-tail-inventory`.) The exhaustive zero-C++ plan and
   ledger are in `docs/engineering/active-lanes/shell32-cpp-tail-plan.md`.
+  **The remaining tail is gated on three SCAFFOLD gaps, not on translation budget** (2026-08-05,
+  measured by running `rustconv cpp-tu` over all 22 live TUs). Only four pass preflight outright;
+  every other failure names one of: (1) an activation shape the scaffold does not model — it knows
+  `OBJECT_ENTRY` and `ShellObjectCreator<T>`, and the tail is full of `new CComObject<T>()`
+  (`CEnumMergedFolder`) and plain internal construction; (2) an inherited layout it will not guess
+  — `CWindowImpl<>`/`CWindowImplBaseT<>` (`CDefView`, `CStubWindow32`, `CMenuToolbars`) and
+  `IDispatchImpl<>` (`CFolder`, `CFolderItems`, `CFolderItemVerbs`); (3) object-field C++ RAII
+  (`CAtlList<>`, `CComHeapPtr<> m_pidls[2]`, `CContainedWindow`). The SDK-enum blocker that used
+  to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
+  `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
+  translatable and left `CEnumMergedFolder` with only its activation shape.
+  `droptargets/CFSDropTarget.cpp` is **bought and banked but not flipped**: all 21 bodies are in
+  `shell32-rust/src/droptargets/CFSDropTarget.rs` (19 paid, one on the sanctioned retry, `_DoDrop`
+  hand-written after two envelope refusals), carrying an `ORPHAN-BY-DESIGN` banner because the
+  file, the island and `shellcom` each declare their own
+  `IDataObject`/`IUnknown`/`IShellFolderView`/`STGMEDIUM`/`CFSDropTarget` and deciding which module
+  owns each is the actual remaining work — a wrong vtable there corrupts on drag-and-drop rather
+  than failing to build.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
   `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
   arches: they are the first shell32 TUs to take their substrate from the **bindgen island**
