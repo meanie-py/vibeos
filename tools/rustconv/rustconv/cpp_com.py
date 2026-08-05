@@ -482,6 +482,67 @@ _ISLAND_INTEGER_PRIMITIVES = frozenset(
 )
 _ISLAND_TYPE_ALIAS = re.compile(r"^pub type (?P<name>\w+) = (?P<rhs>[^;]+);", re.M)
 _ISLAND_TYPE_REEXPORT = re.compile(r"^pub use self::(?P<target>\w+) as (?P<name>\w+);", re.M)
+# `pub use ntdll_sys::nt::*;` — the substrate crate an island resolves its base types through.
+_ISLAND_SYS_GLOB = re.compile(r"^pub use (?P<crate>\w+)_sys::\w+::\*;", re.M)
+# Alias chains are short in practice (SHCONTF -> DWORD -> c_ulong); the bound is a cycle guard,
+# not a tuning knob. A malformed island that aliases in a loop must terminate, not hang.
+_ISLAND_ALIAS_MAX_HOPS = 8
+
+
+def _sys_companion(island: Path) -> Path | None:
+    """The `-sys` bindgen file an island resolves its base types through, same arch.
+
+    An island stops at the names bindgen emitted for THIS module; everything below that
+    (``DWORD``, ``UINT``, ...) arrives through the ``pub use <x>_sys::<mod>::*`` glob at
+    its head. Reading that file is what lets a chain like ``SHCONTF = DWORD`` reach a
+    primitive. The arch comes from the island's OWN filename, never from a default: pairing
+    ``island_arm64.rs`` with ``bindgen_i386.rs`` would silently answer the width question
+    with the wrong target, which is the one thing this whole module exists to prevent.
+    """
+    arch = re.fullmatch(r"island_(\w+)\.rs", island.name)
+    if arch is None:
+        return None
+    try:
+        head = island.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return None
+    glob = _ISLAND_SYS_GLOB.search(head)
+    if glob is None:
+        return None
+    # <workspace>/<crate>-rust/src/island_<arch>.rs -> <workspace>/<crate>-sys/src/bindgen_<arch>.rs
+    workspace = island.parent.parent.parent
+    companion = (
+        workspace
+        / f"{glob.group('crate').replace('_', '-')}-sys"
+        / "src"
+        / f"bindgen_{arch.group(1)}.rs"
+    )
+    return companion if companion.is_file() else None
+
+
+def _resolve_alias_chain(name: str, aliases: dict[str, str]) -> str | None:
+    """Follow ``name`` through ``aliases`` to a primitive, or None.
+
+    Transitive because a single hop is not how bindgen spells the interesting cases:
+    ``SHCONTF`` is ``DWORD`` and only ``DWORD`` is ``c_ulong``, so a one-hop resolver
+    proves neither and the caller falls back to rejecting a perfectly ordinary DWORD
+    state field.
+    """
+    seen: set[str] = set()
+    current = name
+    for _ in range(_ISLAND_ALIAS_MAX_HOPS):
+        if current in _ISLAND_INTEGER_PRIMITIVES:
+            return current
+        if current in seen:
+            return None
+        seen.add(current)
+        nxt = aliases.get(current)
+        if nxt is None:
+            return None
+        current = nxt
+    return None
+
+
 _ISLAND_ALIAS_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
 
 
@@ -513,23 +574,40 @@ def island_integer_aliases(islands: Sequence[Path]) -> frozenset[str]:
             m.group("name"): " ".join(m.group("rhs").split())
             for m in _ISLAND_TYPE_ALIAS.finditer(text)
         }
+        # Base types below the island's own surface live in the `-sys` crate it globs. The
+        # island's aliases WIN on a name collision: it is the module-specific authority, and
+        # the -sys file is only consulted for what the island never mentions.
+        companion = _sys_companion(path)
+        if companion is not None:
+            try:
+                sys_text = companion.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                sys_text = ""
+            for m in _ISLAND_TYPE_ALIAS.finditer(sys_text):
+                aliases.setdefault(m.group("name"), " ".join(m.group("rhs").split()))
         names = {m.group("name"): m.group("target") for m in _ISLAND_TYPE_REEXPORT.finditer(text)}
         # A re-export chains onto an alias (`pub use self::__WIDL_..._00000025 as
         # FOLDERVIEWMODE;` over `pub type __WIDL_..._00000025 = c_int;`). Direct
         # aliases count too, so seed with them and let re-exports resolve through.
-        arch: dict[str, str] = {
-            name: rhs for name, rhs in aliases.items() if rhs in _ISLAND_INTEGER_PRIMITIVES
-        }
+        arch: dict[str, str] = {}
+        for name in aliases:
+            primitive = _resolve_alias_chain(name, aliases)
+            if primitive is not None:
+                arch[name] = primitive
         for name, target in names.items():
-            rhs = aliases.get(target)
-            if rhs in _ISLAND_INTEGER_PRIMITIVES:
-                arch[name] = rhs
+            primitive = _resolve_alias_chain(target, aliases)
+            if primitive is not None:
+                arch[name] = primitive
         resolved.append(arch)
     if not resolved:
         return frozenset()
     shared = set(resolved[0])
     for arch in resolved[1:]:
-        shared &= {name for name in arch if arch[name] == resolved[0][name]}
+        # `name in resolved[0]` is load-bearing, not defensive: an arch can prove a name the
+        # FIRST one never mentions at all (arm64's -sys carries _tag_ARM64INTR_BARRIER_TYPE),
+        # and indexing resolved[0] blindly raises KeyError on it. Intersecting is the whole
+        # point — a name absent from any arch is not proven — so filtering here is exact.
+        shared &= {name for name in arch if name in resolved[0] and arch[name] == resolved[0][name]}
     _ISLAND_ALIAS_CACHE[key] = frozenset(shared)
     return _ISLAND_ALIAS_CACHE[key]
 

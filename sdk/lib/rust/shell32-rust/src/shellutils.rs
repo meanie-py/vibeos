@@ -43,7 +43,7 @@ extern "system" {
 }
 
 /// `CFSTR_SHELLIDLISTW` = "Shell IDList Array" (shlobj.h CF_IDLIST).
-const CFSTR_SHELLIDLISTW: [u16; 19] = [
+pub const CFSTR_SHELLIDLISTW: [u16; 19] = [
     b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'I' as u16,
     b'D' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16, b' ' as u16, b'A' as u16,
     b'r' as u16, b'r' as u16, b'a' as u16, b'y' as u16, 0,

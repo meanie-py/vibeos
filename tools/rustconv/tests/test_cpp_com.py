@@ -379,9 +379,7 @@ def test_internal_init_accepts_repeated_call_sites_and_winapi_initializer():
     inherited = {"Next", "Skip", "Reset", "Clone"}
     assert inherited <= {item.name for item in scan.functions}
     assert all(
-        item.cpp_class == "CPrintersEnum"
-        for item in scan.functions
-        if item.name in inherited
+        item.cpp_class == "CPrintersEnum" for item in scan.functions if item.name in inherited
     )
 
 
@@ -698,7 +696,7 @@ def test_wide_literals_inside_comments_and_narrow_strings_are_left_alone():
         "/* PIDL's and 'My Computer' */"
     )
     assert rewrite_wide_literals('// a L"x" in a comment\n') == '// a L"x" in a comment\n'
-    assert rewrite_wide_literals("s = \"has L' inside\";") == "s = \"has L' inside\";"
+    assert rewrite_wide_literals('s = "has L\' inside";') == 's = "has L\' inside";'
 
 
 def test_escaped_quotes_inside_wide_char_literals():
@@ -2329,3 +2327,52 @@ def test_sdk_enum_state_field_is_accepted_only_with_island_proof():
     proved.require_supported(allow_internal=True)
     fvm = next(f for f in proved.plain_state_fields() if f.name == "m_FVM")
     assert fvm.rust_type == "FOLDERVIEWMODE", "must reference the island alias, not a local copy"
+
+
+def test_island_integer_aliases_follows_a_chain_into_the_sys_crate(tmp_path):
+    """`SHCONTF = DWORD` is only provable if the chain can leave the island.
+
+    bindgen emits a module's OWN aliases into the island and leaves the base types
+    (`DWORD`, `UINT`, ...) to the `-sys` glob at its head. A resolver that stops at the
+    island edge proves neither, so an ordinary DWORD state field is rejected and a class
+    that is perfectly translatable stays UNSUPPORTED.
+    """
+
+    def workspace(arch: str, dword_rhs: str, size_t_rhs: str) -> Path:
+        island_dir = tmp_path / "shell32-rust" / "src"
+        island_dir.mkdir(parents=True, exist_ok=True)
+        sys_dir = tmp_path / "ntdll-sys" / "src"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / f"bindgen_{arch}.rs").write_text(
+            f"pub type DWORD = {dword_rhs};\npub type SIZE_T = {size_t_rhs};\n",
+            encoding="utf-8",
+        )
+        island = island_dir / f"island_{arch}.rs"
+        island.write_text(
+            "pub use ntdll_sys::nt::*;\npub type SHCONTF = DWORD;\npub type PSIZE_T = SIZE_T;\n",
+            encoding="utf-8",
+        )
+        return island
+
+    islands = [
+        workspace("i386", "::core::ffi::c_ulong", "u32"),
+        workspace("amd64", "::core::ffi::c_ulong", "u64"),
+    ]
+    proven = island_integer_aliases(islands)
+    assert "SHCONTF" in proven, "a two-hop chain through the -sys crate must resolve"
+    assert "DWORD" in proven, "the -sys base type itself is proven too"
+    # The agreement check still does the safety work ACROSS the crate boundary: a chain that
+    # ends in a different primitive per arch is rejected however many hops it took to get there.
+    assert "PSIZE_T" not in proven
+    assert "SIZE_T" not in proven
+
+
+def test_island_integer_aliases_terminates_on_a_cyclic_alias(tmp_path):
+    """A malformed island that aliases in a loop must return, not hang."""
+    islands = []
+    for arch in ("i386", "amd64"):
+        path = tmp_path / f"island_{arch}.rs"
+        path.write_text("pub type A = B;\npub type B = A;\npub type OK = u32;\n", encoding="utf-8")
+        islands.append(path)
+    proven = island_integer_aliases(islands)
+    assert proven == frozenset({"OK"})
