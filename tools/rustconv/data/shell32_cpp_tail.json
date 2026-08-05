@@ -10,7 +10,6 @@
       "dll/win32/shell32/CExtractIcon.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
       "dll/win32/shell32/folders/CRegFolder.cpp",
-      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
       "dll/win32/shell32/CFileSysBindData.cpp",
       "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
       "dll/win32/shell32/CDefaultContextMenu.cpp",
@@ -47,7 +46,8 @@
     "dead_after_class_flip": [
       "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/CDefViewDual.cpp",
-      "dll/win32/shell32/droptargets/CFSDropTarget.cpp"
+      "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
+      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp"
     ],
     "free_function_tu": [
       "dll/win32/shell32/dialogs/dialogs.cpp",

@@ -83,6 +83,8 @@ pub mod drop_target_helper;
 // Assembled at the C tree's path (droptargets/) by rustconv; keep that path stable for re-runs.
 #[path = "droptargets/CFSDropTarget.rs"]
 pub mod fs_drop_target;
+#[path = "droptargets/CRecyclerDropTarget.rs"]
+pub mod recycler_drop_target;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;

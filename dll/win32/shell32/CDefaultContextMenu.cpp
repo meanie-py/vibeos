@@ -1144,7 +1144,7 @@ HRESULT CDefaultContextMenu::DoDelete(LPCMINVOKECOMMANDINFOEX lpcmi)
         return E_FAIL;
 
     CComPtr<IDropTarget> pDT;
-    hr = CRecyclerDropTarget_CreateInstance(IID_PPV_ARG(IDropTarget, &pDT));
+    hr = CRecyclerDropTarget_CreateInstance_RustBridge(IID_PPV_ARG(IDropTarget, &pDT));
     if (FAILED_UNEXPECTEDLY(hr))
         return hr;
 
