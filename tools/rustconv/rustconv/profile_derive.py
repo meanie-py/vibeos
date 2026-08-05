@@ -396,6 +396,9 @@ class ConstOwner:
     # through the glob the generated island re-exports) or a SECONDARY one such as
     # `hal_bindgen_<arch>` (reachable only via its own module path, e.g. ntkrnl_sys::hal_ddk)
     sys_source: str | None = None
+    # For an ENUM member: the tag/typedef bindgen prefixes it with, so the report can name the
+    # spelling that actually exists and the `pub use` line that maps it back.
+    enum_prefix: str | None = None
 
 
 @dataclass
@@ -1423,6 +1426,45 @@ _DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(\(|[ \t]+)?([
 _ENUM_RE = re.compile(r"\benum\b[^\{;]*\{")
 
 
+def enum_prefix(text: str, pos: int) -> str | None:
+    """The prefix bindgen will glue onto the enum member at *pos*, or None if it cannot tell.
+
+    bindgen never emits an enum member under its BARE name. For `typedef enum _FOO { A, B } FOO;`
+    it emits `_FOO_A`; for an anonymous `typedef enum { A } FOO;` it emits `FOO_A`. Either way a
+    `match` arm written with the bare name is an unresolved path — which in Rust is a fresh
+    binding that matches EVERYTHING (§9.112), the same silent catch-all a missing `#define`
+    produces. The tag wins over the typedef because that is bindgen's own preference.
+    """
+    open_brace = text.rfind("{", 0, pos)
+    if open_brace < 0:
+        return None
+    head = text[max(0, open_brace - 200) : open_brace]
+    m = re.search(r"\benum\b(?:\s+(?:class\s+)?([A-Za-z_]\w*))?\s*$", head)
+    if m is None:
+        return None
+    if m.group(1):
+        return m.group(1)
+    close = text.find("}", pos)
+    if close < 0:
+        return None
+    m2 = re.match(r"\s*([A-Za-z_]\w*)", text[close + 1 :])
+    return m2.group(1) if m2 else None
+
+
+def header_enum_prefix(path: Path, ident: str) -> str | None:
+    """The bindgen prefix for enum member *ident* as declared in *path*.
+
+    Looked up on demand rather than carried by :func:`header_symbols`, because it is only ever
+    needed for the handful of constants that turn out to BE enum members.
+    """
+    text = _read(path)
+    for m in re.finditer(rf"^[ \t]*{re.escape(ident)}\b[ \t]*(?:=[^,}}\n]*)?\s*[,}}]", text, re.M):
+        pfx = enum_prefix(text, m.start())
+        if pfx:
+            return pfx
+    return None
+
+
 def _macro_kind(body: str) -> str:
     """What bindgen can do with a ``#define`` body.
 
@@ -2024,6 +2066,33 @@ def derive(
                     "bindgen may not fold it — verify it lands in the island",
                 )
             )
+        elif o.macro_kind == "enum":
+            # Allowlisting the header is NOT enough here, which is the whole trap: the constant
+            # IS in the island, under a name the translation never uses. The bare name stays
+            # unresolved, and an unresolved name in a match arm binds everything (§9.112).
+            o.enum_prefix = header_enum_prefix(ref.path, o.ident)
+            if o.enum_prefix:
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_ENUM_PREFIXED",
+                        f"`{o.ident}` ({ref.name}) is an ENUM MEMBER: bindgen emits it as "
+                        f"`{o.enum_prefix}_{o.ident}`, never the bare name. Alias it in the "
+                        f"prelude — pub use crate::types::{o.enum_prefix}_{o.ident} as "
+                        f"{o.ident}; — and do NOT re-declare it with a hand-typed value.",
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_ENUM_PREFIXED",
+                        f"`{o.ident}` ({ref.name}) is an ENUM MEMBER, so bindgen emits it "
+                        "PREFIXED with its enum's tag or typedef, never the bare name. The tag "
+                        "could not be determined here — grep the island for the suffix and "
+                        "alias the result in the prelude.",
+                    )
+                )
     for o in owners:
         if o.owner_kind == "UNOWNED":
             findings.append(
