@@ -12,6 +12,7 @@ from rustconv.cpp_com import (
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
+    _parse_plain_state_field,
     _state_field_name,
     analyze_class,
     apply_interface_method_signatures,
@@ -19,6 +20,7 @@ from rustconv.cpp_com import (
     c_type_to_rust,
     discover_widl_header,
     island_integer_aliases,
+    island_struct_types,
     lower_trivial_worker,
     normalize_worker_body,
     normalize_worker_semantics,
@@ -2376,3 +2378,81 @@ def test_island_integer_aliases_terminates_on_a_cyclic_alias(tmp_path):
         islands.append(path)
     proven = island_integer_aliases(islands)
     assert proven == frozenset({"OK"})
+
+
+def test_island_struct_types_follows_an_alias_and_needs_every_arch(tmp_path):
+    """`FORMATETC` is `pub type FORMATETC = tagFORMATETC;` over `pub struct tagFORMATETC`.
+
+    Matching only `pub struct` therefore proves almost nothing: the C spelling a state
+    field uses is nearly always the alias, not the tag. And the proof must hold on every
+    arch for the same reason widths must — a name one island happens to carry is not a
+    fact about the type.
+    """
+    islands = []
+    for arch, extra in (("i386", ""), ("amd64", "pub struct OnlyHere {}\n")):
+        path = tmp_path / f"island_{arch}.rs"
+        path.write_text(
+            "pub struct tagFORMATETC {}\npub type FORMATETC = tagFORMATETC;\n"
+            "pub type NotAStruct = u32;\n" + extra,
+            encoding="utf-8",
+        )
+        islands.append(path)
+    proven = island_struct_types(islands)
+    assert "tagFORMATETC" in proven
+    assert "FORMATETC" in proven, "the alias must resolve onto the struct it names"
+    assert "NotAStruct" not in proven
+    assert "OnlyHere" not in proven, "one arch is not a proof"
+
+
+def test_atl_container_state_field_keeps_its_type_and_its_drop():
+    """`CSimpleArray<FORMATETC> m_Formats` — the field that had CIDLDataObj UNSUPPORTED.
+
+    A container cannot be flattened to a pointer the way `CComPtr` is, because its
+    destructor walks storage the scaffold does not own. So the field keeps the container
+    type and `atl.rs`'s `Drop` restores the C++ member destructor.
+    """
+    field = _parse_plain_state_field(
+        "CSimpleArray<FORMATETC> m_Formats",
+        island_struct_types={"FORMATETC"},
+    )
+    assert field.raii_container == "CSimpleArray<FORMATETC>"
+    assert field.rust_type == "CSimpleArray<FORMATETC>"
+    assert field.init_expression == "CSimpleArray::new()", "zeroed() is not a valid container"
+
+
+def test_atl_container_over_a_cxx_class_element_is_still_refused():
+    """`CAtlList<StaticShellEntry>` where the element holds a `CStringW`.
+
+    This is the case that must NOT pass. `atl.rs`'s container `Drop` runs one
+    `drop_in_place` per element, which reproduces the C++ only when the element is
+    trivially destructible. A C++ class with a real destructor is never in the island's
+    struct set, so it stays a refusal instead of becoming a silent per-element leak.
+    """
+    with pytest.raises(CppComError, match="container element type is not a proven layout"):
+        _parse_plain_state_field(
+            "CAtlList<StaticShellEntry> m_StaticEntries",
+            island_struct_types={"FORMATETC"},
+        )
+
+
+def test_unlisted_cxx_container_names_the_missing_lowering():
+    """A refusal that names the mechanism, not just the declaration.
+
+    `CAtlMap<K, V> m_x` is not a mystery — it is a container `atl.rs` has not lowered
+    yet, and saying so is what stops the next reader concluding the whole TU is
+    untranslatable.
+    """
+    with pytest.raises(CppComError, match="no Rust lowering for `CAtlArray`"):
+        _parse_plain_state_field("CAtlArray<UINT> m_ids")
+
+
+def test_array_of_owned_heap_pointers_frees_every_element():
+    """`CComHeapPtr<ITEMIDLIST> m_pidls[2]` — CRecycleBinFolderViewCB's shape.
+
+    C++ destroys each element, so the extent has to survive into the Rust type for the
+    generated Release to have something to iterate.
+    """
+    field = _parse_plain_state_field("CComHeapPtr<ITEMIDLIST> m_pidls[2]")
+    assert field.owned_heap_ptr
+    assert field.array_len == 2
+    assert field.rust_type == "[*mut ITEMIDLIST; 2]"

@@ -81,6 +81,7 @@ from .cpp_com import (
     parse_widl_interface,
     prepare_helper_closure,
     provided_raii_contract,
+    raii_container_contract,
     render_class_scaffold,
     render_cpp_support,
     render_interface,
@@ -2242,6 +2243,20 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if cpp_com_cls is not None:
+            container_fields = [
+                state
+                for state in cpp_com_cls.plain_state_fields()
+                if state.raii_container is not None
+            ]
+            for dep in sorted_deps:
+                touched = [
+                    state
+                    for state in container_fields
+                    if re.search(rf"\b{re.escape(state.name)}\b", dep.body_text)
+                ]
+                if touched:
+                    deterministic_contracts[dep.name] += raii_container_contract(touched)
 
         # WHAT each worker had hidden from it, as names rather than token indices.
         # The response cache compares this directionally: an entry sealed at least as

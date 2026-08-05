@@ -64,6 +64,40 @@ _KNOWN_POINTER_TYPEDEFS = frozenset(
 )
 
 
+# ATL CONTAINER members whose Rust lowering already exists in `shell32-rust/src/atl.rs`.
+#
+# `CComPtr` and `CComHeapPtr` are handled a layer down as raw pointers, because the
+# generated Release can express their whole destructor in one line. A container cannot be
+# flattened that way — its destructor walks storage the scaffold does not own — so the
+# field keeps the container TYPE and its `Drop` does the work.
+#
+# Being absent from this table is not neutral, exactly as for `_LOCAL_RAII_TYPES`: an
+# unlisted container is a hard pre-payment refusal naming the type, because the
+# alternative is the model inventing an API for it. `CAtlList` was added with its Rust
+# side; do not list a type before `atl.rs` implements it.
+#
+# `usage` is handed to every worker whose body touches the field. C++ container spellings
+# do not survive translation on their own — `m_Storage[n]` has no Rust meaning, and a
+# model asked to guess produced `.0`-style wrapper artifacts before now.
+_RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
+    "CSimpleArray": (
+        "CSimpleArray::new()",
+        "`Add(t) -> BOOL` (FALSE on allocation failure — check it, the C++ does), "
+        "`GetSize() -> i32`, `GetData() -> *mut T`, `GetAt(i32) -> *mut T`, "
+        "`RemoveAll()`. C++ `arr[n]` is `(*arr.GetAt(n))` and C++ `&arr[n]` is "
+        "`arr.GetAt(n)`.",
+    ),
+    "CAtlList": (
+        "CAtlList::new()",
+        "`AddHead(t)` / `AddTail(t)`, `IsEmpty() -> bool`, `GetCount() -> usize`, "
+        "`RemoveAll()`, `GetHeadPosition() -> POSITION`, "
+        "`GetNext(&mut POSITION) -> *mut T` (returns the CURRENT element and advances "
+        "the position, exactly like ATL), `FindIndex(i32) -> POSITION`, "
+        "`GetAt(POSITION) -> *mut T`. A `POSITION` is null at the end of the list.",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class PlainStateField:
     """One C-layout object field safe to spell directly in the Rust owner."""
@@ -77,13 +111,31 @@ class PlainStateField:
     # generated Release when still non-null (the C++ member dtor's implicit free).
     owned_heap_ptr: bool = False
     array_len: int | None = None
+    # `Tmpl<Elem>` from _RAII_CONTAINER_LOWERINGS: the field keeps the container type and
+    # its `Drop` restores the C++ member destructor the translation dropped.
+    raii_container: str | None = None
 
     @property
     def rust_type(self) -> str:
+        if self.raii_container is not None:
+            return self.raii_container
         if self.com_ptr_interface is not None:
-            return f"*mut {self.com_ptr_interface}"
-        rust = c_type_to_rust(self.c_type)
+            rust = f"*mut {self.com_ptr_interface}"
+        else:
+            rust = c_type_to_rust(self.c_type)
         return f"[{rust}; {self.array_len}]" if self.array_len is not None else rust
+
+    @property
+    def init_expression(self) -> str:
+        """The struct-literal initialiser. Every other field is `zeroed()`, which is the
+        C++ default ctor for a POD and is documented-valid for atl.rs's pointer types;
+        a container has a real `new()` and must use it."""
+        if self.raii_container is not None:
+            template = self.raii_container.split("<", 1)[0]
+            return _RAII_CONTAINER_LOWERINGS[template][0]
+        if self.owned_cstring:
+            return "CStringW::new()"
+        return "core::mem::zeroed()"
 
     @property
     def assignment_helper(self) -> str | None:
@@ -159,6 +211,9 @@ class CppComClass:
     # (see island_integer_aliases). Empty when no islands were supplied, which keeps
     # an unproven type a loud preflight failure rather than an assumed int.
     island_scalar_types: frozenset[str] = frozenset()
+    # Struct names the islands agree on (see island_struct_types). Used only to prove an
+    # ATL container's element type is a C struct — i.e. trivially destructible.
+    island_struct_types: frozenset[str] = frozenset()
 
     def interface_names(self) -> list[str]:
         """Ordered, de-duplicated interfaces to materialize: QI'd (com_map) then
@@ -175,6 +230,7 @@ class CppComClass:
                 allowed_pod_types=pod_names,
                 array_constants=self.array_constants,
                 island_scalar_types=self.island_scalar_types,
+                island_struct_types=self.island_struct_types,
             )
             for item in self.state_fields
         ]
@@ -206,6 +262,7 @@ class CppComClass:
                     allowed_pod_types={item.name for item in self.pod_state_types},
                     array_constants=self.array_constants,
                     island_scalar_types=self.island_scalar_types,
+                    island_struct_types=self.island_struct_types,
                 )
             except CppComError as exc:
                 problems.append(str(exc))
@@ -612,6 +669,82 @@ def island_integer_aliases(islands: Sequence[Path]) -> frozenset[str]:
     return _ISLAND_ALIAS_CACHE[key]
 
 
+_ISLAND_STRUCT = re.compile(r"^pub struct (?P<name>\w+)\b", re.M)
+# `pub use com_sys::{A,B,C};` and `pub use ntdll_sys::nt::*;` — every -sys crate an island
+# resolves names through, however it spells the import.
+_ISLAND_SYS_REF = re.compile(r"^pub use (?P<crate>\w+)_sys::", re.M)
+_ISLAND_STRUCT_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
+
+
+def island_struct_types(islands: Sequence[Path]) -> frozenset[str]:
+    """Struct names every per-arch bindgen island proves, through its whole -sys closure.
+
+    This is a **destructor** proof, not a layout one. bindgen only ever renders C
+    declarations, so a name it emits as a struct came from a C header and is therefore
+    trivially destructible — exactly the property an ATL container element must have for
+    `atl.rs`'s `Drop` (a `drop_in_place` per element) to match the C++.
+
+    A C++ class with a real destructor is never in this set, so `CSimpleArray<CStringW>`
+    stays a loud refusal instead of becoming a silent leak of every element.
+
+    Aliases are followed, because the C spelling is almost never the struct's own name:
+    `FORMATETC` is `pub type FORMATETC = tagFORMATETC;` over `pub struct tagFORMATETC`.
+    Multiple -sys crates are consulted, not just the one `_sys_companion` picks, since
+    an island imports its ordinary base types from one (`ntdll_sys`) and its COM types
+    from another (`com_sys`) — reading only the first would refuse every OLE struct.
+
+    Intersected across arches for the same reason as :func:`island_integer_aliases`: a
+    name only one arch proves is not proven.
+    """
+    key = tuple(str(path) for path in islands)
+    cached = _ISLAND_STRUCT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    per_arch: list[set[str]] = []
+    for path in islands:
+        arch = re.fullmatch(r"island_(\w+)\.rs", path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return frozenset()
+        sources = [text]
+        if arch is not None:
+            workspace = path.parent.parent.parent
+            for match in _ISLAND_SYS_REF.finditer(text[:8192]):
+                companion = (
+                    workspace
+                    / f"{match.group('crate').replace('_', '-')}-sys"
+                    / "src"
+                    / f"bindgen_{arch.group(1)}.rs"
+                )
+                if companion.is_file():
+                    sources.append(companion.read_text(encoding="utf-8", errors="replace"))
+        structs: set[str] = set()
+        aliases: dict[str, str] = {}
+        for source in sources:
+            structs |= {m.group("name") for m in _ISLAND_STRUCT.finditer(source)}
+            for m in _ISLAND_TYPE_ALIAS.finditer(source):
+                # `pub type FORMATETC = tagFORMATETC;` — strip any crate qualifier so
+                # `com_sys::_COAUTHIDENTITY` matches the struct name it names.
+                aliases.setdefault(m.group("name"), m.group("rhs").strip().split("::")[-1])
+        proven = set(structs)
+        for name in aliases:
+            current, hops = name, 0
+            while current in aliases and hops < _ISLAND_ALIAS_MAX_HOPS:
+                current = aliases[current]
+                hops += 1
+            if current in structs:
+                proven.add(name)
+        per_arch.append(proven)
+    if not per_arch:
+        return frozenset()
+    shared = set(per_arch[0])
+    for arch_names in per_arch[1:]:
+        shared &= arch_names
+    _ISLAND_STRUCT_CACHE[key] = frozenset(shared)
+    return _ISLAND_STRUCT_CACHE[key]
+
+
 _RUST_KEYWORDS = frozenset(
     {
         "as",
@@ -660,6 +793,7 @@ def _parse_plain_state_field(
     allowed_pod_types: set[str] | frozenset[str] = frozenset(),
     array_constants: dict[str, int] | None = None,
     island_scalar_types: set[str] | frozenset[str] = frozenset(),
+    island_struct_types: set[str] | frozenset[str] = frozenset(),
 ) -> PlainStateField:
     """Parse the deliberately small C-layout state subset.
 
@@ -685,14 +819,33 @@ def _parse_plain_state_field(
             name=name,
             com_ptr_interface=interface,
         )
-    heap_ptr = re.fullmatch(r"CComHeapPtr\s*<\s*([A-Za-z_]\w*)\s*>\s+([A-Za-z_]\w*)", text)
+    heap_ptr = re.fullmatch(
+        r"CComHeapPtr\s*<\s*(?P<pointee>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)"
+        r"(?:\s*\[\s*(?P<count>[A-Za-z_]\w*|\d+)\s*\])?",
+        text,
+    )
     if heap_ptr is not None:
-        pointee, name = heap_ptr.groups()
+        # A fixed ARRAY of owned heap pointers is still deterministic: C++ destroys each
+        # element, so the generated Release frees each element. CRecycleBinFolderViewCB's
+        # `CComHeapPtr<ITEMIDLIST> m_pidls[2]` is the shape.
+        count_text = heap_ptr.group("count")
+        array_len = None
+        if count_text is not None:
+            if count_text.isdigit():
+                array_len = int(count_text)
+            else:
+                constants = array_constants or {}
+                if count_text not in constants:
+                    raise CppComError(
+                        f"state field array bound is not a proven numeric macro: {declaration}"
+                    )
+                array_len = constants[count_text]
         return PlainStateField(
             declaration=text,
-            c_type=f"{pointee} *",
-            name=name,
+            c_type=f"{heap_ptr.group('pointee')} *",
+            name=heap_ptr.group("name"),
             owned_heap_ptr=True,
+            array_len=array_len,
         )
     cstring = re.fullmatch(r"CStringW\s+([A-Za-z_]\w*)", text)
     if cstring is not None:
@@ -701,6 +854,34 @@ def _parse_plain_state_field(
             c_type="CStringW",
             name=cstring.group(1),
             owned_cstring=True,
+        )
+    container = re.fullmatch(
+        r"(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)",
+        text,
+    )
+    if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
+        # The element type has to be one the scaffold can already spell, or the container
+        # would be generic over a type the module never defines. POD state types are
+        # discovered from the same source, so `CAtlList<DynamicShellEntry>` resolves once
+        # `DynamicShellEntry` is in `allowed_pod_types`.
+        element = container.group("element")
+        known = (
+            set(allowed_pod_types)
+            | set(island_scalar_types)
+            | set(island_struct_types)
+            | set(_POD_LEAF_TYPES)
+            | set(_RUST_SCALARS)
+        )
+        if element not in known:
+            raise CppComError(
+                f"container element type is not a proven layout: {declaration} "
+                f"(`{element}` is neither a source-discovered POD nor a proven scalar)"
+            )
+        return PlainStateField(
+            declaration=text,
+            c_type=f"{container.group('template')}<{element}>",
+            name=container.group("name"),
+            raii_container=f"{container.group('template')}<{element}>",
         )
     ptr_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s*\*\s*"
@@ -788,6 +969,17 @@ def _parse_plain_state_field(
             array_len=count,
         )
     if any(token in text for token in ("<", ">", "&", "[", "]", "{", "}", "=", ",", ":")):
+        template = re.match(r"([A-Za-z_]\w*)\s*<", text)
+        if template is not None:
+            # Name the mechanism. An unlisted C++ container is not a mystery, it is a
+            # missing Rust lowering, and the fix is bounded: implement it in atl.rs and
+            # add it to _RAII_CONTAINER_LOWERINGS. Saying so here is what stops the next
+            # reader from concluding the TU is untranslatable.
+            raise CppComError(
+                f"state field needs an explicit C++ layout/lifetime mapping: {declaration} "
+                f"(no Rust lowering for `{template.group(1)}`; implement it in "
+                f"shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS)"
+            )
         raise CppComError(
             f"state field needs an explicit C++ layout/lifetime mapping: {declaration}"
         )
@@ -1354,6 +1546,7 @@ def analyze_class(
         layout_bases=layout_bases,
         local_base_classes=local_base_classes,
         island_scalar_types=island_integer_aliases(island_files),
+        island_struct_types=island_struct_types(island_files),
     )
 
 
@@ -4612,6 +4805,41 @@ def provided_raii_contract(name: str, rust_text: str) -> str:
     )
 
 
+def raii_container_contract(fields: list[PlainStateField]) -> str:
+    """Deterministic-contract block for the class's ATL container STATE fields.
+
+    The counterpart to :func:`provided_raii_contract`, which covers body-LOCALS. A state
+    field's container type survives into the Rust owner struct, so the model needs the
+    same thing it needs for a local: a fixed API to map usage onto, and an explicit
+    instruction not to re-implement the destructor. Without it, `m_Storage[n]` and
+    `m_Entries.GetNext(it)` are exactly the kind of C++ spelling a model resolves by
+    inventing a wrapper type.
+    """
+    containers = [
+        (state, state.raii_container) for state in fields if state.raii_container is not None
+    ]
+    if not containers:
+        return ""
+    lines = [
+        "\n## Object state: ATL containers (deterministic — already lowered)\n",
+        "These fields keep their ATL container type in the Rust owner. The Rust types are "
+        "in `crate::atl` and WILL be in scope. Use them exactly as declared; do NOT "
+        "re-implement, redefine, or inline their logic, and do NOT write a destructor for "
+        "them — `Drop` already runs the C++ member destructor at object teardown.\n",
+    ]
+    for state, container in containers:
+        _init, usage = _RAII_CONTAINER_LOWERINGS[container.split("<", 1)[0]]
+        lines.append(f"- `(*this).{state.name}: {container}` — {usage}")
+    lines.append(
+        "\nEvery method above takes `&mut self` where it mutates, so a field access is "
+        "`(*this).<field>.<Method>(...)`. The accessors return RAW POINTERS where C++ "
+        "returns a reference: `*mut T` is the address of the element in place, so C++ "
+        "`info.field` on such a reference is `(*p).field` in Rust, and writing through it "
+        "mutates the container's storage exactly as the C++ does."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def apply_interface_method_signatures(
     deps: list[FunctionDep], class_name: str, interfaces: list[InterfaceSpec]
 ) -> list[FunctionDep]:
@@ -5414,14 +5642,23 @@ def render_class_scaffold(
             lines.append(
                 f"        {cls.name}_{state.assignment_helper}(this, core::ptr::null_mut());"
             )
-        if state.owned_cstring:
+        if state.owned_cstring or state.raii_container is not None:
+            # The container's `Drop` in atl.rs IS the C++ member destructor the
+            # translation dropped. It runs AFTER the explicit dtor body, which is C++'s
+            # own order — and every container here has an idempotent RemoveAll, so an
+            # explicit `RemoveAll()` in that body is not a double free.
             lines.append(f"        core::ptr::drop_in_place(&mut (*this).{state.name});")
         if state.owned_heap_ptr:
             # The C++ CComHeapPtr member dtor's implicit CoTaskMemFree.
-            lines.append(
-                f"        if !(*this).{state.name}.is_null() "
-                f"{{ CoTaskMemFree((*this).{state.name}.cast()); }}"
-            )
+            if state.array_len is not None:
+                lines.append(f"        for slot in (*this).{state.name}.iter() {{")
+                lines.append("            if !slot.is_null() { CoTaskMemFree(slot.cast()); }")
+                lines.append("        }")
+            else:
+                lines.append(
+                    f"        if !(*this).{state.name}.is_null() "
+                    f"{{ CoTaskMemFree((*this).{state.name}.cast()); }}"
+                )
     lines.extend(
         [
             "        Shell32RustObjectUnlock();",
@@ -5497,8 +5734,7 @@ def render_class_scaffold(
         ]
     )
     for state in cls.plain_state_fields():
-        value = "CStringW::new()" if state.owned_cstring else "core::mem::zeroed()"
-        lines.append(f"        {state.name}: {value},")
+        lines.append(f"        {state.name}: {state.init_expression},")
     lines.extend(
         [
             "    });",

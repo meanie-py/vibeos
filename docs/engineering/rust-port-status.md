@@ -1152,7 +1152,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   m_pidls[2]`). The leverage is that `atl.rs` **already implements** CComPtr / CHeapPtr /
   CComHeapPtr / CSimpleArray with `Drop` restoring the dropped destructors, and
   `--local-raii NAME=PATH` already performs exactly this substitution for BODY-locals — there
-  is simply no equivalent for a class's STATE fields. Gap (2), inherited layout, blocks
+  is simply no equivalent for a class's STATE fields.
+  **Closed for two of the three, 2026-08-05, and the third turned out to be a different gap.**
+  The scaffold now keeps an ATL container's TYPE in the Rust owner (it cannot be flattened to
+  a pointer the way `CComPtr` is, because its destructor walks storage the scaffold does not
+  own), initialises it with `new()` instead of `zeroed()`, and emits a `drop_in_place` per
+  container in the generated `Release` — after the explicit dtor body, which is C++'s own
+  order. `CComHeapPtr<T> name[N]` is accepted too, freeing each element. `CIDLDataObj` is
+  preflight-green; `CRecycleBinFolderViewCB` has its state field accepted and is now blocked
+  only on activation. **`CDefaultContextMenu` is not an object-field-RAII case at all** —
+  `CAtlList<DynamicShellEntry>` and `<StaticShellEntry>` hold C++ objects with their OWN
+  destructors (`CComPtr<IContextMenu>`, `CStringW`), and `atl.rs`'s container `Drop` runs one
+  `drop_in_place` per element, which reproduces the C++ only when the element is trivially
+  destructible. So the element type must be PROVEN trivially destructible or the container is
+  refused, and the proof is the bindgen island: bindgen only ever renders C declarations, so a
+  name it emits as a struct came from a C header. A C++ class is never in that set. The real
+  remaining gap there is lowering an element STRUCT whose own fields are RAII types — a Rust
+  struct with `CComPtr`/`CStringW` fields gets the right destructor for free from field-drop
+  order, but nothing generates it yet. `CAtlList<T>` itself is implemented in `atl.rs` (the
+  measured surface: GetHeadPosition/GetNext ×7, IsEmpty ×5, RemoveAll/GetAt/FindIndex/AddTail
+  ×2, AddHead ×1) and returns a null POSITION on OOM where ATL throws, which is stated at the
+  type because it silently drops an entry rather than abandoning the operation.
+  Gap (2), inherited layout, blocks
   `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
   and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
   (`CFileSysBindData`, `CExtractIcon`, `COpenWithList`/`COpenWithDialog`, `CRegFolderInfo`,

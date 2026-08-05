@@ -50,7 +50,7 @@ use core::marker::PhantomData;
 
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc, BOOL,
-    HLOCAL, INT, SIZE_T, UINT, WCHAR,
+    HLOCAL, INT, POSITION, SIZE_T, UINT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -445,6 +445,183 @@ impl<T> Default for CSimpleArray<T> {
 impl<T> Drop for CSimpleArray<T> {
     fn drop(&mut self) {
         self.RemoveAll();
+    }
+}
+
+/// ATL's `operator[]`, as a POINTER rather than a reference.
+///
+/// The C++ call sites take the element's ADDRESS (`ReleaseStgMedium(&m_Storage[n])`), so a
+/// raw pointer is what the translation actually wants; `&arr[n]` becomes `arr.GetAt(n)` and
+/// `arr[n]` becomes `(*arr.GetAt(n))`. Out of range returns null — ATL asserts, which is a
+/// no-op in a release build, and a null deref faults at the site instead of silently
+/// reading whatever follows the allocation.
+impl<T> CSimpleArray<T> {
+    pub unsafe fn GetAt(&self, nIndex: i32) -> *mut T {
+        if nIndex < 0 || nIndex >= self.m_nSize {
+            return core::ptr::null_mut();
+        }
+        self.m_aT.add(nIndex as usize)
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CAtlList
+// -------------------------------------------------------------------------------------------
+
+/// `CAtlList<T>` — ATL's doubly-linked list (atlcoll.h).
+///
+/// Measured surface, from every `CAtlList` call site in `dll/win32/shell32/`:
+/// `GetHeadPosition` / `GetNext` (7 each), `IsEmpty` (5), `RemoveAll` (2), `GetAt` (2),
+/// `FindIndex` (2), `AddTail` (2), `AddHead` (1). ATL's own class is far larger; the rest
+/// is deliberately absent so an unported call site is a compile error rather than a guess.
+///
+/// A `POSITION` is a node address, exactly as in ATL, and is null past the end of the list —
+/// which is what makes the C++ `while (it != NULL)` loop shape translate literally.
+///
+/// **Element destructors run.** `RemoveAll` drops each element in place, so a `T` holding a
+/// `CComPtr` or a `CStringW` releases correctly. This is the whole reason a container field
+/// keeps its type in the Rust owner rather than being flattened to a pointer.
+///
+/// **OOM returns a null POSITION instead of throwing.** ATL raises `CAtlException` here;
+/// this crate is `no_std` with no unwinding, and the shell32 call sites discard the returned
+/// POSITION anyway, so there is nothing to propagate to. The difference is real and worth
+/// stating: under genuine allocation failure the entry is dropped rather than the operation
+/// being abandoned. Check the return where that matters.
+#[repr(C)]
+struct CAtlListNode<T> {
+    next: *mut CAtlListNode<T>,
+    prev: *mut CAtlListNode<T>,
+    element: T,
+}
+
+pub struct CAtlList<T> {
+    head: *mut CAtlListNode<T>,
+    tail: *mut CAtlListNode<T>,
+    count: usize,
+}
+
+impl<T> CAtlList<T> {
+    pub const fn new() -> Self {
+        Self { head: core::ptr::null_mut(), tail: core::ptr::null_mut(), count: 0 }
+    }
+
+    unsafe fn alloc_node(element: T) -> *mut CAtlListNode<T> {
+        let node =
+            CCRTAllocator::Allocate(core::mem::size_of::<CAtlListNode<T>>()) as *mut CAtlListNode<T>;
+        if node.is_null() {
+            return node;
+        }
+        core::ptr::write(
+            node,
+            CAtlListNode { next: core::ptr::null_mut(), prev: core::ptr::null_mut(), element },
+        );
+        node
+    }
+
+    pub unsafe fn AddHead(&mut self, element: T) -> POSITION {
+        let node = Self::alloc_node(element);
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        (*node).next = self.head;
+        if self.head.is_null() {
+            self.tail = node;
+        } else {
+            (*self.head).prev = node;
+        }
+        self.head = node;
+        self.count += 1;
+        node.cast()
+    }
+
+    pub unsafe fn AddTail(&mut self, element: T) -> POSITION {
+        let node = Self::alloc_node(element);
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        (*node).prev = self.tail;
+        if self.tail.is_null() {
+            self.head = node;
+        } else {
+            (*self.tail).next = node;
+        }
+        self.tail = node;
+        self.count += 1;
+        node.cast()
+    }
+
+    pub fn IsEmpty(&self) -> bool {
+        self.head.is_null()
+    }
+
+    pub fn GetCount(&self) -> usize {
+        self.count
+    }
+
+    pub fn GetHeadPosition(&self) -> POSITION {
+        self.head.cast()
+    }
+
+    /// ATL's `GetNext(POSITION&)`: returns the element AT the position, then advances the
+    /// position to the following node. The order matters — a translation that advances
+    /// first would skip the head and read one past the tail.
+    pub unsafe fn GetNext(&self, pos: &mut POSITION) -> *mut T {
+        let node = (*pos) as *mut CAtlListNode<T>;
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        *pos = (*node).next.cast();
+        core::ptr::addr_of_mut!((*node).element)
+    }
+
+    pub unsafe fn GetAt(&self, pos: POSITION) -> *mut T {
+        let node = pos as *mut CAtlListNode<T>;
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        core::ptr::addr_of_mut!((*node).element)
+    }
+
+    /// Null when the index is out of range, matching the `POSITION` the C++ then tests.
+    pub unsafe fn FindIndex(&self, iElement: i32) -> POSITION {
+        if iElement < 0 {
+            return core::ptr::null_mut();
+        }
+        let mut node = self.head;
+        let mut i = 0i32;
+        while !node.is_null() {
+            if i == iElement {
+                return node.cast();
+            }
+            node = (*node).next;
+            i += 1;
+        }
+        core::ptr::null_mut()
+    }
+
+    pub unsafe fn RemoveAll(&mut self) {
+        let mut node = self.head;
+        while !node.is_null() {
+            let next = (*node).next;
+            core::ptr::drop_in_place(core::ptr::addr_of_mut!((*node).element));
+            CCRTAllocator::Free(node as *mut c_void);
+            node = next;
+        }
+        self.head = core::ptr::null_mut();
+        self.tail = core::ptr::null_mut();
+        self.count = 0;
+    }
+}
+
+impl<T> Default for CAtlList<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Drop for CAtlList<T> {
+    fn drop(&mut self) {
+        unsafe { self.RemoveAll() }
     }
 }
 

@@ -3197,6 +3197,26 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   `pub type COleInit = u8;`. A declaration against that alias is well-formed. Nothing anywhere
   in the pipeline is red.
 
+- **A container FIELD and a container OF C++ OBJECTS are two different gaps, and only the
+  second one can leak silently.** Symptom: a class is preflight-UNSUPPORTED on
+  `CSimpleArray<FORMATETC> m_Formats` and on `CAtlList<StaticShellEntry> m_StaticEntries`, and
+  they look like the same missing feature. They are not. The container FIELD is mechanical: it
+  cannot be flattened to a pointer the way `CComPtr` is (its destructor walks storage the
+  scaffold does not own), so the field keeps its type, is initialised with `new()` rather than
+  `zeroed()`, and gets a `drop_in_place` in the generated `Release` — after the explicit dtor
+  body, which is C++'s own member-destruction order. The ELEMENT is the real question, because
+  a container `Drop` that does one `drop_in_place` per element reproduces the C++ only when the
+  element is **trivially destructible**. `StaticShellEntry` holds a `CStringW` and
+  `DynamicShellEntry` a `CComPtr<IContextMenu>`, so a container over either leaks every element
+  — and nothing is red: it compiles, links, boots, and loses an interface reference per
+  right-click. The deterministic proof that an element is safe is the **bindgen island**:
+  bindgen only ever renders C declarations, so a name it emits as a struct came from a C header
+  and has no destructor. A C++ class is never in that set. Follow aliases when you check —
+  `FORMATETC` is `pub type FORMATETC = tagFORMATETC;` over `pub struct tagFORMATETC`, so
+  matching `pub struct` alone proves almost nothing — and read every `-sys` crate the island
+  imports from, not just the first: an island takes its ordinary base types from one
+  (`ntdll_sys`) and its COM types from another (`com_sys`), and stopping at the first refuses
+  every OLE struct.
   **Grep every flipped `.cpp` for a bare `let <name>: <CppType>;` with no initialiser.** If the
   C++ type has a constructor or destructor, that line is a dropped side effect. Port the guard
   for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
