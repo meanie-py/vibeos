@@ -40,7 +40,27 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap"]
+
+# heap.c (`src/msvcrt/heap.rs`) — the allocator. ON for every build that produces
+# msvcrt.dll, OFF for both host harnesses, and this one is not a convenience gate like the
+# others: it is load-bearing.
+#
+# msvcrt-difftest is a LINUX HOST binary linked against glibc. heap.rs exports `malloc`,
+# `free`, `calloc` and `realloc` under their plain names, so linking it into the harness
+# replaces the host's allocator with one that calls RtlAllocateHeap — a function that does
+# not exist on Linux — for every allocation the test process makes, including the ones the
+# harness itself made before `main`. That is not a duplicate-symbol error at the point of
+# the mistake; it is the test binary allocating through a null heap handle.
+#
+# Unlike `dir-environ` this costs real grading coverage, and it is worth being plain about
+# that: the four entry points every other translated file leans on are the ones the
+# differential harness cannot reach. The reason is the same one file.c and process.c
+# already carry — the substrate is Win32, not the algorithm — but the stakes are higher
+# here, so the honest status is PORTED, NOT GRADED. What would lift it is a heap shim in
+# `refstub/` mapping the Rtl* family onto the host allocator, exactly as `fileimpl.c` does
+# for the fd table; that is a lane, not an errand.
+heap = []
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
 # msvcrt.dll — all three arches — and OFF for exactly one consumer, the host harness.
