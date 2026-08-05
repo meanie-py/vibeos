@@ -376,12 +376,23 @@ def _land_queued(args, repo: Path) -> int:
     except queue.NoVerdict as e:
         # Our submission is still QUEUED and unjudged — say so, or the agent will assume its
         # work was rejected and start "fixing" a bug that is on mainline.
-        run.classification = "BASE_RED"
+        #
+        # BaseRed is only ONE of the ways a train renders no verdict, and reporting them all
+        # as "mainline is red" sends the lane hunting a mainline break that does not exist —
+        # the same misattribution BaseCheck exists to prevent, committed by the reporter
+        # instead of the judge. An Inconclusive carries its own reason (dirty integration
+        # tree, starved host, gate that never wrote a verdict); pass it through as itself.
+        base_red = isinstance(e, queue.BaseRed)
+        run.classification = "BASE_RED" if base_red else "NO_VERDICT"
         run.add(
             Stage(
                 "train",
                 status="fail",
-                detail="mainline itself is red — train halted, your submission is STILL QUEUED",
+                detail=(
+                    "mainline itself is red — train halted, your submission is STILL QUEUED"
+                    if base_red
+                    else "the train rendered NO VERDICT — your submission is STILL QUEUED"
+                ),
                 salient=[str(e)],
             )
         )
@@ -444,16 +455,22 @@ def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
                 timeout=wait,
             )
         except queue.NoVerdict as e:
-            run.classification = "BASE_RED"
+            # Same distinction as the submit path above: "no verdict" is not "mainline is red".
+            base_red = isinstance(e, queue.BaseRed)
+            run.classification = "BASE_RED" if base_red else "NO_VERDICT"
             run.add(
                 Stage(
                     "conduct",
                     status="fail",
-                    detail="mainline itself is red — train halted, submissions STILL QUEUED",
+                    detail=(
+                        "mainline itself is red — train halted, submissions STILL QUEUED"
+                        if base_red
+                        else "the train rendered NO VERDICT — submissions STILL QUEUED"
+                    ),
                     salient=[str(e)],
                 )
             )
-            return True, "base-red"
+            return True, "base-red" if base_red else "no-verdict"
         run.add(
             Stage(
                 "conduct",

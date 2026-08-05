@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""widen_byte_literals.py — replace `b"...".as_ptr() as LPCWSTR` with `w!("...")`.
+"""widen_byte_literals.py — restore a C `L"..."` that came back spelled some other way.
+
+Two shapes, one oracle. The first is `b"...".as_ptr() as LPCWSTR`; the second is the
+ELEMENTWISE array, `['S' as u16, 'Y' as u16, ..., 0].as_ptr()`, which syssetup's wizard.c
+produced 54 of. The elementwise shape compiles in a `static` (Rust promotes the array to a
+`'static` allocation) but not in a function body, where the array is a TEMPORARY and the
+pointer dangles the moment the statement ends — and either way it is 40 lines of unreadable
+`as u16` that nothing can diff against the C.
 
 THE BUG. A C `L"..."` constant routinely comes back as a Rust BYTE string cast to a wide
 pointer. That is wrong in up to three independent ways at once:
@@ -30,6 +37,51 @@ _LIT = re.compile(
     r'b"(?P<body>(?:[^"\\]|\\.)*)"\s*(?:as\s+\*const\s+u8\s*)?\.as_ptr\(\)\s*(?:as\s+\*const\s+u8\s*)?'
     r"as\s+(?P<ty>LPCWSTR|PCWSTR|LPWSTR|PWSTR|LPCTSTR|LPTSTR|\*const u16|\*mut u16)"
 )
+
+
+# The ELEMENTWISE shape: `['S' as u16, 'Y' as u16, ..., 0].as_ptr()`. Elements are Rust char
+# literals cast to u16, or bare integers (the NULs, and the odd `0x5C`). Requiring at least one
+# `as u16` keeps `[0; 260]` and other genuine numeric arrays out.
+_WCHAR_ELEM = r"(?:'(?:\\.|[^'\\])'\s*as\s+u16|0[xX][0-9A-Fa-f]+|\d+)"
+_WIDE_ARR = re.compile(
+    r"\[\s*(?P<body>" + _WCHAR_ELEM + r"(?:\s*,\s*" + _WCHAR_ELEM + r")*)\s*,?\s*\]\s*\.as_ptr\(\)"
+)
+_ELEM = re.compile(_WCHAR_ELEM)
+
+_RUST_CHAR_ESC = {"n": 0x0A, "r": 0x0D, "t": 0x09, "0": 0x00, "\\": 0x5C, "'": 0x27, '"': 0x22}
+
+
+def decode_units(body: str) -> str | None:
+    """The text an elementwise `['x' as u16, .., 0]` array spells, or None if it isn't one."""
+    units: list[int] = []
+    for tok in _ELEM.findall(body):
+        if tok.startswith("'"):
+            ch = tok[1 : tok.index("'", 1)]
+            if ch.startswith("\\"):
+                if ch[1] in ("x", "u"):
+                    return None  # \xNN / \u{..} — rare enough to hand-check rather than guess
+                if ch[1] not in _RUST_CHAR_ESC:
+                    return None
+                units.append(_RUST_CHAR_ESC[ch[1]])
+            elif len(ch) == 1:
+                units.append(ord(ch))
+            else:
+                return None
+        else:
+            units.append(int(tok, 0))
+    if not units:
+        return None
+    if any(u > 0xFFFF for u in units):
+        return None
+    # Strip exactly ONE trailing zero — the terminator. Any further zero is CONTENT: the C's
+    # `L"Terminal Server\0"` is a double-NUL-terminated list, and eating its embedded NUL would
+    # silently change what the string means to the callee.
+    if units and units[-1] == 0:
+        units = units[:-1]
+    try:
+        return "".join(chr(u) for u in units)
+    except ValueError:
+        return None
 
 
 def unescape(body: str) -> bytes:
@@ -108,15 +160,18 @@ def _c_escape(text: str) -> str:
     newline reads as "the C never spells this".
     """
     out = text.replace("\\", "\\\\").replace('"', '\\"')
-    for ch, esc in (("\t", "\\t"), ("\r", "\\r"), ("\n", "\\n")):
+    for ch, esc in (("\t", "\\t"), ("\r", "\\r"), ("\n", "\\n"), ("\0", "\\0")):
         out = out.replace(ch, esc)
     return out
 
 
 def c_has_literal(c_text: str, text: str) -> bool:
-    """Does the C spell this exact string as a wide literal?"""
-    if not text:
-        return True
+    """Does the C spell this exact string as a wide literal?
+
+    The EMPTY string is checked like any other. `[0].as_ptr()` is `L""` in the sound-event
+    tables, but a bare `[0]` is also what a one-element numeric array looks like, and the only
+    thing that tells them apart is whether the C spells `L""` at all.
+    """
     esc = _c_escape(text)
     return f'L"{esc}"' in c_text or f'TEXT("{esc}")' in c_text or f'_T("{esc}")' in c_text
 
@@ -132,24 +187,46 @@ def convert(rs: pathlib.Path, c_text: str, apply: bool) -> tuple[int, list[str]]
         got = decode(raw)
         line = text[: m.start()].count("\n") + 1
         if got is None:
-            notes.append(f"  ! {rs.name}:{line} not decodable as text, left alone: {m.group('body')[:50]!r}")
+            notes.append(
+                f"  ! {rs.name}:{line} not decodable as text, left alone: {m.group('body')[:50]!r}"
+            )
             return m.group(0)
         if not c_has_literal(c_text, got):
-            notes.append(f"  ! {rs.name}:{line} decodes to {got!r}, which the C never spells — left alone")
+            notes.append(
+                f"  ! {rs.name}:{line} decodes to {got!r}, which the C never spells — left alone"
+            )
             return m.group(0)
         n += 1
         # Rust spells \t \r \n the same way C does, so the source-form escape serves both the
         # oracle and the emitted literal. Emitting the raw control character would break the line.
         return f'w!("{_c_escape(got)}") as {m.group("ty")}'
 
-    new = _LIT.sub(repl, text)
+    stage1 = _LIT.sub(repl, text)
+
+    def repl_arr(m: re.Match[str]) -> str:
+        nonlocal n
+        got = decode_units(m.group("body"))
+        line = stage1[: m.start()].count("\n") + 1
+        if got is None:
+            return m.group(0)  # not a string array at all — say nothing, it was never a finding
+        if not c_has_literal(c_text, got):
+            notes.append(
+                f"  ! {rs.name}:{line} decodes to {got!r}, which the C never spells — left alone"
+            )
+            return m.group(0)
+        n += 1
+        return f'w!("{_c_escape(got)}")'
+
+    new = _WIDE_ARR.sub(repl_arr, stage1)
     if n and apply:
         rs.write_text(new, encoding="utf-8")
     return n, notes
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("crate_src", help="the crate's module dir, e.g. sdk/lib/rust/foo-rust/src/foo")
     ap.add_argument("c_dir", help="the module's C source dir — the oracle")
     ap.add_argument("--apply", action="store_true")
@@ -170,7 +247,9 @@ def main(argv: list[str]) -> int:
         if n:
             print(f"  {rs.name}: {n} literal(s)")
     print("\n".join(all_notes))
-    print(f"\n{'converted' if args.apply else 'would convert'} {total}; {len(all_notes)} left alone")
+    print(
+        f"\n{'converted' if args.apply else 'would convert'} {total}; {len(all_notes)} left alone"
+    )
     return 0
 
 

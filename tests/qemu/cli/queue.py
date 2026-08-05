@@ -419,6 +419,67 @@ def build_batch(repo: Path, wt: Path, subs: list[Submission], log) -> BatchResul
     return res
 
 
+def dirty_paths(wt: Path) -> list[str]:
+    """Tracked-file dirt in the integration tree, by the SAME criterion the gate's stamp step
+    uses (`--untracked-files=no`). Reading it any other way would let the two disagree about
+    whether a tree is stampable, which is the whole bug below."""
+    out = git(wt, "status", "--porcelain", "--untracked-files=no", check=False)
+    paths = []
+    for raw in out.splitlines():
+        # Split on the status field, never slice by column: `git()` strips its whole stdout,
+        # so the FIRST line arrives without porcelain's leading space and a fixed `[3:]`
+        # silently eats a character of the path (`tests/…` -> `ests/…`).
+        parts = raw.strip().split(maxsplit=1)
+        if parts:
+            paths.append(parts[1] if len(parts) > 1 else parts[0])
+    return paths
+
+
+def _workspace_roots(wt: Path) -> list[Path]:
+    """Directories holding a tracked `Cargo.lock` — derived, not hardcoded, so a second
+    workspace cannot quietly escape the preflight."""
+    locks = git(wt, "ls-files", "--", "*Cargo.lock", check=False)
+    return [wt / Path(p).parent for p in locks.splitlines() if p.strip()]
+
+
+def settle_cargo_locks(wt: Path, log) -> list[str]:
+    """Materialize any lockfile the BUILD would have rewritten, in ~0.2s, before the gate.
+
+    WHY (2026-08-04, three lanes wedged for an hour each): a lane parked a crate out of
+    `workspace.members` but left its `[[package]]` entry in Cargo.lock. Cargo prunes that
+    orphan on the next resolve, so the GATE rewrote the lock — and `_write_gate_stamp` refuses
+    a dirty tree, because a stamp must hash content some commit actually hashes to. Green
+    gate, no stamp, `pre-push` rejects, conductor dies, next conductor repeats the whole
+    30-minute cold gate. Re-gating can never fix it, so it loops forever.
+
+    Doing this BEFORE the gate is what makes it safe, and it is strictly better than settling
+    afterwards: the tree that gets gated is then byte-identical to the tree that gets pushed,
+    so there is no window in which the stamp certifies something other than what booted.
+
+    `--locked` is NOT the probe — measured 2026-08-05: `cargo metadata --locked` exits 0 on
+    exactly this input, because `--locked` objects to a lock that needs ADDING to, not one
+    that needs PRUNING. The only honest probe is to let cargo resolve and see if the file
+    moved. Returns the lock paths that changed (relative to `wt`)."""
+    changed: list[str] = []
+    for root in _workspace_roots(wt):
+        cp = subprocess.run(
+            ["cargo", "metadata", "--offline", "--format-version", "1"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if cp.returncode != 0:
+            # Not fatal: the post-gate stamp backstop still catches the consequence. Say so
+            # rather than letting a silently-skipped preflight read as "checked, and clean".
+            log(f"queue: lock preflight could not resolve {root.name} — {cp.stderr.strip()[:200]}")
+            continue
+        rel = str((root / "Cargo.lock").relative_to(wt))
+        if git(wt, "status", "--porcelain", "--untracked-files=no", "--", rel, check=False):
+            changed.append(rel)
+    return changed
+
+
 _NO_STAGES: Mapping[str, str] = MappingProxyType({})
 
 
@@ -636,6 +697,29 @@ def land_subset(
     subs = res.merged
     if not subs:
         return
+    # PREFLIGHT, ~0.2s. A tree the gate will dirty can never be stamped, and the failure would
+    # otherwise surface half an hour later as an opaque pre-push rejection with nothing to
+    # point at. Cheap enough to run every drain; the whole point is that it costs a heartbeat
+    # against a 30-minute cold gate.
+    stray = dirty_paths(wt)
+    if stray:
+        raise Inconclusive(
+            "the integration tree was DIRTY before the gate — this is merge debris in the "
+            f"conductor's worktree, not any lane's code: {', '.join(stray[:10])}. "
+            f"{len(subs)} submission(s) stay QUEUED; nothing was rejected."
+        )
+    for lock in settle_cargo_locks(wt, log):
+        git(wt, "add", "--", lock)
+        git(wt, "commit", "--no-verify", "-m", f"queue: settle {lock} (the build rewrites it)")
+        res.tip = git(wt, "rev-parse", "HEAD")
+        log(f"queue: settled {lock} into the batch tip — the gate would have rewritten it")
+    stray = dirty_paths(wt)
+    if stray:
+        raise Inconclusive(
+            "the integration tree is dirty and it is not a lockfile the queue may settle: "
+            f"{', '.join(stray[:10])}. The gate would run green and mint no push stamp, so "
+            f"the push would be refused. {len(subs)} submission(s) stay QUEUED."
+        )
     verdict = gate_batch(wt, log, retries=retries)
     ok, classification = verdict.ok, verdict.classification
     artifact, salient = verdict.artifact, verdict.salient
@@ -647,7 +731,30 @@ def land_subset(
                 "master moved during a batch gate while the land lock was held — something "
                 "pushed outside the queue; re-run the drain"
             )
-        git(wt, "push", "origin", f"{res.tip}:refs/heads/master")
+        # BACKSTOP. The stamp is the push credential; a green gate that minted none means the
+        # hook is about to refuse this update, and the preflight above evidently missed the
+        # cause. Say that HERE, where the evidence is, instead of letting it surface as a bare
+        # git rejection the conductor dies on. Only on evidence: an unparsed summary (empty
+        # `stages`) proves nothing, so it falls through to the push as before.
+        stamp = verdict.stages.get("stamp", "")
+        if verdict.stages and stamp != "ok":
+            raise Inconclusive(
+                f"the gate was GREEN but minted no push stamp (stamp: {stamp or 'absent'}) — "
+                "the pre-push hook refuses a master update whose tree has no fresh stamp, so "
+                "pushing would fail with nothing to point at. Dirt: "
+                f"{', '.join(dirty_paths(wt)) or '(none — see the gate artifact)'}. "
+                f"{len(subs)} submission(s) stay QUEUED. Artifact: {artifact or '(none)'}"
+            )
+        try:
+            git(wt, "push", "origin", f"{res.tip}:refs/heads/master")
+        except QueueError as e:
+            # Keep the train's failure mode uniform: a push that cannot happen leaves every
+            # submission QUEUED and halts, rather than escaping as an unhandled error that
+            # reads like a crash and resolves nobody.
+            raise Inconclusive(
+                f"the batch gated GREEN but the push was refused: {e}. "
+                f"{len(subs)} submission(s) stay QUEUED. Artifact: {artifact or '(none)'}"
+            ) from e
         log(f"queue: LANDED {len(subs)} submission(s) as {res.tip[:12]}")
         base.landed.extend(s.lane for s in subs)
         for sub in subs:

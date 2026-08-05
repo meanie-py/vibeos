@@ -511,6 +511,12 @@ def c_functions(path: Path) -> dict[str, tuple[str, list[str]]]:
         "CDECL",
         "WINAPIV",
         "DECLSPEC_NORETURN",
+        # A module-private ALIAS for a convention is still a convention. deskcplx.h:4 has
+        # `#define DESK_EXT_CALLBACK CALLBACK`, and without it the return type of
+        # `PDEVMODEW DESK_EXT_CALLBACK CDevSettings_GetCurrentMode(..)` reads as the two tokens
+        # `PDEVMODEW DESK_EXT_CALLBACK`, which no Rust return type can ever match — a permanent
+        # false positive on a correctly-translated function. Same class as netcfgx's STDAPI.
+        "DESK_EXT_CALLBACK",
     )
 
     def _clean_ret(s: str) -> str:

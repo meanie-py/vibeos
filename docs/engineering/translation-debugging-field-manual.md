@@ -341,6 +341,22 @@ The habit that avoids all of it: **cast at the call site using the NAMED type** 
 `as SIZE_T`, `as INT_PTR`), never a concrete width. That is arch-neutral by construction —
 `folders/CNetFolder.rs` was ground the same night with that habit and needed zero amd64 fixes.
 
+**And cross-target agreement cannot rescue you once the cast is already width-baked** — it is a
+filter, not a repair. On syssetup, of the 17 integer sites erroring on all three targets exactly
+**ONE** had three-way agreement, because the targets were *correctly* asking for different
+widths: the parameters are `SIZE_T`, `WPARAM`, `UINT_PTR`. Measured three ways over a session —
+i386-derived casts moved i386 275→144 while pushing amd64 177→193; a blanket `usize` rewrite
+moved i386 144→175; amd64-driven same-width moved i386 176→207. Every route regresses another
+arch, and that is not a tuning problem, it is the class having no width answer. What is portable
+is the NAME, so `crate-repair`'s `width_alias_cast` rule reads the callee's DECLARED parameter
+type out of the crate's own island and writes `as SIZE_T` — one edit, right on all three, needing
+no vote. Its guards are the interesting part and each is a real mis-fire: the callee must be
+declared in **this** crate (a sibling's `SIZE_T` need not be yours — that shape already shipped a
+gate-red), and the span must **be** the whole argument, because rustc labels the narrowest
+disagreeing operand, so in `SetAutoDaylight(SendDlgItemMessage(..) != BST_UNCHECKED as i64)` it
+blames a sub-expression of argument 0 and casting *that* to `BOOL` is well-formed and wrong.
+syssetup: 34 sites the width rule could only withhold, plus 55 more it stood down from.
+
 ### An `extern` declaration for a symbol YOUR OWN CRATE defines
 The worst version of a width mismatch, because both halves are yours and neither compiler nor
 gate can see it. `msvcrt-crt-rust/prelude.rs` declared the nine `_isw*_l` predicates as
@@ -1102,6 +1118,32 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   88 → 51 and the motivating regression test went green by finding nothing at all. Nothing in
   the scanner's own output said so; the coverage ratio moved and the test suite caught it.
   This is the argument for the ratio being printed and for the must-NOT-fire tests existing.
+- **The ELEMENTWISE spelling hides in plain sight and no `b"` rule can see it.** syssetup's
+  wizard.c came back with 54 wide literals written out as `['S' as u16, 'Y' as u16, …, 0]` —
+  the sound-event and theme tables, 270 lines of them. Two defects at once: in a `static`
+  initialiser Rust promotes the array so it merely reads as unreviewable noise, but the same
+  construct in a FUNCTION BODY is a temporary, and `[…].as_ptr()` there dangles the moment the
+  statement ends. Nothing diffs it against the C either — an eyeball comparison of 48 `as u16`
+  elements against `L"SYSTEM\\CurrentControlSet\\Control\\ProductOptions"` is not a review.
+  `widen_byte_literals.py` decodes this shape and rewrites it to `w!("…")` against the same
+  C-source oracle as the byte-string shape; syssetup converted 56 with zero left alone. **Strip
+  exactly ONE trailing zero, not all of them**: `L"Terminal Server\0"` is double-NUL-terminated
+  and eating its embedded NUL changes what the callee reads. And check the empty case against
+  the C too — `[0].as_ptr()` is `L""` in a string table and a one-element numeric array
+  everywhere else, and only the C tells them apart.
+- **The declared LENGTH of a `static const WCHAR x[]` is a number nobody checked.** Five of
+  wizard.c's six registry-path statics arrived with the wrong `[WCHAR; N]` — 59 for a 48-unit
+  string, 52 for a 54-unit one. rustc catches the mismatch only because the initialiser is
+  spelled out; had the model written `[0; 59]` and filled it at runtime, nothing would have.
+  A `wide!("…")` macro that computes `N` from the literal makes the declared length checkable
+  instead of asserted, and shortens 48 lines to one.
+- **A C table of `const WCHAR *` has no direct Rust spelling**, and the workaround the model
+  reaches for is wrong twice. A raw pointer is not `Sync`, so `static T: [[LPCWSTR; 2]; 25]`
+  does not compile; what it wrote instead was `[…].as_ptr()` per element, which is both the
+  elementwise bug above and (outside a static) a dangling pointer. Wrap the table in a
+  `#[repr(transparent)] SyncTable<T>` with `Deref` — the newtype promises exactly what the C
+  already promises (read-only, every pointer `'static`), and `Deref` keeps `Themes[n].ThemeFile`
+  and `table.len()` spelled the way the C spells them.
 - **`b"..."` has alignment 1**, so `b"C\0S\0…".as_ptr() as *mut u16` can land at an odd address
   → amd64-only 0x1E `STATUS_DATATYPE_MISALIGNMENT` when `ProbeForRead` enforces WCHAR
   alignment. Declare a real `static [u16; N]` (alignment 2 ⇒ always even).
@@ -1846,6 +1888,28 @@ format reports `SHFMT_ERROR`. Only the later or-pattern arm (`VOLUMEINUSE | INSU
 reads as a pattern-syntax complaint, not as a report that the two arms above it are already
 broken. **Do not repair such an arm by transcribing ordinals from the C's declaration order**:
 here `DONE` is 11 and `DONEWITHSTRUCTURE` is 1. Take the names from the island.
+
+**A constant whose macro body is an EXPRESSION may not reach the island at all**, and this is
+the one `profile_derive` already warns about — so the failure is usually that somebody read the
+warning as a note. commctrl.h:137 is `#define NM_CUSTOMDRAW (NM_FIRST-12)`; bindgen emitted
+`NM_FIRST` and not `NM_CUSTOMDRAW`, so desk's `NM_CUSTOMDRAW =>` arm bound every notification
+and the seven arms below it were dead. The header WAS allowlisted — allowlisting is necessary
+and not sufficient, because the constant has to fold. `SWITCH_CONST_EXPRESSION: <name> is a
+macro EXPRESSION; bindgen may not fold it — verify it lands in the island` is a TODO with a
+verification step attached, not an INFO line: after generating the island, grep it for every
+flagged name. When one is missing, define it in the prelude **from the header's own macro**
+(`NM_FIRST.wrapping_sub(12)`, matching C's unsigned wrap) rather than pasting `0xFFFFFFF4` —
+a pasted number stops tracking the header the moment it moves.
+
+**The same shape reaches PARAMETER position, where it does not even look like a pattern.** A
+function parameter is a pattern too, so an identifier that resolves to a constant is a CONSTANT
+PATTERN there as well. syssetup's `SetupChangeLocaleEx(.., char Unknown, ..)` translated to
+`Unknown: c_char` — and ntdll-sys glob-exports `pub const Unknown: _MEDIA_TYPE`, so rustc read
+the parameter as a match against that constant and reported `expected i8, found u32` pointing at
+a declaration that is obviously fine. Read it as "this name is already something else," not as a
+type error: the fix is to rename the binding (`_Unknown`), never to change the type. The same
+collision would be silent in a `let`, so a C local named after a glob-visible constant is worth
+the same suspicion.
 
 **A partial allowlist is the same bug, one layer down.** msvcrt-sys carried 13 of errno.h's 39
 codes because the list had grown per-wave on demand — and 9 of `msvcrt_set_errno`'s 18 targets
@@ -4819,6 +4883,30 @@ symbols one way and undefined the other. That pair *is* the diagnostic.
   `DECLSPEC_SELECTANY` / `__declspec(selectany)` / `static const` at file scope *before* the
   link tells you. Build the values from the header's own macros rather than pasting bytes, so
   they stay checkable.
+- **A `static __inline` FUNCTION in a header has the same problem, and no `-sys` island shows
+  it.** strsafe.h's whole bounded-string family is `STRSAFEAPI` = `static __inline HRESULT
+  WINAPI`, so it has internal linkage: every C caller inlines its own copy and NO object file
+  in the tree defines the symbol. bindgen emits nothing for it either (it emits declarations,
+  and there is no external one), so the crate's prelude ends up with a plausible `extern "C"`
+  block that nobody satisfies — syssetup's said "provided by the strsafe static lib the module
+  already links", which the module does not link and never did. It links until the last C TU is
+  flipped, then `undefined symbol: _StringCchCopyW`. **Port the header body into the crate**
+  (`src/<module>/strsafe.rs`, the same treatment shell32 gave its `shellutils.h` inlines)
+  rather than re-homing a wrapper in a surviving .c — a wrapper only moves the problem to the
+  next flip. Grep a flipping module's headers for `static __inline` / `__CRT_INLINE` /
+  `FORCEINLINE` before the link tells you. Faithfulness matters here: these APIs TRUNCATE and
+  return `STRSAFE_E_INSUFFICIENT_BUFFER`, so the port must not reach for slice indexing.
+  If one of them is VARIADIC (`StringCchPrintfW`), its entry point still has to be the
+  `rust_varargs_shim.c` trampoline — stable Rust cannot define a C-variadic — with the body in
+  a fixed-arity `*_v` twin.
+- **An `extern` in the prelude for a name the crate itself defines is an undefined symbol
+  waiting for the flip.** `BLOCKLIST_FUNCS_FROM_CRATE` removes the crate's own FUNCTIONS from
+  the island; it does not touch VARIABLES, so a `static mut` the translation owns
+  (`hDllInstance`, `AdminInfo`, `hSysSetupInf`) is still declared `extern` there and the Rust
+  definition, unmangled by default, exports nothing. `cargo check` is happy — both halves
+  resolve inside the crate — and only the cold link says so. `#[no_mangle]` on the static is
+  the fix; the same reasoning as `#[export_name]` above, and the reason a data global is the
+  easy half (no stdcall decoration to get wrong).
 
 ### An incomplete flip breaks ONLY on a clean arm64 tree
 i386/amd64 keep working because the stale pre-flip `libX.a` (or a weak inline copy clang emits

@@ -46,13 +46,21 @@ from .config import RUST_TARGETS
 # --- rules ------------------------------------------------------------------------------------
 
 RULE_NUMERIC_CAST = "truncating_numeric_cast"
+RULE_WIDTH_ALIAS = "width_alias_cast"
 RULE_NO_STD_PATH = "no_std_path"
 RULE_POINTER_CAST = "raw_pointer_cast"
 RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
 
-#: Rules driven by rustc diagnostics.
-DIAGNOSTIC_RULES: tuple[str, ...] = (RULE_NUMERIC_CAST, RULE_NO_STD_PATH, RULE_POINTER_CAST)
+#: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
+#: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
+#: answer wherever it is available, so it claims the span and the numeric rule stands down.
+DIAGNOSTIC_RULES: tuple[str, ...] = (
+    RULE_WIDTH_ALIAS,
+    RULE_NUMERIC_CAST,
+    RULE_NO_STD_PATH,
+    RULE_POINTER_CAST,
+)
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
 #: ``unconditional_panic`` lint that would catch a literal index does not even run under
@@ -453,6 +461,14 @@ def _next_code_byte(masked: bytes, pos: int) -> bytes:
     return masked[pos : pos + 1]
 
 
+def _prev_code_byte(masked: bytes, pos: int) -> bytes:
+    """The last non-space byte strictly before ``pos`` (b"" at the start of the file)."""
+    pos -= 1
+    while pos >= 0 and masked[pos : pos + 1].isspace():
+        pos -= 1
+    return masked[pos : pos + 1] if pos >= 0 else b""
+
+
 def _in_match_pattern(masked: bytes, end: int) -> bool:
     """True when the span ending at ``end`` sits in match-arm PATTERN position.
 
@@ -722,6 +738,15 @@ FileReader = Callable[[str], bytes | None]
 class _Ctx:
     target: str
     width: int
+    #: ``fn name -> [declared param type, ...]``, harvested from THIS crate's own sources only.
+    #: Empty disables ``RULE_WIDTH_ALIAS`` entirely rather than letting it guess.
+    signatures: Mapping[str, Sequence[str]] = field(default_factory=dict)
+    #: Type aliases this crate itself declares — the scope proof for a cast written in the
+    #: caller using a name read off the callee.
+    local_aliases: frozenset[str] = frozenset()
+    #: Spans ``RULE_WIDTH_ALIAS`` has already answered, so ``RULE_NUMERIC_CAST`` stands down
+    #: instead of proposing a second, width-baked edit for the same bytes.
+    claimed: set[tuple[str, int, int]] = field(default_factory=set)
 
 
 def _shape_of(diagnostic: Mapping[str, Any]) -> str:
@@ -784,6 +809,185 @@ def _conversion_hints(diagnostic: Mapping[str, Any]) -> dict[int, str]:
     return hints
 
 
+def _enclosing_call(masked: bytes, start: int) -> tuple[str | None, int]:
+    """``(callee name, argument index)`` for the call whose argument begins at ``start``.
+
+    Walks out to the nearest UNCLOSED ``(`` and then forward from it counting top-level commas.
+    ``<``/``>`` deliberately do not nest: ``size_of::<T>()`` and ``a >= b`` both appear in real
+    argument lists, and treating either as a bracket desynchronises the depth and silently
+    shifts the index — which reads the WRONG parameter's type off the callee.
+    """
+    depth, index, open_paren = 0, start - 1, None
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([{":
+            if depth == 0:
+                open_paren = index if char == b"(" else None
+                break
+            depth -= 1
+        elif char == b";" and depth == 0:
+            break
+        index -= 1
+    if open_paren is None:
+        return None, 0
+    name_match = re.search(rb"(\w+)$", masked[:open_paren].rstrip())
+    if name_match is None:
+        return None, 0
+    arg_index, depth = 0, 0
+    for pos in range(open_paren + 1, start):
+        char = masked[pos : pos + 1]
+        if char in b"([{":
+            depth += 1
+        elif char in b")]}":
+            depth -= 1
+        elif char == b"," and depth == 0:
+            arg_index += 1
+    return name_match.group(1).decode("utf-8", "replace"), arg_index
+
+
+#: A trailing ``as <int primitive>`` on an argument expression — the width the translation baked.
+_RE_TRAILING_CAST = re.compile(r"\s+as\s+(?:" + "|".join(sorted(INT_PRIMITIVES)) + r")\s*$")
+
+
+def _width_alias_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """int-vs-int at an argument position -> cast to the callee's DECLARED TYPE NAME.
+
+    THE MEASUREMENT THAT MOTIVATES IT. ``RULE_NUMERIC_CAST`` answers the same E0308 with the
+    width rustc resolved on the target it ran on — ``as u32`` from an i386 run — and
+    ``merge_plans`` then withholds it unless another target independently asks for the same
+    width. On syssetup that almost never happens: of the 17 integer sites erroring on all three
+    targets, exactly ONE had three-way agreement, because the PARAMETER TYPES themselves differ
+    per arch (SIZE_T, WPARAM, UINT_PTR). Cross-target voting cannot resolve a class where the
+    targets are *correctly* asking for different widths.
+
+    What is portable is the NAME. ``HeapAlloc``'s third parameter is ``SIZE_T`` on every arch;
+    the alias is what varies, not the spelling. So this rule reads the type off the callee's own
+    declaration and writes ``as SIZE_T`` — one edit, right on all three, needing no vote.
+
+    THE SCOPE TRAP, and why the guard is what it is. The cast is written in the CALLER's scope
+    from a name read in the CALLEE's, so an alias that resolves differently in the two compiles
+    and is wrong (``propose_panicking_cast_edits`` ate exactly this: rtl-misc's ``SIZE_T`` is
+    ``usize``, ntkrnl-sys's amd64 bindgen declares the parameter ``u64``, and rustc holds those
+    distinct at equal width). The guard here is not "is it a primitive" — that would reject the
+    entire class — it is PROVENANCE: the callee must be declared in this crate's own sources,
+    and the alias must be one this crate itself declares. Same crate, same ``types`` island,
+    one meaning.
+    """
+    if not ctx.signatures:
+        return [], [], False
+    sites = [
+        (span, expected, found)
+        for span, expected, found in _mismatch_sites(diagnostic)
+        if expected in INT_PRIMITIVES and found in INT_PRIMITIVES and expected != found
+    ]
+    if not sites:
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    for span, expected, found in sites:
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_WIDTH_ALIAS, reason, name, line, detail))
+
+        if end <= start:
+            continue  # zero-length insertion hint; RULE_NUMERIC_CAST reports these
+        data = load(file_name)
+        if data is None:
+            continue
+        masked = _mask_lexical(data)
+        if _next_code_byte(masked, end) == b"(":
+            continue  # the callee's own span, not a value
+        if _in_macro_definition(masked, start) or _in_match_pattern(masked, end):
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            continue
+        if _prev_code_byte(masked, start) not in (b"(", b",") or _next_code_byte(
+            masked, end
+        ) not in (
+            b")",
+            b",",
+        ):
+            # The span must BE the whole argument, not a sub-expression of one. rustc blames the
+            # narrowest disagreeing operand, so in
+            #     SetAutoDaylight(SendDlgItemMessage(..) != (BST_UNCHECKED) as i64)
+            # it labels `(BST_UNCHECKED) as i64` — which sits inside argument 0, not at it.
+            # Casting THAT to SetAutoDaylight's `BOOL` is a well-formed edit that changes the
+            # wrong expression; the real repair is around the whole comparison.
+            decline("not_whole_argument", text)
+            continue
+        callee, arg_index = _enclosing_call(masked, start)
+        if callee is None:
+            continue  # not an argument — nothing to read a type name off
+        params = ctx.signatures.get(callee)
+        if params is None:
+            decline("callee_not_local", f"`{callee}` is not declared in this crate's own sources")
+            continue
+        if arg_index >= len(params) or not params[arg_index]:
+            decline(
+                "callee_arity", f"{callee}() declares {len(params)} params; this is {arg_index}"
+            )
+            continue
+        target = params[arg_index].strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target):
+            continue  # a pointer/array/fn-ptr parameter — a different rule's business
+        if target in INT_PRIMITIVES:
+            # The declaration already names a primitive, so there is no portable alias to
+            # prefer: RULE_NUMERIC_CAST's `as <expected>` is the same edit. Leave it to it.
+            continue
+        if target not in ctx.local_aliases:
+            decline(
+                "alias_not_local",
+                f"`{target}` is not a type this crate declares, so its meaning in the caller's "
+                "scope is not proven",
+            )
+            continue
+        # Strip a width the translation already baked (`(x) as u64`) rather than stacking a
+        # second cast on top of it — the value is unchanged and the source stays readable.
+        inner = _RE_TRAILING_CAST.sub("", text)
+        if inner != text and not _balanced(_mask_lexical(inner.encode())):
+            inner = text
+        inner = inner.strip()
+        # Already a single parenthesised group? Then `(inner) as T` would only add `((..))`.
+        wrapped = inner
+        if not (
+            inner.startswith("(")
+            and inner.endswith(")")
+            and _matching_closer(_mask_lexical(inner.encode()), 0) == len(inner) - 1
+        ):
+            wrapped = f"({inner})"
+        ctx.claimed.add((file_name, start, end))
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{wrapped} as {target}",
+                rule=RULE_WIDTH_ALIAS,
+                authority=(
+                    f"{callee}() parameter {arg_index} is declared `{target}` in this crate's "
+                    f"own sources, and `{target}` is declared here too; rustc resolved it to "
+                    f"`{expected}` on {ctx.target} and the expression is `{found}`. Casting to "
+                    "the NAME is portable across all three targets, so it needs no width vote."
+                ),
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                requires_target_agreement=False,
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, bool(edits)
+
+
 def _numeric_cast_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -809,6 +1013,12 @@ def _numeric_cast_rule(
         if end <= start:
             # Guard: rustc's child suggestion spans are zero-length INSERTION points.
             decline("zero_length_span", f"{expected} at byte {start}")
+            continue
+        if (file_name, start, end) in ctx.claimed:
+            # RULE_WIDTH_ALIAS already answered this span with the callee's declared type NAME,
+            # which is portable. A second, width-baked edit for the same bytes would only
+            # collide in select_non_overlapping.
+            decline("claimed_by_width_alias", f"bytes {start}..{end}")
             continue
         hint = hints.get(end)
         if hint is not None and hint != expected:
@@ -1002,6 +1212,7 @@ def _no_std_path_rule(
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
+    RULE_WIDTH_ALIAS: _width_alias_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
     RULE_NO_STD_PATH: _no_std_path_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
@@ -1014,13 +1225,24 @@ def propose_edits(
     *,
     target: str,
     rules: Collection[str] = DIAGNOSTIC_RULES,
+    signatures: Mapping[str, Sequence[str]] | None = None,
+    local_aliases: Collection[str] = (),
 ) -> RepairPlan:
     """PURE: parsed rustc diagnostics -> proposed edits, declined sites, and residual RED.
 
     ``read_file`` maps a diagnostic's ``file_name`` to its bytes (or ``None``); no cargo run and
     no filesystem knowledge is baked in, so tests drive this with fixtures.
+
+    ``signatures``/``local_aliases`` are the authority for ``RULE_WIDTH_ALIAS`` and must be
+    harvested from the crate's OWN sources — see that rule for why provenance is the guard.
+    Omitting them disables the rule instead of loosening it.
     """
-    ctx = _Ctx(target=target, width=pointer_width(target))
+    ctx = _Ctx(
+        target=target,
+        width=pointer_width(target),
+        signatures=signatures or {},
+        local_aliases=frozenset(local_aliases),
+    )
     cache: dict[str, bytes | None] = {}
 
     def load(name: str) -> bytes | None:
@@ -1488,7 +1710,11 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             close = _match_forward(masked, open_paren)
             if close is None:
                 continue
-            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            # `close` is the index PAST the `)`, so slice to `close - 1`. Including it left the
+            # LAST parameter of every one-line declaration spelled `SIZE_T)`, which failed the
+            # plain-identifier check in every consumer — so the final parameter of a wrapped-form
+            # declaration was silently unresolvable, and nothing said so.
+            raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             defined[match.group(1).decode("utf-8", "replace")] = [
                 part.split(":", 1)[1].strip() if ":" in part else "" for part in _split_params(raw)
             ]
@@ -1502,7 +1728,11 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             if close is None:
                 continue
             name = match.group(1).decode("utf-8", "replace")
-            raw = data[open_paren + 1 : close].decode("utf-8", "replace")
+            # `close` is the index PAST the `)`, so slice to `close - 1`. Including it left the
+            # LAST parameter of every one-line declaration spelled `SIZE_T)`, which failed the
+            # plain-identifier check in every consumer — so the final parameter of a wrapped-form
+            # declaration was silently unresolvable, and nothing said so.
+            raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             params = []
             for part in _split_params(raw):
                 # `name: Type` -> Type; `&self`/`mut self` and `...` carry no type.
@@ -1696,6 +1926,42 @@ def _panicking_cast_edits_for_crate(
     return edits, skipped
 
 
+#: ``pub type NAME = ...;`` — an alias the crate declares outright.
+_RE_TYPE_ALIAS = re.compile(rb"^\s*pub\s+type\s+(\w+)\s*=", re.M)
+#: ``name: Type`` in a declaration — a type name the crate already uses somewhere.
+_RE_USED_TYPE = re.compile(rb"\b\w+\s*:\s*([A-Z]\w*)\s*[,)]")
+
+
+def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset[str]]:
+    """``RULE_WIDTH_ALIAS``'s authority: signatures and type names from THIS crate ONLY.
+
+    Deliberately narrower than ``_panicking_cast_edits_for_crate``'s harvest, which widens with
+    ``path =`` dependencies. A dependency's declaration is fine to READ a width off, but this
+    rule copies a NAME into the caller's scope, and a sibling crate's ``SIZE_T`` need not be
+    this crate's — that is the bug that rule ate. Same crate, same island, one meaning.
+
+    WHAT THE NAME SET PROVES, AND WHAT IT DOES NOT. Most of these aliases are not DECLARED by
+    the crate at all: the island opens with ``pub use ntdll_sys::nt::*;``, so ``SIZE_T`` is
+    glob-reachable rather than written down, and a declarations-only sweep finds none of them
+    and disables the rule completely. What is actually true is narrower and sufficient: the
+    caller can already name the CALLEE, and the callee arrives through the same glob chain
+    (``prelude::*`` -> ``types::*`` -> island -> ``ntdll_sys::nt::*``) that carries its
+    parameter types, so a name that resolves in the island resolves identically in the caller.
+    This set is therefore a sanity filter — "a type name this crate already uses" — not a proof
+    of scope. The proof is the pass loop: a repair pass that raises the error count on ANY
+    target is reverted whole, so a name that does not resolve costs a pass, never a silent
+    mis-cast.
+    """
+    sources: dict[str, bytes] = {}
+    names: set[str] = set()
+    for path in sorted((crate_dir / "src").rglob("*.rs")):
+        data = path.read_bytes()
+        sources[path.as_posix()] = data
+        names.update(m.group(1).decode("utf-8", "replace") for m in _RE_TYPE_ALIAS.finditer(data))
+        names.update(m.group(1).decode("utf-8", "replace") for m in _RE_USED_TYPE.finditer(data))
+    return harvest_signatures(sources), frozenset(names)
+
+
 def _flex_edits_for_crate(
     crate_dir: Path, root: Path, decls: FlexArrayDecls
 ) -> tuple[list[Edit], list[Skipped]]:
@@ -1829,8 +2095,20 @@ def repair_crate(
         # A FRESH reader every pass: the previous pass rewrote these files, and every guard
         # (callee_span/already_cast/balance) must judge the bytes rustc just parsed.
         reader = _file_reader(root)
+        # Re-harvested each pass alongside the reader, for the same reason: the previous pass
+        # rewrote these files.
+        local_sigs, local_aliases = (
+            _local_authorities(resolved_dir) if RULE_WIDTH_ALIAS in rules else ({}, frozenset())
+        )
         plans = {
-            target: propose_edits(run.diagnostics, reader, target=target, rules=diagnostic_rules)
+            target: propose_edits(
+                run.diagnostics,
+                reader,
+                target=target,
+                rules=diagnostic_rules,
+                signatures=local_sigs,
+                local_aliases=local_aliases,
+            )
             for target, run in runs.items()
         }
         merged = merge_plans(plans, allow_single_target_width=allow_single_target_width)

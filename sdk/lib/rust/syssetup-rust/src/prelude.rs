@@ -43,7 +43,7 @@ extern "C" {
     // on all three targets, so these ARE expressible in stable Rust — unlike the `...` entry
     // points, which live in rust_varargs_shim.c.
     pub fn vsprintf(buf: *mut c_char, fmt: *const c_char, ap: *mut c_char) -> c_int;
-    pub fn vsnwprintf(buf: *mut u16, n: usize, fmt: *const u16, ap: *mut c_char) -> c_int;
+    pub fn _vsnwprintf(buf: *mut u16, n: usize, fmt: *const u16, ap: *mut c_char) -> c_int;
     pub fn _snwprintf(buf: *mut u16, n: usize, fmt: *const u16, ...) -> c_int;
 }
 
@@ -77,6 +77,59 @@ macro_rules! w {
     }};
 }
 pub use crate::w;
+// The ARRAY sibling of `w!`. A C `static const WCHAR x[] = L"..."` is an ARRAY, and the
+// difference matters twice: `[WCHAR; N]` is `Sync` where `*const u16` is not (so it can BE a
+// static), and the declared `N` is checked against the literal instead of being a number
+// somebody counted. wizard.c's six registry-path statics arrived with five of the six lengths
+// wrong.
+#[macro_export]
+macro_rules! wide {
+    ($s:expr $(,)?) => {{
+        const INPUT: &[u8] = $s.as_bytes();
+        const OUT: [u16; INPUT.len() + 1] = {
+            let mut out = [0u16; INPUT.len() + 1];
+            let mut i = 0;
+            while i < INPUT.len() {
+                assert!(INPUT[i] < 0x80, "wide!() takes ASCII literals only");
+                out[i] = INPUT[i] as u16;
+                i += 1;
+            }
+            out // trailing element stays 0 => NUL-terminated
+        };
+        OUT
+    }};
+}
+pub use crate::wide;
+// A C file-scope `static const` TABLE OF POINTERS (wizard.c's sound-event and theme tables) has
+// no direct Rust spelling: a raw pointer is not `Sync`, so an array of them cannot be a
+// `static`. This newtype promises exactly what the C already promises — the table is read-only
+// and every pointer in it is `'static` (each one comes from `w!`, i.e. another static). `Deref`
+// keeps the call sites spelled as the C spells them: `Themes[n].ThemeFile`, `table.len()`.
+#[repr(transparent)]
+pub struct SyncTable<T: 'static>(pub T);
+unsafe impl<T: 'static> Sync for SyncTable<T> {}
+impl<T: 'static> core::ops::Deref for SyncTable<T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+// setupapi's own default copy-queue callback, which install.c and netinstall.c hand straight to
+// SetupInstallFilesFromInfSectionW as a PSP_FILE_CALLBACK_W. The island declares it in the
+// ARCH's literal convention (`extern "stdcall"` on i386), and Rust compares fn-pointer ABIs
+// NOMINALLY, so that fn item does not fit a slot normalize_island_abi spelled `system` — even
+// though the two ARE the same ABI there. Re-declared once with the portable spelling: same
+// symbol, same ABI, and this item shadows the glob-imported one from `crate::types::*`.
+extern "system" {
+    pub fn SetupDefaultQueueCallbackW(
+        Context: PVOID,
+        Notification: UINT,
+        Param1: UINT_PTR,
+        Param2: UINT_PTR,
+    ) -> UINT;
+}
 
 // ================= UNICODE A/W aliases ========================================================
 // syssetup compiles with -DUNICODE, so `#define SendMessage SendMessageW` and its siblings are
@@ -195,8 +248,8 @@ pub use crate::SE_SHUTDOWN_NAME;
 // externs, so there is no calling convention to get wrong.
 extern "C" {
     pub static IID_IPersistFile: IID;
-    pub static IID_IShellLink: IID;
 }
+pub use crate::types::IID_IShellLinkW as IID_IShellLink;
 
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an
@@ -327,7 +380,10 @@ pub use crate::DateTime_GetSystemtime;
 #[macro_export]
 macro_rules! DateTime_SetSystemtime {
     ($hwnd:expr, $flag:expr, $st:expr $(,)?) => {
-        $crate::prelude::SendMessageW($hwnd, DTM_SETSYSTEMTIME, $flag as WPARAM, $st as *mut _ as LPARAM) != 0
+        // `*const _`, not `*mut _`: DTM_SETSYSTEMTIME only READS the SYSTEMTIME, and the callers
+        // pass a shared `&LocalTime`, which has no `*mut` cast. The pointee kind still has to be
+        // inferable for the `as LPARAM` int-cast, which `_` gets from the argument.
+        $crate::prelude::SendMessageW($hwnd, DTM_SETSYSTEMTIME, $flag as WPARAM, $st as *const _ as LPARAM) != 0
     };
 }
 pub use crate::DateTime_SetSystemtime;
@@ -392,7 +448,12 @@ pub use crate::IPersistFile_Save;
 // something the crate itself defines is the drift shape AGENTS.md warns about — it would link
 // against our own symbol with a signature nothing checks.
 pub use crate::syssetup::install::{InstallStartMenuItems, RegisterTypeLibraries};
-pub use crate::syssetup::logfile::{InitializeSetupActionLog, TerminateSetupActionLog, pSetupDebugPrint};
+pub use crate::syssetup::strsafe::{StringCbCopyW, StringCchCatW, StringCchCopyW};
+// pSetupDebugPrint is NOT re-exported from logfile: the crate only defines the fixed-arity twin
+// `pSetupDebugPrint_v`. The variadic entry point is rust_varargs_shim.c's, and the island already
+// declares it (`unsafe extern "C" { pub fn pSetupDebugPrint(.., ...) }`), so it arrives with the
+// rest of `crate::types::*`.
+pub use crate::syssetup::logfile::{InitializeSetupActionLog, TerminateSetupActionLog};
 pub use crate::syssetup::netinstall::InstallNetworkComponent;
 pub use crate::syssetup::security::{
     InstallSecurity, SetAccountsDomainSid, SetAdministratorPassword, SetAutoAdminLogon,
@@ -415,13 +476,10 @@ macro_rules! DialogBox {
 pub use crate::DialogBox;
 
 // ================= CRT the island does not carry ==============================================
-// strsafe.h's StringCch* are STRSAFEAPI `static inline`, so no object file defines them and
-// bindgen emits nothing. They are the bounded string ops — declared here, provided by the
-// strsafe static lib the module already links.
+// strsafe.h's StringCch*/StringCb* are STRSAFEAPI `static __inline`, so no object file in the
+// tree defines them — they are ported in syssetup::strsafe and re-exported below. Only the
+// VARIADIC entry point is external: it is the trampoline in rust_varargs_shim.c.
 extern "C" {
-    pub fn StringCchCopyW(dst: *mut u16, cch: usize, src: *const u16) -> HRESULT;
-    pub fn StringCchCatW(dst: *mut u16, cch: usize, src: *const u16) -> HRESULT;
-    pub fn StringCbCopyW(dst: *mut u16, cb: usize, src: *const u16) -> HRESULT;
     pub fn StringCchPrintfW(dst: *mut u16, cch: usize, fmt: *const u16, ...) -> HRESULT;
     pub fn swprintf(buf: *mut u16, fmt: *const u16, ...) -> c_int;
     pub fn _ultow(value: u32, buf: *mut u16, radix: c_int) -> *mut u16;
