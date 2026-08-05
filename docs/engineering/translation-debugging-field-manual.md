@@ -1874,6 +1874,18 @@ reads as a pattern-syntax complaint, not as a report that the two arms above it 
 broken. **Do not repair such an arm by transcribing ordinals from the C's declaration order**:
 here `DONE` is 11 and `DONEWITHSTRUCTURE` is 1. Take the names from the island.
 
+**A constant whose macro body is an EXPRESSION may not reach the island at all**, and this is
+the one `profile_derive` already warns about — so the failure is usually that somebody read the
+warning as a note. commctrl.h:137 is `#define NM_CUSTOMDRAW (NM_FIRST-12)`; bindgen emitted
+`NM_FIRST` and not `NM_CUSTOMDRAW`, so desk's `NM_CUSTOMDRAW =>` arm bound every notification
+and the seven arms below it were dead. The header WAS allowlisted — allowlisting is necessary
+and not sufficient, because the constant has to fold. `SWITCH_CONST_EXPRESSION: <name> is a
+macro EXPRESSION; bindgen may not fold it — verify it lands in the island` is a TODO with a
+verification step attached, not an INFO line: after generating the island, grep it for every
+flagged name. When one is missing, define it in the prelude **from the header's own macro**
+(`NM_FIRST.wrapping_sub(12)`, matching C's unsigned wrap) rather than pasting `0xFFFFFFF4` —
+a pasted number stops tracking the header the moment it moves.
+
 **The same shape reaches PARAMETER position, where it does not even look like a pattern.** A
 function parameter is a pattern too, so an identifier that resolves to a constant is a CONSTANT
 PATTERN there as well. syssetup's `SetupChangeLocaleEx(.., char Unknown, ..)` translated to
