@@ -134,8 +134,21 @@ list(APPEND SOURCE
     # shell32-rust/src/folders/CControlPanelFolder.rs and imported by the other two —
     # CControlPanelEnum.rs and CCPLItemMenu.rs — rather than re-declared, which would make one
     # layout into three distinct nominal types.
-    folders/CRecycleBin.cpp
+    # folders/CRecycleBin.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+    # CRecycleBin class was already shell32-rust/src/recycle_bin.rs, its free helpers (the trash
+    # engine glue, BBITEMDATA accessors, SHEmptyRecycleBin*) are
+    # shell32-rust/src/folders/CRecycleBin.rs, and BOTH file-local COM classes came across too —
+    # CRecycleBinEnum.rs and CRecycleBinItemContextMenu.rs, each an internal ShellObjectCreator
+    # object with no OBJECT_ENTRY, so both needed `--cpp-com --internal`.
+    # THREE of its five retained bridges could NOT come across, because their far side is still
+    # C++ (CRecyclerDropTarget and CRecycleBinFolderViewCB each own a separate .cpp, and the
+    # latter cannot be bought at all — its scaffold preflight refuses it twice). They are now
+    # rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
+    # move exposed in CRecycleBinFolderViewCB.
+    # SHQueryRecycleBin{A,W} are hand-written in the Rust slice: bindgen renders IRecycleBin,
+    # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
     folders/CRecycleBinFolderViewCB.cpp
+    rust_recyclebin_bridges_stub.cpp
     folders/CRegFolder.cpp
     # droptargets/CexeDropHandler.cpp — replaced by Rust
     # (shell32-rust/src/exe_drop_handler.rs).

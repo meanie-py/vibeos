@@ -22,7 +22,7 @@ CRecycleBinFolderViewCB::~CRecycleBinFolderViewCB()
         SHChangeNotifyDeregister(m_nChangeNotif);
 }
 
-void CRecycleBinFolderViewCB::Initialize(CRecycleBin *pRecycleBin, IShellView *psv, LPCITEMIDLIST pidlParent)
+void CRecycleBinFolderViewCB::Initialize(IShellFolder2 *pRecycleBin, IShellView *psv, LPCITEMIDLIST pidlParent)
 {
     m_pRecycleBin = pRecycleBin;
     m_pShellView = psv;
@@ -95,7 +95,7 @@ HRESULT CRecycleBinFolderViewCB::TranslatePidl(LPITEMIDLIST *ppidlNew, LPCITEMID
 
     CComHeapPtr<ITEMIDLIST> pidlChild;
     ATLASSERT(m_pRecycleBin);
-    m_pRecycleBin->ParseRecycleBinPath(szPath, NULL, &pidlChild, NULL);
+    CRecycleBin_ParseRecycleBinPath_RustBridge(m_pRecycleBin, szPath, NULL, &pidlChild, NULL);
     if (!pidlChild)
     {
         ERR("!pidlChild\n");
