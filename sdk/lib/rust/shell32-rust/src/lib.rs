@@ -179,6 +179,12 @@ pub mod dialogs_dialogs;
 #[path = "shell32/CDefViewDual.rs"]
 pub mod def_view_dual;
 
+// CDefViewBckgrndMenu — the folder-background context menu. Same wiring rationale as
+// CDefViewDual above: assembled under shell32/ to keep the re-run path stable, wired here
+// because it is a COM class and not one of that module's free-function TUs.
+#[path = "shell32/CDefViewBckgrndMenu.rs"]
+pub mod def_view_bckgrnd_menu;
+
 // The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
 // these two are the retained closure that kept the .cpp compiled — its free helpers and
 // `*_RustBridge` entry points, and the CNetFolderEnum enumerator. Two files because one TU

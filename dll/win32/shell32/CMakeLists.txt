@@ -182,7 +182,12 @@ list(APPEND SOURCE
     # was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes
     # that now. Its IDispatchImpl<> template arguments — plibid/piid/wMajor/wMinor — are baked
     # into the Rust translation, since a template reaches no TU and so has no body to translate.
-    CDefViewBckgrndMenu.cpp
+    # CDefViewBckgrndMenu.cpp — replaced by Rust
+    # (shell32-rust/src/shell32/CDefViewBckgrndMenu.rs); cohab via libshell32_rust.a. Whole-TU
+    # flip: an internal ShellObjectCreator class with no OBJECT_ENTRY, whose only outside entry
+    # point is CDefViewBckgrndMenu_CreateInstance. Its one caller is the still-C++
+    # CDefView.cpp:3578, so shfldr.h's forward declaration became EXTERN_C to name the
+    # unmangled cdecl symbol Rust publishes — same treatment CDefViewUtil's helpers got.
     # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a

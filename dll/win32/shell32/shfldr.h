@@ -152,7 +152,10 @@ EXTERN_C HRESULT SHELL32_BindToSF (LPCITEMIDLIST pidlRoot, PERSIST_FOLDER_TARGET
 extern "C"
 BOOL HCR_RegOpenClassIDKey(REFIID riid, HKEY *hkey);
 
-HRESULT CDefViewBckgrndMenu_CreateInstance(IShellFolder* psf, REFIID riid, void **ppv);
+/* EXTERN_C: the class is Rust-owned (shell32-rust/src/shell32/CDefViewBckgrndMenu.rs) and
+ * publishes this factory as an unmangled cdecl symbol, so the still-C++ CDefView.cpp needs the
+ * declaration to name it rather than a C++-mangled one. Arity and order match the C exactly. */
+EXTERN_C HRESULT CDefViewBckgrndMenu_CreateInstance(IShellFolder* psf, REFIID riid, void **ppv);
 
 EXTERN_C HRESULT SH_GetApidlFromDataObject(IDataObject *pDataObject, PIDLIST_ABSOLUTE* ppidlfolder, PUITEMID_CHILD **apidlItems, UINT *pcidl);
 
