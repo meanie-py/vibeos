@@ -193,3 +193,8 @@ pub use winlogon_sys::nt::{
     WLX_VERSION_1_4,
     WLX_WM_SAS,
 };
+
+// strsafe.h's VARIADIC printf entry points, declared at the crate root (see lib.rs for why they
+// stopped being macros and what that macro was doing wrong). Re-exported here so the per-file
+// `use crate::prelude::*` reaches them exactly as the macros' textual scope used to.
+pub use crate::{StringCbPrintfW, StringCchPrintfW};

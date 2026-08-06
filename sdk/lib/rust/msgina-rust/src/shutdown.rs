@@ -1088,11 +1088,14 @@ unsafe fn ShutdownOnInit(
             szBuffer.as_mut_ptr(),
             szBuffer.len() as i32,
         );
-        StringCchPrintfW!(
+        // `_countof(szBuffer2)` in the C. `.as_ptr()` on UserName is C's array-to-pointer decay,
+        // which Rust does not do for you — passing the `[WCHAR; 256]` by value put 512 bytes of
+        // name text in the varargs area and `%ws` read the first of them as an address.
+        StringCchPrintfW(
             szBuffer2.as_mut_ptr(),
-            szBuffer2.len() as u32,
+            szBuffer2.len(),
             szBuffer.as_ptr(),
-            (*pgContext).UserName,
+            (*pgContext).UserName.as_ptr(),
         );
         idx = SendMessageW(
             hwndList,
