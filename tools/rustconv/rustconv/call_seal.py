@@ -29,6 +29,10 @@ class SealedCall:
     # Upper bound when the callee has C++ DEFAULT ARGUMENTS: the C site may omit them, a
     # faithful Rust lowering cannot. None means "no defaults, exact match required".
     argc_max: int | None = None
+    # This callee is a C++ METHOD, so `argc` above already counts the leading `this` that
+    # the C site spells implicitly. Recorded because the Rust site can then be REPAIRED
+    # rather than rejected -- see `repair_dropped_receivers`.
+    receiver: bool = False
 
 
 @dataclass(frozen=True)
@@ -249,7 +253,8 @@ def seal_calls(
         # reason this matters -- ACCEPTS a body that dropped `this`: `CDrivesFolderEnum_dtor`
         # shipped `DeleteList_body()` against a fn whose first parameter is `this`, and the
         # envelope called it good because 0 matched the C site's 0.
-        if original in receiver_callees:
+        is_receiver = original in receiver_callees
+        if is_receiver:
             if argc is not None:
                 argc += 1
             if argc_max is not None:
@@ -261,6 +266,7 @@ def seal_calls(
                 in_dead_region(dead_spans, start, end),
                 argc,
                 argc_max,
+                is_receiver,
             )
         )
         result = result[:start] + placeholder + result[end:]
@@ -568,6 +574,48 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     return findings
 
 
+def repair_dropped_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[str]]:
+    """Insert the explicit `this` a sibling METHOD call site is missing.
+
+    The C++ receiver is implicit, so the prepared C reads `_DoCallback_body(a, b, c)`
+    while the Rust worker's first parameter is `this`. Making that explicit is a
+    mechanical lowering the tool owns -- `normalize_worker_semantics` has always done it
+    on the unsealed path -- but it is keyed to the callee NAME, and under `--seal-calls`
+    the name is an opaque token, so it could never fire. The envelope's arity check then
+    rejected a body whose ONLY defect was the receiver the tool was supposed to add: five
+    of seven rejects on CDefaultContextMenu, each re-billed on retry, for a repair that
+    costs nothing.
+
+    Deliberately narrow. A site is repaired only when it is short by EXACTLY the receiver
+    and does not already lead with `this`; anything else is a real disagreement and stays
+    a hard failure. The receiver can only ever be `this` here, because the helper binder
+    refused any sibling call with a different receiver long before this point.
+    """
+    if not any(call.receiver for call in sealed.calls):
+        return rust, []
+    insertions: list[tuple[int, str, str]] = []
+    masked = _code_mask(rust)
+    for call in sealed.calls:
+        if not call.receiver or call.argc is None:
+            continue
+        for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", masked):
+            counted = _argument_count(masked, match.end())
+            if counted is None or "::<" in counted[1]:
+                continue
+            count, text = counted
+            if count != call.argc - 1:
+                continue
+            if re.match(r"\s*this\b", text):
+                continue
+            opening = masked.find("(", match.end())
+            insertions.append(
+                (opening + 1, "this" + (", " if count else ""), f"{call.placeholder}={call.original}")
+            )
+    for position, insertion, _ in sorted(insertions, reverse=True):
+        rust = rust[:position] + insertion + rust[position:]
+    return rust, sorted({repaired for _, _, repaired in insertions})
+
+
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
     """Verify the closed call set and restore the callee names.
 
@@ -575,6 +623,7 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
     omitted that lives only in non-executed code -- accepted, but reported.
     """
     rust = scrub_comment_token_echoes(rust)
+    rust, _repaired = repair_dropped_receivers(rust, sealed)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
     executable = _PLACEHOLDER_RE.findall(masked)

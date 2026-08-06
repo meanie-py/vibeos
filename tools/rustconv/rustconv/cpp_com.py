@@ -25,6 +25,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .fact_seal import _named_cast_spans
 from .lex_mask import mask_code
 
 if TYPE_CHECKING:
@@ -5438,8 +5439,16 @@ def audit_worker_body(
     source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source_body, flags=re.S)
     symbolic = set()
     ignored_words = _CPP_COM_DEBUG_MACROS | _CPP_COM_LITERAL_WORDS | _CPP_COM_TYPE_WORDS
+    # A C++ named cast's `<...>` is a TYPE, and Rust either spells it differently or drops
+    # it entirely — `const_cast` becomes nothing at all. fact_seal already refuses to seal
+    # these for exactly that reason; this audit demanding the same token back is the two
+    # mechanisms disagreeing, and the audit loses. CDefaultContextMenu::Initialize was
+    # rejected over `const_cast<PCUITEMID_CHILD_ARRAY>(...)` in a body that was correct.
+    cast_type_spans = _named_cast_spans(source)
     for match in re.finditer(r"\b[A-Z][A-Z0-9_]+\b", source):
         word = match.group(0)
+        if any(a <= match.start() < b for a, b in cast_type_spans):
+            continue
         # Callable macro/function names (FAILED(...), SUCCEEDED(...),
         # HRESULT_FROM_WIN32(...)) are behavior, not constants. The body audit
         # separately preserves their arguments, branches, and numeric literals.
