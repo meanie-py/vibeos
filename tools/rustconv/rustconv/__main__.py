@@ -112,13 +112,13 @@ from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .postprocess import postprocess
 from .preamble_audit import audit_preamble
-from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
 from .probe_migrate import (
     build_probe_file_prompt,
     load_probe_system_prompt,
     run_probe_migration,
     scan_rust_file,
 )
+from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
 from .prompt_builder import (
     build_file_prompt,
     build_full_prompt,
