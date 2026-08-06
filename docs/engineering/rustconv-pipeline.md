@@ -129,9 +129,10 @@ becomes a deliberate decision, not a silent behaviour change.
 
 **Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
 repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
-fix compile errors. Four rules, each with a closed authority (`truncating_numeric_cast`,
-`flex_array_index`, `no_std_path`, `raw_pointer_cast`); everything else stays RED and bucketed
-by shape for triage. Three properties worth knowing:
+fix compile errors. Eight rules, each with a closed authority — diagnostic-driven
+(`width_alias_cast`, `truncating_numeric_cast`, `match_scrutinee_cast`, `anon_union_field`,
+`no_std_path`, `raw_pointer_cast`) and source-driven (`flex_array_index`, `panicking_cast`);
+everything else stays RED and bucketed by shape for triage. Three properties worth knowing:
 - It **refuses rustc's own `.try_into().unwrap()` suggestion** — that converts C's silent
   truncation into a panic in a live service and trips `tools/scan_silent_failures.py`.
 - Span repairs are driven off the `expected X, found Y` **labels**, not the primary span: in
@@ -154,6 +155,18 @@ by shape for triage. Three properties worth knowing:
   names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a
   wrapped or-pattern puts the `=>` on a later line, and `foo(A, b)` vs `(A, 0) => v` are
   indistinguishable at the comma until you step out of the enclosing bracket group.
+  **`match_scrutinee_cast` now performs that widening** rather than leaving it as the largest
+  decline bucket (293 sites on desk.cpl alone). It walks out to the enclosing `match` and casts
+  the SCRUTINEE, cross-target-agreed like any width bake, and drops the whole match when the
+  arms want different types — two expectations mean the arms are not one constant family.
+- **`anon_union_field` routes a flattened anonymous-union field** through bindgen's
+  `__bindgen_anon_N`. C injects an anonymous union's members into the enclosing struct's scope
+  (`psh.nStartPage`), Rust has no anonymous members, and every property-sheet module hits it.
+  The map is derived from the crate's own islands, never guessed: a field an outer struct
+  declares itself is left alone (C shadows the same way), and a field the three arches route
+  differently — or that one arch declares directly — is dropped rather than guessed. It
+  deliberately declines the E0560 struct-LITERAL spelling: `S { a.b: v }` is not legal Rust, so
+  the repair there is a zeroed value plus field stores, which is a rewrite and not a splice.
 - **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
   `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
   `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn
