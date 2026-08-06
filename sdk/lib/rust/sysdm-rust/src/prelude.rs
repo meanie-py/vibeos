@@ -426,10 +426,130 @@ pub const LOCALE_USER_DEFAULT: LCID = LANG_USER_DEFAULT as LCID; // MAKELCID(..,
 
 // A/W struct aliases the module spells without the suffix, resolved by its -DUNICODE.
 pub use crate::types::{
-    tagBROWSEINFOW as BROWSEINFO, tagLVITEMW as _LVITEMW, tagLVITEMW as LVITEM,
+    tagBROWSEINFOW as BROWSEINFO, tagLVITEMW as _LVITEMW,
     tagTVHITTESTINFO as TV_HITTESTINFO, tagTVKEYDOWN as TV_KEYDOWN,
     NMLVDISPINFOW as NMLVDISPINFO,
 };
+
+
+// shlobj_undoc.h's `tagWALK_TREE_CMD` enum, which performance.c passes to
+// IRegTreeOptions_WalkTree by bare member name. Same bindgen enum-tag prefix as dmilib's.
+pub use crate::types::{
+    tagWALK_TREE_CMD_WALK_TREE_DEFAULT as WALK_TREE_DEFAULT,
+    tagWALK_TREE_CMD_WALK_TREE_DESTROY as WALK_TREE_DESTROY,
+    tagWALK_TREE_CMD_WALK_TREE_REFRESH as WALK_TREE_REFRESH,
+    tagWALK_TREE_CMD_WALK_TREE_SAVE as WALK_TREE_SAVE,
+};
+
+// ndk/ketypes.h:189 `#define SharedUserData ((KUSER_SHARED_DATA *)USER_SHARED_DATA)` — a MACRO
+// casting a fixed VA, so no island carries it. Same spelling kernel32-rust uses.
+pub const SharedUserData: *mut KUSER_SHARED_DATA = 0x7FFE_0000 as *mut KUSER_SHARED_DATA;
+
+// ================= sibling-module functions ===================================================
+// precomp.h declares these; each is DEFINED in another of the 12 translated modules, and the C
+// reaches them by plain name because a TU-crossing call needs no more than the prototype. In
+// Rust the modules are siblings, so the prelude is where the name is made to resolve — exactly
+// as desk-rust does it.
+pub use crate::sysdm::advanced::AdvancedPageProc;
+pub use crate::sysdm::environment::EnvironmentDlgProc;
+pub use crate::sysdm::general::GeneralPageProc;
+pub use crate::sysdm::hardprof::HardProfDlgProc;
+pub use crate::sysdm::hardware::HardwarePageProc;
+pub use crate::sysdm::licence::LicenceDlgProc;
+pub use crate::sysdm::performance::ShowPerformanceOptions;
+pub use crate::sysdm::smbios::GetSystemName;
+pub use crate::sysdm::startrec::StartRecDlgProc;
+pub use crate::sysdm::userprofile::UserProfileDlgProc;
+pub use crate::sysdm::virtmem::VirtMemDlgProc;
+
+
+// ================= strsafe.h ==================================================================
+// The shared crate (sdk/lib/rust/strsafe-rust). `STRSAFEAPI` is `static __inline`, so no object
+// file in the tree defines these — see that crate for why they are ported once rather than per
+// module. The variadic entry points are trampolines in dll/cpl/sysdm/rust_varargs_shim.c.
+pub use strsafe_rust::{
+    StringCbCatW, StringCbCopyW, StringCchCatW, StringCchCopyW, StringCchLengthW,
+    StringCchVPrintfW, STRSAFE_E_INSUFFICIENT_BUFFER, STRSAFE_E_INVALID_PARAMETER,
+};
+
+// ================= commctrl.h / windowsx.h control wrappers ===================================
+// Every one is a MACRO around SendMessage, so no island carries them, and each is transcribed
+// with the header line. The `LV_ITEM _ms_lvi;` family really does declare a local in the C —
+// the block form below is that, not an approximation.
+#[macro_export]
+macro_rules! ListView_GetItemCount { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETITEMCOUNT, 0, 0) as c_int }; }
+#[macro_export]
+macro_rules! ListView_GetItem { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETITEM, 0, $p as LPARAM) as BOOL }; }
+#[macro_export]
+macro_rules! ListView_DeleteItem { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_DELETEITEM, $i as WPARAM, 0) as BOOL }; }
+#[macro_export]
+macro_rules! ListView_DeleteAllItems { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_DELETEALLITEMS, 0, 0) as BOOL }; }
+#[macro_export]
+macro_rules! ListView_SetColumnWidth { ($h:expr, $c:expr, $cx:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_SETCOLUMNWIDTH, $c as WPARAM, $crate::MAKELPARAM!($cx, 0)) as BOOL }; }
+#[macro_export]
+macro_rules! ListView_GetColumnWidth { ($h:expr, $c:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETCOLUMNWIDTH, $c as WPARAM, 0) as c_int }; }
+#[macro_export]
+macro_rules! ListView_GetNextItem { ($h:expr, $i:expr, $f:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETNEXTITEM, $i as WPARAM, $crate::MAKELPARAM!($f, 0)) as c_int }; }
+#[macro_export]
+macro_rules! ListView_GetSelectedCount { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETSELECTEDCOUNT, 0, 0) as UINT }; }
+#[macro_export]
+macro_rules! ListView_EditLabel { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_EDITLABEL, $i as WPARAM, 0) as HWND }; }
+#[macro_export]
+macro_rules! ListView_GetEditControl { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETEDITCONTROL, 0, 0) as HWND }; }
+#[macro_export]
+macro_rules! ListView_Update { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_UPDATE, $i as WPARAM, 0) as BOOL }; }
+#[macro_export]
+macro_rules! ListView_SetExtendedListViewStyle { ($h:expr, $dw:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, $dw as LPARAM) as DWORD }; }
+// commctrl.h:2689/2696 — these two declare a local LV_ITEM in the macro body.
+#[macro_export]
+macro_rules! ListView_GetItemText {
+    ($h:expr, $i:expr, $sub:expr, $psz:expr, $cch:expr $(,)?) => {{
+        let mut _ms_lvi: LV_ITEM = core::mem::zeroed();
+        _ms_lvi.iSubItem = $sub as c_int;
+        _ms_lvi.cchTextMax = $cch as c_int;
+        _ms_lvi.pszText = $psz;
+        $crate::prelude::SendMessageW($h, LVM_GETITEMTEXTW, $i as WPARAM, core::ptr::addr_of_mut!(_ms_lvi) as LPARAM)
+    }};
+}
+#[macro_export]
+macro_rules! ListView_SetItemText {
+    ($h:expr, $i:expr, $sub:expr, $psz:expr $(,)?) => {{
+        let mut _ms_lvi: LV_ITEM = core::mem::zeroed();
+        _ms_lvi.iSubItem = $sub as c_int;
+        _ms_lvi.pszText = $psz;
+        $crate::prelude::SendMessageW($h, LVM_SETITEMTEXTW, $i as WPARAM, core::ptr::addr_of_mut!(_ms_lvi) as LPARAM)
+    }};
+}
+#[macro_export]
+macro_rules! TreeView_GetNextItem { ($h:expr, $i:expr, $c:expr $(,)?) => { $crate::prelude::SendMessageW($h, TVM_GETNEXTITEM, $c as WPARAM, $i as LPARAM) as HTREEITEM }; }
+#[macro_export]
+macro_rules! TreeView_GetSelection { ($h:expr $(,)?) => { $crate::TreeView_GetNextItem!($h, core::ptr::null_mut::<core::ffi::c_void>(), TVGN_CARET) }; }
+#[macro_export]
+macro_rules! TreeView_HitTest { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, TVM_HITTEST, 0, $p as LPARAM) as HTREEITEM }; }
+#[macro_export]
+macro_rules! Button_SetCheck { ($h:expr, $c:expr $(,)?) => { { $crate::prelude::SendMessageW($h, BM_SETCHECK, $c as WPARAM, 0); } }; }
+pub use crate::{
+    Button_SetCheck, ListView_DeleteAllItems, ListView_DeleteItem, ListView_EditLabel,
+    ListView_GetColumnWidth, ListView_GetEditControl, ListView_GetItem, ListView_GetItemCount,
+    ListView_GetItemText, ListView_GetNextItem, ListView_GetSelectedCount, ListView_SetColumnWidth, ListView_SetExtendedListViewStyle,
+    ListView_SetItemText, ListView_Update, TreeView_GetNextItem,
+    TreeView_GetSelection, TreeView_HitTest,
+};
+
+// sysdm.c's own variadic. Stable Rust cannot DEFINE one, so the entry point is a trampoline in
+// dll/cpl/sysdm/rust_varargs_shim.c and the real body is `ResourceMessageBox_v` next to it.
+// `extern "C"`, not "system", even though the C says `__cdecl` explicitly: no ABI on any of our
+// targets has a variadic stdcall, so the two agree.
+extern "C" {
+    pub fn ResourceMessageBox(
+        hInstance: HINSTANCE,
+        hwnd: HWND,
+        uType: UINT,
+        uCaption: UINT,
+        uText: UINT,
+        ...
+    ) -> INT;
+}
 
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an

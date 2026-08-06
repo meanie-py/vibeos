@@ -31,7 +31,7 @@ unsafe extern "C" fn OnOK(hwndDlg: HWND) {
     let mut ReportAsWorkstation: u32;
 
     ReportAsWorkstation = if SendDlgItemMessageW(hwndDlg,
-                                               IDC_REPORTASWORKSTATION,
+                                               (IDC_REPORTASWORKSTATION) as i32,
                                                BM_GETCHECK,
                                                0,
                                                0) == BST_CHECKED { 1 } else { 0 };
@@ -44,7 +44,7 @@ unsafe extern "C" fn OnOK(hwndDlg: HWND) {
                        KEY_WRITE,
                        core::ptr::null_mut(),
                        &mut hKey,
-                       core::ptr::null_mut()) == ERROR_SUCCESS
+                       core::ptr::null_mut()) == (ERROR_SUCCESS) as i32
     {
         RegSetValueEx(hKey,
                       _T("ReportAsWorkstation"),
@@ -67,24 +67,24 @@ unsafe extern "C" fn OnInitSysSettingsDialog(hwndDlg: HWND) {
                      ReportAsWorkstationKey.as_ptr(),
                      0,
                      KEY_READ,
-                     &mut hKey) == ERROR_SUCCESS
+                     &mut hKey) == (ERROR_SUCCESS) as i32
     {
         let mut cbData_local = cbData;
         if RegQueryValueEx(hKey,
-                            _T(b"ReportAsWorkstation\0".as_ptr() as *const i8),
+                            _T((b"ReportAsWorkstation\0".as_ptr() as *const i8).cast()),
                             0,
                             &mut dwType,
                             &mut dwVal as *mut u32 as LPBYTE,
-                            &mut cbData_local) == ERROR_SUCCESS
+                            &mut cbData_local) == (ERROR_SUCCESS) as i32
         {
             if dwType == REG_DWORD && cbData_local == core::mem::size_of::<u32>() as u32 {
-                ReportAsWorkstation = if dwVal != FALSE { 1 } else { 0 };
+                ReportAsWorkstation = if dwVal != (FALSE) as u32 { 1 } else { 0 };
             }
         }
 
         RegCloseKey(hKey);
     }
-    SendDlgItemMessageW(hwndDlg, IDC_REPORTASWORKSTATION, BM_SETCHECK,
+    SendDlgItemMessageW(hwndDlg, (IDC_REPORTASWORKSTATION) as i32, BM_SETCHECK,
                         if ReportAsWorkstation != 0 { BST_CHECKED } else { BST_UNCHECKED }, 0);
 }
 

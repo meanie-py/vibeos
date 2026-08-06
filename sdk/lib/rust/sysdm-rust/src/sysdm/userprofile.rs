@@ -28,14 +28,14 @@ unsafe extern "C" fn OnProfileTypeInit(
         return FALSE;
     }
 
-    pszRawBuffer = HeapAlloc(GetProcessHeap(), 0, ((nLength + 1) * core::mem::size_of::<u16>() as i32) as usize);
+    pszRawBuffer = (HeapAlloc(GetProcessHeap(), 0, ((nLength + 1) * core::mem::size_of::<u16>() as i32) as SIZE_T)).cast();
     if pszRawBuffer.is_null() {
         return FALSE;
     }
 
     LoadStringW(hApplet, IDS_USERPROFILE_TYPE_TEXT, pszRawBuffer, nLength + 1);
 
-    pszCookedBuffer = HeapAlloc(GetProcessHeap(), 0, ((nLength + wcslen((*pProfileData).pszFullName) + 1) * core::mem::size_of::<u16>() as i32) as usize);
+    pszCookedBuffer = (HeapAlloc(GetProcessHeap(), 0, ((nLength + (wcslen((*pProfileData).pszFullName)) as i32 + 1) * core::mem::size_of::<u16>() as i32) as SIZE_T)).cast();
     if pszCookedBuffer.is_null() {
         'done: loop {
             if !pszCookedBuffer.is_null() {
@@ -52,11 +52,11 @@ unsafe extern "C" fn OnProfileTypeInit(
 
     swprintf(pszCookedBuffer, pszRawBuffer, (*pProfileData).pszFullName);
 
-    SetDlgItemText(hwndDlg, IDC_USERPROFILE_TYPE_TEXT, pszCookedBuffer);
+    SetDlgItemText(hwndDlg, (IDC_USERPROFILE_TYPE_TEXT) as i32, pszCookedBuffer);
 
-    EnableWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_TYPE_ROAMING), FALSE);
-    Button_SetCheck(GetDlgItem(hwndDlg, IDC_USERPROFILE_TYPE_LOCAL), BST_CHECKED);
-    EnableWindow(GetDlgItem(hwndDlg, IDOK), FALSE);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_TYPE_ROAMING) as i32), FALSE);
+    Button_SetCheck(GetDlgItem(hwndDlg, (IDC_USERPROFILE_TYPE_LOCAL) as i32), BST_CHECKED);
+    EnableWindow(GetDlgItem(hwndDlg, (IDOK) as i32), FALSE);
 
     if !pszCookedBuffer.is_null() {
         HeapFree(GetProcessHeap(), 0, pszCookedBuffer as LPVOID);
@@ -137,7 +137,7 @@ unsafe extern "C" fn ChangeUserProfileType(
 
     // DPRINT removed
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_USERPROFILE_LIST);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_USERPROFILE_LIST) as i32);
     if hwndListView == core::ptr::null_mut() {
         return FALSE;
     }
@@ -147,7 +147,7 @@ unsafe extern "C" fn ChangeUserProfileType(
         return FALSE;
     }
 
-    ZeroMemory(core::ptr::addr_of_mut!(Item) as LPVOID, core::mem::size_of_val(&LVITEM));
+    ZeroMemory(core::ptr::addr_of_mut!(Item) as LPVOID, core::mem::size_of::<LVITEM>());
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
     if ListView_GetItem(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
@@ -175,7 +175,7 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
     let iSelected: i32;
     let pProfileData: *mut PROFILEDATA;
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_USERPROFILE_LIST);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_USERPROFILE_LIST) as i32);
     if hwndListView.is_null() {
         return FALSE;
     }
@@ -187,7 +187,7 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
 
     ZeroMemory(
         core::ptr::addr_of_mut!(Item) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&LVITEM),
+        core::mem::size_of::<LVITEM>(),
     );
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
@@ -211,7 +211,7 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
         IDS_USERPROFILE_CONFIRM_DELETE_TITLE,
         IDS_USERPROFILE_CONFIRM_DELETE,
         (*pProfileData).pszFullName,
-    ) == IDYES
+    ) == (IDYES) as i32
     {
         return TRUE;
     }
@@ -286,7 +286,7 @@ unsafe extern "C" fn CopyUserProfile(
 
     // DPRINT removed
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_USERPROFILE_LIST);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_USERPROFILE_LIST) as i32);
     if hwndListView.is_null() {
         return FALSE;
     }
@@ -298,7 +298,7 @@ unsafe extern "C" fn CopyUserProfile(
 
     ZeroMemory(
         core::ptr::addr_of_mut!(Item) as *mut core::ffi::c_void,
-        core::mem::size_of_val(&LVITEM)
+        core::mem::size_of::<LVITEM>()
     );
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
@@ -333,36 +333,36 @@ unsafe extern "C" fn SetListViewColumns(hwndListView: HWND) {
 
     memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, core::mem::size_of::<LV_COLUMN>());
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
-    column.fmt = LVCFMT_LEFT;
+    column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.40) as INT;
     column.iSubItem = 0;
     LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn(hwndListView, 0, &mut column);
 
-    column.fmt = LVCFMT_RIGHT;
+    column.fmt = (LVCFMT_RIGHT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 1;
     LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn(hwndListView, 1, &mut column);
 
-    column.fmt = LVCFMT_LEFT;
+    column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 2;
     LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn(hwndListView, 2, &mut column);
 
-    column.fmt = LVCFMT_LEFT;
+    column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 3;
     LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn(hwndListView, 3, &mut column);
 
-    column.fmt = LVCFMT_LEFT;
-    column.cx = ((rect.right - rect.left) * 0.15) as INT - GetSystemMetrics(SM_CYHSCROLL);
+    column.fmt = (LVCFMT_LEFT) as i32;
+    column.cx = ((rect.right - rect.left) * 0.15) as INT - GetSystemMetrics((SM_CYHSCROLL) as i32);
     column.iSubItem = 4;
     LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
@@ -378,7 +378,7 @@ unsafe extern "C" fn GetProfileSize(
     let mut Size: ULARGE_INTEGER = core::mem::zeroed();
     let mut bResult = TRUE;
 
-    dwProfilePathLength = wcslen(pszProfilePath);
+    dwProfilePathLength = (wcslen(pszProfilePath)) as u32;
 
     wcscat(pszProfilePath, b"\\*.*\0".as_ptr() as *const u16);
 
@@ -465,7 +465,7 @@ unsafe extern "C" fn GetProfileName(
         &mut Use,
     ) == 0
     {
-        LoadStringW(hApplet, IDS_USERPROFILE_ACCOUNT_UNKNOWN, pszNameBuffer, dwNameBufferSize);
+        LoadStringW(hApplet, IDS_USERPROFILE_ACCOUNT_UNKNOWN, pszNameBuffer, (dwNameBufferSize) as i32);
         *pbUnknownProfile = TRUE;
     } else {
         if Use != SidTypeUser {
@@ -473,9 +473,9 @@ unsafe extern "C" fn GetProfileName(
         }
 
         if szAccountName[0] == UNICODE_NULL {
-            LoadStringW(hApplet, IDS_USERPROFILE_ACCOUNT_DELETED, pszNameBuffer, dwNameBufferSize);
+            LoadStringW(hApplet, IDS_USERPROFILE_ACCOUNT_DELETED, pszNameBuffer, (dwNameBufferSize) as i32);
         } else {
-            wsprintf(pszNameBuffer, b"L\"%s\\%s\"\0".as_ptr(), szDomainName.as_ptr(), szAccountName.as_ptr());
+            wsprintf(pszNameBuffer, (b"L\"%s\\%s\"\0".as_ptr()).cast(), szDomainName.as_ptr(), szAccountName.as_ptr());
         }
         *pbUnknownProfile = FALSE;
     }
@@ -487,8 +487,8 @@ unsafe extern "C" fn AddUserProfile(
     pProfileSid: PSID,
     hProfileKey: HKEY,
 ) {
-    let mut szTempProfilePath: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szProfilePath: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szTempProfilePath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szProfilePath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut szNameBuffer: [u16; 256] = [0; 256];
     let mut pProfileData: *mut PROFILEDATA = core::ptr::null_mut();
     let mut dwProfileData: u32;
@@ -509,14 +509,14 @@ unsafe extern "C" fn AddUserProfile(
     let mut dwError: u32;
 
     dwSize = MAX_PATH * core::mem::size_of::<u16>() as u32;
-    dwError = RegQueryValueExW(
+    dwError = (RegQueryValueExW(
         hProfileKey,
         ['P' as u16, 'r' as u16, 'o' as u16, 'f' as u16, 'i' as u16, 'l' as u16, 'e' as u16, 'I' as u16, 'm' as u16, 'a' as u16, 'g' as u16, 'e' as u16, 'P' as u16, 'a' as u16, 't' as u16, 'h' as u16, 0].as_ptr(),
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         szTempProfilePath.as_mut_ptr() as LPBYTE,
         core::ptr::addr_of_mut!(dwSize),
-    );
+    )) as u32;
     if dwError != ERROR_SUCCESS {
         return;
     }
@@ -555,7 +555,7 @@ unsafe extern "C" fn AddUserProfile(
         pProfileSid,
         ARRAYSIZE(szNameBuffer.as_ptr()),
         szNameBuffer.as_mut_ptr(),
-        core::ptr::addr_of_mut!(bUnknownProfile),
+        (core::ptr::addr_of_mut!(bUnknownProfile)).cast(),
     ) == 0
     {
         return;
@@ -569,7 +569,7 @@ unsafe extern "C" fn AddUserProfile(
         core::ptr::addr_of_mut!(dwType),
         core::ptr::addr_of_mut!(dwState) as LPBYTE,
         core::ptr::addr_of_mut!(dwSize),
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS) as i32
     {
         dwState = 0;
     }
@@ -582,7 +582,7 @@ unsafe extern "C" fn AddUserProfile(
         core::ptr::addr_of_mut!(dwType),
         core::ptr::addr_of_mut!(dwRefCount) as LPBYTE,
         core::ptr::addr_of_mut!(dwSize),
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS) as i32
     {
         dwRefCount = 0;
     }
@@ -593,7 +593,7 @@ unsafe extern "C" fn AddUserProfile(
     pProfileData = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        dwProfileData as usize,
+        (dwProfileData) as SIZE_T,
     ) as *mut PROFILEDATA;
     if pProfileData.is_null() {
         return;
@@ -601,14 +601,14 @@ unsafe extern "C" fn AddUserProfile(
 
     (*pProfileData).dwRefCount = dwRefCount;
     (*pProfileData).dwState = dwState;
-    (*pProfileData).bUnknownProfile = bUnknownProfile;
+    (*pProfileData).bUnknownProfile = (bUnknownProfile) as i32;
 
     ptr = ((pProfileData as usize) + core::mem::size_of::<PROFILEDATA>()) as PWSTR;
     (*pProfileData).pszFullName = ptr;
 
     wcscpy((*pProfileData).pszFullName, szNameBuffer.as_ptr());
 
-    ptr = ((ptr as usize) + ((wcslen((*pProfileData).pszFullName) as u32 + 1) * core::mem::size_of::<u16>()) as usize) as PWSTR;
+    ptr = ((ptr as usize) + ((wcslen((*pProfileData).pszFullName) as u32 + 1) * (core::mem::size_of::<u16>()) as u32) as usize) as PWSTR;
     (*pProfileData).pszProfilePath = ptr;
     wcscpy((*pProfileData).pszProfilePath, szProfilePath.as_ptr());
 
@@ -619,13 +619,13 @@ unsafe extern "C" fn AddUserProfile(
     lvi.lParam = pProfileData as LPARAM;
     iItem = ListView_InsertItem(hwndListView, core::ptr::addr_of_mut!(lvi));
 
-    StrFormatByteSizeW(ullProfileSize, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()) - 1);
+    StrFormatByteSizeW((ullProfileSize) as LONGLONG, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()) - 1);
     ListView_SetItemText(hwndListView, iItem, 1, szNameBuffer.as_mut_ptr());
 
     if dwState & 0x0010 != 0 {
-        nId = IDS_USERPROFILE_ROAMING;
+        nId = (IDS_USERPROFILE_ROAMING) as i32;
     } else {
-        nId = IDS_USERPROFILE_LOCAL;
+        nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
     LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()));
@@ -633,11 +633,11 @@ unsafe extern "C" fn AddUserProfile(
     ListView_SetItemText(hwndListView, iItem, 2, szNameBuffer.as_mut_ptr());
 
     if dwState & 0x0001 != 0 {
-        nId = IDS_USERPROFILE_MANDATORY;
+        nId = (IDS_USERPROFILE_MANDATORY) as i32;
     } else if dwState & 0x0010 != 0 {
-        nId = IDS_USERPROFILE_ROAMING;
+        nId = (IDS_USERPROFILE_ROAMING) as i32;
     } else {
-        nId = IDS_USERPROFILE_LOCAL;
+        nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
     LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()));
@@ -675,7 +675,7 @@ unsafe extern "C" fn UpdateButtonState(
         iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
         if iSelected != -1
         {
-            ZeroMemory(&mut Item as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LVITEM));
+            ZeroMemory(&mut Item as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEM>());
             Item.mask = LVIF_PARAM;
             Item.iItem = iSelected;
             if ListView_GetItem(hwndListView, &mut Item) != 0
@@ -701,16 +701,16 @@ unsafe extern "C" fn UpdateButtonState(
         }
     }
 
-    EnableWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_CHANGE), bChange);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_DELETE), bDelete);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_COPY), bCopy);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_CHANGE) as i32), bChange);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_DELETE) as i32), bDelete);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_COPY) as i32), bCopy);
 }
 unsafe extern "C" fn AddUserProfiles(
     hwndDlg: HWND,
     hwndListView: HWND,
     bAdmin: BOOL,
 ) {
-    let mut hKeyUserProfiles: HKEY = INVALID_HANDLE_VALUE;
+    let mut hKeyUserProfiles: HKEY = (INVALID_HANDLE_VALUE).cast();
     let mut hProfileKey: HKEY = core::ptr::null_mut();
     let mut dwIndex: u32;
     let mut szProfileSid: [u16; 64] = [0; 64];
@@ -733,7 +733,7 @@ unsafe extern "C" fn AddUserProfiles(
             break 'done;
         }
 
-        pTokenUser = HeapAlloc(GetProcessHeap(), 0, dwSize) as PTOKEN_USER;
+        pTokenUser = HeapAlloc(GetProcessHeap(), 0, (dwSize) as SIZE_T) as PTOKEN_USER;
         if pTokenUser.is_null() {
             break 'done;
         }
@@ -777,7 +777,7 @@ unsafe extern "C" fn AddUserProfiles(
                     0,
                     KEY_READ,
                     &mut hProfileKey,
-                ) == ERROR_SUCCESS
+                ) == (ERROR_SUCCESS) as i32
                 {
                     if ConvertStringSidToSid(szProfileSid.as_ptr(), &mut pProfileSid) != 0 {
                         AddUserProfile(hwndListView, pProfileSid, hProfileKey);
@@ -797,13 +797,13 @@ unsafe extern "C" fn AddUserProfiles(
                     0,
                     KEY_READ,
                     &mut hProfileKey,
-                ) == ERROR_SUCCESS
+                ) == (ERROR_SUCCESS) as i32
                 {
                     AddUserProfile(hwndListView, (*pTokenUser).User.Sid, hProfileKey);
                     RegCloseKey(hProfileKey);
                 }
 
-                LocalFree(pszProfileSid);
+                LocalFree((pszProfileSid).cast());
             }
         }
 
@@ -819,7 +819,7 @@ unsafe extern "C" fn AddUserProfiles(
         UpdateButtonState(hwndDlg, hwndListView);
     }
 
-    if hKeyUserProfiles != INVALID_HANDLE_VALUE {
+    if hKeyUserProfiles != (INVALID_HANDLE_VALUE).cast() {
         RegCloseKey(hKeyUserProfiles);
     }
 
@@ -836,12 +836,12 @@ unsafe extern "C" fn OnInitUserProfileDialog(hwndDlg: HWND) {
 
     bAdmin = IsUserAdmin();
 
-    SetListViewColumns(GetDlgItem(hwndDlg, IDC_USERPROFILE_LIST));
+    SetListViewColumns(GetDlgItem(hwndDlg, (IDC_USERPROFILE_LIST) as i32));
 
-    ShowWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_DELETE), if bAdmin != 0 { SW_SHOW } else { SW_HIDE });
-    ShowWindow(GetDlgItem(hwndDlg, IDC_USERPROFILE_COPY), if bAdmin != 0 { SW_SHOW } else { SW_HIDE });
+    ShowWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_DELETE) as i32), if bAdmin != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
+    ShowWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_COPY) as i32), if bAdmin != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
 
-    AddUserProfiles(hwndDlg, GetDlgItem(hwndDlg, IDC_USERPROFILE_LIST), bAdmin);
+    AddUserProfiles(hwndDlg, GetDlgItem(hwndDlg, (IDC_USERPROFILE_LIST) as i32), bAdmin);
 }
 unsafe extern "C" fn OnNotify(
     hwndDlg: HWND,
@@ -851,7 +851,7 @@ unsafe extern "C" fn OnNotify(
     if (*nmhdr).idFrom == IDC_USERACCOUNT_LINK && (*nmhdr).code == NM_CLICK {
         ShellExecuteW(hwndDlg, core::ptr::null_mut(), b"usrmgr.cpl\0".as_ptr() as PWSTR, core::ptr::null_mut(), core::ptr::null_mut(), 0);
     } else if (*nmhdr).idFrom == IDC_USERPROFILE_LIST {
-        match (*nmhdr).code {
+        match ((*nmhdr).code) as i32 {
             LVN_ITEMCHANGED => {
                 UpdateButtonState(hwndDlg, (*nmhdr).hwndFrom);
             }

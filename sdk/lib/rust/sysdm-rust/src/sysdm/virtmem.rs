@@ -59,10 +59,10 @@ unsafe extern "C" fn GetMaxPageFileSize(PageFile: *mut PAGEFILE) -> UINT {
         if (*core::ptr::addr_of!((*crate::mm::SharedUserData).ProcessorFeatures))[PF_PAE_ENABLED] != 0
             && (*PageFile).bIsNotFAT != 0
         {
-            return min((*PageFile).FreeSize, MAXIMUM_PAGEFILE_SIZE_PAE);
+            return min!((*PageFile).FreeSize, MAXIMUM_PAGEFILE_SIZE_PAE);
         }
     }
-    return min((*PageFile).FreeSize, MAXIMUM_PAGEFILE_SIZE);
+    return min!((*PageFile).FreeSize, MAXIMUM_PAGEFILE_SIZE);
 }
 unsafe extern "C" fn ReadPageFileSettings(pVirtMem: PVIRTMEM) -> i32 {
     let mut bRet: i32 = FALSE;
@@ -80,31 +80,31 @@ unsafe extern "C" fn ReadPageFileSettings(pVirtMem: PVIRTMEM) -> i32 {
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(hkey),
         core::ptr::null_mut(),
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS) as i32
     {
         if RegQueryValueEx(
             hkey,
-            _T(b"PagingFiles\0".as_ptr() as *const i8),
+            _T((b"PagingFiles\0".as_ptr() as *const i8).cast()),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(dwType),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(dwDataSize),
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             (*pVirtMem).szPagingFiles = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                dwDataSize,
+                (dwDataSize) as SIZE_T,
             ) as LPTSTR;
             if !(*pVirtMem).szPagingFiles.is_null() {
                 if RegQueryValueEx(
                     hkey,
-                    _T(b"PagingFiles\0".as_ptr() as *const i8),
+                    _T((b"PagingFiles\0".as_ptr() as *const i8).cast()),
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(dwType),
                     (*pVirtMem).szPagingFiles as PBYTE,
                     core::ptr::addr_of_mut!(dwDataSize),
-                ) == ERROR_SUCCESS
+                ) == (ERROR_SUCCESS) as i32
                 {
                     bRet = TRUE;
                 }
@@ -158,8 +158,8 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
     let mut szDrives: [TCHAR; 1024] = [0; 1024];
     let mut DrivePtr: LPTSTR;
     let mut szDrive: [TCHAR; 3] = [0; 3];
-    let mut szVolume: [TCHAR; MAX_PATH + 1] = [0; MAX_PATH + 1];
-    let mut szFSName: [TCHAR; MAX_PATH + 1] = [0; MAX_PATH + 1];
+    let mut szVolume: [TCHAR; (MAX_PATH + 1) as usize] = [0; (MAX_PATH + 1) as usize];
+    let mut szFSName: [TCHAR; (MAX_PATH + 1) as usize] = [0; (MAX_PATH + 1) as usize];
     let mut MinSize: INT;
     let mut MaxSize: INT;
     let mut DriveLen: INT;
@@ -167,7 +167,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
     let mut PgCnt: UINT = 0;
     let mut PageFile: PPAGEFILE;
 
-    DriveLen = GetLogicalDriveStrings(_countof(szDrives.len()) - 1, szDrives.as_mut_ptr());
+    DriveLen = GetLogicalDriveStrings(_countof!(szDrives.len()) - 1, szDrives.as_mut_ptr());
 
     DrivePtr = szDrives.as_mut_ptr();
 
@@ -177,7 +177,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
 
         DrivePtr = _tcsupr(DrivePtr);
 
-        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, _countof(szDrive.len()));
+        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, _countof!(szDrive.len()));
 
         if GetDriveType(DrivePtr) == DRIVE_FIXED {
             MinSize = -1;
@@ -196,8 +196,8 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
             (*PageFile).bUsed = TRUE;
             lstrcpy((*PageFile).szDrive.as_mut_ptr(), szDrive.as_mut_ptr());
 
-            if GetVolumeInformation(DrivePtr, szVolume.as_mut_ptr(), _countof(szVolume.len()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), szFSName.as_mut_ptr(), _countof(szFSName.len())) != 0 {
-                (*PageFile).pszVolume = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (_tcslen(szVolume.as_mut_ptr()) + 1) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+            if GetVolumeInformation(DrivePtr, szVolume.as_mut_ptr(), _countof!(szVolume.len()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), szFSName.as_mut_ptr(), _countof!(szFSName.len())) != 0 {
+                (*PageFile).pszVolume = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ((_tcslen(szVolume.as_mut_ptr()) + 1) * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
                 if (*PageFile).pszVolume != core::ptr::null_mut() {
                     _tcscpy((*PageFile).pszVolume, szVolume.as_mut_ptr());
                 }
@@ -257,7 +257,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(hk),
         core::ptr::null_mut()
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS) as i32
     {
         if RegSetValueEx(
             hk,
@@ -266,7 +266,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
             REG_MULTI_SZ,
             szPagingFiles.as_ptr() as LPBYTE,
             (nPos as u32) * core::mem::size_of::<TCHAR>() as u32
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             bErr = FALSE;
         }
@@ -276,7 +276,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
 
     if bErr == FALSE {
         i = 0;
-        while i < _countof((*pVirtMem).PageFile) {
+        while i < _countof!((*pVirtMem).PageFile) {
             if (*pVirtMem).PageFile[i as usize].OldMinSize != -1 &&
                 (*pVirtMem).PageFile[i as usize].NewMinSize == -1
             {
@@ -313,16 +313,16 @@ unsafe extern "C" fn SetListBoxColumns(hwndListBox: HWND) {
     );
 }
 unsafe extern "C" fn OnNoPagingFile(pVirtMem: PVIRTMEM) {
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_INITIALSIZE), FALSE);
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_MAXSIZE), FALSE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_INITIALSIZE) as i32), FALSE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_MAXSIZE) as i32), FALSE);
 }
 unsafe extern "C" fn OnSysManSize(pVirtMem: PVIRTMEM) {
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_INITIALSIZE), FALSE);
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_MAXSIZE), FALSE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_INITIALSIZE) as i32), FALSE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_MAXSIZE) as i32), FALSE);
 }
 unsafe extern "C" fn OnCustom(pVirtMem: PVIRTMEM) {
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_INITIALSIZE), TRUE);
-    EnableWindow(GetDlgItem((*pVirtMem).hSelf, IDC_MAXSIZE), TRUE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_INITIALSIZE) as i32), TRUE);
+    EnableWindow(GetDlgItem((*pVirtMem).hSelf, (IDC_MAXSIZE) as i32), TRUE);
 }
 unsafe extern "C" fn InitPagefileList(pVirtMem: PVIRTMEM) {
     let mut Index: INT;
@@ -332,7 +332,7 @@ unsafe extern "C" fn InitPagefileList(pVirtMem: PVIRTMEM) {
     let mut szDisplayString: [TCHAR; 256] = [0; 256];
 
     i = 0;
-    while i < _countof((*pVirtMem).PageFile) {
+    while i < _countof!((*pVirtMem).PageFile) {
         PageFile = &mut (*pVirtMem).PageFile[i as usize];
 
         if (*PageFile).bUsed != 0 {
@@ -341,13 +341,13 @@ unsafe extern "C" fn InitPagefileList(pVirtMem: PVIRTMEM) {
                 LoadString(hApplet,
                            IDS_PAGEFILE_NONE,
                            szSize.as_mut_ptr(),
-                           _countof(szSize));
+                           (_countof!(szSize)) as i32);
             } else if ((*PageFile).NewMinSize == 0) &&
                       ((*PageFile).NewMaxSize == 0) {
                 LoadString(hApplet,
                            IDS_PAGEFILE_SYSTEM,
                            szSize.as_mut_ptr(),
-                           _countof(szSize));
+                           (_countof!(szSize)) as i32);
             } else {
                 _stprintf(szSize.as_mut_ptr(), _T("%d - %d"),
                           (*PageFile).NewMinSize,
@@ -360,7 +360,7 @@ unsafe extern "C" fn InitPagefileList(pVirtMem: PVIRTMEM) {
                       if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T("") },
                       szSize.as_ptr());
 
-            Index = SendMessage((*pVirtMem).hListBox, LB_ADDSTRING, 0 as WPARAM, szDisplayString.as_ptr() as LPARAM);
+            Index = (SendMessage((*pVirtMem).hListBox, LB_ADDSTRING, 0 as WPARAM, szDisplayString.as_ptr() as LPARAM)) as i32;
             SendMessage((*pVirtMem).hListBox, LB_SETITEMDATA, Index as WPARAM, i as LPARAM);
         }
 
@@ -387,7 +387,7 @@ unsafe extern "C" fn UpdatePagefileEntry(
             hApplet,
             IDS_PAGEFILE_NONE,
             szSize.as_mut_ptr(),
-            _countof(szSize),
+            (_countof!(szSize)) as i32,
         );
     }
     else if ((*PageFile).NewMinSize == 0) &&
@@ -397,14 +397,14 @@ unsafe extern "C" fn UpdatePagefileEntry(
             hApplet,
             IDS_PAGEFILE_SYSTEM,
             szSize.as_mut_ptr(),
-            _countof(szSize),
+            (_countof!(szSize)) as i32,
         );
     }
     else
     {
         _stprintf(
             szSize.as_mut_ptr(),
-            _T(b"%d - %d\0".as_ptr()),
+            _T((b"%d - %d\0".as_ptr()).cast()),
             (*PageFile).NewMinSize,
             (*PageFile).NewMaxSize,
         );
@@ -412,7 +412,7 @@ unsafe extern "C" fn UpdatePagefileEntry(
 
     _stprintf(
         szDisplayString.as_mut_ptr(),
-        _T(b"%s  [%s]\t%s\0".as_ptr()),
+        _T((b"%s  [%s]\t%s\0".as_ptr()).cast()),
         (*PageFile).szDrive.as_ptr(),
         if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T(b"\0".as_ptr()) },
         szSize.as_ptr(),
@@ -432,7 +432,7 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
 
     Index = SendDlgItemMessage(
         (*pVirtMem).hSelf,
-        IDC_PAGEFILELIST,
+        (IDC_PAGEFILELIST) as i32,
         LB_GETCURSEL,
         0,
         0
@@ -441,7 +441,7 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
     if Index >= 0 && Index < (*pVirtMem).Count as INT {
         DriveIndex = SendDlgItemMessage(
             (*pVirtMem).hSelf,
-            IDC_PAGEFILELIST,
+            (IDC_PAGEFILELIST) as i32,
             LB_GETITEMDATA,
             Index as WPARAM,
             0
@@ -451,13 +451,13 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
 
         if IsDlgButtonChecked(
             (*pVirtMem).hSelf,
-            IDC_CUSTOM
+            (IDC_CUSTOM) as i32
         ) == BST_CHECKED {
             let maxPageFileSize: UINT;
 
             MinSize = GetDlgItemInt(
                 (*pVirtMem).hSelf,
-                IDC_INITIALSIZE,
+                (IDC_INITIALSIZE) as i32,
                 core::ptr::addr_of_mut!(bTranslated),
                 FALSE
             );
@@ -474,7 +474,7 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
 
             MaxSize = GetDlgItemInt(
                 (*pVirtMem).hSelf,
-                IDC_MAXSIZE,
+                (IDC_MAXSIZE) as i32,
                 core::ptr::addr_of_mut!(bTranslated),
                 FALSE
             );
@@ -522,7 +522,7 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
             (*PageFile).bUsed = TRUE;
         } else if IsDlgButtonChecked(
             (*pVirtMem).hSelf,
-            IDC_NOPAGEFILE
+            (IDC_NOPAGEFILE) as i32
         ) == BST_CHECKED {
             (*PageFile).NewMinSize = -1;
             (*PageFile).NewMaxSize = -1;
@@ -551,14 +551,14 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
     let PageFileSizeMb: UINT;
     let mut szMegabytes: [TCHAR; 8] = core::mem::zeroed();
     let mut szBuffer: [TCHAR; 64] = core::mem::zeroed();
-    let mut szText: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szText: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut fdata: WIN32_FIND_DATA = core::mem::zeroed();
     let hFind: HANDLE;
     let mut pfSize: ULARGE_INTEGER = core::mem::zeroed();
 
     Index = SendDlgItemMessage(
         (*pVirtMem).hSelf,
-        IDC_PAGEFILELIST,
+        (IDC_PAGEFILELIST) as i32,
         LB_GETCURSEL,
         0,
         0
@@ -567,7 +567,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
     if Index >= 0 && Index < (*pVirtMem).Count as INT {
         DriveIndex = SendDlgItemMessage(
             (*pVirtMem).hSelf,
-            IDC_PAGEFILELIST,
+            (IDC_PAGEFILELIST) as i32,
             LB_GETITEMDATA,
             Index as WPARAM,
             0
@@ -579,12 +579,12 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             hApplet,
             IDS_PAGEFILE_MB,
             szMegabytes.as_mut_ptr(),
-            _countof(szMegabytes)
+            (_countof!(szMegabytes)) as i32
         );
 
         SetDlgItemText(
             (*pVirtMem).hSelf,
-            IDC_DRIVE,
+            (IDC_DRIVE) as i32,
             (*PageFile).szDrive.as_ptr()
         );
 
@@ -597,20 +597,20 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
         {
             (*PageFile).FreeSize = ((*FreeDiskSpace.u).QuadPart / MEGABYTE) as UINT;
             _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), (*PageFile).FreeSize);
-            SetDlgItemText((*pVirtMem).hSelf, IDC_SPACEAVAIL, szBuffer.as_ptr());
+            SetDlgItemText((*pVirtMem).hSelf, (IDC_SPACEAVAIL) as i32, szBuffer.as_ptr());
         }
 
         if (*PageFile).NewMinSize == -1 &&
            (*PageFile).NewMaxSize == -1
         {
             OnNoPagingFile(pVirtMem);
-            CheckDlgButton((*pVirtMem).hSelf, IDC_NOPAGEFILE, BST_CHECKED);
+            CheckDlgButton((*pVirtMem).hSelf, (IDC_NOPAGEFILE) as i32, BST_CHECKED);
         }
         else if (*PageFile).NewMinSize == 0 &&
                 (*PageFile).NewMaxSize == 0
         {
             OnSysManSize(pVirtMem);
-            CheckDlgButton((*pVirtMem).hSelf, IDC_SYSMANSIZE, BST_CHECKED);
+            CheckDlgButton((*pVirtMem).hSelf, (IDC_SYSMANSIZE) as i32, BST_CHECKED);
         }
         else
         {
@@ -618,27 +618,27 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
 
             SetDlgItemInt(
                 (*pVirtMem).hSelf,
-                IDC_INITIALSIZE,
+                (IDC_INITIALSIZE) as i32,
                 (*PageFile).NewMinSize as UINT,
                 FALSE
             );
 
             SetDlgItemInt(
                 (*pVirtMem).hSelf,
-                IDC_MAXSIZE,
+                (IDC_MAXSIZE) as i32,
                 (*PageFile).NewMaxSize as UINT,
                 FALSE
             );
 
             CheckDlgButton(
                 (*pVirtMem).hSelf,
-                IDC_CUSTOM,
+                (IDC_CUSTOM) as i32,
                 BST_CHECKED
             );
         }
 
         _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), MINIMUM_PAGEFILE_SIZE);
-        SetDlgItemText((*pVirtMem).hSelf, IDC_MINIMUM, szBuffer.as_ptr());
+        SetDlgItemText((*pVirtMem).hSelf, (IDC_MINIMUM) as i32, szBuffer.as_ptr());
 
         MemoryStatus.dwLength = core::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(core::ptr::addr_of_mut!(MemoryStatus)) != 0 {
@@ -646,13 +646,13 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             let mut RecoMemMb: UINT;
             let maxPageFileSize: UINT = GetMaxPageFileSize(PageFile);
 
-            FreeMemMb = (MemoryStatus.ullTotalPhys / MEGABYTE) as UINT;
+            FreeMemMb = (MemoryStatus.ullTotalPhys / (MEGABYTE) as u64) as UINT;
             RecoMemMb = FreeMemMb + (FreeMemMb / 2);
             if RecoMemMb > maxPageFileSize {
                 RecoMemMb = maxPageFileSize;
             }
             _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), RecoMemMb);
-            SetDlgItemText((*pVirtMem).hSelf, IDC_RECOMMENDED, szBuffer.as_ptr());
+            SetDlgItemText((*pVirtMem).hSelf, (IDC_RECOMMENDED) as i32, szBuffer.as_ptr());
         }
 
         let mut PageFileSizeMb = 0;
@@ -678,7 +678,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
         }
 
         _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), PageFileSizeMb);
-        SetDlgItemText((*pVirtMem).hSelf, IDC_CURRENT, szBuffer.as_ptr());
+        SetDlgItemText((*pVirtMem).hSelf, (IDC_CURRENT) as i32, szBuffer.as_ptr());
     }
 
     TRUE
@@ -701,13 +701,13 @@ unsafe extern "C" fn OnInitVirtMemDialog(hwnd: HWND, pVirtMem: PVIRTMEM) {
     let mut PageFile: PPAGEFILE;
 
     (*pVirtMem).hSelf = hwnd;
-    (*pVirtMem).hListBox = GetDlgItem(hwnd, IDC_PAGEFILELIST);
+    (*pVirtMem).hListBox = GetDlgItem(hwnd, (IDC_PAGEFILELIST) as i32);
     (*pVirtMem).bModified = FALSE;
 
     SetListBoxColumns((*pVirtMem).hListBox);
 
     i = 0;
-    while i < _countof(core::ptr::addr_of_mut!((*pVirtMem).PageFile)) {
+    while i < _countof!(core::ptr::addr_of_mut!((*pVirtMem).PageFile)) {
         PageFile = &mut (*pVirtMem).PageFile[i as usize];
         (*PageFile).bUsed = FALSE;
         (*PageFile).OldMinSize = -1;
@@ -729,7 +729,7 @@ unsafe extern "C" fn OnDestroy(pVirtMem: PVIRTMEM) {
     let mut i: UINT;
 
     i = 0;
-    while i < _countof((*pVirtMem).PageFile) {
+    while i < _countof!((*pVirtMem).PageFile) {
         if !(*pVirtMem).PageFile[i as usize].pszVolume.is_null() {
             HeapFree(GetProcessHeap(), 0, (*pVirtMem).PageFile[i as usize].pszVolume as *mut _);
         }
@@ -760,7 +760,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
             pVirtMem = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<VIRTMEM>(),
+                (core::mem::size_of::<VIRTMEM>()) as SIZE_T,
             ) as PVIRTMEM;
             if pVirtMem.is_null() {
                 EndDialog(hwndDlg, 0);
@@ -785,7 +785,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
 
                 IDOK => {
                     OnVirtMemDialogOk(pVirtMem);
-                    EndDialog(hwndDlg, (*pVirtMem).bModified as i32);
+                    EndDialog(hwndDlg, ((*pVirtMem).bModified) as INT_PTR);
                     return TRUE;
                 }
 

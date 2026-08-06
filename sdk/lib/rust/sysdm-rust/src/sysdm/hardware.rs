@@ -42,14 +42,14 @@ unsafe extern "C" fn LaunchHardwareWizard(hWndParent: HWND) {
 
     shInputDll.cbSize = core::mem::size_of::<SHELLEXECUTEINFO>() as u32;
     shInputDll.hwnd = hWndParent;
-    shInputDll.lpVerb = _T(b"open\0".as_ptr() as *const i8);
-    shInputDll.lpFile = _T(b"rundll32.exe\0".as_ptr() as *const i8);
-    shInputDll.lpParameters = _T(b"shell32.dll,Control_RunDLL hdwwiz.cpl\0".as_ptr() as *const i8);
+    shInputDll.lpVerb = _T((b"open\0".as_ptr() as *const i8).cast());
+    shInputDll.lpFile = _T((b"rundll32.exe\0".as_ptr() as *const i8).cast());
+    shInputDll.lpParameters = _T((b"shell32.dll,Control_RunDLL hdwwiz.cpl\0".as_ptr() as *const i8).cast());
 
     if ShellExecuteEx(core::ptr::addr_of_mut!(shInputDll)) == 0 {
         MessageBox(
             core::ptr::null_mut(),
-            _T(b"Can't start hdwwiz.cpl\0".as_ptr() as *const i8),
+            _T((b"Can't start hdwwiz.cpl\0".as_ptr() as *const i8).cast()),
             core::ptr::null_mut(),
             MB_OK | MB_ICONERROR,
         );

@@ -5,11 +5,11 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 pub static mut hApplet: HINSTANCE = 0 as HINSTANCE;
 
-pub static mut Applets: [APPLET; NUM_APPLETS] = [
+pub static mut Applets: [APPLET; (NUM_APPLETS) as usize] = [
     APPLET {
-        idIcon: IDI_CPLSYSTEM,
-        idName: IDS_CPLSYSTEMNAME,
-        idDescription: IDS_CPLSYSTEMDESCRIPTION,
+        idIcon: (IDI_CPLSYSTEM) as i32,
+        idName: (IDS_CPLSYSTEMNAME) as i32,
+        idDescription: (IDS_CPLSYSTEMDESCRIPTION) as i32,
         AppletProc: Some(SystemApplet),
     }
 ];
@@ -27,16 +27,16 @@ pub unsafe extern "C" fn ResourceMessageBox(
     mut args: ...
 ) -> i32 {
     let mut args: va_list;
-    let mut szCaption: [u16; MAX_STR_LENGTH] = [0; MAX_STR_LENGTH];
-    let mut szText: [u16; MAX_STR_LENGTH] = [0; MAX_STR_LENGTH];
-    let mut szCookedText: [u16; 2 * MAX_STR_LENGTH] = [0; 2 * MAX_STR_LENGTH];
+    let mut szCaption: [u16; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
+    let mut szText: [u16; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
+    let mut szCookedText: [u16; (2 * MAX_STR_LENGTH) as usize] = [0; (2 * MAX_STR_LENGTH) as usize];
 
-    LoadStringW(hInstance, uCaption, szCaption.as_mut_ptr(), _countof(szCaption));
-    LoadStringW(hInstance, uText, szText.as_mut_ptr(), _countof(szText));
+    LoadStringW(hInstance, uCaption, szCaption.as_mut_ptr(), (_countof!(szCaption)) as i32);
+    LoadStringW(hInstance, uText, szText.as_mut_ptr(), (_countof!(szText)) as i32);
 
     va_start(args, uText);
-    StringCchVPrintfW(szCookedText.as_mut_ptr(), _countof(szCookedText),
-                      szText.as_ptr(), args);
+    StringCchVPrintfW(szCookedText.as_mut_ptr(), (_countof!(szCookedText)) as usize,
+                      szText.as_ptr(), (args).cast());
     va_end(args);
 
     return MessageBoxW(hwnd,
@@ -49,7 +49,7 @@ unsafe extern "stdcall" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARA
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_SYSTEM_PAGES {
         let index = (*ppsh).nPages as usize;
-        (*ppsh).phpage[index] = hpage;
+        (*ppsh).__bindgen_anon_3.phpage[index] = hpage;
         (*ppsh).nPages += 1;
         return TRUE;
     }
@@ -62,7 +62,7 @@ unsafe extern "C" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> 
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_SYSTEM_PAGES {
         let index = (*ppsh).nPages as usize;
-        (*ppsh).phpage[index] = hpage;
+        (*ppsh).__bindgen_anon_3.phpage[index] = hpage;
         (*ppsh).nPages += 1;
         return TRUE;
     }
@@ -78,7 +78,7 @@ unsafe extern "C" fn InitPropSheetPage(ppsh: *mut PROPSHEETHEADER, idDlg: WORD, 
         psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
         psp.dwFlags = PSP_DEFAULT;
         psp.hInstance = hApplet;
-        psp.pszTemplate = MAKEINTRESOURCE(idDlg);
+        psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE(idDlg);
         psp.pfnDlgProc = DlgProc;
 
         hPage = CreatePropertySheetPage(core::ptr::addr_of_mut!(psp));
@@ -158,7 +158,7 @@ unsafe extern "C" fn PropSheetProc(
             SendMessageW(
                 hwndDlg,
                 WM_SETICON,
-                ICON_BIG,
+                (ICON_BIG) as WPARAM,
                 hIcon as LPARAM,
             );
         }
@@ -168,7 +168,7 @@ unsafe extern "C" fn PropSheetProc(
 }
 #[no_mangle]
 pub unsafe extern "system" fn SystemApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, lParam: LPARAM) -> i32 {
-    let mut hpsp: [HPROPSHEETPAGE; MAX_SYSTEM_PAGES] = core::mem::zeroed();
+    let mut hpsp: [HPROPSHEETPAGE; (MAX_SYSTEM_PAGES) as usize] = core::mem::zeroed();
     let mut psh: PROPSHEETHEADER = core::mem::zeroed();
     let mut hNetIdDll: HMODULE;
     let mut hpsxa: HPSXA = core::ptr::null_mut();
@@ -197,17 +197,17 @@ pub unsafe extern "system" fn SystemApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM
     psh.dwFlags = PSH_PROPTITLE | PSH_USEICONID | PSH_USECALLBACK;
     psh.hwndParent = hwnd;
     psh.hInstance = hApplet;
-    psh.pszIcon = MAKEINTRESOURCEW(IDI_CPLSYSTEM);
+    psh.__bindgen_anon_1.pszIcon = MAKEINTRESOURCEW(IDI_CPLSYSTEM);
     psh.pszCaption = MAKEINTRESOURCE(IDS_CPLSYSTEMNAME);
     psh.nPages = 0;
-    psh.nStartPage = 0;
-    psh.phpage = hpsp.as_mut_ptr();
+    psh.__bindgen_anon_2.nStartPage = 0;
+    psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
     psh.pfnCallback = Some(PropSheetProc);
 
-    InitPropSheetPage(core::ptr::addr_of_mut!(psh), IDD_PROPPAGEGENERAL, Some(GeneralPageProc));
+    InitPropSheetPage(core::ptr::addr_of_mut!(psh), (IDD_PROPPAGEGENERAL) as WORD, Some(GeneralPageProc));
     hNetIdDll = AddNetIdPage(core::ptr::addr_of_mut!(psh));
-    InitPropSheetPage(core::ptr::addr_of_mut!(psh), IDD_PROPPAGEHARDWARE, Some(HardwarePageProc));
-    InitPropSheetPage(core::ptr::addr_of_mut!(psh), IDD_PROPPAGEADVANCED, Some(AdvancedPageProc));
+    InitPropSheetPage(core::ptr::addr_of_mut!(psh), (IDD_PROPPAGEHARDWARE) as WORD, Some(HardwarePageProc));
+    InitPropSheetPage(core::ptr::addr_of_mut!(psh), (IDD_PROPPAGEADVANCED) as WORD, Some(AdvancedPageProc));
 
     hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, [REGSTR_PATH_CONTROLSFOLDER, TEXT("\\System")].concat().as_ptr(), MAX_SYSTEM_PAGES - psh.nPages);
     if hpsxa != core::ptr::null_mut() {
@@ -215,7 +215,7 @@ pub unsafe extern "system" fn SystemApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM
     }
 
     if nPage != 0 && nPage <= psh.nPages as i32 {
-        psh.nStartPage = nPage as u32;
+        psh.__bindgen_anon_2.nStartPage = nPage as u32;
     }
 
     Ret = PropertySheet(core::ptr::addr_of_mut!(psh)) as i32;
@@ -249,7 +249,7 @@ pub unsafe extern "system" fn CPlApplet(
         }
 
         CPL_GETCOUNT => {
-            return NUM_APPLETS;
+            return (NUM_APPLETS) as i32;
         }
 
         CPL_INQUIRE => {

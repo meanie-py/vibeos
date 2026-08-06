@@ -29,37 +29,37 @@ pub type PSTARTINFO = *mut _STARTINFO;
 pub static mut SaveRecoveryOptions: BOOL = 0;
 unsafe extern "C" fn SetTimeout(hwndDlg: HWND, Timeout: INT) {
     if Timeout == 0 {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECLISTUPDWN), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECLISTEDIT), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTUPDWN) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTEDIT) as i32), FALSE);
     } else {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECLISTUPDWN), TRUE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECLISTEDIT), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTUPDWN) as i32), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTEDIT) as i32), TRUE);
     }
-    SendDlgItemMessageW(hwndDlg, IDC_STRRECLISTUPDWN, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
-    SendDlgItemMessageW(hwndDlg, IDC_STRRECLISTUPDWN, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
 }
 unsafe extern "C" fn SetRecoveryTimeout(hwndDlg: HWND, Timeout: INT) {
     if Timeout == 0 {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECRECUPDWN), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECRECEDIT), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECUPDWN) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECEDIT) as i32), FALSE);
     } else {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECRECUPDWN), TRUE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECRECEDIT), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECUPDWN) as i32), TRUE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECEDIT) as i32), TRUE);
     }
-    SendDlgItemMessageW(hwndDlg, IDC_STRRECRECUPDWN, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
-    SendDlgItemMessageW(hwndDlg, IDC_STRRECRECUPDWN, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
 }
 unsafe extern "C" fn GetSystemDrive(szSystemDrive: *mut *mut u16) -> u32 {
     let mut dwBufSize: u32;
 
-    *szSystemDrive = HeapAlloc(GetProcessHeap(), 0, MAX_PATH * core::mem::size_of::<u16>() as u32);
+    *szSystemDrive = (HeapAlloc(GetProcessHeap(), 0, (MAX_PATH * (core::mem::size_of::<u16>()) as u32) as SIZE_T)).cast();
     if !(*szSystemDrive).is_null() {
         dwBufSize = GetEnvironmentVariableW(b"S\0y\0s\0t\0e\0m\0D\0r\0i\0v\0e\0\0\0".as_ptr() as *const u16, *szSystemDrive, MAX_PATH);
         if dwBufSize > MAX_PATH {
             let mut szTmp: *mut u16;
             let dwBufSize2: u32;
 
-            szTmp = HeapReAlloc(GetProcessHeap(), 0, *szSystemDrive as *mut core::ffi::c_void, dwBufSize * core::mem::size_of::<u16>() as u32) as *mut u16;
+            szTmp = HeapReAlloc(GetProcessHeap(), 0, *szSystemDrive as *mut core::ffi::c_void, (dwBufSize * (core::mem::size_of::<u16>()) as u32) as SIZE_T) as *mut u16;
             if szTmp.is_null() {
                 HeapFree(GetProcessHeap(), 0, *szSystemDrive as *mut core::ffi::c_void);
                 *szSystemDrive = core::ptr::null_mut();
@@ -87,8 +87,8 @@ unsafe extern "C" fn GetSystemDrive(szSystemDrive: *mut *mut u16) -> u32 {
 }
 unsafe extern "C" fn ReadFreeldrSection(hInf: HINF, szSectionName: *mut WCHAR) -> PBOOTRECORD {
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
-    let mut szName: [WCHAR; MAX_PATH] = core::mem::zeroed();
-    let mut szValue: [WCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szName: [WCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
+    let mut szValue: [WCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut LineLength: DWORD = 0;
 
     if SetupFindFirstLineW(
@@ -104,7 +104,7 @@ unsafe extern "C" fn ReadFreeldrSection(hInf: HINF, szSectionName: *mut WCHAR) -
     let pRecord = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<BOOTRECORD>(),
+        (core::mem::size_of::<BOOTRECORD>()) as SIZE_T,
     ) as PBOOTRECORD;
     if pRecord.is_null() {
         return core::ptr::null_mut();
@@ -180,9 +180,9 @@ unsafe extern "C" fn ReadFreeldrSection(hInf: HINF, szSectionName: *mut WCHAR) -
 unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
     let mut pRecord: PBOOTRECORD;
-    let mut szDefaultOs: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szValue: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szDefaultOs: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szName: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szValue: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut LineLength: DWORD = 0;
     let mut TimeOut: DWORD = 0;
     let mut lResult: LRESULT;
@@ -201,7 +201,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
         &mut InfContext,
         1,
         szDefaultOs.as_mut_ptr(),
-        (core::mem::size_of::<[WCHAR; MAX_PATH]>() / core::mem::size_of::<WCHAR>()) as DWORD,
+        (core::mem::size_of::<[WCHAR; (MAX_PATH) as usize]>() / core::mem::size_of::<WCHAR>()) as DWORD,
         &mut LineLength,
     ) == 0
     {
@@ -242,7 +242,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
             &mut InfContext,
             0,
             szName.as_mut_ptr(),
-            (core::mem::size_of::<[WCHAR; MAX_PATH]>() / core::mem::size_of::<WCHAR>()) as DWORD,
+            (core::mem::size_of::<[WCHAR; (MAX_PATH) as usize]>() / core::mem::size_of::<WCHAR>()) as DWORD,
             &mut LineLength,
         ) == 0
         {
@@ -253,7 +253,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
             &mut InfContext,
             1,
             szValue.as_mut_ptr(),
-            (core::mem::size_of::<[WCHAR; MAX_PATH]>() / core::mem::size_of::<WCHAR>()) as DWORD,
+            (core::mem::size_of::<[WCHAR; (MAX_PATH) as usize]>() / core::mem::size_of::<WCHAR>()) as DWORD,
             &mut LineLength,
         ) == 0
         {
@@ -264,7 +264,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
         if !pRecord.is_null() {
             lResult = SendDlgItemMessageW(
                 hwndDlg,
-                IDC_STRECOSCOMBO,
+                (IDC_STRECOSCOMBO) as i32,
                 CB_ADDSTRING,
                 0 as WPARAM,
                 szValue.as_ptr() as LPARAM,
@@ -272,7 +272,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
             if lResult != CB_ERR {
                 SendDlgItemMessageW(
                     hwndDlg,
-                    IDC_STRECOSCOMBO,
+                    (IDC_STRECOSCOMBO) as i32,
                     CB_SETITEMDATA,
                     lResult as WPARAM,
                     pRecord as LPARAM,
@@ -296,7 +296,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
 
     lResult = SendDlgItemMessageW(
         hwndDlg,
-        IDC_STRECOSCOMBO,
+        (IDC_STRECOSCOMBO) as i32,
         CB_FINDSTRING,
         (-(1 as isize)) as WPARAM,
         szDefaultOs.as_ptr() as LPARAM,
@@ -304,7 +304,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     if lResult != CB_ERR {
         SendDlgItemMessageW(
             hwndDlg,
-            IDC_STRECOSCOMBO,
+            (IDC_STRECOSCOMBO) as i32,
             CB_SETCURSEL,
             lResult as WPARAM,
             0 as LPARAM,
@@ -314,7 +314,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     if TimeOut != 0 {
         SendDlgItemMessageW(
             hwndDlg,
-            IDC_STRECLIST,
+            (IDC_STRECLIST) as i32,
             BM_SETCHECK,
             BST_CHECKED as WPARAM,
             0 as LPARAM,
@@ -327,12 +327,12 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
 }
 unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     let mut InfContext: INFCONTEXT = core::mem::zeroed();
-    let mut szName: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szValue: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szValue: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut LineLength: DWORD = 0;
     let mut TimeOut: DWORD = 0;
-    let mut szDefaultOS: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szOptions: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szDefaultOS: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szOptions: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut pRecord: PBOOTRECORD;
     let mut lResult: LRESULT;
 
@@ -403,7 +403,7 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
                               (core::mem::size_of_val(&szOptions) / core::mem::size_of::<u16>()) as DWORD,
                               &mut LineLength);
 
-        pRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<BOOTRECORD>()) as PBOOTRECORD;
+        pRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<BOOTRECORD>()) as SIZE_T) as PBOOTRECORD;
         if !pRecord.is_null() {
             (*pRecord).BootType = 0;
             wcscpy((*pRecord).szBootPath.as_mut_ptr(), szName.as_ptr());
@@ -414,9 +414,9 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
                 wcscpy(szDefaultOS.as_mut_ptr(), szValue.as_ptr());
             }
 
-            lResult = SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_ADDSTRING, 0 as WPARAM, szValue.as_ptr() as LPARAM);
+            lResult = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szValue.as_ptr() as LPARAM);
             if lResult != CB_ERR {
-                SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_SETITEMDATA, lResult as WPARAM, pRecord as LPARAM);
+                SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_SETITEMDATA, lResult as WPARAM, pRecord as LPARAM);
             } else {
                 HeapFree(GetProcessHeap(), 0, pRecord as *mut core::ffi::c_void);
             }
@@ -427,13 +427,13 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
         }
     }
 
-    lResult = SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_FINDSTRING, 0 as WPARAM, szDefaultOS.as_ptr() as LPARAM);
+    lResult = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_FINDSTRING, 0 as WPARAM, szDefaultOS.as_ptr() as LPARAM);
     if lResult != CB_ERR {
-        SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_SETCURSEL, lResult as WPARAM, 0 as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_SETCURSEL, lResult as WPARAM, 0 as LPARAM);
     }
 
     if TimeOut != 0 {
-        SendDlgItemMessageW(hwndDlg, IDC_STRECLIST, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRECLIST) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     SetTimeout(hwndDlg, TimeOut as INT);
@@ -445,21 +445,21 @@ unsafe extern "C" fn DeleteBootRecords(hwndDlg: HWND) {
     let mut index: i32;
     let mut pRecord: PBOOTRECORD;
 
-    lIndex = SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_GETCOUNT, 0 as WPARAM, 0 as LPARAM);
+    lIndex = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_GETCOUNT, 0 as WPARAM, 0 as LPARAM);
     if lIndex == CB_ERR {
         return;
     }
 
     index = 0;
     while index < lIndex as i32 {
-        pRecord = SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_GETITEMDATA, index as WPARAM, 0 as LPARAM) as PBOOTRECORD;
+        pRecord = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_GETITEMDATA, index as WPARAM, 0 as LPARAM) as PBOOTRECORD;
         if pRecord as INT_PTR != CB_ERR {
             HeapFree(GetProcessHeap(), 0, pRecord as *mut core::ffi::c_void);
         }
         index += 1;
     }
 
-    SendDlgItemMessageW(hwndDlg, IDC_STRECOSCOMBO, CB_RESETCONTENT, 0 as WPARAM, 0 as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_RESETCONTENT, 0 as WPARAM, 0 as LPARAM);
 }
 unsafe extern "C" fn LoadOSList(hwndDlg: HWND, pStartInfo: PSTARTINFO) -> LRESULT {
     let mut dwBufSize: u32;
@@ -519,18 +519,18 @@ unsafe extern "C" fn LoadOSList(hwndDlg: HWND, pStartInfo: PSTARTINFO) -> LRESUL
 }
 unsafe extern "C" fn SetCrashDlgItems(hwnd: HWND, pStartInfo: *mut STARTINFO) {
     if (*pStartInfo).dwCrashDumpEnabled == 0 {
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECDUMPFILE), FALSE);
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECOVERWRITE), FALSE);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECDUMPFILE) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECOVERWRITE) as i32), FALSE);
     } else if (*pStartInfo).dwCrashDumpEnabled == 3 {
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECDUMPFILE), TRUE);
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECOVERWRITE), FALSE);
-        SendMessageW(GetDlgItem(hwnd, IDC_STRRECDUMPFILE), WM_SETTEXT, 0 as WPARAM, (*pStartInfo).szMinidumpDir.as_ptr() as LPARAM);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECDUMPFILE) as i32), TRUE);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECOVERWRITE) as i32), FALSE);
+        SendMessageW(GetDlgItem(hwnd, (IDC_STRRECDUMPFILE) as i32), WM_SETTEXT, 0 as WPARAM, (*pStartInfo).szMinidumpDir.as_ptr() as LPARAM);
     } else if (*pStartInfo).dwCrashDumpEnabled == 1 || (*pStartInfo).dwCrashDumpEnabled == 2 {
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECDUMPFILE), TRUE);
-        EnableWindow(GetDlgItem(hwnd, IDC_STRRECOVERWRITE), TRUE);
-        SendMessageW(GetDlgItem(hwnd, IDC_STRRECDUMPFILE), WM_SETTEXT, 0 as WPARAM, (*pStartInfo).szDumpFile.as_ptr() as LPARAM);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECDUMPFILE) as i32), TRUE);
+        EnableWindow(GetDlgItem(hwnd, (IDC_STRRECOVERWRITE) as i32), TRUE);
+        SendMessageW(GetDlgItem(hwnd, (IDC_STRRECDUMPFILE) as i32), WM_SETTEXT, 0 as WPARAM, (*pStartInfo).szDumpFile.as_ptr() as LPARAM);
     }
-    SendDlgItemMessageW(hwnd, IDC_STRRECDEBUGCOMBO, CB_SETCURSEL, (*pStartInfo).dwCrashDumpEnabled as WPARAM, 0 as LPARAM);
+    SendDlgItemMessageW(hwnd, (IDC_STRRECDEBUGCOMBO) as i32, CB_SETCURSEL, (*pStartInfo).dwCrashDumpEnabled as WPARAM, 0 as LPARAM);
 }
 unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut STARTINFO) {
     let mut hKey: HKEY = core::ptr::null_mut();
@@ -556,7 +556,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     lResult = SendDlgItemMessage(
         hwndDlg,
-        IDC_STRRECWRITEEVENT,
+        (IDC_STRRECWRITEEVENT) as i32,
         BM_GETCHECK,
         0 as WPARAM,
         0 as LPARAM,
@@ -572,7 +572,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     lResult = SendDlgItemMessage(
         hwndDlg,
-        IDC_STRRECSENDALERT,
+        (IDC_STRRECSENDALERT) as i32,
         BM_GETCHECK,
         0 as WPARAM,
         0 as LPARAM,
@@ -588,7 +588,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     lResult = SendDlgItemMessage(
         hwndDlg,
-        IDC_STRRECRESTART,
+        (IDC_STRRECRESTART) as i32,
         BM_GETCHECK,
         0 as WPARAM,
         0 as LPARAM,
@@ -604,7 +604,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     lResult = SendDlgItemMessage(
         hwndDlg,
-        IDC_STRRECOVERWRITE,
+        (IDC_STRRECOVERWRITE) as i32,
         BM_GETCHECK,
         0 as WPARAM,
         0 as LPARAM,
@@ -623,7 +623,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
     {
         SendDlgItemMessage(
             hwndDlg,
-            IDC_STRRECDUMPFILE,
+            (IDC_STRRECDUMPFILE) as i32,
             WM_GETTEXT,
             (core::mem::size_of_val(&(*pStartInfo).szDumpFile) / core::mem::size_of::<u16>()) as WPARAM,
             (*pStartInfo).szDumpFile.as_ptr() as LPARAM,
@@ -634,12 +634,12 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
             0,
             REG_EXPAND_SZ,
             (*pStartInfo).szDumpFile.as_ptr() as LPBYTE,
-            (wcslen((*pStartInfo).szDumpFile.as_ptr()) + 1) * core::mem::size_of::<u16>() as u32,
+            ((wcslen((*pStartInfo).szDumpFile.as_ptr()) + 1) * core::mem::size_of::<u16>()) as DWORD,
         );
     } else if (*pStartInfo).dwCrashDumpEnabled == 3 {
         SendDlgItemMessage(
             hwndDlg,
-            IDC_STRRECDUMPFILE,
+            (IDC_STRRECDUMPFILE) as i32,
             WM_GETTEXT,
             (core::mem::size_of_val(&(*pStartInfo).szDumpFile) / core::mem::size_of::<u16>()) as WPARAM,
             (*pStartInfo).szDumpFile.as_ptr() as LPARAM,
@@ -650,7 +650,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
             0,
             REG_EXPAND_SZ,
             (*pStartInfo).szDumpFile.as_ptr() as LPBYTE,
-            (wcslen((*pStartInfo).szDumpFile.as_ptr()) + 1) * core::mem::size_of::<u16>() as u32,
+            ((wcslen((*pStartInfo).szDumpFile.as_ptr()) + 1) * core::mem::size_of::<u16>()) as DWORD,
         );
     }
 
@@ -666,7 +666,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 }
 unsafe extern "C" fn LoadRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut STARTINFO) {
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut szName: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut dwValue: DWORD = 0;
     let mut dwValueLength: DWORD = 0;
     let mut dwType: DWORD = 0;
@@ -688,70 +688,70 @@ unsafe extern "C" fn LoadRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut STARTIN
         SetLastError(dwResult);
         ShowLastWin32Error(hwndDlg);
 
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECWRITEEVENT), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECSENDALERT), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECRESTART), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECDEBUGCOMBO), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECDUMPFILE), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_STRRECOVERWRITE), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECWRITEEVENT) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECSENDALERT) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRESTART) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECDEBUGCOMBO) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECDUMPFILE) as i32), FALSE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECOVERWRITE) as i32), FALSE);
 
         SaveRecoveryOptions = FALSE;
         return;
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"LogEvent\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == ERROR_SUCCESS && dwType == REG_DWORD && dwValue != 0 {
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECWRITEEVENT, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
+    if RegQueryValueExW(hKey, b"LogEvent\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECWRITEEVENT) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"SendAlert\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == ERROR_SUCCESS && dwType == REG_DWORD && dwValue != 0 {
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECSENDALERT, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
+    if RegQueryValueExW(hKey, b"SendAlert\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECSENDALERT) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"AutoReboot\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == ERROR_SUCCESS && dwType == REG_DWORD && dwValue != 0 {
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECRESTART, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
+    if RegQueryValueExW(hKey, b"AutoReboot\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECRESTART) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"Overwrite\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == ERROR_SUCCESS && dwType == REG_DWORD && dwValue != 0 {
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECOVERWRITE, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
+    if RegQueryValueExW(hKey, b"Overwrite\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECOVERWRITE) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"CrashDumpEnabled\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == ERROR_SUCCESS && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, b"CrashDumpEnabled\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         (*pStartInfo).dwCrashDumpEnabled = dwValue;
     }
 
     dwValueLength = core::mem::size_of_val(&(*pStartInfo).szDumpFile) as DWORD;
-    if RegQueryValueExW(hKey, b"DumpFile\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szDumpFile.as_mut_ptr() as LPBYTE, &mut dwValueLength) != ERROR_SUCCESS {
+    if RegQueryValueExW(hKey, b"DumpFile\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szDumpFile.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
         (*pStartInfo).szDumpFile[0] = 0;
     }
 
     dwValueLength = core::mem::size_of_val(&(*pStartInfo).szMinidumpDir) as DWORD;
-    if RegQueryValueExW(hKey, b"MinidumpDir\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szMinidumpDir.as_mut_ptr() as LPBYTE, &mut dwValueLength) != ERROR_SUCCESS {
+    if RegQueryValueExW(hKey, b"MinidumpDir\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szMinidumpDir.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
         (*pStartInfo).szMinidumpDir[0] = 0;
     }
 
     if LoadStringW(hApplet, IDS_NO_DUMP, szName.as_mut_ptr(), (core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) as i32) != 0 {
         szName[(core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) - 1] = 0;
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECDEBUGCOMBO, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECDEBUGCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
     }
 
     if LoadStringW(hApplet, IDS_FULL_DUMP, szName.as_mut_ptr(), (core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) as i32) != 0 {
         szName[(core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) - 1] = 0;
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECDEBUGCOMBO, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECDEBUGCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
     }
 
     if LoadStringW(hApplet, IDS_KERNEL_DUMP, szName.as_mut_ptr(), (core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) as i32) != 0 {
         szName[(core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) - 1] = 0;
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECDEBUGCOMBO, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECDEBUGCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
     }
 
     if LoadStringW(hApplet, IDS_MINI_DUMP, szName.as_mut_ptr(), (core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) as i32) != 0 {
         szName[(core::mem::size_of_val(&szName) / core::mem::size_of::<u16>()) - 1] = 0;
-        SendDlgItemMessageW(hwndDlg, IDC_STRRECDEBUGCOMBO, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
+        SendDlgItemMessageW(hwndDlg, (IDC_STRRECDEBUGCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szName.as_ptr() as LPARAM);
     }
 
     SetCrashDlgItems(hwndDlg, pStartInfo);
@@ -781,7 +781,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
             pStartInfo = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<STARTINFO>(),
+                (core::mem::size_of::<STARTINFO>()) as SIZE_T,
             ) as PSTARTINFO;
             SetWindowLongPtr(hwndDlg, DWLP_USER, pStartInfo as isize);
 
@@ -804,14 +804,14 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         b"n\0o\0t\0e\0p\0a\0d\0\0\0".as_ptr() as *const u16,
                         (*pStartInfo).szFreeldrIni.as_ptr(),
                         core::ptr::null_mut(),
-                        SW_SHOWNORMAL,
+                        (SW_SHOWNORMAL) as INT,
                     );
                 }
 
                 IDOK => {
                     if SendDlgItemMessage(
                         hwndDlg,
-                        IDC_STRECLIST,
+                        (IDC_STRECLIST) as i32,
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
@@ -819,7 +819,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                     {
                         iTimeout = SendDlgItemMessage(
                             hwndDlg,
-                            IDC_STRRECLISTUPDWN,
+                            (IDC_STRRECLISTUPDWN) as i32,
                             UDM_GETPOS,
                             0 as WPARAM,
                             0 as LPARAM,
@@ -831,7 +831,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
 
                     lResult = SendDlgItemMessageW(
                         hwndDlg,
-                        IDC_STRECOSCOMBO,
+                        (IDC_STRECOSCOMBO) as i32,
                         CB_GETCURSEL,
                         0 as WPARAM,
                         0 as LPARAM,
@@ -843,7 +843,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
 
                     pRecord = SendDlgItemMessage(
                         hwndDlg,
-                        IDC_STRECOSCOMBO,
+                        (IDC_STRECOSCOMBO) as i32,
                         CB_GETITEMDATA,
                         lResult as WPARAM,
                         0 as LPARAM,
@@ -895,7 +895,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                 IDC_STRECLIST => {
                     if SendDlgItemMessage(
                         hwndDlg,
-                        IDC_STRECLIST,
+                        (IDC_STRECLIST) as i32,
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
@@ -910,7 +910,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                 IDC_STRRECREC => {
                     if SendDlgItemMessage(
                         hwndDlg,
-                        IDC_STRRECREC,
+                        (IDC_STRRECREC) as i32,
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
@@ -928,7 +928,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
 
                         lResult = SendDlgItemMessage(
                             hwndDlg,
-                            IDC_STRRECDEBUGCOMBO,
+                            (IDC_STRRECDEBUGCOMBO) as i32,
                             CB_GETCURSEL,
                             0 as WPARAM,
                             0 as LPARAM,
@@ -939,7 +939,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                             {
                                 SendDlgItemMessageW(
                                     hwndDlg,
-                                    IDC_STRRECDUMPFILE,
+                                    (IDC_STRRECDUMPFILE) as i32,
                                     WM_GETTEXT,
                                     (core::mem::size_of_val(&(*pStartInfo).szDumpFile) / core::mem::size_of::<u16>()) as WPARAM,
                                     (*pStartInfo).szDumpFile.as_ptr() as LPARAM,
@@ -947,7 +947,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                             } else if (*pStartInfo).dwCrashDumpEnabled == 3 {
                                 SendDlgItemMessageW(
                                     hwndDlg,
-                                    IDC_STRRECDUMPFILE,
+                                    (IDC_STRRECDUMPFILE) as i32,
                                     WM_GETTEXT,
                                     (core::mem::size_of_val(&(*pStartInfo).szMinidumpDir) / core::mem::size_of::<u16>()) as WPARAM,
                                     (*pStartInfo).szMinidumpDir.as_ptr() as LPARAM,

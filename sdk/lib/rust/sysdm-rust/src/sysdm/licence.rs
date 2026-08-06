@@ -29,7 +29,7 @@ pub unsafe extern "system" fn LicenceDlgProc(
             pLicInfo = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<LIC_CONTEXT>(),
+                (core::mem::size_of::<LIC_CONTEXT>()) as SIZE_T,
             ) as *mut LIC_CONTEXT;
             if pLicInfo.is_null() {
                 EndDialog(hDlg, 0);

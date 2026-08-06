@@ -34,7 +34,7 @@ unsafe extern "C" fn IsDigitStrA(DmiString: PCHAR) -> BOOL {
         return FALSE;
     }
     while *c != 0 {
-        if *c >= b'0' && *c <= b'9' {
+        if *c >= (b'0') as i8 && *c <= (b'9') as i8 {
             c = c.offset(1);
         } else {
             return FALSE;
@@ -55,12 +55,12 @@ unsafe extern "C" fn TrimPunctuation(pStr: PWSTR) {
         return;
     }
 
-    while i < Length && IsPunctuation(*pStr.offset(i as isize)) != 0 {
+    while i < (Length) as u32 && IsPunctuation(*pStr.offset(i as isize)) != 0 {
         i += 1;
     }
 
     if i > 0 {
-        Length -= i;
+        Length -= (i) as usize;
         memmove(
             pStr as *mut core::ffi::c_void,
             pStr.offset(i as isize) as *const core::ffi::c_void,
@@ -79,10 +79,10 @@ unsafe extern "C" fn wcsistr(s: *const wchar_t, b: *const wchar_t) -> *mut wchar
     let mut c: *mut wchar_t;
     x = s as *mut wchar_t;
     while *x != 0 {
-        if towlower(*x) == towlower(*b) {
+        if towlower((*x) as i32) == towlower((*b) as i32) {
             y = x;
             c = b as *mut wchar_t;
-            while *y != 0 && *c != 0 && towlower(*y) == towlower(*c) {
+            while *y != 0 && *c != 0 && towlower((*y) as i32) == towlower((*c) as i32) {
                 c = c.add(1);
                 y = y.add(1);
             }
@@ -155,7 +155,7 @@ unsafe extern "C" fn wcsrep(
     lenFind = wcslen(pwFind) + 2 + 1;
     lenReplace = wcslen(pwReplace) + 2 + 1;
 
-    pwsStr = HeapAlloc(GetProcessHeap(), 0, lenStr * core::mem::size_of::<u16>()) as PWSTR;
+    pwsStr = HeapAlloc(GetProcessHeap(), 0, (lenStr * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if pwsStr.is_null()
     {
         return;
@@ -164,7 +164,7 @@ unsafe extern "C" fn wcsrep(
     StringCchCatW(pwsStr, lenStr, pwStr);
     StringCchCatW(pwsStr, lenStr, b" \0".as_ptr() as *const u16);
 
-    pwsFind = HeapAlloc(GetProcessHeap(), 0, lenFind * core::mem::size_of::<u16>()) as PWSTR;
+    pwsFind = HeapAlloc(GetProcessHeap(), 0, (lenFind * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if pwsFind.is_null()
     {
         HeapFree(GetProcessHeap(), 0, pwsStr as *mut core::ffi::c_void);
@@ -188,7 +188,7 @@ unsafe extern "C" fn wcsrep(
         return;
     }
 
-    pwsReplace = HeapAlloc(GetProcessHeap(), 0, lenReplace * core::mem::size_of::<u16>()) as PWSTR;
+    pwsReplace = HeapAlloc(GetProcessHeap(), 0, (lenReplace * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if pwsReplace.is_null()
     {
         HeapFree(GetProcessHeap(), 0, pwsFind as *mut core::ffi::c_void);
@@ -229,89 +229,89 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
     }
 
     static Vendors: [GENERIC_NAME; 20] = [
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
     ];
 
     static Devices: [GENERIC_NAME; 49] = [
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: FALSE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: FALSE, bRemove: 0 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: 0, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: FALSE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: TRUE, bRemove: TRUE },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: FALSE, bRemove: TRUE },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: 0 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: 0, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (FALSE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
+        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
     ];
 
     let mut bMatch: u8;
     let mut i: u32;
 
     if !bRemove.is_null() {
-        *bRemove = FALSE;
+        *bRemove = (FALSE) as u8;
     }
 
-    i = TRUE;
-    while i < _countof(Vendors) {
+    i = (TRUE) as u32;
+    while i < _countof!(Vendors) {
         if ven.is_null() {
             break;
         }
@@ -324,13 +324,13 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
             if !bRemove.is_null() {
                 *bRemove = Vendors[i as usize].bRemove;
             }
-            return FALSE;
+            return (FALSE) as u8;
         }
         i += 1;
     }
 
-    i = TRUE;
-    while i < _countof(Devices) {
+    i = (TRUE) as u32;
+    while i < _countof!(Devices) {
         if dev.is_null() {
             break;
         }
@@ -343,12 +343,12 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
             if !bRemove.is_null() {
                 *bRemove = Devices[i as usize].bRemove;
             }
-            return FALSE;
+            return (FALSE) as u8;
         }
         i += 1;
     }
 
-    TRUE
+    (TRUE) as u8
 }
 unsafe extern "C" fn AppendSystemFamily(pBuf: PWSTR, cchBuf: usize, DmiStrings: *mut PCSTR, dev: PWSTR) {
     static KnownFamilies: [PCSTR; 4] = [
@@ -367,8 +367,8 @@ unsafe extern "C" fn AppendSystemFamily(pBuf: PWSTR, cchBuf: usize, DmiStrings: 
     let mut wideStr: [wchar_t; 128] = [0; 128];
 
     i = 0;
-    while i < _countof(KnownFamilies) as u32 {
-        StringCchPrintfW(wideStr.as_mut_ptr(), _countof(wideStr) as usize, 0 as PCWSTR, *KnownFamilies.get_unchecked(i as usize));
+    while i < _countof!(KnownFamilies) as u32 {
+        StringCchPrintfW(wideStr.as_mut_ptr(), _countof!(wideStr) as usize, 0 as PCWSTR, *KnownFamilies.get_unchecked(i as usize));
 
         if wcsistr(dev, wideStr.as_ptr()) == core::ptr::null_mut() &&
             (*Aliases.get_unchecked(i as usize) == core::ptr::null() || wcsistr(dev, *Aliases.get_unchecked(i as usize)) == core::ptr::null_mut()) &&
@@ -496,7 +496,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         REDUNDANT_WORD { pwStr: b"p\0l\0c\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
     ];
     let mut SMBiosBuf: *mut core::ffi::c_void;
-    let mut DmiStrings: [PCSTR; ID_STRINGS_MAX] = [core::ptr::null(); ID_STRINGS_MAX];
+    let mut DmiStrings: [PCSTR; (ID_STRINGS_MAX) as usize] = [core::ptr::null(); (ID_STRINGS_MAX) as usize];
     let mut ven: [u16; 512] = [0; 512];
     let mut dev: [u16; 512] = [0; 512];
     let mut tmpstr: [i8; 512] = [0; 512];
@@ -509,94 +509,94 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
 
     SMBiosBuf = LoadSMBiosData(DmiStrings.as_mut_ptr());
     if SMBiosBuf.is_null() {
-        return FALSE;
+        return (FALSE) as u8;
     }
 
-    TrimNonPrintable(DmiStrings[SYS_VENDOR]);
-    bTrimProduct = TrimNonPrintableProd(DmiStrings[SYS_PRODUCT]);
-    TrimNonPrintable(DmiStrings[SYS_VERSION]);
-    bTrimFamily = TrimNonPrintable(DmiStrings[SYS_FAMILY]);
-    TrimNonPrintable(DmiStrings[BOARD_VENDOR]);
-    TrimNonPrintable(DmiStrings[BOARD_NAME]);
-    TrimNonPrintable(DmiStrings[BOARD_VERSION]);
+    TrimNonPrintable(DmiStrings[(SYS_VENDOR) as usize]);
+    bTrimProduct = (TrimNonPrintableProd(DmiStrings[(SYS_PRODUCT) as usize])) as u8;
+    TrimNonPrintable(DmiStrings[(SYS_VERSION) as usize]);
+    bTrimFamily = (TrimNonPrintable(DmiStrings[(SYS_FAMILY) as usize])) as u8;
+    TrimNonPrintable(DmiStrings[(BOARD_VENDOR) as usize]);
+    TrimNonPrintable(DmiStrings[(BOARD_NAME) as usize]);
+    TrimNonPrintable(DmiStrings[(BOARD_VERSION) as usize]);
 
     if bTrimProduct != 0 {
-        if !DmiStrings[SYS_FAMILY].is_null() && bTrimFamily == 0 {
-            DmiStrings[SYS_PRODUCT] = DmiStrings[SYS_FAMILY];
-            bTrimProduct = FALSE;
+        if !DmiStrings[(SYS_FAMILY) as usize].is_null() && bTrimFamily == 0 {
+            DmiStrings[(SYS_PRODUCT) as usize] = DmiStrings[(SYS_FAMILY) as usize];
+            bTrimProduct = (FALSE) as u8;
         }
     }
 
-    GetSMBiosStringW(DmiStrings[SYS_VENDOR], ven.as_mut_ptr(), _countof(ven.len()), TRUE);
-    GetSMBiosStringW(DmiStrings[SYS_PRODUCT], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
+    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
     bGenericName = IsGenericSystemName(ven.as_ptr(), dev.as_ptr(), core::ptr::null_mut()) | bTrimProduct;
 
     if wcslen(dev.as_ptr()) == 0 ||
         wcscmp(dev.as_ptr(), ven.as_ptr()) == 0 ||
         bGenericName != 0
     {
-        let mut bGenericVen: u8 = FALSE;
-        let mut bRemoveVen: u8 = FALSE;
+        let mut bGenericVen: u8 = (FALSE) as u8;
+        let mut bRemoveVen: u8 = (FALSE) as u8;
         let mut bGenericDev: u8 = if wcslen(dev.as_ptr()) == 0 || wcscmp(dev.as_ptr(), ven.as_ptr()) == 0 || bTrimProduct != 0 { 1 } else { 0 };
 
         if bGenericName != 0 && IsGenericSystemName(ven.as_ptr(), core::ptr::null(), &mut bRemove) != 0 {
             if bRemove != 0 {
                 *ven.as_mut_ptr() = 0;
             }
-            bGenericVen = TRUE;
+            bGenericVen = (TRUE) as u8;
             bRemoveVen = bRemove;
         }
         if bGenericName != 0 && IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 {
             if bRemove != 0 {
                 *dev.as_mut_ptr() = 0;
             }
-            bGenericDev = TRUE;
+            bGenericDev = (TRUE) as u8;
         }
 
-        if !DmiStrings[BOARD_VENDOR].is_null() || bGenericName == 0 {
-            if (!DmiStrings[BOARD_VENDOR].is_null() &&
-                strlen(DmiStrings[BOARD_VENDOR]) >= 2 &&
-                strstr(DmiStrings[BOARD_VENDOR], b"  \0".as_ptr() as PCSTR) != DmiStrings[BOARD_VENDOR]) ||
+        if !DmiStrings[(BOARD_VENDOR) as usize].is_null() || bGenericName == 0 {
+            if (!DmiStrings[(BOARD_VENDOR) as usize].is_null() &&
+                strlen(DmiStrings[(BOARD_VENDOR) as usize]) >= 2 &&
+                strstr(DmiStrings[(BOARD_VENDOR) as usize], b"  \0".as_ptr() as PCSTR) != DmiStrings[(BOARD_VENDOR) as usize]) ||
                 bGenericVen != 0
             {
-                GetSMBiosStringW(DmiStrings[BOARD_VENDOR], ven.as_mut_ptr(), _countof(ven.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
             }
-            GetSMBiosStringW(DmiStrings[BOARD_NAME], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
 
             if IsGenericSystemName(ven.as_ptr(), core::ptr::null(), &mut bRemove) != 0 && bRemove != 0 {
                 *ven.as_mut_ptr() = 0;
 
                 if bGenericVen != 0 && bRemoveVen == 0 {
-                    GetSMBiosStringW(DmiStrings[SYS_VENDOR], ven.as_mut_ptr(), _countof(ven.len()), TRUE);
+                    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
                 }
             }
             if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                 *dev.as_mut_ptr() = 0;
 
                 if bGenericDev == 0 {
-                    GetSMBiosStringW(DmiStrings[SYS_PRODUCT], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+                    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
                 }
             }
             if wcslen(dev.as_ptr()) == 0 &&
-                !DmiStrings[SYS_VERSION].is_null()
+                !DmiStrings[(SYS_VERSION) as usize].is_null()
             {
-                GetSMBiosStringW(DmiStrings[SYS_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
 
                 if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                     *dev.as_mut_ptr() = 0;
                 }
             }
             if wcslen(dev.as_ptr()) == 0 &&
-                !DmiStrings[BOARD_VERSION].is_null()
+                !DmiStrings[(BOARD_VERSION) as usize].is_null()
             {
-                GetSMBiosStringW(DmiStrings[BOARD_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(BOARD_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
 
                 if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                     *dev.as_mut_ptr() = 0;
                 }
             }
-        } else if !DmiStrings[BOARD_NAME].is_null() {
-            GetSMBiosStringW(DmiStrings[BOARD_NAME], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+        } else if !DmiStrings[(BOARD_NAME) as usize].is_null() {
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
 
             if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                 *dev.as_mut_ptr() = 0;
@@ -604,11 +604,11 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         }
 
         if wcslen(ven.as_ptr()) == 0 && wcslen(dev.as_ptr()) == 0 {
-            GetSMBiosStringW(DmiStrings[BIOS_VENDOR], ven.as_mut_ptr(), _countof(ven.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BIOS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
         }
     } else {
         if wcslen(ven.as_ptr()) < 2 {
-            GetSMBiosStringW(DmiStrings[BOARD_VENDOR], ven.as_mut_ptr(), _countof(ven.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
 
             if IsGenericSystemName(ven.as_ptr(), core::ptr::null(), &mut bRemove) != 0 && bRemove != 0 {
                 *ven.as_mut_ptr() = 0;
@@ -627,8 +627,8 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     for i in 0..25 {
         if wcsstr(dev.as_ptr(), LongNames[i as usize].pwLongName) == dev.as_ptr() {
             StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
-            StringCchCopyW(ven.as_mut_ptr(), _countof(ven.len()), dev.as_ptr());
-            StringCchCopyW(dev.as_mut_ptr(), _countof(dev.len()), pBuf);
+            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), dev.as_ptr());
+            StringCchCopyW(dev.as_mut_ptr(), _countof!(dev.len()), pBuf);
         }
         wcsrep(ven.as_mut_ptr(), LongNames[i as usize].pwLongName, LongNames[i as usize].pwShortName, TRUE);
     }
@@ -643,25 +643,25 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     }
 
     if _wcsicmp(ven.as_ptr(), b"L\0E\0N\0O\0V\0O\0\0\0".as_ptr() as PCWSTR) == 0 {
-        StringCchCopyW(ven.as_mut_ptr(), _countof(ven.len()), b"L\0e\0n\0o\0v\0o\0\0\0".as_ptr() as PCWSTR);
+        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"L\0e\0n\0o\0v\0o\0\0\0".as_ptr() as PCWSTR);
 
-        if !DmiStrings[SYS_VERSION].is_null() {
-            if strncmp(DmiStrings[SYS_VERSION], b"ThinkPad   \0".as_ptr() as PCSTR, 11) == 0 {
-                *DmiStrings[SYS_VERSION].offset(8 as isize) = 0;
+        if !DmiStrings[(SYS_VERSION) as usize].is_null() {
+            if strncmp(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad   \0".as_ptr() as PCSTR, 11) == 0 {
+                *DmiStrings[(SYS_VERSION) as usize].offset(8 as isize) = 0;
             }
             if wcslen(dev.as_ptr()) > 0 &&
-                (strcmp(DmiStrings[SYS_VERSION], b"IdeaCentre\0".as_ptr() as PCSTR) == 0 ||
-                 strcmp(DmiStrings[SYS_VERSION], b"ThinkPad\0".as_ptr() as PCSTR) == 0)
+                (strcmp(DmiStrings[(SYS_VERSION) as usize], b"IdeaCentre\0".as_ptr() as PCSTR) == 0 ||
+                 strcmp(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad\0".as_ptr() as PCSTR) == 0)
             {
-                DmiStrings[SYS_FAMILY] = DmiStrings[SYS_VERSION];
-                DmiStrings[SYS_VERSION] = core::ptr::null();
+                DmiStrings[(SYS_FAMILY) as usize] = DmiStrings[(SYS_VERSION) as usize];
+                DmiStrings[(SYS_VERSION) as usize] = core::ptr::null();
             } else {
-                StringCchCopyA(tmpstr.as_mut_ptr(), _countof(tmpstr.len()), DmiStrings[SYS_VERSION]);
+                StringCchCopyA(tmpstr.as_mut_ptr(), _countof!(tmpstr.len()), DmiStrings[(SYS_VERSION) as usize]);
                 _strupr(tmpstr.as_mut_ptr());
             }
         }
 
-        if !DmiStrings[SYS_VERSION].is_null() &&
+        if !DmiStrings[(SYS_VERSION) as usize].is_null() &&
             !strcmp(tmpstr.as_mut_ptr(), b" \0".as_ptr() as PCSTR).is_null() &&
             !strcmp(tmpstr.as_mut_ptr(), b"LENOVO\0".as_ptr() as PCSTR).is_null() &&
             strstr(tmpstr.as_mut_ptr(), b"LENOVO   \0".as_ptr() as PCSTR).is_null() &&
@@ -670,13 +670,13 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
             strstr(tmpstr.as_mut_ptr(), b"INVALID\0".as_ptr() as PCSTR).is_null() &&
             strncmp(tmpstr.as_mut_ptr(), b"   \0".as_ptr() as PCSTR, 3) == 0 &&
             (strlen(tmpstr.as_mut_ptr()) >= 3 || IsDigitStrA(tmpstr.as_mut_ptr()) == 0) &&
-            strstr(DmiStrings[SYS_VERSION], b"Rev \0".as_ptr() as PCSTR).is_null() &&
-            strstr(DmiStrings[SYS_VERSION], b"1.\0".as_ptr() as PCSTR).is_null() &&
+            strstr(DmiStrings[(SYS_VERSION) as usize], b"Rev \0".as_ptr() as PCSTR).is_null() &&
+            strstr(DmiStrings[(SYS_VERSION) as usize], b"1.\0".as_ptr() as PCSTR).is_null() &&
             wcsistr(dev.as_ptr(), b"S\0y\0s\0t\0e\0m\0 \0\0\0".as_ptr() as PCWSTR).is_null() &&
             wcsistr(dev.as_ptr(), b"I\0d\0e\0a\0P\0a\0d\0 \0\0\0".as_ptr() as PCWSTR).is_null() &&
             wcsistr(dev.as_ptr(), b"T\0h\0i\0n\0k\0S\0e\0r\0v\0e\0r\0 \0\0\0".as_ptr() as PCWSTR).is_null()
         {
-            GetSMBiosStringW(DmiStrings[SYS_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
         }
 
         if wcsstr(dev.as_ptr(), b"L\0e\0n\0o\0v\0o\0-\0\0\0".as_ptr() as PCWSTR) == dev.as_ptr() {
@@ -684,46 +684,46 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         }
 
         if wcscmp(dev.as_ptr(), b"L\0e\0n\0o\0v\0o\0\0\0".as_ptr() as PCWSTR) == 0 {
-            GetSMBiosStringW(DmiStrings[BOARD_NAME], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
         }
     }
     if wcscmp(ven.as_ptr(), b"I\0B\0M\0\0\0".as_ptr() as PCWSTR) == 0 &&
-        !DmiStrings[SYS_VERSION].is_null() &&
-        (!strstr(DmiStrings[SYS_VERSION], b"ThinkPad \0".as_ptr() as PCSTR).is_null() ||
-         !strstr(DmiStrings[SYS_VERSION], b"ThinkCentre \0".as_ptr() as PCSTR).is_null())
+        !DmiStrings[(SYS_VERSION) as usize].is_null() &&
+        (!strstr(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad \0".as_ptr() as PCSTR).is_null() ||
+         !strstr(DmiStrings[(SYS_VERSION) as usize], b"ThinkCentre \0".as_ptr() as PCSTR).is_null())
     {
-        GetSMBiosStringW(DmiStrings[SYS_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+        GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
     }
 
     if wcscmp(ven.as_ptr(), b"D\0E\0X\0P\0\0\0".as_ptr() as PCWSTR) == 0 {
-        if !DmiStrings[SYS_PRODUCT].is_null() &&
-            !DmiStrings[SYS_VERSION].is_null() &&
-            (_stricmp(DmiStrings[SYS_PRODUCT], b"Tablet PC\0".as_ptr() as PCSTR) == 0 ||
-             _stricmp(DmiStrings[SYS_PRODUCT], b"Notebook\0".as_ptr() as PCSTR) == 0 ||
-             _stricmp(DmiStrings[SYS_PRODUCT], b"Decktop\0".as_ptr() as PCSTR) == 0)
+        if !DmiStrings[(SYS_PRODUCT) as usize].is_null() &&
+            !DmiStrings[(SYS_VERSION) as usize].is_null() &&
+            (_stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Tablet PC\0".as_ptr() as PCSTR) == 0 ||
+             _stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Notebook\0".as_ptr() as PCSTR) == 0 ||
+             _stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Decktop\0".as_ptr() as PCSTR) == 0)
         {
-            GetSMBiosStringW(DmiStrings[SYS_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
         }
     }
 
     if wcscmp(ven.as_ptr(), b"R\0a\0z\0e\0r\0\0\0".as_ptr() as PCWSTR) == 0 && wcscmp(dev.as_ptr(), b"B\0l\0a\0d\0e\0\0\0".as_ptr() as PCWSTR) == 0 {
-        if !DmiStrings[SYS_VERSION].is_null() {
-            StringCchCopyW(ven.as_mut_ptr(), _countof(ven.len()), b"R\0a\0z\0e\0r\0 \0B\0l\0a\0d\0e\0\0\0".as_ptr() as PCWSTR);
-            GetSMBiosStringW(DmiStrings[SYS_VERSION], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+        if !DmiStrings[(SYS_VERSION) as usize].is_null() {
+            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"R\0a\0z\0e\0r\0 \0B\0l\0a\0d\0e\0\0\0".as_ptr() as PCWSTR);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
         }
     }
 
     if wcscmp(ven.as_ptr(), b"M\0S\0I\0\0\0".as_ptr() as PCWSTR) == 0 &&
         !wcsstr(dev.as_ptr(), b"M\0S\0-\0\0\0".as_ptr() as PCWSTR).is_null() &&
-        !DmiStrings[BOARD_NAME].is_null() &&
-        !strstr(DmiStrings[BOARD_NAME], b"(MS-\0".as_ptr() as PCSTR).is_null()
+        !DmiStrings[(BOARD_NAME) as usize].is_null() &&
+        !strstr(DmiStrings[(BOARD_NAME) as usize], b"(MS-\0".as_ptr() as PCSTR).is_null()
     {
-        GetSMBiosStringW(DmiStrings[BOARD_NAME], dev.as_mut_ptr(), _countof(dev.len()), TRUE);
+        GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
     }
     if wcslen(ven.as_ptr()) == 0 &&
         wcsstr(dev.as_ptr(), b"M\0S\0-\0\0\0".as_ptr() as PCWSTR) == dev.as_ptr()
     {
-        StringCchCopyW(ven.as_mut_ptr(), _countof(ven.len()), b"M\0S\0I\0\0\0".as_ptr() as PCWSTR);
+        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"M\0S\0I\0\0\0".as_ptr() as PCWSTR);
     }
 
     TrimPunctuation(ven.as_mut_ptr());
@@ -737,10 +737,10 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         StringCchCopyW(pBuf, cchBuf, dev.as_ptr());
     } else {
         if wcslen(ven.as_ptr()) > 0 && wcslen(dev.as_ptr()) > 0 {
-            j = wcschr(dev.as_ptr(), b' ' as u16 as i32);
+            j = wcschr(dev.as_ptr(), (b' ' as u16) as WCHAR);
             if !j.is_null() {
                 i = ((j as usize - dev.as_ptr() as usize) / 2) as u32;
-                if wcslen(ven.as_ptr()) > i && _wcsnicmp(ven.as_ptr().offset(wcslen(ven.as_ptr()) as isize - i as isize), dev.as_ptr(), i as usize) == 0 {
+                if wcslen(ven.as_ptr()) > (i) as usize && _wcsnicmp(ven.as_ptr().offset(wcslen(ven.as_ptr()) as isize - i as isize), dev.as_ptr(), i as usize) == 0 {
                     *ven.as_mut_ptr().offset(wcslen(ven.as_ptr()) as isize - i as isize) = 0;
                     TrimPunctuation(ven.as_mut_ptr());
                 }

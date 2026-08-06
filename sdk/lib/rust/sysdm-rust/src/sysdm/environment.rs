@@ -45,8 +45,8 @@ unsafe extern "C" fn DetermineDialogBoxType(lpRawValue: LPTSTR) -> BOOL {
     let mut lpTemp: LPTSTR;
     let mut lpToken: LPTSTR;
 
-    dwValueLength = _tcslen(lpRawValue) + 1;
-    lpTemp = GlobalAlloc(GPTR, dwValueLength * core::mem::size_of::<TCHAR>() as u32) as LPTSTR;
+    dwValueLength = (_tcslen(lpRawValue) + 1) as u32;
+    lpTemp = GlobalAlloc(GPTR, (dwValueLength * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
     if lpTemp.is_null() {
         return FALSE;
     }
@@ -62,7 +62,7 @@ unsafe extern "C" fn DetermineDialogBoxType(lpRawValue: LPTSTR) -> BOOL {
         }
         lpToken = _tcstok(core::ptr::null_mut(), _T(b";\0".as_ptr() as *const TCHAR));
     }
-    GlobalFree(lpTemp);
+    GlobalFree((lpTemp).cast());
 
     return TRUE;
 }
@@ -73,36 +73,36 @@ unsafe extern "C" fn GatherDataFromEditBox(
     let mut dwNameLength: DWORD;
     let mut dwValueLength: DWORD;
 
-    dwNameLength = SendDlgItemMessage(hwndDlg, IDC_VARIABLE_NAME, WM_GETTEXTLENGTH, 0, 0);
-    dwValueLength = SendDlgItemMessage(hwndDlg, IDC_VARIABLE_VALUE, WM_GETTEXTLENGTH, 0, 0);
+    dwNameLength = (SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_NAME) as i32, WM_GETTEXTLENGTH, 0, 0)) as u32;
+    dwValueLength = (SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_VALUE) as i32, WM_GETTEXTLENGTH, 0, 0)) as u32;
 
     if dwNameLength == 0 || dwValueLength == 0 {
         return 0;
     }
 
-    if (*VarData).lpName.is_null() || (_tcslen((*VarData).lpName) < dwNameLength) {
+    if (*VarData).lpName.is_null() || (_tcslen((*VarData).lpName) < (dwNameLength) as usize) {
         if !(*VarData).lpName.is_null() {
-            GlobalFree((*VarData).lpName);
+            GlobalFree(((*VarData).lpName).cast());
         }
 
-        (*VarData).lpName = GlobalAlloc(GPTR, (dwNameLength + 1) * core::mem::size_of::<TCHAR>() as DWORD) as *mut TCHAR;
+        (*VarData).lpName = GlobalAlloc(GPTR, ((dwNameLength + 1) * core::mem::size_of::<TCHAR>() as DWORD) as SIZE_T) as *mut TCHAR;
         if (*VarData).lpName.is_null() {
             return 0;
         }
     }
-    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_NAME, WM_GETTEXT, dwNameLength + 1, (*VarData).lpName as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_NAME) as i32, WM_GETTEXT, dwNameLength + 1, (*VarData).lpName as LPARAM);
 
-    if (*VarData).lpRawValue.is_null() || (_tcslen((*VarData).lpRawValue) < dwValueLength) {
+    if (*VarData).lpRawValue.is_null() || (_tcslen((*VarData).lpRawValue) < (dwValueLength) as usize) {
         if !(*VarData).lpRawValue.is_null() {
-            GlobalFree((*VarData).lpRawValue);
+            GlobalFree(((*VarData).lpRawValue).cast());
         }
 
-        (*VarData).lpRawValue = GlobalAlloc(GPTR, (dwValueLength + 1) * core::mem::size_of::<TCHAR>() as DWORD) as *mut TCHAR;
+        (*VarData).lpRawValue = GlobalAlloc(GPTR, ((dwValueLength + 1) * core::mem::size_of::<TCHAR>() as DWORD) as SIZE_T) as *mut TCHAR;
         if (*VarData).lpRawValue.is_null() {
             return 0;
         }
     }
-    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_VALUE, WM_GETTEXT, dwValueLength + 1, (*VarData).lpRawValue as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_VALUE) as i32, WM_GETTEXT, dwValueLength + 1, (*VarData).lpRawValue as LPARAM);
 
     return dwValueLength;
 }
@@ -113,7 +113,7 @@ unsafe extern "C" fn GatherDataFromListView(
     let mut dwValueLength: DWORD;
     let mut NumberOfItems: DWORD;
     let mut i: DWORD;
-    let mut szData: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szData: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     NumberOfItems = ListView_GetItemCount(hwndListView);
     if NumberOfItems == 0 {
@@ -129,27 +129,27 @@ unsafe extern "C" fn GatherDataFromListView(
             i as i32,
             0,
             szData.as_mut_ptr(),
-            _countof(szData),
+            _countof!(szData),
         );
-        dwValueLength += _tcslen(szData.as_ptr());
+        dwValueLength += (_tcslen(szData.as_ptr())) as u32;
         i += 1;
     }
 
-    if (*VarData).lpRawValue.is_null() || _tcslen((*VarData).lpRawValue) < dwValueLength {
+    if (*VarData).lpRawValue.is_null() || _tcslen((*VarData).lpRawValue) < (dwValueLength) as usize {
         if !(*VarData).lpRawValue.is_null() {
             GlobalFree((*VarData).lpRawValue as *mut core::ffi::c_void);
         }
 
         (*VarData).lpRawValue = GlobalAlloc(
             GPTR,
-            (dwValueLength + 1) * core::mem::size_of::<TCHAR>(),
+            ((dwValueLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T,
         ) as LPTSTR;
         if (*VarData).lpRawValue.is_null() {
             return 0;
         }
     }
 
-    *(*VarData).lpRawValue.add(0) = _T('\0' as i32);
+    *(*VarData).lpRawValue.add(0) = _T(('\0') as T);
     i = 0;
     while i < NumberOfItems {
         if i > 0 {
@@ -164,7 +164,7 @@ unsafe extern "C" fn GatherDataFromListView(
             i as i32,
             0,
             szData.as_mut_ptr(),
-            _countof(szData),
+            _countof!(szData),
         );
         StringCchCat(
             (*VarData).lpRawValue,
@@ -194,7 +194,7 @@ unsafe extern "C" fn GetSelectedListViewItem(hwndListView: HWND) -> i32 {
                 LVM_GETITEMSTATE,
                 iItem as WPARAM,
                 LVIS_SELECTED as LPARAM
-            ) as i32 == LVIS_SELECTED {
+            ) as i32 == (LVIS_SELECTED) as i32 {
                 return iItem;
             }
             iItem += 1;
@@ -239,7 +239,7 @@ unsafe extern "C" fn ListViewSubclassProc(
             RemoveWindowSubclass(hListBox, ListViewSubclassProc, uIdSubclass);
         }
         WM_SIZE => {
-            ShowScrollBar(hListBox, SB_HORZ, FALSE);
+            ShowScrollBar(hListBox, (SB_HORZ) as i32, FALSE);
         }
         _ => {}
     }
@@ -254,7 +254,7 @@ unsafe extern "C" fn AddEmptyItem(
 
     ZeroMemory(&mut lvi as *mut _ as *mut _, core::mem::size_of::<LV_ITEM>());
     lvi.mask = LVIF_TEXT | LVIF_STATE;
-    lvi.cchTextMax = MAX_PATH;
+    lvi.cchTextMax = (MAX_PATH) as i32;
     lvi.pszText = _T(b"\0".as_ptr() as *const i8) as *mut _;
     lvi.iItem = dwSelectedValueIndex as i32;
     lvi.iSubItem = 0;
@@ -279,23 +279,23 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
         core::mem::size_of_val(&lvi),
     );
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
 
     GetClientRect(hwndListView, core::ptr::addr_of_mut!(rItem));
 
     (*core::ptr::addr_of_mut!(column)).mask = LVCF_WIDTH;
     (*core::ptr::addr_of_mut!(column)).cx = rItem.right;
     ListView_InsertColumn(hwndListView, 0, core::ptr::addr_of_mut!(column));
-    ShowScrollBar(hwndListView, SB_HORZ, FALSE);
+    ShowScrollBar(hwndListView, (SB_HORZ) as i32, FALSE);
 
     (*core::ptr::addr_of_mut!(lvi)).mask = LVIF_TEXT | LVIF_STATE;
     (*core::ptr::addr_of_mut!(lvi)).cchTextMax = MAX_PATH;
     (*core::ptr::addr_of_mut!(lvi)).iSubItem = 0;
 
-    dwValueLength = _tcslen((*DlgData).VarData.lpRawValue) + 1;
+    dwValueLength = (_tcslen((*DlgData).VarData.lpRawValue) + 1) as u32;
     lpTemp = GlobalAlloc(
         GPTR,
-        dwValueLength * core::mem::size_of::<TCHAR>() as DWORD,
+        (dwValueLength * core::mem::size_of::<TCHAR>() as DWORD) as SIZE_T,
     ) as LPTSTR;
     if lpTemp.is_null() {
         return;
@@ -333,13 +333,13 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
 }
 unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
     let mut ofn: OPENFILENAME = core::mem::zeroed();
-    let mut szFilter: [TCHAR; MAX_STR_LENGTH] = [0; MAX_STR_LENGTH];
-    let mut szFile: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFilter: [TCHAR; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
+    let mut szFile: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     _T(b"\0".as_ptr());
     _T(b"\0".as_ptr());
 
-    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof(szFilter.as_ptr()));
+    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof!(szFilter.as_ptr()));
 
     ZeroMemory(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
@@ -347,11 +347,11 @@ unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
     ofn.hwndOwner = hwndDlg;
     ofn.lpstrFilter = szFilter.as_mut_ptr();
     ofn.lpstrFile = szFile.as_mut_ptr();
-    ofn.nMaxFile = _countof(szFile.as_ptr());
+    ofn.nMaxFile = _countof!(szFile.as_ptr());
     ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if GetOpenFileName(core::ptr::addr_of_mut!(ofn)) != 0 {
-        SetDlgItemText(hwndDlg, IDC_VARIABLE_VALUE, szFile.as_mut_ptr());
+        SetDlgItemText(hwndDlg, (IDC_VARIABLE_VALUE) as i32, szFile.as_mut_ptr());
     }
 }
 unsafe extern "C" fn BrowseRequiredFolder(
@@ -359,7 +359,7 @@ unsafe extern "C" fn BrowseRequiredFolder(
     DlgData: *mut EDIT_DIALOG_DATA,
 ) {
     let mut hwndListView: HWND;
-    let mut szDir: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szDir: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     let mut bi: BROWSEINFO = core::mem::zeroed();
     let mut pidllist: LPITEMIDLIST;
@@ -371,7 +371,7 @@ unsafe extern "C" fn BrowseRequiredFolder(
     bi.hwndOwner = hwndDlg;
     bi.ulFlags = BIF_NEWDIALOGSTYLE;
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
 
     pidllist = SHBrowseForFolder(&mut bi);
     if pidllist.is_null() {
@@ -397,7 +397,7 @@ unsafe extern "C" fn BrowseRequiredFolder(
                 LVIS_FOCUSED | LVIS_SELECTED,
             );
         } else {
-            SetDlgItemText(hwndDlg, IDC_VARIABLE_VALUE, szDir.as_mut_ptr());
+            SetDlgItemText(hwndDlg, (IDC_VARIABLE_VALUE) as i32, szDir.as_mut_ptr());
         }
     }
 
@@ -408,14 +408,14 @@ unsafe extern "C" fn MoveListItem(
     DlgData: *mut EDIT_DIALOG_DATA,
     bMoveUp: i32,
 ) {
-    let mut szDest: [TCHAR; MAX_PATH] = core::mem::zeroed();
-    let mut szSource: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szDest: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
+    let mut szSource: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let hwndListView: HWND;
     let dwSrcIndex: u32;
     let dwDestIndex: u32;
     let dwLastIndex: u32;
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
 
     dwLastIndex = ListView_GetItemCount(hwndListView) - 1;
     dwSrcIndex = (*DlgData).dwSelectedValueIndex;
@@ -431,14 +431,14 @@ unsafe extern "C" fn MoveListItem(
             dwSrcIndex,
             0,
             szDest.as_mut_ptr(),
-            _countof(szDest.as_mut_ptr()),
+            _countof!(szDest.as_mut_ptr()),
         );
         ListView_GetItemText(
             hwndListView,
             dwDestIndex,
             0,
             szSource.as_mut_ptr(),
-            _countof(szSource.as_mut_ptr()),
+            _countof!(szSource.as_mut_ptr()),
         );
 
         ListView_SetItemText(
@@ -480,13 +480,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
     if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE {
         hdwp = BeginDeferWindowPos(5);
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_VARIABLE_NAME);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_VARIABLE_NAME) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -502,13 +502,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_VARIABLE_VALUE);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_VARIABLE_VALUE) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -526,13 +526,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
     } else if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
         hdwp = BeginDeferWindowPos(11);
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -553,13 +553,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_BROWSE_FOLDER);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_BROWSE_FOLDER) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -575,13 +575,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_NEW);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_NEW) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -597,13 +597,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_EDIT);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_EDIT) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -619,13 +619,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_DELETE);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_DELETE) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -641,13 +641,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_MOVE_UP);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_MOVE_UP) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -663,13 +663,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_MOVE_DOWN);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_MOVE_DOWN) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -685,13 +685,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
             );
         }
 
-        hItemWnd = GetDlgItem(hwndDlg, IDC_BUTTON_EDIT_TEXT);
+        hItemWnd = GetDlgItem(hwndDlg, (IDC_BUTTON_EDIT_TEXT) as i32);
         GetWindowRect(hItemWnd, &mut rect);
         MapWindowPoints(
             HWND_DESKTOP,
             hwndDlg,
             (&mut rect) as *mut RECT as LPPOINT,
-            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+            (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
         );
 
         if !hdwp.is_null() {
@@ -708,13 +708,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
         }
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDOK);
+    hItemWnd = GetDlgItem(hwndDlg, (IDOK) as i32);
     GetWindowRect(hItemWnd, &mut rect);
     MapWindowPoints(
         HWND_DESKTOP,
         hwndDlg,
         (&mut rect) as *mut RECT as LPPOINT,
-        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
     );
 
     if !hdwp.is_null() {
@@ -730,13 +730,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDCANCEL);
+    hItemWnd = GetDlgItem(hwndDlg, (IDCANCEL) as i32);
     GetWindowRect(hItemWnd, &mut rect);
     MapWindowPoints(
         HWND_DESKTOP,
         hwndDlg,
         (&mut rect) as *mut RECT as LPPOINT,
-        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
     );
 
     if !hdwp.is_null() {
@@ -752,13 +752,13 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_DIALOG_GRIP);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_DIALOG_GRIP) as i32);
     GetWindowRect(hItemWnd, &mut rect);
     MapWindowPoints(
         HWND_DESKTOP,
         hwndDlg,
         (&mut rect) as *mut RECT as LPPOINT,
-        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32,
+        (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT,
     );
 
     if !hdwp.is_null() {
@@ -793,8 +793,8 @@ unsafe extern "C" fn OnBeginLabelEdit(pnmv: *mut NMLVDISPINFO) -> BOOL {
 }
 unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
     let mut hwndEdit: HWND;
-    let mut szOldDir: [TCHAR; MAX_PATH] = core::mem::zeroed();
-    let mut szNewDir: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szOldDir: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
+    let mut szNewDir: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
 
     hwndEdit = ListView_GetEditControl((*pnmv).hdr.hwndFrom);
     if hwndEdit == core::ptr::null_mut() {
@@ -810,13 +810,13 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
         (*pnmv).item.iItem,
         0,
         szOldDir.as_mut_ptr(),
-        _countof(szOldDir.as_ptr()),
+        _countof!(szOldDir.as_ptr()),
     );
 
     SendMessage(
         hwndEdit,
         WM_GETTEXT,
-        _countof(szNewDir.as_ptr()),
+        _countof!(szNewDir.as_ptr()),
         szNewDir.as_mut_ptr() as LPARAM,
     );
 
@@ -859,9 +859,9 @@ unsafe extern "C" fn OnNotifyEditVariableDlg(hwndDlg: HWND, DlgData: PEDIT_DIALO
 
                 NM_DBLCLK => {
                     if (*lpnmlv).iItem == -1 {
-                        SendMessage(GetDlgItem(hwndDlg, IDC_BUTTON_NEW), BM_CLICK, 0, 0);
+                        SendMessage(GetDlgItem(hwndDlg, (IDC_BUTTON_NEW) as i32), BM_CLICK, 0, 0);
                     } else {
-                        ListView_EditLabel(GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE), (*DlgData).dwSelectedValueIndex as i32);
+                        ListView_EditLabel(GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32), (*DlgData).dwSelectedValueIndex as i32);
                     }
                 }
 
@@ -992,7 +992,7 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
                     }
 
                     if (*(*DlgData).VarData).lpCookedValue != core::ptr::null_mut() {
-                        GlobalFree((*(*DlgData).VarData).lpCookedValue);
+                        GlobalFree(((*(*DlgData).VarData).lpCookedValue).cast());
                         (*(*DlgData).VarData).lpCookedValue = core::ptr::null_mut();
                     }
 
@@ -1120,7 +1120,7 @@ unsafe extern "C" fn EditVariableDlgProc(
     let hwndListView: HWND;
 
     DlgData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PEDIT_DIALOG_DATA;
-    hwndListView = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -1145,11 +1145,11 @@ unsafe extern "C" fn EditVariableDlgProc(
                 }
             } else {
                 if (*(*DlgData).VarData).lpName != core::ptr::null_mut() {
-                    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_NAME, WM_SETTEXT, 0, (*(*DlgData).VarData).lpName as LPARAM);
+                    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_NAME) as i32, WM_SETTEXT, 0, (*(*DlgData).VarData).lpName as LPARAM);
                 }
 
                 if (*(*DlgData).VarData).lpRawValue != core::ptr::null_mut() {
-                    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_VALUE, WM_SETTEXT, 0, (*(*DlgData).VarData).lpRawValue as LPARAM);
+                    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_VALUE) as i32, WM_SETTEXT, 0, (*(*DlgData).VarData).lpRawValue as LPARAM);
                 }
             }
         }
@@ -1195,7 +1195,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                 }
             }
 
-            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, TRUE);
+            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, (TRUE) as LONG_PTR);
             return TRUE;
         }
 
@@ -1220,7 +1220,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                     }
 
                     if (*(*DlgData).VarData).lpCookedValue != core::ptr::null_mut() {
-                        GlobalFree((*(*DlgData).VarData).lpCookedValue);
+                        GlobalFree(((*(*DlgData).VarData).lpCookedValue).cast());
                         (*(*DlgData).VarData).lpCookedValue = core::ptr::null_mut();
                     }
 
@@ -1230,7 +1230,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                         if !_tcschr(p, _T('%')).is_null() {
                             (*(*DlgData).VarData).dwType = REG_EXPAND_SZ;
 
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, 2 * MAX_PATH * core::mem::size_of::<TCHAR>()) as LPTSTR;
+                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (2 * MAX_PATH * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
                             if (*(*DlgData).VarData).lpCookedValue.is_null() {
                                 return FALSE;
                             }
@@ -1243,7 +1243,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                         } else {
                             (*(*DlgData).VarData).dwType = REG_SZ;
 
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (dwValueLength + 1) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
                             if (*(*DlgData).VarData).lpCookedValue.is_null() {
                                 return FALSE;
                             }
@@ -1253,7 +1253,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                     } else {
                         (*(*DlgData).VarData).dwType = REG_SZ;
 
-                        (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (dwValueLength + 1) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+                        (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
                         if (*(*DlgData).VarData).lpCookedValue.is_null() {
                             return FALSE;
                         }
@@ -1311,7 +1311,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                         MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON1,
                         IDS_ENVIRONMENT_WARNING_TITLE,
                         IDS_ENVIRONMENT_WARNING,
-                    ) == IDOK
+                    ) == (IDOK) as i32
                     {
                         EndDialog(hwndDlg, -1);
                     }
@@ -1389,7 +1389,7 @@ unsafe extern "C" fn GetEnvironmentVariables(
 
     lpName = GlobalAlloc(
         GPTR,
-        (dwMaxValueNameLength + 1) * core::mem::size_of::<TCHAR>() as u32,
+        ((dwMaxValueNameLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T,
     ) as LPTSTR;
     if lpName.is_null() {
         RegCloseKey(hKey);
@@ -1398,7 +1398,7 @@ unsafe extern "C" fn GetEnvironmentVariables(
 
     lpData = GlobalAlloc(
         GPTR,
-        (dwMaxValueDataLength + 1) * core::mem::size_of::<TCHAR>() as u32,
+        ((dwMaxValueDataLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T,
     ) as LPTSTR;
     if lpData.is_null() {
         GlobalFree(lpName as _);
@@ -1408,7 +1408,7 @@ unsafe extern "C" fn GetEnvironmentVariables(
 
     lpExpandData = GlobalAlloc(
         GPTR,
-        2048 * core::mem::size_of::<TCHAR>() as u32,
+        (2048 * core::mem::size_of::<TCHAR>()) as SIZE_T,
     ) as LPTSTR;
     if lpExpandData.is_null() {
         GlobalFree(lpName as _);
@@ -1447,20 +1447,20 @@ unsafe extern "C" fn GetEnvironmentVariables(
 
         VarData = GlobalAlloc(
             GPTR,
-            core::mem::size_of::<VARIABLE_DATA>() as u32,
+            (core::mem::size_of::<VARIABLE_DATA>()) as SIZE_T,
         ) as PVARIABLE_DATA;
 
         (*VarData).dwType = dwType;
 
         (*VarData).lpName = GlobalAlloc(
             GPTR,
-            (dwNameLength + 1) * core::mem::size_of::<TCHAR>() as u32,
+            ((dwNameLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T,
         ) as LPTSTR;
         _tcscpy((*VarData).lpName, lpName);
 
         (*VarData).lpRawValue = GlobalAlloc(
             GPTR,
-            (dwDataLength + 1) * core::mem::size_of::<TCHAR>() as u32,
+            ((dwDataLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T,
         ) as LPTSTR;
         _tcscpy((*VarData).lpRawValue, lpData);
 
@@ -1468,14 +1468,14 @@ unsafe extern "C" fn GetEnvironmentVariables(
 
         (*VarData).lpCookedValue = GlobalAlloc(
             GPTR,
-            (_tcslen(lpExpandData) + 1) * core::mem::size_of::<TCHAR>() as u32,
+            ((_tcslen(lpExpandData) + 1) * core::mem::size_of::<TCHAR>()) as SIZE_T,
         ) as LPTSTR;
         _tcscpy((*VarData).lpCookedValue, lpExpandData);
 
         memset(
             &mut lvi as *mut _ as *mut _,
             0x00,
-            core::mem::size_of_val(&lvi) as u32,
+            (core::mem::size_of_val(&lvi) as u32) as usize,
         );
         lvi.mask = LVIF_TEXT | LVIF_STATE | LVIF_PARAM;
         lvi.lParam = VarData as LPARAM;
@@ -1506,7 +1506,7 @@ unsafe extern "C" fn SetEnvironmentDialogListViewColumns(hwndListView: HWND) {
 
     memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, sizeof(column));
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
-    column.fmt = LVCFMT_LEFT;
+    column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.32) as INT;
     column.iSubItem = 0;
     LoadString(hApplet, IDS_VARIABLE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of_val(&szStr[0])) as i32);
@@ -1522,7 +1522,7 @@ unsafe extern "C" fn SetEnvironmentDialogListViewColumns(hwndListView: HWND) {
 unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     let mut hwndListView: HWND;
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_LIST);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
 
     ListView_SetExtendedListViewStyle(hwndListView, LVS_EX_FULLROWSELECT);
 
@@ -1545,7 +1545,7 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
 
     ListView_Update(hwndListView, 0);
 
-    hwndListView = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+    hwndListView = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
 
     ListView_SetExtendedListViewStyle(hwndListView, LVS_EX_FULLROWSELECT);
 
@@ -1577,7 +1577,7 @@ unsafe extern "C" fn OnNewVariable(
     let mut lvi: LV_ITEM;
     let mut iItem: i32;
 
-    DlgData = GlobalAlloc(GPTR, core::mem::size_of::<EDIT_DIALOG_DATA>()) as *mut EDIT_DIALOG_DATA;
+    DlgData = GlobalAlloc(GPTR, (core::mem::size_of::<EDIT_DIALOG_DATA>()) as SIZE_T) as *mut EDIT_DIALOG_DATA;
     if DlgData.is_null() {
         return;
     }
@@ -1586,7 +1586,7 @@ unsafe extern "C" fn OnNewVariable(
     (*DlgData).dwDlgID = IDD_EDIT_VARIABLE;
     (*DlgData).dwSelectedValueIndex = -1 as DWORD;
 
-    (*DlgData).VarData = GlobalAlloc(GPTR, core::mem::size_of::<VARIABLE_DATA>()) as *mut VARIABLE_DATA;
+    (*DlgData).VarData = GlobalAlloc(GPTR, (core::mem::size_of::<VARIABLE_DATA>()) as SIZE_T) as *mut VARIABLE_DATA;
     if (*DlgData).VarData.is_null() {
         return;
     }
@@ -1646,7 +1646,7 @@ unsafe extern "C" fn OnEditVariable(
     let mut iItem: i32;
     let mut iRet: i32;
 
-    DlgData = GlobalAlloc(GPTR, core::mem::size_of::<EDIT_DIALOG_DATA>()) as *mut EDIT_DIALOG_DATA;
+    DlgData = GlobalAlloc(GPTR, (core::mem::size_of::<EDIT_DIALOG_DATA>()) as SIZE_T) as *mut EDIT_DIALOG_DATA;
     if DlgData.is_null() {
         return;
     }
@@ -1669,23 +1669,23 @@ unsafe extern "C" fn OnEditVariable(
                 (*DlgData).dwDlgID = IDD_EDIT_VARIABLE_FANCY;
             }
 
-            iRet = DialogBoxParam(
+            iRet = (DialogBoxParam(
                 hApplet,
                 MAKEINTRESOURCE((*DlgData).dwDlgID),
                 hwndDlg,
                 EditVariableDlgProc,
                 DlgData as LPARAM,
-            );
+            )) as i32;
 
             if iRet < 0 {
                 (*DlgData).dwDlgID = IDD_EDIT_VARIABLE;
-                iRet = DialogBoxParam(
+                iRet = (DialogBoxParam(
                     hApplet,
                     MAKEINTRESOURCE((*DlgData).dwDlgID),
                     hwndDlg,
                     EditVariableDlgProc,
                     DlgData as LPARAM,
-                );
+                )) as i32;
             }
 
             if iRet > 0 {
@@ -1773,9 +1773,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         y -= (((*DlgData).cyOld - cy + 1) / 2) as i32;
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_GROUP);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_GROUP) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1789,9 +1789,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_GROUP);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_GROUP) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1805,9 +1805,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_LIST);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1823,9 +1823,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         ListView_SetColumnWidth(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1841,9 +1841,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         ListView_SetColumnWidth(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_NEW);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_NEW) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1857,9 +1857,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_EDIT);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_EDIT) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1873,9 +1873,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_USER_VARIABLE_DELETE);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_DELETE) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1889,9 +1889,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_NEW);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_NEW) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1905,9 +1905,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_EDIT);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_EDIT) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1921,9 +1921,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_SYSTEM_VARIABLE_DELETE);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_DELETE) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1937,9 +1937,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDOK);
+    hItemWnd = GetDlgItem(hwndDlg, (IDOK) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1953,9 +1953,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDCANCEL);
+    hItemWnd = GetDlgItem(hwndDlg, (IDCANCEL) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -1969,9 +1969,9 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
         );
     }
 
-    hItemWnd = GetDlgItem(hwndDlg, IDC_DIALOG_GRIP);
+    hItemWnd = GetDlgItem(hwndDlg, (IDC_DIALOG_GRIP) as i32);
     GetWindowRect(hItemWnd, &mut rect);
-    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as i32);
+    MapWindowPoints(HWND_DESKTOP, hwndDlg, (&mut rect as *mut RECT) as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT);
 
     if !hdwp.is_null() {
         hdwp = DeferWindowPos(
@@ -2061,15 +2061,15 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
     lvi.iItem = iItem;
 
     if RegCreateKeyEx(
-        if iDlgItem == IDC_SYSTEM_VARIABLE_LIST {
+        if iDlgItem == (IDC_SYSTEM_VARIABLE_LIST) as i32 {
             HKEY_LOCAL_MACHINE
         } else {
             HKEY_CURRENT_USER
         },
-        if iDlgItem == IDC_SYSTEM_VARIABLE_LIST {
-            _T(b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0".as_ptr() as *const i8)
+        if iDlgItem == (IDC_SYSTEM_VARIABLE_LIST) as i32 {
+            _T((b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0".as_ptr() as *const i8).cast())
         } else {
-            _T(b"Environment\0".as_ptr() as *const i8)
+            _T((b"Environment\0".as_ptr() as *const i8).cast())
         },
         0,
         core::ptr::null_mut(),
@@ -2105,7 +2105,7 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
     if dwValueCount > 0 {
         aValueArray = GlobalAlloc(
             GPTR,
-            (dwValueCount as usize) * core::mem::size_of::<LPTSTR>(),
+            ((dwValueCount as usize) * core::mem::size_of::<LPTSTR>()) as SIZE_T,
         ) as *mut LPTSTR;
         if aValueArray != core::ptr::null_mut() {
             i = 0;
@@ -2124,8 +2124,8 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
                 {
                     lpBuffer = GlobalAlloc(
                         GPTR,
-                        ((dwNameLength + 1) as usize)
-                            * core::mem::size_of::<TCHAR>(),
+                        (((dwNameLength + 1) as usize)
+                            * core::mem::size_of::<TCHAR>()) as SIZE_T,
                     ) as LPTSTR;
                     if lpBuffer != core::ptr::null_mut() {
                         _tcscpy(lpBuffer, szBuffer.as_ptr());
@@ -2174,7 +2174,7 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
     RegCloseKey(hKey);
 }
 unsafe extern "C" fn OnNotify(hwndDlg: HWND, phdr: *mut NMHDR) -> i32 {
-    match (*phdr).code {
+    match ((*phdr).code) as i32 {
         NM_DBLCLK => {
             if (*phdr).idFrom == IDC_USER_VARIABLE_LIST ||
                 (*phdr).idFrom == IDC_SYSTEM_VARIABLE_LIST
@@ -2213,7 +2213,7 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         WM_INITDIALOG => {
             let mut rect: RECT = core::mem::zeroed();
 
-            DlgData = GlobalAlloc(GPTR, core::mem::size_of::<ENVIRONMENT_DIALOG_DATA>() as u32) as *mut ENVIRONMENT_DIALOG_DATA;
+            DlgData = GlobalAlloc(GPTR, (core::mem::size_of::<ENVIRONMENT_DIALOG_DATA>()) as SIZE_T) as *mut ENVIRONMENT_DIALOG_DATA;
             if DlgData.is_null() {
                 EndDialog(hwndDlg, 0);
                 return TRUE as INT_PTR;
@@ -2260,45 +2260,45 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
                 }
             }
 
-            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, TRUE);
+            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, (TRUE) as LONG_PTR);
             return TRUE;
         }
 
         WM_COMMAND => {
             match LOWORD(wParam as u32) {
                 IDC_USER_VARIABLE_NEW => {
-                    OnNewVariable(hwndDlg, IDC_USER_VARIABLE_LIST);
+                    OnNewVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDC_USER_VARIABLE_EDIT => {
-                    OnEditVariable(hwndDlg, IDC_USER_VARIABLE_LIST);
+                    OnEditVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDC_USER_VARIABLE_DELETE => {
-                    OnDeleteVariable(hwndDlg, IDC_USER_VARIABLE_LIST);
+                    OnDeleteVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDC_SYSTEM_VARIABLE_NEW => {
-                    OnNewVariable(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+                    OnNewVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDC_SYSTEM_VARIABLE_EDIT => {
-                    OnEditVariable(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+                    OnEditVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDC_SYSTEM_VARIABLE_DELETE => {
-                    OnDeleteVariable(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+                    OnDeleteVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
                     return TRUE;
                 }
 
                 IDOK => {
-                    SetAllVars(hwndDlg, IDC_USER_VARIABLE_LIST);
-                    SetAllVars(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+                    SetAllVars(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
+                    SetAllVars(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
                     SendMessage(HWND_BROADCAST, WM_WININICHANGE,
                                 0, _T("Environment") as LPARAM);
                     EndDialog(hwndDlg, 0);
@@ -2315,8 +2315,8 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         }
 
         WM_DESTROY => {
-            ReleaseListViewItems(hwndDlg, IDC_USER_VARIABLE_LIST);
-            ReleaseListViewItems(hwndDlg, IDC_SYSTEM_VARIABLE_LIST);
+            ReleaseListViewItems(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
+            ReleaseListViewItems(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
             GlobalFree(DlgData as *mut core::ffi::c_void);
         }
 

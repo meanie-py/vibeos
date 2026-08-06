@@ -24,9 +24,9 @@ unsafe extern "C" fn RegTreeOpt_OnTreeViewClick(pRTO: *mut IRegTreeOptions, hWnd
     return RegTreeOpt_ToggleCheckItem(pRTO, hItem);
 }
 unsafe extern "C" fn RegTreeOpt_OnTreeViewKeyDown(pRTO: *mut IRegTreeOptions, hWndTree: HWND, pKey: *mut TV_KEYDOWN) -> BOOL {
-    if (*pKey).wVKey == VK_SPACE {
+    if (*pKey).wVKey == (VK_SPACE) as u16 {
         return RegTreeOpt_ToggleCheckItem(pRTO, TreeView_GetSelection(hWndTree));
-    } else if (*pKey).wVKey == VK_F5 && !pRTO.is_null() {
+    } else if (*pKey).wVKey == (VK_F5) as u16 && !pRTO.is_null() {
         IRegTreeOptions_WalkTree(pRTO, WALK_TREE_REFRESH);
     }
     return FALSE;
@@ -114,7 +114,7 @@ unsafe extern "C" fn VisualEffectsDlgProc(
     lParam: LPARAM,
 ) -> INT_PTR {
     let pRTO = GetWindowLongPtrW(hDlg, DWLP_USER) as *mut IRegTreeOptions;
-    let hWndTree = GetDlgItem(hDlg, IDC_TREE);
+    let hWndTree = GetDlgItem(hDlg, (IDC_TREE) as i32);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -215,8 +215,8 @@ unsafe extern "C" fn AdvancedDlgProc(
 ) -> INT_PTR {
     match uMsg {
         WM_INITDIALOG => {
-            EnableWindow(GetDlgItem(hDlg, IDC_CPUCLIENT), FALSE);
-            EnableWindow(GetDlgItem(hDlg, IDC_CPUSERVER), FALSE);
+            EnableWindow(GetDlgItem(hDlg, (IDC_CPUCLIENT) as i32), FALSE);
+            EnableWindow(GetDlgItem(hDlg, (IDC_CPUSERVER) as i32), FALSE);
             return TRUE;
         }
         WM_COMMAND => {
@@ -263,8 +263,8 @@ pub unsafe extern "C" fn ShowPerformanceOptions(hDlg: HWND) {
     psh.hwndParent = hDlg;
     psh.hInstance = hApplet;
     psh.pszCaption = MAKEINTRESOURCEW(IDS_PERFORMANCEOPTIONS);
-    psh.nPages = _countof(pages);
-    psh.ppsp = pages.as_ptr();
+    psh.nPages = _countof!(pages);
+    psh.__bindgen_anon_3.ppsp = pages.as_ptr();
 
     PropertySheetW(&mut psh);
 

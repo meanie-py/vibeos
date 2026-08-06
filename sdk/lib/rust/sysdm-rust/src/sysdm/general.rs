@@ -25,10 +25,10 @@ pub type PFGETTICKCOUNT64 = Option<unsafe extern "system" fn() -> ULONGLONG>;
 static mut pImgInfo: PIMGINFO = core::ptr::null_mut();
 
 static BlendFunc: BLENDFUNCTION = BLENDFUNCTION {
-    BlendOp: AC_SRC_OVER,
+    BlendOp: (AC_SRC_OVER) as u8,
     BlendFlags: 0,
     SourceConstantAlpha: 255,
-    AlphaFormat: AC_SRC_ALPHA,
+    AlphaFormat: (AC_SRC_ALPHA) as u8,
 };
 
 static mut hKernel32Vista: HMODULE = core::ptr::null_mut();
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn ShowLastWin32Error(hWndOwner: HWND) {
     }
 
     MessageBox(hWndOwner, lpMsg, core::ptr::null_mut(), MB_OK | MB_ICONERROR);
-    LocalFree(lpMsg);
+    LocalFree((lpMsg).cast());
 }
 unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
     let mut logoBitmap: BITMAP = core::mem::zeroed();
@@ -102,7 +102,7 @@ unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
             break 'Cleanup;
         }
 
-        bmpi.bmiHeader.biSize = BITMAPINFO;
+        bmpi.bmiHeader.biSize = (core::mem::size_of::<BITMAPINFO>()) as u32;
         bmpi.bmiHeader.biWidth = logoBitmap.bmWidth;
         bmpi.bmiHeader.biHeight = logoBitmap.bmHeight;
         bmpi.bmiHeader.biPlanes = 1;
@@ -143,8 +143,8 @@ unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
         (*pImgInfo).hBitmap = hAlphaLogo;
         (*pImgInfo).cxSource = logoBitmap.bmWidth;
         (*pImgInfo).cySource = logoBitmap.bmHeight;
-        (*pImgInfo).iBits = logoBitmap.bmBitsPixel;
-        (*pImgInfo).iPlanes = logoBitmap.bmPlanes;
+        (*pImgInfo).iBits = (logoBitmap.bmBitsPixel) as i32;
+        (*pImgInfo).iPlanes = (logoBitmap.bmPlanes) as i32;
 
         break 'Cleanup;
     }
@@ -188,7 +188,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                     hDC = GetDC(core::ptr::null_mut());
                     if hDC == core::ptr::null_mut() {
                         'Cleanup: loop {
-                            if hFont != core::ptr::null_mut() { DeleteObject(hFont); }
+                            if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                             if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                             if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
                             if hDC != core::ptr::null_mut() { ReleaseDC(core::ptr::null_mut(), hDC); }
@@ -203,7 +203,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
                         if hCreditsDC == core::ptr::null_mut() || hLogoDC == core::ptr::null_mut() {
                             'Cleanup: loop {
-                                if hFont != core::ptr::null_mut() { DeleteObject(hFont); }
+                                if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                 if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                 if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
                                 if hDC != core::ptr::null_mut() { ReleaseDC(core::ptr::null_mut(), hDC); }
@@ -212,53 +212,53 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                         } else {
                             SetRect(&mut rcCredits, 0, 0, 0, 0);
 
-                            ncm.cbSize = core::mem::size_of_val(&NONCLIENTMETRICS) as u32;
-                            SystemParametersInfo(SPI_GETNONCLIENTMETRICS, core::mem::size_of_val(&NONCLIENTMETRICS) as u32, &mut ncm as *mut _ as *mut _, 0);
+                            ncm.cbSize = core::mem::size_of::<NONCLIENTMETRICS>() as u32;
+                            SystemParametersInfo(SPI_GETNONCLIENTMETRICS, core::mem::size_of::<NONCLIENTMETRICS>() as u32, &mut ncm as *mut _ as *mut _, 0);
 
                             hFont = CreateFontIndirect(&mut ncm.lfMessageFont);
                             if hFont == core::ptr::null_mut() {
                                 'Cleanup: loop {
-                                    if hFont != core::ptr::null_mut() { DeleteObject(hFont); }
+                                    if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                     if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                     if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
                                     if hDC != core::ptr::null_mut() { ReleaseDC(core::ptr::null_mut(), hDC); }
                                     break;
                                 }
                             } else {
-                                SelectObject(hCreditsDC, hFont);
+                                SelectObject(hCreditsDC, (hFont).cast());
 
-                                LoadString(hApplet, IDS_DEVS, szCredits.as_mut_ptr(), (core::mem::size_of_val(&szCredits) / core::mem::size_of_val(&TCHAR)) as i32);
+                                LoadString(hApplet, IDS_DEVS, szCredits.as_mut_ptr(), (core::mem::size_of_val(&szCredits) / core::mem::size_of::<TCHAR>()) as i32);
                                 DrawText(hCreditsDC, szCredits.as_mut_ptr(), -1, &mut rcCredits, DT_CALCRECT);
 
                                 iDevsHeight = rcCredits.bottom - rcCredits.top;
 
-                                hCreditsBitmap = CreateBitmap((*pImgInfo).cxSource, (2 * (*pImgInfo).cySource) + iDevsHeight + 1, (*pImgInfo).iPlanes, (*pImgInfo).iBits, core::ptr::null_mut());
+                                hCreditsBitmap = CreateBitmap((*pImgInfo).cxSource, (2 * (*pImgInfo).cySource) + iDevsHeight + 1, ((*pImgInfo).iPlanes) as UINT, ((*pImgInfo).iBits) as UINT, core::ptr::null_mut());
                                 if hCreditsBitmap == core::ptr::null_mut() {
                                     'Cleanup: loop {
-                                        if hFont != core::ptr::null_mut() { DeleteObject(hFont); }
+                                        if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                         if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                         if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
                                         if hDC != core::ptr::null_mut() { ReleaseDC(core::ptr::null_mut(), hDC); }
                                         break;
                                     }
                                 } else {
-                                    SelectObject(hLogoDC, (*pImgInfo).hBitmap);
-                                    SelectObject(hCreditsDC, hCreditsBitmap);
+                                    SelectObject(hLogoDC, ((*pImgInfo).hBitmap).cast());
+                                    SelectObject(hCreditsDC, (hCreditsBitmap).cast());
 
                                     offset += (*pImgInfo).cySource as u32;
 
                                     SetRect(&mut rcCredits, 0, 0, (*pImgInfo).cxSource, (2 * (*pImgInfo).cySource) + iDevsHeight + 1);
-                                    FillRect(hCreditsDC, &mut rcCredits, GetSysColorBrush(COLOR_3DFACE));
+                                    FillRect(hCreditsDC, &mut rcCredits, GetSysColorBrush((COLOR_3DFACE) as i32));
 
                                     SetRect(&mut rcCredits, 0, offset as i32, (*pImgInfo).cxSource, offset as i32 + iDevsHeight + 1);
-                                    SetBkMode(hCreditsDC, TRANSPARENT);
+                                    SetBkMode(hCreditsDC, (TRANSPARENT) as i32);
 
                                     OffsetRect(&mut rcCredits, 1, 1);
-                                    SetTextColor(hCreditsDC, GetSysColor(COLOR_BTNSHADOW));
+                                    SetTextColor(hCreditsDC, GetSysColor((COLOR_BTNSHADOW) as i32));
                                     DrawText(hCreditsDC, szCredits.as_mut_ptr(), -1, &mut rcCredits, DT_CENTER);
 
                                     OffsetRect(&mut rcCredits, -1, -1);
-                                    SetTextColor(hCreditsDC, GetSysColor(COLOR_WINDOWTEXT));
+                                    SetTextColor(hCreditsDC, GetSysColor((COLOR_WINDOWTEXT) as i32));
                                     DrawText(hCreditsDC, szCredits.as_mut_ptr(), -1, &mut rcCredits, DT_CENTER);
 
                                     offset += iDevsHeight as u32;
@@ -266,9 +266,9 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                                     AlphaBlend(hCreditsDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, hLogoDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, BlendFunc);
                                     AlphaBlend(hCreditsDC, 0, offset as i32, (*pImgInfo).cxSource, (*pImgInfo).cySource, hLogoDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, BlendFunc);
 
-                                    timerid = SetTimer(hwnd, 1, ANIM_TIME, core::ptr::null_mut());
+                                    timerid = (SetTimer(hwnd, 1, (ANIM_TIME) as UINT, core::ptr::null_mut())) as u32;
 
-                                    if hFont != core::ptr::null_mut() { DeleteObject(hFont); }
+                                    if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                     if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                     if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
                                     if hDC != core::ptr::null_mut() { ReleaseDC(core::ptr::null_mut(), hDC); }
@@ -286,12 +286,12 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                 if hDC != core::ptr::null_mut() {
                     GetClientRect(hwnd, &mut rcCredits);
                     SetRect(&mut rcCredits, 0, 0, rcCredits.right, (*pImgInfo).cySource);
-                    FillRect(hDC, &mut rcCredits, GetSysColorBrush(COLOR_3DFACE));
+                    FillRect(hDC, &mut rcCredits, GetSysColorBrush((COLOR_3DFACE) as i32));
                     ReleaseDC(hwnd, hDC);
                 }
-                KillTimer(hwnd, timerid);
+                KillTimer(hwnd, (timerid) as UINT_PTR);
                 if hCreditsBitmap != core::ptr::null_mut() {
-                    DeleteObject(hCreditsBitmap);
+                    DeleteObject((hCreditsBitmap).cast());
                 }
 
                 InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
@@ -300,7 +300,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
             }
         }
         WM_TIMER => {
-            top += ANIM_STEP;
+            top += (ANIM_STEP) as u32;
 
             if top > offset {
                 let mut rcCredits: RECT = core::mem::zeroed();
@@ -308,12 +308,12 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                 if hDC != core::ptr::null_mut() {
                     GetClientRect(hwnd, &mut rcCredits);
                     SetRect(&mut rcCredits, 0, 0, rcCredits.right, (*pImgInfo).cySource);
-                    FillRect(hDC, &mut rcCredits, GetSysColorBrush(COLOR_3DFACE));
+                    FillRect(hDC, &mut rcCredits, GetSysColorBrush((COLOR_3DFACE) as i32));
                     ReleaseDC(hwnd, hDC);
                 }
-                KillTimer(hwnd, timerid);
+                KillTimer(hwnd, (timerid) as UINT_PTR);
                 if hCreditsBitmap != core::ptr::null_mut() {
-                    DeleteObject(hCreditsBitmap);
+                    DeleteObject((hCreditsBitmap).cast());
                 }
 
                 top = 0;
@@ -337,10 +337,10 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
             if hdcMem != core::ptr::null_mut() {
                 if timerid != 0 {
-                    SelectObject(hdcMem, hCreditsBitmap);
+                    SelectObject(hdcMem, (hCreditsBitmap).cast());
                     BitBlt(hdc, left, PS.rcPaint.top, PS.rcPaint.right - PS.rcPaint.left, PS.rcPaint.top + (*pImgInfo).cySource, hdcMem, 0, top as i32, SRCCOPY);
                 } else {
-                    SelectObject(hdcMem, (*pImgInfo).hBitmap);
+                    SelectObject(hdcMem, ((*pImgInfo).hBitmap).cast());
                     AlphaBlend(hdc, left, PS.rcPaint.top, (*pImgInfo).cxSource, (*pImgInfo).cySource, hdcMem, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, BlendFunc);
                 }
 
@@ -360,15 +360,15 @@ unsafe extern "C" fn SetRegTextData(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: 
     let mut BufSize: u32 = 0;
     let mut Type: u32 = 0;
 
-    if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, core::ptr::null_mut(), &mut BufSize) == ERROR_SUCCESS {
-        lpBuf = HeapAlloc(GetProcessHeap(), 0, BufSize) as LPTSTR;
+    if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, core::ptr::null_mut(), &mut BufSize) == (ERROR_SUCCESS) as i32 {
+        lpBuf = HeapAlloc(GetProcessHeap(), 0, (BufSize) as SIZE_T) as LPTSTR;
 
         if lpBuf.is_null() {
             return;
         }
 
-        if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, lpBuf as PBYTE, &mut BufSize) == ERROR_SUCCESS {
-            SetDlgItemText(hwnd, uID, lpBuf);
+        if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, lpBuf as PBYTE, &mut BufSize) == (ERROR_SUCCESS) as i32 {
+            SetDlgItemText(hwnd, (uID) as i32, lpBuf);
         }
 
         HeapFree(GetProcessHeap(), 0, lpBuf as *mut _);
@@ -383,18 +383,18 @@ unsafe extern "C" fn SetProcNameString(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uI
     let mut szLastSpace: *mut TCHAR;
     let mut LastSpace: i32 = 0;
 
-    if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, core::ptr::null_mut(), &mut BufSize) == ERROR_SUCCESS {
-        lpBuf = HeapAlloc(GetProcessHeap(), 0, BufSize) as LPTSTR;
+    if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, core::ptr::null_mut(), &mut BufSize) == (ERROR_SUCCESS) as i32 {
+        lpBuf = HeapAlloc(GetProcessHeap(), 0, (BufSize) as SIZE_T) as LPTSTR;
 
         if lpBuf.is_null() {
             return 0;
         }
 
-        if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, lpBuf as PBYTE, &mut BufSize) == ERROR_SUCCESS {
+        if RegQueryValueEx(hKey, Value, core::ptr::null_mut(), &mut Type, lpBuf as PBYTE, &mut BufSize) == (ERROR_SUCCESS) as i32 {
             if BufSize > ((30 + 1) * core::mem::size_of::<TCHAR>() as u32) {
                 _tcsncpy(szBuf.as_mut_ptr(), lpBuf, 30);
                 szBuf[30] = 0;
-                szLastSpace = _tcsrchr(szBuf.as_mut_ptr(), ' ' as i32);
+                szLastSpace = _tcsrchr(szBuf.as_mut_ptr(), (' ' as i32) as u16);
 
                 if szLastSpace == 0 {
                     LastSpace = 30;
@@ -403,14 +403,14 @@ unsafe extern "C" fn SetProcNameString(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uI
                     szBuf[LastSpace as usize] = 0;
                 }
 
-                _tcsncpy(szBuf.as_mut_ptr(), lpBuf, LastSpace);
+                _tcsncpy(szBuf.as_mut_ptr(), lpBuf, (LastSpace) as usize);
 
-                SetDlgItemText(hwnd, uID1, szBuf.as_ptr());
-                SetDlgItemText(hwnd, uID2, lpBuf.offset((LastSpace + 1) as isize));
+                SetDlgItemText(hwnd, (uID1) as i32, szBuf.as_ptr());
+                SetDlgItemText(hwnd, (uID2) as i32, lpBuf.offset((LastSpace + 1) as isize));
 
                 Ret = 2;
             } else {
-                SetDlgItemText(hwnd, uID1, lpBuf);
+                SetDlgItemText(hwnd, (uID1) as i32, lpBuf);
                 Ret = 1;
             }
         }
@@ -427,7 +427,7 @@ unsafe extern "C" fn MakeFloatValueString(dFloatValue: *mut f64, szOutput: LPTST
         let uIntegral: u32 = *dFloatValue as u32;
         let uDecimals: u8 = ((*dFloatValue * 100 as f64) as u32 - uIntegral * 100) as u8;
 
-        wsprintf(szOutput, _T(b"%u%s%02u %s\0".as_ptr() as *const i8), uIntegral, szDecimalSeparator.as_ptr(), uDecimals, szAppend);
+        wsprintf(szOutput, _T((b"%u%s%02u %s\0".as_ptr() as *const i8).cast()), uIntegral, szDecimalSeparator.as_ptr(), uDecimals, szAppend);
     }
 }
 unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u32) -> i32 {
@@ -457,21 +457,21 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
             &mut Type,
             &mut ppi.CurrentMhz as *mut _ as PBYTE,
             &mut BufSize,
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
     {
         if ppi.CurrentMhz < 1000 {
             if LoadString(
                 hApplet,
                 IDS_MEGAHERTZ,
                 szHz.as_mut_ptr(),
-                _countof(szHz),
+                (_countof!(szHz)) as i32,
             ) == 0
             {
                 return FALSE;
             }
             StringCchPrintf(
                 szBuf.as_mut_ptr(),
-                _countof(szBuf),
+                _countof!(szBuf),
                 _T(b"%lu %s\0".as_ptr() as *const u16),
                 ppi.CurrentMhz,
                 szHz.as_ptr(),
@@ -482,7 +482,7 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
                 hApplet,
                 IDS_GIGAHERTZ,
                 szHz.as_mut_ptr(),
-                _countof(szHz),
+                (_countof!(szHz)) as i32,
             ) == 0
             {
                 return FALSE;
@@ -490,7 +490,7 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
             MakeFloatValueString(&mut flt, szBuf.as_mut_ptr(), szHz.as_mut_ptr());
         }
 
-        SetDlgItemText(hwnd, uID, szBuf.as_ptr());
+        SetDlgItemText(hwnd, (uID) as i32, szBuf.as_ptr());
         return TRUE;
     }
 
@@ -503,39 +503,39 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     let mut MemStat: MEMORYSTATUSEX = core::mem::zeroed();
     let mut Buf: [TCHAR; 32] = [0; 32];
     let mut SMBiosName: [u16; 96] = [0; 96];
-    let mut CurMachineLine: i32 = IDC_MACHINELINE1;
+    let mut CurMachineLine: i32 = (IDC_MACHINELINE1) as i32;
 
     let sys_key_str = _T(b"HARDWARE\\DESCRIPTION\\System\0".as_ptr() as *const i8);
     let proc_key_str = _T(b"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0\0".as_ptr() as *const i8);
 
-    core::ptr::copy_nonoverlapping(sys_key_str, SysKey.as_mut_ptr(), 64);
-    core::ptr::copy_nonoverlapping(proc_key_str, ProcKey.as_mut_ptr(), 64);
+    core::ptr::copy_nonoverlapping(sys_key_str, (SysKey.as_mut_ptr()).cast(), 64);
+    core::ptr::copy_nonoverlapping(proc_key_str, (ProcKey.as_mut_ptr()).cast(), 64);
 
-    if GetSystemName(SMBiosName.as_mut_ptr(), _countof(SMBiosName.as_ptr())) != 0 {
+    if GetSystemName(SMBiosName.as_mut_ptr(), _countof!(SMBiosName.as_ptr())) != 0 {
         SetDlgItemText(hwnd, CurMachineLine, SMBiosName.as_mut_ptr());
         CurMachineLine += 1;
     } else {
-        if RegOpenKeyEx(HKEY_LOCAL_MACHINE, SysKey.as_ptr(), 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
-            SetRegTextData(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), CurMachineLine);
+        if RegOpenKeyEx(HKEY_LOCAL_MACHINE, SysKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
+            SetRegTextData(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), (CurMachineLine) as u32);
             CurMachineLine += 1;
             RegCloseKey(hKey);
         }
     }
 
-    if RegOpenKeyEx(HKEY_LOCAL_MACHINE, ProcKey.as_ptr(), 0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
+    if RegOpenKeyEx(HKEY_LOCAL_MACHINE, ProcKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
         let mut PrevMachineLine: i32;
 
-        SetRegTextData(hwnd, hKey, _T(b"VendorIdentifier\0".as_ptr() as *const i8), CurMachineLine);
+        SetRegTextData(hwnd, hKey, _T(b"VendorIdentifier\0".as_ptr() as *const i8), (CurMachineLine) as u32);
         CurMachineLine += 1;
 
         PrevMachineLine = CurMachineLine;
-        CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"ProcessorNameString\0".as_ptr() as *const i8), CurMachineLine, CurMachineLine + 1);
+        CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"ProcessorNameString\0".as_ptr() as *const i8), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
 
         if CurMachineLine == PrevMachineLine {
-            CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), CurMachineLine, CurMachineLine + 1);
+            CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
         }
 
-        if SetProcSpeed(hwnd, hKey, _T(b"~MHz\0".as_ptr() as *const i8), CurMachineLine) != 0 {
+        if SetProcSpeed(hwnd, hKey, _T(b"~MHz\0".as_ptr() as *const i8), (CurMachineLine) as u32) != 0 {
             CurMachineLine += 1;
         }
         RegCloseKey(hKey);
@@ -573,7 +573,7 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
             MakeFloatValueString(&mut dTotalPhys, Buf.as_mut_ptr(), szStr.as_mut_ptr());
         } else {
             LoadString(hApplet, IDS_MEGABYTE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of::<TCHAR>()) as i32);
-            wsprintf(Buf.as_mut_ptr(), _T(b"%u %s\0".as_ptr() as *const i8), (MemStat.ullTotalPhys / 1024 / 1024) as u32, szStr.as_ptr());
+            wsprintf(Buf.as_mut_ptr(), _T((b"%u %s\0".as_ptr() as *const i8).cast()), (MemStat.ullTotalPhys / 1024 / 1024) as u32, szStr.as_ptr());
         }
 
         SetDlgItemText(hwnd, CurMachineLine, Buf.as_mut_ptr());
@@ -591,16 +591,16 @@ unsafe extern "C" fn GetSystemVersion(hwnd: HWND) {
         return;
     }
 
-    hRosVersion = GetDlgItem(hwnd, IDC_ROSVERSION);
+    hRosVersion = GetDlgItem(hwnd, (IDC_ROSVERSION) as i32);
     if hRosVersion.is_null() {
         return;
     }
-    lenStr = GetWindowTextLengthW(hRosVersion);
+    lenStr = (GetWindowTextLengthW(hRosVersion)) as usize;
     lenStr += lenVersion + 1;
     pwszStr = HeapAlloc(
         GetProcessHeap(),
         0,
-        lenStr * core::mem::size_of::<u16>(),
+        (lenStr * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     if pwszStr.is_null() {
         return;
@@ -610,7 +610,7 @@ unsafe extern "C" fn GetSystemVersion(hwnd: HWND) {
     StringCchCatW(pwszStr, lenStr, pwszVersion);
     SetWindowText(hRosVersion, pwszStr);
 
-    HeapFree(GetProcessHeap(), 0, pwszStr);
+    HeapFree(GetProcessHeap(), 0, (pwszStr).cast());
 }
 unsafe extern "C" fn GetTickCountQPC() -> u64 {
     let mut Counter: LARGE_INTEGER = core::mem::zeroed();
@@ -627,7 +627,7 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
     let mut cSeconds: u32;
     let mut szBuf: [u16; 64] = [0; 64];
 
-    hUptimeLabel = GetDlgItem(hwndDlg, IDC_UPTIME);
+    hUptimeLabel = GetDlgItem(hwndDlg, (IDC_UPTIME) as i32);
     if hUptimeLabel.is_null() {
         return;
     }
@@ -639,7 +639,7 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
     }
 
     cSeconds = (cMilliseconds / 1000) as u32;
-    StringCchPrintfW(szBuf.as_mut_ptr(), _countof(szBuf), szUptimeFormat.as_ptr(),
+    StringCchPrintfW(szBuf.as_mut_ptr(), _countof!(szBuf), szUptimeFormat.as_ptr(),
                      cSeconds / (60*60*24),
                      (cSeconds / (60*60)) % 24,
                      (cSeconds / 60) % 60,
@@ -647,12 +647,12 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
 
     SetWindowTextW(hUptimeLabel, szBuf.as_ptr());
 
-    SetTimer(hwndDlg, ID_SYSUPTIME_UPDATE_TIMER, 1000 - (cMilliseconds % 1000), core::ptr::null_mut());
+    SetTimer(hwndDlg, (ID_SYSUPTIME_UPDATE_TIMER) as UINT_PTR, (1000 - (cMilliseconds % 1000)) as UINT, core::ptr::null_mut());
 }
 unsafe extern "C" fn InitSystemUptime(hwndDlg: HWND) {
     let mut hKernel32: HMODULE;
 
-    if LoadStringW(hApplet, IDS_UPTIME_FORMAT, szUptimeFormat.as_mut_ptr(), _countof(szUptimeFormat)) == 0 {
+    if LoadStringW(hApplet, IDS_UPTIME_FORMAT, szUptimeFormat.as_mut_ptr(), (_countof!(szUptimeFormat)) as i32) == 0 {
         return;
     }
 
@@ -676,21 +676,21 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
 
     match uMsg {
         WM_INITDIALOG => {
-            pImgInfo = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<IMGINFO>()) as *mut IMGINFO;
+            pImgInfo = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<IMGINFO>()) as SIZE_T) as *mut IMGINFO;
             if pImgInfo.is_null() {
                 EndDialog(hwndDlg, 0);
                 return FALSE;
             }
 
             InitLogo(hwndDlg);
-            SetWindowLongPtr(GetDlgItem(hwndDlg, IDC_ROSIMG), GWLP_WNDPROC, RosImageProc as isize);
+            SetWindowLongPtr(GetDlgItem(hwndDlg, (IDC_ROSIMG) as i32), GWLP_WNDPROC, RosImageProc as isize);
             GetSystemInformation(hwndDlg);
             GetSystemVersion(hwndDlg);
             InitSystemUptime(hwndDlg);
         }
 
         WM_DESTROY => {
-            KillTimer(hwndDlg, ID_SYSUPTIME_UPDATE_TIMER);
+            KillTimer(hwndDlg, (ID_SYSUPTIME_UPDATE_TIMER) as UINT_PTR);
 
             if !hKernel32Vista.is_null() {
                 FreeLibrary(hKernel32Vista);
@@ -724,7 +724,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
 
                 hdcMem = CreateCompatibleDC((*lpDrawItem).hDC);
                 if !hdcMem.is_null() {
-                    SelectObject(hdcMem, (*pImgInfo).hBitmap);
+                    SelectObject(hdcMem, ((*pImgInfo).hBitmap).cast());
                     BitBlt(
                         (*lpDrawItem).hDC,
                         left,
@@ -748,7 +748,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
             if (*nmhdr).idFrom == IDC_ROSHOMEPAGE_LINK && (*nmhdr).code == NM_CLICK {
                 let nml = nmhdr as *mut PNMLINK;
 
-                ShellExecuteW(hwndDlg, b"o\0p\0e\0n\0\0".as_ptr() as *const u16, (*(*nml)).item.szUrl, core::ptr::null(), core::ptr::null(), SW_SHOWNORMAL);
+                ShellExecuteW(hwndDlg, b"o\0p\0e\0n\0\0".as_ptr() as *const u16, (*(*nml)).item.szUrl, core::ptr::null(), core::ptr::null(), (SW_SHOWNORMAL) as INT);
             }
         }
 

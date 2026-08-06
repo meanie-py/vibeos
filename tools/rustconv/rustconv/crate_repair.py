@@ -55,6 +55,8 @@ RULE_ANON_UNION = "anon_union_field"
 RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
 RULE_PACKED_FIELD_PTR = "packed_field_ptr"
 RULE_INDEX_USIZE = "index_usize"
+RULE_MACRO_CALL = "macro_call_bang"
+RULE_SIZEOF_TYPE = "sizeof_type_name"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -68,6 +70,8 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_ANON_UNION,
     RULE_PACKED_FIELD_PTR,
     RULE_INDEX_USIZE,
+    RULE_MACRO_CALL,
+    RULE_SIZEOF_TYPE,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1597,6 +1601,151 @@ def _index_usize_rule(
     )
 
 
+#: E0423 ``expected function, found macro `X` `` — a header macro rendered as a call.
+_RE_FOUND_MACRO = re.compile(r"expected function, found macro `(?P<name>\w+)`")
+#: E0423 ``expected value, found type alias `X` `` — a C ``sizeof(TYPE)`` that lost its operator.
+_RE_FOUND_TYPE = re.compile(
+    r"expected value, found (?:type alias|struct|builtin type) `(?P<name>\w+)`"
+)
+
+
+def _macro_call_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``FOO(a, b)`` where the crate declares ``macro_rules! FOO`` -> ``FOO!(a, b)``.
+
+    A C header macro has no Rust function to be, so the prelude spells it ``macro_rules!`` — and
+    the translation writes the CALL exactly as the C did, without the ``!``. rustc names the
+    macro it found, so the fix carries its own authority: there is nothing to infer, only a
+    token to insert. This is the largest single bucket on a freshly translated Win32 module
+    (60 sites on sysdm.cpl, and desk.cpl needed the same pass by hand).
+
+    Nothing about it is width- or arch-dependent, so it needs no cross-target agreement.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0423":
+        return [], [], False
+    match = _RE_FOUND_MACRO.search(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = match.group("name")
+    if data[start:end].decode("utf-8", "replace") != name:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    if _next_code_byte(masked, end) != b"(":
+        # Not a call at all — rustc found the macro in some other value position, and appending
+        # `!` there would not even parse.
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_MACRO_CALL,
+                    "not_a_call",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`{name}` is a macro used in value position but not followed by `(`",
+                )
+            ],
+            False,
+        )
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{name}!",
+                rule=RULE_MACRO_CALL,
+                authority=(
+                    f"rustc E0423 names `{name}` as a MACRO in call position; the crate declares "
+                    "it with `macro_rules!`, so the `!` is the whole of the fix"
+                ),
+                original=name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _sizeof_type_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C ``sizeof(TYPE)`` that came across as the bare TYPE NAME -> ``size_of::<TYPE>()``.
+
+    C spells the size of a type and the size of a value the same way, and Rust does not:
+    ``size_of::<T>()`` vs ``size_of_val(&v)``. A translation that keeps the C's single spelling
+    lands the type name where a value belongs, in exactly two shapes — bare
+    (``x.cbSize = BITMAPINFO``) and wrapped (``size_of_val(&NONCLIENTMETRICS)``). rustc names the
+    type it found, so both are answerable without inference.
+
+    The wrapped shape MUST swallow the whole call: rewriting only the operand leaves
+    ``size_of_val(&size_of::<T>())``, which is the size of a `usize` — a plausible-looking number
+    that is wrong on every arch, and compiles.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0423":
+        return [], [], False
+    match = _RE_FOUND_TYPE.search(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = match.group("name")
+    if data[start:end].decode("utf-8", "replace") != name:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+
+    replacement = f"core::mem::size_of::<{name}>()"
+    lo, hi = start, end
+    # `size_of_val(&NAME)` / `core::mem::size_of_val(&NAME)` — take the whole call.
+    prefix = data[max(0, start - 64) : start].decode("utf-8", "replace")
+    wrapper = re.search(r"(?:core::mem::)?size_of_val\s*\(\s*&\s*$", prefix)
+    if wrapper is not None and _next_code_byte(masked, end) == b")":
+        lo = start - (len(prefix) - wrapper.start())
+        hi = masked.index(b")", end) + 1
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=lo,
+                byte_end=hi,
+                replacement=replacement,
+                rule=RULE_SIZEOF_TYPE,
+                authority=(
+                    f"rustc E0423 names `{name}` as a TYPE in value position; C's `sizeof(T)` is "
+                    "Rust's `size_of::<T>()`, and the operand is the type rustc just named"
+                ),
+                original=data[lo:hi].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -1608,6 +1757,8 @@ _RULE_TABLE: dict[
     RULE_ANON_UNION: _anon_union_rule,
     RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
     RULE_INDEX_USIZE: _index_usize_rule,
+    RULE_MACRO_CALL: _macro_call_rule,
+    RULE_SIZEOF_TYPE: _sizeof_type_rule,
 }
 
 
