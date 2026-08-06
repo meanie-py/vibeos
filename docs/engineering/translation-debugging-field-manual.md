@@ -966,6 +966,18 @@ The A/W *function* aliases are usually derived into the crate prelude and the *t
 forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
 `LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
 
+**And the prelude is not enough — the ISLAND has the same problem, one level lower.** The
+re-exports above fix the module's own code; they do nothing for a struct the ISLAND declares.
+desk.h says `TCHAR szPath[MAX_PATH]`, so with the glob's `TCHAR = c_char` bindgen emitted
+`_ICON_PATH { szPath: [TCHAR; 260] }` — 260 bytes where the real struct is 520, on a module
+compiled `-DUNICODE`. That compiles perfectly, and the translation had already papered over the
+symptom by sprinkling `.cast()` on the call sites to make the narrow pointers fit. **Fix it in
+the PROFILE, not the prelude**: `UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR
+LPTCH PTCH"` makes the module's own island emit them from its own `-DUNICODE` compile. The
+check is one grep: `grep '^pub type TCHAR = ' src/types_i386.rs` must say `WCHAR`.
+`scan_type_alias_contradictions` then reports the disagreement with ntdll-sys, which is real and
+deliberate — baseline it, exactly as BCHAR already is for aclui/shell32/syssetup/winsrv.
+
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
 cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
@@ -1030,6 +1042,16 @@ which is skipped rather than guessed at. Those three took the tree from 102 find
   `size_of_val()` on that narrow const returning N instead of N*2 → an undersized
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
   in **both** the append and the size math.
+- **`--allowlist-file` matches where an item is DEFINED, not where it is REACHED.** An umbrella
+  header that is a pure `#include` manifold contributes nothing by being allowlisted, and the
+  failure is asymmetric in the worst way: bindgen still emits a STRUCT the allowlist reaches as
+  a dependency of some allowlisted signature, while every CONSTANT and function that header
+  owns stays absent. desk's island carried `IDataObject` (dragged in by an allowlisted
+  prototype) and none of the `DVASPECT_*`/`TYMED_*`/`DATADIR_*` its own call sites pass, because
+  objbase.h only `#include`s the widl-GENERATED objidl.h/wtypes.h — and gdiplus.h's C branch is
+  likewise nothing but `#include`s, so allowlisting it emitted **zero** of the 608 `Gdip*`
+  declarations. Allowlist the FAMILY (`gdiplus[a-z]*\.h`) or the generated header by name, and
+  verify with a grep for one member rather than assuming the umbrella carried it.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
 - **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
   on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
@@ -3126,6 +3148,35 @@ Four things that cost precision, all of them found by being wrong first:
 since the name is coming from user-mode"). Do not close such a finding by adding a bare print —
 that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
 looks like a missing diagnostic is a missing handler.
+
+### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
+
+**Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because
+the `#if` sat between two ARGUMENTS of a call) or, worse, a clean build in which one
+architecture takes a branch the C never compiles anywhere.
+
+**Cause.** `#if _WIN32_WINNT >= 0x502` and `#if (WINVER >= 0x0600)` are assertions about the
+TARGET WINDOWS VERSION, which is a `-D` flag identical on all three of our arches. To a
+translator they look like the per-arch `#if defined(_M_AMD64)` it sees constantly, and
+`target_arch`/`target_pointer_width` is the nearest Rust spelling of "a compile-time branch".
+desk.cpl had two, independently, in different files — so this is a class:
+
+  * `classinst.c`'s `#if _WIN32_WINNT >= 0x502 KEY_READ|KEY_WRITE #else KEY_ALL_ACCESS` became
+    `#[cfg(target_pointer_width = "64")]` / `#[cfg(...= "32")]` on the two argument
+    EXPRESSIONS. Had it parsed, i386 would have demanded ALL_ACCESS on a key it only reads.
+  * `theme.c`'s `#if (WINVER >= 0x0600)` block became
+    `#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]`, and its body reads
+    `NONCLIENTMETRICSW::iPaddedBorderWidth` — a field that does not exist at the version the
+    module actually compiles at, which is precisely why the C does not compile that block.
+
+**Fix.** Resolve the version test at the module's real `-D` setting and keep only the live arm,
+with a comment naming the directive and the value, so the dead arm's absence is a decision on
+the page rather than a hole. Check the module's `VER_DEFS` in `gen_driver_types.sh` (or its
+CMake `set_module_type`) for what that value is — do not assume the newest.
+
+**Detection.** Grep the translated output for `cfg(target_arch` / `cfg(target_pointer_width)`
+and check each against the C: a per-arch cfg is *legitimate* only where the C branched on
+`_M_IX86`/`_M_AMD64`/`_M_ARM64` or on a pointer-width-derived macro. Anything else is this bug.
 
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 

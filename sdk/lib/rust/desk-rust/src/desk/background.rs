@@ -20,7 +20,7 @@ pub const PLACEMENT_VALUE_FILL: u32 = 10;
 #[repr(C)]
 pub struct BackgroundItem {
     pub bWallpaper: BOOL,
-    pub szFilename: [TCHAR; MAX_PATH],
+    pub szFilename: [TCHAR; (MAX_PATH) as usize],
     pub szDisplayName: [TCHAR; 256],
 }
 
@@ -41,6 +41,7 @@ pub struct _BACKGROUND_DATA {
 pub type PBACKGROUND_DATA = *mut _BACKGROUND_DATA;
 pub type BACKGROUND_DATA = _BACKGROUND_DATA;
 
+#[no_mangle]
 pub static mut g_GlobalData: GLOBAL_DATA = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub unsafe extern "C" fn GdipGetEncoderClsid(MimeType: PCWSTR, pClsid: *mut CLSID) -> HRESULT {
@@ -54,7 +55,7 @@ pub unsafe extern "C" fn GdipGetEncoderClsid(MimeType: PCWSTR, pClsid: *mut CLSI
         return E_FAIL;
     }
 
-    codecInfo = HeapAlloc(GetProcessHeap(), 0, size as usize) as *mut ImageCodecInfo;
+    codecInfo = HeapAlloc(GetProcessHeap(), 0, (size) as SIZE_T) as *mut ImageCodecInfo;
     if codecInfo.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -90,7 +91,7 @@ pub unsafe extern "C" fn GdipGetSupportedFileExtensions() -> LPWSTR {
         return core::ptr::null_mut();
     }
 
-    codecInfo = HeapAlloc(GetProcessHeap(), 0, size) as *mut ImageCodecInfo;
+    codecInfo = HeapAlloc(GetProcessHeap(), 0, (size) as SIZE_T) as *mut ImageCodecInfo;
     if codecInfo.is_null() {
         return core::ptr::null_mut();
     }
@@ -109,7 +110,7 @@ pub unsafe extern "C" fn GdipGetSupportedFileExtensions() -> LPWSTR {
 
     size = (size + 1) * core::mem::size_of::<u16>() as u32;
 
-    lpBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size) as LPWSTR;
+    lpBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (size) as SIZE_T) as LPWSTR;
     if lpBuffer.is_null() {
         HeapFree(GetProcessHeap(), 0, codecInfo as *mut core::ffi::c_void);
         return core::ptr::null_mut();
@@ -143,9 +144,9 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
 ) -> u32 {
     let mut fd: WIN32_FIND_DATA = core::mem::zeroed();
     let mut hFind: HANDLE;
-    let mut szSearchPath: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szSearchPath: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut szFileTypes: LPTSTR = core::ptr::null_mut();
-    let mut separators: [TCHAR; 2] = [TEXT!(";"), 0];
+    let mut separators: [TCHAR; 2] = wide!(";");
     let mut token: *mut TCHAR;
     let mut hr: HRESULT;
     let mut sfi: SHFILEINFO = core::mem::zeroed();
@@ -162,16 +163,16 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
 
     token = _tcstok(szFileTypes, separators.as_ptr() as *const TCHAR);
     while !token.is_null() {
-        if PathCombine(szSearchPath.as_mut_ptr(), wallpaperDirectory, token) == 0 {
+        if PathCombine(szSearchPath.as_mut_ptr(), wallpaperDirectory, token) == (0) as *mut u16 {
             HeapFree(GetProcessHeap(), 0, szFileTypes as LPVOID);
             return i;
         }
 
         hFind = FindFirstFile(szSearchPath.as_ptr(), &mut fd);
         while hFind != INVALID_HANDLE_VALUE {
-            let mut filename: [TCHAR; MAX_PATH] = core::mem::zeroed();
+            let mut filename: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
 
-            if PathCombine(filename.as_mut_ptr(), wallpaperDirectory, fd.cFileName.as_ptr()) == 0 {
+            if PathCombine(filename.as_mut_ptr(), wallpaperDirectory, (fd.cFileName.as_ptr()).cast()) == (0) as *mut u16 {
                 FindClose(hFind);
                 HeapFree(GetProcessHeap(), 0, szFileTypes as LPVOID);
                 return i;
@@ -192,12 +193,12 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
 
                 backgroundItem = &mut (*pData).backgroundItems[(*pData).listViewItemCount as usize];
 
-                (*backgroundItem).bWallpaper = TRUE;
+                (*backgroundItem).bWallpaper = (TRUE) as i32;
 
                 hr = StringCbCopy(
-                    (*backgroundItem).szDisplayName.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&(*backgroundItem).szDisplayName),
-                    sfi.szDisplayName.as_ptr() as *const core::ffi::c_void,
+                    (*backgroundItem).szDisplayName.as_mut_ptr(),
+                    core::mem::size_of::<[TCHAR; 256]>(),
+                    core::ptr::addr_of!(sfi.szDisplayName).cast(),
                 );
                 if FAILED!(hr) {
                     FindClose(hFind);
@@ -208,9 +209,9 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
                 PathRemoveExtension((*backgroundItem).szDisplayName.as_mut_ptr());
 
                 hr = StringCbCopy(
-                    (*backgroundItem).szFilename.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&(*backgroundItem).szFilename),
-                    filename.as_ptr() as *const core::ffi::c_void,
+                    ((*backgroundItem).szFilename.as_mut_ptr() as *mut core::ffi::c_void).cast(),
+                    core::mem::size_of::<[TCHAR; MAX_PATH as usize]>(),
+                    (filename.as_ptr() as *const core::ffi::c_void).cast(),
                 );
                 if FAILED!(hr) {
                     FindClose(hFind);
@@ -218,9 +219,9 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
                     return i;
                 }
 
-                ZeroMemory(
+                ZeroMemory!(
                     &mut listItem as *mut _ as *mut core::ffi::c_void,
-                    LV_ITEM,
+                    core::mem::size_of::<LV_ITEM>(),
                 );
                 listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
                 listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
@@ -248,17 +249,17 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
     return i;
 }
 unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
-    let mut szSearchPath: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut szSearchPath: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut listItem: LV_ITEM = core::mem::zeroed();
     let mut dummy: LV_COLUMN = core::mem::zeroed();
     let mut clientRect: RECT = core::mem::zeroed();
     let mut regKey: HKEY = core::mem::zeroed();
     let mut sfi: SHFILEINFO = core::mem::zeroed();
     let mut himl: HIMAGELIST;
-    let mut wallpaperFilename: [TCHAR; MAX_PATH] = core::mem::zeroed();
-    let mut originalWallpaper: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut wallpaperFilename: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
+    let mut originalWallpaper: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut bufferSize: u32 = core::mem::size_of_val(&wallpaperFilename) as u32;
-    let mut buffer: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut buffer: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut varType: u32 = REG_SZ;
     let mut result: i32;
     let mut i: u32 = 0;
@@ -270,45 +271,45 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     let cy: i32;
     let hShell32: HINSTANCE;
 
-    hwndBackgroundList = GetDlgItem(hwndDlg, IDC_BACKGROUND_LIST);
+    hwndBackgroundList = GetDlgItem(hwndDlg, (IDC_BACKGROUND_LIST) as i32);
 
     GetClientRect(hwndBackgroundList, &mut clientRect);
 
-    cx = GetSystemMetrics(SM_CXSMICON);
-    cy = GetSystemMetrics(SM_CYSMICON);
+    cx = GetSystemMetrics((SM_CXSMICON) as i32);
+    cy = GetSystemMetrics((SM_CYSMICON) as i32);
     himl = ImageList_Create(cx, cy, ILC_COLOR32 | ILC_MASK, 0, 0);
 
     hShell32 = GetModuleHandleW(w!("shell32.dll") as PCWSTR);
-    hIcon = LoadImageW(hShell32, MAKEINTRESOURCEW(IDI_SHELL_NO), IMAGE_ICON, cx, cy, 0) as HICON;
+    hIcon = LoadImageW(hShell32, MAKEINTRESOURCEW!(IDI_SHELL_NO), IMAGE_ICON, cx, cy, 0) as HICON;
 
-    ListView_SetImageList(hwndBackgroundList, himl, LVSIL_SMALL);
+    ListView_SetImageList!(hwndBackgroundList, himl, LVSIL_SMALL);
 
-    ZeroMemory(&mut dummy as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_COLUMN));
+    ZeroMemory!(&mut dummy as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_COLUMN>());
     dummy.mask = LVCF_SUBITEM | LVCF_WIDTH;
     dummy.iSubItem = 0;
-    dummy.cx = (clientRect.right - clientRect.left) - GetSystemMetrics(SM_CXVSCROLL);
-    ListView_InsertColumn(hwndBackgroundList, 0, &mut dummy);
+    dummy.cx = (clientRect.right - clientRect.left) - GetSystemMetrics((SM_CXVSCROLL) as i32);
+    ListView_InsertColumn!(hwndBackgroundList, 0, &mut dummy);
 
     backgroundItem = &mut (*pData).backgroundItems[(*pData).listViewItemCount as usize];
-    (*backgroundItem).bWallpaper = FALSE;
+    (*backgroundItem).bWallpaper = (FALSE) as i32;
     LoadString(
         hApplet,
         IDS_NONE,
         (*backgroundItem).szDisplayName.as_mut_ptr(),
-        (core::mem::size_of_val(&(*backgroundItem).szDisplayName) / core::mem::size_of::<TCHAR>()) as i32,
+        (core::mem::size_of::<[TCHAR; 256]>() / core::mem::size_of::<TCHAR>()) as i32,
     );
 
-    ZeroMemory(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_ITEM));
+    ZeroMemory!(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
     listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
     listItem.state = 0;
     listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
-    listItem.iImage = ImageList_AddIcon(himl, hIcon);
+    listItem.iImage = ImageList_AddIcon!(himl, hIcon);
     listItem.iItem = (*pData).listViewItemCount as i32;
-    listItem.lParam = (*pData).listViewItemCount as isize;
+    listItem.lParam = (((*pData).listViewItemCount as isize) as i32) as LPARAM;
     hIcon = core::ptr::null_mut();
 
-    ListView_InsertItem(hwndBackgroundList, &mut listItem);
-    ListView_SetItemState(
+    ListView_InsertItem!(hwndBackgroundList, &mut listItem);
+    ListView_SetItemState!(
         hwndBackgroundList,
         (*pData).listViewItemCount as i32,
         LVIS_SELECTED,
@@ -317,18 +318,18 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
 
     (*pData).listViewItemCount += 1;
 
-    result = RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Control Panel\\Desktop"), 0, KEY_QUERY_VALUE, &mut regKey);
-    if result == ERROR_SUCCESS {
-        result = RegQueryValueEx(regKey, TEXT("Wallpaper"), 0, &mut varType, wallpaperFilename.as_mut_ptr() as LPBYTE, &mut bufferSize);
-        if (result == ERROR_SUCCESS) && (_tcslen(wallpaperFilename.as_ptr()) > 0) {
+    result = RegOpenKeyEx(HKEY_CURRENT_USER, w!("Control Panel\\Desktop"), 0, KEY_QUERY_VALUE, &mut regKey);
+    if result == (ERROR_SUCCESS) as i32 {
+        result = RegQueryValueEx(regKey, w!("Wallpaper"), (0) as *mut u32, &mut varType, wallpaperFilename.as_mut_ptr() as LPBYTE, &mut bufferSize);
+        if (result == (ERROR_SUCCESS) as i32) && (_tcslen(wallpaperFilename.as_ptr()) > 0) {
             bufferSize = core::mem::size_of_val(&originalWallpaper) as u32;
-            result = RegQueryValueEx(regKey, TEXT("OriginalWallpaper"), 0, &mut varType, originalWallpaper.as_mut_ptr() as LPBYTE, &mut bufferSize);
+            result = RegQueryValueEx(regKey, w!("OriginalWallpaper"), (0) as *mut u32, &mut varType, originalWallpaper.as_mut_ptr() as LPBYTE, &mut bufferSize);
 
-            if (result == ERROR_SUCCESS) && (_tcslen(originalWallpaper.as_ptr()) > 0) && (_tcsicmp(wallpaperFilename.as_ptr(), originalWallpaper.as_ptr()) == 0) {
+            if (result == (ERROR_SUCCESS) as i32) && (_tcslen(originalWallpaper.as_ptr()) > 0) && (_tcsicmp(wallpaperFilename.as_ptr(), originalWallpaper.as_ptr()) == 0) {
                 bufferSize = core::mem::size_of_val(&originalWallpaper) as u32;
-                result = RegQueryValueEx(regKey, TEXT("ConvertedWallpaper"), 0, &mut varType, originalWallpaper.as_mut_ptr() as LPBYTE, &mut bufferSize);
+                result = RegQueryValueEx(regKey, w!("ConvertedWallpaper"), (0) as *mut u32, &mut varType, originalWallpaper.as_mut_ptr() as LPBYTE, &mut bufferSize);
 
-                if (result == ERROR_SUCCESS) && (_tcslen(originalWallpaper.as_ptr()) > 0) {
+                if (result == (ERROR_SUCCESS) as i32) && (_tcslen(originalWallpaper.as_ptr()) > 0) {
                     hr = StringCbCopy(wallpaperFilename.as_mut_ptr(), core::mem::size_of_val(&wallpaperFilename), originalWallpaper.as_ptr());
                     if hr < 0 {
                         RegCloseKey(regKey);
@@ -348,19 +349,19 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
             SHGetFileInfoW(
                 wallpaperFilename.as_ptr(),
                 0,
-                &mut sfi as *mut _ as *mut core::ffi::c_void,
+                (&mut sfi as *mut _ as *mut core::ffi::c_void).cast(),
                 core::mem::size_of_val(&sfi) as u32,
                 SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME,
             );
-            sfi.iIcon = ImageList_AddIcon(himl, sfi.hIcon);
+            sfi.iIcon = ImageList_AddIcon!(himl, sfi.hIcon);
 
             i += 1;
 
             backgroundItem = &mut (*pData).backgroundItems[(*pData).listViewItemCount as usize];
 
-            (*backgroundItem).bWallpaper = TRUE;
+            (*backgroundItem).bWallpaper = (TRUE) as i32;
 
-            hr = StringCbCopy((*backgroundItem).szDisplayName.as_mut_ptr(), core::mem::size_of_val(&(*backgroundItem).szDisplayName), sfi.szDisplayName.as_ptr());
+            hr = StringCbCopy((*backgroundItem).szDisplayName.as_mut_ptr(), core::mem::size_of::<[TCHAR; 256]>(), core::ptr::addr_of!(sfi.szDisplayName).cast());
             if hr < 0 {
                 RegCloseKey(regKey);
                 return;
@@ -368,22 +369,22 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
 
             PathRemoveExtension((*backgroundItem).szDisplayName.as_mut_ptr());
 
-            hr = StringCbCopy((*backgroundItem).szFilename.as_mut_ptr(), core::mem::size_of_val(&(*backgroundItem).szFilename), wallpaperFilename.as_ptr());
+            hr = StringCbCopy((*backgroundItem).szFilename.as_mut_ptr(), core::mem::size_of::<[TCHAR; MAX_PATH as usize]>(), wallpaperFilename.as_ptr());
             if hr < 0 {
                 RegCloseKey(regKey);
                 return;
             }
 
-            ZeroMemory(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_ITEM));
+            ZeroMemory!(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
             listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
             listItem.state = 0;
             listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
             listItem.iImage = sfi.iIcon;
             listItem.iItem = (*pData).listViewItemCount as i32;
-            listItem.lParam = (*pData).listViewItemCount as isize;
+            listItem.lParam = (((*pData).listViewItemCount as isize) as i32) as LPARAM;
 
-            ListView_InsertItem(hwndBackgroundList, &mut listItem);
-            ListView_SetItemState(
+            ListView_InsertItem!(hwndBackgroundList, &mut listItem);
+            ListView_SetItemState!(
                 hwndBackgroundList,
                 (*pData).listViewItemCount as i32,
                 LVIS_SELECTED,
@@ -400,7 +401,7 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         i = AddWallpapersFromDirectory(i, hwndBackgroundList, backgroundItem, pData, wallpaperFilename.as_ptr(), szSearchPath.as_ptr());
     }
 
-    if SHRegGetPath(HKEY_LOCAL_MACHINE, TEXT("SOFTWARE\\Microsoft\\Windows\\CurrentVersion"), TEXT("WallPaperDir"), szSearchPath.as_mut_ptr(), 0) == ERROR_SUCCESS {
+    if SHRegGetPath(HKEY_LOCAL_MACHINE, w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion"), w!("WallPaperDir"), szSearchPath.as_mut_ptr(), 0) == ERROR_SUCCESS {
         i = AddWallpapersFromDirectory(i, hwndBackgroundList, backgroundItem, pData, wallpaperFilename.as_ptr(), szSearchPath.as_ptr());
     }
 }
@@ -413,53 +414,53 @@ unsafe extern "C" fn InitBackgroundDialog(hwndDlg: HWND, pData: PBACKGROUND_DATA
     AddListViewItems(hwndDlg, pData);
 
     LoadString(hApplet, IDS_CENTER, szString.as_mut_ptr(), (core::mem::size_of_val(&szString) / core::mem::size_of::<TCHAR>()) as i32);
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_INSERTSTRING, PLACEMENT_CENTER, szString.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_INSERTSTRING, (PLACEMENT_CENTER) as WPARAM, szString.as_ptr() as LPARAM);
 
     LoadString(hApplet, IDS_STRETCH, szString.as_mut_ptr(), (core::mem::size_of_val(&szString) / core::mem::size_of::<TCHAR>()) as i32);
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_INSERTSTRING, PLACEMENT_STRETCH, szString.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_INSERTSTRING, (PLACEMENT_STRETCH) as WPARAM, szString.as_ptr() as LPARAM);
 
     LoadString(hApplet, IDS_TILE, szString.as_mut_ptr(), (core::mem::size_of_val(&szString) / core::mem::size_of::<TCHAR>()) as i32);
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_INSERTSTRING, PLACEMENT_TILE, szString.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_INSERTSTRING, (PLACEMENT_TILE) as WPARAM, szString.as_ptr() as LPARAM);
 
     LoadString(hApplet, IDS_FIT, szString.as_mut_ptr(), (core::mem::size_of_val(&szString) / core::mem::size_of::<TCHAR>()) as i32);
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_INSERTSTRING, PLACEMENT_FIT, szString.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_INSERTSTRING, (PLACEMENT_FIT) as WPARAM, szString.as_ptr() as LPARAM);
 
     LoadString(hApplet, IDS_FILL, szString.as_mut_ptr(), (core::mem::size_of_val(&szString) / core::mem::size_of::<TCHAR>()) as i32);
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_INSERTSTRING, PLACEMENT_FILL, szString.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_INSERTSTRING, (PLACEMENT_FILL) as WPARAM, szString.as_ptr() as LPARAM);
 
-    SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_CENTER, 0);
-    (*pData).placementSelection = PLACEMENT_CENTER;
+    SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_CENTER) as WPARAM, 0);
+    (*pData).placementSelection = (PLACEMENT_CENTER) as i32;
 
-    if RegOpenKeyEx(HKEY_CURRENT_USER, TEXT("Control Panel\\Desktop"), 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(regKey)) != ERROR_SUCCESS {
+    if RegOpenKeyEx(HKEY_CURRENT_USER, w!("Control Panel\\Desktop"), 0, KEY_QUERY_VALUE, core::ptr::addr_of_mut!(regKey)) != (ERROR_SUCCESS) as i32 {
         return;
     }
 
-    if RegQueryValueEx(regKey, TEXT("WallpaperStyle"), 0, core::ptr::null_mut(), szBuffer.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(bufferSize)) == ERROR_SUCCESS {
-        if _ttoi(szBuffer.as_ptr()) == PLACEMENT_VALUE_CENTER {
-            SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_CENTER, 0);
-            (*pData).placementSelection = PLACEMENT_CENTER;
+    if RegQueryValueEx(regKey, w!("WallpaperStyle"), (0) as *mut u32, core::ptr::null_mut(), szBuffer.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(bufferSize)) == (ERROR_SUCCESS) as i32 {
+        if _ttoi(szBuffer.as_ptr()) == (PLACEMENT_VALUE_CENTER) as i32 {
+            SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_CENTER) as WPARAM, 0);
+            (*pData).placementSelection = (PLACEMENT_CENTER) as i32;
         }
 
-        if _ttoi(szBuffer.as_ptr()) == PLACEMENT_VALUE_STRETCH {
-            SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_STRETCH, 0);
-            (*pData).placementSelection = PLACEMENT_STRETCH;
+        if _ttoi(szBuffer.as_ptr()) == (PLACEMENT_VALUE_STRETCH) as i32 {
+            SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_STRETCH) as WPARAM, 0);
+            (*pData).placementSelection = (PLACEMENT_STRETCH) as i32;
         }
 
-        if _ttoi(szBuffer.as_ptr()) == PLACEMENT_VALUE_FIT {
-            SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_FIT, 0);
-            (*pData).placementSelection = PLACEMENT_FIT;
+        if _ttoi(szBuffer.as_ptr()) == (PLACEMENT_VALUE_FIT) as i32 {
+            SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_FIT) as WPARAM, 0);
+            (*pData).placementSelection = (PLACEMENT_FIT) as i32;
         }
 
-        if _ttoi(szBuffer.as_ptr()) == PLACEMENT_VALUE_FILL {
-            SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_FILL, 0);
-            (*pData).placementSelection = PLACEMENT_FILL;
+        if _ttoi(szBuffer.as_ptr()) == (PLACEMENT_VALUE_FILL) as i32 {
+            SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_FILL) as WPARAM, 0);
+            (*pData).placementSelection = (PLACEMENT_FILL) as i32;
         }
     }
 
-    if RegQueryValueEx(regKey, TEXT("TileWallpaper"), 0, core::ptr::null_mut(), szBuffer.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(bufferSize)) == ERROR_SUCCESS {
+    if RegQueryValueEx(regKey, w!("TileWallpaper"), (0) as *mut u32, core::ptr::null_mut(), szBuffer.as_mut_ptr() as LPBYTE, core::ptr::addr_of_mut!(bufferSize)) == (ERROR_SUCCESS) as i32 {
         if _ttoi(szBuffer.as_ptr()) == 1 {
-            SendDlgItemMessage(hwndDlg, IDC_PLACEMENT_COMBO, CB_SETCURSEL, PLACEMENT_TILE, 0);
-            (*pData).placementSelection = PLACEMENT_TILE;
+            SendDlgItemMessage(hwndDlg, (IDC_PLACEMENT_COMBO) as i32, CB_SETCURSEL, (PLACEMENT_TILE) as WPARAM, 0);
+            (*pData).placementSelection = (PLACEMENT_TILE) as i32;
         }
     }
 
@@ -467,12 +468,12 @@ unsafe extern "C" fn InitBackgroundDialog(hwndDlg: HWND, pData: PBACKGROUND_DATA
 }
 unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut res: i32 = ERROR_SUCCESS;
+    let mut res: i32 = (ERROR_SUCCESS) as i32;
     let mut cc: CHOOSECOLOR = core::mem::zeroed();
 
     res = RegCreateKeyEx(
         HKEY_CURRENT_USER,
-        TEXT(b"Control Panel\\Appearance\0".as_ptr() as *const TCHAR),
+        w!("Control Panel\\Appearance"),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -482,12 +483,12 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         core::ptr::null_mut()
     );
 
-    if res == ERROR_SUCCESS {
+    if res == (ERROR_SUCCESS) as i32 {
         let mut dwType: u32 = REG_BINARY;
         let mut cbData: u32 = core::mem::size_of_val(&(*pData).custom_colors) as u32;
         res = RegQueryValueEx(
             hKey,
-            TEXT(b"CustomColors\0".as_ptr() as *const TCHAR),
+            w!("CustomColors"),
             core::ptr::null_mut(),
             &mut dwType,
             (*pData).custom_colors.as_mut_ptr() as LPBYTE,
@@ -497,45 +498,45 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         hKey = core::ptr::null_mut();
     }
 
-    cc.lStructSize = CHOOSECOLOR;
+    cc.lStructSize = (core::mem::size_of::<CHOOSECOLOR>()) as u32;
     cc.hwndOwner = hwndDlg;
     cc.hInstance = core::ptr::null_mut();
     cc.rgbResult = g_GlobalData.desktop_color;
     cc.lpCustColors = (*pData).custom_colors.as_mut_ptr();
     cc.Flags = CC_ANYCOLOR | CC_FULLOPEN | CC_RGBINIT;
     cc.lCustData = 0;
-    cc.lpfnHook = core::ptr::null_mut();
+    cc.lpfnHook = None;
     cc.lpTemplateName = core::ptr::null_mut();
 
     if ChooseColor(&mut cc) != 0 {
         g_GlobalData.desktop_color = cc.rgbResult;
-        (*pData).bClrBackgroundChanged = TRUE;
+        (*pData).bClrBackgroundChanged = (TRUE) as i32;
 
-        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
         InvalidateRect(
-            GetDlgItem(hwndDlg, IDC_BACKGROUND_PREVIEW),
+            GetDlgItem(hwndDlg, (IDC_BACKGROUND_PREVIEW) as i32),
             core::ptr::null_mut(),
-            TRUE
+            (TRUE) as BOOL
         );
         InvalidateRect(
-            GetDlgItem(hwndDlg, IDC_COLOR_BUTTON),
+            GetDlgItem(hwndDlg, (IDC_COLOR_BUTTON) as i32),
             core::ptr::null_mut(),
-            TRUE
+            (TRUE) as BOOL
         );
 
         res = RegOpenKeyEx(
             HKEY_CURRENT_USER,
-            TEXT(b"Control Panel\\Appearance\0".as_ptr() as *const TCHAR),
+            w!("Control Panel\\Appearance"),
             0,
             KEY_SET_VALUE,
             &mut hKey
         );
 
-        if res == ERROR_SUCCESS {
+        if res == (ERROR_SUCCESS) as i32 {
             RegSetValueEx(
                 hKey,
-                TEXT(b"CustomColors\0".as_ptr() as *const TCHAR),
+                w!("CustomColors"),
                 0,
                 REG_BINARY,
                 (*pData).custom_colors.as_mut_ptr() as LPBYTE,
@@ -553,38 +554,38 @@ unsafe extern "C" fn CheckListViewFilenameExists(hwndList: HWND, tszFileName: LP
     lvfi.flags = LVFI_STRING;
     lvfi.psz = tszFileName;
 
-    retVal = ListView_FindItem(hwndList, -1, &lvfi);
+    retVal = ListView_FindItem!(hwndList, -1, &lvfi);
     if retVal != -1 {
-        return TRUE;
+        return (TRUE) as i32;
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     let mut ofn: OPENFILENAME = core::mem::zeroed();
-    let mut filename: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut filename: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut fileTitle: [TCHAR; 256] = core::mem::zeroed();
-    let mut initialDir: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut initialDir: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut filter: LPTSTR;
     let mut extensions: LPTSTR;
     let mut backgroundItem: *mut BackgroundItem = core::ptr::null_mut();
-    let mut sfi: CSIDL_MYPICTURES = core::mem::zeroed();
+    let mut sfi: SHFILEINFO = core::mem::zeroed();
     let mut listItem: LV_ITEM = core::mem::zeroed();
     let hwndBackgroundList: HWND;
     let mut p: *mut TCHAR;
     let hr: HRESULT;
-    let mut filterdesc: [TCHAR; MAX_PATH] = core::mem::zeroed();
+    let mut filterdesc: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut c: *mut TCHAR;
     let mut sizeRemain: usize;
     let buffersize: SIZE_T;
     let success: BOOL;
     let himl: HIMAGELIST;
 
-    hwndBackgroundList = GetDlgItem(hwndDlg, IDC_BACKGROUND_LIST);
-    himl = ListView_GetImageList(hwndBackgroundList, LVSIL_SMALL);
-    SHGetFolderPathW(core::ptr::null_mut(), CSIDL_MYPICTURES, core::ptr::null_mut(), 0, initialDir.as_mut_ptr());
+    hwndBackgroundList = GetDlgItem(hwndDlg, (IDC_BACKGROUND_LIST) as i32);
+    himl = ListView_GetImageList!(hwndBackgroundList, LVSIL_SMALL);
+    SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_MYPICTURES) as i32, core::ptr::null_mut(), 0, initialDir.as_mut_ptr());
 
-    ZeroMemory(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
+    ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
     ofn.lStructSize = core::mem::size_of::<OPENFILENAME>() as u32;
     ofn.hwndOwner = hwndDlg;
@@ -597,7 +598,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         return;
     }
 
-    buffersize = (_tcslen(extensions) * 2 + 6) * core::mem::size_of::<TCHAR>() + core::mem::size_of_val(&filterdesc);
+    buffersize = (((_tcslen(extensions) * 2 + 6) * core::mem::size_of::<TCHAR>() + core::mem::size_of_val(&filterdesc)) as u32) as WPARAM;
 
     filter = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, buffersize) as LPTSTR;
     if filter.is_null() {
@@ -605,7 +606,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         return;
     }
 
-    sizeRemain = buffersize;
+    sizeRemain = (buffersize) as usize;
     c = filter;
 
     if StringCbPrintfEx(c, sizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(sizeRemain), 0, w!("%ls (%ls)"), filterdesc.as_ptr(), extensions) < 0 {
@@ -625,7 +626,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
 
     HeapFree(GetProcessHeap(), 0, extensions as *mut core::ffi::c_void);
 
-    ofn.lpstrFile.offset(0 as isize).write(TEXT('\0'));
+    ofn.lpstrFile.offset(0 as isize).write(('\0' as WCHAR));
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrFilter = filter;
     ofn.nFilterIndex = 0;
@@ -638,49 +639,49 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     HeapFree(GetProcessHeap(), 0, filter as *mut core::ffi::c_void);
 
     if success != 0 {
-        if CheckListViewFilenameExists(hwndBackgroundList, ofn.lpstrFileTitle) != FALSE {
+        if CheckListViewFilenameExists(hwndBackgroundList, ofn.lpstrFileTitle) != (FALSE) as i32 {
             return;
         }
 
-        if (*pData).listViewItemCount > (MAX_BACKGROUNDS - 1) {
+        if (*pData).listViewItemCount > ((MAX_BACKGROUNDS - 1)) as i32 {
             return;
         }
 
         SHGetFileInfo(
             filename.as_mut_ptr(),
             0,
-            core::ptr::addr_of_mut!(sfi) as *mut core::ffi::c_void,
-            core::mem::size_of_val(&sfi),
+            (core::ptr::addr_of_mut!(sfi) as *mut core::ffi::c_void).cast(),
+            (core::mem::size_of_val(&sfi)) as u32,
             SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME
         );
-        sfi.iIcon = ImageList_AddIcon(himl, sfi.hIcon);
+        sfi.iIcon = ImageList_AddIcon!(himl, sfi.hIcon);
 
         backgroundItem = core::ptr::addr_of_mut!((*pData).backgroundItems[(*pData).listViewItemCount as usize]);
 
-        (*backgroundItem).bWallpaper = TRUE;
+        (*backgroundItem).bWallpaper = (TRUE) as i32;
 
         let hr = StringCbCopy(
             (*backgroundItem).szDisplayName.as_mut_ptr(),
-            core::mem::size_of_val(&(*backgroundItem).szDisplayName),
-            sfi.szDisplayName.as_ptr()
+            core::mem::size_of::<[TCHAR; 256]>(),
+            core::ptr::addr_of!(sfi.szDisplayName).cast()
         );
         if hr < 0 {
             return;
         }
-        p = _tcsrchr((*backgroundItem).szDisplayName.as_mut_ptr(), _T('.'));
+        p = _tcsrchr((*backgroundItem).szDisplayName.as_mut_ptr(), ('.' as WCHAR));
         if !p.is_null() {
             *p = 0 as TCHAR;
         }
         let hr = StringCbCopy(
             (*backgroundItem).szFilename.as_mut_ptr(),
-            core::mem::size_of_val(&(*backgroundItem).szFilename),
+            core::mem::size_of::<[TCHAR; MAX_PATH as usize]>(),
             filename.as_ptr()
         );
         if hr < 0 {
             return;
         }
 
-        ZeroMemory(core::ptr::addr_of_mut!(listItem) as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
+        ZeroMemory!(core::ptr::addr_of_mut!(listItem) as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
         listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
         listItem.state = 0;
         listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
@@ -688,14 +689,14 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         listItem.iItem = (*pData).listViewItemCount;
         listItem.lParam = (*pData).listViewItemCount as LPARAM;
 
-        ListView_InsertItem(hwndBackgroundList, core::ptr::addr_of_mut!(listItem));
-        ListView_SetItemState(
+        ListView_InsertItem!(hwndBackgroundList, core::ptr::addr_of_mut!(listItem));
+        ListView_SetItemState!(
             hwndBackgroundList,
             (*pData).listViewItemCount,
             LVIS_SELECTED,
             LVIS_SELECTED
         );
-        SendMessage(hwndBackgroundList, WM_VSCROLL, SB_BOTTOM, 0);
+        SendMessage(hwndBackgroundList, WM_VSCROLL, (SB_BOTTOM) as WPARAM, 0);
 
         (*pData).listViewItemCount += 1;
     }
@@ -711,23 +712,23 @@ unsafe extern "C" fn ListViewItemChanged(hwndDlg: HWND, pData: *mut BACKGROUND_D
         (*pData).pWallpaperBitmap = core::ptr::null_mut();
     }
 
-    if (*backgroundItem).bWallpaper != FALSE {
-        (*pData).pWallpaperBitmap = DibLoadImage((*backgroundItem).szFilename.as_ptr());
+    if (*backgroundItem).bWallpaper != (FALSE) as i32 {
+        (*pData).pWallpaperBitmap = DibLoadImage(((*backgroundItem).szFilename.as_ptr()) as *mut u16);
 
         if (*pData).pWallpaperBitmap == core::ptr::null_mut() {
             return;
         }
     }
 
-    (*pData).bWallpaperChanged = TRUE;
+    (*pData).bWallpaperChanged = (TRUE) as i32;
 
-    InvalidateRect(GetDlgItem(hwndDlg, IDC_BACKGROUND_PREVIEW),
-                   core::ptr::null_mut(), TRUE);
+    InvalidateRect(GetDlgItem(hwndDlg, (IDC_BACKGROUND_PREVIEW) as i32),
+                   core::ptr::null_mut(), (TRUE) as BOOL);
 
-    EnableWindow(GetDlgItem(hwndDlg, IDC_PLACEMENT_COMBO),
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_PLACEMENT_COMBO) as i32),
                  (*backgroundItem).bWallpaper);
 
-    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 }
 unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut BACKGROUND_DATA) {
     let mut scaleX: f32;
@@ -748,34 +749,34 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
     let hDC: HDC;
     let hOldObj: HGDIOBJ;
     let mut rcItem: RECT = RECT {
-        left: MONITOR_LEFT,
-        top: MONITOR_TOP,
-        right: MONITOR_RIGHT,
-        bottom: MONITOR_BOTTOM,
+        left: (MONITOR_LEFT) as i32,
+        top: (MONITOR_TOP) as i32,
+        right: (MONITOR_RIGHT) as i32,
+        bottom: (MONITOR_BOTTOM) as i32,
     };
 
     hDC = CreateCompatibleDC((*draw).hDC);
-    hOldObj = SelectObject(hDC, g_GlobalData.hMonitorBitmap);
+    hOldObj = SelectObject(hDC, (g_GlobalData.hMonitorBitmap).cast());
 
-    if (*pData).backgroundItems[(*pData).backgroundSelection as usize].bWallpaper == FALSE {
+    if (*pData).backgroundItems[(*pData).backgroundSelection as usize].bWallpaper == (FALSE) as i32 {
         hBrush = CreateSolidBrush(g_GlobalData.desktop_color);
         FillRect(hDC, &mut rcItem, hBrush);
-        DeleteObject(hBrush);
+        DeleteObject((hBrush).cast());
     } else if (*pData).pWallpaperBitmap != core::ptr::null_mut() {
-        scaleX = (GetSystemMetrics(SM_CXSCREEN) as f32 - 1) / MONITOR_WIDTH;
-        scaleY = (GetSystemMetrics(SM_CYSCREEN) as f32 - 1) / MONITOR_HEIGHT;
+        scaleX = (GetSystemMetrics((SM_CXSCREEN) as i32) as f32 - 1.0) / MONITOR_WIDTH as f32;
+        scaleY = (GetSystemMetrics((SM_CYSCREEN) as i32) as f32 - 1.0) / MONITOR_HEIGHT as f32;
 
         scaledWidth = ((*(*pData).pWallpaperBitmap).width as f32 / scaleX) as i32;
         scaledHeight = ((*(*pData).pWallpaperBitmap).height as f32 / scaleY) as i32;
 
-        FillRect(hDC, &mut rcItem, GetSysColorBrush(COLOR_BACKGROUND));
+        FillRect(hDC, &mut rcItem, GetSysColorBrush((COLOR_BACKGROUND) as i32));
 
-        SetStretchBltMode(hDC, COLORONCOLOR);
+        SetStretchBltMode(hDC, (COLORONCOLOR) as i32);
 
-        match (*pData).placementSelection {
+        match ((*pData).placementSelection) as u32 {
             PLACEMENT_CENTER => {
-                posX = (MONITOR_WIDTH - scaledWidth + 1) / 2;
-                posY = (MONITOR_HEIGHT - scaledHeight + 1) / 2;
+                posX = ((MONITOR_WIDTH - (scaledWidth) as u32 + 1) / 2) as i32;
+                posY = ((MONITOR_HEIGHT - (scaledHeight) as u32 + 1) / 2) as i32;
                 desX = 0;
                 desY = 0;
 
@@ -788,25 +789,25 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
                     posY = 0;
                 }
 
-                if scaledWidth > MONITOR_WIDTH {
-                    scaledWidth = MONITOR_WIDTH;
+                if scaledWidth > (MONITOR_WIDTH) as i32 {
+                    scaledWidth = (MONITOR_WIDTH) as i32;
                 }
 
-                if scaledHeight > MONITOR_HEIGHT {
-                    scaledHeight = MONITOR_HEIGHT;
+                if scaledHeight > (MONITOR_HEIGHT) as i32 {
+                    scaledHeight = (MONITOR_HEIGHT) as i32;
                 }
 
                 StretchDIBits(
                     hDC,
-                    MONITOR_LEFT + posX,
-                    MONITOR_TOP + posY,
+                    (MONITOR_LEFT + (posX) as u32) as i32,
+                    (MONITOR_TOP + (posY) as u32) as i32,
                     scaledWidth,
                     scaledHeight,
                     desX,
                     desY,
-                    (*(*pData).pWallpaperBitmap).width - (desX as f32 * scaleX) as i32,
-                    (*(*pData).pWallpaperBitmap).height - (desY as f32 * scaleY) as i32,
-                    (*(*pData).pWallpaperBitmap).bits,
+                    ((*(*pData).pWallpaperBitmap).width - ((desX as f32 * scaleX) as i32) as u32) as i32,
+                    ((*(*pData).pWallpaperBitmap).height - ((desY as f32 * scaleY) as i32) as u32) as i32,
+                    ((*(*pData).pWallpaperBitmap).bits) as *const c_void,
                     (*(*pData).pWallpaperBitmap).info,
                     DIB_RGB_COLORS,
                     SRCCOPY,
@@ -815,15 +816,15 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
             PLACEMENT_STRETCH => {
                 StretchDIBits(
                     hDC,
-                    MONITOR_LEFT,
-                    MONITOR_TOP,
-                    MONITOR_WIDTH,
-                    MONITOR_HEIGHT,
+                    (MONITOR_LEFT) as i32,
+                    (MONITOR_TOP) as i32,
+                    (MONITOR_WIDTH) as i32,
+                    (MONITOR_HEIGHT) as i32,
                     0,
                     0,
-                    (*(*pData).pWallpaperBitmap).width,
-                    (*(*pData).pWallpaperBitmap).height,
-                    (*(*pData).pWallpaperBitmap).bits,
+                    ((*(*pData).pWallpaperBitmap).width) as i32,
+                    ((*(*pData).pWallpaperBitmap).height) as i32,
+                    ((*(*pData).pWallpaperBitmap).bits) as *const c_void,
                     (*(*pData).pWallpaperBitmap).info,
                     DIB_RGB_COLORS,
                     SRCCOPY,
@@ -831,32 +832,32 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
             }
             PLACEMENT_TILE => {
                 y = 0;
-                while y < MONITOR_HEIGHT {
+                while y < (MONITOR_HEIGHT) as i32 {
                     x = 0;
-                    while x < MONITOR_WIDTH {
-                        if (MONITOR_WIDTH - x) >= scaledWidth {
+                    while x < (MONITOR_WIDTH) as i32 {
+                        if (MONITOR_WIDTH - (x) as u32) >= (scaledWidth) as u32 {
                             posX = scaledWidth;
                         } else {
-                            posX = MONITOR_WIDTH - x;
+                            posX = (MONITOR_WIDTH - (x) as u32) as i32;
                         }
 
-                        if (MONITOR_HEIGHT - y) >= scaledHeight {
+                        if (MONITOR_HEIGHT - (y) as u32) >= (scaledHeight) as u32 {
                             posY = scaledHeight;
                         } else {
-                            posY = MONITOR_HEIGHT - y;
+                            posY = (MONITOR_HEIGHT - (y) as u32) as i32;
                         }
 
                         StretchDIBits(
                             hDC,
-                            MONITOR_LEFT + x,
-                            MONITOR_TOP + y,
+                            (MONITOR_LEFT + (x) as u32) as i32,
+                            (MONITOR_TOP + (y) as u32) as i32,
                             posX,
                             posY,
                             0,
                             0,
-                            (*(*pData).pWallpaperBitmap).width * posX / scaledWidth,
-                            (*(*pData).pWallpaperBitmap).height * posY / scaledHeight,
-                            (*(*pData).pWallpaperBitmap).bits,
+                            ((*(*pData).pWallpaperBitmap).width * (posX) as u32 / (scaledWidth) as u32) as i32,
+                            ((*(*pData).pWallpaperBitmap).height * (posY) as u32 / (scaledHeight) as u32) as i32,
+                            ((*(*pData).pWallpaperBitmap).bits) as *const c_void,
                             (*(*pData).pWallpaperBitmap).info,
                             DIB_RGB_COLORS,
                             SRCCOPY,
@@ -868,62 +869,62 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
                 }
             }
             PLACEMENT_FIT => {
-                if (MONITOR_WIDTH * scaledHeight) <= (MONITOR_HEIGHT * scaledWidth) {
-                    fitFillScaleNum = MONITOR_WIDTH;
+                if (MONITOR_WIDTH * (scaledHeight) as u32) <= (MONITOR_HEIGHT * (scaledWidth) as u32) {
+                    fitFillScaleNum = (MONITOR_WIDTH) as i32;
                     fitFillScaleDen = scaledWidth;
                 } else {
-                    fitFillScaleNum = MONITOR_HEIGHT;
+                    fitFillScaleNum = (MONITOR_HEIGHT) as i32;
                     fitFillScaleDen = scaledHeight;
                 }
 
                 fitFillWidth = MulDiv(scaledWidth, fitFillScaleNum, fitFillScaleDen);
                 fitFillHeight = MulDiv(scaledHeight, fitFillScaleNum, fitFillScaleDen);
 
-                posX = (MONITOR_WIDTH - fitFillWidth) / 2;
-                posY = (MONITOR_HEIGHT - fitFillHeight) / 2;
+                posX = ((MONITOR_WIDTH - (fitFillWidth) as u32) / 2) as i32;
+                posY = ((MONITOR_HEIGHT - (fitFillHeight) as u32) / 2) as i32;
 
                 StretchDIBits(
                     hDC,
-                    MONITOR_LEFT + posX,
-                    MONITOR_TOP + posY,
+                    (MONITOR_LEFT + (posX) as u32) as i32,
+                    (MONITOR_TOP + (posY) as u32) as i32,
                     fitFillWidth,
                     fitFillHeight,
                     0,
                     0,
-                    (*(*pData).pWallpaperBitmap).width,
-                    (*(*pData).pWallpaperBitmap).height,
-                    (*(*pData).pWallpaperBitmap).bits,
+                    ((*(*pData).pWallpaperBitmap).width) as i32,
+                    ((*(*pData).pWallpaperBitmap).height) as i32,
+                    ((*(*pData).pWallpaperBitmap).bits) as *const c_void,
                     (*(*pData).pWallpaperBitmap).info,
                     DIB_RGB_COLORS,
                     SRCCOPY,
                 );
             }
             PLACEMENT_FILL => {
-                if (MONITOR_WIDTH * scaledHeight) > (MONITOR_HEIGHT * scaledWidth) {
-                    fitFillScaleNum = MONITOR_WIDTH;
+                if (MONITOR_WIDTH * (scaledHeight) as u32) > (MONITOR_HEIGHT * (scaledWidth) as u32) {
+                    fitFillScaleNum = (MONITOR_WIDTH) as i32;
                     fitFillScaleDen = scaledWidth;
                 } else {
-                    fitFillScaleNum = MONITOR_HEIGHT;
+                    fitFillScaleNum = (MONITOR_HEIGHT) as i32;
                     fitFillScaleDen = scaledHeight;
                 }
 
                 fitFillWidth = MulDiv(scaledWidth, fitFillScaleNum, fitFillScaleDen);
                 fitFillHeight = MulDiv(scaledHeight, fitFillScaleNum, fitFillScaleDen);
 
-                desX = (((fitFillWidth - MONITOR_WIDTH) * (*(*pData).pWallpaperBitmap).width) / (2 * fitFillWidth));
-                desY = (((fitFillHeight - MONITOR_HEIGHT) * (*(*pData).pWallpaperBitmap).height) / (2 * fitFillHeight));
+                desX = (((fitFillWidth - (MONITOR_WIDTH) as i32) * ((*(*pData).pWallpaperBitmap).width) as i32) / (2 * fitFillWidth));
+                desY = (((fitFillHeight - (MONITOR_HEIGHT) as i32) * ((*(*pData).pWallpaperBitmap).height) as i32) / (2 * fitFillHeight));
 
                 StretchDIBits(
                     hDC,
-                    MONITOR_LEFT,
-                    MONITOR_TOP,
-                    MONITOR_WIDTH,
-                    MONITOR_HEIGHT,
+                    (MONITOR_LEFT) as i32,
+                    (MONITOR_TOP) as i32,
+                    (MONITOR_WIDTH) as i32,
+                    (MONITOR_HEIGHT) as i32,
                     desX,
                     desY,
-                    (MONITOR_WIDTH * (*(*pData).pWallpaperBitmap).width) / fitFillWidth,
-                    (MONITOR_HEIGHT * (*(*pData).pWallpaperBitmap).height) / fitFillHeight,
-                    (*(*pData).pWallpaperBitmap).bits,
+                    ((MONITOR_WIDTH * (*(*pData).pWallpaperBitmap).width) / (fitFillWidth) as u32) as i32,
+                    ((MONITOR_HEIGHT * (*(*pData).pWallpaperBitmap).height) / (fitFillHeight) as u32) as i32,
+                    ((*(*pData).pWallpaperBitmap).bits) as *const c_void,
                     (*(*pData).pWallpaperBitmap).info,
                     DIB_RGB_COLORS,
                     SRCCOPY,
@@ -952,7 +953,7 @@ unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut B
 }
 unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
     let mut regKey: HKEY = core::ptr::null_mut();
-    let mut szWallpaper: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szWallpaper: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut image: *mut GpImage = core::ptr::null_mut();
     let mut encoderClsid: CLSID = core::mem::zeroed();
     let mut guidFormat: GUID = core::mem::zeroed();
@@ -961,7 +962,7 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
 
     if SHGetFolderPath(
         core::ptr::null_mut(),
-        CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE,
+        (CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE) as i32,
         core::ptr::null_mut(),
         0,
         szWallpaper.as_mut_ptr(),
@@ -973,7 +974,7 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
     if StringCbCat(
         szWallpaper.as_mut_ptr(),
         core::mem::size_of_val(&szWallpaper),
-        TEXT("\\Wallpaper1.bmp"),
+        w!("\\Wallpaper1.bmp"),
     ) < 0
     {
         return;
@@ -981,7 +982,7 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
 
     if RegCreateKeyEx(
         HKEY_CURRENT_USER,
-        TEXT("Control Panel\\Desktop"),
+        w!("Control Panel\\Desktop"),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -989,109 +990,109 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
         core::ptr::null_mut(),
         &mut regKey,
         core::ptr::null_mut(),
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS) as i32
     {
         return;
     }
 
-    if (*pData).placementSelection == PLACEMENT_TILE {
+    if (*pData).placementSelection == (PLACEMENT_TILE) as i32 {
         RegSetValueEx(
             regKey,
-            TEXT("TileWallpaper"),
+            w!("TileWallpaper"),
             0,
             REG_SZ,
-            TEXT("1") as LPBYTE,
+            w!("1") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 2) as u32,
         );
         RegSetValueEx(
             regKey,
-            TEXT("WallpaperStyle"),
+            w!("WallpaperStyle"),
             0,
             REG_SZ,
-            TEXT("0") as LPBYTE,
-            (core::mem::size_of::<TCHAR>() * 2) as u32,
-        );
-    }
-
-    if (*pData).placementSelection == PLACEMENT_CENTER {
-        RegSetValueEx(
-            regKey,
-            TEXT("TileWallpaper"),
-            0,
-            REG_SZ,
-            TEXT("0") as LPBYTE,
-            (core::mem::size_of::<TCHAR>() * 2) as u32,
-        );
-        RegSetValueEx(
-            regKey,
-            TEXT("WallpaperStyle"),
-            0,
-            REG_SZ,
-            TEXT("0") as LPBYTE,
+            w!("0") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 2) as u32,
         );
     }
 
-    if (*pData).placementSelection == PLACEMENT_STRETCH {
+    if (*pData).placementSelection == (PLACEMENT_CENTER) as i32 {
         RegSetValueEx(
             regKey,
-            TEXT("TileWallpaper"),
+            w!("TileWallpaper"),
             0,
             REG_SZ,
-            TEXT("0") as LPBYTE,
+            w!("0") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 2) as u32,
         );
         RegSetValueEx(
             regKey,
-            TEXT("WallpaperStyle"),
+            w!("WallpaperStyle"),
             0,
             REG_SZ,
-            TEXT("2") as LPBYTE,
-            (core::mem::size_of::<TCHAR>() * 2) as u32,
-        );
-    }
-
-    if (*pData).placementSelection == PLACEMENT_FIT {
-        RegSetValueEx(
-            regKey,
-            TEXT("TileWallpaper"),
-            0,
-            REG_SZ,
-            TEXT("0") as LPBYTE,
-            (core::mem::size_of::<TCHAR>() * 2) as u32,
-        );
-        RegSetValueEx(
-            regKey,
-            TEXT("WallpaperStyle"),
-            0,
-            REG_SZ,
-            TEXT("6") as LPBYTE,
+            w!("0") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 2) as u32,
         );
     }
 
-    if (*pData).placementSelection == PLACEMENT_FILL {
+    if (*pData).placementSelection == (PLACEMENT_STRETCH) as i32 {
         RegSetValueEx(
             regKey,
-            TEXT("TileWallpaper"),
+            w!("TileWallpaper"),
             0,
             REG_SZ,
-            TEXT("0") as LPBYTE,
+            w!("0") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 2) as u32,
         );
         RegSetValueEx(
             regKey,
-            TEXT("WallpaperStyle"),
+            w!("WallpaperStyle"),
             0,
             REG_SZ,
-            TEXT("10") as LPBYTE,
+            w!("2") as LPBYTE,
+            (core::mem::size_of::<TCHAR>() * 2) as u32,
+        );
+    }
+
+    if (*pData).placementSelection == (PLACEMENT_FIT) as i32 {
+        RegSetValueEx(
+            regKey,
+            w!("TileWallpaper"),
+            0,
+            REG_SZ,
+            w!("0") as LPBYTE,
+            (core::mem::size_of::<TCHAR>() * 2) as u32,
+        );
+        RegSetValueEx(
+            regKey,
+            w!("WallpaperStyle"),
+            0,
+            REG_SZ,
+            w!("6") as LPBYTE,
+            (core::mem::size_of::<TCHAR>() * 2) as u32,
+        );
+    }
+
+    if (*pData).placementSelection == (PLACEMENT_FILL) as i32 {
+        RegSetValueEx(
+            regKey,
+            w!("TileWallpaper"),
+            0,
+            REG_SZ,
+            w!("0") as LPBYTE,
+            (core::mem::size_of::<TCHAR>() * 2) as u32,
+        );
+        RegSetValueEx(
+            regKey,
+            w!("WallpaperStyle"),
+            0,
+            REG_SZ,
+            w!("10") as LPBYTE,
             (core::mem::size_of::<TCHAR>() * 3) as u32,
         );
     }
 
-    if (*pData).backgroundItems[(*pData).backgroundSelection].bWallpaper != FALSE {
+    if (*pData).backgroundItems[((*pData).backgroundSelection) as usize].bWallpaper != FALSE {
         GdipLoadImageFromFile(
-            (*pData).backgroundItems[(*pData).backgroundSelection].szFilename.as_ptr(),
+            (*pData).backgroundItems[((*pData).backgroundSelection) as usize].szFilename.as_ptr(),
             &mut image,
         );
         if image.is_null() {
@@ -1100,13 +1101,13 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
         }
 
         GdipGetImageRawFormat(image, &mut guidFormat);
-        if IsEqualGUID(&guidFormat, &ImageFormatBMP) {
+        if IsEqualGUID!(&guidFormat, &ImageFormatBMP) != 0 {
             GdipDisposeImage(image);
             RegCloseKey(regKey);
             SystemParametersInfo(
                 SPI_SETDESKWALLPAPER,
                 0,
-                (*pData).backgroundItems[(*pData).backgroundSelection].szFilename.as_ptr() as *mut _,
+                (*pData).backgroundItems[((*pData).backgroundSelection) as usize].szFilename.as_ptr() as *mut _,
                 SPIF_UPDATEINIFILE,
             );
             return;
@@ -1128,25 +1129,25 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
         }
 
         if StringCchLength(
-            (*pData).backgroundItems[(*pData).backgroundSelection].szFilename.as_ptr(),
-            MAX_PATH,
+            (*pData).backgroundItems[((*pData).backgroundSelection) as usize].szFilename.as_ptr(),
+            (MAX_PATH) as usize,
             &mut length,
         ) >= 0
         {
             RegSetValueEx(
                 regKey,
-                TEXT("ConvertedWallpaper"),
+                w!("ConvertedWallpaper"),
                 0,
                 REG_SZ,
-                (*pData).backgroundItems[(*pData).backgroundSelection].szFilename.as_ptr() as LPBYTE,
+                (*pData).backgroundItems[((*pData).backgroundSelection) as usize].szFilename.as_ptr() as LPBYTE,
                 ((length + 1) * core::mem::size_of::<TCHAR>()) as u32,
             );
         }
 
-        if StringCchLength(szWallpaper.as_ptr(), MAX_PATH, &mut length) >= 0 {
+        if StringCchLength(szWallpaper.as_ptr(), (MAX_PATH) as usize, &mut length) >= 0 {
             RegSetValueEx(
                 regKey,
-                TEXT("OriginalWallpaper"),
+                w!("OriginalWallpaper"),
                 0,
                 REG_SZ,
                 szWallpaper.as_ptr() as LPBYTE,
@@ -1164,7 +1165,7 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
         SystemParametersInfo(
             SPI_SETDESKWALLPAPER,
             0,
-            TEXT("") as *mut core::ffi::c_void,
+            w!("") as *mut core::ffi::c_void,
             SPIF_UPDATEINIFILE,
         );
     }
@@ -1173,64 +1174,54 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
 }
 unsafe extern "C" fn SetDesktopBackColor(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut iElement: i32 = COLOR_BACKGROUND;
+    let mut iElement: i32 = (COLOR_BACKGROUND) as i32;
     let mut clText: [TCHAR; 16] = [0; 16];
     let mut red: u8;
     let mut green: u8;
     let mut blue: u8;
 
     if SetSysColors(1, core::ptr::addr_of_mut!(iElement), core::ptr::addr_of_mut!(g_GlobalData.desktop_color)) == 0 {
-        MessageBox(hwndDlg, TEXT(b"SetSysColor() failed!\0".as_ptr() as *const i8),
-            TEXT(b"Error!\0".as_ptr() as *const i8), MB_ICONSTOP);
+        MessageBox(hwndDlg, w!("SetSysColor() failed!"),
+            w!("Error!"), MB_ICONSTOP);
     }
 
-    if RegCreateKeyEx(HKEY_CURRENT_USER, TEXT(b"Control Panel\\Colors\0".as_ptr() as *const i8), 0, core::ptr::null_mut(),
-                       REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), core::ptr::addr_of_mut!(hKey), core::ptr::null_mut()) != ERROR_SUCCESS {
+    if RegCreateKeyEx(HKEY_CURRENT_USER, w!("Control Panel\\Colors"), 0, core::ptr::null_mut(),
+                       REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), core::ptr::addr_of_mut!(hKey), core::ptr::null_mut()) != (ERROR_SUCCESS) as i32 {
         return;
     }
 
-    red = GetRValue(g_GlobalData.desktop_color);
-    green = GetGValue(g_GlobalData.desktop_color);
-    blue = GetBValue(g_GlobalData.desktop_color);
+    red = GetRValue!(g_GlobalData.desktop_color);
+    green = GetGValue!(g_GlobalData.desktop_color);
+    blue = GetBValue!(g_GlobalData.desktop_color);
 
-    StringCbPrintf(clText.as_mut_ptr(), core::mem::size_of_val(&clText), TEXT(b"%d %d %d\0".as_ptr() as *const i8), red, green, blue);
-    RegSetValueEx(hKey, TEXT(b"Background\0".as_ptr() as *const i8), 0, REG_SZ, clText.as_ptr() as LPBYTE,
-                  (wcslen(clText.as_ptr()) + 1) * core::mem::size_of::<TCHAR>());
+    StringCbPrintf(clText.as_mut_ptr(), core::mem::size_of_val(&clText), w!("%d %d %d"), red as c_int, green as c_int, blue as c_int);
+    RegSetValueEx(hKey, w!("Background"), 0, REG_SZ, clText.as_ptr() as LPBYTE,
+                  ((wcslen(clText.as_ptr()) + 1) * core::mem::size_of::<TCHAR>()) as u32);
 
     RegCloseKey(hKey);
 }
 unsafe extern "C" fn OnCustomButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
     let mut hpsp: [HPROPSHEETPAGE; 1] = [core::ptr::null_mut(); 1];
-    let mut psh = PROPSHEETHEADER {
-        dwSize: core::mem::size_of::<PROPSHEETHEADER>() as u32,
-        dwFlags: PSH_NOAPPLYNOW,
-        hwndParent: GetParent(hwndDlg),
-        hInstance: hApplet,
-        pszIcon: core::ptr::null(),
-        pszCaption: MAKEINTRESOURCE(IDS_DESKTOP_ITEMS),
-        nPages: 0,
-        nStartPage: 0,
-        phpage: hpsp.as_mut_ptr(),
-        pfnCallback: None,
-        hbmWatermark: core::ptr::null_mut(),
-        hplWatermark: 0,
-        hbmHeader: core::ptr::null_mut(),
-    };
-    let mut psp = PROPSHEETPAGE {
-        dwSize: core::mem::size_of::<PROPSHEETPAGE>() as u32,
-        dwFlags: PSP_DEFAULT,
-        hInstance: hApplet,
-        pszTemplate: MAKEINTRESOURCE(IDD_DESKTOP_GENERAL),
-        pszIcon: core::ptr::null(),
-        pszTitle: core::ptr::null(),
-        pfnDlgProc: Some(DesktopPageProc),
-        lParam: (&mut (*pData).desktopData) as *mut _ as LPARAM,
-        pfnCallback: None,
-        pcRefParent: core::ptr::null_mut(),
-        pszHeaderTitle: core::ptr::null(),
-        pszHeaderSubTitle: core::ptr::null(),
-        hActCtx: core::ptr::null_mut(),
-    };
+    // background.c:1121 `PROPSHEETHEADER psh = {sizeof(psh)};` — a C aggregate initialiser that
+    // zeroes everything it does not name, then eleven separate field stores. Rebuilt as a zeroed
+    // value plus those stores rather than a Rust struct literal, because the C spells five of the
+    // fields (pszIcon, nStartPage, phpage, hbmWatermark, hbmHeader) through prsht.h's ANONYMOUS
+    // unions, and a struct literal has no syntax for a path like `__bindgen_anon_1.pszIcon`.
+    let mut psh: PROPSHEETHEADER = core::mem::zeroed();
+    psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
+    psh.dwFlags = PSH_NOAPPLYNOW;
+    psh.hwndParent = GetParent(hwndDlg);
+    psh.hInstance = hApplet;
+    psh.pszCaption = MAKEINTRESOURCE!(IDS_DESKTOP_ITEMS);
+    psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
+
+    let mut psp: PROPSHEETPAGE = core::mem::zeroed();
+    psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
+    psp.dwFlags = PSP_DEFAULT;
+    psp.hInstance = hApplet;
+    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_DESKTOP_GENERAL);
+    psp.pfnDlgProc = Some(DesktopPageProc);
+    psp.lParam = (&mut (*pData).desktopData) as *mut _ as LPARAM;
 
     hpsp[0] = CreatePropertySheetPage(&mut psp);
     if hpsp[0].is_null() {
@@ -1241,7 +1232,7 @@ unsafe extern "C" fn OnCustomButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) 
 
     if PropertySheet(&mut psh) > 0 {
         if SaveDesktopSettings(&mut (*pData).desktopData) != 0 {
-            PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+            PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
         }
     }
 }
@@ -1262,13 +1253,13 @@ pub unsafe extern "system" fn BackgroundPageProc(
             pData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<BACKGROUND_DATA>(),
+                (core::mem::size_of::<BACKGROUND_DATA>()) as SIZE_T,
             ) as *mut BACKGROUND_DATA;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pData as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, ((pData as isize) as i32) as LPARAM);
             gdipStartup.GdiplusVersion = 1;
-            gdipStartup.DebugEventCallback = core::ptr::null_mut();
-            gdipStartup.SuppressBackgroundThread = FALSE;
-            gdipStartup.SuppressExternalCodecs = FALSE;
+            gdipStartup.DebugEventCallback = None;
+            gdipStartup.SuppressBackgroundThread = (FALSE) as i32;
+            gdipStartup.SuppressExternalCodecs = (FALSE) as i32;
             GdiplusStartup(
                 core::ptr::addr_of_mut!((*pData).gdipToken),
                 core::ptr::addr_of_mut!(gdipStartup),
@@ -1279,44 +1270,44 @@ pub unsafe extern "system" fn BackgroundPageProc(
         }
 
         WM_COMMAND => {
-            let controlId = LOWORD(wParam);
-            let command = HIWORD(wParam);
+            let controlId = LOWORD!(wParam);
+            let command = HIWORD!(wParam);
 
-            match controlId {
+            match (controlId) as u32 {
                 IDC_COLOR_BUTTON => {
-                    if command == BN_CLICKED {
+                    if command == (BN_CLICKED) as u16 {
                         OnColorButton(hwndDlg, pData);
                     }
                 }
 
                 IDC_BROWSE_BUTTON => {
-                    if command == BN_CLICKED {
+                    if command == (BN_CLICKED) as u16 {
                         OnBrowseButton(hwndDlg, pData);
                     }
                 }
 
                 IDC_PLACEMENT_COMBO => {
-                    if command == CBN_SELCHANGE {
+                    if command == (CBN_SELCHANGE) as u16 {
                         (*pData).placementSelection = SendDlgItemMessage(
                             hwndDlg,
-                            IDC_PLACEMENT_COMBO,
+                            (IDC_PLACEMENT_COMBO) as i32,
                             CB_GETCURSEL,
                             0,
                             0,
                         ) as i32;
 
                         InvalidateRect(
-                            GetDlgItem(hwndDlg, IDC_BACKGROUND_PREVIEW),
+                            GetDlgItem(hwndDlg, (IDC_BACKGROUND_PREVIEW) as i32),
                             core::ptr::null_mut(),
-                            TRUE,
+                            (TRUE) as BOOL,
                         );
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
                 IDC_DESKTOP_CUSTOM => {
-                    if command == BN_CLICKED {
+                    if command == (BN_CLICKED) as u16 {
                         OnCustomButton(hwndDlg, pData);
                     }
                 }
@@ -1351,24 +1342,24 @@ pub unsafe extern "system" fn BackgroundPageProc(
                         HWND_BROADCAST,
                         WM_SETTINGCHANGE,
                         0,
-                        _T("") as LPARAM,
+                        w!("") as LPARAM,
                     );
-                    return TRUE;
+                    return (TRUE) as LPARAM;
                 }
 
                 LVN_ITEMCHANGED => {
                     let nm = lParam as *mut NMLISTVIEW;
 
                     if ((*nm).uNewState & LVIS_SELECTED) == 0 {
-                        return FALSE;
+                        return (FALSE as INT_PTR) as LPARAM;
                     }
 
                     ListViewItemChanged(hwndDlg, pData, (*nm).iItem);
                 }
 
                 NM_CUSTOMDRAW => {
-                    if (*lpnm).idFrom == IDC_COLOR_BUTTON {
-                        return SetDlgMsgResult(
+                    if (*lpnm).idFrom == (IDC_COLOR_BUTTON) as WPARAM {
+                        return SetDlgMsgResult!(
                             hwndDlg,
                             0,
                             ClrBtn_CustomDraw(
@@ -1389,13 +1380,13 @@ pub unsafe extern "system" fn BackgroundPageProc(
             }
 
             GdiplusShutdown((*pData).gdipToken);
-            HeapFree(GetProcessHeap(), 0, pData);
+            HeapFree(GetProcessHeap(), 0, (pData).cast());
         }
 
         _ => {}
     }
 
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 
 

@@ -11,13 +11,13 @@ pub unsafe extern "C" fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP {
         return core::ptr::null_mut();
     }
 
-    lpBitmap = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<DIBITMAP>()) as PDIBITMAP;
+    lpBitmap = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<DIBITMAP>()) as SIZE_T) as PDIBITMAP;
     if lpBitmap.is_null() {
         GdipDisposeImage(bitmap as *mut GpImage);
         return core::ptr::null_mut();
     }
 
-    (*lpBitmap).info = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<BITMAPINFO>()) as *mut BITMAPINFO;
+    (*lpBitmap).info = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<BITMAPINFO>()) as SIZE_T) as *mut BITMAPINFO;
     if (*lpBitmap).info.is_null() {
         HeapFree(GetProcessHeap(), 0, lpBitmap as *mut core::ffi::c_void);
         GdipDisposeImage(bitmap as *mut GpImage);
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP {
         return core::ptr::null_mut();
     }
 
-    (*lpBitmap).bits = HeapAlloc(GetProcessHeap(), 0, ((*lpBitmap).width * (*lpBitmap).height * 4) as usize) as *mut u32;
+    (*lpBitmap).bits = (HeapAlloc(GetProcessHeap(), 0, ((*lpBitmap).width * (*lpBitmap).height * 4) as SIZE_T) as *mut u32).cast();
     if (*lpBitmap).bits.is_null() {
         HeapFree(GetProcessHeap(), 0, (*lpBitmap).info as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, lpBitmap as *mut core::ffi::c_void);
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP {
         return core::ptr::null_mut();
     }
 
-    ZeroMemory((*lpBitmap).info as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
+    ZeroMemory!((*lpBitmap).info as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
     (*(*lpBitmap).info).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
     (*(*lpBitmap).info).bmiHeader.biWidth = (*lpBitmap).width as i32;
     (*(*lpBitmap).info).bmiHeader.biHeight = -((*lpBitmap).height as i32);
@@ -52,11 +52,11 @@ pub unsafe extern "C" fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP {
     lock.Width = (*lpBitmap).width;
     lock.Height = (*lpBitmap).height;
     lock.Stride = ((*lpBitmap).width * 4) as i32;
-    lock.PixelFormat = PixelFormat32bppPARGB;
+    lock.PixelFormat = (PixelFormat32bppPARGB) as i32;
     lock.Scan0 = (*lpBitmap).bits as *mut core::ffi::c_void;
     lock.Reserved = 0;
 
-    if GdipBitmapLockBits(bitmap, core::ptr::null_mut(), ImageLockModeRead | ImageLockModeUserInputBuf, PixelFormat32bppPARGB, &mut lock) != Ok {
+    if GdipBitmapLockBits(bitmap, core::ptr::null_mut(), ImageLockModeRead | ImageLockModeUserInputBuf, (PixelFormat32bppPARGB) as PixelFormat, &mut lock) != Ok {
         HeapFree(GetProcessHeap(), 0, (*lpBitmap).bits as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, (*lpBitmap).info as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, lpBitmap as *mut core::ffi::c_void);

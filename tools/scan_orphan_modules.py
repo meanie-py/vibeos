@@ -56,6 +56,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rust_module_tree import (
     crate_is_opaque,
     crate_live_files,
+    crate_phantom_mods,
     crate_root_of,
 )
 
@@ -90,6 +91,31 @@ def has_crate_root(crate_dir):
     return any(
         os.path.exists(os.path.join(d, f)) for d in (src, crate_dir) for f in ("lib.rs", "main.rs")
     )
+
+
+def scan_phantoms(roots):
+    """The DUAL finding: `mod X;` declared against a file that does not exist.
+
+    An orphan is a file nothing compiles; a phantom is a declaration with nothing behind it.
+    Same module tree, opposite direction, and the phantom is the one no gate could see: a
+    crate parked out of `workspace.members` is never compiled, and no source scanner opens a
+    path that is absent. desk shipped `pub mod guid;` with no guid.rs AND lib.rs claiming 20
+    TUs when 17 had been translated — through a full green `check` and `check-tooling`, twice.
+
+    There is no banner escape here on purpose. An orphan can be deliberately parked; a `mod`
+    pointing at nothing is never deliberate — it cannot compile, so the only question is
+    whether anyone has tried to compile it yet."""
+    out, seen = [], set()
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            if "Cargo.toml" not in filenames or dirpath in seen:
+                continue
+            seen.add(dirpath)
+            if not has_crate_root(dirpath) or crate_is_opaque(dirpath):
+                continue
+            out.extend(crate_phantom_mods(dirpath))
+    return out
 
 
 def scan(roots):
@@ -177,6 +203,13 @@ def main():
             f"above this file — nothing compiles it; scaffold the crate, or declare it "
             f"with a `//! {BANNER} <reason>` banner"
         )
+    phantoms = scan_phantoms(roots)
+    for decl, name, cands in phantoms:
+        where = " | ".join(os.path.relpath(c, repo) for c in cands)
+        print(
+            f"{os.path.relpath(decl, repo)}:1: [PHANTOM] `mod {name};` resolves to no file "
+            f"(looked for {where}) — write it, or drop the declaration"
+        )
     for path in stale:
         print(
             f"{os.path.relpath(path, repo)}:1: [STALE-BANNER] a `mod` chain DOES reach this "
@@ -189,11 +222,11 @@ def main():
             print(f"{os.path.relpath(path, repo)}:1: [DECLARED] {reason}")
 
     print(
-        f"\nSUMMARY: undeclared-orphans={len(findings)}  "
+        f"\nSUMMARY: undeclared-orphans={len(findings)}  phantom-modules={len(phantoms)}  "
         f"rootless={len(rootless)} ({rootless_lines} lines)  declared={len(declared)}  "
         f"stale-banners={len(stale)}"
     )
-    return 1 if (findings or rootless or stale) else 0
+    return 1 if (findings or rootless or phantoms or stale) else 0
 
 
 if __name__ == "__main__":

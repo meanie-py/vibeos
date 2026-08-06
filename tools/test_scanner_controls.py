@@ -1433,3 +1433,62 @@ def test_decl_drift_sees_through_a_c_void_re_export(tmp_path: Path):
     assert "ExFreePool" in out, (
         "the c_void re-export made PVOID undecidable — coverage lost silently\n" + out
     )
+
+
+# ── scan_orphan_modules: the PHANTOM class (a `mod` with no file behind it) ──
+# Its own control for the same reason ROOTLESS needed one: the table's positive control is
+# satisfied by ANY output line naming the fixture, so folding a phantom into the orphan
+# fixture would be "covered" by the already-passing orphan hit and prove nothing.
+#
+# The class comes from desk (2026-08-05): lib.rs carried `pub mod guid;` against a file that
+# never existed, and separately declared 20 TUs when 17 had been translated. Both survived a
+# full green `check` AND `check-tooling`, because a crate parked out of `workspace.members`
+# is never compiled and no source scanner opens a path that is absent.
+_PHANTOM_CARGO = """\
+[package]
+name = "phantom-fixture"
+version = "0.0.0"
+edition = "2021"
+"""
+_PHANTOM_BAD_LIB = """\
+pub mod real;
+pub mod ghost;
+"""
+_PHANTOM_GOOD_LIB = """\
+pub mod real;
+// A `#[path]` selector names its own file and must NOT read as a phantom — this is the
+// per-arch island shape (`types_i386.rs`) every translated crate carries.
+#[cfg_attr(target_arch = "x86", path = "real.rs")]
+pub mod selected;
+// A directory module resolves through `<name>/mod.rs`, not `<name>.rs`.
+pub mod dir_mod;
+"""
+
+
+def test_phantom_module_is_reported(tmp_path: Path):
+    """`mod ghost;` with no ghost.rs cannot compile — and nothing else can see it."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_BAD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+        },
+    )
+    hits = [ln for ln in out.splitlines() if "[PHANTOM]" in ln and "ghost" in ln]
+    assert hits, f"phantom `mod ghost;` was not reported.\n--- output ---\n{out}"
+
+
+def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
+    """The must-NOT-fire half. A gate that flags every per-arch `#[path]` island would fire
+    on essentially every translated crate in the tree and be turned off within the hour."""
+    _root, out = _orphan_out(
+        tmp_path,
+        {
+            "Cargo.toml": _PHANTOM_CARGO,
+            "src/lib.rs": _PHANTOM_GOOD_LIB,
+            "src/real.rs": "pub fn ok() -> u32 { 1 }\n",
+            "src/dir_mod/mod.rs": "pub fn ok() -> u32 { 2 }\n",
+        },
+    )
+    assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"

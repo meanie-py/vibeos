@@ -51,6 +51,10 @@ RULE_NO_STD_PATH = "no_std_path"
 RULE_POINTER_CAST = "raw_pointer_cast"
 RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
+RULE_ANON_UNION = "anon_union_field"
+RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
+RULE_PACKED_FIELD_PTR = "packed_field_ptr"
+RULE_INDEX_USIZE = "index_usize"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -58,8 +62,12 @@ RULE_PANICKING_CAST = "panicking_cast"
 DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_WIDTH_ALIAS,
     RULE_NUMERIC_CAST,
+    RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_POINTER_CAST,
+    RULE_ANON_UNION,
+    RULE_PACKED_FIELD_PTR,
+    RULE_INDEX_USIZE,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -747,6 +755,13 @@ class _Ctx:
     #: Spans ``RULE_WIDTH_ALIAS`` has already answered, so ``RULE_NUMERIC_CAST`` stands down
     #: instead of proposing a second, width-baked edit for the same bytes.
     claimed: set[tuple[str, int, int]] = field(default_factory=set)
+    #: ``(struct, flattened field) -> dotted path through bindgen's ``__bindgen_anon_N``.
+    #: Derived from the crate's own type declarations; empty disables ``RULE_ANON_UNION``.
+    anon_unions: Mapping[tuple[str, str], str] = field(default_factory=dict)
+    #: ``scrutinee span -> {type each arm wants}``, accumulated across diagnostics so
+    #: ``propose_edits`` can drop a match whose arms do not agree. One ``match`` yields one
+    #: diagnostic PER offending arm, and no single-diagnostic rule can see the others.
+    match_wants: dict[tuple[str, int, int], set[str]] = field(default_factory=dict)
 
 
 def _shape_of(diagnostic: Mapping[str, Any]) -> str:
@@ -1209,13 +1224,390 @@ def _no_std_path_rule(
     return edits, skipped, True
 
 
+def _enclosing_match_scrutinee(masked: bytes, start: int) -> tuple[int, int] | None:
+    """Byte range of the scrutinee of the ``match`` whose ARM contains ``start``.
+
+    Walks out to the nearest UNCLOSED ``{`` — the brace that opens the arm block — then back
+    over the scrutinee to a ``match`` keyword at depth 0. Returns ``None`` unless BOTH are
+    found, so a span in some other braced construct (a struct literal arm body, a nested block)
+    is never mistaken for an arm.
+    """
+    depth, index, brace = 0, start - 1, None
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([":
+            depth -= 1
+        elif char == b"{":
+            if depth == 0:
+                brace = index
+                break
+            depth -= 1
+        index -= 1
+    if brace is None:
+        return None
+    depth, index = 0, brace - 1
+    while index >= 0:
+        char = masked[index : index + 1]
+        if char in b")]}":
+            depth += 1
+        elif char in b"([{":
+            depth -= 1
+            if depth < 0:
+                return None  # the scrutinee cannot span out of its own enclosing group
+        elif depth == 0 and char == b"h" and masked[index - 4 : index + 1] == b"match":
+            keyword = index - 4
+            before = masked[keyword - 1 : keyword]
+            after = masked[index + 1 : index + 2]
+            if (before and (before.isalnum() or before == b"_")) or after.isalnum():
+                index -= 1
+                continue
+            body = masked[index + 1 : brace]
+            if not body.strip():
+                return None
+            lead = len(body) - len(body.lstrip())
+            return index + 1 + lead, brace - (len(body) - len(body.rstrip()))
+        elif depth == 0 and char in b";":
+            return None
+        index -= 1
+    return None
+
+
+def _match_scrutinee_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """int-vs-int on a match ARM -> cast the SCRUTINEE, never the pattern.
+
+    ``_in_match_pattern`` declines these for ``RULE_NUMERIC_CAST``, and is right to: an
+    expression is not legal in a pattern, and rewriting the CONSTANT in an arm is the §9.112
+    shape — an arm whose name stops resolving becomes a fresh binding that matches EVERYTHING,
+    silently. It was also by far the largest decline bucket on the modules that motivated this
+    (293 sites on desk.cpl alone), so leaving it unanswered means paying an LLM for it.
+
+    The scrutinee is the one edit that fixes every arm at once and cannot change which constant
+    an arm compares against. It is exactly what C's ``switch`` does implicitly: ``match
+    LOWORD!(wParam)`` yields a WORD and the arms are the island's UINT ``IDC_*``; ``match
+    (*lpnm).code`` yields a UINT and the arms are prsht.h's NEGATIVE ``PSN_*``.
+
+    EVERY ARM MUST WANT THE SAME TYPE. One ``match`` emits one diagnostic per offending arm, so
+    the wants are accumulated on ``ctx`` and ``propose_edits`` drops the whole match if they
+    disagree — two expectations mean the arms are not one constant family and a human should
+    look.
+    """
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        # `expected` is the SCRUTINEE's type and `found` the ARM constant's: rustc reports an
+        # arm mismatch from the arm's side. Casting to `expected` writes `match (x as u16) as
+        # u16` — a no-op that leaves the error and burns a pass.
+        if _normalise_type(expected) != "int" or found not in INT_PRIMITIVES:
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        masked = _mask_lexical(data)
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        if not _in_match_pattern(masked, end) or _in_macro_definition(masked, start):
+            continue
+        scrutinee = _enclosing_match_scrutinee(masked, start)
+        if scrutinee is None:
+            continue
+        key = (file_name, scrutinee[0], scrutinee[1])
+        ctx.match_wants.setdefault(key, set()).add(found)
+        text = data[scrutinee[0] : scrutinee[1]].decode("utf-8", "replace")
+        if _RE_TRAILING_CAST.search(text):
+            continue  # a previous pass already answered this match
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=scrutinee[0],
+                byte_end=scrutinee[1],
+                replacement=f"({text}) as {found}",
+                rule=RULE_MATCH_SCRUTINEE,
+                authority=(
+                    f"arm at line {span.get('line_start')} is `{found}` and the scrutinee is "
+                    f"`{expected}`; C's switch converts the scrutinee, and a cast is not legal "
+                    "in a pattern"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+                # `found` is a resolved primitive, so on a width-varying family the three arches
+                # can legitimately ask for different ones. Let agreement settle it.
+                requires_target_agreement=True,
+            )
+        )
+    return edits, [], bool(edits)
+
+
+#: E0609 ``no field `X` on type `Y` `` — ``Y`` may arrive as a raw pointer or a reference.
+_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w \n]+?)`", re.S)
+#: E0560 ``struct `Y` has no field named `X` `` — a struct-LITERAL field, which is not fixable
+#: by the same substitution (see the rule).
+_RE_NO_LITERAL_FIELD = re.compile(r"struct `(?P<ty>\w+)` has no field named `(?P<field>\w+)`")
+
+
+def _anon_union_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A field C reached through an ANONYMOUS union -> route it through ``__bindgen_anon_N``.
+
+    C injects an anonymous union's members into the enclosing struct's name scope, so prsht.h's
+    ``PROPSHEETHEADERW`` is written ``psh.nStartPage`` even though ``nStartPage`` shares a union
+    with ``pStartPage``. Rust has no anonymous members, so bindgen names the union
+    ``__bindgen_anon_N`` and the flattened spelling stops compiling. Every property-sheet module
+    hits this (desk.cpl did; sysdm.cpl's ``psh.nStartPage``/``pszCaption``/``phpage`` will).
+
+    THE MAP IS DERIVED, NEVER GUESSED. ``harvest_anon_unions`` reads the crate's own ``pub
+    struct``/``pub union`` declarations and walks the ``__bindgen_anon_N`` members; a field the
+    outer struct resolves directly is left alone, which reproduces exactly the shadowing C does.
+    With no map the rule contributes nothing rather than inventing a path.
+
+    WHY E0560 IS DECLINED. rustc reports the struct-LITERAL spelling of the same mistake as
+    E0560, and it looks fixable by the same substitution — but it is not: ``S { a.b: v }`` is not
+    legal Rust at all. The faithful repair is a zeroed value plus field stores, which is a
+    rewrite and not a byte substitution, so the rule records the site and stands aside. (desk's
+    hand-rolled version of this pass did rewrite E0560 sites, and every one of them came back as
+    a parse error on the next pass.)
+    """
+    if not ctx.anon_unions:
+        return [], [], False
+    message = str(diagnostic.get("message") or "")
+
+    literal = _RE_NO_LITERAL_FIELD.search(message)
+    if literal is not None:
+        span = next(
+            (item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None
+        )
+        struct, field_name = literal.group("ty"), literal.group("field")
+        if (struct, field_name) not in ctx.anon_unions:
+            return [], [], False
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_ANON_UNION,
+                    "struct_literal_field",
+                    str((span or {}).get("file_name") or ""),
+                    int((span or {}).get("line_start") or 0),
+                    f"`{struct}.{field_name}` lives in "
+                    f"{ctx.anon_unions[(struct, field_name)]}, but a struct literal cannot name "
+                    "a nested field. Rewrite as a zeroed value plus field stores.",
+                )
+            ],
+            False,
+        )
+
+    match = _RE_NO_FIELD.search(message)
+    if match is None:
+        return [], [], False
+    field_name = match.group("field")
+    # `*mut _PROPSHEETHEADERW`, `&_PROPSHEETHEADERW`, `_PROPSHEETHEADERW` all name one struct.
+    struct = match.group("ty").replace("\n", " ").strip().lstrip("&*").strip()
+    for prefix in ("mut ", "const "):
+        if struct.startswith(prefix):
+            struct = struct[len(prefix) :].strip()
+    path = ctx.anon_unions.get((struct, field_name))
+    if path is None:
+        return [], [], False
+
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    actual = data[start:end].decode("utf-8", "replace")
+    if actual != field_name:
+        # The span did not land on the bare identifier (a macro expansion, or a rustc shape we
+        # have not seen). Say so rather than rewriting bytes we did not recognise.
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_ANON_UNION,
+                    "span_is_not_the_field",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"expected `{field_name}` at the primary span, found `{actual}`",
+                )
+            ],
+            False,
+        )
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=path,
+                rule=RULE_ANON_UNION,
+                authority=(
+                    f"`{struct}` declares no `{field_name}`; its `{path.rsplit('.', 1)[0]}` "
+                    f"anonymous union does, and no outer field shadows the name"
+                ),
+                original=field_name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: ``.as_ptr()`` / ``.as_mut_ptr()`` immediately after the offending place expression.
+_RE_AS_PTR = re.compile(r"\.as_(?P<mut>mut_)?ptr\(\)")
+
+
+def _packed_field_ptr_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``packed.array.as_ptr()`` -> ``addr_of!(packed.array).cast()`` (E0793).
+
+    ``as_ptr()`` goes through ``&[T; N]``, and forming a reference to a field of a
+    ``#[repr(packed)]`` struct is undefined behaviour even when it is never read — which is why
+    rustc makes it a hard error rather than a lint. ``SP_DRVINFO_DETAIL_DATA`` and ``SHFILEINFO``
+    are both packed in the SDK and the C simply takes the address, so the faithful translation
+    is the one that never forms the reference.
+
+    ``addr_of!`` does exactly that; ``.cast()`` turns the resulting ``*const [T; N]`` into the
+    ``*const T`` the callee wants, which is what C's array-to-pointer decay says anyway. No
+    width is baked, so no cross-target agreement is needed.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0793":
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
+    tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
+    place = data[start:end].decode("utf-8", "replace")
+    if tail is None or not _balanced(masked[start:end]):
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_PACKED_FIELD_PTR,
+                    "not_an_as_ptr_call",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`{place[:60]}` is a packed-field reference rustc rejects, but it is not "
+                    "the `.as_ptr()` shape this rule knows how to rewrite",
+                )
+            ],
+            False,
+        )
+    macro = "addr_of_mut!" if tail.group("mut") else "addr_of!"
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end + tail.end(),
+                replacement=f"core::ptr::{macro}({place}).cast()",
+                rule=RULE_PACKED_FIELD_PTR,
+                authority=(
+                    f"rustc E0793: `{place[:40]}` is a field of a #[repr(packed)] struct, so "
+                    f"`as_ptr()`'s intermediate reference is UB; `{macro}` takes the address "
+                    "without ever forming one"
+                ),
+                original=f"{place}{tail.group(0)}",
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0277 ``the type `[T]` cannot be indexed by `u32` ``.
+_RE_CANNOT_INDEX = re.compile(r"cannot be indexed by `(?P<index>\w+)`")
+
+
+def _index_usize_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """Array/slice index of a non-``usize`` integer -> ``as usize``.
+
+    C indexes with whatever integer is handy. rustc reports the Rust requirement as E0277 (no
+    ``Index<u32>`` impl), NOT as a type mismatch, so no ``expected X, found Y`` label exists and
+    ``RULE_NUMERIC_CAST`` never sees the site at all.
+
+    ``usize`` is the width-varying alias itself, so the cast is portable by construction and
+    needs no cross-target agreement — unlike a concrete ``as u32``. The index type is required
+    to be an integer primitive so the rule cannot "fix" indexing by a struct.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    match = _RE_CANNOT_INDEX.search(str(diagnostic.get("message") or ""))
+    if match is None or match.group("index") not in INT_PRIMITIVES:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if start >= end:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    if re.search(r"\bas\s+usize\s*$", text):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}) as usize",
+                rule=RULE_INDEX_USIZE,
+                authority=(
+                    f"rustc E0277: the indexed type has no `Index<{match.group('index')}>`; "
+                    "`usize` is the width-varying alias itself, so the cast is portable"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
     RULE_WIDTH_ALIAS: _width_alias_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
+    RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
     RULE_NO_STD_PATH: _no_std_path_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
+    RULE_ANON_UNION: _anon_union_rule,
+    RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_INDEX_USIZE: _index_usize_rule,
 }
 
 
@@ -1227,21 +1619,24 @@ def propose_edits(
     rules: Collection[str] = DIAGNOSTIC_RULES,
     signatures: Mapping[str, Sequence[str]] | None = None,
     local_aliases: Collection[str] = (),
+    anon_unions: Mapping[tuple[str, str], str] | None = None,
 ) -> RepairPlan:
     """PURE: parsed rustc diagnostics -> proposed edits, declined sites, and residual RED.
 
     ``read_file`` maps a diagnostic's ``file_name`` to its bytes (or ``None``); no cargo run and
     no filesystem knowledge is baked in, so tests drive this with fixtures.
 
-    ``signatures``/``local_aliases`` are the authority for ``RULE_WIDTH_ALIAS`` and must be
-    harvested from the crate's OWN sources — see that rule for why provenance is the guard.
-    Omitting them disables the rule instead of loosening it.
+    ``signatures``/``local_aliases`` are the authority for ``RULE_WIDTH_ALIAS`` and
+    ``anon_unions`` is the authority for ``RULE_ANON_UNION``; all three must be harvested from
+    the crate's OWN sources — see those rules for why provenance is the guard. Omitting one
+    disables its rule instead of loosening it.
     """
     ctx = _Ctx(
         target=target,
         width=pointer_width(target),
         signatures=signatures or {},
         local_aliases=frozenset(local_aliases),
+        anon_unions=anon_unions or {},
     )
     cache: dict[str, bytes | None] = {}
 
@@ -1277,6 +1672,23 @@ def propose_edits(
                 file_name=str(primary.get("file_name") or "") if primary else "",
                 line=int(primary.get("line_start") or 0) if primary else 0,
                 message=str(diagnostic.get("message") or ""),
+            )
+        )
+    # One `match` emits one diagnostic per offending arm, so arm-vs-arm disagreement is only
+    # visible now that every diagnostic has been seen. A scrutinee cast that satisfies one arm
+    # and breaks another is not a repair; drop the whole match and say which types collided.
+    for key, wants in ctx.match_wants.items():
+        if len(wants) < 2:
+            continue
+        edit = edits.pop((*key, RULE_MATCH_SCRUTINEE), None)
+        skipped.append(
+            Skipped(
+                RULE_MATCH_SCRUTINEE,
+                "arms_disagree",
+                key[0],
+                edit.line if edit is not None else 0,
+                f"arms want {', '.join(sorted(wants))} — not one constant family, so the "
+                "scrutinee has no single correct type. Fix where the constants are DECLARED.",
             )
         )
     ordered = sorted(edits.values(), key=lambda item: (item.file_name, item.byte_start))
@@ -1428,8 +1840,17 @@ def merge_plans(
 
     THE correctness property of this module: a concrete ``as u32`` inferred from an i386 run is
     wrong on amd64/arm64 wherever the real parameter is a width-varying alias.  Such an edit is
-    applied only when >= 2 targets propose the IDENTICAL replacement; a disagreement is reported
-    as ``target_divergent`` so a human can write the semantic alias instead.
+    applied only when EVERY analysed target proposes the IDENTICAL replacement; a disagreement is
+    reported as ``target_divergent`` so a human can write the semantic alias instead.
+
+    "Every analysed target", not ">= 2 of them".  A target that proposes NOTHING at a site is not
+    abstaining -- it is saying the site already compiles there, which is the strongest possible
+    evidence against baking some other target's width into it.  desk.cpl found this the hard way:
+    ``SendDlgItemMessage(.., CB_INSERTSTRING, PLACEMENT_CENTER, ..)`` is clean on i386 (WPARAM is
+    u32, and so is the constant) and mismatched on the 64-bit pair, so amd64 and arm64 agreed on
+    ``as u64``, the old >= 2 rule applied it, and 54 call sites that had been CORRECT on i386
+    stopped compiling there.  The right answer at such a site is always the callee's declared type
+    NAME (``as WPARAM``), which RULE_WIDTH_ALIAS writes and this rule must not pre-empt.
     """
     grouped: dict[tuple[str, int, int, str], list[Edit]] = {}
     for plan in plans.values():
@@ -1463,7 +1884,7 @@ def merge_plans(
         # Sensitivity is a property of the SITE, not of whichever plan happened to be first:
         # `as u32` is pointer-width on i386 and fixed on amd64, so one flag is enough to gate.
         sensitive = any(edit.requires_target_agreement for edit in group)
-        if sensitive and len(targets) < 2:
+        if sensitive and (len(targets) < 2 or set(targets) != set(analysed)):
             if not allow_single_target_width:
                 withheld.append(
                     Withheld(
@@ -1473,7 +1894,13 @@ def merge_plans(
                         proto.line,
                         f"`{proto.replacement}` bakes a pointer-width type proven only on "
                         f"{','.join(targets) or 'no target'} (analysed: {','.join(analysed)}). "
-                        "Re-run with the other targets, or hand-write the semantic alias.",
+                        + (
+                            f"{','.join(sorted(set(analysed) - set(targets)))} reported nothing "
+                            "here, which means the site already compiles there — applying this "
+                            "would BREAK it. Hand-write the callee's declared type name."
+                            if set(targets) < set(analysed)
+                            else "Re-run with the other targets, or hand-write the semantic alias."
+                        ),
                     )
                 )
                 continue
@@ -1749,6 +2176,89 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
     return resolved
 
 
+#: ``pub struct S {`` / ``pub union S {`` and its body, up to the matching column-0 ``}``.
+#: bindgen and rustfmt both emit that shape; a nested brace inside a field type (``[T; N]``,
+#: ``Option<unsafe extern "C" fn()>``) never starts at column 0, so the terminator is unambiguous.
+_RE_TYPE_BLOCK = re.compile(r"^pub (?:struct|union) (\w+)\s*\{(.*?)^\}", re.S | re.M)
+_RE_TYPE_FIELD = re.compile(r"^\s*pub (\w+)\s*:\s*(.+?),\s*$", re.M)
+#: How deep a chain of nested anonymous unions to follow. prsht.h and objidl.h both nest twice;
+#: the bound exists so a malformed island cannot make the walk unbounded.
+_ANON_DEPTH = 3
+
+
+def harvest_anon_unions(sources: Mapping[str, bytes]) -> dict[tuple[str, str], str]:
+    """``(struct, flattened field) -> dotted path`` through bindgen's ``__bindgen_anon_N``.
+
+    The authority for ``RULE_ANON_UNION``. Reads every ``pub struct``/``pub union`` the crate
+    declares — which on a translated module means all three ``types_<arch>.rs`` islands plus any
+    hand-written types — and walks each ``__bindgen_anon_N`` member to the fields C would have
+    injected into the enclosing scope.
+
+    Two guards, both of which are the difference between a repair and a corruption:
+
+    * A field the outer struct declares ITSELF is never mapped. C's anonymous-member injection
+      loses to an outer member of the same name, and so must this.
+    * A ``(struct, field)`` that two islands resolve to DIFFERENT paths is dropped. The three
+      arches are separate bindgen runs and their union numbering need not agree; two disagreeing
+      authorities are no authority (same rule as ``harvest_signatures``).
+    """
+    per_source: list[dict[tuple[str, str], str]] = []
+    #: ``(struct, field)`` pairs some island declares DIRECTLY. A field that is direct on one
+    #: arch and unionised on another must not be routed: the edit would fix the arch that
+    #: reported the error and break the one that did not. (The pass loop's regression guard
+    #: would revert it, but a whole pass is a real cost and the answer is knowable here.)
+    direct_anywhere: set[tuple[str, str]] = set()
+    for data in sources.values():
+        text = data.decode("utf-8", "replace")
+        items: dict[str, list[tuple[str, str]]] = {}
+        for match in _RE_TYPE_BLOCK.finditer(text):
+            items[match.group(1)] = [
+                (f.group(1), f.group(2).strip()) for f in _RE_TYPE_FIELD.finditer(match.group(2))
+            ]
+        if not items:
+            continue
+        direct = {name: {f for f, _ in fields} for name, fields in items.items()}
+        for name, fields in direct.items():
+            direct_anywhere.update((name, f) for f in fields)
+        local: dict[tuple[str, str], str] = {}
+
+        def walk(
+            owner: str,
+            container: str,
+            prefix: str,
+            depth: int,
+            _items: dict[str, list[tuple[str, str]]] = items,
+            _direct: dict[str, set[str]] = direct,
+            _local: dict[tuple[str, str], str] = local,
+        ) -> None:
+            if depth > _ANON_DEPTH:
+                return
+            for field_name, field_type in _items.get(container, []):
+                if field_name.startswith("__bindgen_anon"):
+                    walk(owner, field_type, f"{prefix}{field_name}.", depth + 1)
+                    continue
+                if field_name in _direct[owner]:
+                    continue  # the outer struct has its own; C would shadow it the same way
+                _local.setdefault((owner, field_name), f"{prefix}{field_name}")
+
+        for name, fields in items.items():
+            for field_name, field_type in fields:
+                if field_name.startswith("__bindgen_anon"):
+                    walk(name, field_type, f"{field_name}.", 1)
+        per_source.append(local)
+
+    resolved: dict[tuple[str, str], str] = {}
+    dropped: set[tuple[str, str]] = set()
+    for local in per_source:
+        for key, path in local.items():
+            if resolved.get(key, path) != path:
+                dropped.add(key)
+            resolved[key] = path
+    for key in dropped | direct_anywhere:
+        resolved.pop(key, None)
+    return resolved
+
+
 def propose_panicking_cast_edits(
     file_name: str, data: bytes, signatures: Mapping[str, Sequence[str]]
 ) -> tuple[list[Edit], list[Skipped]]:
@@ -1932,6 +2442,20 @@ _RE_TYPE_ALIAS = re.compile(rb"^\s*pub\s+type\s+(\w+)\s*=", re.M)
 _RE_USED_TYPE = re.compile(rb"\b\w+\s*:\s*([A-Z]\w*)\s*[,)]")
 
 
+def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
+    """``RULE_ANON_UNION``'s authority: type declarations from THIS crate ONLY.
+
+    Same provenance rule as ``_local_authorities`` — the edit writes a field path that has to
+    resolve in the caller's scope, and a sibling crate's ``_PROPSHEETHEADERW`` need not be this
+    crate's. All three ``types_<arch>.rs`` islands are read together; ``harvest_anon_unions``
+    drops any field the arches route differently.
+    """
+    sources = {
+        path.as_posix(): path.read_bytes() for path in sorted((crate_dir / "src").rglob("*.rs"))
+    }
+    return harvest_anon_unions(sources)
+
+
 def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset[str]]:
     """``RULE_WIDTH_ALIAS``'s authority: signatures and type names from THIS crate ONLY.
 
@@ -2100,6 +2624,7 @@ def repair_crate(
         local_sigs, local_aliases = (
             _local_authorities(resolved_dir) if RULE_WIDTH_ALIAS in rules else ({}, frozenset())
         )
+        anon_unions = _local_anon_unions(resolved_dir) if RULE_ANON_UNION in rules else {}
         plans = {
             target: propose_edits(
                 run.diagnostics,
@@ -2108,6 +2633,7 @@ def repair_crate(
                 rules=diagnostic_rules,
                 signatures=local_sigs,
                 local_aliases=local_aliases,
+                anon_unions=anon_unions,
             )
             for target, run in runs.items()
         }
