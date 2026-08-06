@@ -41,6 +41,7 @@ pub struct _BACKGROUND_DATA {
 pub type PBACKGROUND_DATA = *mut _BACKGROUND_DATA;
 pub type BACKGROUND_DATA = _BACKGROUND_DATA;
 
+#[no_mangle]
 pub static mut g_GlobalData: GLOBAL_DATA = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub unsafe extern "C" fn GdipGetEncoderClsid(MimeType: PCWSTR, pClsid: *mut CLSID) -> HRESULT {

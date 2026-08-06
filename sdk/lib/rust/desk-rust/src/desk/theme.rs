@@ -686,7 +686,7 @@ unsafe extern "C" fn EnumThemeStyles(pszThemeFileName: LPCWSTR, pfnEnumTheme: EN
 
     ppPrevStyle = &mut List;
 
-    while pfnEnumTheme.unwrap()(pszThemeFileName, core::ptr::null_mut(), index, &mut names) >= 0 {
+    while pfnEnumTheme.unwrap_unchecked()(pszThemeFileName, core::ptr::null_mut(), index, &mut names) >= 0 {
         index = index.wrapping_add(1);
         pCurrentStyle = CreateStyle(names.szName.as_ptr(), names.szDisplayName.as_ptr());
         if pCurrentStyle == core::ptr::null_mut() {

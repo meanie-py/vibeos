@@ -3,7 +3,9 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+#[no_mangle]
 pub static mut hApplet: HINSTANCE = core::ptr::null_mut();
+#[no_mangle]
 pub static mut hCPLWindow: HWND = core::ptr::null_mut();
 
 pub static mut Applets: [APPLET; 1] = [
@@ -271,7 +273,7 @@ pub unsafe extern "system" fn CPlApplet(
 
         CPL_DBLCLK => {
             if (i as usize) < _countof!(Applets) as usize {
-                (Applets[i as usize].AppletProc.unwrap())(hwndCPl, uMsg, lParam1, lParam2);
+                (Applets[i as usize].AppletProc.unwrap_unchecked())(hwndCPl, uMsg, lParam1, lParam2);
             } else {
                 return (TRUE) as i32;
             }
@@ -279,7 +281,7 @@ pub unsafe extern "system" fn CPlApplet(
 
         CPL_STARTWPARMSW => {
             if (i as usize) < _countof!(Applets) as usize {
-                return (Applets[i as usize].AppletProc.unwrap())(hwndCPl, uMsg, lParam1, lParam2);
+                return (Applets[i as usize].AppletProc.unwrap_unchecked())(hwndCPl, uMsg, lParam1, lParam2);
             }
         }
 

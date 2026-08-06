@@ -480,6 +480,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "desk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "dhcpcsvc-rust"
 version = "0.1.0"
 dependencies = [
