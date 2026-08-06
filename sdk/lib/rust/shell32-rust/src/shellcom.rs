@@ -468,7 +468,14 @@ pub struct IContextMenuVtbl {
         UINT,
     ) -> HRESULT,
     pub InvokeCommand: unsafe extern "system" fn(*mut IContextMenu, *mut c_void) -> HRESULT,
-    pub GetCommandString: usize,
+    pub GetCommandString: unsafe extern "system" fn(
+        *mut IContextMenu,
+        UINT_PTR,
+        UINT,
+        *mut UINT,
+        LPSTR,
+        UINT,
+    ) -> HRESULT,
 }
 
 #[repr(C)]

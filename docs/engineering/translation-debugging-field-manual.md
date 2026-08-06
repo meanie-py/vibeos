@@ -238,6 +238,19 @@ change stops the caller being dead-stripped.
   called. Measured over `dll/ base/ sdk/include/ modules/`, every `(IID|SID|CLSID)_*` name
   followed by `(` outside a literal is a function-like macro; the only real IIDs that look
   called sit inside wine-test format strings, which `mask_code` blanks first.
+- **A GUID-spelled name can also be a plain ALIAS `#define` for another IID.**
+  `SID_SFolderView` is `#define SID_SFolderView IID_IFolderView` (shobjidl.idl:904) and
+  `SID_IShellBrowser` is `#define SID_IShellBrowser IID_IShellBrowser`
+  (shlguid_undoc.h:215) — service ids that name an interface id rather than existing.
+  CDefaultContextMenu hit both at once: the generator invented an `extern static` for the
+  second because it is GUID-shaped, and a HAND-WRITTEN support module had already declared the
+  first for the same reason. Neither is exported by any library. Note this is not the
+  function-like-macro case above — nothing is "called", so the positional test cannot see it;
+  the check is whether a *definition* exists at all.
+- **`DSA_GetItemCount` is a macro that dereferences its own handle** —
+  `#define DSA_GetItemCount(hdsa) (*(int *) (hdsa))` (commctrl.h:4831), the count being the
+  first field of the DSA. comctl32 exports `DSA_GetItemPtr` and `DSA_InsertItem` as real
+  functions, so having *some* of a family be symbols is not evidence about the rest.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
@@ -1667,6 +1680,18 @@ tag/ordinary namespaces make a local named after an enum member completely norma
 this in any module that touches a `*_INFORMATION_CLASS`. Rename the LOCAL (no ABI consequence)
 rather than the import. Loud here; the silent cousin is the same name in a `match` arm — see
 "An undefined constant in a `match` arm becomes an irrefutable CATCH-ALL".
+
+**It captures FUNCTION PARAMETERS too, and there the diagnostic names nothing useful.**
+shell32's `InsertMenuItemAt(HMENU hMenu, UINT Pos, UINT Flags)` translated faithfully to
+`fn InsertMenuItemAt(hMenu: HMENU, Pos: UINT, Flags: UINT)`, and ntdll-sys exports
+`pub const Pos: _BUS_DATA_TYPE` (a bindgen enum-alias member). `Pos` therefore resolves as a
+constant PATTERN, and rustc reports `E0308: expected u32, found i32` **on the parameter list**,
+underlining `Pos` with "expected due to this" under its own declared type — a mismatch between
+a parameter and the type written right next to it, which reads as nonsense. Changing `UINT` to
+`u32` does not move it. The tell is that the "found" type belongs to neither side of what you
+are looking at: here `i32` is `_BUS_DATA_TYPE`, mentioned nowhere in the file. Grep the whole
+crate graph for `const <ThatName>` before you doubt the type. Rename the parameter; `mut Pos`
+would also force a binding but leaves an `unused_mut` for the lint baseline to eat.
 
 ### An arch-INVARIANT constant, wrong in exactly ONE arch's private copy
 `ke/arm64/kiinit.rs` declared `PRCB_BUILD_UNIPROCESSOR = 1` / `PRCB_BUILD_DEBUG = 2`. Every
@@ -4738,7 +4763,26 @@ so the NEXT `cargo check` reports two syntax errors and hides the other two hund
   primary span for a mismatched *call* covers the callee, so wrapping produced
   `(SHUnicodeToAnsi) as i32((*mut pEntry).Verb, …)`. Convert rustc's
   `.try_into().unwrap()` suggestions to `as` casts (C truncates silently; the suggestion
-  inserts a panic), but take the SPAN from a suggestion rustc actually authored.
+  inserts a panic), but take the SPAN from a suggestion rustc actually authored. Those
+  suggestions are ZERO-WIDTH APPENDS at the point a `.method()` could legally attach, which is
+  exactly what makes ` as T` precedence-safe at that byte — the position is the useful part,
+  not the text.
+- **An append after an `as`-cast is a PARSE error, not a type fix.** `x as REFIID` + `.cast()`
+  gives `x as REFIID.cast()` → "cast cannot be followed by a method call". Any applier that
+  appends must reject a span whose text ends in `as <Type>`.
+- **The type pair is not always on the primary span.** For
+  "arguments to this function are incorrect" rustc puts `expected X, found Y` on a `note`
+  CHILD whose single span covers just the offending ARGUMENT; the primary span is the whole
+  call. An applier that only reads primary spans silently skips most real cases — on this
+  grind it saw 0 of 19 crate-split mismatches until it walked the children.
+- **Casting is only ever right for a NOMINAL split.** `.cast()` is the whole fix when
+  `shellcom`, the island, `com-sys` and `ntdll-sys` each emit their own `IDropTarget`/`_GUID`
+  — match on the two types sharing a final path segment (modulo leading underscores) and
+  nothing else. The two exclusions that mattered here were both real bugs a cast would have
+  buried: `StrIsNullOrEmpty` is C++-OVERLOADED (LPCSTR and LPCWSTR, shellutils.h:474-475) and
+  the translation picked the wide one for an ANSI field, so a `*const i8` → `*const u16` cast
+  would have shipped an ANSI string read as UTF-16; and a helper typed `LPCSTR` that is really
+  a width test on any pointer wanted to be generic, not cast at its callers.
 
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,

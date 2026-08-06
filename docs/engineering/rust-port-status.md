@@ -1227,12 +1227,36 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   table) needed a separate `--free-functions` run — the same two-run shape `CNetFolder` used.
   Both runs derive their output path from the TU, so the second **requires `-o`**: rustconv
   refuses to write rather than discard the first, which is fail-loud working as designed.
-  Still NOT FLIPPED — wired together the crate sits at **201 errors on i386**, all inside the
-  two generated halves and concentrated in this crate's known three-way substrate conflict
-  (`crate::shellcom` vs the bindgen island vs `com_sys`: `IDataObject`, `_GUID`, and which
-  interfaces expose `lpVtbl` slots as `Option<fn>`). Everything the safe automation reaches is
-  done; the RESUME.md records the four span-applier traps that cost time here, so the next
-  pass starts from the residue instead of re-deriving them.
+  **FLIPPED (2026-08-05, third session): 201 errors -> 0 on all three arches, `.cpp` out of
+  CMake.** The residue was the three-way substrate conflict this crate is known for
+  (`crate::shellcom` vs the bindgen island vs `com_sys`/`ntdll_sys`), and it resolved as three
+  mechanical classes plus a hand tail. `IContextMenu` is declared ONCE, by the class half, with
+  every slot typed, and both the TU half and the support module import that one — which is what
+  keeps `DCMENTRY.pCM` and `DynamicShellEntry.pCM` the same nominal type; the TU half's
+  generated duplicates of `DynamicShellEntry`/`StaticShellEntry` were dead AND typed `pCM` as a
+  raw pointer where the C++ has `CComPtr<IContextMenu>`, so they were deleted rather than
+  reconciled. `IShellExtInit` and `IShellFolderView` are declared file-locally in the
+  hand-written support module, as shellcom.rs's own header directs. `DCMENTRY` is re-declared
+  there too, for one reason: the island types its `pCM` as the bindgen C++ class with an opaque
+  `vtable_`, which no call site can go through.
+  Defects worth naming beyond the substrate: `_InsertMenuItemW` lost the `LOWORD(dwTypeData)`
+  argument to `LoadStringW` and shifted the rest left (a `/* i32 */` placeholder, so it failed
+  loudly); `AddStaticEntry` rendered C's `!_wcsicmp(...)` as Rust's BITWISE `!`, which would
+  have inverted the "open verb goes first" rule; `QCMINFO`'s 5th field was named `NULL` after
+  its initializer; the ctor transposed `m_iIdSCMFirst(0)` and `*m_DefVerbs = UNICODE_NULL`;
+  `StrIsNullOrEmpty` is C++-OVERLOADED and the wide overload was chosen for the ANSI
+  `lpParameters`; and both `*_RustBridge` wrappers came back as `#[no_mangle]` GENERICS
+  returning `CY` (tagCY, the CURRENCY union) instead of `UINT`/`HRESULT` — CFSDropTarget imports
+  those two by name, so they had to be right.
+  The flip itself needed only two linkage changes: `MapFcidmCmdToVerb` and `MapVerbToDfmCmd`
+  are declared with C++ linkage in precomp.h and still called from the C++ `CDefView.cpp` and
+  `utils.cpp`, so both declarations became `EXTERN_C`. Everything else already matched —
+  `SHCreateDefaultContextMenu` and `CDefFolderMenu_Create2` are `extern "C" WINAPI` in
+  shlobj.h, and `_InsertMenuItemW` sits inside wine/shell32_main.h's `extern "C"` block.
+  Three PHANTOM symbols only the link could find, all macros: `SID_IShellBrowser` and
+  `SID_SFolderView` are `#define`s ALIASING `IID_IShellBrowser`/`IID_IFolderView`, and
+  `DSA_GetItemCount(hdsa)` is `(*(int *)(hdsa))`. `cargo check` is green with all three
+  declared `extern`; only the linker knows they are not symbols.
   Gap (2), inherited layout, blocks
   `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
   and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
