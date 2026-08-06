@@ -1967,8 +1967,25 @@ def hal_cmake_for_c(c_path: Path) -> Path | None:
     return None
 
 
-# Backend selection: "claude" (default if ANTHROPIC_API_KEY set), "gemini"
+# Backend selection: "deepseek" (the house translation model), then "claude", then "gemini".
+#
+# DeepSeek is checked FIRST even though ANTHROPIC_API_KEY is also provisioned, because an
+# unflagged `translate` is the common case and it must land on the cheap lane. This used to
+# return "claude" whenever ANTHROPIC_API_KEY was set, and since DEFAULT_MODELS had no
+# "deepseek" key at all, `-m deepseek` was the ONLY way to reach DeepSeek — a flag the docs
+# recommended and nothing enforced. The shell32 tail lane duly drifted: 69 Sonnet runs to 1
+# DeepSeek from 2026-08-02, 382 paid calls billed at $3.81 that DeepSeek would have served
+# for $0.31 (12.2x). The banner printed the model and price on every one of those runs, so
+# visibility was never the missing piece — the DEFAULT was.
+#
+# Escalation is unaffected: `-m sonnet` / `-m opus` still switch the backend by model prefix
+# (see submit_single), which is the documented route for substrate-clean high-band repairs.
+# Switching the default re-bills nothing — the resume-cache key (preparation_namespace) is
+# built from mode + seal flags and does NOT include the model, so every banked unit still
+# replays for $0 regardless of which model bought it.
 def get_backend() -> str:
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "claude"
     return "gemini"
@@ -1988,6 +2005,9 @@ GEMINI_MAX_TOKENS = 65536
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL_CHAT = "deepseek-chat"
 DEEPSEEK_MODEL_REASONER = "deepseek-reasoner"
+# The provisioned key serves the v4 tier; pro is the translation default (flash is the
+# cheaper sibling, not a quality peer). Kept in sync with MODEL_ALIASES["deepseek"].
+DEEPSEEK_MODEL_V4_PRO = "deepseek-v4-pro"
 # Output-token budget. v4 models are REASONING models: reasoning tokens are
 # drawn from this same budget before any code `content` is emitted. At 8192 a
 # large unit (e.g. a file-scope type preamble with many structs/COM vtables)
@@ -2009,6 +2029,7 @@ DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "65536"))
 
 # Default model per backend
 DEFAULT_MODELS = {
+    "deepseek": DEEPSEEK_MODEL_V4_PRO,
     "claude": CLAUDE_MODEL_SONNET,
     "gemini": GEMINI_MODEL,
 }

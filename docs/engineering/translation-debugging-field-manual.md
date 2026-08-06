@@ -4859,6 +4859,20 @@ present is a silently-wrong island.
   fell back to cdecl **on a comment**, mis-deriving 17 genuine WINAPI methods; and
   `CALLBACK`/`PASCAL` were missing from the keyword list. A silent fallback to a plausible
   default is the worst possible failure mode.
+- **The MODEL default fell back to the expensive backend, and only the docs said otherwise.**
+  Symptom: paid runs billed Sonnet at 12.2× DeepSeek while every doc and estimate assumed the
+  cheap lane. Cause: `-m` had no default, so `resolve_model(None)` went to
+  `DEFAULT_MODELS[get_backend()]`, `get_backend()` returned `"claude"` whenever
+  `ANTHROPIC_API_KEY` was set, and `DEFAULT_MODELS` **had no `"deepseek"` key at all** — the
+  house model was unreachable except by typing `-m deepseek`, which the docs recommended and
+  nothing enforced. 69 Sonnet runs to 1 DeepSeek over four days; 382 calls at $3.81 where
+  DeepSeek was $0.31. Fix: `get_backend()` prefers `DEEPSEEK_API_KEY`, and `DEFAULT_MODELS`
+  carries every backend it can return. **The pre-payment banner printed the model AND its
+  per-1M price on all 382 calls** — so this is not a visibility bug, and no amount of "read the
+  banner" discipline would have caught it. A documented flag that nothing enforces is a
+  deferred mechanism, and the drift is silent because both models return working Rust.
+  Generalize: when a default routes to a *provider*, assert the resolved VALUE in a test —
+  `default == DEFAULT_MODELS[get_backend()]` is a tautology that passes for any wrong answer.
 - **An oracle that resolves a type wrongly reports its own IGNORANCE as a defect** `[§9.80]`,
   and the ambiguity check cannot save you when the parser is blind to the true declaration —
   four flavours of the same mistake: an `.idl` outvoting the `.h`; the true declaration
