@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
@@ -1820,6 +1820,29 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
     return agreed or {}
 
 
+def skip_fn_for_file(requested: Iterable[str], present: Iterable[str]) -> list[str]:
+    """Which ``--skip-fn`` names apply to ONE file: the ones that file actually declares.
+
+    A function name belongs to exactly one translation unit, so on a directory run every OTHER
+    file legitimately lacks the name. Treating that as a per-file error — and skipping the file —
+    is how asking to drop one BODY silently dropped eleven FILES: unbought, unassembled, and
+    reported only as one stderr line among eleven identical ones. The name that matched NOTHING
+    across the whole worklist is the real error, and only the caller of the loop can know it;
+    see ``unmatched_skip_fn``.
+    """
+    return sorted(set(requested) & set(present))
+
+
+def unmatched_skip_fn(requested: Iterable[str], matched: Iterable[str]) -> list[str]:
+    """``--skip-fn`` names no file in the worklist carried — i.e. misspelled.
+
+    Loud on purpose and in the AUDIT report rather than a log line: the caller believes a body
+    was left to them to hand-write, and the truth is the opposite — it was translated and
+    SHIPPED. That inverts the whole guarantee of the flag.
+    """
+    return sorted(set(requested) - set(matched))
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
@@ -2099,6 +2122,14 @@ def cmd_translate(args):
 
     total_files = len(c_files)
     audit_findings: dict[str, list[str]] = {}
+    #: `--skip-fn` names, and the ones some file actually carried. A name belongs to exactly one
+    #: TU, so on a DIRECTORY run every OTHER file legitimately does not have it — see the
+    #: per-file handling for why that must not be an error there, and the post-loop check for
+    #: where a typo is still caught.
+    skip_fn_requested = {
+        name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
+    }
+    skip_fn_matched: set[str] = set()
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -2382,21 +2413,18 @@ def cmd_translate(args):
                 file=sys.stderr,
             )
 
-        skipped_by_request: list[str] = []
-        if getattr(args, "skip_fn", None):
-            requested = {name.strip() for name in args.skip_fn if name.strip()}
-            present = {d.name for d in sorted_deps}
-            unknown = requested - present
-            if unknown:
-                print(
-                    f"  Error: --skip-fn name(s) not in {c_file.name}: "
-                    f"{', '.join(sorted(unknown))}",
-                    file=sys.stderr,
-                )
-                print(f"  Available: {', '.join(d.name for d in deps)}", file=sys.stderr)
-                continue
-            skipped_by_request = sorted(requested)
-            sorted_deps = [d for d in sorted_deps if d.name not in requested]
+        # A `--skip-fn` name belongs to exactly ONE translation unit, so on a directory run
+        # every other file legitimately does not carry it. Treating that as a per-file error and
+        # `continue`ing skipped those files ENTIRELY — unbought, unassembled, and reported only
+        # as a stderr line among eleven others. Asking to drop one BODY silently dropped eleven
+        # FILES; the run looked like it worked and cost a whole cycle to notice. So a name that
+        # this file does not have is simply not applicable here. A name NO file has is still a
+        # typo, and the post-loop check below is loud about it — that is the case the original
+        # error was really for, and it belongs where the whole worklist is known.
+        skipped_by_request = skip_fn_for_file(skip_fn_requested, (d.name for d in sorted_deps))
+        if skipped_by_request:
+            skip_fn_matched |= set(skipped_by_request)
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_by_request)]
             print(
                 f"  --skip-fn: {len(skipped_by_request)} body/bodies left to hand-writing: "
                 f"{', '.join(skipped_by_request)}",
@@ -3697,6 +3725,18 @@ def cmd_translate(args):
     if UNVERIFIED_CONSTANT_BODIES:
         audit_findings.setdefault("UNVERIFIED CONSTANTS (fact envelope ignored)", []).extend(
             UNVERIFIED_CONSTANT_BODIES
+        )
+
+    # A `--skip-fn` name no file in the worklist carried. Per-file this is normal (the name
+    # belongs to one TU); across the WHOLE worklist it means the name is misspelled, and the
+    # caller believes a body was left to them that was in fact translated and shipped. That is
+    # the inverse of the skip's own guarantee, so it is an audit finding, not a log line.
+    unmatched_skip = unmatched_skip_fn(skip_fn_requested, skip_fn_matched)
+    if unmatched_skip:
+        audit_findings.setdefault("--skip-fn NAMES THAT MATCHED NOTHING", []).extend(
+            f"'{name}' is in no file of this worklist — misspelled? Nothing was skipped for it, "
+            "so any body you expected to hand-write was translated and SHIPPED."
+            for name in unmatched_skip
         )
 
     if audit_findings:
