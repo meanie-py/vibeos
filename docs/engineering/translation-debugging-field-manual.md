@@ -650,6 +650,13 @@ hand flips the error to the other two.
   "Seco" */, SIZE_MAX)`. Latent under TCG (unmapped reads return 0, scan ends instantly) and a
   multi-hour "hang" under WHPX/KVM, where every probe is a VM exit. amd64 accidentally works
   (Win64 passes >8-byte aggregates by reference). **`.as_ptr()` every array into a variadic.**
+  Second instance, and it shows the shape a *macro* wrapper hides: msgina rendered
+  `StringCchPrintfW(szBuffer2, _countof(szBuffer2), szBuffer, pgContext->UserName)` as a
+  `macro_rules!` that spliced `$arg` straight into `wsprintfW`, so `UserName` — a
+  `[WCHAR; 256]` — went by value and `%ws` read two characters of the user's name as an
+  address. rustc says nothing: an array IS `Sized`, so it is a legal variadic argument. A macro
+  wrapper is the worst place for this class because there is no declared parameter type
+  ANYWHERE for a reviewer to compare against.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -3255,6 +3262,29 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **A BOUNDED API substituted by an UNBOUNDED one — the buffer's size argument is dropped, and
+  the substitute has its own, larger, internal bound.** msgina rendered strsafe.h's
+  `StringCchPrintfW`/`StringCbPrintfW` as `macro_rules!` wrappers that discarded the count and
+  forwarded to user32's `wsprintfW` — with a comment saying so, on the reasoning that
+  `wsprintfW` bounds to 1024 wchars internally "matching the small fixed buffers these are
+  called with". The buffers are `WCHAR[256]`, so the substitution turned a truncating API into
+  one that writes 1.5 KB past a stack array whenever the interpolated value (a user name, from
+  the logon dialog) is long. Nothing detects this: it compiles, it links, the common case fits,
+  and the C's `STRSAFE_E_INSUFFICIENT_BUFFER` return was already being ignored. **A substitute
+  whose bound is not the CALLER'S bound is not a substitute** — if the real body cannot be
+  written, hard-fail rather than approximate, because a bound is the entire contract of the
+  function that carries one. Symptom to grep for: a wrapper that takes a size parameter and
+  never mentions it again (`let _ = $cch;`).
+- **A hand-approximated port of a header the tree already ports elsewhere.** Same module, same
+  root cause: `static __inline` helpers have no object file anywhere, so each flipped module
+  ports them again, and the Nth copy is written from what the module happens to call rather than
+  from the header. msgina's `StringCbCopyNExW` dropped the fill paths, the `IGNORE_NULLS`
+  handling, and computed `pcbRemaining` differently from the worker; syssetup's copy was a
+  strict subset; desk's was faithful. Four copies, no two alike. The fix for the CLASS is one
+  crate (`sdk/lib/rust/strsafe-rust`) on core primitives so it needs no island — `WCHAR`/
+  `HRESULT`/`DWORD` are transparent aliases for `u16`/`i32`/`u32` in every island in the tree
+  and Rust unifies aliases structurally. **Two copies of a ported header is the detection
+  event**, not four.
 - **The model FIXES a real bug in the C, and that is still a defect.** `CDefaultContextMenu::
   DoCreateNewFolder` frees `pidl` exactly once, on the success path, and leaks it when
   `SelectItem` fails. Every sample added a second `SHFree` on the failure path — correct as
