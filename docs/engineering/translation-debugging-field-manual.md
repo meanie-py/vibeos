@@ -541,6 +541,21 @@ for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
 unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
 folds existing pairs, refusing any whose bodies differ by more than cast decoration.
 
+**And a convention twin is NOT an arch gate — it just looks like one.** msvcrt's except.c came
+back with `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not)] extern "C"` pairs on its
+callbacks, which is correct and says nothing about the fact that the file's ENTIRE 64-bit frame
+handler lives inside `#ifndef __i386__`. Seeing cfg attributes on the page reads as "arch
+handled" and the reviewer moves on. Left ungated, the Rust `__CxxFrameHandler` wins cohab
+first-match over except_i386.c's completely different 32-bit SEH implementation — and it
+**links clean**, because the symbol is the same and only the frame layout it walks is not.
+Two rules fall out: the translator gates on CONVENTION, you must gate on the `#if`s yourself;
+and the object file is the oracle for which arch defines what (`nm` shows `__CxxFrameHandler`
+in except.c.obj on amd64/arm64 and absent on i386). Same reasoning applies to a TU compiled
+TWICE under different `-D` — except.c is built into both msvcrt_static and msvcrt_shared, and
+its `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)` block is live in exactly one of them. No
+source-level analysis can settle a disjunction with an unknown term, and none should try; the
+per-target object already knows.
+
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it
 is easier to miss because there is no bindgen slot to disagree with — the typedef and both its

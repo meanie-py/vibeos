@@ -883,7 +883,7 @@ still-C when it is 3).
 
 | file | defines | still reached in C |
 |---|---|---|
-| `except.c` | 21 | **21** |
+| `except.c` | 21 | **0** — flipped in wave 29 |
 | `except_i386.c` | 13 | **13** |
 | `ucrt_tls_sup.c` | 4 | 3 |
 | `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
@@ -892,9 +892,31 @@ still-C when it is 3).
 | `sincos.c` | 2 | 1 (`sincosf`) |
 | `scanf.c` | 44 | **0** — fully flipped |
 
-So the remaining real surface is **the exception dispatcher and nothing else of size**:
-except.c + except_i386.c are 34 of the 45 symbols still served by C. Wave 29 is the last
-meaty chunk of this library; the rest is a handful of stragglers.
+So the remaining real surface was **the exception dispatcher and nothing else of size**:
+except.c + except_i386.c were 34 of the 45 symbols still served by C. Wave 29 took except.c's
+21; what is left is `except_i386.c`'s 13 plus a handful of stragglers.
+
+**Wave 29 — except.c (21/21), behind the `cpp` feature.** The signal layer (`signal`/`raise`,
+the `sighandlers` table, the SEH filter that maps a hardware fault to a C signal) and the C++
+frame handler, in one TU because they share one thread_data block. $0.28 sealed; no
+`UNVERIFIED CONSTANTS` findings, and `find_catch_block`'s EIGHT positional arguments were
+diffed against both C call sites by hand regardless.
+
+Two things here generalise beyond msvcrt:
+
+* **A convention dual is not an arch gate, and it looks like one.** rustconv emitted
+  `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not(...))] extern "C"` pairs for the
+  callbacks — correct, and unrelated to the fact that this file's whole 64-bit frame handler
+  is inside `#ifndef __i386__`. Left ungated, the Rust `__CxxFrameHandler` would have won
+  first-match over except_i386.c's completely different 32-bit SEH implementation, and
+  **linked clean**. The object is the oracle: except.c.obj defines `__CxxFrameHandler`,
+  `call_catch_block` and `cxx_local_unwind` on amd64/arm64 and none of them on i386.
+* **A TU compiled TWICE with different `-D` has two different live sets.** except.c is built
+  into `msvcrt_static` (msvcrt.dll, no `__UCRTSUPPORT__`) *and* `msvcrt_shared`
+  (ucrtbase.dll, with it). Its `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)` block is
+  undecidable from source — correctly so, since neither `profile_derive` nor rustconv can
+  settle a disjunction with an unknown term — but the *object* settles it per target. Five
+  bodies were `--skip-fn`'d on that evidence and recorded as audit findings.
 
 **Two files that look meaty and are phantoms — do not target them.** `concurrency.c` (3,839
 lines, the largest untranslated file in the module) sits entirely inside

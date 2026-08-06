@@ -363,6 +363,63 @@ ALLOWLIST_TYPES = [
     "terminate_function",
     "unexpected_function",
     "_se_translator_function",
+    # ── except.c (the exception DISPATCHER, as opposed to cpp.c's objects) ─
+    # The five shapes the compiler emits into the image to describe a function's try
+    # blocks, and which the frame handler walks at throw time. cppexcept.h defines four
+    # of them TWICE under `#ifndef RTTI_USE_RVA`, the same double-definition hazard the
+    # cpp.c block above documents -- except here it is worse, because these are not just
+    # pointer-vs-RVA. The RVA arm gives `catchblock_info` an extra `frame` field under
+    # `_WIN64` and gives `cxx_function_descr` an extra `unwind_help` in the MIDDLE, so
+    # the arms differ in FIELD COUNT and in the offset of every field after the insert.
+    # A hand-written struct could not be right on more than one arch, and wrong here
+    # means the handler reads a catch handler's address out of the wrong four bytes and
+    # jumps there. `cxx_function_descr` additionally opens with a 29-bit `magic`
+    # bitfield packed against a 3-bit `bbt_flags`, which is the other thing nobody
+    # should transcribe by hand.
+    "ipmap_info",
+    "catchblock_info",
+    "tryblock_info",
+    "unwind_info",
+    "cxx_function_descr",
+    # msvcrt.h's registration record for a nested C++ exception. `__CxxRegisterExceptionObject`
+    # fills one and hands the SAME storage to `__CxxUnregisterExceptionObject`, so the
+    # two translated bodies must agree on its layout with each other and with any C
+    # caller that stack-allocates it.
+    "cxx_frame_info",
+    # <fpieee.h>: what `_fpieee_flt` builds and hands to the user's callback. It is a
+    # tower of bitfields and unions (`_FPIEEE_VALUE` overlays every float width on one
+    # storage), and `_fpieee_flt`'s whole job is to translate a CONTEXT's FPU state into
+    # it POSITIONALLY -- Operand1/Operand2/Result each carry their own type tag. That is
+    # precisely the shape a permuted transcription satisfies silently.
+    "_FPIEEE_RECORD",
+    "_FPIEEE_VALUE",
+    "_FPIEEE_EXCEPTION_FLAGS",
+    "_FPIEEE_ROUND",
+    "_FPIEEE_PRECISION",
+    # <signal.h>: `signal`'s handler type. Named because both `signal` and `raise` spell
+    # it in their own signatures and the whole `sighandlers[NSIG]` table is an array of
+    # it. NOTE the three sentinels SIG_DFL/SIG_IGN/SIG_ERR are NOT derivable -- they are
+    # casts of 0/1/-1 to this pointer type, which bindgen does not emit as consts, so
+    # the translation must carry them and they are exactly the kind of thing to check
+    # by hand.
+    "__sighandler_t",
+    # The SEH vocabulary except.c's own signatures spell. `DISPATCHER_CONTEXT` is the
+    # 64-bit unwinder's scratch block — `__CxxFrameHandler` reads `HandlerData` and
+    # `ImageBase` out of it to find the function descriptor, so it is the one struct whose
+    # layout decides whether the handler finds any try blocks at all. The `P*` aliases are
+    # named for the reason the SECURITY_ATTRIBUTES block above records: allowlisting the
+    # struct tag emits the struct and not the pointer typedef the code actually says.
+    "_DISPATCHER_CONTEXT",
+    "DISPATCHER_CONTEXT",
+    "PEXCEPTION_POINTERS",
+    "PEXCEPTION_RECORD",
+    "PCONTEXT",
+    "EXCEPTION_DISPOSITION",
+    "_EXCEPTION_DISPOSITION",
+    "NTSTATUS",
+    "ULONG_PTR",
+    "uintptr_t",
+    "LPTOP_LEVEL_EXCEPTION_FILTER",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -781,6 +838,22 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # an AsciiChar and a UnicodeChar over the same two bytes — read the wrong member
         # and every enhanced key decodes to garbage. Derived, not transcribed.
         "|CreateFileA|WriteConsoleA|ReadConsoleA|GetConsoleMode|SetConsoleMode"
+        # except.c: msvcrt_init_signals/msvcrt_free_signals register and unregister the
+        # Ctrl-C handler here. Derived rather than hand-declared because the parameter is
+        # `PHANDLER_ROUTINE`, a stdcall function-pointer typedef — and on i386 stdcall is
+        # the SYMBOL NAME, so an `extern "C"` copy of this would link to nothing.
+        "|SetConsoleCtrlHandler"
+        # except.c's 64-bit frame handler. `RtlLookupFunctionEntry` is how it recovers the
+        # throwing function's entry from a PC (the first step of every nested-exception
+        # check) and `RtlUnwindEx` is the actual unwind. Both are ntdll, both take
+        # architecture-shaped records, and neither exists on i386 — which is exactly why
+        # the block that calls them is `#ifndef __i386__` in the C.
+        "|RtlLookupFunctionEntry|RtlUnwindEx"
+        # except.c's always-on diagnostics. wine's ERR/FIXME channels are ON by default
+        # upstream, so dropping them ships silence where the C would have said why — the
+        # class `tools/scan_dropped_prints.py` exists to catch. OutputDebugStringA is the
+        # live sink user-mode Rust already uses in this tree (explorer-rust).
+        "|OutputDebugStringA"
         "|ReadConsoleInputA|ReadConsoleInputW|PeekConsoleInputA"
         "|GetNumberOfConsoleInputEvents"
         # winuser.h / winbase.h / ntsecapi.h: exit.c's message-box path and misc.c's four.
@@ -962,6 +1035,27 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # the exception dispatcher as an image base.
         "|CXX_EXCEPTION|CXX_FRAME_MAGIC_VC6|CXX_FRAME_MAGIC_VC7|CXX_FRAME_MAGIC_VC8"
         "|CXX_EXCEPTION_PARAMS|EXCEPTION_NONCONTINUABLE"
+        # The unwind control bits `cxx_frame_handler` branches on. `EXCEPTION_UNWINDING`
+        # and `EXCEPTION_EXIT_UNWIND` say "this pass is tearing frames down, do not look
+        # for a catch"; `EXCEPTION_TARGET_UNWIND` says "this is the frame we are unwinding
+        # TO". `STATUS_UNWIND_CONSOLIDATE` and `STATUS_LONGJUMP` are the two synthetic
+        # codes that arrive mid-unwind and must not be mistaken for real exceptions. Bit
+        # positions and magic status values both, so an invented one is silent.
+        "|EXCEPTION_UNWINDING|EXCEPTION_EXIT_UNWIND|EXCEPTION_TARGET_UNWIND"
+        "|EXCEPTION_COLLIDED_UNWIND|STATUS_UNWIND_CONSOLIDATE|STATUS_LONGJUMP"
+        # cppexcept.h's two FLAG WORDS, which decide how a thrown object reaches the catch
+        # block. `find_caught_type` rejects a match whose `TYPE_FLAG_CONST`/`_VOLATILE` the
+        # catch does not accept, and `copy_exception` picks one of THREE different copies
+        # off `TYPE_FLAG_REFERENCE` / `CLASS_IS_SIMPLE_TYPE` / `CLASS_HAS_VIRTUAL_BASE_CLASS`
+        # — bind by reference, `memmove` the bytes, or run the copy ctor. These are bit
+        # POSITIONS, so an invented value does not fail: it compiles, links, and silently
+        # takes the wrong arm, which means copying a C++ object by memmove when it has a
+        # copy constructor. `FUNC_DESCR_NOEXCEPT` is the same shape one level up —
+        # `check_noexcept` calls `terminate()` on it, so a wrong bit either terminates a
+        # process that should have unwound or lets an exception escape a noexcept function.
+        "|TYPE_FLAG_CONST|TYPE_FLAG_VOLATILE|TYPE_FLAG_REFERENCE"
+        "|CLASS_IS_SIMPLE_TYPE|CLASS_HAS_VIRTUAL_BASE_CLASS"
+        "|FUNC_DESCR_SYNCHRONOUS|FUNC_DESCR_NOEXCEPT"
         # ── except.c ────────────────────────────────────────────────────────
         # The two switch vocabularies profile_derive reports as BLOCKING for this file.
         # `STATUS_FLOAT_*` (ntstatus.h) are the five codes `_fpieee_flt` dispatches on and
