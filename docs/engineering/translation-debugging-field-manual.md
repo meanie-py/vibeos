@@ -2037,6 +2037,26 @@ of them were **ours**, not the model's:
   C++ named cast, `const_cast<LPWSTR>(strchrW(...))` (`dde_connect`). Both now skipped — the same
   judgement the scanner already made for a C-style `(TYPE *)value` cast, and the same judgement
   `seal_calls` already made about the callee name in that identical `extern` construct.
+  **A second mechanism held the opposite opinion about the same construct** (2026-08-05,
+  `CDefaultContextMenu::Initialize`). The seal correctly skipped `PCUITEMID_CHILD_ARRAY` in
+  `const_cast<PCUITEMID_CHILD_ARRAY>(_ILCopyaPidl(...))`, and then cpp_com's *dropped symbolic
+  constant* audit — an independent ALL-CAPS scan — demanded the token back and rejected a body
+  that was right. `const_cast` lowers to **nothing**, so no faithful Rust can contain it. When
+  two mechanisms judge one construct, they must share the judgement, not each hold an opinion:
+  the audit now calls `fact_seal._named_cast_spans` rather than re-deriving a second answer.
+- **Sealing hid the call sites from the pass that REPAIRS them** (2026-08-05, `CDefaultContextMenu`
+  — five of seven rejects on one TU, each re-billed on every retry). A C++ sibling call spells its
+  receiver implicitly, so the prepared C reads `_DoCallback_body(a, b, c)` while the Rust worker's
+  first parameter is `this`. `normalize_worker_semantics` has always inserted that `this` — but it
+  is keyed to the callee NAME, and under `--seal-calls` the name is an opaque token, so it could
+  never fire; meanwhile `seal_calls` adds 1 to `argc` for a receiver callee (deliberately — a body
+  that DROPPED `this` used to be accepted, and `CDrivesFolderEnum_dtor` shipped `DeleteList_body()`
+  that way). Net: the envelope demanded a receiver the responsible pass could not see. `SealedCall`
+  now records `receiver` and the repair runs before the envelope is judged, narrowly — short by
+  EXACTLY the receiver, and not already leading with `this`. **The general lesson is about ORDER:
+  a validator that runs before a normalisation pass judges text the pipeline was never going to
+  ship.** When a seal rejects at scale, check what runs after it. Fixing it re-validated the
+  already-paid bodies from the cache at **$0** — a tool fix can recover spend, not just prevent it.
 - **A DIRECTIVE is not code, and an array PARAMETER's bound is not a value** (found on shell32
   `changenotify.cpp`, 8 rejected paid attempts across two functions). Three new shapes of the same
   unsatisfiable-envelope class, all now handled by `lex_mask.directive_spans` + `fact_seal.
@@ -3088,6 +3108,17 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **The model FIXES a real bug in the C, and that is still a defect.** `CDefaultContextMenu::
+  DoCreateNewFolder` frees `pidl` exactly once, on the success path, and leaks it when
+  `SelectItem` fails. Every sample added a second `SHFree` on the failure path — correct as
+  engineering, wrong as translation, and caught only because the call envelope's "exactly once"
+  rule saw a duplicated token. Worth stating because the rejection reads like model sloppiness
+  and is the opposite: the envelope is doing precisely its job. Two practical consequences —
+  **retrying does not help** (the improvement is stable across samples, so `--retry-rejects` is
+  money for nothing; hand-write it with a comment saying the leak is deliberate), and a
+  translation that is *silently* more correct than its C is a divergence no lint can find later,
+  because nothing is broken. Same family as recall-permutation: the model's prior beats the text
+  in front of it, and here the prior is "this code should not leak."
 - **A dropped `!` on a predicate, with the second operand garbled into the wreckage.**
   `CFSDropTarget::_QueryDrop` reads
   `if (!PathIsSameDrive(wstrFirstFile, m_sPathTarget) && m_dwDefaultEffect != D_LINK)`;
@@ -3273,6 +3304,17 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   i.e. every non-directory item in a folder's Properties size calculation — had no callee at
   all. Written by hand as `GetFileStats_Path`. Worth grepping the C for a duplicated signature
   before assuming a "missing" callee was simply dropped.
+- **A free function and a MEMBER may share a name; C++ resolves it by scope, not by arity.**
+  `CDefaultContextMenu` declares a static `MapVerbToCmdId/5` and a method `MapVerbToCmdId/3`.
+  Inside a method body the unqualified call takes the member, and the free one is reached by
+  writing `::MapVerbToCmdId`. A binder that knows only the free candidate reads the member call
+  as an unbindable arity and hard-fails the entire TU before payment — which is how a 2,024-line
+  file looked untranslatable when nothing was actually wrong with it. The tell that this is an
+  asymmetry rather than a missing feature: the *rewrite* pass already handled it (no candidate at
+  that arity → `continue` → the method pass binds it), and only the *reachability* walk raised.
+  The mirror image is worth fixing at the same time: a method pass that matches a bare identifier
+  without looking at what precedes it will rewrite `::f(...)` into a call on `this` whenever the
+  arities happen to line up, turning an explicit "I mean the global one" into its opposite.
 - **A default argument is not carried to the call site.** `BrFolder_FindTreeItemOfAbsoluteItem(
   BrFolder&, PCIDLIST_ABSOLUTE, HTREEITEM hItem = NULL)` called with two arguments in C++ needs
   three in Rust. Loud (`E0061`), trivial to fix, easy to mis-fix by deleting the parameter.
@@ -3309,6 +3351,27 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   imports from, not just the first: an island takes its ordinary base types from one
   (`ntdll_sys`) and its COM types from another (`com_sys`), and stopping at the first refuses
   every OLE struct.
+  **The island is one of TWO safe families, and the second is where the leak actually lived**
+  (2026-08-05, `CDefaultContextMenu`). An island struct is safe because it is trivially
+  destructible. A *source-discovered POD* is safe only if it is RENDERED owning — and it was
+  not. The POD renderer spelled ATL members with the COM **owner's** type, which is right for an
+  owner (its generated `Release` releases each member explicitly) and fatal in a POD, whose
+  field types **are** its entire destructor: `pCM: *mut IContextMenu` inside the element makes
+  the container's per-element `drop_in_place` drop a raw pointer. `PlainStateField.owned_rust_type`
+  is the "Rust drop glue owns this" spelling (`CComPtr<T>` / `CComHeapPtr<T>` / `CStringW`), all
+  `repr(transparent)` over the same pointer so layout is untouched. Two corollaries fall out: a
+  by-value POD member of the owner needed the same `drop_in_place` in `Release` (transitively —
+  a wrapper struct owns whatever it contains), and a **packed** struct with a destructor member
+  cannot exist in Rust at all, so refuse it in preflight by name instead of eating `E0793` after
+  the money is spent.
+  **The free-function renderer had the identical bug, and the SHIPPED file is what proved it.**
+  `brfolder.rs` spells `BrItemData`'s fields `CComPtr`/`CComHeapPtr`; the generator emitted raw
+  pointers — directly above the `CComHeapPtr` support block it was not using. So a regeneration
+  would have quietly downgraded a correct file into a leaking one, and nothing would have been
+  red. When a generator and a shipped artifact disagree, the artifact is evidence: diff them
+  before assuming the generator is the source of truth. Sweep for the shape with a grep for C++
+  structs holding `CComPtr`/`CStringW`/`CComHeapPtr` members — repo-wide there are 12, and only
+  one had a Rust port, which is why this stayed latent until a TU needed it.
   **Grep every flipped `.cpp` for a bare `let <name>: <CppType>;` with no initialiser.** If the
   C++ type has a constructor or destructor, that line is a dropped side effect. Port the guard
   for real (`struct` + `impl Drop`) and construct it — `COleInit::new()` in
