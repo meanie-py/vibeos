@@ -382,6 +382,24 @@ importing.** For an entry point specifically, `nm` the decorated name out of a o
 12)` byte count. A mismatch is a linker error at best and a silently-unused entry point at
 worst, and the probe costs one command.
 
+**Same hazard, arriving through the `.spec` instead of through a Rust reader — and this one
+SHIPPED. If the DLL exports a global, its Rust definition needs `#[no_mangle]`, or the export
+silently keeps the C copy.** `msvcrt.spec:715` says `@ extern _mbctype MSVCRT_mbctype`: the
+export name and the backing symbol differ, and only the backing symbol is what a definition
+must be spelled. mbcs.rs defined `pub static mut MSVCRT_mbctype` without `#[no_mangle]`, so the
+Rust array got a mangled private name, the export resolved to mbcs.c's copy, and the shipping
+amd64 DLL carried **two 257-byte arrays at different RVAs** — `_setmbcp_l` (Rust) writing one
+and the exported `_mbctype` naming the other, permanently zero. (`__p__mbctype` is *not* part
+of the bug: it returns the per-thread `mbcinfo->mbctype`, a different table.) Nothing failed
+to build, link, or boot, because the table IS all-zero in every single-byte locale; it only
+bites under a DBCS codepage, where every byte then classifies as a non-lead byte. Find it with
+`llvm-nm --defined-only <dll> | grep <symbol>` — **two definitions, one mangled, is the
+signature**; `llvm-objdump -p` gives the export's RVA so you can say which one it points at.
+Note that a symbol being in the `.spec` is *not* the check: `_mbctype` was there all along.
+`tools/verify_cohab_coverage.py` now reads the second field of an `extern` line, which is the
+one directive whose export name and backing symbol differ — before that fix, the tool built to
+catch wrong-name flips was blind to the only shape where the name is written down twice.
+
 **Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
 `cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
 never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
