@@ -1428,8 +1428,17 @@ def merge_plans(
 
     THE correctness property of this module: a concrete ``as u32`` inferred from an i386 run is
     wrong on amd64/arm64 wherever the real parameter is a width-varying alias.  Such an edit is
-    applied only when >= 2 targets propose the IDENTICAL replacement; a disagreement is reported
-    as ``target_divergent`` so a human can write the semantic alias instead.
+    applied only when EVERY analysed target proposes the IDENTICAL replacement; a disagreement is
+    reported as ``target_divergent`` so a human can write the semantic alias instead.
+
+    "Every analysed target", not ">= 2 of them".  A target that proposes NOTHING at a site is not
+    abstaining -- it is saying the site already compiles there, which is the strongest possible
+    evidence against baking some other target's width into it.  desk.cpl found this the hard way:
+    ``SendDlgItemMessage(.., CB_INSERTSTRING, PLACEMENT_CENTER, ..)`` is clean on i386 (WPARAM is
+    u32, and so is the constant) and mismatched on the 64-bit pair, so amd64 and arm64 agreed on
+    ``as u64``, the old >= 2 rule applied it, and 54 call sites that had been CORRECT on i386
+    stopped compiling there.  The right answer at such a site is always the callee's declared type
+    NAME (``as WPARAM``), which RULE_WIDTH_ALIAS writes and this rule must not pre-empt.
     """
     grouped: dict[tuple[str, int, int, str], list[Edit]] = {}
     for plan in plans.values():
@@ -1463,7 +1472,7 @@ def merge_plans(
         # Sensitivity is a property of the SITE, not of whichever plan happened to be first:
         # `as u32` is pointer-width on i386 and fixed on amd64, so one flag is enough to gate.
         sensitive = any(edit.requires_target_agreement for edit in group)
-        if sensitive and len(targets) < 2:
+        if sensitive and (len(targets) < 2 or set(targets) != set(analysed)):
             if not allow_single_target_width:
                 withheld.append(
                     Withheld(
@@ -1473,7 +1482,13 @@ def merge_plans(
                         proto.line,
                         f"`{proto.replacement}` bakes a pointer-width type proven only on "
                         f"{','.join(targets) or 'no target'} (analysed: {','.join(analysed)}). "
-                        "Re-run with the other targets, or hand-write the semantic alias.",
+                        + (
+                            f"{','.join(sorted(set(analysed) - set(targets)))} reported nothing "
+                            "here, which means the site already compiles there — applying this "
+                            "would BREAK it. Hand-write the callee's declared type name."
+                            if set(targets) < set(analysed)
+                            else "Re-run with the other targets, or hand-write the semantic alias."
+                        ),
                     )
                 )
                 continue

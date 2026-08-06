@@ -376,6 +376,28 @@ def test_pointer_width_cast_applies_when_two_targets_agree():
     assert merged.withheld == ()
 
 
+def test_a_target_that_reported_nothing_vetoes_a_width_bake():
+    """desk.cpl: 54 call sites that COMPILED on i386 were broken by amd64+arm64 agreeing.
+
+    `SendDlgItemMessage(.., CB_INSERTSTRING, PLACEMENT_CENTER, ..)` needs no cast on i386 --
+    WPARAM is u32 there and so is the constant -- so i386 proposes nothing while the 64-bit pair
+    both ask for `as u64`. Two targets agreeing is not agreement: silence is evidence the site is
+    already right, and the honest answer is the callee's declared name (`as WPARAM`).
+    """
+    merged = merge_plans(
+        {
+            "i386": propose_edits(
+                [], _reader({"src/a.rs": _ARG_SRC}), target="i386", rules=[RULE_NUMERIC_CAST]
+            ),
+            "amd64": _width_plan("amd64", "u64"),
+            "arm64": _width_plan("arm64", "u64"),
+        }
+    )
+    assert merged.edits == ()
+    assert [item.reason for item in merged.withheld] == ["width_unproven"]
+    assert "i386 reported nothing here" in merged.withheld[0].detail
+
+
 def test_divergent_widths_are_withheld_not_guessed():
     """The wkssvc mistake: i386 wants u32, amd64 wants u64 — the real type is SIZE_T."""
     merged = merge_plans({"i386": _width_plan("i386", "u32"), "amd64": _width_plan("amd64", "u64")})
