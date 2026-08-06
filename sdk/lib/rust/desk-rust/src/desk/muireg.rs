@@ -7,11 +7,11 @@ unsafe extern "C" fn load_string(hModule: HINSTANCE, mut resId: u32, pwszBuffer:
     let mut pString: *mut u16;
     let mut idxString: i32;
 
-    if HIWORD(resId) == 0xffff {
+    if HIWORD!(resId) == 0xffff {
         resId = (-(resId as i32)) as u32;
     }
 
-    hResource = FindResourceW(hModule, MAKEINTRESOURCEW(LOWORD(resId >> 4) + 1), RT_STRING as LPWSTR);
+    hResource = FindResourceW(hModule, MAKEINTRESOURCEW!(LOWORD!(resId >> 4) + 1), RT_STRING as LPWSTR);
     if hResource.is_null() {
         return 0;
     }
@@ -125,14 +125,14 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
     }
 
     result = ERROR_SUCCESS;
-    if *pwszExpandedBuffer != L'@' as u16 {
+    if *pwszExpandedBuffer != '@' as u16 {
         lstrcpynW(pszOutBuf, pwszExpandedBuffer, (cbOutBuf / core::mem::size_of::<u16>() as u32) as i32);
     } else {
-        let pComma: *mut u16 = wcsrchr(pwszExpandedBuffer, L',' as u16);
+        let pComma: *mut u16 = wcsrchr(pwszExpandedBuffer, ',' as u16);
         let mut uiStringId: u32;
         let hModule: HMODULE;
 
-        if pComma.is_null() || *pComma.offset(1 as isize) != L'-' as u16 {
+        if pComma.is_null() || *pComma.offset(1 as isize) != '-' as u16 {
             result = ERROR_BADKEY;
             HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
             HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
         }
 
         uiStringId = _wtoi(pComma.offset(2 as isize)) as u32;
-        *pComma = L'\0' as u16;
+        *pComma = '\0' as u16;
 
         hModule = LoadLibraryExW(
             pwszExpandedBuffer.offset(1 as isize),

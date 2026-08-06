@@ -202,7 +202,7 @@ pub unsafe extern "C" fn SaveDesktopSettings(pData: *mut DESKTOP_DATA) -> BOOL {
     }
 
     i = 0;
-    while i < _countof(DesktopIcons) {
+    while i < _countof!(DesktopIcons) {
         if (*pData).bLocalHideChanged[i as usize] == 0 {
             i += 1;
             continue;
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn SaveDesktopSettings(pData: *mut DESKTOP_DATA) -> BOOL {
     }
 
     i = 0;
-    while i < _countof(IconChange) {
+    while i < _countof!(IconChange) {
         if (*pData).bLocalIconChanged[i as usize] == 0 {
             i += 1;
             continue;
@@ -223,7 +223,7 @@ pub unsafe extern "C" fn SaveDesktopSettings(pData: *mut DESKTOP_DATA) -> BOOL {
 
         StringCchCopy(
             (*pData).Icon[i as usize].szPath.as_mut_ptr(),
-            _countof((*pData).Icon[i as usize].szPath),
+            _countof!((*pData).Icon[i as usize].szPath),
             (*pData).LocalIcon[i as usize].szPath.as_ptr()
         );
         (*pData).bIconChanged[i as usize] = TRUE;
@@ -236,16 +236,16 @@ pub unsafe extern "C" fn SaveDesktopSettings(pData: *mut DESKTOP_DATA) -> BOOL {
 unsafe extern "C" fn GetCurrentValue(i: u32, bNewStart: u8) -> u8 {
     let mut regPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
 
-    StringCchCopy(regPath.as_mut_ptr(), _countof(regPath), szHideDesktopIcons.as_ptr());
-    StringCchCat(regPath.as_mut_ptr(), _countof(regPath), if bNewStart != 0 { szNewStartPanel.as_ptr() } else { szClassicStartMenu.as_ptr() });
+    StringCchCopy(regPath.as_mut_ptr(), _countof!(regPath), szHideDesktopIcons.as_ptr());
+    StringCchCat(regPath.as_mut_ptr(), _countof!(regPath), if bNewStart != 0 { szNewStartPanel.as_ptr() } else { szClassicStartMenu.as_ptr() });
 
     SHRegGetBoolUSValue(regPath.as_ptr(), DesktopIcons[i as usize].CLSID, FALSE, bNewStart)
 }
 unsafe extern "C" fn SetCurrentValue(i: u32, bNewStart: u8, bValue: u8) {
     let mut regPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
 
-    StringCchCopy(regPath.as_mut_ptr(), _countof(regPath), szHideDesktopIcons.as_ptr());
-    StringCchCat(regPath.as_mut_ptr(), _countof(regPath), if bNewStart != 0 { szNewStartPanel.as_ptr() } else { szClassicStartMenu.as_ptr() });
+    StringCchCopy(regPath.as_mut_ptr(), _countof!(regPath), szHideDesktopIcons.as_ptr());
+    StringCchCat(regPath.as_mut_ptr(), _countof!(regPath), if bNewStart != 0 { szNewStartPanel.as_ptr() } else { szClassicStartMenu.as_ptr() });
 
     SHSetValue(HKEY_CURRENT_USER, regPath.as_ptr(), DesktopIcons[i as usize].CLSID, REG_DWORD,
                core::ptr::addr_of!(bValue) as LPBYTE, core::mem::size_of_val(&bValue) as u32);
@@ -321,7 +321,7 @@ unsafe extern "C" fn GetIconFromLocation(szIconPath: LPTSTR) -> HICON {
     let mut iIndex: i32;
     let mut szPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
 
-    ExpandEnvironmentStrings(szIconPath, szPath.as_mut_ptr(), _countof(szPath));
+    ExpandEnvironmentStrings(szIconPath, szPath.as_mut_ptr(), _countof!(szPath));
     iIndex = PathParseIconLocation(szPath.as_mut_ptr());
     return ExtractIcon(hApplet, szPath.as_mut_ptr(), iIndex);
 }
@@ -333,10 +333,10 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
     SHGetSetSettings(&mut ss, SSF_STARTPANELON, FALSE);
 
     i = 0;
-    while i < _countof((*pData).optIcons) {
+    while i < _countof!((*pData).optIcons) {
         let bHide: i32;
 
-        if ss.fStartPanelOn != 0 {
+        if ss.fStartPanelOn() != 0 {
             bHide = (*pData).optIcons[i as usize].bHideNewStart;
         } else {
             bHide = (*pData).optIcons[i as usize].bHideClassic;
@@ -363,10 +363,10 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
         1,
         1
     );
-    ListView_SetImageList(hwndList, (*pData).hLocalImageList, LVSIL_NORMAL);
+    ListView_SetImageList!(hwndList, (*pData).hLocalImageList, LVSIL_NORMAL);
 
     i = 0;
-    while i < _countof(IconChange) {
+    while i < _countof!(IconChange) {
         let mut szClassPath: [TCHAR; MAX_PATH] = core::mem::zeroed();
         let mut dwType: u32 = 0;
         let mut cbData: u32;
@@ -375,13 +375,13 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
 
         StringCchCopy(
             (*pData).LocalIcon[i as usize].szPath.as_mut_ptr(),
-            _countof((*pData).LocalIcon[i as usize].szPath),
+            _countof!((*pData).LocalIcon[i as usize].szPath),
             (*pData).Icon[i as usize].szPath.as_ptr()
         );
         (*pData).bLocalIconChanged[i as usize] = FALSE;
 
-        StringCchCopy(szClassPath.as_mut_ptr(), _countof(szClassPath), szUserClass);
-        StringCchCat(szClassPath.as_mut_ptr(), _countof(szClassPath), IconChange[i as usize].CLSID);
+        StringCchCopy(szClassPath.as_mut_ptr(), _countof!(szClassPath), szUserClass);
+        StringCchCat(szClassPath.as_mut_ptr(), _countof!(szClassPath), IconChange[i as usize].CLSID);
         cbData = core::mem::size_of_val(&(*pData).LocalIcon[i as usize].szTitle) as u32;
 
         if SHGetValue(
@@ -397,7 +397,7 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
                 GetModuleHandle(TEXT("shell32.dll")),
                 IconChange[i as usize].TitleId,
                 (*pData).LocalIcon[i as usize].szTitle.as_mut_ptr(),
-                _countof((*pData).LocalIcon[i as usize].szTitle)
+                _countof!((*pData).LocalIcon[i as usize].szTitle)
             );
         }
 
@@ -411,12 +411,12 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
 
         if !hIcon.is_null() {
             if !(*pData).hLocalImageList.is_null() {
-                lvitem.iImage = ImageList_AddIcon((*pData).hLocalImageList, hIcon);
+                lvitem.iImage = ImageList_AddIcon!((*pData).hLocalImageList, hIcon);
             }
             DestroyIcon(hIcon);
         }
 
-        if ListView_InsertItem(hwndList, &lvitem) < 0 {
+        if ListView_InsertItem!(hwndList, &lvitem) < 0 {
             i += 1;
             continue;
         }
@@ -437,7 +437,7 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
 }
 unsafe extern "C" fn DesktopOnDestroyDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA) {
     if (*pData).hLocalImageList != core::ptr::null_mut() {
-        ListView_SetImageList(GetDlgItem(hwndDlg, IDC_ICONS_LISTVIEW), core::ptr::null_mut(), LVSIL_NORMAL);
+        ListView_SetImageList!(GetDlgItem(hwndDlg, IDC_ICONS_LISTVIEW), core::ptr::null_mut(), LVSIL_NORMAL);
         ImageList_Destroy((*pData).hLocalImageList);
     }
 
@@ -468,8 +468,8 @@ pub unsafe extern "system" fn DesktopPageProc(
         }
 
         WM_COMMAND => {
-            let controlId = LOWORD(wParam);
-            let command = HIWORD(wParam);
+            let controlId = LOWORD!(wParam);
+            let command = HIWORD!(wParam);
 
             if command == BN_CLICKED {
                 let mut i: u32;
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn DesktopPageProc(
                         (*pData).bLocalSettingsChanged = TRUE;
                         (*pData).bLocalHideChanged[i as usize] = TRUE;
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         break;
                     }
                     i += 1;
@@ -568,7 +568,7 @@ pub unsafe extern "system" fn DesktopPageProc(
 
                     InvalidateRect(hwndList, core::ptr::null_mut(), TRUE);
                     SetFocus(hwndList);
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                 }
             }
         }

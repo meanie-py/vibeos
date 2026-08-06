@@ -40,7 +40,7 @@ unsafe extern "C" fn GetCurrentScreenSaverValue(lpValue: LPTSTR) -> LPTSTR {
     let Ret: LONG;
 
     Ret = RegOpenKeyEx(HKEY_CURRENT_USER,
-                       _T(b"Control Panel\\Desktop\0".as_ptr() as *const i8),
+                       w!("Control Panel\\Desktop"),
                        0,
                        KEY_READ,
                        &mut hKey);
@@ -195,12 +195,12 @@ unsafe extern "C" fn SetScreenSaverPreviewBox(hwndDlg: HWND, pData: PDATA) {
         return;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         &mut si as *mut _ as *mut _,
         core::mem::size_of::<STARTUPINFO>(),
     );
     si.cb = core::mem::size_of::<STARTUPINFO>() as u32;
-    ZeroMemory(
+    ZeroMemory!(
         &mut (*pData).PrevWindowPi as *mut _ as *mut _,
         core::mem::size_of::<PROCESS_INFORMATION>(),
     );
@@ -279,12 +279,12 @@ unsafe extern "C" fn ScreenSaverConfig(hwndDlg: HWND, pData: PDATA) {
         return;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         &mut si as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<STARTUPINFO>(),
     );
     si.cb = core::mem::size_of::<STARTUPINFO>() as u32;
-    ZeroMemory(
+    ZeroMemory!(
         &mut pi as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<PROCESS_INFORMATION>(),
     );
@@ -344,12 +344,12 @@ unsafe extern "C" fn ScreenSaverPreview(hwndDlg: HWND, pData: *mut DATA) {
         return;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(si) as *mut core::ffi::c_void,
         core::mem::size_of::<STARTUPINFO>()
     );
     si.cb = core::mem::size_of::<STARTUPINFO>() as u32;
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(pi) as *mut core::ffi::c_void,
         core::mem::size_of::<PROCESS_INFORMATION>()
     );
@@ -378,12 +378,12 @@ unsafe extern "C" fn CheckRegScreenSaverIsSecure(hwndDlg: HWND) {
     let result: i32;
 
     if RegOpenKeyEx(HKEY_CURRENT_USER,
-                     _T(b"Control Panel\\Desktop\0".as_ptr() as *const i8),
+                     w!("Control Panel\\Desktop"),
                      0,
                      KEY_ALL_ACCESS,
                      &mut hKey) == ERROR_SUCCESS {
         result = RegQueryValueEx(hKey,
-                                _T(b"ScreenSaverIsSecure\0".as_ptr() as *const i8),
+                                w!("ScreenSaverIsSecure"),
                                 0,
                                 &mut varType,
                                 szBuffer.as_mut_ptr() as LPBYTE,
@@ -467,7 +467,7 @@ unsafe extern "C" fn AddScreenSaver(
             hModule,
             1,
             (*ScreenSaverItem).szDisplayName.as_mut_ptr(),
-            _countof((*ScreenSaverItem).szDisplayName),
+            _countof!((*ScreenSaverItem).szDisplayName),
         ) == 0
         {
             hr = StringCbCopy(
@@ -622,7 +622,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
     let mut regKey: HKEY = core::ptr::null_mut();
 
     if RegOpenKeyEx(HKEY_CURRENT_USER,
-                     _T(b"Control Panel\\Desktop\0".as_ptr() as *const i8),
+                     w!("Control Panel\\Desktop"),
                      0,
                      KEY_ALL_ACCESS,
                      &mut regKey) == ERROR_SUCCESS
@@ -635,7 +635,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
         if (*pData).ScreenSaverItems[(*pData).Selection as usize].bIsScreenSaver != 0 {
             let Length: usize = (_tcslen((*pData).ScreenSaverItems[(*pData).Selection as usize].szFilename.as_ptr()) + 1) * core::mem::size_of::<TCHAR>();
             RegSetValueEx(regKey,
-                          _T(b"SCRNSAVE.EXE\0".as_ptr() as *const i8),
+                          w!("SCRNSAVE.EXE"),
                           0,
                           REG_SZ,
                           (*pData).ScreenSaverItems[(*pData).Selection as usize].szFilename.as_ptr() as PBYTE,
@@ -643,7 +643,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
 
             SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, TRUE, 0, SPIF_UPDATEINIFILE);
         } else {
-            RegDeleteValue(regKey, _T(b"SCRNSAVE.EXE\0".as_ptr() as *const i8));
+            RegDeleteValue(regKey, w!("SCRNSAVE.EXE"));
 
             SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, FALSE, 0, SPIF_UPDATEINIFILE);
         }
@@ -655,7 +655,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
                                  0);
         Sec = if Ret == BST_CHECKED { _T('1' as i32) } else { _T('0' as i32) };
         RegSetValueEx(regKey,
-                      _T(b"ScreenSaverIsSecure\0".as_ptr() as *const i8),
+                      w!("ScreenSaverIsSecure"),
                       0,
                       REG_SZ,
                       &Sec as *const TCHAR as PBYTE,
@@ -698,7 +698,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
         let hChild: HWND;
 
         if !hParent.is_null() {
-            (*pData).OldPreviewProc = GetWindowLongPtr(hParent, GWLP_WNDPROC) as WNDPROC;
+            (*pData).OldPreviewProc = core::mem::transmute(GetWindowLongPtr(hParent, GWLP_WNDPROC) as *const ());
             SetWindowLongPtr(hParent, GWLP_WNDPROC, RedrawSubclassProc as LONG_PTR);
             SetWindowLongPtr(hParent, GWLP_USERDATA, pData as LONG_PTR);
         }
@@ -737,7 +737,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
         IDC_SCREENS_TIME,
         UDM_SETRANGE,
         0,
-        MAKELONG(240, 1),
+        MAKELONG!(240, 1),
     );
 
     EnumScreenSavers(hwndSSCombo, pData);
@@ -745,7 +745,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
     CheckRegScreenSaverIsSecure(hwndDlg);
 
     iCurSs = 0;
-    pSsValue = GetCurrentScreenSaverValue(_T(b"SCRNSAVE.EXE\0".as_ptr() as *const i8));
+    pSsValue = GetCurrentScreenSaverValue(w!("SCRNSAVE.EXE"));
     if !pSsValue.is_null() {
         let mut bFound = FALSE;
         let mut i: INT;
@@ -760,7 +760,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
         }
 
         if bFound == 0 {
-            bFound = AddScreenSaver(hwndSSCombo, pData, pSsValue, _T(b"SCRNSAVE.EXE\0".as_ptr() as *const i8));
+            bFound = AddScreenSaver(hwndSSCombo, pData, pSsValue, w!("SCRNSAVE.EXE"));
             if bFound != 0 {
                 i = (*pData).ScreenSaverCount as INT - 1;
             }
@@ -772,7 +772,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
             iCurSs = SendMessage(
                 hwndSSCombo,
                 CB_FINDSTRINGEXACT,
-                -1,
+                -1i32 as WPARAM,
                 (*pData).ScreenSaverItems[i as usize].szDisplayName.as_ptr() as LPARAM,
             ) as INT;
             if iCurSs == CB_ERR {
@@ -782,7 +782,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
     }
     SendMessage(hwndSSCombo, CB_SETCURSEL, iCurSs as WPARAM, 0);
 
-    pSsValue = GetCurrentScreenSaverValue(_T(b"ScreenSaveTimeOut\0".as_ptr() as *const i8));
+    pSsValue = GetCurrentScreenSaverValue(w!("ScreenSaveTimeOut"));
     if !pSsValue.is_null() {
         let Time = _ttoi(pSsValue) as UINT / 60;
 
@@ -822,7 +822,7 @@ pub unsafe extern "system" fn ScreenSaverPageProc(
                 SetWindowLongPtr(
                     GetDlgItem(hwndDlg, IDC_SCREENS_PREVIEW),
                     GWLP_WNDPROC,
-                    (*pData).OldPreviewProc as LONG_PTR,
+                    core::mem::transmute::<_, *const ()>((*pData).OldPreviewProc) as LONG_PTR,
                 );
                 DestroyWindow((*pData).ScreenSaverPreviewParent);
                 (*pData).ScreenSaverPreviewParent = core::ptr::null_mut();
@@ -850,21 +850,21 @@ pub unsafe extern "system" fn ScreenSaverPageProc(
         }
 
         WM_COMMAND => {
-            let controlId = LOWORD(wParam);
-            let command = HIWORD(wParam);
+            let controlId = LOWORD!(wParam);
+            let command = HIWORD!(wParam);
 
             match controlId {
                 IDC_SCREENS_LIST => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == CBN_SELCHANGE {
                         SelectionChanged(hwndDlg, pData);
                         SetScreenSaverPreviewBox(hwndDlg, pData);
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
                 IDC_SCREENS_TIMEDELAY => {
                     if command == EN_CHANGE {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
@@ -892,7 +892,7 @@ pub unsafe extern "system" fn ScreenSaverPageProc(
 
                 IDC_SCREENS_USEPASSCHK => {
                     if command == BN_CLICKED {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 

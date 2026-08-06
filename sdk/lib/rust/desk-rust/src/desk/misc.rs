@@ -14,7 +14,7 @@ unsafe extern "C" fn LengthOfStrResource(
         return -1;
     }
 
-    lpName = MAKEINTRESOURCE((uID >> 4) + 1);
+    lpName = MAKEINTRESOURCE!((uID >> 4) + 1);
 
     hrSrc = FindResourceW(hInst, lpName, RT_STRING as LPWSTR);
     if !hrSrc.is_null() {
@@ -80,7 +80,11 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
     pCD: *mut NMCUSTOMDRAW,
     Color: COLORREF,
 ) -> u32 {
-    enum { MARGIN = 1, SEPLINE = 2 }
+    // misc.c:86 `enum { MARGIN = 1, SEPLINE = 2 };` — a C anonymous enum used purely as two
+    // named integers, which is `const` in Rust. A real `enum` here would need a cast at each of
+    // the five arithmetic uses below.
+    const MARGIN: c_int = 1;
+    const SEPLINE: c_int = 2;
     let hTheme: HTHEME;
     let hOrgPen: HGDIOBJ;
     let hOrgBrush: HGDIOBJ;
@@ -113,7 +117,8 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
         r.right -= margins.cxRightWidth + nPadW;
         r.bottom -= margins.cyBottomHeight + nPadH;
     } else {
-        enum { FOCUSADJUST = 2 }
+    // misc.c:222 `enum { FOCUSADJUST = 2 };` — same anonymous-enum-as-constant shape.
+    const FOCUSADJUST: c_int = 2;
         InflateRect(&mut r, -(nPadW + FOCUSADJUST), -(nPadH + FOCUSADJUST));
     }
 
@@ -134,7 +139,7 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
     pts[1].y = pts[0].y;
     pts[2].x = pts[0].x + nArrow / 2;
     pts[2].y = pts[1].y + nArrow / 2;
-    Polygon((*pCD).hdc, pts.as_mut_ptr(), _countof(pts));
+    Polygon((*pCD).hdc, pts.as_mut_ptr(), _countof!(pts));
 
     r.left = r.right - nHalf - SEPLINE * 3 / 2;
     DrawEtchedLine(hTheme, (*pCD).hdc, BP_PUSHBUTTON, PBS_NORMAL, &mut r, BF_LEFT);

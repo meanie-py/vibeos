@@ -40,7 +40,7 @@ pub unsafe extern "C" fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP {
         return core::ptr::null_mut();
     }
 
-    ZeroMemory((*lpBitmap).info as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
+    ZeroMemory!((*lpBitmap).info as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
     (*(*lpBitmap).info).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
     (*(*lpBitmap).info).bmiHeader.biWidth = (*lpBitmap).width as i32;
     (*(*lpBitmap).info).bmiHeader.biHeight = -((*lpBitmap).height as i32);

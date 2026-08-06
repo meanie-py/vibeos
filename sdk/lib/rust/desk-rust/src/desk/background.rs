@@ -218,9 +218,9 @@ unsafe extern "C" fn AddWallpapersFromDirectory(
                     return i;
                 }
 
-                ZeroMemory(
+                ZeroMemory!(
                     &mut listItem as *mut _ as *mut core::ffi::c_void,
-                    LV_ITEM,
+                    core::mem::size_of::<LV_ITEM>(),
                 );
                 listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
                 listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
@@ -279,15 +279,15 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     himl = ImageList_Create(cx, cy, ILC_COLOR32 | ILC_MASK, 0, 0);
 
     hShell32 = GetModuleHandleW(w!("shell32.dll") as PCWSTR);
-    hIcon = LoadImageW(hShell32, MAKEINTRESOURCEW(IDI_SHELL_NO), IMAGE_ICON, cx, cy, 0) as HICON;
+    hIcon = LoadImageW(hShell32, MAKEINTRESOURCEW!(IDI_SHELL_NO), IMAGE_ICON, cx, cy, 0) as HICON;
 
-    ListView_SetImageList(hwndBackgroundList, himl, LVSIL_SMALL);
+    ListView_SetImageList!(hwndBackgroundList, himl, LVSIL_SMALL);
 
-    ZeroMemory(&mut dummy as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_COLUMN));
+    ZeroMemory!(&mut dummy as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_COLUMN>());
     dummy.mask = LVCF_SUBITEM | LVCF_WIDTH;
     dummy.iSubItem = 0;
     dummy.cx = (clientRect.right - clientRect.left) - GetSystemMetrics(SM_CXVSCROLL);
-    ListView_InsertColumn(hwndBackgroundList, 0, &mut dummy);
+    ListView_InsertColumn!(hwndBackgroundList, 0, &mut dummy);
 
     backgroundItem = &mut (*pData).backgroundItems[(*pData).listViewItemCount as usize];
     (*backgroundItem).bWallpaper = FALSE;
@@ -298,17 +298,17 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         (core::mem::size_of_val(&(*backgroundItem).szDisplayName) / core::mem::size_of::<TCHAR>()) as i32,
     );
 
-    ZeroMemory(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_ITEM));
+    ZeroMemory!(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
     listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
     listItem.state = 0;
     listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
-    listItem.iImage = ImageList_AddIcon(himl, hIcon);
+    listItem.iImage = ImageList_AddIcon!(himl, hIcon);
     listItem.iItem = (*pData).listViewItemCount as i32;
     listItem.lParam = (*pData).listViewItemCount as isize;
     hIcon = core::ptr::null_mut();
 
-    ListView_InsertItem(hwndBackgroundList, &mut listItem);
-    ListView_SetItemState(
+    ListView_InsertItem!(hwndBackgroundList, &mut listItem);
+    ListView_SetItemState!(
         hwndBackgroundList,
         (*pData).listViewItemCount as i32,
         LVIS_SELECTED,
@@ -352,7 +352,7 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
                 core::mem::size_of_val(&sfi) as u32,
                 SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME,
             );
-            sfi.iIcon = ImageList_AddIcon(himl, sfi.hIcon);
+            sfi.iIcon = ImageList_AddIcon!(himl, sfi.hIcon);
 
             i += 1;
 
@@ -374,7 +374,7 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
                 return;
             }
 
-            ZeroMemory(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&LV_ITEM));
+            ZeroMemory!(&mut listItem as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
             listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
             listItem.state = 0;
             listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
@@ -382,8 +382,8 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
             listItem.iItem = (*pData).listViewItemCount as i32;
             listItem.lParam = (*pData).listViewItemCount as isize;
 
-            ListView_InsertItem(hwndBackgroundList, &mut listItem);
-            ListView_SetItemState(
+            ListView_InsertItem!(hwndBackgroundList, &mut listItem);
+            ListView_SetItemState!(
                 hwndBackgroundList,
                 (*pData).listViewItemCount as i32,
                 LVIS_SELECTED,
@@ -472,7 +472,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
 
     res = RegCreateKeyEx(
         HKEY_CURRENT_USER,
-        TEXT(b"Control Panel\\Appearance\0".as_ptr() as *const TCHAR),
+        w!("Control Panel\\Appearance"),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -487,7 +487,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         let mut cbData: u32 = core::mem::size_of_val(&(*pData).custom_colors) as u32;
         res = RegQueryValueEx(
             hKey,
-            TEXT(b"CustomColors\0".as_ptr() as *const TCHAR),
+            w!("CustomColors"),
             core::ptr::null_mut(),
             &mut dwType,
             (*pData).custom_colors.as_mut_ptr() as LPBYTE,
@@ -497,7 +497,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         hKey = core::ptr::null_mut();
     }
 
-    cc.lStructSize = CHOOSECOLOR;
+    cc.lStructSize = core::mem::size_of::<CHOOSECOLOR>();
     cc.hwndOwner = hwndDlg;
     cc.hInstance = core::ptr::null_mut();
     cc.rgbResult = g_GlobalData.desktop_color;
@@ -511,7 +511,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         g_GlobalData.desktop_color = cc.rgbResult;
         (*pData).bClrBackgroundChanged = TRUE;
 
-        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
         InvalidateRect(
             GetDlgItem(hwndDlg, IDC_BACKGROUND_PREVIEW),
@@ -526,7 +526,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
 
         res = RegOpenKeyEx(
             HKEY_CURRENT_USER,
-            TEXT(b"Control Panel\\Appearance\0".as_ptr() as *const TCHAR),
+            w!("Control Panel\\Appearance"),
             0,
             KEY_SET_VALUE,
             &mut hKey
@@ -535,7 +535,7 @@ unsafe extern "C" fn OnColorButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
         if res == ERROR_SUCCESS {
             RegSetValueEx(
                 hKey,
-                TEXT(b"CustomColors\0".as_ptr() as *const TCHAR),
+                w!("CustomColors"),
                 0,
                 REG_BINARY,
                 (*pData).custom_colors.as_mut_ptr() as LPBYTE,
@@ -553,7 +553,7 @@ unsafe extern "C" fn CheckListViewFilenameExists(hwndList: HWND, tszFileName: LP
     lvfi.flags = LVFI_STRING;
     lvfi.psz = tszFileName;
 
-    retVal = ListView_FindItem(hwndList, -1, &lvfi);
+    retVal = ListView_FindItem!(hwndList, -1, &lvfi);
     if retVal != -1 {
         return TRUE;
     }
@@ -568,7 +568,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     let mut filter: LPTSTR;
     let mut extensions: LPTSTR;
     let mut backgroundItem: *mut BackgroundItem = core::ptr::null_mut();
-    let mut sfi: CSIDL_MYPICTURES = core::mem::zeroed();
+    let mut sfi: SHFILEINFO = core::mem::zeroed();
     let mut listItem: LV_ITEM = core::mem::zeroed();
     let hwndBackgroundList: HWND;
     let mut p: *mut TCHAR;
@@ -581,10 +581,10 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     let himl: HIMAGELIST;
 
     hwndBackgroundList = GetDlgItem(hwndDlg, IDC_BACKGROUND_LIST);
-    himl = ListView_GetImageList(hwndBackgroundList, LVSIL_SMALL);
+    himl = ListView_GetImageList!(hwndBackgroundList, LVSIL_SMALL);
     SHGetFolderPathW(core::ptr::null_mut(), CSIDL_MYPICTURES, core::ptr::null_mut(), 0, initialDir.as_mut_ptr());
 
-    ZeroMemory(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
+    ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
     ofn.lStructSize = core::mem::size_of::<OPENFILENAME>() as u32;
     ofn.hwndOwner = hwndDlg;
@@ -653,7 +653,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
             core::mem::size_of_val(&sfi),
             SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME
         );
-        sfi.iIcon = ImageList_AddIcon(himl, sfi.hIcon);
+        sfi.iIcon = ImageList_AddIcon!(himl, sfi.hIcon);
 
         backgroundItem = core::ptr::addr_of_mut!((*pData).backgroundItems[(*pData).listViewItemCount as usize]);
 
@@ -680,7 +680,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
             return;
         }
 
-        ZeroMemory(core::ptr::addr_of_mut!(listItem) as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
+        ZeroMemory!(core::ptr::addr_of_mut!(listItem) as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
         listItem.mask = LVIF_TEXT | LVIF_PARAM | LVIF_STATE | LVIF_IMAGE;
         listItem.state = 0;
         listItem.pszText = (*backgroundItem).szDisplayName.as_mut_ptr();
@@ -688,8 +688,8 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
         listItem.iItem = (*pData).listViewItemCount;
         listItem.lParam = (*pData).listViewItemCount as LPARAM;
 
-        ListView_InsertItem(hwndBackgroundList, core::ptr::addr_of_mut!(listItem));
-        ListView_SetItemState(
+        ListView_InsertItem!(hwndBackgroundList, core::ptr::addr_of_mut!(listItem));
+        ListView_SetItemState!(
             hwndBackgroundList,
             (*pData).listViewItemCount,
             LVIS_SELECTED,
@@ -727,7 +727,7 @@ unsafe extern "C" fn ListViewItemChanged(hwndDlg: HWND, pData: *mut BACKGROUND_D
     EnableWindow(GetDlgItem(hwndDlg, IDC_PLACEMENT_COMBO),
                  (*backgroundItem).bWallpaper);
 
-    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 }
 unsafe extern "C" fn DrawBackgroundPreview(draw: LPDRAWITEMSTRUCT, pData: *mut BACKGROUND_DATA) {
     let mut scaleX: f32;
@@ -1100,7 +1100,7 @@ unsafe extern "C" fn SetWallpaper(pData: *mut BACKGROUND_DATA) {
         }
 
         GdipGetImageRawFormat(image, &mut guidFormat);
-        if IsEqualGUID(&guidFormat, &ImageFormatBMP) {
+        if IsEqualGUID!(&guidFormat, &ImageFormatBMP) {
             GdipDisposeImage(image);
             RegCloseKey(regKey);
             SystemParametersInfo(
@@ -1180,57 +1180,47 @@ unsafe extern "C" fn SetDesktopBackColor(hwndDlg: HWND, pData: *mut BACKGROUND_D
     let mut blue: u8;
 
     if SetSysColors(1, core::ptr::addr_of_mut!(iElement), core::ptr::addr_of_mut!(g_GlobalData.desktop_color)) == 0 {
-        MessageBox(hwndDlg, TEXT(b"SetSysColor() failed!\0".as_ptr() as *const i8),
-            TEXT(b"Error!\0".as_ptr() as *const i8), MB_ICONSTOP);
+        MessageBox(hwndDlg, w!("SetSysColor() failed!"),
+            w!("Error!"), MB_ICONSTOP);
     }
 
-    if RegCreateKeyEx(HKEY_CURRENT_USER, TEXT(b"Control Panel\\Colors\0".as_ptr() as *const i8), 0, core::ptr::null_mut(),
+    if RegCreateKeyEx(HKEY_CURRENT_USER, w!("Control Panel\\Colors"), 0, core::ptr::null_mut(),
                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, core::ptr::null_mut(), core::ptr::addr_of_mut!(hKey), core::ptr::null_mut()) != ERROR_SUCCESS {
         return;
     }
 
-    red = GetRValue(g_GlobalData.desktop_color);
-    green = GetGValue(g_GlobalData.desktop_color);
-    blue = GetBValue(g_GlobalData.desktop_color);
+    red = GetRValue!(g_GlobalData.desktop_color);
+    green = GetGValue!(g_GlobalData.desktop_color);
+    blue = GetBValue!(g_GlobalData.desktop_color);
 
-    StringCbPrintf(clText.as_mut_ptr(), core::mem::size_of_val(&clText), TEXT(b"%d %d %d\0".as_ptr() as *const i8), red, green, blue);
-    RegSetValueEx(hKey, TEXT(b"Background\0".as_ptr() as *const i8), 0, REG_SZ, clText.as_ptr() as LPBYTE,
+    StringCbPrintf(clText.as_mut_ptr(), core::mem::size_of_val(&clText), w!("%d %d %d"), red as c_int, green as c_int, blue as c_int);
+    RegSetValueEx(hKey, w!("Background"), 0, REG_SZ, clText.as_ptr() as LPBYTE,
                   (wcslen(clText.as_ptr()) + 1) * core::mem::size_of::<TCHAR>());
 
     RegCloseKey(hKey);
 }
 unsafe extern "C" fn OnCustomButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) {
     let mut hpsp: [HPROPSHEETPAGE; 1] = [core::ptr::null_mut(); 1];
-    let mut psh = PROPSHEETHEADER {
-        dwSize: core::mem::size_of::<PROPSHEETHEADER>() as u32,
-        dwFlags: PSH_NOAPPLYNOW,
-        hwndParent: GetParent(hwndDlg),
-        hInstance: hApplet,
-        pszIcon: core::ptr::null(),
-        pszCaption: MAKEINTRESOURCE(IDS_DESKTOP_ITEMS),
-        nPages: 0,
-        nStartPage: 0,
-        phpage: hpsp.as_mut_ptr(),
-        pfnCallback: None,
-        hbmWatermark: core::ptr::null_mut(),
-        hplWatermark: 0,
-        hbmHeader: core::ptr::null_mut(),
-    };
-    let mut psp = PROPSHEETPAGE {
-        dwSize: core::mem::size_of::<PROPSHEETPAGE>() as u32,
-        dwFlags: PSP_DEFAULT,
-        hInstance: hApplet,
-        pszTemplate: MAKEINTRESOURCE(IDD_DESKTOP_GENERAL),
-        pszIcon: core::ptr::null(),
-        pszTitle: core::ptr::null(),
-        pfnDlgProc: Some(DesktopPageProc),
-        lParam: (&mut (*pData).desktopData) as *mut _ as LPARAM,
-        pfnCallback: None,
-        pcRefParent: core::ptr::null_mut(),
-        pszHeaderTitle: core::ptr::null(),
-        pszHeaderSubTitle: core::ptr::null(),
-        hActCtx: core::ptr::null_mut(),
-    };
+    // background.c:1121 `PROPSHEETHEADER psh = {sizeof(psh)};` — a C aggregate initialiser that
+    // zeroes everything it does not name, then eleven separate field stores. Rebuilt as a zeroed
+    // value plus those stores rather than a Rust struct literal, because the C spells five of the
+    // fields (pszIcon, nStartPage, phpage, hbmWatermark, hbmHeader) through prsht.h's ANONYMOUS
+    // unions, and a struct literal has no syntax for a path like `__bindgen_anon_1.pszIcon`.
+    let mut psh: PROPSHEETHEADER = core::mem::zeroed();
+    psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
+    psh.dwFlags = PSH_NOAPPLYNOW;
+    psh.hwndParent = GetParent(hwndDlg);
+    psh.hInstance = hApplet;
+    psh.pszCaption = MAKEINTRESOURCE!(IDS_DESKTOP_ITEMS);
+    psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
+
+    let mut psp: PROPSHEETPAGE = core::mem::zeroed();
+    psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
+    psp.dwFlags = PSP_DEFAULT;
+    psp.hInstance = hApplet;
+    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_DESKTOP_GENERAL);
+    psp.pfnDlgProc = Some(DesktopPageProc);
+    psp.lParam = (&mut (*pData).desktopData) as *mut _ as LPARAM;
 
     hpsp[0] = CreatePropertySheetPage(&mut psp);
     if hpsp[0].is_null() {
@@ -1241,7 +1231,7 @@ unsafe extern "C" fn OnCustomButton(hwndDlg: HWND, pData: *mut BACKGROUND_DATA) 
 
     if PropertySheet(&mut psh) > 0 {
         if SaveDesktopSettings(&mut (*pData).desktopData) != 0 {
-            PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+            PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
         }
     }
 }
@@ -1279,8 +1269,8 @@ pub unsafe extern "system" fn BackgroundPageProc(
         }
 
         WM_COMMAND => {
-            let controlId = LOWORD(wParam);
-            let command = HIWORD(wParam);
+            let controlId = LOWORD!(wParam);
+            let command = HIWORD!(wParam);
 
             match controlId {
                 IDC_COLOR_BUTTON => {
@@ -1311,7 +1301,7 @@ pub unsafe extern "system" fn BackgroundPageProc(
                             TRUE,
                         );
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
 
@@ -1368,7 +1358,7 @@ pub unsafe extern "system" fn BackgroundPageProc(
 
                 NM_CUSTOMDRAW => {
                     if (*lpnm).idFrom == IDC_COLOR_BUTTON {
-                        return SetDlgMsgResult(
+                        return SetDlgMsgResult!(
                             hwndDlg,
                             0,
                             ClrBtn_CustomDraw(

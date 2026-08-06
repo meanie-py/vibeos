@@ -40,8 +40,14 @@ pub mod desk {
     // CLSIDs as data. It declares zero functions, so there is nothing to translate and it
     // stays C in the CMake source list (same call as ole32 and aclui). It was declared here
     // against a file that never existed, which is invisible to every gate: a parked crate is
-    // not compiled, and no scanner opens a path that is absent. `scan_module_files` now
-    // fails on exactly this.
+    // not compiled, and no scanner opens a path that is absent. `scan_orphan_modules` now
+    // reports exactly this, as [PHANTOM].
+
+    // Not TUs of the CMake source list: `static __inline` bodies out of headers desk includes,
+    // which therefore have no object file anywhere in the tree once the .c that inlined them
+    // is flipped. Same placement as syssetup's src/syssetup/strsafe.rs.
+    pub mod deskcplx;
+    pub mod strsafe;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

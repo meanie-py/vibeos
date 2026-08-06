@@ -238,7 +238,7 @@ unsafe extern "C" fn MyDrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT, scheme
     }
 
     MyIntDrawRectEdge(dc, r, if (uFlags & DFCS_PUSHED) != 0 { EDGE_SUNKEN } else { EDGE_RAISED }, BF_RECT | BF_MIDDLE | BF_SOFT, scheme);
-    ZeroMemory(core::ptr::addr_of_mut!(lf) as *mut core::ffi::c_void, core::mem::size_of::<LOGFONT>());
+    ZeroMemory!(core::ptr::addr_of_mut!(lf) as *mut core::ffi::c_void, core::mem::size_of::<LOGFONT>());
     MyMakeSquareRect(r, core::ptr::addr_of_mut!(myr));
     myr.left += 1;
     myr.top += 1;
@@ -253,7 +253,7 @@ unsafe extern "C" fn MyDrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT, scheme
     lf.lfWidth = 0;
     lf.lfWeight = FW_NORMAL;
     lf.lfCharSet = DEFAULT_CHARSET;
-    lstrcpy(lf.lfFaceName.as_mut_ptr(), TEXT(b"Marlett\0".as_ptr() as *const i8));
+    lstrcpy(lf.lfFaceName.as_mut_ptr(), w!("Marlett"));
 
     hFont = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
     hOldFont = SelectObject(dc, hFont as *mut core::ffi::c_void);
@@ -305,7 +305,7 @@ unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme:
     }
 
     MyIntDrawRectEdge(dc, r, if (uFlags & DFCS_PUSHED) != 0 { EDGE_SUNKEN } else { EDGE_RAISED }, (uFlags & DFCS_FLAT) | BF_MIDDLE | BF_RECT, scheme);
-    ZeroMemory(core::ptr::addr_of_mut!(lf) as *mut core::ffi::c_void, core::mem::size_of::<LOGFONT>());
+    ZeroMemory!(core::ptr::addr_of_mut!(lf) as *mut core::ffi::c_void, core::mem::size_of::<LOGFONT>());
     MyMakeSquareRect(r, core::ptr::addr_of_mut!(myr));
     myr.left += 1;
     myr.top += 1;
@@ -320,7 +320,7 @@ unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme:
     lf.lfWidth = 0;
     lf.lfWeight = FW_NORMAL;
     lf.lfCharSet = DEFAULT_CHARSET;
-    lstrcpy(lf.lfFaceName.as_mut_ptr(), TEXT(b"Marlett\0".as_ptr() as *const i8));
+    lstrcpy(lf.lfFaceName.as_mut_ptr(), w!("Marlett"));
 
     hFont = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
     hOldFont = SelectObject(dc, hFont as *mut core::ffi::c_void);

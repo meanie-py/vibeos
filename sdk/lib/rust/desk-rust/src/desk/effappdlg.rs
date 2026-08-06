@@ -47,7 +47,7 @@ unsafe extern "C" fn AddToCombobox(Combo: INT, hwndDlg: HWND, From: INT, To: INT
             hApplet,
             iElement as u32,
             tstrText.as_mut_ptr() as LPTSTR,
-            _countof(tstrText),
+            _countof!(tstrText),
         );
         SendDlgItemMessage(
             hwndDlg,
@@ -133,7 +133,7 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) as u32 {
+            match LOWORD!(wParam) as u32 {
                 IDOK => {
                     EffAppearanceDlgSaveCurrentValues(hwndDlg, g);
                     EndDialog(hwndDlg, IDOK);
@@ -150,13 +150,13 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
                 | IDC_EFFAPPEARANCE_DRAGFULLWINDOWS
                 | IDC_EFFAPPEARANCE_KEYBOARDCUES
                 | IDC_EFFAPPEARANCE_FLATMENUS => {
-                    if HIWORD(wParam) as u32 == BN_CLICKED {
+                    if HIWORD!(wParam) as u32 == BN_CLICKED {
                         EffAppearanceDlgUpdateControls(hwndDlg, g);
                     }
                 }
 
                 IDC_EFFAPPEARANCE_ANIMATIONTYPE | IDC_EFFAPPEARANCE_SMOOTHINGTYPE => {
-                    if HIWORD(wParam) as u32 == CBN_SELCHANGE {
+                    if HIWORD!(wParam) as u32 == CBN_SELCHANGE {
                         let Index = SendDlgItemMessageW(
                             hwndDlg,
                             IDC_EFFAPPEARANCE_SMOOTHINGTYPE,

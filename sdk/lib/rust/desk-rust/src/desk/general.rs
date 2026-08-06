@@ -14,17 +14,17 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
 
     hFontSize = GetDlgItem(hWnd, IDC_FONTSIZE_COMBO);
 
-    hInf = SetupOpenInfFile(_T(b"font.inf\0".as_ptr() as *const TCHAR), core::ptr::null_mut(),
+    hInf = SetupOpenInfFile(w!("font.inf"), core::ptr::null_mut(),
                             INF_STYLE_WIN4, core::ptr::null_mut());
 
     if hInf != INVALID_HANDLE_VALUE {
-        if SetupFindFirstLine(hInf, _T(b"Font Sizes\0".as_ptr() as *const TCHAR), core::ptr::null_mut(), Context.as_mut_ptr() as *mut _) != 0 {
-            if RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T(b"SYSTEM\\CurrentControlSet\\Hardware Profiles\\Current\\Software\\Fonts\0".as_ptr() as *const TCHAR),
+        if SetupFindFirstLine(hInf, w!("Font Sizes"), core::ptr::null_mut(), Context.as_mut_ptr() as *mut _) != 0 {
+            if RegOpenKeyEx(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Hardware Profiles\\Current\\Software\\Fonts"),
                              0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
                 dwSize = MAX_PATH;
                 dwType = REG_DWORD;
 
-                if RegQueryValueEx(hKey, _T(b"LogPixels\0".as_ptr() as *const TCHAR), core::ptr::null_mut(), &mut dwType,
+                if RegQueryValueEx(hKey, w!("LogPixels"), core::ptr::null_mut(), &mut dwType,
                                     (&mut dwValue as *mut u32) as LPBYTE, &mut dwSize) != ERROR_SUCCESS {
                     dwValue = 0;
                 }
@@ -38,7 +38,7 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
 
                 if SetupGetStringField(Context.as_mut_ptr() as *mut _, 0, Buffer.as_mut_ptr(), Buffer.len() / core::mem::size_of::<TCHAR>(), core::ptr::null_mut()) != 0 &&
                     SetupGetIntField(Context.as_mut_ptr() as *mut _, 1, &mut ci) != 0 {
-                    _stprintf(Desc.as_mut_ptr(), _T(b"%s (%d DPI)\0".as_ptr() as *const TCHAR), Buffer.as_ptr(), ci);
+                    _stprintf(Desc.as_mut_ptr(), w!("%s (%d DPI)"), Buffer.as_ptr(), ci);
                     i = SendMessage(hFontSize, CB_ADDSTRING, 0, Desc.as_ptr() as LPARAM) as i32;
                     if i != CB_ERR {
                         SendMessage(hFontSize, CB_SETITEMDATA, i as WPARAM, ci as LPARAM);
@@ -65,13 +65,13 @@ unsafe extern "C" fn InitRadioButtons(hWnd: HWND) {
     let mut hKey: HKEY = core::ptr::null_mut();
 
     if RegOpenKeyEx(HKEY_CURRENT_USER,
-                     _T(b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Controls Folder\\Display\0".as_ptr() as *const TCHAR),
+                     w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Controls Folder\\Display"),
                      0, KEY_READ, &mut hKey) == ERROR_SUCCESS
     {
         let mut szBuf: [TCHAR; 64] = [0; 64];
         let mut dwSize: u32 = 64;
 
-        if RegQueryValueEx(hKey, _T(b"DynaSettingsChange\0".as_ptr() as *const TCHAR), 0, core::ptr::null_mut(),
+        if RegQueryValueEx(hKey, w!("DynaSettingsChange"), 0, core::ptr::null_mut(),
                             szBuf.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS
         {
             match _ttoi(szBuf.as_ptr())
@@ -116,7 +116,7 @@ pub unsafe extern "system" fn AdvGeneralPageProc(
 
     match uMsg {
         WM_INITDIALOG => {
-            DispDevice = ((*(lParam as *mut LPPROPSHEETPAGE)).lParam) as PDISPLAY_DEVICE_ENTRY;
+            DispDevice = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PDISPLAY_DEVICE_ENTRY;
             SetWindowLongPtr(hwndDlg, DWLP_USER, DispDevice as isize);
 
             InitFontSizeList(hwndDlg);
@@ -125,14 +125,14 @@ pub unsafe extern "system" fn AdvGeneralPageProc(
             Ret = TRUE;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDC_FONTSIZE_COMBO => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    if HIWORD!(wParam) == CBN_SELCHANGE {
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }
                 IDC_RESTART_RB | IDC_WITHOUTREBOOT_RB | IDC_ASKME_RB => {
-                    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                 }
                 _ => {}
             }

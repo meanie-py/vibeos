@@ -211,7 +211,10 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         }
     }
 
-    cchMax = MAX_PATH - (core::mem::size_of_val(&_T(b".SoftwareSettings\0")) / core::mem::size_of::<TCHAR>()) as u32;
+    // C: `MAX_PATH - (sizeof(_T(".SoftwareSettings")) / sizeof(TCHAR))` — the ARRAY size of the
+    // literal, i.e. 17 characters plus the terminator. `wide!` is the array form of `w!` and
+    // counts the literal itself; `size_of_val` on `w!`'s POINTER would have measured 4 or 8.
+    cchMax = MAX_PATH - wide!(".SoftwareSettings").len() as u32;
     result = SetupDiGetActualSectionToInstall(
         hInf,
         DriverInfoDetailData.SectionName.as_ptr(),
@@ -248,7 +251,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     hr = StringCbCat(
         SectionName.as_mut_ptr() as *mut core::ffi::c_void,
         core::mem::size_of_val(&SectionName),
-        _T(b".SoftwareSettings\0"),
+        w!(".SoftwareSettings"),
     );
     if hr < 0 {
         rc = ERROR_INSUFFICIENT_BUFFER;
@@ -314,10 +317,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
-        #[cfg(target_pointer_width = "64")]
+        // The C's `#if _WIN32_WINNT >= 0x502` — a WINDOWS VERSION test, not an architecture
+        // one. desk compiles with -D_WIN32_WINNT=0x502 on all three targets, so the >= 0x502
+        // arm is the only live branch and KEY_ALL_ACCESS is dead source. The translation had
+        // rendered it as `#[cfg(target_pointer_width = ...)]` on the two argument expressions,
+        // which is wrong twice: attributes on expressions are not stable Rust at all, and had
+        // they been, i386 would have asked for ALL_ACCESS on a key it only reads and writes.
         KEY_READ | KEY_WRITE,
-        #[cfg(target_pointer_width = "32")]
-        KEY_ALL_ACCESS,
         core::ptr::null_mut(),
         &mut hSettingsKey,
         &mut disposition,
@@ -423,7 +429,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
 
     rc = RegOpenKeyEx(
         HKEY_LOCAL_MACHINE,
-        _T(b"SYSTEM\\CurrentControlSet\\Services\0"),
+        w!("SYSTEM\\CurrentControlSet\\Services"),
         0,
         KEY_ENUMERATE_SUB_KEYS,
         &mut hServicesKey,
@@ -490,7 +496,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
             break;
         }
 
-        _stprintf(DeviceName.as_mut_ptr(), _T(b"Device%hu\0"), wIndex);
+        _stprintf(DeviceName.as_mut_ptr(), w!("Device%hu"), wIndex as c_int);
 
         rc = RegCreateKeyEx(
             hServiceKey,
@@ -606,7 +612,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     cbData = (_tcslen(DriverInfoData.Description.as_ptr()) + 1) as u32 * core::mem::size_of::<TCHAR>() as u32;
     rc = RegSetValueEx(
         hDeviceSubKey,
-        _T(b"Device Description\0"),
+        w!("Device Description"),
         0,
         REG_SZ,
         DriverInfoData.Description.as_ptr() as *const u8,

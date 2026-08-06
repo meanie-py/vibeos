@@ -75,29 +75,13 @@ pub unsafe extern "C" fn LoadPopupMenu(
 
     hSubMenu
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DisplayAppletPropSheetAddPage(
+unsafe extern "system" fn DisplayAppletPropSheetAddPage(
     hpage: HPROPSHEETPAGE,
     lParam: LPARAM,
 ) -> i32 {
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_DESK_PAGES {
-        *(*ppsh).phpage.offset((*ppsh).nPages as isize) = hpage;
-        (*ppsh).nPages = (*ppsh).nPages + 1;
-        return TRUE;
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DisplayAppletPropSheetAddPage(
-    hpage: HPROPSHEETPAGE,
-    lParam: LPARAM,
-) -> i32 {
-    let ppsh = lParam as *mut PROPSHEETHEADER;
-    if !ppsh.is_null() && (*ppsh).nPages < MAX_DESK_PAGES {
-        *(*ppsh).phpage.offset((*ppsh).nPages as isize) = hpage;
+        *(*ppsh).__bindgen_anon_3.phpage.offset((*ppsh).nPages as isize) = hpage;
         (*ppsh).nPages = (*ppsh).nPages + 1;
         return TRUE;
     }
@@ -114,7 +98,7 @@ unsafe extern "C" fn InitPropSheetPage(
     let mut psp: PROPSHEETPAGE = core::mem::zeroed();
 
     if (*ppsh).nPages < MAX_DESK_PAGES {
-        ZeroMemory(
+        ZeroMemory!(
             &mut psp as *mut _ as *mut core::ffi::c_void,
             core::mem::size_of::<PROPSHEETPAGE>(),
         );
@@ -124,7 +108,7 @@ unsafe extern "C" fn InitPropSheetPage(
             psp.dwFlags |= PSP_USECALLBACK;
         }
         psp.hInstance = hApplet;
-        psp.pszTemplate = MAKEINTRESOURCE(idDlg);
+        psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(idDlg);
         psp.pfnDlgProc = DlgProc;
         psp.pfnCallback = pfnCallback;
 
@@ -136,33 +120,18 @@ unsafe extern "C" fn InitPropSheetPage(
 
     return FALSE;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
+unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW(IDC_DESK_ICON));
+            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDC_DESK_ICON));
             SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
         }
         _ => {}
     }
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
-    let mut hIcon: HICON;
-    match uMsg {
-        PSCB_INITIALIZED => {
-            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW(IDC_DESK_ICON));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
-        }
-        _ => {}
-    }
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, lParam: LPARAM) -> i32 {
+unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, lParam: LPARAM) -> i32 {
     let mut hpsp: [*mut core::ffi::c_void; MAX_DESK_PAGES] = [core::ptr::null_mut(); MAX_DESK_PAGES];
     let mut psh: PROPSHEETHEADER = core::mem::zeroed();
     let mut hpsxa: HPSXA = core::ptr::null_mut();
@@ -174,7 +143,7 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
     let mut nPage: i32 = 0;
     let mut bitmap: BITMAP = core::mem::zeroed();
 
-    UNREFERENCED_PARAMETER(wParam);
+    UNREFERENCED_PARAMETER!(wParam);
 
     hCPLWindow = hwnd;
 
@@ -189,7 +158,7 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
         if !argv.is_null() && argc != 0 {
             i = 0;
             while i < argc {
-                if *(*argv.offset(i as isize)).offset(0 as isize) == L'@' as u16 {
+                if *(*argv.offset(i as isize)).offset(0 as isize) == '@' as u16 {
                     pwszSelectedTab = (*argv.offset(i as isize)).offset(1 as isize);
                 } else if wcsncmp(*argv.offset(i as isize), w!("/Action:") as LPCWSTR, 8) == 0 {
                     pwszAction = (*argv.offset(i as isize)).offset(8 as isize);
@@ -211,7 +180,7 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
         g_GlobalData.pwszAction = pwszAction;
         g_GlobalData.desktop_color = GetSysColor(COLOR_DESKTOP);
 
-        g_GlobalData.hMonitorBitmap = LoadBitmapW(hApplet, MAKEINTRESOURCEW(IDC_MONITOR));
+        g_GlobalData.hMonitorBitmap = LoadBitmapW(hApplet, MAKEINTRESOURCEW!(IDC_MONITOR));
         if !g_GlobalData.hMonitorBitmap.is_null() {
             GetObjectW(g_GlobalData.hMonitorBitmap, core::mem::size_of::<BITMAP>() as i32, &mut bitmap as *mut _ as LPVOID);
 
@@ -219,24 +188,24 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
             g_GlobalData.bmMonHeight = bitmap.bmHeight;
         }
 
-        ZeroMemory(&mut psh as *mut _ as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
+        ZeroMemory!(&mut psh as *mut _ as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
         psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
         psh.dwFlags = PSH_USECALLBACK | PSH_PROPTITLE | PSH_USEICONID;
         psh.hwndParent = hCPLWindow;
         psh.hInstance = hApplet;
-        psh.pszIcon = MAKEINTRESOURCEW(IDC_DESK_ICON);
-        psh.pszCaption = MAKEINTRESOURCEW(IDS_CPLNAME);
+        psh.__bindgen_anon_1.pszIcon = MAKEINTRESOURCEW!(IDC_DESK_ICON);
+        psh.pszCaption = MAKEINTRESOURCEW!(IDS_CPLNAME);
         psh.nPages = 0;
-        psh.nStartPage = 0;
-        psh.phpage = hpsp.as_mut_ptr();
+        psh.__bindgen_anon_2.nStartPage = 0;
+        psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
         psh.pfnCallback = Some(PropSheetProc);
 
-        hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, TEXT(b"\\Desk\0".as_ptr() as LPCSTR), MAX_DESK_PAGES - psh.nPages);
+        hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Desk"), MAX_DESK_PAGES - psh.nPages);
 
         i = 0;
-        while i < _countof(PropPages) {
+        while i < _countof!(PropPages) {
             if !pwszSelectedTab.is_null() && _wcsicmp(pwszSelectedTab, PropPages[i as usize].Name) == 0 {
-                psh.nStartPage = i;
+                psh.__bindgen_anon_2.nStartPage = i;
             }
 
             if PropPages[i as usize].idDlg == IDD_BACKGROUND && !hpsxa.is_null() &&
@@ -249,8 +218,8 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
             i += 1;
         }
 
-        if nPage != 0 && psh.nStartPage == 0 {
-            psh.nStartPage = nPage as u32;
+        if nPage != 0 && psh.__bindgen_anon_2.nStartPage == 0 {
+            psh.__bindgen_anon_2.nStartPage = nPage as u32;
         }
 
         PropertySheet(&mut psh);
@@ -270,117 +239,6 @@ unsafe extern "stdcall" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, 
 
     return TRUE;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, lParam: LPARAM) -> i32 {
-    let mut hpsp: [*mut core::ffi::c_void; MAX_DESK_PAGES] = [core::ptr::null_mut(); MAX_DESK_PAGES];
-    let mut psh: PROPSHEETHEADER = core::mem::zeroed();
-    let mut hpsxa: HPSXA = core::ptr::null_mut();
-    let mut i: u32;
-    let mut argv: *mut LPWSTR = core::ptr::null_mut();
-    let mut pwszSelectedTab: LPCWSTR = core::ptr::null();
-    let mut pwszFile: LPCWSTR = core::ptr::null();
-    let mut pwszAction: LPCWSTR = core::ptr::null();
-    let mut nPage: i32 = 0;
-    let mut bitmap: BITMAP = core::mem::zeroed();
-
-    UNREFERENCED_PARAMETER(wParam);
-
-    hCPLWindow = hwnd;
-
-    if uMsg == CPL_STARTWPARMSW && lParam != 0 {
-        let mut argc: i32 = 0;
-        let mut i: i32;
-
-        nPage = _wtoi(lParam as PWSTR);
-
-        argv = CommandLineToArgvW(lParam as LPCWSTR, &mut argc);
-
-        if !argv.is_null() && argc != 0 {
-            i = 0;
-            while i < argc {
-                if *(*argv.offset(i as isize)).offset(0 as isize) == L'@' as u16 {
-                    pwszSelectedTab = (*argv.offset(i as isize)).offset(1 as isize);
-                } else if wcsncmp(*argv.offset(i as isize), w!("/Action:") as LPCWSTR, 8) == 0 {
-                    pwszAction = (*argv.offset(i as isize)).offset(8 as isize);
-                } else if wcsncmp(*argv.offset(i as isize), w!("/file:") as LPCWSTR, 6) == 0 {
-                    pwszFile = (*argv.offset(i as isize)).offset(6 as isize);
-                }
-                i += 1;
-            }
-        }
-    }
-
-    'cleanup: loop {
-        if !pwszAction.is_null() && wcsncmp(pwszAction, w!("ActivateMSTheme") as LPCWSTR, 15) == 0 {
-            ActivateThemeFile(pwszFile);
-            break 'cleanup;
-        }
-
-        g_GlobalData.pwszFile = pwszFile;
-        g_GlobalData.pwszAction = pwszAction;
-        g_GlobalData.desktop_color = GetSysColor(COLOR_DESKTOP);
-
-        g_GlobalData.hMonitorBitmap = LoadBitmapW(hApplet, MAKEINTRESOURCEW(IDC_MONITOR));
-        if !g_GlobalData.hMonitorBitmap.is_null() {
-            GetObjectW(g_GlobalData.hMonitorBitmap, core::mem::size_of::<BITMAP>() as i32, &mut bitmap as *mut _ as LPVOID);
-
-            g_GlobalData.bmMonWidth = bitmap.bmWidth;
-            g_GlobalData.bmMonHeight = bitmap.bmHeight;
-        }
-
-        ZeroMemory(&mut psh as *mut _ as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
-        psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
-        psh.dwFlags = PSH_USECALLBACK | PSH_PROPTITLE | PSH_USEICONID;
-        psh.hwndParent = hCPLWindow;
-        psh.hInstance = hApplet;
-        psh.pszIcon = MAKEINTRESOURCEW(IDC_DESK_ICON);
-        psh.pszCaption = MAKEINTRESOURCEW(IDS_CPLNAME);
-        psh.nPages = 0;
-        psh.nStartPage = 0;
-        psh.phpage = hpsp.as_mut_ptr();
-        psh.pfnCallback = Some(PropSheetProc);
-
-        hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, TEXT(b"\\Desk\0".as_ptr() as LPCSTR), MAX_DESK_PAGES - psh.nPages);
-
-        i = 0;
-        while i < _countof(PropPages) {
-            if !pwszSelectedTab.is_null() && _wcsicmp(pwszSelectedTab, PropPages[i as usize].Name) == 0 {
-                psh.nStartPage = i;
-            }
-
-            if PropPages[i as usize].idDlg == IDD_BACKGROUND && !hpsxa.is_null() &&
-                SHReplaceFromPropSheetExtArray(hpsxa, CPLPAGE_DISPLAY_BACKGROUND, DisplayAppletPropSheetAddPage, &mut psh as *mut _ as LPARAM) != 0 {
-                i += 1;
-                continue;
-            }
-
-            InitPropSheetPage(&mut psh, PropPages[i as usize].idDlg, PropPages[i as usize].DlgProc, PropPages[i as usize].Callback);
-            i += 1;
-        }
-
-        if nPage != 0 && psh.nStartPage == 0 {
-            psh.nStartPage = nPage as u32;
-        }
-
-        PropertySheet(&mut psh);
-
-        break;
-    }
-
-    DeleteObject(g_GlobalData.hMonitorBitmap);
-
-    if !hpsxa.is_null() {
-        SHDestroyPropSheetExtArray(hpsxa);
-    }
-
-    if !argv.is_null() {
-        LocalFree(argv as LPVOID);
-    }
-
-    return TRUE;
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn CPlApplet(
     hwndCPl: HWND,
@@ -396,11 +254,11 @@ pub unsafe extern "system" fn CPlApplet(
         }
 
         CPL_GETCOUNT => {
-            return _countof(Applets.as_ptr()) as i32;
+            return _countof!(Applets) as i32;
         }
 
         CPL_INQUIRE => {
-            if (i as usize) < _countof(Applets.as_ptr()) as usize {
+            if (i as usize) < _countof!(Applets) as usize {
                 let CPlInfo = lParam2 as *mut CPLINFO;
                 (*CPlInfo).lData = 0;
                 (*CPlInfo).idIcon = Applets[i as usize].idIcon;
@@ -412,16 +270,16 @@ pub unsafe extern "system" fn CPlApplet(
         }
 
         CPL_DBLCLK => {
-            if (i as usize) < _countof(Applets.as_ptr()) as usize {
-                (Applets[i as usize].AppletProc)(hwndCPl, uMsg, lParam1, lParam2);
+            if (i as usize) < _countof!(Applets) as usize {
+                (Applets[i as usize].AppletProc.unwrap())(hwndCPl, uMsg, lParam1, lParam2);
             } else {
                 return TRUE;
             }
         }
 
         CPL_STARTWPARMSW => {
-            if (i as usize) < _countof(Applets.as_ptr()) as usize {
-                return (Applets[i as usize].AppletProc)(hwndCPl, uMsg, lParam1, lParam2);
+            if (i as usize) < _countof!(Applets) as usize {
+                return (Applets[i as usize].AppletProc.unwrap())(hwndCPl, uMsg, lParam1, lParam2);
             }
         }
 
@@ -497,18 +355,18 @@ pub unsafe extern "system" fn InstallScreenSaverW(
         );
     }
 
-    dwLen = GetModuleFileNameW(hApplet, szFullPath.as_mut_ptr(), _countof(szFullPath));
+    dwLen = GetModuleFileNameW(hApplet, szFullPath.as_mut_ptr(), _countof!(szFullPath));
     if dwLen == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER {
         StringCchCopyW(
             szFullPath.as_mut_ptr(),
-            _countof(szFullPath),
+            _countof!(szFullPath),
             w!("desk.cpl") as LPCWSTR,
         );
     }
 
     rc = StringCchCatW(
         szFullPath.as_mut_ptr(),
-        _countof(szFullPath),
+        _countof!(szFullPath),
         w!(",,1") as LPCWSTR,
     );
     if rc < 0 {
@@ -579,7 +437,7 @@ pub unsafe extern "system" fn DllMain(
     dwReason: u32,
     lpvReserved: LPVOID,
 ) -> i32 {
-    UNREFERENCED_PARAMETER(lpvReserved);
+    UNREFERENCED_PARAMETER!(lpvReserved);
 
     match dwReason {
         DLL_PROCESS_ATTACH => {

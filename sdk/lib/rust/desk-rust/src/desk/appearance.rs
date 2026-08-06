@@ -196,17 +196,17 @@ pub unsafe extern "system" fn AppearancePageProc(
                 return FALSE;
             }
 
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDC_APPEARANCE_EFFECTS => {
                     if DialogBoxParam(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_EFFAPPEARANCE),
+                        MAKEINTRESOURCE!(IDD_EFFAPPEARANCE),
                         hwndDlg,
                         EffAppearanceDlgProc,
                         g as LPARAM,
                     ) == IDOK
                     {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         (*g).Scheme = (*g).SchemeAdv;
                         (*g).bSchemeChanged = TRUE;
                     }
@@ -215,13 +215,13 @@ pub unsafe extern "system" fn AppearancePageProc(
                 IDC_APPEARANCE_ADVANCED => {
                     if DialogBoxParam(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_ADVAPPEARANCE),
+                        MAKEINTRESOURCE!(IDD_ADVAPPEARANCE),
                         hwndDlg,
                         AdvAppearanceDlgProc,
                         g as LPARAM,
                     ) == IDOK
                     {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         (*g).bSchemeChanged = TRUE;
                         (*g).Scheme = (*g).SchemeAdv;
                         g_GlobalData.desktop_color = (*g).Scheme.crColor[COLOR_DESKTOP];
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                 }
 
                 IDC_APPEARANCE_COLORSCHEME => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == CBN_SELCHANGE {
                         (*g).ActiveTheme.Color =
                             GetSelectedData(hwndDlg, IDC_APPEARANCE_COLORSCHEME) as PTHEME_STYLE;
                         if !(*(*g).ActiveTheme.Color).ChildStyle.is_null() {
@@ -243,7 +243,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                             (*g).bThemeChanged = TRUE;
                         }
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_LoadSelectedScheme(hwndDlg, g);
                         AppearancePage_ShowSizes(hwndDlg, g);
@@ -252,7 +252,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                 }
 
                 IDC_APPEARANCE_VISUAL_STYLE => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == CBN_SELCHANGE {
                         let pTheme: PTHEME =
                             GetSelectedData(hwndDlg, IDC_APPEARANCE_VISUAL_STYLE) as PTHEME;
 
@@ -268,7 +268,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                         (*g).bThemeChanged = TRUE;
                         (*g).bSchemeChanged = TRUE;
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_ShowColorSchemes(hwndDlg, g);
                         AppearancePage_ShowSizes(hwndDlg, g);
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                 }
 
                 IDC_APPEARANCE_SIZE => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == CBN_SELCHANGE {
                         (*g).ActiveTheme.Size =
                             GetSelectedData(hwndDlg, IDC_APPEARANCE_SIZE) as PTHEME_STYLE;
                         (*g).bSchemeChanged = TRUE;
@@ -286,7 +286,7 @@ pub unsafe extern "system" fn AppearancePageProc(
                             (*g).bThemeChanged = TRUE;
                         }
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_LoadSelectedScheme(hwndDlg, g);
                         AppearancePage_UpdateThemePreview(hwndDlg, g);

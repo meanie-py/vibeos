@@ -1672,6 +1672,10 @@ case "$DRIVER" in
     # modules running (umpnpmgr, syssetup) the resemblance argument lost, both times to the same
     # mistake: a property-sheet module LOOKS like it wants signed `int` control ids, and spends
     # more of its time handing constants to UNSIGNED Win32 parameters.
+    # desk is the third: MEASURED 2026-08-05 on the same tree, i386, one cargo check each.
+    #   MACRO_SIGNED=0 -> 1,517 errors (1,276 E0308,  68 E0277)
+    #   MACRO_SIGNED=1 -> 1,820 errors (1,508 E0308, 113 E0277)
+    # 0 wins by 303. Do not "fix" this by resemblance.
     MACRO_SIGNED=0
     # UNBLOCK so THIS island owns every callback type desk INSTALLS: ntdll-sys spells each with
     # the arch's literal convention, and normalize_island_abi only rewrites a crate's OWN
@@ -1685,6 +1689,14 @@ case "$DRIVER" in
     # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C FLATTENS them
     # (`psp.pszTemplate = ..`), which the `__BindgenUnionField<T>` emulation cannot accept.
     REAL_UNIONS=1
+    # wtypes.h's `uCLSSPEC` tagged union, which came in with the COM headers above and which
+    # desk never touches. bindgen emits its two anonymous member STRUCTS without `Copy`, and a
+    # non-Copy field cannot live in a real Rust union — so with REAL_UNIONS=1 the island itself
+    # stops compiling (E0740 + E0204) over a type nothing in the module names.
+    # The pattern has to reach the NESTED name too (`..._00000009___WIDL_..._00000008`),
+    # hence the trailing `.*`. It stays anchored at `__WIDL`, so the `_userCLIPFORMAT___WIDL_`
+    # family — which IS used, as STGMEDIUM's wire type — is untouched.
+    EXTRA_BL_ITEMS=( '__WIDL_wtypes_generated_name_0000000[89].*' uCLSSPEC )
     DRIVER_DIR="${SRC}/dll/cpl/desk"
     WRAPPER_INC=$'#include "desk.h"\n#include <shellapi.h>\n#include <shlwapi.h>\n#include <windowsx.h>\n#include <debug.h>\n#include <cplext.h>\n#include <winnls.h>\n#define NDEBUG\n#include <cfgmgr32.h>\n#include <uxtheme.h>\n#include <vsstyle.h>\n#include <vssym32.h>\n#include <uxundoc.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <wingdi.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <gdiplus.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
@@ -1702,6 +1714,17 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]gdiplus[a-z]*\.h'
                   --allowlist-file '.*[/\\]initguid\.h'
                   --allowlist-file '.*[/\\]objbase\.h'
+                  # The widl-GENERATED COM headers, which own three enum families desk uses
+                  # by bare member name: DVASPECT_* (wtypes.h), TYMED_* and DATADIR_*
+                  # (objidl.h). objbase.h merely #includes them, and --allowlist-file matches
+                  # the DEFINITION site, so the island carried `IDataObject` (a struct, pulled
+                  # in as a dependency of an allowlisted signature) while every constant those
+                  # same call sites pass stayed absent. Hand-typing an enum value is the
+                  # §9.112 shape; let bindgen read the header.
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h'
+                  --allowlist-file '.*[/\\]wtypesbase\.h'
                   --allowlist-file '.*[/\\]prsht\.h'
                   --allowlist-file '.*[/\\]regstr\.h'
                   --allowlist-file '.*[/\\]setupapi\.h'

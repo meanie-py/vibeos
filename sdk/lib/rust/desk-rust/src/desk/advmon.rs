@@ -4,25 +4,11 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const MAX_ADVANCED_PAGES: i32 = 32;
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_ADVANCED_PAGES {
         let idx = (*ppsh).nPages as usize;
-        (*ppsh).phpage[idx] = hpage;
-        (*ppsh).nPages += 1;
-        return TRUE;
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
-    let ppsh = lParam as *mut PROPSHEETHEADER;
-    if !ppsh.is_null() && (*ppsh).nPages < MAX_ADVANCED_PAGES {
-        let idx = (*ppsh).nPages as usize;
-        (*ppsh).phpage[idx] = hpage;
+        *(*ppsh).__bindgen_anon_3.phpage.add(idx) = hpage;
         (*ppsh).nPages += 1;
         return TRUE;
     }
@@ -34,11 +20,11 @@ unsafe extern "C" fn DisplayAdvancedSettingsInitPropSheetPage(ppsh: *mut PROPSHE
     let mut psp: PROPSHEETPAGE;
 
     if (*ppsh).nPages < MAX_ADVANCED_PAGES {
-        ZeroMemory(core::ptr::addr_of_mut!(psp) as *mut core::ffi::c_void, core::mem::size_of::<PROPSHEETPAGE>());
+        ZeroMemory!(core::ptr::addr_of_mut!(psp) as *mut core::ffi::c_void, core::mem::size_of::<PROPSHEETPAGE>());
         psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
         psp.dwFlags = PSP_DEFAULT;
         psp.hInstance = hApplet;
-        psp.pszTemplate = MAKEINTRESOURCE(idDlg);
+        psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(idDlg);
         psp.pfnDlgProc = DlgProc;
         psp.lParam = lParam;
 
@@ -57,12 +43,12 @@ unsafe extern "C" fn BuildAdvPropTitle(pdo: *mut IDataObject, lpBuffer: LPTSTR, 
     let mut lpDisplayName: LPTSTR;
     let mut szFormatBuff: [TCHAR; 32] = [0; 32];
 
-    if LoadString(hApplet, IDS_ADVANCEDTITLEFMT, szFormatBuff.as_mut_ptr(), _countof(szFormatBuff)) == 0 {
+    if LoadString(hApplet, IDS_ADVANCEDTITLEFMT, szFormatBuff.as_mut_ptr(), _countof!(szFormatBuff)) == 0 {
         szFormatBuff[0] = _T('\0');
     }
 
-    uiMonitorName = RegisterClipboardFormat(DESK_EXT_MONITORNAME);
-    uiDisplayName = RegisterClipboardFormat(DESK_EXT_DISPLAYNAME);
+    uiMonitorName = RegisterClipboardFormat(DESK_EXT_MONITORNAME!());
+    uiDisplayName = RegisterClipboardFormat(DESK_EXT_DISPLAYNAME!());
 
     lpMonitorName = QueryDeskCplString(pdo, uiMonitorName);
     lpDisplayName = QueryDeskCplString(pdo, uiDisplayName);
@@ -88,28 +74,28 @@ pub unsafe extern "C" fn DisplayAdvancedSettings(hWndParent: HWND, DisplayDevice
 
     szCaption[0] = _T('\0');
 
-    ZeroMemory(&mut psh as *mut _ as *mut core::ffi::c_void, sizeof::<PROPSHEETHEADER>(), 0u8);
+    ZeroMemory!(&mut psh as *mut _ as *mut core::ffi::c_void, sizeof::<PROPSHEETHEADER>());
     psh.dwSize = sizeof::<PROPSHEETHEADER>() as u32;
     psh.dwFlags = PSH_PROPTITLE;
     psh.hwndParent = hWndParent;
     psh.hInstance = hApplet;
     psh.pszCaption = szCaption.as_mut_ptr();
-    psh.phpage = hpsp.as_mut_ptr();
+    psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
 
     DisplayAdvancedSettingsInitPropSheetPage(&mut psh, IDD_ADVANCED_GENERAL, AdvGeneralPageProc, DisplayDevice as LPARAM);
 
     pdo = CreateDevSettings(DisplayDevice);
 
     if pdo != core::ptr::null_mut() {
-        BuildAdvPropTitle(pdo, szCaption.as_mut_ptr(), _countof(szCaption));
+        BuildAdvPropTitle(pdo, szCaption.as_mut_ptr(), _countof!(szCaption));
     }
 
-    hpsxaDev = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER, TEXT("\\Device"), MAX_ADVANCED_PAGES - psh.nPages, pdo);
+    hpsxaDev = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Device"), MAX_ADVANCED_PAGES - psh.nPages, pdo);
     if hpsxaDev != core::ptr::null_mut() {
         SHAddFromPropSheetExtArray(hpsxaDev, PropSheetAddPage, &mut psh as *mut _ as LPARAM);
     }
 
-    hpsxaDisp = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER, TEXT("\\Display"), MAX_ADVANCED_PAGES - psh.nPages, pdo);
+    hpsxaDisp = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Display"), MAX_ADVANCED_PAGES - psh.nPages, pdo);
     if hpsxaDisp != core::ptr::null_mut() {
         SHAddFromPropSheetExtArray(hpsxaDisp, PropSheetAddPage, &mut psh as *mut _ as LPARAM);
     }

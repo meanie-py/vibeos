@@ -29,8 +29,8 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
     let hwndMonSel: HWND;
     let mut info: MONSL_MONINFO = core::mem::zeroed();
 
-    LoadString(hApplet, IDS_PIXEL, Pixel.as_mut_ptr(), _countof(Pixel));
-    _stprintf(Buffer.as_mut_ptr(), Pixel.as_ptr(), (*(*pData).CurrentDisplayDevice).CurrentSettings.dmPelsWidth, (*(*pData).CurrentDisplayDevice).CurrentSettings.dmPelsHeight, Pixel.as_ptr());
+    LoadString(hApplet, IDS_PIXEL, Pixel.as_mut_ptr(), _countof!(Pixel));
+    _stprintf(Buffer.as_mut_ptr(), Pixel.as_ptr(), (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth, (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight, Pixel.as_ptr());
     SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION_TEXT, WM_SETTEXT, 0, Buffer.as_ptr() as LPARAM);
 
     index = 0;
@@ -46,7 +46,7 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
         index = index + 1;
     }
 
-    if LoadString(hApplet, (2900 + (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmBitsPerPel), Buffer.as_mut_ptr(), _countof(Buffer)) != 0 {
+    if LoadString(hApplet, (2900 + (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmBitsPerPel), Buffer.as_mut_ptr(), _countof!(Buffer)) != 0 {
         SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_SELECTSTRING, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM);
     }
 
@@ -325,7 +325,7 @@ unsafe extern "C" fn OnDisplayDeviceChanged(hwndDlg: HWND, pData: PSETTINGS_DATA
     Current = (*pDeviceEntry).Settings;
     while !Current.is_null() {
         let mut Buffer: [u16; 64] = [0; 64];
-        if LoadString(hApplet, (2900 + (*Current).dmBitsPerPel), Buffer.as_mut_ptr(), _countof(Buffer)) != 0 {
+        if LoadString(hApplet, (2900 + (*Current).dmBitsPerPel), Buffer.as_mut_ptr(), _countof!(Buffer)) != 0 {
             index = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_FINDSTRINGEXACT, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM) as u32;
             if index == CB_ERR as u32 {
                 index = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_ADDSTRING, 0, Buffer.as_ptr() as LPARAM) as u32;
@@ -338,7 +338,7 @@ unsafe extern "C" fn OnDisplayDeviceChanged(hwndDlg: HWND, pData: PSETTINGS_DATA
     SendDlgItemMessage(hwndDlg, IDC_SETTINGS_DEVICE, WM_SETTEXT, 0, (*pDeviceEntry).DeviceDescription as LPARAM);
 
     SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_CLEARTICS, TRUE, 0);
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_SETRANGE, TRUE, MAKELONG(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
+    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_SETRANGE, TRUE, MAKELONG!(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
 
     UpdateDisplay(hwndDlg, pData, TRUE);
 }
@@ -441,7 +441,7 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
     while i < NUM_SPECTRUM_BITMAPS {
         (*pData).hSpectrumBitmaps[i as usize] = LoadImageW(
             hApplet,
-            MAKEINTRESOURCEW(IDB_SPECTRUM_4 + i),
+            MAKEINTRESOURCEW!(IDB_SPECTRUM_4 + i),
             IMAGE_BITMAP,
             0,
             0,
@@ -575,7 +575,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
         return;
     }
 
-    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
     if dmNewBitsPerPel < (*Current).dmBitsPerPel {
         Current = (*Current).Blink;
@@ -632,8 +632,8 @@ unsafe extern "C" fn OnResolutionChanged(
     bUpdateThumb: BOOL,
 ) {
     let mut Current: PSETTINGS_ENTRY;
-    let dmNewPelsHeight = (*(*pData).CurrentDisplayDevice).Resolutions[NewPosition as usize].dmPelsHeight;
-    let dmNewPelsWidth = (*(*pData).CurrentDisplayDevice).Resolutions[NewPosition as usize].dmPelsWidth;
+    let dmNewPelsHeight = (*(*(*pData).CurrentDisplayDevice).Resolutions.offset(NewPosition as isize)).dmPelsHeight;
+    let dmNewPelsWidth = (*(*(*pData).CurrentDisplayDevice).Resolutions.offset(NewPosition as isize)).dmPelsWidth;
     let dmBitsPerPel: DWORD;
     let dmDisplayFrequency: DWORD;
 
@@ -642,7 +642,7 @@ unsafe extern "C" fn OnResolutionChanged(
         return;
     }
 
-    PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+    PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
     InvalidateRect(GetDlgItem(hwndDlg, IDC_RESOLUTION_PREVIEW), core::ptr::null_mut(), TRUE);
 
     dmBitsPerPel = (*Current).dmBitsPerPel;
@@ -716,8 +716,7 @@ pub unsafe extern "system" fn SettingsPageCallbackProc(
 
     return Ret;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ConfirmDlgProc(
+unsafe extern "system" fn ConfirmDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -746,7 +745,7 @@ unsafe extern "stdcall" fn ConfirmDlgProc(
                 hApplet,
                 IDS_TIMEOUTTEXT,
                 (*pData).szRawBuffer.as_mut_ptr(),
-                _countof((*pData).szRawBuffer),
+                _countof!((*pData).szRawBuffer),
             );
 
             _stprintf(
@@ -790,94 +789,7 @@ unsafe extern "stdcall" fn ConfirmDlgProc(
 
         WM_COMMAND => {
             KillTimer(hwndDlg, 1);
-            EndDialog(hwndDlg, LOWORD(wParam));
-        }
-
-        WM_DESTROY => {
-            HeapFree(GetProcessHeap(), 0, pData as *mut _);
-        }
-
-        _ => {}
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ConfirmDlgProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let mut pData: PTIMEOUTDATA;
-
-    pData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PTIMEOUTDATA;
-
-    match uMsg {
-        WM_INITDIALOG => {
-            pData = HeapAlloc(
-                GetProcessHeap(),
-                HEAP_ZERO_MEMORY,
-                core::mem::size_of::<TIMEOUTDATA>(),
-            ) as PTIMEOUTDATA;
-            if pData.is_null() {
-                return FALSE;
-            }
-
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pData as LONG_PTR);
-
-            (*pData).nTimeout = 15;
-
-            LoadString(
-                hApplet,
-                IDS_TIMEOUTTEXT,
-                (*pData).szRawBuffer.as_mut_ptr(),
-                _countof((*pData).szRawBuffer),
-            );
-
-            _stprintf(
-                (*pData).szCookedBuffer.as_mut_ptr(),
-                (*pData).szRawBuffer.as_ptr(),
-                (*pData).nTimeout,
-            );
-            SetDlgItemText(
-                hwndDlg,
-                IDC_TIMEOUTTEXT,
-                (*pData).szCookedBuffer.as_ptr(),
-            );
-
-            SetTimer(
-                hwndDlg,
-                1,
-                1000,
-                core::ptr::null_mut(),
-            );
-        }
-
-        WM_TIMER => {
-            (*pData).nTimeout -= 1;
-
-            _stprintf(
-                (*pData).szCookedBuffer.as_mut_ptr(),
-                (*pData).szRawBuffer.as_ptr(),
-                (*pData).nTimeout,
-            );
-            SetDlgItemText(
-                hwndDlg,
-                IDC_TIMEOUTTEXT,
-                (*pData).szCookedBuffer.as_ptr(),
-            );
-
-            if (*pData).nTimeout == 0 {
-                KillTimer(hwndDlg, 1);
-                EndDialog(hwndDlg, IDNO);
-            }
-        }
-
-        WM_COMMAND => {
-            KillTimer(hwndDlg, 1);
-            EndDialog(hwndDlg, LOWORD(wParam));
+            EndDialog(hwndDlg, LOWORD!(wParam));
         }
 
         WM_DESTROY => {
@@ -901,7 +813,7 @@ pub unsafe extern "C" fn SwitchDisplayMode(
     let mut Title: [TCHAR; 256] = [0; 256];
     let mut devmode: DEVMODE = core::mem::zeroed();
 
-    RtlZeroMemory(
+    RtlZeroMemory!(
         &mut devmode as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<DEVMODE>(),
     );
@@ -942,7 +854,7 @@ pub unsafe extern "C" fn SwitchDisplayMode(
         }
     }
 
-    if DialogBox(hApplet, MAKEINTRESOURCE(IDD_CONFIRMSETTINGS), hwndDlg, ConfirmDlgProc) == IDYES {
+    if DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_CONFIRMSETTINGS), hwndDlg, ConfirmDlgProc) == IDYES {
         return TRUE;
     } else {
         devmode.dmPelsWidth = (*seInit).dmPelsWidth;
@@ -1069,19 +981,19 @@ pub unsafe extern "system" fn SettingsPageProc(
             }
         }
         WM_COMMAND => {
-            let controlId: DWORD = LOWORD(wParam);
-            let command: DWORD = HIWORD(wParam);
+            let controlId: DWORD = LOWORD!(wParam);
+            let command: DWORD = HIWORD!(wParam);
 
             if controlId == IDC_SETTINGS_ADVANCED && command == BN_CLICKED {
                 if DisplayAdvancedSettings(hwndDlg, (*pData).CurrentDisplayDevice) != 0 {
                     let mut devmode: DEVMODE = core::mem::zeroed();
-                    ZeroMemory(
+                    ZeroMemory!(
                         core::ptr::addr_of_mut!(devmode) as *mut core::ffi::c_void,
                         core::mem::size_of::<DEVMODE>(),
                     );
                     devmode.dmSize = core::mem::size_of::<DEVMODE>() as WORD;
                     if EnumDisplaySettingsExW(
-                        (*(*pData).CurrentDisplayDevice).DeviceName.as_ptr(),
+                        (*(*pData).CurrentDisplayDevice).DeviceName,
                         ENUM_CURRENT_SETTINGS,
                         core::ptr::addr_of_mut!(devmode),
                         0,
@@ -1103,7 +1015,7 @@ pub unsafe extern "system" fn SettingsPageProc(
             }
         }
         WM_HSCROLL => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 TB_LINEUP
                 | TB_LINEDOWN
                 | TB_PAGEUP
@@ -1121,7 +1033,7 @@ pub unsafe extern "system" fn SettingsPageProc(
                     OnResolutionChanged(hwndDlg, pData, newPosition, TRUE);
                 }
                 TB_THUMBTRACK => {
-                    OnResolutionChanged(hwndDlg, pData, HIWORD(wParam), FALSE);
+                    OnResolutionChanged(hwndDlg, pData, HIWORD!(wParam), FALSE);
                 }
                 _ => {}
             }
@@ -1151,8 +1063,8 @@ pub unsafe extern "system" fn SettingsPageProc(
             let mut pt: POINT = core::mem::zeroed();
             let mut ptClient: POINT;
 
-            pt.x = LOWORD(lParam) as i16 as i32;
-            pt.y = HIWORD(lParam) as i16 as i32;
+            pt.x = LOWORD!(lParam) as i16 as i32;
+            pt.y = HIWORD!(lParam) as i16 as i32;
 
             let hwndMonSel: HWND = GetDlgItem(hwndDlg, IDC_SETTINGS_MONSEL);
             if wParam as HWND == hwndMonSel {
@@ -1202,7 +1114,7 @@ pub unsafe extern "system" fn SettingsPageProc(
                 }
 
                 if Index >= 0 as INT {
-                    let hPopup: HMENU = LoadPopupMenu(hApplet, MAKEINTRESOURCE(IDM_MONITOR_MENU));
+                    let hPopup: HMENU = LoadPopupMenu(hApplet, MAKEINTRESOURCE!(IDM_MONITOR_MENU));
                     if !hPopup.is_null() {
                         EnableMenuItem(
                             hPopup,
