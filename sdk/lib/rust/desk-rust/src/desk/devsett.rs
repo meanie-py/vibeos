@@ -875,9 +875,9 @@ unsafe extern "system" fn CDevSettings_QueryGetData(
     #[cfg(debug_assertions)]
     {
         if GetClipboardFormatName(
-            (*pformatetc).cfFormat,
+            (*pformatetc).cfFormat as UINT,
             szFormatName.as_mut_ptr(),
-            (core::mem::size_of_val(&szFormatName) / core::mem::size_of::<TCHAR>()) as u32,
+            (core::mem::size_of_val(&szFormatName) / core::mem::size_of::<TCHAR>()) as c_int,
         ) != 0
         {
             // DPRINT removed
@@ -898,7 +898,7 @@ unsafe extern "system" fn CDevSettings_GetCanonicalFormatEtc(
     // DPRINT removed
 
     hr = IDataObject_QueryGetData(iface, pformatectIn);
-    if ((hr) >= 0) >= 0 {
+    if hr >= 0 {
         CopyMemory!(
             pformatetcOut as *mut _,
             pformatectIn as *const _,

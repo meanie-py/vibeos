@@ -297,6 +297,30 @@ pub const IDI_SHELL_NO: WORD = 200;
 // Built from the header's own macro rather than a pasted 0xFFFFFFF4, so it stays checkable:
 // the C arithmetic is UNSIGNED (`0U-0U`, then `-12`), which wraps.
 pub const NM_CUSTOMDRAW: UINT = NM_FIRST.wrapping_sub(12);
+// The rest of that same family, and the reason it needs restating: prsht.h and commctrl.h build
+// every notification code by UNSIGNED wraparound (`#define PSN_FIRST (0U - 200U)`), and the
+// NMHDR::code field they are compared against is a UINT. bindgen folds the arithmetic and then
+// emits the RESULT as a signed `i32` (`PSN_APPLY: i32 = -202`), so the C's one comparison becomes
+// a Rust type error — and "fix" it by casting the scrutinee and the arms stop being one family.
+//
+// DERIVED from the island's own values by reinterpreting the bits, never re-typed: `-202i32 as
+// u32` is 0xFFFFFF36, which is exactly what the preprocessor computes. A hand-written 0xFFFFFF36
+// would be the §9.112 shape.
+pub const PSN_APPLY: UINT = crate::types::PSN_APPLY as UINT;
+pub const PSN_KILLACTIVE: UINT = crate::types::PSN_KILLACTIVE as UINT;
+pub const PSN_SETACTIVE: UINT = crate::types::PSN_SETACTIVE as UINT;
+pub const LVN_ITEMCHANGED: UINT = crate::types::LVN_ITEMCHANGED as UINT;
+// ChangeDisplaySettingsEx returns a LONG and winuser.h:190-196 spells this family as plain
+// signed integers, but bindgen splits it: the two non-negative members come out `u32` and the
+// five negative ones `i32`, so a `match` over them cannot type-check at all. One family, one
+// type, taken from the function's own return type.
+pub const DISP_CHANGE_SUCCESSFUL: LONG = crate::types::DISP_CHANGE_SUCCESSFUL as LONG;
+pub const DISP_CHANGE_RESTART: LONG = crate::types::DISP_CHANGE_RESTART as LONG;
+pub const DISP_CHANGE_FAILED: LONG = crate::types::DISP_CHANGE_FAILED as LONG;
+pub const DISP_CHANGE_BADMODE: LONG = crate::types::DISP_CHANGE_BADMODE as LONG;
+pub const DISP_CHANGE_NOTUPDATED: LONG = crate::types::DISP_CHANGE_NOTUPDATED as LONG;
+pub const DISP_CHANGE_BADFLAGS: LONG = crate::types::DISP_CHANGE_BADFLAGS as LONG;
+pub const DISP_CHANGE_BADPARAM: LONG = crate::types::DISP_CHANGE_BADPARAM as LONG;
 
 // deskcplx.h:7-16 — the clipboard-format NAMES the desk.cpl <-> display-driver shell-extension
 // protocol is keyed on. `TEXT("...")` under UNICODE, so they are wide literals rather than
@@ -394,14 +418,14 @@ pub use crate::IntToPtr;
 // winnt.h `#define FIELD_OFFSET(t, f) ((LONG)(LONG_PTR)&(((t*)0)->f))`. A macro because it takes
 // a TYPE and a FIELD NAME; `offset_of!` is the stable spelling of exactly this since 1.77.
 #[macro_export]
-macro_rules! FIELD_OFFSET { ($t:ty, $f:ident $(,)?) => { core::mem::offset_of!($t, $f) as LONG }; }
+macro_rules! FIELD_OFFSET { ($t:ty, $f:ident $(,)?) => { core::mem::offset_of!($t, $f) as ULONG_PTR }; }
 pub use crate::FIELD_OFFSET;
 // guiddef.h:147 `#define IsEqualGUID(a, b) (!memcmp(a, b, sizeof(GUID)))`. Returns C's int, so
 // the call sites' `!= 0` reads the same either way.
 #[macro_export]
 macro_rules! IsEqualGUID {
     ($a:expr, $b:expr $(,)?) => {
-        ((unsafe { $crate::prelude::memcmp($a as *const core::ffi::c_void, $b as *const core::ffi::c_void, core::mem::size_of::<GUID>()) } == 0) as c_int)
+        ((unsafe { $crate::prelude::memcmp($a as *const _ as *const core::ffi::c_void, $b as *const _ as *const core::ffi::c_void, core::mem::size_of::<GUID>()) } == 0) as c_int)
     };
 }
 pub use crate::IsEqualGUID;
@@ -410,17 +434,17 @@ pub use crate::IsEqualGUID;
 // self-recursion → silent hang (AGENTS.md).
 #[macro_export]
 macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut core::ffi::c_void, 0, $l as usize); } };
+    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut _ as *mut core::ffi::c_void, 0, $l as usize); } };
 }
 pub use crate::ZeroMemory;
 #[macro_export]
 macro_rules! RtlZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut core::ffi::c_void, 0, $l as usize); } };
+    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut _ as *mut core::ffi::c_void, 0, $l as usize); } };
 }
 pub use crate::RtlZeroMemory;
 #[macro_export]
 macro_rules! CopyMemory {
-    ($d:expr, $s:expr, $l:expr $(,)?) => { { $crate::prelude::memcpy($d as *mut core::ffi::c_void, $s as *const core::ffi::c_void, $l as usize); } };
+    ($d:expr, $s:expr, $l:expr $(,)?) => { { $crate::prelude::memcpy($d as *mut _ as *mut core::ffi::c_void, $s as *const _ as *const core::ffi::c_void, $l as usize); } };
 }
 pub use crate::CopyMemory;
 #[macro_export]
@@ -445,10 +469,10 @@ macro_rules! SetDlgMsgResult {
             || __m == WM_QUERYDRAGICON
             || __m == WM_INITDIALOG
         {
-            $result as BOOL
+            $result as INT_PTR
         } else {
             $crate::prelude::SetWindowLongPtr($hwnd, DWLP_MSGRESULT, $result as LONG_PTR);
-            TRUE
+            TRUE as INT_PTR
         }
     }};
 }
@@ -475,17 +499,17 @@ macro_rules! ListView_SetImageList {
 pub use crate::ListView_SetImageList;
 #[macro_export]
 macro_rules! ListView_InsertItem {
-    ($hwnd:expr, $item:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_INSERTITEMW, 0, $item as *const _ as LPARAM) as c_int };
+    ($hwnd:expr, $item:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_INSERTITEMW, 0, $item as *const _ as *const core::ffi::c_void as LPARAM) as c_int };
 }
 pub use crate::ListView_InsertItem;
 #[macro_export]
 macro_rules! ListView_InsertColumn {
-    ($hwnd:expr, $col:expr, $pcol:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_INSERTCOLUMNW, $col as c_int as WPARAM, $pcol as *const _ as LPARAM) as c_int };
+    ($hwnd:expr, $col:expr, $pcol:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_INSERTCOLUMNW, $col as c_int as WPARAM, $pcol as *const _ as *const core::ffi::c_void as LPARAM) as c_int };
 }
 pub use crate::ListView_InsertColumn;
 #[macro_export]
 macro_rules! ListView_FindItem {
-    ($hwnd:expr, $start:expr, $plvfi:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_FINDITEMW, $start as c_int as WPARAM, $plvfi as *const _ as LPARAM) as c_int };
+    ($hwnd:expr, $start:expr, $plvfi:expr $(,)?) => { $crate::prelude::SendMessageW($hwnd, LVM_FINDITEMW, $start as c_int as WPARAM, $plvfi as *const _ as *const core::ffi::c_void as LPARAM) as c_int };
 }
 pub use crate::ListView_FindItem;
 // commctrl.h:2678 — a STATEMENT macro that builds its own LV_ITEM on the stack. The `state` and

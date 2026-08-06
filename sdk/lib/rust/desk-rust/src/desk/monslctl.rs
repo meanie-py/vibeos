@@ -235,14 +235,14 @@ unsafe extern "C" fn MonSelUpdateExtent(infoPtr: *mut MONITORSELWND) {
 
     if (*infoPtr).MonitorsCount > 0 {
         MonSelMonInfoToRect(
-            &(*infoPtr).MonitorInfo.offset(0 as isize),
+            (*infoPtr).MonitorInfo.offset(0 as isize),
             &mut (*infoPtr).rcExtent,
         );
 
         Index = 1;
         while Index < (*infoPtr).MonitorsCount {
             MonSelMonInfoToRect(
-                &(*infoPtr).MonitorInfo.offset(Index as isize),
+                (*infoPtr).MonitorInfo.offset(Index as isize),
                 &mut rcMonitor,
             );
 
@@ -1024,7 +1024,7 @@ unsafe extern "C" fn MonSelContextMenu(
     MapWindowPoints(
         (*infoPtr).hSelf,
         core::ptr::null_mut(),
-        &nm.pt,
+        core::ptr::addr_of_mut!(nm.pt),
         1,
     );
 
@@ -1265,7 +1265,7 @@ unsafe extern "system" fn MonitorSelWndProc(
         WM_MOUSEMOVE => {
             let mut pt: POINT = core::mem::zeroed();
 
-            if (wParam & MK_LBUTTON) == 0 {
+            if (wParam & (MK_LBUTTON) as WPARAM) == 0 {
                 MonSelCancelDragging(infoPtr);
             } else {
                 if (*infoPtr).LeftBtnDown() != 0 {
@@ -1367,10 +1367,10 @@ unsafe extern "system" fn MonitorSelWndProc(
                 _ => {}
             }
 
-            Ret |= (DLGC_WANTARROWS) as i32;
+            Ret |= ((DLGC_WANTARROWS) as i32) as LPARAM;
 
             if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYNUMKEY) != 0 {
-                Ret |= (DLGC_WANTCHARS) as i32;
+                Ret |= ((DLGC_WANTCHARS) as i32) as LPARAM;
             }
         }
 
@@ -1393,7 +1393,7 @@ unsafe extern "system" fn MonitorSelWndProc(
             OldUIState = (*infoPtr).UIState;
             match (LOWORD!(wParam)) as u32 {
                 UIS_SET => {
-                    (*infoPtr).UIState |= HIWORD!(wParam);
+                    (*infoPtr).UIState |= HIWORD!(wParam) as DWORD;
                 }
 
                 UIS_CLEAR => {
@@ -1429,7 +1429,7 @@ unsafe extern "system" fn MonitorSelWndProc(
         }
 
         WM_STYLECHANGED => {
-            if wParam == (GWL_STYLE) as u32 {
+            if wParam == ((GWL_STYLE) as u32) as WPARAM {
                 let OldEnabled: u32 = (*infoPtr).Enabled();
                 (*infoPtr).set_Enabled(if ((*(lParam as LPSTYLESTRUCT)).styleNew & WS_DISABLED) != 0 { 0 } else { 1 });
 
@@ -1443,7 +1443,7 @@ unsafe extern "system" fn MonitorSelWndProc(
             let mut Index: INT;
 
             if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYARROWKEY) != 0 {
-                match wParam {
+                match (wParam) as u32 {
                     VK_UP | VK_LEFT => {
                         Index = (*infoPtr).SelectedMonitor;
 
@@ -1572,7 +1572,7 @@ pub unsafe extern "C" fn RegisterMonitorSelectionControl(hInstance: HINSTANCE) -
     let mut wc: WNDCLASS = core::mem::zeroed();
 
     wc.style = CS_DBLCLKS;
-    wc.lpfnWndProc = Some(MonitorSelWndProc);
+    wc.lpfnWndProc = Some(core::mem::transmute(MonitorSelWndProc as *const ()));
     wc.cbWndExtra = core::mem::size_of::<PMONITORSELWND>() as i32;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursorW(

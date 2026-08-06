@@ -144,7 +144,7 @@ pub unsafe extern "C" fn InitDesktopSettings(pData: *mut DESKTOP_DATA) {
         }
 
         if lstrlen(((*pData).Icon[i as usize].szPath.as_ptr()).cast()) == 0 {
-            (StringCchCopy) as *mut u16((*pData).Icon[i as usize].szPath.as_mut_ptr(), (_countof!((*pData).Icon[i as usize].szPath)) as usize, (*pData).DefIcon[i as usize].szPath.as_ptr());
+            StringCchCopy((*pData).Icon[i as usize].szPath.as_mut_ptr(), (_countof!((*pData).Icon[i as usize].szPath)) as usize, (*pData).DefIcon[i as usize].szPath.as_ptr());
         }
 
         i += 1;
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn SaveDesktopSettings(pData: *mut DESKTOP_DATA) -> BOOL {
             continue;
         }
 
-        (StringCchCopy) as *mut u16(
+        StringCchCopy(
             (*pData).Icon[i as usize].szPath.as_mut_ptr(),
             (_countof!((*pData).Icon[i as usize].szPath)) as usize,
             (*pData).LocalIcon[i as usize].szPath.as_ptr()
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn SetDesktopSettings(pData: PDESKTOP_DATA) {
     i = 0;
     while i < _countof!(IconChange) {
         let mut iconPath: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
-        let dwType: u32 = if (*pData).Icon[i as usize].szPath[0] == (('%' as WCHAR)) as i8 {
+        let dwType: u32 = if (*pData).Icon[i as usize].szPath[0] == '%' as WCHAR {
             REG_EXPAND_SZ
         } else {
             REG_SZ
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn SetDesktopSettings(pData: PDESKTOP_DATA) {
 
     (*pData).bSettingsChanged = (FALSE) as i32;
 
-    PostMessage(GetShellWindow(), WM_COMMAND, FCIDM_DESKBROWSER_REFRESH, 0);
+    PostMessage(GetShellWindow(), WM_COMMAND, (FCIDM_DESKBROWSER_REFRESH) as WPARAM, 0);
 }
 unsafe extern "C" fn GetIconFromLocation(szIconPath: LPTSTR) -> HICON {
     let mut iIndex: i32;
@@ -330,14 +330,14 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
         let mut lvitem: LVITEM = core::mem::zeroed();
         let hIcon: HICON;
 
-        (StringCchCopy) as *mut u16(
+        StringCchCopy(
             (*pData).LocalIcon[i as usize].szPath.as_mut_ptr(),
             (_countof!((*pData).LocalIcon[i as usize].szPath)) as usize,
             (*pData).Icon[i as usize].szPath.as_ptr()
         );
         (*pData).bLocalIconChanged[i as usize] = (FALSE) as i32;
 
-        StringCchCopy(szClassPath.as_mut_ptr(), (_countof!(szClassPath)) as usize, szUserClass);
+        StringCchCopy(szClassPath.as_mut_ptr(), (_countof!(szClassPath)) as usize, szUserClass.as_ptr());
         StringCchCat(szClassPath.as_mut_ptr(), (_countof!(szClassPath)) as usize, IconChange[i as usize].CLSID);
         cbData = core::mem::size_of_val(&(*pData).LocalIcon[i as usize].szTitle) as u32;
 
@@ -394,7 +394,7 @@ unsafe extern "C" fn DesktopOnInitDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA
 }
 unsafe extern "C" fn DesktopOnDestroyDialog(hwndDlg: HWND, pData: *mut DESKTOP_DATA) {
     if (*pData).hLocalImageList != core::ptr::null_mut() {
-        ListView_SetImageList!(GetDlgItem(hwndDlg, (IDC_ICONS_LISTVIEW) as i32), core::ptr::null_mut(), LVSIL_NORMAL);
+        ListView_SetImageList!(GetDlgItem(hwndDlg, (IDC_ICONS_LISTVIEW) as i32), core::ptr::null_mut::<core::ffi::c_void>(), LVSIL_NORMAL);
         ImageList_Destroy((*pData).hLocalImageList);
     }
 
@@ -416,7 +416,7 @@ pub unsafe extern "system" fn DesktopPageProc(
             let ppsp = lParam as *mut PROPSHEETPAGE;
             let pData = (*ppsp).lParam as *mut DESKTOP_DATA;
 
-            SetWindowLongPtr(hwndDlg, DWLP_USER, (pData as isize) as i32);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, ((pData as isize) as i32) as LPARAM);
             DesktopOnInitDialog(hwndDlg, pData);
         }
 
@@ -497,7 +497,7 @@ pub unsafe extern "system" fn DesktopPageProc(
                 } else if controlId == (IDC_ICONS_SETDEFAULT) as u16 {
                     i = ((*pData).iLocalCurIcon) as u32;
 
-                    (StringCchCopy) as *mut u16(
+                    StringCchCopy(
                         (*pData).LocalIcon[i as usize].szPath.as_mut_ptr(),
                         (_countof!((*pData).LocalIcon[i as usize].szPath)) as usize,
                         (*pData).DefIcon[i as usize].szPath.as_ptr(),
@@ -533,10 +533,10 @@ pub unsafe extern "system" fn DesktopPageProc(
         WM_NOTIFY => {
             let nm = lParam as *mut NMLISTVIEW;
 
-            match ((*nm).hdr.code) as i32 {
+            match (*nm).hdr.code {
                 LVN_ITEMCHANGED => {
                     if ((*nm).uNewState & LVIS_SELECTED) == 0 {
-                        return FALSE;
+                        return (FALSE) as LPARAM;
                     }
 
                     (*pData).iLocalCurIcon = ((*nm).iItem as u32) as i32;
@@ -548,7 +548,7 @@ pub unsafe extern "system" fn DesktopPageProc(
         _ => {}
     }
 
-    return ((FALSE) as i64) as i32;
+    return (FALSE as INT_PTR) as LPARAM;
 }
 
 

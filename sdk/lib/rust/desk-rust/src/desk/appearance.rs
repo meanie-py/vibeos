@@ -78,15 +78,15 @@ unsafe extern "C" fn AppearancePage_OnInit(hwndDlg: HWND) -> INT_PTR {
 
     g = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<GLOBALS>()) as SIZE_T) as *mut GLOBALS;
     if g.is_null() {
-        return FALSE;
+        return (FALSE) as LPARAM;
     }
 
-    SetWindowLongPtr(hwndDlg, DWLP_USER, (g as isize) as i32);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, ((g as isize) as i32) as LPARAM);
 
     (*g).bInitializing = (TRUE) as i32;
 
     if LoadCurrentScheme(core::ptr::addr_of_mut!((*g).Scheme)) == 0 {
-        return ((FALSE) as i64) as i32;
+        return (FALSE as INT_PTR) as LPARAM;
     }
 
     (*g).pThemes = LoadThemes();
@@ -154,7 +154,7 @@ unsafe extern "C" fn AppearancePage_OnInit(hwndDlg: HWND) -> INT_PTR {
     }
     (*g).bInitializing = (FALSE) as i32;
 
-    return (FALSE) as i64;
+    return FALSE as INT_PTR;
 }
 unsafe extern "C" fn AppearancePage_OnDestroy(hwndDlg: HWND, g: *mut GLOBALS) {
     HeapFree(GetProcessHeap(), 0, g as *mut _);
@@ -193,7 +193,7 @@ pub unsafe extern "system" fn AppearancePageProc(
 
         WM_COMMAND => {
             if g.is_null() || (*g).bInitializing != 0 {
-                return FALSE;
+                return (FALSE) as LPARAM;
             }
 
             match (LOWORD!(wParam)) as u32 {
@@ -202,9 +202,9 @@ pub unsafe extern "system" fn AppearancePageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_EFFAPPEARANCE),
                         hwndDlg,
-                        EffAppearanceDlgProc,
+                        Some(EffAppearanceDlgProc),
                         g as LPARAM,
-                    ) == (IDOK) as i32
+                    ) == ((IDOK) as i32) as LPARAM
                     {
                         PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         (*g).Scheme = (*g).SchemeAdv;
@@ -217,9 +217,9 @@ pub unsafe extern "system" fn AppearancePageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_ADVAPPEARANCE),
                         hwndDlg,
-                        AdvAppearanceDlgProc,
+                        Some(AdvAppearanceDlgProc),
                         g as LPARAM,
-                    ) == (IDOK) as i32
+                    ) == ((IDOK) as i32) as LPARAM
                     {
                         PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         (*g).bSchemeChanged = (TRUE) as i32;
@@ -299,7 +299,7 @@ pub unsafe extern "system" fn AppearancePageProc(
 
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
-            match ((*lpnm).code) as i32 {
+            match (*lpnm).code {
                 PSN_APPLY => {
                     if (*g).bThemeChanged != 0 {
                         ActivateTheme(core::ptr::addr_of_mut!((*g).ActiveTheme));
@@ -319,12 +319,12 @@ pub unsafe extern "system" fn AppearancePageProc(
                     (*g).bThemeChanged = (FALSE) as i32;
                     (*g).bSchemeChanged = (FALSE) as i32;
                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR as LONG_PTR);
-                    return ((TRUE) as i64) as i32;
+                    return (TRUE as INT_PTR) as LPARAM;
                 }
 
                 PSN_KILLACTIVE => {
                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, FALSE as LONG_PTR);
-                    return (TRUE) as i64;
+                    return TRUE as INT_PTR;
                 }
 
                 PSN_SETACTIVE => {
@@ -341,7 +341,7 @@ pub unsafe extern "system" fn AppearancePageProc(
         _ => {}
     }
 
-    return (FALSE) as i64;
+    return FALSE as INT_PTR;
 }
 
 

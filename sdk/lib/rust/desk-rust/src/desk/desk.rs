@@ -209,7 +209,7 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
             }
 
             if PropPages[i as usize].idDlg == (IDD_BACKGROUND) as u16 && !hpsxa.is_null() &&
-                SHReplaceFromPropSheetExtArray(hpsxa, CPLPAGE_DISPLAY_BACKGROUND, DisplayAppletPropSheetAddPage, &mut psh as *mut _ as LPARAM) != 0 {
+                SHReplaceFromPropSheetExtArray(hpsxa, CPLPAGE_DISPLAY_BACKGROUND, Some(DisplayAppletPropSheetAddPage), &mut psh as *mut _ as LPARAM) != 0 {
                 i += 1;
                 continue;
             }
@@ -308,26 +308,26 @@ pub unsafe extern "system" fn InstallScreenSaverW(
     }
     // DPRINT removed
 
-    rc = RegOpenKeyExW(
+    rc = (RegOpenKeyExW(
         HKEY_CURRENT_USER,
         w!("Control Panel\\Desktop") as LPCWSTR,
         0,
         KEY_SET_VALUE,
         &mut regKey,
-    );
-    if rc == (ERROR_SUCCESS) as i32 {
+    )) as LPARAM;
+    if rc == ((ERROR_SUCCESS) as i32) as LPARAM {
         let Length: usize = (wcslen(pszFile) + 1) * core::mem::size_of::<u16>();
-        rc = RegSetValueExW(
+        rc = (RegSetValueExW(
             regKey,
             w!("SCRNSAVE.EXE") as LPCWSTR,
             0,
             REG_SZ,
             pszFile as PBYTE,
             Length as u32,
-        );
+        )) as LPARAM;
         RegCloseKey(regKey);
     }
-    if rc != (ERROR_SUCCESS) as i32 {
+    if rc != ((ERROR_SUCCESS) as i32) as LPARAM {
         // DPRINT removed
         return;
     }
@@ -343,7 +343,7 @@ pub unsafe extern "system" fn InstallScreenSaverW(
     if SystemParametersInfoW(
         SPI_GETSCREENSAVETIMEOUT,
         0,
-        &mut Timeout,
+        &mut Timeout as *mut _ as PVOID,
         0,
     ) == 0 || Timeout <= 0
     {
@@ -364,11 +364,11 @@ pub unsafe extern "system" fn InstallScreenSaverW(
         );
     }
 
-    rc = StringCchCatW(
+    rc = (StringCchCatW(
         szFullPath.as_mut_ptr(),
         (_countof!(szFullPath)) as usize,
         w!(",,1") as LPCWSTR,
-    );
+    )) as LPARAM;
     if rc < 0 {
         return;
     }

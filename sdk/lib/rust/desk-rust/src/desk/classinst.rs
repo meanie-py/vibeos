@@ -180,7 +180,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     }
 
     hInf = SetupOpenInfFile(
-        DriverInfoDetailData.InfFileName.as_ptr(),
+        core::ptr::addr_of!(DriverInfoDetailData.InfFileName).cast(),
         core::ptr::null_mut(),
         INF_STYLE_WIN4,
         core::ptr::null_mut(),
@@ -217,7 +217,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     cchMax = MAX_PATH - wide!(".SoftwareSettings").len() as u32;
     result = SetupDiGetActualSectionToInstall(
         hInf,
-        DriverInfoDetailData.SectionName.as_ptr(),
+        core::ptr::addr_of!(DriverInfoDetailData.SectionName).cast(),
         SectionName.as_mut_ptr(),
         cchMax,
         core::ptr::null_mut(),
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         hSettingsKey,
         core::ptr::null_mut(),
         0,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -578,7 +578,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         hDeviceSubKey,
         core::ptr::null_mut(),
         0,
-        core::ptr::null_mut(),
+        None,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -609,13 +609,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         }
     }
 
-    cbData = (_tcslen(DriverInfoData.Description.as_ptr()) + 1) as u32 * core::mem::size_of::<TCHAR>() as u32;
+    cbData = (_tcslen(core::ptr::addr_of!(DriverInfoData.Description).cast()) + 1) as u32 * core::mem::size_of::<TCHAR>() as u32;
     rc = RegSetValueEx(
         hDeviceSubKey,
         w!("Device Description"),
         0,
         REG_SZ,
-        DriverInfoData.Description.as_ptr() as *const u8,
+        core::ptr::addr_of!(DriverInfoData.Description).cast() as *const u8,
         cbData,
     );
     if rc != (ERROR_SUCCESS) as i32 {

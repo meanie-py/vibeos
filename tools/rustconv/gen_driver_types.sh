@@ -1683,9 +1683,16 @@ case "$DRIVER" in
     # `extern "system"` (Rust compares fn-pointer ABIs NOMINALLY). The containers have to come
     # too — a struct whose field type still resolves to the -sys typedef reintroduces the
     # mismatch at the assignment.
+    #
+    # The TCHAR FAMILY is unblocked for a different and sharper reason: ntdll-sys is built
+    # WITHOUT UNICODE, so its glob says `TCHAR = c_char`, and desk.h's own structs are declared
+    # `TCHAR szPath[MAX_PATH]`. Inheriting the glob's TCHAR makes _ICON_PATH 260 bytes where the
+    # real one is 520 — a layout bug that compiles clean, and the kind that shows up much later
+    # as a truncated path. Unblocked, THIS island emits them from its own -DUNICODE compile.
     UNBLOCK="DLGPROC WNDPROC LPFNPSPCALLBACKW LPFNPSPCALLBACKA PFNPROPSHEETCALLBACK
              LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE
-             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW"
+             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW
+             TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C FLATTENS them
     # (`psp.pszTemplate = ..`), which the `__BindgenUnionField<T>` emulation cannot accept.
     REAL_UNIONS=1

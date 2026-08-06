@@ -9296,6 +9296,9 @@ pub const DNCP_ACTIVEWINDOW: u32 = 1;
 pub const DNCP_INACTIVEWINDOW: u32 = 2;
 pub const DNCP_DIALOGWINDOW: u32 = 4;
 pub const DNCP_DRAW_ALL: u32 = 7;
+pub type TCHAR = WCHAR;
+pub type LPTSTR = LPWSTR;
+pub type LPCTSTR = LPCWSTR;
 pub type PTHREAD_START_ROUTINE =
     ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> DWORD>;
 pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;

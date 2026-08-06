@@ -100,7 +100,7 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     MoveToEx(hdc, 0, 0, &mut SavePoint);
 
     if LTOuterI != -1 {
-        LTOuterPen = (GetStockObject((DC_PEN) as i32)).cast();
+        LTOuterPen = (GetStockObject(DC_PEN as c_int)).cast();
         SelectObject(hdc, (LTOuterPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[LTOuterI as usize]);
         if (uFlags & BF_TOP) != 0 {
@@ -114,7 +114,7 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if RBOuterI != -1 {
-        RBOuterPen = (GetStockObject((DC_PEN) as i32)).cast();
+        RBOuterPen = (GetStockObject(DC_PEN as c_int)).cast();
         SelectObject(hdc, (RBOuterPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[RBOuterI as usize]);
         if (uFlags & BF_BOTTOM) != 0 {
@@ -128,7 +128,7 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if LTInnerI != -1 {
-        LTInnerPen = (GetStockObject((DC_PEN) as i32)).cast();
+        LTInnerPen = (GetStockObject(DC_PEN as c_int)).cast();
         SelectObject(hdc, (LTInnerPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[LTInnerI as usize]);
         if (uFlags & BF_TOP) != 0 {
@@ -142,7 +142,7 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if RBInnerI != -1 {
-        RBInnerPen = (GetStockObject((DC_PEN) as i32)).cast();
+        RBInnerPen = (GetStockObject(DC_PEN as c_int)).cast();
         SelectObject(hdc, (RBInnerPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[RBInnerI as usize]);
         if (uFlags & BF_BOTTOM) != 0 {
@@ -442,7 +442,7 @@ pub unsafe extern "C" fn MyDrawCaptionTemp(
 ) -> BOOL {
     let mut hbr: HBRUSH;
     let hFontOld: HGDIOBJ;
-    let mut rc: RECT;
+    let mut rc: RECT = core::mem::zeroed();
 
     if uFlags & DC_GRADIENT != 0 {
         let gcap = GRADIENT_RECT {

@@ -3,13 +3,13 @@ use crate::prelude::*;
 use core::ffi::c_void;
 unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
     let mut hInf: *mut core::ffi::c_void;
-    let mut hKey: HKEY;
+    let mut hKey: HKEY = core::ptr::null_mut();
     let mut hFontSize: HWND;
     let mut Context: core::mem::MaybeUninit<[u8; 512]> = core::mem::MaybeUninit::uninit();
     let mut i: i32;
     let mut ci: i32 = 0;
     let mut dwSize: u32;
-    let mut dwValue: u32;
+    let mut dwValue: u32 = 0;
     let mut dwType: u32;
 
     hFontSize = GetDlgItem(hWnd, (IDC_FONTSIZE_COMBO) as i32);
@@ -117,12 +117,12 @@ pub unsafe extern "system" fn AdvGeneralPageProc(
     match uMsg {
         WM_INITDIALOG => {
             DispDevice = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PDISPLAY_DEVICE_ENTRY;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, (DispDevice as isize) as i32);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, ((DispDevice as isize) as i32) as LPARAM);
 
             InitFontSizeList(hwndDlg);
             InitRadioButtons(hwndDlg);
 
-            Ret = TRUE;
+            Ret = (TRUE) as LPARAM;
         }
         WM_COMMAND => {
             match (LOWORD!(wParam)) as u32 {

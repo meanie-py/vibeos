@@ -38,7 +38,7 @@ pub static g_Assignment: [ASSIGNMENT; 18] = [
 unsafe extern "C" fn UpdateButtonColor(hwndDlg: HWND, g: *mut GLOBALS, ID: i32, nButton: i32, nColor: i32) {
     let mut hdcColorButton: HDC;
     let mut hdcCompat: HDC;
-    let mut rect: RECT;
+    let mut rect: RECT = core::mem::zeroed();
     let mut hbrush: HBRUSH;
     let mut hwndColorButton: HWND;
     let mut hgdiTmp: HGDIOBJ;
@@ -68,7 +68,7 @@ unsafe extern "C" fn UpdateButtonColor(hwndDlg: HWND, g: *mut GLOBALS, ID: i32, 
     }
     else
     {
-        SendDlgItemMessage(hwndDlg, ID, BM_SETIMAGE, IMAGE_BITMAP as WPARAM, core::ptr::null_mut() as LPARAM);
+        SendDlgItemMessage(hwndDlg, ID, BM_SETIMAGE, IMAGE_BITMAP as WPARAM, core::ptr::null_mut::<core::ffi::c_void>() as LPARAM);
         EnableWindow(GetDlgItem(hwndDlg, ID), (FALSE) as BOOL);
     }
 }
@@ -76,7 +76,7 @@ unsafe extern "C" fn InitColorButtons(hwndDlg: HWND, g: *mut GLOBALS) {
     let mut i: INT;
     let mut hdcColorButton: HDC;
     let mut hdcCompat: HDC;
-    let mut rect: RECT;
+    let mut rect: RECT = core::mem::zeroed();
     let mut hbrush: HBRUSH;
     let mut hPen: HPEN;
     let hwndColorButton: HWND;
@@ -162,12 +162,12 @@ unsafe extern "system" fn EnumFontFamExProc(
         return 0;
     }
 
-    if (SendMessage) as u32(
+    if SendMessage(
         lParam as HWND,
         CB_FINDSTRINGEXACT,
-        -1 as i32,
-        core::ptr::addr_of_mut!((*lpelfe).elfLogFont.lfFaceName) as WPARAM,
-    ) != CB_ERR
+        -1i32 as WPARAM,
+        core::ptr::addr_of_mut!((*lpelfe).elfLogFont.lfFaceName) as LPARAM,
+    ) != (CB_ERR) as LPARAM
     {
         return 2;
     }
@@ -176,7 +176,7 @@ unsafe extern "system" fn EnumFontFamExProc(
         lParam as HWND,
         CB_ADDSTRING,
         0,
-        (core::ptr::addr_of_mut!((*lpelfe).elfLogFont.lfFaceName) as WPARAM) as i32,
+        ((core::ptr::addr_of_mut!((*lpelfe).elfLogFont.lfFaceName) as WPARAM) as i32) as LPARAM,
     );
 
     1
@@ -216,7 +216,7 @@ unsafe extern "C" fn UpdateControls(hwndDlg: HWND, g: *mut GLOBALS) {
 
         SetDlgItemText(hwndDlg, (IDC_ADVAPPEARANCE_FONT_C) as i32, (*plfFont).lfFaceName.as_ptr());
         SetDlgItemInt(hwndDlg, (IDC_ADVAPPEARANCE_FONTSIZE_E) as i32, (-MulDiv((*plfFont).lfHeight, 72, GetDeviceCaps(hdcDlg, (LOGPIXELSY) as i32))) as UINT, (FALSE) as BOOL);
-        SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONT_C) as i32, CB_FINDSTRINGEXACT, -1i32 as WPARAM, ((*plfFont).lfFaceName.as_ptr() as WPARAM) as i32);
+        SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONT_C) as i32, CB_FINDSTRINGEXACT, -1i32 as WPARAM, (((*plfFont).lfFaceName.as_ptr() as WPARAM) as i32) as LPARAM);
         SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONTBOLD) as i32, BM_SETCHECK, if (*plfFont).lfWeight == (FW_BOLD) as i32 { 1 } else { 0 }, 0);
         SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONTITALIC) as i32, BM_SETCHECK, (*plfFont).lfItalic as WPARAM, 0);
     } else {
@@ -388,7 +388,7 @@ unsafe extern "C" fn AdvAppearanceDlg_Init(hwndDlg: HWND, g: *mut GLOBALS) {
 
     InitColorButtons(hwndDlg, g);
 
-    SendMessage(GetDlgItem(hwndDlg, (IDC_ADVAPPEARANCE_SIZE_UD) as i32), UDM_SETRANGE, 0L, MAKELONG!(200, 1) as LPARAM);
+    SendMessage(GetDlgItem(hwndDlg, (IDC_ADVAPPEARANCE_SIZE_UD) as i32), UDM_SETRANGE, 0, MAKELONG!(200, 1) as LPARAM);
 
     lfFont.lfCharSet = (DEFAULT_CHARSET) as u8;
     lfFont.lfFaceName[0] = 0 as TCHAR;
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 
         WM_COMMAND => {
             if g.is_null() {
-                return TRUE;
+                return (TRUE) as LPARAM;
             }
 
             match (LOWORD!(wParam)) as u32 {
@@ -507,7 +507,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                     if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         SaveCurrentValues(hwndDlg, g);
                         iSelection = (SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_ELEMENT) as i32, CB_GETCURSEL, 0, 0)) as i32;
-                        (*g).CurrentElement = (SendDlgItemMessage) as u32(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_GETITEMDATA, iSelection, 0) as INT;
+                        (*g).CurrentElement = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT as c_int, CB_GETITEMDATA, iSelection as WPARAM, 0 as LPARAM) as INT;
                         UpdateControls(hwndDlg, g);
                     }
                 }
@@ -516,12 +516,12 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                     if HIWORD!(wParam) == (EN_CHANGE) as u16 {
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Size;
                         if iProperty == -1 {
-                            return ((TRUE) as i64) as i32;
+                            return (TRUE as INT_PTR) as LPARAM;
                         }
 
-                        iSelection = LOWORD!(SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_SIZE_UD) as i32, UDM_GETPOS, 0, 0L)) as INT;
+                        iSelection = LOWORD!(SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_SIZE_UD) as i32, UDM_GETPOS, 0, 0)) as INT;
                         SchemeSetMetric(core::ptr::addr_of_mut!((*g).SchemeAdv), iProperty, iSelection);
-                        SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SETSIZE, iProperty as WPARAM, iSelection as LPARAM);
+                        SendDlgItemMessage(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32, PVM_SETSIZE, iProperty as WPARAM, iSelection as LPARAM);
 
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Size2;
                         if iProperty != -1 {
@@ -534,12 +534,12 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                     if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Font;
                         if iProperty == -1 {
-                            return (TRUE) as i64;
+                            return TRUE as INT_PTR;
                         }
 
                         plfFont = SchemeGetFont(core::ptr::addr_of_mut!((*g).SchemeAdv), iProperty);
-                        GetSelectedComboText(hwndDlg, (IDC_ADVAPPEARANCE_FONT_C) as INT, (*plfFont).lfFaceName.as_ptr());
-                        (SendDlgItemMessage) as u32(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SETFONT, iProperty, plfFont as LPARAM);
+                        GetSelectedComboText(hwndDlg, (IDC_ADVAPPEARANCE_FONT_C) as INT, ((*plfFont).lfFaceName.as_ptr()) as *mut u16);
+                        SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW as c_int, PVM_SETFONT, iProperty as WPARAM, plfFont as LPARAM);
                     }
                 }
 
@@ -549,7 +549,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Font;
                         if iProperty == -1 {
-                            return (TRUE) as i64;
+                            return TRUE as INT_PTR;
                         }
 
                         hdcDlg = GetDC(hwndDlg);
@@ -567,13 +567,13 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                     if HIWORD!(wParam) == (BN_CLICKED) as u16 {
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Font;
                         if iProperty == -1 {
-                            return (TRUE) as i64;
+                            return TRUE as INT_PTR;
                         }
 
                         plfFont = SchemeGetFont(core::ptr::addr_of_mut!((*g).SchemeAdv), iProperty);
                         iSelection = SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONTBOLD) as i32, BM_GETCHECK, 0, 0) as INT;
                         (*plfFont).lfWeight = if iSelection == (BST_CHECKED) as i32 { (FW_BOLD) as i32 } else { (FW_NORMAL) as i32 };
-                        (SendDlgItemMessage) as u32(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SETFONT, iProperty, plfFont as LPARAM);
+                        SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW as c_int, PVM_SETFONT, iProperty as WPARAM, plfFont as LPARAM);
                     }
                 }
 
@@ -581,13 +581,13 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                     if HIWORD!(wParam) == (BN_CLICKED) as u16 {
                         iProperty = g_Assignment[(*g).CurrentElement as usize].Font;
                         if iProperty == -1 {
-                            return (TRUE) as i64;
+                            return TRUE as INT_PTR;
                         }
 
                         plfFont = SchemeGetFont(core::ptr::addr_of_mut!((*g).SchemeAdv), iProperty);
                         iSelection = SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONTITALIC) as i32, BM_GETCHECK, 0, 0) as INT;
                         (*plfFont).lfItalic = if iSelection == (BST_CHECKED) as i32 { (TRUE) as u8 } else { (FALSE) as u8 };
-                        (SendDlgItemMessage) as u32(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SETFONT, iProperty, plfFont as LPARAM);
+                        SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW as c_int, PVM_SETFONT, iProperty as WPARAM, plfFont as LPARAM);
                     }
                 }
 
@@ -604,17 +604,17 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
                 }
 
                 _ => {
-                    return FALSE;
+                    return FALSE as INT_PTR;
                 }
             }
         }
 
         _ => {
-            return FALSE;
+            return FALSE as INT_PTR;
         }
     }
 
-    return TRUE;
+    return TRUE as INT_PTR;
 }
 
 
@@ -998,7 +998,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 //         }
 //     }
 //
-//     SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_SETCURSEL, iDeskIndex, 0);
+//     SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT as c_int, CB_SETCURSEL, iDeskIndex as WPARAM, 0 as LPARAM);
 //
 //     /* Create font for bold button */
 //     lfButtonFont = g->Scheme.ncMetrics.lfMessageFont;
@@ -1033,7 +1033,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 //     InitColorButtons(hwndDlg, g);
 //
 //     /* Make the UpDown control count correctly */
-//     SendMessage(GetDlgItem(hwndDlg, IDC_ADVAPPEARANCE_SIZE_UD), UDM_SETRANGE, 0L, MAKELONG (200, 1));
+//     SendMessage(GetDlgItem(hwndDlg, IDC_ADVAPPEARANCE_SIZE_UD), UDM_SETRANGE, 0, MAKELONG (200, 1));
 //
 //     /* Fill font selection combo */
 //     lfFont.lfCharSet = DEFAULT_CHARSET;
@@ -1051,7 +1051,7 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 //     }
 //
 //     /* Update the controls */
-//     iListIndex = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_GETCURSEL, 0, 0);
+//     iListIndex = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT as c_int, CB_GETCURSEL, 0 as WPARAM, 0 as LPARAM);
 //     g->CurrentElement = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_GETITEMDATA, (WPARAM)iListIndex, 0);
 //     UpdateControls(hwndDlg, g);
 // }
@@ -1171,8 +1171,8 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 //                     if (HIWORD(wParam) == CBN_SELCHANGE)
 //                     {
 //                         SaveCurrentValues(hwndDlg, g);
-//                         iSelection = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_GETCURSEL, 0, 0);
-//                         g->CurrentElement = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT, CB_GETITEMDATA, iSelection, 0);
+//                         iSelection = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT as c_int, CB_GETCURSEL, 0 as WPARAM, 0 as LPARAM);
+//                         g->CurrentElement = SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_ELEMENT as c_int, CB_GETITEMDATA, iSelection as WPARAM, 0 as LPARAM);
 //                         UpdateControls(hwndDlg, g);
 //                     }
 //                     break;
@@ -1184,9 +1184,9 @@ pub unsafe extern "system" fn AdvAppearanceDlgProc(hwndDlg: HWND, uMsg: UINT, wP
 //                         if (iProperty == -1)
 //                             return TRUE;
 //
-//                         iSelection = LOWORD(SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_SIZE_UD, UDM_GETPOS,0,0L));
+//                         iSelection = LOWORD(SendDlgItemMessage(hwndDlg, IDC_ADVAPPEARANCE_SIZE_UD, UDM_GETPOS,0,0));
 //                         SchemeSetMetric(&g->SchemeAdv, iProperty, iSelection);
-//                         SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SETSIZE, iProperty, iSelection);
+//                         SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW as c_int, PVM_SETSIZE, iProperty as WPARAM, iSelection as LPARAM);
 //
 //                         iProperty = g_Assignment[g->CurrentElement].Size2;
 //                         if (iProperty != -1)

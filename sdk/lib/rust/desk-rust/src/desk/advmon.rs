@@ -17,7 +17,7 @@ unsafe extern "system" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM
 }
 unsafe extern "C" fn DisplayAdvancedSettingsInitPropSheetPage(ppsh: *mut PROPSHEETHEADER, idDlg: WORD, DlgProc: DLGPROC, lParam: LPARAM) -> BOOL {
     let mut hPage: HPROPSHEETPAGE;
-    let mut psp: PROPSHEETPAGE;
+    let mut psp: PROPSHEETPAGE = core::mem::zeroed();
 
     if (*ppsh).nPages < (MAX_ADVANCED_PAGES) as u32 {
         ZeroMemory!(core::ptr::addr_of_mut!(psp) as *mut core::ffi::c_void, core::mem::size_of::<PROPSHEETPAGE>());
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn DisplayAdvancedSettings(hWndParent: HWND, DisplayDevice
     psh.pszCaption = szCaption.as_mut_ptr();
     psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
 
-    DisplayAdvancedSettingsInitPropSheetPage(&mut psh, (IDD_ADVANCED_GENERAL) as WORD, AdvGeneralPageProc, DisplayDevice as LPARAM);
+    DisplayAdvancedSettingsInitPropSheetPage(&mut psh, (IDD_ADVANCED_GENERAL) as WORD, Some(AdvGeneralPageProc), DisplayDevice as LPARAM);
 
     pdo = CreateDevSettings(DisplayDevice);
 
@@ -92,15 +92,15 @@ pub unsafe extern "C" fn DisplayAdvancedSettings(hWndParent: HWND, DisplayDevice
 
     hpsxaDev = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Device"), (MAX_ADVANCED_PAGES - (psh.nPages) as i32) as UINT, pdo);
     if hpsxaDev != core::ptr::null_mut() {
-        SHAddFromPropSheetExtArray(hpsxaDev, PropSheetAddPage, &mut psh as *mut _ as LPARAM);
+        SHAddFromPropSheetExtArray(hpsxaDev, Some(PropSheetAddPage), &mut psh as *mut _ as LPARAM);
     }
 
     hpsxaDisp = SHCreatePropSheetExtArrayEx(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Display"), (MAX_ADVANCED_PAGES - (psh.nPages) as i32) as UINT, pdo);
     if hpsxaDisp != core::ptr::null_mut() {
-        SHAddFromPropSheetExtArray(hpsxaDisp, PropSheetAddPage, &mut psh as *mut _ as LPARAM);
+        SHAddFromPropSheetExtArray(hpsxaDisp, Some(PropSheetAddPage), &mut psh as *mut _ as LPARAM);
     }
 
-    Ret = (PropertySheet(&mut psh) != -(1 as i32)) as LONG as BOOL;
+    Ret = (PropertySheet(&mut psh) != (-(1 as i32)) as LPARAM) as LONG as BOOL;
 
     if hpsxaDisp != core::ptr::null_mut() {
         SHDestroyPropSheetExtArray(hpsxaDisp);

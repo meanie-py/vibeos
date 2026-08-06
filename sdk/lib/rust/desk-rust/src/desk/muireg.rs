@@ -121,7 +121,7 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
         ExpandEnvironmentStringsW(pwszTempBuffer, pwszExpandedBuffer, cbData);
     } else {
         pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData) as SIZE_T) as LPWSTR;
-        (memcpy) as *mut c_void(pwszExpandedBuffer as *mut u8, pwszTempBuffer as *const u8, cbData as usize);
+        memcpy(pwszExpandedBuffer as *mut core::ffi::c_void, pwszTempBuffer as *const core::ffi::c_void, cbData as usize);
     }
 
     result = (ERROR_SUCCESS) as i32;

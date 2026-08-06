@@ -39,7 +39,7 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
            (*(*(*pData).CurrentDisplayDevice).Resolutions.offset(index as isize)).dmPelsHeight == (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight
         {
             if bUpdateThumb != 0 {
-                (SendDlgItemMessage) as i32(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETPOS, (TRUE) as u64, (index) as i64);
+                SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETPOS, TRUE as WPARAM, index as LPARAM);
             }
             break;
         }
@@ -52,10 +52,10 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
 
     hwndMonSel = GetDlgItem(hwndDlg, (IDC_SETTINGS_MONSEL) as i32);
     index = SendMessage(hwndMonSel, MSLM_GETCURSEL, 0, 0) as INT as DWORD;
-    if index != (-1 as i32) as DWORD && SendMessage(hwndMonSel, MSLM_GETMONITORINFO, index, core::ptr::addr_of_mut!(info) as LPARAM) != 0 {
+    if index != (-1 as i32) as DWORD && SendMessage(hwndMonSel, MSLM_GETMONITORINFO, (index) as WPARAM, core::ptr::addr_of_mut!(info) as LPARAM) != 0 {
         info.Size.cx = ((*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth) as i32;
         info.Size.cy = ((*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight) as i32;
-        SendMessage(hwndMonSel, MSLM_SETMONITORINFO, index, core::ptr::addr_of_mut!(info) as LPARAM);
+        SendMessage(hwndMonSel, MSLM_SETMONITORINFO, (index) as WPARAM, core::ptr::addr_of_mut!(info) as LPARAM);
     }
 }
 unsafe extern "C" fn CompareSettings(
@@ -248,29 +248,29 @@ unsafe extern "C" fn AddDisplayDevice(
             Current = (*Current).Flink;
         }
 
-        descriptionSize = ((_tcslen((*DisplayDevice).DeviceString.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>()) as u32;
+        descriptionSize = (((_tcslen((*DisplayDevice).DeviceString.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32) as WPARAM;
         description = HeapAlloc(GetProcessHeap(), 0, descriptionSize) as LPTSTR;
         if description.is_null() {
             break 'ByeBye;
         }
 
-        nameSize = ((_tcslen((*DisplayDevice).DeviceName.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>()) as u32;
+        nameSize = (((_tcslen((*DisplayDevice).DeviceName.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32) as WPARAM;
         name = HeapAlloc(GetProcessHeap(), 0, nameSize) as LPTSTR;
         if name.is_null() {
             break 'ByeBye;
         }
 
-        keySize = ((_tcslen((*DisplayDevice).DeviceKey.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>()) as u32;
+        keySize = (((_tcslen((*DisplayDevice).DeviceKey.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32) as WPARAM;
         key = HeapAlloc(GetProcessHeap(), 0, keySize) as LPTSTR;
         if key.is_null() {
             break 'ByeBye;
         }
 
-        devidSize = ((_tcslen((*DisplayDevice).DeviceID.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>()) as u32;
+        devidSize = (((_tcslen((*DisplayDevice).DeviceID.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32) as WPARAM;
         devid = HeapAlloc(GetProcessHeap(), 0, devidSize) as LPTSTR;
         if devid.is_null() {
             break 'ByeBye;
@@ -337,8 +337,8 @@ unsafe extern "C" fn OnDisplayDeviceChanged(hwndDlg: HWND, pData: PSETTINGS_DATA
 
     SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_DEVICE) as i32, WM_SETTEXT, 0, (*pDeviceEntry).DeviceDescription as LPARAM);
 
-    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_CLEARTICS, (TRUE) as u32, 0);
-    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETRANGE, (TRUE) as u32, MAKELONG!(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_CLEARTICS, ((TRUE) as u32) as WPARAM, 0);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETRANGE, ((TRUE) as u32) as WPARAM, MAKELONG!(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
 
     UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
 }
@@ -355,7 +355,7 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
         return;
     }
 
-    SetWindowLongPtr(hwndDlg, DWLP_USER, (pData as isize) as i32);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, ((pData as isize) as i32) as LPARAM);
 
     (*pData).DisplayDeviceList = core::ptr::null_mut();
     displayDevice.cb = core::mem::size_of::<DISPLAY_DEVICE>() as u32;
@@ -558,7 +558,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
     let mut client: RECT = core::mem::zeroed();
 
     index = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_GETCURSEL, 0, 0) as u32;
-    dmNewBitsPerPel = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_GETITEMDATA, index, 0) as u32;
+    dmNewBitsPerPel = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_GETITEMDATA, (index) as WPARAM, 0) as u32;
 
     hSpectrumControl = GetDlgItem(hwndDlg, (IDC_SETTINGS_SPECTRUM) as i32);
     hSpectrumDC = GetDC(hSpectrumControl);
@@ -700,8 +700,8 @@ unsafe extern "C" fn OnResolutionChanged(
 pub unsafe extern "system" fn SettingsPageCallbackProc(
     hwnd: HWND,
     uMsg: u32,
-    ppsp: *mut u32,
-) -> u32 {
+    ppsp: LPPROPSHEETPAGE,
+) -> UINT {
     let mut Ret: u32 = 0;
 
     match uMsg {
@@ -734,7 +734,7 @@ unsafe extern "system" fn ConfirmDlgProc(
                 (core::mem::size_of::<TIMEOUTDATA>()) as SIZE_T,
             ) as PTIMEOUTDATA;
             if pData.is_null() {
-                return FALSE;
+                return (FALSE) as LPARAM;
             }
 
             SetWindowLongPtr(hwndDlg, DWLP_USER, pData as LONG_PTR);
@@ -763,7 +763,7 @@ unsafe extern "system" fn ConfirmDlgProc(
                 hwndDlg,
                 1,
                 1000,
-                core::ptr::null_mut(),
+                None,
             );
         }
 
@@ -799,7 +799,7 @@ unsafe extern "system" fn ConfirmDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as LPARAM
 }
 #[no_mangle]
 pub unsafe extern "C" fn SwitchDisplayMode(
@@ -807,8 +807,8 @@ pub unsafe extern "C" fn SwitchDisplayMode(
     DeviceName: PWSTR,
     seInit: *mut SETTINGS_ENTRY,
     seNew: *mut SETTINGS_ENTRY,
-    rc: *mut i32,
-) -> u8 {
+    rc: *mut LONG,
+) -> BOOL {
     let mut Message: [TCHAR; 1024] = [0; 1024];
     let mut Title: [TCHAR; 256] = [0; 256];
     let mut devmode: DEVMODE = core::mem::zeroed();
@@ -832,30 +832,30 @@ pub unsafe extern "C" fn SwitchDisplayMode(
         core::ptr::null_mut(),
     );
 
-    match (((*rc) as u32) as i32) as u32 {
+    match *rc {
         DISP_CHANGE_SUCCESSFUL => {}
         DISP_CHANGE_RESTART => {
             LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
             LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONINFORMATION);
-            return (FALSE) as u8;
+            return (FALSE as INT_PTR) as i32;
         }
         DISP_CHANGE_FAILED => {
             LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
             LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-            return (FALSE) as u8;
+            return (FALSE as INT_PTR) as i32;
         }
         _ => {
             LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
             LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-            return (FALSE) as u8;
+            return FALSE;
         }
     }
 
-    if DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_CONFIRMSETTINGS), hwndDlg, ConfirmDlgProc) == (IDYES) as i32 {
-        return (TRUE) as u8;
+    if DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_CONFIRMSETTINGS), hwndDlg, Some(ConfirmDlgProc)) == ((IDYES) as i32) as LPARAM {
+        return TRUE;
     } else {
         devmode.dmPelsWidth = (*seInit).dmPelsWidth;
         devmode.dmPelsHeight = (*seInit).dmPelsHeight;
@@ -870,27 +870,27 @@ pub unsafe extern "C" fn SwitchDisplayMode(
             core::ptr::null_mut(),
         );
 
-        match (((*rc) as u32) as i32) as u32 {
+        match *rc {
             DISP_CHANGE_SUCCESSFUL => {
-                return (FALSE) as u8;
+                return FALSE;
             }
             DISP_CHANGE_RESTART => {
                 LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
                 LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONINFORMATION);
-                return (FALSE) as u8;
+                return FALSE;
             }
             DISP_CHANGE_FAILED => {
                 LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
                 LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-                return (FALSE) as u8;
+                return FALSE;
             }
             _ => {
                 LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
                 LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-                return (FALSE) as u8;
+                return FALSE;
             }
         }
     }
@@ -927,7 +927,7 @@ unsafe extern "C" fn FindBestElement(
 unsafe extern "C" fn ApplyDisplaySettings(hwndDlg: HWND, pData: PSETTINGS_DATA) {
     let mut rc: i32 = 0;
 
-    let Ret: u8 = SwitchDisplayMode(
+    let Ret: BOOL = SwitchDisplayMode(
         hwndDlg,
         ((*(*pData).CurrentDisplayDevice).DeviceName).cast(),
         core::ptr::addr_of_mut!((*(*pData).CurrentDisplayDevice).InitialSettings),
@@ -981,8 +981,8 @@ pub unsafe extern "system" fn SettingsPageProc(
             }
         }
         WM_COMMAND => {
-            let controlId: DWORD = LOWORD!(wParam);
-            let command: DWORD = HIWORD!(wParam);
+            let controlId: DWORD = LOWORD!(wParam) as DWORD;
+            let command: DWORD = HIWORD!(wParam) as DWORD;
 
             if controlId == IDC_SETTINGS_ADVANCED && command == BN_CLICKED {
                 if DisplayAdvancedSettings(hwndDlg, (*pData).CurrentDisplayDevice) != 0 {
@@ -1185,7 +1185,7 @@ pub unsafe extern "system" fn SettingsPageProc(
         }
         _ => {}
     }
-    FALSE
+    (FALSE) as LPARAM
 }
 
 

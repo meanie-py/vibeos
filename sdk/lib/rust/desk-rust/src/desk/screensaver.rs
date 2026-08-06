@@ -82,7 +82,7 @@ unsafe extern "C" fn SelectionChanged(hwndDlg: HWND, pData: PDATA) {
     hwndCombo = GetDlgItem(hwndDlg, (IDC_SCREENS_LIST) as i32);
 
     i = SendMessage(hwndCombo, CB_GETCURSEL, 0, 0) as INT;
-    i = SendMessage(hwndCombo, CB_GETITEMDATA, (i) as u32, 0) as INT;
+    i = SendMessage(hwndCombo, CB_GETITEMDATA, ((i) as u32) as WPARAM, 0) as INT;
 
     (*pData).Selection = i;
 
@@ -105,7 +105,7 @@ pub unsafe extern "system" fn RedrawSubclassProc(
 ) -> LRESULT {
     let mut hwnd: HWND;
     let mut pData: PDATA;
-    let mut Ret: LRESULT = FALSE;
+    let mut Ret: LRESULT = (FALSE) as LPARAM;
 
     pData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PDATA;
     if pData.is_null() {
@@ -628,7 +628,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
                      &mut regKey) == (ERROR_SUCCESS) as i32
     {
         let mut Time: i32;
-        let mut bRet: i32;
+        let mut bRet: i32 = 0;
         let mut Sec: TCHAR;
         let Ret: u32;
 
@@ -653,7 +653,7 @@ unsafe extern "C" fn SetScreenSaver(hwndDlg: HWND, pData: PDATA) {
                                  BM_GETCHECK,
                                  0,
                                  0)) as u32;
-        Sec = if Ret == BST_CHECKED { _T(('1') as T) } else { _T(('0') as T) };
+        Sec = if Ret == BST_CHECKED { '1' as WCHAR } else { '0' as WCHAR };
         RegSetValueEx(regKey,
                       w!("ScreenSaverIsSecure"),
                       0,
@@ -737,7 +737,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
         (IDC_SCREENS_TIME) as i32,
         UDM_SETRANGE,
         0,
-        MAKELONG!(240, 1),
+        (MAKELONG!(240, 1)) as LPARAM,
     );
 
     EnumScreenSavers(hwndSSCombo, pData);
@@ -745,7 +745,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
     CheckRegScreenSaverIsSecure(hwndDlg);
 
     iCurSs = 0;
-    pSsValue = GetCurrentScreenSaverValue(w!("SCRNSAVE.EXE"));
+    pSsValue = GetCurrentScreenSaverValue(w!("SCRNSAVE.EXE") as LPTSTR);
     if !pSsValue.is_null() {
         let mut bFound = FALSE;
         let mut i: INT;
@@ -760,7 +760,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
         }
 
         if bFound == 0 {
-            bFound = ((AddScreenSaver(hwndSSCombo, pData, pSsValue, w!("SCRNSAVE.EXE"))) as u32) as i32;
+            bFound = ((AddScreenSaver(hwndSSCombo, pData, pSsValue, w!("SCRNSAVE.EXE") as LPTSTR)) as u32) as i32;
             if bFound != 0 {
                 i = (*pData).ScreenSaverCount as INT - 1;
             }
@@ -782,7 +782,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
     }
     SendMessage(hwndSSCombo, CB_SETCURSEL, iCurSs as WPARAM, 0);
 
-    pSsValue = GetCurrentScreenSaverValue(w!("ScreenSaveTimeOut"));
+    pSsValue = GetCurrentScreenSaverValue(w!("ScreenSaveTimeOut") as LPTSTR);
     if !pSsValue.is_null() {
         let Time = _ttoi(pSsValue) as UINT / 60;
 
@@ -793,7 +793,7 @@ unsafe extern "C" fn OnInitDialog(hwndDlg: HWND, pData: PDATA) -> BOOL {
             (IDC_SCREENS_TIME) as i32,
             UDM_SETPOS32,
             0,
-            (Time) as i32,
+            ((Time) as i32) as LPARAM,
         );
     }
 
@@ -903,10 +903,10 @@ pub unsafe extern "system" fn ScreenSaverPageProc(
         WM_NOTIFY => {
             let lpnm = lParam as LPNMHDR;
 
-            match ((*lpnm).code) as i32 {
+            match (*lpnm).code {
                 PSN_APPLY => {
                     SetScreenSaver(hwndDlg, pData);
-                    return TRUE;
+                    return (TRUE) as LPARAM;
                 }
 
                 PSN_SETACTIVE => {
@@ -930,7 +930,7 @@ pub unsafe extern "system" fn ScreenSaverPageProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as LPARAM
 }
 
 

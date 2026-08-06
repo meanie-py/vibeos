@@ -128,14 +128,12 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
 
     (*scheme).ncMetrics.cbSize = (core::mem::size_of::<NONCLIENTMETRICSW>()) as u32;
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    {
-        if GetVersionEx(core::ptr::addr_of_mut!(osvi)) != 0 {
-            if osvi.dwMajorVersion <= 5 {
-                (*scheme).ncMetrics.cbSize -= core::mem::size_of_val(&(*scheme).ncMetrics.iPaddedBorderWidth) as u32;
-            }
-        }
-    }
+    // theme.c:140-151 guards this with `#if (WINVER >= 0x0600)`, and desk compiles with
+    // -DWINVER=0x502 on all three targets, so the block is DEAD source: NONCLIENTMETRICSW has no
+    // iPaddedBorderWidth at that version, which is exactly why the C does not compile it either.
+    // The translation had rendered the WINDOWS-VERSION test as an ARCHITECTURE one
+    // (`#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]`) — the same substitution
+    // classinst.c's `#if _WIN32_WINNT >= 0x502` got, and just as wrong.
 
     ret = SystemParametersInfoW(
         SPI_GETNONCLIENTMETRICS,
@@ -612,7 +610,7 @@ unsafe extern "C" fn LoadSchemeSizes(hkScheme: HKEY) -> *mut THEME_STYLE {
     RegCloseKey(hkSizes);
     List
 }
-unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
+unsafe extern "C" fn LoadClassicColorSchemes() -> *mut THEME_STYLE {
     let mut Result: INT_PTR;
     let mut hkNewSchemes: HKEY = core::ptr::null_mut();
     let mut hkScheme: HKEY = core::ptr::null_mut();
@@ -622,8 +620,8 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
     let mut List: *mut THEME_STYLE = core::ptr::null_mut();
     let mut pCurrentStyle: *mut THEME_STYLE;
 
-    Result = RegOpenKeyW(HKEY_CURRENT_USER, g_CPANewSchemes.as_ptr(), &mut hkNewSchemes);
-    if Result != (ERROR_SUCCESS) as i32 {
+    Result = (RegOpenKeyW(HKEY_CURRENT_USER, g_CPANewSchemes.as_ptr(), &mut hkNewSchemes)) as LPARAM;
+    if Result != ((ERROR_SUCCESS) as i32) as LPARAM {
         return core::ptr::null_mut();
     }
 
@@ -631,12 +629,12 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
     while RegEnumKeyW(hkNewSchemes, (iStyle) as DWORD, wstrStyleName.as_mut_ptr(), 5) == (ERROR_SUCCESS) as i32 {
         iStyle += 1;
 
-        Result = RegOpenKeyW(hkNewSchemes, wstrStyleName.as_ptr(), &mut hkScheme);
-        if Result != (ERROR_SUCCESS) as i32 {
+        Result = (RegOpenKeyW(hkNewSchemes, wstrStyleName.as_ptr(), &mut hkScheme)) as LPARAM;
+        if Result != ((ERROR_SUCCESS) as i32) as LPARAM {
             continue;
         }
 
-        Result = RegLoadMUIStringW(
+        Result = (RegLoadMUIStringW(
             hkScheme,
             w!("DisplayName"),
             wstrDisplayName.as_mut_ptr(),
@@ -644,9 +642,9 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
             core::ptr::null_mut(),
             0,
             core::ptr::null_mut(),
-        );
-        if Result != (ERROR_SUCCESS) as i32 {
-            Result = RegLoadMUIStringW(
+        )) as LPARAM;
+        if Result != ((ERROR_SUCCESS) as i32) as LPARAM {
+            Result = (RegLoadMUIStringW(
                 hkScheme,
                 w!("LegacyName"),
                 wstrDisplayName.as_mut_ptr(),
@@ -654,10 +652,10 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
                 core::ptr::null_mut(),
                 0,
                 core::ptr::null_mut(),
-            );
+            )) as LPARAM;
         }
 
-        if Result == (ERROR_SUCCESS) as i32 {
+        if Result == ((ERROR_SUCCESS) as i32) as LPARAM {
             pCurrentStyle = CreateStyle(wstrStyleName.as_ptr(), wstrDisplayName.as_ptr());
         } else {
             pCurrentStyle = CreateStyle(wstrStyleName.as_ptr(), wstrStyleName.as_ptr());
@@ -766,7 +764,7 @@ pub unsafe extern "C" fn LoadThemes() -> *mut THEME {
     }
     lstrcatW(szThemesPath.as_mut_ptr(), w!("\\Themes"));
 
-    hret = EnumThemes(szThemesPath.as_ptr(), EnumThemeProc, core::ptr::addr_of_mut!((*pClassicTheme).NextTheme) as LPVOID);
+    hret = EnumThemes(szThemesPath.as_ptr(), Some(EnumThemeProc), core::ptr::addr_of_mut!((*pClassicTheme).NextTheme) as LPVOID);
     if hret < 0 {
         (*pClassicTheme).NextTheme = core::ptr::null_mut();
         if (*pClassicTheme).ColoursList.is_null() {
@@ -851,7 +849,7 @@ pub unsafe extern "C" fn GetActiveTheme(pThemeList: *mut THEME, pSelectedTheme: 
         szSizeBuff.as_mut_ptr(),
         (MAX_PATH) as i32,
     );
-    if ((hret) < 0) < 0 {
+    if hret < 0 {
         return (FALSE) as i32;
     }
 
@@ -1103,7 +1101,7 @@ pub unsafe extern "system" fn ThemesPageProc(
 
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
-            match ((*lpnm).code) as i32 {
+            match (*lpnm).code {
                 PSN_APPLY => {
                     SendMessage(
                         HWND_BROADCAST,
@@ -1111,7 +1109,7 @@ pub unsafe extern "system" fn ThemesPageProc(
                         0,
                         w!("") as LPARAM,
                     );
-                    return TRUE;
+                    return (TRUE) as LPARAM;
                 }
                 _ => {}
             }
@@ -1122,7 +1120,7 @@ pub unsafe extern "system" fn ThemesPageProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as LPARAM
 }
 
 
