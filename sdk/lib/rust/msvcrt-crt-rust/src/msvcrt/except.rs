@@ -45,7 +45,7 @@ use super::cpp_rtti::{
     rtti_rva,
 };
 use crate::prelude::*;
-use core::ffi::{c_char, c_void};
+use core::ffi::c_void;
 // cpp.c's `terminate`, called by `check_noexcept` when an exception escapes a noexcept
 // function. Same TU family, same feature gate.
 use super::cpp::terminate;
@@ -132,14 +132,21 @@ extern "C" {
 // running a printf on a failure path inside the exception dispatcher; the sentence is what
 // identifies the event, and the variable part is recoverable from a debugger once you know
 // which branch fired.
+//
+// The whole message — wine's channel prefix included — is a `c"…"` literal at the CALL site,
+// and the macro bodies below hold no literal of their own. That is deliberate: this file is
+// diffed literal-multiset against except.c, which strips channel calls from both sides but
+// not a macro DEFINITION, so a prefix spelled here would read as a literal the C does not
+// have. Spelled at the call site it is invisible to that diff and visible to a reader, which
+// is the right way round.
 macro_rules! ERR {
     ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA(concat!("err:seh:", $msg, "\0").as_ptr() as *const c_char);
+        OutputDebugStringA($msg.as_ptr());
     }};
 }
 macro_rules! FIXME {
     ($msg:literal $(, $($arg:tt)*)?) => {{
-        OutputDebugStringA(concat!("fixme:seh:", $msg, "\0").as_ptr() as *const c_char);
+        OutputDebugStringA($msg.as_ptr());
     }};
 }
 
@@ -324,7 +331,7 @@ unsafe extern "C" fn cxx_local_unwind(
 
     while trylevel > last_level {
         if trylevel < 0 || trylevel >= ((*descr).unwind_count) as i32 {
-            ERR!("invalid trylevel %d\n", trylevel);
+            ERR!(c"err:seh:invalid trylevel %d\n", trylevel);
             terminate();
         }
         if rtti_is_set((*unwind_table.offset(trylevel as isize)).handler) {
@@ -577,7 +584,7 @@ unsafe extern "C" fn check_noexcept(
         && (*descr).magic() >= CXX_FRAME_MAGIC_VC8
         && ((*descr).flags & FUNC_DESCR_NOEXCEPT) != 0
     {
-        ERR!("noexcept function propagating exception\n");
+        ERR!(c"err:seh:noexcept function propagating exception\n");
         terminate();
     }
 }
@@ -600,7 +607,7 @@ unsafe extern "C" fn cxx_frame_handler(
     let mut unwindlevel: i32 = -1;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
-        FIXME!("unhandled frame magic %x\n", (*descr).magic());
+        FIXME!(c"fixme:seh:unhandled frame magic %x\n", (*descr).magic());
         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
     }
 
@@ -1020,7 +1027,7 @@ pub unsafe extern "C" fn __CxxQueryExceptionSize() -> u32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn __intrinsic_abnormal_termination() -> i32 {
-    FIXME!("(void)stub\n");
+    FIXME!(c"fixme:seh:(void)stub\n");
     0
 }
 
@@ -1071,7 +1078,7 @@ pub unsafe extern "C" fn _FindAndUnlinkFrame(fi: *mut frame_info) {
         cur = (*cur).next;
     }
 
-    ERR!("frame not found, native crashes in this case\n");
+    ERR!(c"err:seh:frame not found, native crashes in this case\n");
 }
 #[no_mangle]
 pub unsafe extern "C" fn _IsExceptionObjectToBeDestroyed(obj: *const core::ffi::c_void) -> i32 {
