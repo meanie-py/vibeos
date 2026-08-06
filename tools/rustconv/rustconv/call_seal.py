@@ -609,7 +609,11 @@ def repair_dropped_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[
                 continue
             opening = masked.find("(", match.end())
             insertions.append(
-                (opening + 1, "this" + (", " if count else ""), f"{call.placeholder}={call.original}")
+                (
+                    opening + 1,
+                    "this" + (", " if count else ""),
+                    f"{call.placeholder}={call.original}",
+                )
             )
     for position, insertion, _ in sorted(insertions, reverse=True):
         rust = rust[:position] + insertion + rust[position:]

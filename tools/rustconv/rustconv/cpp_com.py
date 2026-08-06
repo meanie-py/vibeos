@@ -4619,7 +4619,8 @@ def prepare_helper_closure(
                 # and the REWRITE pass below already skips these to let the method pass
                 # take them. Only this walk refused, which is the asymmetry, not a gap.
                 if any(
-                    len(candidate.params) == arity for candidate in method_targets.get(source_name, ())
+                    len(candidate.params) == arity
+                    for candidate in method_targets.get(source_name, ())
                 ):
                     continue
                 available = sorted({n for name, n in binding if name == source_name})
