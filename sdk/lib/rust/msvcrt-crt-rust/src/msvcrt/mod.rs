@@ -254,6 +254,24 @@ pub mod cpp_rtti;
 #[cfg(feature = "cpp")]
 pub mod except;
 
+// except_i386.c: the OTHER side of that gate — 32-bit SEH, where an exception frame is a
+// linked list threaded through `fs:0` rather than a table the unwinder looks up by PC. The
+// `#ifdef __i386__` around the whole TU is why both modules are `#![cfg(target_arch = "x86")]`
+// from the inside as well as gated here: on amd64/arm64 this file compiles to nothing at all,
+// and `except.rs` supplies the same exported names from the other implementation.
+//
+// `seh_i386` is its hand-written companion, the same relationship `cpp_rtti` has to `cpp`: six
+// `__ASM_GLOBAL_FUNC` thunks that run on somebody else's frame, and wine/exception.h's two
+// `static inline` frame-list helpers. None of them has C text a translator could read.
+//
+// Seven bodies of the C are NOT here, on purpose: `_global_unwind2`, `_except_handler2/3`,
+// `_local_unwind2`, `longjmp` and the two `__regs__setjmp*` are all inside `#ifndef
+// __REACTOS__` and are in no object this tree builds.
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod except_i386;
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod seh_i386;
+
 // lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
 // together behind `threading` because the host harness supplies its own `_lock`,
 // `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.

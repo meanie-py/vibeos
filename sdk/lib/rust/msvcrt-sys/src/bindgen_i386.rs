@@ -5070,6 +5070,22 @@ pub struct _GUID {
 pub type GUID = _GUID;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct __JUMP_BUFFER {
+    pub Ebp: ::core::ffi::c_ulong,
+    pub Ebx: ::core::ffi::c_ulong,
+    pub Edi: ::core::ffi::c_ulong,
+    pub Esi: ::core::ffi::c_ulong,
+    pub Esp: ::core::ffi::c_ulong,
+    pub Eip: ::core::ffi::c_ulong,
+    pub Registration: ::core::ffi::c_ulong,
+    pub TryLevel: ::core::ffi::c_ulong,
+    pub Cookie: ::core::ffi::c_ulong,
+    pub UnwindFunc: ::core::ffi::c_ulong,
+    pub UnwindData: [::core::ffi::c_ulong; 6usize],
+}
+pub type _JUMP_BUFFER = __JUMP_BUFFER;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct _heapinfo {
     pub _pentry: *mut ::core::ffi::c_int,
     pub _size: usize,
@@ -5262,6 +5278,14 @@ pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
 unsafe extern "stdcall" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
+unsafe extern "stdcall" {
+    pub fn __wine_RtlUnwind(
+        TargetFrame: PVOID,
+        TargetIp: PVOID,
+        ExceptionRecord: PEXCEPTION_RECORD,
+        ReturnValue: PVOID,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OSVERSIONINFOW {
@@ -5306,6 +5330,7 @@ pub struct _EXCEPTION_REGISTRATION_RECORD {
     pub Prev: *mut _EXCEPTION_REGISTRATION_RECORD,
     pub Handler: PEXCEPTION_HANDLER,
 }
+pub type EXCEPTION_REGISTRATION_RECORD = _EXCEPTION_REGISTRATION_RECORD;
 pub type LPARAM = LONG_PTR;
 pub type FARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
 #[repr(C)]
@@ -7822,6 +7847,125 @@ pub type __sighandler_t = ::core::option::Option<unsafe extern "C" fn(arg1: ::co
 unsafe extern "stdcall" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
 }
+pub const _FPIEEE_FORMAT__FpFormatFp32: _FPIEEE_FORMAT = 0;
+pub const _FPIEEE_FORMAT__FpFormatFp64: _FPIEEE_FORMAT = 1;
+pub const _FPIEEE_FORMAT__FpFormatFp80: _FPIEEE_FORMAT = 2;
+pub const _FPIEEE_FORMAT__FpFormatFp128: _FPIEEE_FORMAT = 3;
+pub const _FPIEEE_FORMAT__FpFormatI16: _FPIEEE_FORMAT = 4;
+pub const _FPIEEE_FORMAT__FpFormatI32: _FPIEEE_FORMAT = 5;
+pub const _FPIEEE_FORMAT__FpFormatI64: _FPIEEE_FORMAT = 6;
+pub const _FPIEEE_FORMAT__FpFormatU16: _FPIEEE_FORMAT = 7;
+pub const _FPIEEE_FORMAT__FpFormatU32: _FPIEEE_FORMAT = 8;
+pub const _FPIEEE_FORMAT__FpFormatU64: _FPIEEE_FORMAT = 9;
+pub const _FPIEEE_FORMAT__FpFormatBcd80: _FPIEEE_FORMAT = 10;
+pub const _FPIEEE_FORMAT__FpFormatCompare: _FPIEEE_FORMAT = 11;
+pub const _FPIEEE_FORMAT__FpFormatString: _FPIEEE_FORMAT = 12;
+pub type _FPIEEE_FORMAT = ::core::ffi::c_uint;
+pub const _FP_OPERATION_CODE__FpCodeUnspecified: _FP_OPERATION_CODE = 0;
+pub const _FP_OPERATION_CODE__FpCodeAdd: _FP_OPERATION_CODE = 1;
+pub const _FP_OPERATION_CODE__FpCodeSubtract: _FP_OPERATION_CODE = 2;
+pub const _FP_OPERATION_CODE__FpCodeMultiply: _FP_OPERATION_CODE = 3;
+pub const _FP_OPERATION_CODE__FpCodeDivide: _FP_OPERATION_CODE = 4;
+pub const _FP_OPERATION_CODE__FpCodeSquareRoot: _FP_OPERATION_CODE = 5;
+pub const _FP_OPERATION_CODE__FpCodeRemainder: _FP_OPERATION_CODE = 6;
+pub const _FP_OPERATION_CODE__FpCodeCompare: _FP_OPERATION_CODE = 7;
+pub const _FP_OPERATION_CODE__FpCodeConvert: _FP_OPERATION_CODE = 8;
+pub const _FP_OPERATION_CODE__FpCodeRound: _FP_OPERATION_CODE = 9;
+pub const _FP_OPERATION_CODE__FpCodeTruncate: _FP_OPERATION_CODE = 10;
+pub const _FP_OPERATION_CODE__FpCodeFloor: _FP_OPERATION_CODE = 11;
+pub const _FP_OPERATION_CODE__FpCodeCeil: _FP_OPERATION_CODE = 12;
+pub const _FP_OPERATION_CODE__FpCodeAcos: _FP_OPERATION_CODE = 13;
+pub const _FP_OPERATION_CODE__FpCodeAsin: _FP_OPERATION_CODE = 14;
+pub const _FP_OPERATION_CODE__FpCodeAtan: _FP_OPERATION_CODE = 15;
+pub const _FP_OPERATION_CODE__FpCodeAtan2: _FP_OPERATION_CODE = 16;
+pub const _FP_OPERATION_CODE__FpCodeCabs: _FP_OPERATION_CODE = 17;
+pub const _FP_OPERATION_CODE__FpCodeCos: _FP_OPERATION_CODE = 18;
+pub const _FP_OPERATION_CODE__FpCodeCosh: _FP_OPERATION_CODE = 19;
+pub const _FP_OPERATION_CODE__FpCodeExp: _FP_OPERATION_CODE = 20;
+pub const _FP_OPERATION_CODE__FpCodeFabs: _FP_OPERATION_CODE = 21;
+pub const _FP_OPERATION_CODE__FpCodeFmod: _FP_OPERATION_CODE = 22;
+pub const _FP_OPERATION_CODE__FpCodeFrexp: _FP_OPERATION_CODE = 23;
+pub const _FP_OPERATION_CODE__FpCodeHypot: _FP_OPERATION_CODE = 24;
+pub const _FP_OPERATION_CODE__FpCodeLdexp: _FP_OPERATION_CODE = 25;
+pub const _FP_OPERATION_CODE__FpCodeLog: _FP_OPERATION_CODE = 26;
+pub const _FP_OPERATION_CODE__FpCodeLog10: _FP_OPERATION_CODE = 27;
+pub const _FP_OPERATION_CODE__FpCodeModf: _FP_OPERATION_CODE = 28;
+pub const _FP_OPERATION_CODE__FpCodePow: _FP_OPERATION_CODE = 29;
+pub const _FP_OPERATION_CODE__FpCodeSin: _FP_OPERATION_CODE = 30;
+pub const _FP_OPERATION_CODE__FpCodeSinh: _FP_OPERATION_CODE = 31;
+pub const _FP_OPERATION_CODE__FpCodeTan: _FP_OPERATION_CODE = 32;
+pub const _FP_OPERATION_CODE__FpCodeTanh: _FP_OPERATION_CODE = 33;
+pub const _FP_OPERATION_CODE__FpCodeY0: _FP_OPERATION_CODE = 34;
+pub const _FP_OPERATION_CODE__FpCodeY1: _FP_OPERATION_CODE = 35;
+pub const _FP_OPERATION_CODE__FpCodeYn: _FP_OPERATION_CODE = 36;
+pub const _FP_OPERATION_CODE__FpCodeLogb: _FP_OPERATION_CODE = 37;
+pub const _FP_OPERATION_CODE__FpCodeNextafter: _FP_OPERATION_CODE = 38;
+pub const _FP_OPERATION_CODE__FpCodeNegate: _FP_OPERATION_CODE = 39;
+pub const _FP_OPERATION_CODE__FpCodeFmin: _FP_OPERATION_CODE = 40;
+pub const _FP_OPERATION_CODE__FpCodeFmax: _FP_OPERATION_CODE = 41;
+pub const _FP_OPERATION_CODE__FpCodeConvertTrunc: _FP_OPERATION_CODE = 42;
+pub const _FP_OPERATION_CODE__XMMIAddps: _FP_OPERATION_CODE = 43;
+pub const _FP_OPERATION_CODE__XMMIAddss: _FP_OPERATION_CODE = 44;
+pub const _FP_OPERATION_CODE__XMMISubps: _FP_OPERATION_CODE = 45;
+pub const _FP_OPERATION_CODE__XMMISubss: _FP_OPERATION_CODE = 46;
+pub const _FP_OPERATION_CODE__XMMIMulps: _FP_OPERATION_CODE = 47;
+pub const _FP_OPERATION_CODE__XMMIMulss: _FP_OPERATION_CODE = 48;
+pub const _FP_OPERATION_CODE__XMMIDivps: _FP_OPERATION_CODE = 49;
+pub const _FP_OPERATION_CODE__XMMIDivss: _FP_OPERATION_CODE = 50;
+pub const _FP_OPERATION_CODE__XMMISqrtps: _FP_OPERATION_CODE = 51;
+pub const _FP_OPERATION_CODE__XMMISqrtss: _FP_OPERATION_CODE = 52;
+pub const _FP_OPERATION_CODE__XMMIMaxps: _FP_OPERATION_CODE = 53;
+pub const _FP_OPERATION_CODE__XMMIMaxss: _FP_OPERATION_CODE = 54;
+pub const _FP_OPERATION_CODE__XMMIMinps: _FP_OPERATION_CODE = 55;
+pub const _FP_OPERATION_CODE__XMMIMinss: _FP_OPERATION_CODE = 56;
+pub const _FP_OPERATION_CODE__XMMICmpps: _FP_OPERATION_CODE = 57;
+pub const _FP_OPERATION_CODE__XMMICmpss: _FP_OPERATION_CODE = 58;
+pub const _FP_OPERATION_CODE__XMMIComiss: _FP_OPERATION_CODE = 59;
+pub const _FP_OPERATION_CODE__XMMIUComiss: _FP_OPERATION_CODE = 60;
+pub const _FP_OPERATION_CODE__XMMICvtpi2ps: _FP_OPERATION_CODE = 61;
+pub const _FP_OPERATION_CODE__XMMICvtsi2ss: _FP_OPERATION_CODE = 62;
+pub const _FP_OPERATION_CODE__XMMICvtps2pi: _FP_OPERATION_CODE = 63;
+pub const _FP_OPERATION_CODE__XMMICvtss2si: _FP_OPERATION_CODE = 64;
+pub const _FP_OPERATION_CODE__XMMICvttps2pi: _FP_OPERATION_CODE = 65;
+pub const _FP_OPERATION_CODE__XMMICvttss2si: _FP_OPERATION_CODE = 66;
+pub const _FP_OPERATION_CODE__XMMIAddsubps: _FP_OPERATION_CODE = 67;
+pub const _FP_OPERATION_CODE__XMMIHaddps: _FP_OPERATION_CODE = 68;
+pub const _FP_OPERATION_CODE__XMMIHsubps: _FP_OPERATION_CODE = 69;
+pub const _FP_OPERATION_CODE__XMMI2Addpd: _FP_OPERATION_CODE = 70;
+pub const _FP_OPERATION_CODE__XMMI2Addsd: _FP_OPERATION_CODE = 71;
+pub const _FP_OPERATION_CODE__XMMI2Subpd: _FP_OPERATION_CODE = 72;
+pub const _FP_OPERATION_CODE__XMMI2Subsd: _FP_OPERATION_CODE = 73;
+pub const _FP_OPERATION_CODE__XMMI2Mulpd: _FP_OPERATION_CODE = 74;
+pub const _FP_OPERATION_CODE__XMMI2Mulsd: _FP_OPERATION_CODE = 75;
+pub const _FP_OPERATION_CODE__XMMI2Divpd: _FP_OPERATION_CODE = 76;
+pub const _FP_OPERATION_CODE__XMMI2Divsd: _FP_OPERATION_CODE = 77;
+pub const _FP_OPERATION_CODE__XMMI2Sqrtpd: _FP_OPERATION_CODE = 78;
+pub const _FP_OPERATION_CODE__XMMI2Sqrtsd: _FP_OPERATION_CODE = 79;
+pub const _FP_OPERATION_CODE__XMMI2Maxpd: _FP_OPERATION_CODE = 80;
+pub const _FP_OPERATION_CODE__XMMI2Maxsd: _FP_OPERATION_CODE = 81;
+pub const _FP_OPERATION_CODE__XMMI2Minpd: _FP_OPERATION_CODE = 82;
+pub const _FP_OPERATION_CODE__XMMI2Minsd: _FP_OPERATION_CODE = 83;
+pub const _FP_OPERATION_CODE__XMMI2Cmppd: _FP_OPERATION_CODE = 84;
+pub const _FP_OPERATION_CODE__XMMI2Cmpsd: _FP_OPERATION_CODE = 85;
+pub const _FP_OPERATION_CODE__XMMI2Comisd: _FP_OPERATION_CODE = 86;
+pub const _FP_OPERATION_CODE__XMMI2UComisd: _FP_OPERATION_CODE = 87;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2pi: _FP_OPERATION_CODE = 88;
+pub const _FP_OPERATION_CODE__XMMI2Cvtsd2si: _FP_OPERATION_CODE = 89;
+pub const _FP_OPERATION_CODE__XMMI2Cvttpd2pi: _FP_OPERATION_CODE = 90;
+pub const _FP_OPERATION_CODE__XMMI2Cvttsd2si: _FP_OPERATION_CODE = 91;
+pub const _FP_OPERATION_CODE__XMMI2Cvtps2pd: _FP_OPERATION_CODE = 92;
+pub const _FP_OPERATION_CODE__XMMI2Cvtss2sd: _FP_OPERATION_CODE = 93;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2ps: _FP_OPERATION_CODE = 94;
+pub const _FP_OPERATION_CODE__XMMI2Cvtsd2ss: _FP_OPERATION_CODE = 95;
+pub const _FP_OPERATION_CODE__XMMI2Cvtdq2ps: _FP_OPERATION_CODE = 96;
+pub const _FP_OPERATION_CODE__XMMI2Cvttps2dq: _FP_OPERATION_CODE = 97;
+pub const _FP_OPERATION_CODE__XMMI2Cvtps2dq: _FP_OPERATION_CODE = 98;
+pub const _FP_OPERATION_CODE__XMMI2Cvttpd2dq: _FP_OPERATION_CODE = 99;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2dq: _FP_OPERATION_CODE = 100;
+pub const _FP_OPERATION_CODE__XMMI2Addsubpd: _FP_OPERATION_CODE = 101;
+pub const _FP_OPERATION_CODE__XMMI2Haddpd: _FP_OPERATION_CODE = 102;
+pub const _FP_OPERATION_CODE__XMMI2Hsubpd: _FP_OPERATION_CODE = 103;
+pub type _FP_OPERATION_CODE = ::core::ffi::c_uint;
 pub const _FPIEEE_PRECISION__FpPrecisionFull: _FPIEEE_PRECISION = 0;
 pub const _FPIEEE_PRECISION__FpPrecision53: _FPIEEE_PRECISION = 1;
 pub const _FPIEEE_PRECISION__FpPrecision24: _FPIEEE_PRECISION = 2;
