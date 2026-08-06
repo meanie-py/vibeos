@@ -1560,10 +1560,16 @@ def analyze_class(
             )
 
             def effective_creator_arity(args: list[str]) -> int:
-                iid_ppv_tail = bool(
-                    args and re.fullmatch(r"\s*IID_PPV_ARG\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                # A ppv macro is one C++ argument but several ABI ones, and the
+                # family members differ in HOW many — so the count has to come
+                # from the macro's own expansion, not from a flat +1.
+                tail = (
+                    re.fullmatch(rf"\s*({_PPV_ARG_MACRO})\s*\([^()]+\)\s*", args[-1], re.DOTALL)
+                    if args
+                    else None
                 )
-                return len(args) + int(iid_ppv_tail)
+                extra = 1 + _PPV_ARG_MIDDLES[tail.group(1)].count(",") if tail else 0
+                return len(args) + extra
 
             if any(
                 effective_creator_arity(args) != len(params) + 2 for args in activation_arg_lists
@@ -1948,6 +1954,20 @@ def rewrite_wide_literals(text: str) -> str:
     return _rewrite_wide_literals(text)
 
 
+# The `ppv` header macros (sdk/include/reactos/shellutils.h). Each expands ONE
+# apparent C++ argument into several ABI arguments, so neither is a symbol and
+# neither is one Rust argument. They differ only by what sits between the IID and
+# the `void**`: `IID_NULL_PPV_ARG` is for `GetUIObjectOf`, whose reserved
+# `prgfInOut` parameter is always passed NULL.
+#
+# `IID_NULL_PPV_ARG` does not CONTAIN the string `IID_PPV_ARG`, so every rule
+# keyed on `\bIID_PPV_ARG` was structurally incapable of matching it — it reached
+# a module as an unexpanded macro call plus a phantom `static IID_NULL_PPV_ARG`.
+# Naming the family once is what keeps a new member from repeating that.
+_PPV_ARG_MIDDLES = {"IID_PPV_ARG": "", "IID_NULL_PPV_ARG": "core::ptr::null_mut(), "}
+_PPV_ARG_MACRO = r"IID_(?:NULL_)?PPV_ARG"
+
+
 def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> str:
     """C++-generic model-output repairs — no class, no vtable, no `this` required.
 
@@ -1987,14 +2007,27 @@ def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> st
         rust,
     )
     source_iid_args = re.findall(
-        r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
+        rf"\b({_PPV_ARG_MACRO})\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", source
     )
-    for interface, output in source_iid_args:
+    for macro, interface, output in source_iid_args:
         rust = re.sub(
-            rf"\bIID_PPV_ARG\s*\(\s*{re.escape(output)}\s*\)",
-            f"core::ptr::addr_of!(IID_{interface}), {output}.cast()",
+            rf"\b{macro}\s*\(\s*{re.escape(output)}\s*\)",
+            f"core::ptr::addr_of!(IID_{interface}), {_PPV_ARG_MIDDLES[macro]}{output}.cast()",
             rust,
         )
+    # A model that splits the macro into the right NUMBER of arguments can still lose
+    # the interface, putting the MACRO's own name where the IID belongs: measured on
+    # CDefaultContextMenu::DoCreateLink as `&IID_PPV_ARG as *const _ as REFIID` for
+    # `IID_PPV_ARG(IDropTarget, &pDT)`. The ppv slot was right; only the riid was a
+    # name that exists in no library. The source names the interface, so recover it —
+    # but only when the body names exactly one, since two would be a guess.
+    bare_macro = re.compile(rf"\b({_PPV_ARG_MACRO})\b(?!\s*\()")
+    if bare_macro.search(rust):
+        interfaces = {interface for _, interface, _ in source_iid_args} or set(
+            re.findall(rf"\b{_PPV_ARG_MACRO}\s*\(\s*([A-Za-z_]\w*)", source)
+        )
+        if len(interfaces) == 1:
+            rust = bare_macro.sub(f"IID_{interfaces.pop()}", rust)
     # The COM path has LATER rules that still need to see an intact IID_PPV_ARG —
     # notably alias resolution (`let ppv = &mut (*this).inner;` … `(…, ppv)`), which
     # recovers the real destination. So the catch-all must run after those, and
@@ -2003,7 +2036,7 @@ def normalize_cpp_idioms(source: str, rust: str, *, residual: bool = True) -> st
 
 
 def _expand_residual_iid_ppv_arg(rust: str) -> str:
-    """Catch-all for any `IID_PPV_ARG(T, expr)` the shape-specific rules above missed.
+    """Catch-all for any `IID_[NULL_]PPV_ARG(T, expr)` the shape-specific rules missed.
 
     Those rules each pin one spelling of the second argument (`&mut x`, a bare
     identifier, a `let` pair). A model that writes anything else — measured:
@@ -2011,14 +2044,19 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
     through all of them and reached the module as a call to a macro, which is not
     a symbol and cannot link. Splitting on the top-level comma handles every
     spelling instead of enumerating them, so the failure mode is bounded.
+
+    Being spelling-agnostic on the second argument is also why this is the one
+    place the NULL variant has to be understood: it makes the whole family work
+    without duplicating each shape-specific rule above.
     """
     out = []
     i = 0
     while True:
-        match = re.search(r"\bIID_PPV_ARG\s*\(", rust[i:])
+        match = re.search(rf"\b({_PPV_ARG_MACRO})\s*\(", rust[i:])
         if match is None:
             out.append(rust[i:])
             return "".join(out)
+        middle = _PPV_ARG_MIDDLES[match.group(1)]
         start = i + match.start()
         cursor = i + match.end()  # just past the '('
         depth, comma = 1, None
@@ -2055,7 +2093,7 @@ def _expand_residual_iid_ppv_arg(rust: str) -> str:
         else:
             value = f"({value})"
         out.append(rust[i:start])
-        out.append(f"core::ptr::addr_of!(IID_{interface}), {value}.cast()")
+        out.append(f"core::ptr::addr_of!(IID_{interface}), {middle}{value}.cast()")
         i = cursor
 
 
@@ -2628,12 +2666,15 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     )
     if iid_alias is not None:
         alias, field = iid_alias.groups()
-        iid_use = re.compile(rf"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)\s*,\s*{re.escape(alias)}\s*\)")
+        iid_use = re.compile(
+            rf"\b({_PPV_ARG_MACRO})\s*\(\s*([A-Za-z_]\w*)\s*,\s*{re.escape(alias)}\s*\)"
+        )
         matched_use = iid_use.search(rust)
         if matched_use is not None:
-            interface = matched_use.group(1)
+            macro, interface = matched_use.groups()
             replacement = (
                 f"core::ptr::addr_of!(IID_{interface}), "
+                f"{_PPV_ARG_MIDDLES[macro]}"
                 f"core::ptr::addr_of_mut!((*this).{field}).cast()"
             )
             rust = rust[: iid_alias.start()] + rust[iid_alias.end() :]
@@ -3770,7 +3811,7 @@ def render_cpp_support(
         used_words.add("shell32_hInstance")
     used_words.update(
         f"IID_{interface}"
-        for interface in re.findall(r"\bIID_PPV_ARG\s*\(\s*([A-Za-z_]\w*)", source)
+        for interface in re.findall(rf"\b{_PPV_ARG_MACRO}\s*\(\s*([A-Za-z_]\w*)", source)
     )
     if "ShellObjectCreatorInit<CPrintersEnum>" in source:
         used_words.add("CPrintersEnum_CreateInstance")
@@ -4085,10 +4126,21 @@ def render_cpp_support(
         chunks.append(_CPP_COM_HEAP_PTR_SUPPORT)
     if "SENDTO_ITEM" in used_words:
         chunks.append(_CPP_SENDTO_ITEM_SUPPORT)
+    # A GUID constant is REFERENCED, never called. The ppv header macros happen to
+    # match the GUID spelling, and an extern static for one is a phantom: no such
+    # symbol exists to link against. Deciding that positionally retires a denylist
+    # that had to be remembered — it listed `IID_PPV_ARG` alone, so the day
+    # `IID_NULL_PPV_ARG` first appeared it shipped exactly that phantom.
+    # Measured over dll/ base/ sdk/include/ modules/: every `(IID|SID|CLSID)_*` name
+    # followed by `(` outside a literal is a function-like macro (the ppv pair,
+    # IID_PPV_ARGS, IID_GENERIC_CHECK_IID, IID_BS_LOOKUP_*). The only real IIDs that
+    # look called — IID_IShellLinkA, IID_IAutoComplete — sit inside wine-test format
+    # strings, which mask_code blanks before either set is built.
+    called_words = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", _masked_cpp(selection_source)))
     guid_words = {
         word
         for word in used_words
-        if word != "IID_PPV_ARG" and re.fullmatch(r"(?:IID|SID|CLSID)_[A-Za-z_]\w*", word)
+        if word not in called_words and re.fullmatch(r"(?:IID|SID|CLSID)_[A-Za-z_]\w*", word)
     }
     for alias, target in _CPP_SUPPORT_GUID_ALIASES.items():
         if alias in used_words:

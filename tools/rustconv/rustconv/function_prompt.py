@@ -61,6 +61,9 @@ Rust has no direct spelling for. Guessing at one produces code that cannot compi
   string literal, so any of those is a compile error or a silent encoding change.
 - **`IID_PPV_ARG(T, &out)` is a header macro, not a function.** It expands to TWO
   ABI arguments (`REFIID, *mut *mut c_void`). Never emit a call to it.
+  `IID_NULL_PPV_ARG(T, &out)` is a *different* macro expanding to THREE
+  (`REFIID, NULL, *mut *mut c_void`) — the NULL is `GetUIObjectOf`'s reserved
+  `prgfInOut`. Dropping it silently shifts every argument after it.
 - **ATL smart pointers are ownership, not sugar.** `CComPtr<T>` / `CComHeapPtr<T>`
   carry exact AddRef/Release (or free) pairs. Lower them to raw pointers only while
   preserving both operations AND the control-flow point where the C++ destructor

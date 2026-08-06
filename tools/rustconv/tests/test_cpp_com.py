@@ -22,6 +22,7 @@ from rustconv.cpp_com import (
     island_integer_aliases,
     island_struct_types,
     lower_trivial_worker,
+    normalize_cpp_idioms,
     normalize_worker_body,
     normalize_worker_semantics,
     parse_widl_interface,
@@ -657,9 +658,9 @@ def test_helper_closure_resolves_a_free_helper_against_a_method_of_the_same_name
     # The `::`-qualified call keeps the free helper; the unqualified one takes the member.
     dynamic = by_name["CDefaultContextMenu_GetDynamicEntry"]
     invoke = by_name["CDefaultContextMenu_InvokeCommand"]
-    assert "MapVerbToCmdId_body" in " ".join(
-        dep.body_text for dep in (dynamic, invoke)
-    ), "at least one call site is bound"
+    assert "MapVerbToCmdId_body" in " ".join(dep.body_text for dep in (dynamic, invoke)), (
+        "at least one call site is bound"
+    )
     assert "CDefaultContextMenu_MapVerbToCmdId_body" in invoke.body_text
 
 
@@ -2577,9 +2578,7 @@ struct BrItemData
 static void use(BrItemData *p) { (void)p; }
 """
     )
-    rendered = render_cpp_support(
-        source, {"BrItemData", "lpsfParent", "pidlChild", "pidlFull"}
-    )
+    rendered = render_cpp_support(source, {"BrItemData", "lpsfParent", "pidlChild", "pidlFull"})
     assert "pub lpsfParent: CComPtr<IShellFolder>," in rendered
     assert "pub pidlFull: CComHeapPtr<ITEMIDLIST_ABSOLUTE>," in rendered
     assert "pub lpsfParent: *mut IShellFolder," not in rendered
@@ -2633,3 +2632,85 @@ def test_array_of_owned_heap_pointers_frees_every_element():
     assert field.owned_heap_ptr
     assert field.array_len == 2
     assert field.rust_type == "[*mut ITEMIDLIST; 2]"
+
+
+def test_iid_null_ppv_arg_expands_to_three_arguments():
+    """`IID_NULL_PPV_ARG` is a *different* macro, not a spelling of `IID_PPV_ARG`.
+
+    It does not contain the substring `IID_PPV_ARG`, so every rule keyed on
+    `\\bIID_PPV_ARG` was structurally incapable of matching it: the macro reached
+    CDefaultContextMenu as an unexpanded call. The middle `NULL` is
+    `GetUIObjectOf`'s reserved `prgfInOut`, and dropping it does not fail to
+    compile — it shifts `ppv` into the `prgfInOut` slot, which is far worse.
+    """
+    source = (
+        "m_psf->GetUIObjectOf(pdcm->hwnd, m_cidl, m_apidl, "
+        "IID_NULL_PPV_ARG(IDataObject, &m_pDataObj));"
+    )
+    for shape in (
+        "IID_NULL_PPV_ARG(IDataObject, core::ptr::addr_of_mut!((*this).m_pDataObj))",
+        "IID_NULL_PPV_ARG(IDataObject, &mut pdo)",
+        "IID_NULL_PPV_ARG(IDataObject, pdo as *mut *mut IDataObject)",
+    ):
+        expanded = normalize_cpp_idioms(source, shape)
+        assert "IID_NULL_PPV_ARG(" not in expanded, "a macro is not a symbol; it cannot link"
+        assert "core::ptr::addr_of!(IID_IDataObject), core::ptr::null_mut(), " in expanded
+        assert expanded.rstrip().endswith(".cast()")
+
+
+def test_the_plain_ppv_macro_gains_no_null_argument():
+    """The negative control: generalizing the family must not give `IID_PPV_ARG` a
+    third argument, which would shift every argument after it in ~200 call sites."""
+    expanded = normalize_cpp_idioms("", "IID_PPV_ARG(IShellFolder, &mut sp)")
+    assert expanded == "core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(sp).cast()"
+    assert "null_mut" not in expanded
+
+
+def test_a_ppv_macro_never_becomes_a_phantom_guid_extern(tmp_path: Path):
+    """A GUID constant is referenced, never CALLED.
+
+    The ppv macros match the `IID_*` spelling, so the extern harvest declared
+    `static IID_NULL_PPV_ARG: GUID;` — a symbol that exists in no library. It was
+    excluded by a hand-maintained denylist listing `IID_PPV_ARG` alone, so the
+    first new family member shipped the phantom. Deciding it positionally is what
+    retires the denylist.
+    """
+    source = tmp_path / "phantom.cpp"
+    source.write_text(
+        """
+static HRESULT get(IShellFolder *psf, HWND hwnd, PCUITEMID_CHILD pidl)
+{
+    CComPtr<IDataObject> pdo;
+    return psf->GetUIObjectOf(hwnd, 1, &pidl, IID_NULL_PPV_ARG(IDataObject, &pdo));
+}
+"""
+    )
+    rendered = render_cpp_support(source)
+    assert "IID_NULL_PPV_ARG: GUID" not in rendered
+    assert "IID_PPV_ARG: GUID" not in rendered
+    assert "static IID_IDataObject: GUID;" in rendered, (
+        "the interface IID the expansion references still needs its declaration"
+    )
+
+
+def test_a_ppv_macro_name_in_the_riid_slot_is_recovered_from_the_source():
+    """The fourth shape: right arity, wrong name.
+
+    CDefaultContextMenu::DoCreateLink came back with `&IID_PPV_ARG as *const _ as
+    REFIID` — the model split `IID_PPV_ARG(IDropTarget, &pDT)` into the correct two
+    arguments but put the MACRO's name in the riid slot. The ppv slot was already
+    right, so no expansion rule fired; the name simply exists in no library.
+    """
+    source = "hr = m_psf->CreateViewObject(NULL, IID_PPV_ARG(IDropTarget, &pDT));"
+    rust = (
+        "&IID_PPV_ARG as *const _ as REFIID, "
+        "&mut pDT as *mut *mut IDropTarget as *mut *mut core::ffi::c_void"
+    )
+    assert normalize_cpp_idioms(source, rust).startswith("&IID_IDropTarget as *const _ as REFIID")
+
+
+def test_two_candidate_interfaces_leave_the_riid_slot_alone():
+    """Recovery is only sound when the body names ONE interface. Two is a guess, and a
+    guessed IID is a QueryInterface for the wrong thing — so leave it uncompilable."""
+    source = "a(IID_PPV_ARG(IDropTarget, &x)); b(IID_PPV_ARG(IShellFolder, &y));"
+    assert normalize_cpp_idioms(source, "&IID_PPV_ARG as REFIID") == "&IID_PPV_ARG as REFIID"

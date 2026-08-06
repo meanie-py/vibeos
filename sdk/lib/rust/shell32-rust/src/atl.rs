@@ -49,8 +49,9 @@ use core::ffi::c_void;
 use core::marker::PhantomData;
 
 use crate::island::{
-    CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc, BOOL,
-    HLOCAL, INT, POSITION, SIZE_T, UINT, WCHAR,
+    CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
+    RegCloseKey, RegOpenKeyExW, BOOL, HKEY, HLOCAL, INT, LONG, LPCWSTR, POSITION, REGSAM, SIZE_T,
+    UINT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -708,6 +709,13 @@ impl CStringW {
         self.m_nLength == 0
     }
 
+    /// `CompareNoCase(psz)` — cstringt.h:743, `StringTraits::CompareNoCase(GetString(), psz)`,
+    /// which for the W traits is `_wcsicmp`. Returns the sign convention of the C call, so
+    /// translated `== 0` tests keep meaning "equal" rather than "not equal".
+    pub unsafe fn CompareNoCase(&self, psz: *const WCHAR) -> INT {
+        _wcsicmp(self.as_ptr(), psz)
+    }
+
     /// Grow the buffer to hold at least `nChars` characters plus the terminator. Never
     /// shrinks: `GetBuffer`/`ReleaseBuffer` hand out a raw pointer that must stay valid.
     unsafe fn Reserve(&mut self, nChars: i32) {
@@ -926,6 +934,9 @@ extern "C" {
     /// msvcrt `@ varargs _scwprintf(wstr)` — the character count a `swprintf` of the same
     /// arguments would produce, excluding the terminator. Negative on a bad format.
     fn _scwprintf(format: *const WCHAR, ...) -> INT;
+    /// msvcrt — case-insensitive wide compare, what ATL's W string traits use for
+    /// `CompareNoCase`.
+    fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;
 }
 
 impl Default for CStringW {
@@ -950,6 +961,87 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CRegKey
+// -------------------------------------------------------------------------------------------
+
+/// `CRegKey` — an owning `HKEY`, ported from `sdk/lib/atl/atlbase.h`.
+///
+/// Only the surface the translated shell32 C++ actually uses: `Open` / `Close` / `Detach`,
+/// plus the destructor. `Create`, the value getters and the transaction-manager overloads
+/// are deliberately absent — this module records measured usage, not ATL's full published
+/// surface, and an unused port is an untested one.
+///
+/// Two details of ATL's `Open` are load-bearing and easy to "improve" away:
+///
+///  * it closes the previously-held key **only when the new open succeeds**, so a failed
+///    `Open` leaves the old key intact and still owned; and
+///  * `Close` on an empty key is `ERROR_SUCCESS`, not an error.
+///
+/// `m_hKey` is `pub` because the C++ passes a `CRegKey` where an `HKEY` is expected, relying
+/// on ATL's `operator HKEY()`. Rust has no implicit conversion, so call sites spell the field.
+#[repr(transparent)]
+pub struct CRegKey {
+    pub m_hKey: HKEY,
+}
+
+impl CRegKey {
+    pub const fn new() -> Self {
+        Self { m_hKey: core::ptr::null_mut() }
+    }
+
+    /// ATL: `explicit CRegKey(HKEY hKey)` — takes ownership of an already-open key.
+    pub const fn from_raw(hKey: HKEY) -> Self {
+        Self { m_hKey: hKey }
+    }
+
+    /// Release ownership without closing.
+    pub fn Detach(&mut self) -> HKEY {
+        let hKey = self.m_hKey;
+        self.m_hKey = core::ptr::null_mut();
+        hKey
+    }
+
+    pub fn Attach(&mut self, hKey: HKEY) {
+        self.m_hKey = hKey;
+    }
+
+    pub unsafe fn Close(&mut self) -> LONG {
+        if self.m_hKey.is_null() {
+            return 0; // ERROR_SUCCESS
+        }
+        RegCloseKey(self.Detach()) as LONG
+    }
+
+    /// ATL has a `samDesired = KEY_READ | KEY_WRITE` default argument; Rust has no default
+    /// arguments, and every translated call site passes the access mask explicitly anyway.
+    pub unsafe fn Open(&mut self, hKeyParent: HKEY, lpszKeyName: LPCWSTR, samDesired: REGSAM) -> LONG {
+        let mut hKey: HKEY = core::ptr::null_mut();
+        let lRes = RegOpenKeyExW(hKeyParent, lpszKeyName, 0, samDesired, &mut hKey) as LONG;
+        if lRes == 0 {
+            // ERROR_SUCCESS: adopt the new key, closing whatever we held. On FAILURE the old
+            // key is kept — dropping it here would be a use-after-close for the caller.
+            self.Close();
+            self.m_hKey = hKey;
+        }
+        lRes
+    }
+}
+
+impl Default for CRegKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CRegKey {
+    fn drop(&mut self) {
+        unsafe {
+            self.Close();
         }
     }
 }

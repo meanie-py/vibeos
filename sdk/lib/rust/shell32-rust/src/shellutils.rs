@@ -497,3 +497,46 @@ pub unsafe fn __SHCloneStrW(target: *mut *mut u16, source: *const u16) {
     *target = SHAlloc(cch as SIZE_T * core::mem::size_of::<u16>() as SIZE_T) as *mut u16;
     lstrcpyW(*target, source);
 }
+
+extern "system" {
+    /// shlwapi ordinal 175. Declared here rather than pulled from the island because
+    /// shellutils.h reaches it through shlwapi.h, which is outside the island's closure.
+    fn IUnknown_SetSite(object: *mut crate::shellcom::IUnknown, site: *mut crate::shellcom::IUnknown) -> HRESULT;
+}
+
+/// `CScopedSetObjectWithSite` — shellutils.h:657.
+///
+/// Sets a site on an object for a scope and clears it on the way out. The C++ is a
+/// three-line RAII struct, and the one detail that matters is what it does with a NULL
+/// site: it does NOT call `IUnknown_SetSite` and it stores NULL in `m_pObj`, so the
+/// destructor's unconditional `IUnknown_SetSite(m_pObj, NULL)` is a no-op rather than
+/// clearing a site the scope never set. Storing `pObj` regardless would clear a site
+/// somebody else installed.
+///
+/// `drop_target_helper::simulate_drop_with_site` inlines these same semantics for the one
+/// call it needed; this is the reusable form, for translated bodies that construct the
+/// C++ object by name.
+pub struct CScopedSetObjectWithSite {
+    m_pObj: *mut crate::shellcom::IUnknown,
+}
+
+impl CScopedSetObjectWithSite {
+    pub unsafe fn new(
+        pObj: *mut crate::shellcom::IUnknown,
+        pSite: *mut crate::shellcom::IUnknown,
+    ) -> Self {
+        if pSite.is_null() {
+            return Self { m_pObj: core::ptr::null_mut() };
+        }
+        IUnknown_SetSite(pObj, pSite);
+        Self { m_pObj: pObj }
+    }
+}
+
+impl Drop for CScopedSetObjectWithSite {
+    fn drop(&mut self) {
+        unsafe {
+            IUnknown_SetSite(self.m_pObj, core::ptr::null_mut());
+        }
+    }
+}

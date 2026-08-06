@@ -1310,13 +1310,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   free one and hard-failed the whole TU); `--seal-calls` hid sibling call sites from the pass
   that inserts the implicit `this`, so the envelope demanded a receiver the responsible pass
   could not see (5 of the 7 rejects); and cpp_com's dropped-constant audit demanded back a
-  `const_cast<T>` type argument that `fact_seal` already knew has no Rust landing site. What
-  remains is exactly two bodies: `InvokeRegVerb` needs `CRegKey` + `CScopedSetObjectWithSite`
-  and a real vtable-subobject cast — the same `--local-raii` lowering that blocks
-  `COpenWithMenu`, so build it once for both — and `DoCreateNewFolder` is hand-written in the
-  parked file because every sample silently FIXED a real ReactOS leak (the C frees `pidl` once
-  and leaks it when `SelectItem` fails), which the envelope is right to refuse and which
-  retrying cannot change.
+  `const_cast<T>` type argument that `fact_seal` already knew has no Rust landing site. The two
+  bodies the workers could not produce are now hand-written in the parked file:
+  `DoCreateNewFolder`, because every sample silently FIXED a real ReactOS leak (the C frees
+  `pidl` once and leaks it when `SelectItem` fails), which the envelope is right to refuse and
+  which retrying cannot change; and `InvokeRegVerb`, whose three missing constructs now exist —
+  **`CRegKey` ported in `atl.rs` and `CScopedSetObjectWithSite` in `shellutils.rs` (LANDED)**,
+  and the `static_cast<IContextMenu*>(this)` is the file's own `QueryInterface` answer,
+  `addr_of_mut!((*this).IContextMenu3_iface).cast()`. That is the same `--local-raii` substrate
+  that blocks `COpenWithMenu`, so that lane is unblocked too.
+  **Second session (2026-08-05): the free-function half is bought as well — $0.13, 22/22, so
+  $0.54 for the whole TU.** `--cpp-com --class` translates the CLASS ONLY; this TU's other 14
+  top-level definitions (the `DCMA_*` menu-array API, both `*_RustBridge` entry points,
+  `SHCreateDefaultContextMenu`, `CDefFolderMenu_Create2`, the `g_StaticInvokeCmdMap` verb
+  table) needed a separate `--free-functions` run — the same two-run shape `CNetFolder` used.
+  Both runs derive their output path from the TU, so the second **requires `-o`**: rustconv
+  refuses to write rather than discard the first, which is fail-loud working as designed.
+  Still NOT FLIPPED — wired together the crate sits at **201 errors on i386**, all inside the
+  two generated halves and concentrated in this crate's known three-way substrate conflict
+  (`crate::shellcom` vs the bindgen island vs `com_sys`: `IDataObject`, `_GUID`, and which
+  interfaces expose `lpVtbl` slots as `Option<fn>`). Everything the safe automation reaches is
+  done; the RESUME.md records the four span-applier traps that cost time here, so the next
+  pass starts from the residue instead of re-deriving them.
   Gap (2), inherited layout, blocks
   `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
   and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
