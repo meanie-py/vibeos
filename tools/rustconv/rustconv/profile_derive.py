@@ -67,6 +67,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from .dead_regions import KNOWN_DEFINED, cond_truth  # noqa: F401  (KNOWN_DEFINED re-exported)
+
 # ---------------------------------------------------------------------------
 # Errors + findings
 # ---------------------------------------------------------------------------
@@ -901,26 +903,10 @@ _BUILD_SDK_RE = re.compile(r"^build-[^/]+/sdk/")
 # the wine-derived `#ifndef __REACTOS__` idiom (a `case DLL_WINE_PREATTACH:` that ReactOS
 # never compiles) unambiguously dead. Reading those arms produced a FALSE §9.112 alarm, and a
 # checker that cries wolf gets ignored.
-KNOWN_DEFINED = frozenset({"__REACTOS__"})
-
-
-def _cond_truth(line: str) -> bool | None:
-    """``True``/``False`` when a preprocessor condition is fixed for this tree, else ``None``."""
-    m = re.match(r"^\s*#\s*(ifdef|ifndef|if)\b(.*)$", line)
-    if m is None:
-        return None
-    kind, rest = m.group(1), m.group(2).strip()
-    if kind in ("ifdef", "ifndef"):
-        sym = rest.split()[0] if rest.split() else ""
-        if sym in KNOWN_DEFINED:
-            return kind == "ifdef"
-        return None
-    if re.fullmatch(r"0+", rest):
-        return False
-    m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
-    if m2 and m2.group(2) in KNOWN_DEFINED:
-        return m2.group(1) is None
-    return None
+# One rule, one home: `dead_regions` owns it, because `translate` needs the same verdict to
+# keep a dead body out of the PAID worklist and two copies of "is this branch compiled" is
+# exactly the drift that would let the two disagree about the same `#ifndef`.
+_cond_truth = cond_truth
 
 
 def scan_includes(text: str) -> list[Include]:

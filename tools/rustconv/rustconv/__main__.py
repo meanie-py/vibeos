@@ -91,6 +91,7 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
+from .dead_regions import never_compiled_lines
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -2290,6 +2291,25 @@ def cmd_translate(args):
         # `msvcrt_spawn` and `_wpopen` blocked 48 accepted bodies across nine runs).
         # The skip is never silent: each name becomes an audit finding, so the assembled
         # file always says out loud which bodies a human still owes.
+        # Bodies the BUILD never compiles are dropped before anything is bought. A function
+        # inside `#ifndef __REACTOS__` is in no object file we produce, so a translation of
+        # it can never be called — and `translate` bills one paid call PER FUNCTION, so
+        # leaving them in the worklist is a bill for code that does not exist.
+        # except_i386.c is 7 of 23 that way: `_global_unwind2`, `_except_handler2`,
+        # `_except_handler3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`,
+        # every one confirmed absent from the object with `nm`. The rule is the narrow one
+        # `dead_regions.cond_truth` can prove; anything it cannot settle stays live and gets
+        # translated, because paying for a live body is a cost and dropping one is a bug.
+        dead_lines = never_compiled_lines(c_file.read_text(errors="replace"))
+        skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
+        if skipped_dead:
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]
+            print(
+                f"  dead branch: {len(skipped_dead)} body/bodies the build never compiles, "
+                f"not translated and not billed: {', '.join(skipped_dead)}",
+                file=sys.stderr,
+            )
+
         skipped_by_request: list[str] = []
         if getattr(args, "skip_fn", None):
             requested = {name.strip() for name in args.skip_fn if name.strip()}
@@ -3494,6 +3514,11 @@ def cmd_translate(args):
         # is wrong. A dropped struct is a compile error and finds itself; a table
         # with one wrong byte does not.
         file_findings: list[str] = []
+        for name in skipped_dead:
+            file_findings.append(
+                f"dead branch: '{name}' is inside a preprocessor arm this tree never "
+                f"compiles, so it is absent from the output ON PURPOSE — nothing is owed"
+            )
         for name in skipped_by_request:
             file_findings.append(
                 f"--skip-fn: '{name}' was NOT translated and is absent from the output — "
