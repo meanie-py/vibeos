@@ -5758,6 +5758,14 @@ pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
 unsafe extern "C" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
+unsafe extern "C" {
+    pub fn RtlUnwind(
+        TargetFrame: PVOID,
+        TargetIp: PVOID,
+        ExceptionRecord: PEXCEPTION_RECORD,
+        ReturnValue: PVOID,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OSVERSIONINFOW {

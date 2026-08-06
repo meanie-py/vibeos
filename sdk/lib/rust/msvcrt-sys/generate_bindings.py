@@ -880,6 +880,12 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # which is the other reason not to hand-write it: on i386 stdcall IS the symbol
         # name, so an `extern "C"` copy would link to nothing.
         "|__wine_RtlUnwind"
+        # ...and the plain name for the OTHER arches, because that `-D` is inside
+        # `if(ARCH STREQUAL "i386")`. except_x86_64.c's `_local_unwind` is a one-line
+        # `RtlUnwind( frame, target, NULL, 0 )` under the real winnt.h declaration. The two
+        # spellings are one function under two names and never both present in an island:
+        # i386 sees only `__wine_RtlUnwind`, amd64/arm64 only `RtlUnwind`.
+        "|RtlUnwind"
         # except.c's always-on diagnostics. wine's ERR/FIXME channels are ON by default
         # upstream, so dropping them ships silence where the C would have said why — the
         # class `tools/scan_dropped_prints.py` exists to catch. OutputDebugStringA is the

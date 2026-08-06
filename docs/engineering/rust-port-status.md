@@ -883,6 +883,10 @@ still-C when it is 3).
 |---|---|---|
 | `except.c` | 21 | **0** — flipped in wave 29 |
 | `except_i386.c` | 13 | **0** — flipped in wave 30 |
+| `except_x86_64.c` | 5 | **0** — flipped in wave 31 |
+| `except_arm64.c` | 5 | **0** — flipped in wave 31 |
+| `handler4.c` | 0 | **0** — 97% dead, compiles to an object with no symbols |
+| `concurrency.c` | 0 | **0** — 98% dead, same |
 | `ucrt_tls_sup.c` | 4 | 3 |
 | `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
 | `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
@@ -894,6 +898,42 @@ So the remaining real surface was **the exception dispatcher and nothing else of
 except.c + except_i386.c were 34 of the 45 symbols still served by C. Waves 29 and 30 took both.
 What is left is a handful of stragglers — `ucrt_tls_sup.c`'s 3, `wcs.c`'s 3, `string.c`'s 3,
 `DllMain`, `sincosf` — and nothing in msvcrt is now bigger than one function.
+
+**And two of the biggest-LOOKING files left were never work at all.** `handler4.c` (775 lines)
+and `concurrency.c` (3,839) each sit wholly inside one outermost `#if` decided by the module's
+own `-D_MSVCR_VER=0` — `#if defined(__x86_64__) && _MSVCR_VER>=140` and `#if _MSVCR_VER >= 100`.
+Each compiles to a **396-byte object with zero defined symbols** on all three arches
+(`llvm-nm --defined-only`, not inference). 4,614 lines that every prior census carried in the
+"still to translate" column. `profile_derive`'s `DEAD_TU` finding had been saying so
+pre-payment; it was read straight past, because in a module whose constants are named
+`ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
+
+**Wave 31 — except_x86_64.c + except_arm64.c (10/10), $0.04.** The other two arms of the arch
+gate wave 30 opened, and the end of the except family: `except.rs`'s `unsafe extern "C"` block
+for `call_catch_handler` / `call_unwind_handler` / `get_exception_pc` / `handle_fpieee_flt` is
+now answered by Rust on every arch instead of by a surviving C sibling. Both files are tiny —
+four bodies and one `__ASM_GLOBAL_FUNC` each — because that is genuinely all the 64-bit
+dispatcher cannot say portably: how to enter a handler on somebody else's frame, and where this
+architecture keeps the faulting PC. Neither earns a `seh_*` companion module; one thunk stays
+inline.
+
+Worth carrying forward:
+
+* **The asm proof generalises, including the unwind data.** `-d` agreement is necessary and not
+  sufficient for a `.seh_*`-carrying thunk: a dropped `.seh_save_regp` leaves the instructions
+  identical and the unwind info wrong. Comparing `.xdata` **and** `.pdata` against the C's own
+  object closes it — arm64 `call_exc_handler` matches its 16-byte `.xdata` record exactly, and
+  `_setjmp` and `get_exception_pc` have no `.pdata` entry on *either* side, which is the
+  agreement that says the packed-vs-`.xdata` decision came out the same way.
+* **A one-line `RtlUnwind` needed an island change on two arches and none on the third.** The
+  `-DRtlUnwind=__wine_RtlUnwind` rename is inside `if(ARCH STREQUAL "i386")`, so bindgen sees
+  the plain declaration on amd64/arm64 and the renamed one on i386. The allowlist now carries
+  both spellings; they are never both present in one island.
+* **A wine channel's ARGUMENTS can be the dangerous part.** `handle_fpieee_flt`'s FIXME prints
+  `*(ULONG64*)ep->ContextRecord->Rip` — a load through the faulting PC, which the C performs
+  only when the seh channel is on. Our sink is unconditional, so the arguments are deliberately
+  left unevaluated; evaluating them to silence an unused-parameter warning would take a second
+  fault inside a filter that is about to return CONTINUE_SEARCH.
 
 **Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
 linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
