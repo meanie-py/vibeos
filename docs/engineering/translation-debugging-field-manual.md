@@ -390,6 +390,22 @@ that would otherwise be free. Where a prelude must declare it anyway (a shared b
 import), the declaration has to be checked against the definition by hand, because rustc treats
 them as unrelated items.
 
+**Sibling case, and it is a SEQUENCING rule rather than a typing one: a global's definition
+may only cross the cohab boundary in the same commit as its WRITER.** msvcrt's
+`msvcrt_tls_index` is written once by `DllMain` at DLL_PROCESS_ATTACH and read by every
+`msvcrt_get_thread_data`. While `DllMain` was C, prelude.rs's `extern` was the only correct
+arrangement, and its comment said why: defining it on the Rust side would have given the
+reader *a second, always-zero index* — the C writer fills in the C's copy, the Rust reader
+sees Rust's, and nothing fails to compile or link. Flipping `DllMain` retires that hazard,
+but only if the definition moves with it. Split across two commits, one of them ships a
+tree where every TLS lookup reads slot 0. The general form: **when you flip the function that
+INITIALISES a global, the global comes with it, and when you flip a reader first, it must keep
+importing.** For an entry point specifically, `nm` the decorated name out of a one-file
+`rustc --emit=obj` before building anything — `extern "system"` + `#[no_mangle]` on i686 gives
+`_DllMain@12`, which must match the C object and the `set_module_type(... ENTRYPOINT DllMain
+12)` byte count. A mismatch is a linker error at best and a silently-unused entry point at
+worst, and the probe costs one command.
+
 **Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
 `cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
 never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
@@ -580,6 +596,17 @@ NOTHING there (no `__GCC_HAVE_DWARF2_CFI_ASM`), so omitting the CFI lines is the
 not a dropped directive. These thunks exist because each runs on a frame belonging to someone
 else (`call_handler` sets `%ebp` to the throwing function's before calling its `__finally`
 block); no Rust `fn` with a normal prologue can replace one.
+On the 64-bit arches the SAME thunks carry `.seh_*` unwind directives, and there `-d` agreement
+is necessary but NOT sufficient: a dropped `.seh_save_regp` leaves every instruction identical
+and the unwind info wrong, which only shows up as a hang while an exception is already in
+flight. Diff `.xdata` **and** `.pdata` as well. Two things make that readable: the C `.obj`
+holds records for the whole TU, so match your thunk's record by looking its `.text` offset up
+in the symbol table rather than diffing the section whole; and an *absent* `.pdata` entry is
+itself a signal to compare — arm64 packs simple frames into `.pdata` and gives complex ones an
+`.xdata` record, so `_setjmp` and `get_exception_pc` having no entry on **either** side is the
+agreement that says that decision came out the same way. `__ASM_SEH(...)` is live on
+x86_64/aarch64 mingw (clang defines `__SEH__`) even though `__ASM_CFI(...)` is not; check the
+target's `-dM -E` output rather than assuming, since the two macros differ per target.
 
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it
@@ -2772,6 +2799,39 @@ in, buy, and restore from a byte-exact backup verified with `git diff --quiet`.
 **Detection.** A column-0 sweep for `^name(` that is absent from the extracted set finds it with
 zero false positives on this file. Repo-wide it is noisy (`WINE_DEFAULT_DEBUG_CHANNEL` and other
 macro invocations sit at column 0 too), so it needs a macro-name filter before it can be a gate.
+
+### A `.c` in the source list can compile to an object with ZERO defined symbols
+
+**Symptom.** A file sits in the CMake source list, is 775 or 3,839 lines long, has real
+function bodies and real logic, and appears in every "still to translate" census — and the
+compiler throws all of it away. msvcrt's `handler4.c` and `concurrency.c` are both this: each
+produces a **396-byte object with no defined symbols** on all three arches. Together they are
+4,614 lines of apparent remaining work that is not work.
+
+**Cause.** One outermost `#if` over the whole TU, decided by a value the module pins on the
+compile line: `#if defined(__x86_64__) && _MSVCR_VER>=140` and `#if _MSVCR_VER >= 100`, against
+`target_compile_definitions(msvcrt_static PRIVATE _MSVCR_VER=0)`. `DEAD_SOURCE` cannot see it
+(the file IS in the list) and a reader cannot see it either, because the gate is 3,800 lines
+away from the body you are looking at. Same shape as wldap32's `HAVE_LDAP`, but sourced from
+the module's own `-D` rather than wine's `config.h`.
+
+**Fix.** `python -m rustconv.profile_derive <module> --emit report` already reports it, at
+ERROR, as `DEAD_TU` (≥90% of the TU's lines inside a decidably-FALSE `#if`), and
+`never_compiled_lines` drops such bodies off the worklist so `translate` does not bill for
+them. Confirm with the linker rather than the parser — `llvm-nm --defined-only` on the `.obj`
+is the whole check.
+
+Two traps around it:
+
+- **Grep the report for `✗`, not for `ERROR`.** A `DEAD_TU` finding is invisible in a
+  `grep -E 'ERROR|WARN'` of a module whose constants are named `ERROR_ACCESS_DENIED`,
+  `ERROR_PATH_NOT_FOUND`, and forty more. Both findings here were correctly emitted and read
+  straight past.
+- **A pinned macro decides code, so derive it conservatively.** A name counts only where every
+  target compiling the TU, on every arch, pins it to the same value — an msvcrt `.c` belongs to
+  three targets, and `-D` inside `if(ARCH STREQUAL "i386")` is not a fact about amd64. Wrong in
+  the permissive direction costs one paid call; wrong the other way silently deletes a live
+  body from the translation.
 
 ### A sealed constant comes back as the enclosing `case` label
 

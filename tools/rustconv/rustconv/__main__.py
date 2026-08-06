@@ -92,7 +92,7 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
-from .dead_regions import never_compiled_lines
+from .dead_regions import never_compiled_lines, pinned_int_macros
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -119,6 +119,7 @@ from .probe_migrate import (
     run_probe_migration,
     scan_rust_file,
 )
+from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
 from .prompt_builder import (
     build_file_prompt,
     build_full_prompt,
@@ -1770,6 +1771,55 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
+def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
+    """`-DNAME=<int>` the build puts on EVERY compile of `c_file`, from its CMakeLists.
+
+    Feeds `never_compiled_lines`, so it decides what is on the bill: msvcrt pins
+    `_MSVCR_VER=0` and ~200 `#if _MSVCR_VER >= 80/100/110/120/140` bodies across the module
+    are dead at that value. Getting it WRONG in the permissive direction costs a paid call;
+    wrong in the other direction silently drops a live body. So the rule is agreement:
+    a name survives only if every target that compiles this TU, on every arch, pins it to
+    the same value. A macro pinned only under `if(ARCH STREQUAL ...)`, or only in one of the
+    three targets an msvcrt TU belongs to, decides nothing and the bodies stay live.
+
+    Best-effort by design — an unparseable or absent CMakeLists yields `{}`, which is
+    exactly the pre-existing behaviour (more paid calls, never a dropped body).
+    """
+    cmake = c_file.resolve().parent / "CMakeLists.txt"
+    # A TU can live one directory down from the CMakeLists that lists it
+    # (msvcrt's `reactos/misc.c`), so walk up until one turns up.
+    for _ in range(3):
+        if cmake.is_file():
+            break
+        cmake = cmake.parent.parent / "CMakeLists.txt"
+    if not cmake.is_file():
+        return {}
+
+    repo_root = REACTOS_ROOT
+    wanted = c_file.resolve()
+    agreed: dict[str, int] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        try:
+            names = sorted(_target_names(cmake))
+        except ProfileDeriveError:
+            return {}
+        for name in names:
+            if getattr(args, "target", None) and name != args.target:
+                continue
+            try:
+                module = parse_cmakelists(cmake, repo_root, arch=arch, target=name)
+            except ProfileDeriveError:
+                continue
+            if wanted not in {p.resolve() for p in module.compiled_tus}:
+                continue
+            here = pinned_int_macros(module.definitions)
+            if agreed is None:
+                agreed = here
+            else:
+                agreed = {k: v for k, v in agreed.items() if here.get(k) == v}
+    return agreed or {}
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
@@ -2315,7 +2365,14 @@ def cmd_translate(args):
         # every one confirmed absent from the object with `nm`. The rule is the narrow one
         # `dead_regions.cond_truth` can prove; anything it cannot settle stays live and gets
         # translated, because paying for a live body is a cost and dropping one is a bug.
-        dead_lines = never_compiled_lines(c_file.read_text(errors="replace"))
+        # TWO classes of gate, and the second is the bigger one in msvcrt: `#ifndef
+        # __REACTOS__` is tree-wide, but the module's own `-D_MSVCR_VER=0` decides ~200
+        # `#if _MSVCR_VER >= 80/100/110/120/140` directives — concurrency.c is 3,839 lines
+        # wholly inside one. `_module_pinned_macros` reads those off the CMakeLists, and
+        # only where every target and every arch agrees on the value.
+        dead_lines = never_compiled_lines(
+            c_file.read_text(errors="replace"), _module_pinned_macros(c_file, args)
+        )
         skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
         if skipped_dead:
             sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]

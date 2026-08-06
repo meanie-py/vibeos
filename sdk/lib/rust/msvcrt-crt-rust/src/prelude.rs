@@ -422,13 +422,6 @@ extern "C" {
     // msvcrt.h:229 — `extern _locale_t MSVCRT_locale;`
     pub static mut MSVCRT_locale: _locale_t;
 
-    // msvcrt.h:170 — `extern DWORD msvcrt_tls_index;`, defined in main.c (still C) and
-    // assigned there by `TlsAlloc()` at DLL attach. thread.c only ever READS it, so it
-    // stays `extern` here rather than moving with thread.c: whoever owns DllMain owns the
-    // slot's lifetime, and duplicating the definition on the Rust side would give the
-    // reader a second, always-zero index.
-    pub static mut msvcrt_tls_index: DWORD;
-
     // data.c:59/:61. `MSVCRT_app_type` is the 0/1/2 console-vs-GUI discriminator that exit.c's
     // three error paths branch on to decide message box vs stderr; `MSVCRT__wpgmptr` is the
     // program path DoMessageBoxW prints.
@@ -442,6 +435,19 @@ extern "C" {
     // in either case: one is an `int`, the other a pointer.
     pub static mut MSVCRT_app_type: c_int;
     pub static mut MSVCRT__wpgmptr: *mut WCHAR;
+
+    // msvcrt.h:170 — `extern DWORD msvcrt_tls_index;`. Same arrangement and the same reason
+    // as the two above: `msvcrt/main.rs` DEFINES it `#[no_mangle]` under the `dllmain`
+    // feature, thread.rs READS it under `threading`, and an import would couple two gates.
+    //
+    // This one used to carry a warning that duplicating the definition on the Rust side
+    // would give the reader "a second, always-zero index". That was true while the C's
+    // DllMain was the only WRITER — a Rust definition would then have been a second slot
+    // that nobody ever filled in. It stopped being true the moment DllMain itself became
+    // Rust, which is why the definition moved in the same commit as the writer and not
+    // before it. Writer and reader now resolve to one storage location whichever
+    // definition lld's first-match happens to keep, since the C's DllMain no longer runs.
+    pub static mut msvcrt_tls_index: DWORD;
 
     // <stdlib.h>/<signal.h>/<stdio.h> siblings that are still C. `raise` and `mbstowcs`
     // have no Rust definition to check against; `_snwprintf` and `fwprintf` are variadic,
