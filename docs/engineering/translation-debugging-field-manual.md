@@ -3334,7 +3334,10 @@ N+1 as evidence that the fix for bug N was wrong.**
   whose bound is not the CALLER'S bound is not a substitute** — if the real body cannot be
   written, hard-fail rather than approximate, because a bound is the entire contract of the
   function that carries one. Symptom to grep for: a wrapper that takes a size parameter and
-  never mentions it again (`let _ = $cch;`).
+  never mentions it again (`let _ = $cch;`). **Swept the tree after fixing it and found no
+  second instance** — shell32-rust has eleven copies of a per-file `%s`/`%c` mini-printf, and
+  every one of them honours its `capacity` and returns `STRSAFE_E_INSUFFICIENT_BUFFER`. Writing
+  a narrow formatter is fine; dropping the bound is not, and they are independent decisions.
 - **A hand-approximated port of a header the tree already ports elsewhere.** Same module, same
   root cause: `static __inline` helpers have no object file anywhere, so each flipped module
   ports them again, and the Nth copy is written from what the module happens to call rather than
