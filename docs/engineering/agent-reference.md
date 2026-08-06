@@ -392,7 +392,15 @@ python -m rustconv candidate-check candidates.json --repair  # Batched x3 candid
 python -m rustconv substrate-plan path/to/report.json   # Cluster compiler roots by authority
 python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 deterministic repair
 python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
+python -m rustconv bank-audit [--verbose]               # Paid .responses output NOT in the tree
 ```
+
+`bank-audit` is the oracle behind the "never delete a `.responses/` dir holding unintegrated
+work" rule — it runs `.responses` → tree, the opposite direction to `fn_coverage`/`export_audit`,
+so it sees paid bodies that never reached a crate (nothing references them, so nothing else
+complains). Exits nonzero on a finding. A banked NAME is a label, not a symbol: `--verbose` shows
+how each alias resolved (macro-expansion body, varargs twin, TCHAR macro, allowlist). Reviewed
+exceptions live in `tools/rustconv/bank_audit_allow.toml` and each needs a written reason.
 
 ### Deterministic substrate closure
 

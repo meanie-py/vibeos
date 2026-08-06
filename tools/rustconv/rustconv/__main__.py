@@ -39,6 +39,8 @@ from . import (
     user_lock_inventory,
 )
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
+from .bank_audit import audit as bank_audit
+from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
@@ -60,6 +62,7 @@ from .config import (
     OUTPUT_CRATE,
     REACTOS_ROOT,
     RUST_DIR,
+    RUSTCONV_RESPONSES_DIR,
     SHELL32_ISLAND_FILES,
     TARGETS,
     cost_usd,
@@ -3871,6 +3874,23 @@ def cmd_extern_audit(args):
         run_extern_audit(json_output=args.json)
 
 
+def cmd_bank_audit(args):
+    """Report paid translation output that never made it into the tree."""
+    responses = Path(args.responses) if args.responses else RUSTCONV_RESPONSES_DIR
+    rust_root = Path(args.tree) if args.tree else RUST_DIR
+    if not responses.is_dir():
+        raise ValueError(f"no response bank at {responses}")
+    if not rust_root.is_dir():
+        raise ValueError(f"no Rust tree at {rust_root}")
+
+    reports = bank_audit(responses, rust_root)
+    print(format_bank_report(reports, verbose=args.verbose))
+    # Unintegrated paid work is a finding, not a status line — exit nonzero so a
+    # caller that wired this into a gate actually notices.
+    if any(r.absent for r in reports):
+        sys.exit(1)
+
+
 def cmd_trace_catalog(args):
     """Generate debugcon trace catalog from Rust source."""
 
@@ -4629,6 +4649,17 @@ def main():
         "--dry-run", action="store_true", help="Show what --fix would change without writing"
     )
 
+    # bank-audit
+    p = sub.add_parser(
+        "bank-audit",
+        help="Report paid translation output (.responses) that is not in the tree",
+    )
+    p.add_argument("--responses", help="Response bank root (default: tools/rustconv/.responses)")
+    p.add_argument("--tree", help="Rust crate root to check against (default: sdk/lib/rust)")
+    p.add_argument(
+        "--verbose", action="store_true", help="Also list functions resolved via an alias rule"
+    )
+
     # pp (postprocess existing .rs files)
     p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
     p.add_argument("path", help="Rust file or directory (subsystem under ntoskrnl-rust/src/)")
@@ -4675,6 +4706,7 @@ def main():
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
+        "bank-audit": cmd_bank_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
     }
