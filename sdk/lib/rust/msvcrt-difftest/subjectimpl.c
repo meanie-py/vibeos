@@ -59,39 +59,20 @@ unsigned int subj_doserrno_get(void)           { return *subj_doserrno_slot(); }
 void         subj_doserrno_set(unsigned int v) { *subj_doserrno_slot() = v; }
 
 /* ------------------------------------------------------------------ *
- * _wcsdup — NOT under test here, and on the path anyway.
+ * _wcsdup — RETIRED (wave 32), exactly as this stub's own note said it would be.
  *
- * file.rs's `tmpnam_helper` calls it.  wcs.c still owns it in the shipping DLL
- * (msvcrt-crt-rust does not export it), so the subject has no Rust copy to link
- * against, and the reference's is renamed `ref__wcsdup` and must stay unreachable
- * from this side.  Follows dll/win32/msvcrt/wcs.c:81-91, including the
- * NULL-in/NULL-out arm — the same debt shape as fileimpl.c's msvcrt_set_errno,
- * and it retires the same way, by making wcs.c's owner a reference TU whose
- * subject half is Rust.
+ * It stood in because `file.rs`'s `tmpnam_helper` calls `_wcsdup` and
+ * msvcrt-crt-rust did not export it, so the subject side had no Rust copy to
+ * link against while the reference's stayed renamed `ref__wcsdup`.  Wave 32 put
+ * the real one in `wcs_rest.rs`, which is the retirement the note described —
+ * "by making wcs.c's owner a reference TU whose subject half is Rust".  Keeping
+ * the stub now is a duplicate symbol AND a worse test: it graded a hand-written
+ * stand-in where the shipping artifact is available.
  *
- * `unsigned short`, NOT the host's `wchar_t`, and NOT glibc's `wcslen`: msvcrt's
- * wchar_t is 16 bits and this TU has no header that says so.  Reaching for the
- * host's would count 32-bit units over a UTF-16 buffer — a length wrong by ~2x
- * and a malloc to match, on a string the caller then reads to its real NUL.
- * That is why the loop is spelled out rather than delegated.
+ * The 16-bit-wchar_t warning it carried is preserved where it now applies: the
+ * Rust body takes `*const wchar_t` from the msvcrt-sys island, which is
+ * `c_ushort`, so the host's 32-bit `wchar_t` never enters the picture.
  * ------------------------------------------------------------------ */
-#include <stdlib.h>
-#include <string.h>
-
-unsigned short *_wcsdup(const unsigned short *str)
-{
-    unsigned short *ret = NULL;
-    if (str)
-    {
-        size_t len = 0;
-        size_t size;
-        while (str[len]) len++;
-        size = (len + 1) * sizeof(unsigned short);
-        ret = malloc(size);
-        if (ret) memcpy(ret, str, size);
-    }
-    return ret;
-}
 
 /* ------------------------------------------------------------------ *
  * The invalid-parameter handler.
