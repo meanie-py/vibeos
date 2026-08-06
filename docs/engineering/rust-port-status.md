@@ -829,6 +829,52 @@ and `msvcrt_wstrdupa` itself.
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
+**Wave 28 (2026-08-05) — lock.c + thread.c FLIPPED ($0.13). The lock table and per-thread state.**
+
+6 spec exports (`_lock`, `_unlock`, `_beginthread`, `_beginthreadex`, `_endthread`,
+`_endthreadex`) plus the three internals main.c calls (`msvcrt_init_mt_locks`,
+`msvcrt_free_locks`, `msvcrt_get_thread_data`). 434 lines, 14 live functions; small, but the
+most-executed code in the crate — `_lock`/`_unlock` run on every `malloc` through heap.rs's
+`LOCK_HEAP`, and `msvcrt_get_thread_data` is the per-thread accessor nearly every other
+translated module calls. That is the point of taking it now: unlike except.c, a defect here
+fails the boot loudly instead of hiding.
+
+**One real defect, and it is the CALL-side twin of the `_tzset` constant permutation.**
+`_beginthread_trampoline` came back with its call set slid one slot: `msvcrt_get_thread_data`
+— a zero-argument function — wearing the `memcpy`'s three arguments, `memcpy` wearing the
+`free`'s one, and `free` in place of the `start_address(arglist)` call that is the entire
+point of the trampoline. The thread would have leaked its argument block and never run the
+user's entry point. `--seal-calls` accepted it because every callee appeared exactly once and
+executable, which is all a closed SET can check.
+
+`rustconv`'s arity oracle exists for exactly this and had the evidence, but skipped the site:
+it discarded any call whose argument text mentioned `::<`, and the third argument was
+`core::mem::size_of::<T>()` — which is how essentially every `memcpy` lowering spells its
+length, so one over-broad guard had disabled arity checking across a whole call family. Fixed
+by blanking only the turbofish's own commas (`_mask_turbofish_commas`, length-preserving and
+`->`/nesting aware); replaying the real body through the seal now rejects it with
+`msvcrt_get_thread_data wants 0, got 3`. Three regression tests.
+
+**Substrate.** The two thread-entry typedefs are DERIVED, not hand-written, and the reason is
+visible in the output: `_beginthreadex_start_routine_t` is `extern "stdcall"` on i386 and
+`extern "C"` on amd64/arm64, because `__stdcall` is a real convention only on x86 — a
+hand-written pair would have been right on one arch and silently wrong on two. Also added
+`SetLastError` (the other half of the `GetLastError` save/restore `msvcrt_get_thread_data`
+goes out of its way to do) and `ResumeThread`. `msvcrt_tls_index` stays `extern`: main.c is
+still C and owns the `TlsAlloc()` that fills it, and a second Rust definition would give the
+reader an always-zero index.
+
+Both trampolines' per-arch convention duals are thin wrappers over one shared `_body`, because
+only half a `cfg` dual is ever compiled — a later hand-edit to the wrong twin is invisible to
+`cargo check` on every target that does not select it.
+
+Behind a `threading` feature, default-on, dropped by the host harness for a DUPLICATE
+definition rather than a missing one: `msvcrt-difftest/refimpl.c:310` defines
+`msvcrt_get_thread_data` and `fileimpl.c:1220` defines `_lock`/`_unlock`, since the harness
+needs its own single-threaded thread_data it can inspect between cases. PORTED, NOT GRADED —
+the substrate is Win32 (TLS slots, CRITICAL_SECTIONs, CreateThread), not an algorithm a host
+harness can reproduce.
+
 **Wave 27 (2026-08-05) — cpp.c FLIPPED ($0.21). The C++ RTTI/exception subsystem.**
 
 47 spec exports, 51 compiled functions: the `type_info` / `exception` / `bad_cast` /

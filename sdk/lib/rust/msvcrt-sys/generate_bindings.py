@@ -95,6 +95,14 @@ ALLOWLIST_TYPES = [
     # the shape a hand-written Rust struct gets right on one arch and wrong on another.
     "_exception",
     "_complex",
+    # process.h's two thread-entry function-pointer typedefs, which share one union in
+    # thread.c's trampoline struct. They differ in BOTH return type and CONVENTION —
+    # `void (__cdecl *)(void*)` vs `unsigned int (__stdcall *)(void*)` — and __stdcall is
+    # a real convention only on i386, so a hand-written pair would be right on one arch
+    # and silently wrong on the other two. Deriving them also keeps `_beginthreadex`'s
+    # third parameter type-identical to the `CreateThread` callback it is handed to.
+    "_beginthread_start_routine_t",
+    "_beginthreadex_start_routine_t",
     # winnt.h's fixed-width aliases math.c transmutes floats through.
     "UINT64",
     "INT64",
@@ -730,6 +738,20 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # arguments including TWO function pointers (malloc/free), and `operator_delete`
         # is the C++ deallocator every vector_dtor calls.
         "|RaiseException|RtlPcToFileHeader|__unDName|operator_delete"
+        # ── thread.c / lock.c ───────────────────────────────────────────────
+        # The TLS quartet is thread.c's whole reason for existing: `msvcrt_get_thread_data`
+        # is the CRT's per-thread state accessor, called by nearly every other translated
+        # module in this crate. `TlsGetValue` returning NULL is the "not created yet" path,
+        # NOT an error, and it must not disturb GetLastError — which is why thread.c saves
+        # and restores it around the whole body. A hand-written extern that got the return
+        # type or the WINAPI convention wrong would break every module at once, on i386.
+        # `_amsg_exit` is the fatal-runtime-error exit thread.c takes when TLS cannot be
+        # established; the thread trio (CreateThread/ExitThread/GetExitCodeThread) is
+        # `_beginthread`/`_endthread`'s Win32 half.
+        # `SetLastError` is the other half of that save/restore pair — omit it and the
+        # preservation thread.c goes out of its way to do simply does not happen.
+        "|TlsGetValue|TlsSetValue|TlsAlloc|TlsFree|GetCurrentThreadId|SetLastError"
+        "|CreateThread|ExitThread|GetExitCodeThread|ResumeThread|_amsg_exit"
         "|FindFirstFileA|FindFirstFileW|FindNextFileA|FindNextFileW|FindClose"
         "|CreateDirectoryW|RemoveDirectoryW|SetCurrentDirectoryW|GetCurrentDirectoryW"
         "|GetFullPathNameW|GetDiskFreeSpaceW|GetDriveTypeW"
@@ -955,6 +977,14 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # float.h's `_FPE_*` signal sub-codes float_exception_map maps each status onto,
         # and signal.h's handler slots. `_FPE_*` are small adjacent integers, so a
         # transcription that drifts by one reports the wrong arithmetic fault.
+        # mtdll.h's lock SLOT NUMBERS. `_LOCKTAB_LOCK` guards the lock table itself, which
+        # `_lock` takes before creating any other entry, and
+        # `_TOTAL_LOCKS` (already present) sizes the table. These are array indices into one
+        # static table, so a wrong one does not fail: it silently serialises two unrelated
+        # subsystems on the same critical section, or guards nothing. Worked example, from
+        # writing this very comment: it reads like slot 0 and it is 17. `_RT_THREAD` is the
+        # `_amsg_exit` message code for "cannot establish thread data" (16).
+        "|_LOCKTAB_LOCK|_RT_[A-Z_]+"
         "|_FPE_[A-Z]+|SIGINT|SIGILL|SIGFPE|SIGSEGV|SIGTERM|SIGABRT|SIGBREAK"
         "|SIG_IGN|SIG_DFL|SIG_ERR|SIG_GET|SIG_SGE|SIG_ACK|NSIG"
         ")",

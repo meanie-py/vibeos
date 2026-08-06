@@ -44,6 +44,13 @@ pub type intptr_t = isize;
 // Each is a macro, so it has no symbol for bindgen to snapshot; the value is the header's.
 /// `minwindef.h`: `#define FALSE 0`. Typed `u8` because the two uses are `BOOL`-shaped
 /// locals that the C assigns from `_ismbblead*`, which the translation carries as `u8`.
+///
+/// bindgen now ALSO emits a `FALSE` (as `u32`, from minwindef.h), so a module that globs
+/// both this prelude and `msvcrt_sys` — which is all of them — sees the bare name as
+/// E0659-ambiguous. An explicit `use msvcrt_sys::FALSE;` shadows both globs and is the
+/// fix; `lock.rs` does exactly that. Collapsing the two into one definition means
+/// re-typing 28 sites across four already-graded modules, so it is tracked separately
+/// rather than smuggled into an unrelated wave.
 pub const FALSE: u8 = 0;
 /// `mbstring.h`: `#define _NLSCMPERROR ((unsigned int)0x7fffffff)`. Every use in `mbcs.c`
 /// is a `return` from an `int` function, where the C conversion is value-preserving.
@@ -414,6 +421,13 @@ extern "C" {
 
     // msvcrt.h:229 — `extern _locale_t MSVCRT_locale;`
     pub static mut MSVCRT_locale: _locale_t;
+
+    // msvcrt.h:170 — `extern DWORD msvcrt_tls_index;`, defined in main.c (still C) and
+    // assigned there by `TlsAlloc()` at DLL attach. thread.c only ever READS it, so it
+    // stays `extern` here rather than moving with thread.c: whoever owns DllMain owns the
+    // slot's lifetime, and duplicating the definition on the Rust side would give the
+    // reader a second, always-zero index.
+    pub static mut msvcrt_tls_index: DWORD;
 
     // data.c:59/:61. `MSVCRT_app_type` is the 0/1/2 console-vs-GUI discriminator that exit.c's
     // three error paths branch on to decide message box vs stderr; `MSVCRT__wpgmptr` is the

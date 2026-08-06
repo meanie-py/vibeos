@@ -4496,6 +4496,38 @@ pub const LOCALE_IDIGITSUBSTITUTION: u32 = 4116;
 pub const LOCALE_IPAPERSIZE: u32 = 4106;
 pub const LOCALE_FREE: u32 = 1;
 pub const LOCALE_THREAD: u32 = 2;
+pub const _RT_STACK: u32 = 0;
+pub const _RT_NULLPTR: u32 = 1;
+pub const _RT_FLOAT: u32 = 2;
+pub const _RT_INTDIV: u32 = 3;
+pub const _RT_EXECMEM: u32 = 5;
+pub const _RT_EXECFORM: u32 = 6;
+pub const _RT_EXECENV: u32 = 7;
+pub const _RT_SPACEARG: u32 = 8;
+pub const _RT_SPACEENV: u32 = 9;
+pub const _RT_ABORT: u32 = 10;
+pub const _RT_NPTR: u32 = 12;
+pub const _RT_FPTR: u32 = 13;
+pub const _RT_BREAK: u32 = 14;
+pub const _RT_INT: u32 = 15;
+pub const _RT_THREAD: u32 = 16;
+pub const _RT_LOCK: u32 = 17;
+pub const _RT_HEAP: u32 = 18;
+pub const _RT_OPENCON: u32 = 19;
+pub const _RT_QWIN: u32 = 20;
+pub const _RT_NOMAIN: u32 = 21;
+pub const _RT_NONCONT: u32 = 22;
+pub const _RT_INVALDISP: u32 = 23;
+pub const _RT_ONEXIT: u32 = 24;
+pub const _RT_PUREVIRT: u32 = 25;
+pub const _RT_STDIOINIT: u32 = 26;
+pub const _RT_LOWIOINIT: u32 = 27;
+pub const _RT_HEAPINIT: u32 = 28;
+pub const _RT_DOMAIN: u32 = 120;
+pub const _RT_SING: u32 = 121;
+pub const _RT_TLOSS: u32 = 122;
+pub const _RT_CRNL: u32 = 252;
+pub const _RT_BANNER: u32 = 255;
 pub const _MAX__TIME64_T: u64 = 32535244799;
 pub const _O_RDONLY: u32 = 0;
 pub const _O_WRONLY: u32 = 1;
@@ -4568,6 +4600,7 @@ pub const _TIME_LOCK: u32 = 11;
 pub const _EXIT_LOCK1: u32 = 13;
 pub const _EXIT_LOCK2: u32 = 14;
 pub const _POPEN_LOCK: u32 = 16;
+pub const _LOCKTAB_LOCK: u32 = 17;
 pub const _SETLOCALE_LOCK: u32 = 19;
 pub const _MB_CP_LOCK: u32 = 25;
 pub const _STREAM_LOCKS: u32 = 28;
@@ -5284,6 +5317,9 @@ pub struct tagPOINT {
     pub y: LONG,
 }
 pub type POINT = tagPOINT;
+pub type PTHREAD_START_ROUTINE =
+    ::core::option::Option<unsafe extern "stdcall" fn(lpThreadParameter: LPVOID) -> DWORD>;
+pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _OVERLAPPED {
@@ -5531,6 +5567,16 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn CreateThread(
+        arg1: LPSECURITY_ATTRIBUTES,
+        arg2: DWORD,
+        arg3: LPTHREAD_START_ROUTINE,
+        arg4: PVOID,
+        arg5: DWORD,
+        arg6: PDWORD,
+    ) -> HANDLE;
+}
+unsafe extern "stdcall" {
     pub fn DebugBreak();
 }
 unsafe extern "stdcall" {
@@ -5555,6 +5601,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ExitProcess(arg1: UINT) -> !;
+}
+unsafe extern "stdcall" {
+    pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
 unsafe extern "stdcall" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
@@ -5602,6 +5651,9 @@ unsafe extern "stdcall" {
     pub fn GetCurrentProcessId() -> DWORD;
 }
 unsafe extern "stdcall" {
+    pub fn GetCurrentThreadId() -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn GetDiskFreeSpaceW(
         arg1: LPCWSTR,
         arg2: PDWORD,
@@ -5621,6 +5673,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
@@ -5741,6 +5796,9 @@ unsafe extern "stdcall" {
     pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn ResumeThread(arg1: HANDLE) -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -5772,6 +5830,9 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn SetLastError(arg1: DWORD);
+}
+unsafe extern "stdcall" {
     pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -5789,6 +5850,18 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TlsAlloc() -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn TlsFree(arg1: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TlsGetValue(arg1: DWORD) -> PVOID;
+}
+unsafe extern "stdcall" {
+    pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
@@ -6057,6 +6130,9 @@ pub struct __thread_data {
 pub type thread_data_t = __thread_data;
 unsafe extern "C" {
     pub fn msvcrt_get_thread_data() -> *mut thread_data_t;
+}
+unsafe extern "C" {
+    pub fn _amsg_exit(errnum: ::core::ffi::c_int);
 }
 unsafe extern "C" {
     pub fn msvcrt_wstrdupa(arg1: *const ::core::ffi::c_char) -> *mut wchar_t;
@@ -7667,6 +7743,11 @@ pub struct _onexit_table_t {
     pub _last: *mut _PVFV,
     pub _end: *mut _PVFV,
 }
+pub type _beginthread_start_routine_t =
+    ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>;
+pub type _beginthreadex_start_routine_t = ::core::option::Option<
+    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void) -> ::core::ffi::c_uint,
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct tagHELPINFO {

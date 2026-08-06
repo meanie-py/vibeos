@@ -2137,6 +2137,26 @@ of them were **ours**, not the model's:
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
 
+  **`--seal-calls` has the same permutation weakness, and its arity oracle was switched off by
+  a turbofish.** msvcrt's `_beginthread_trampoline` shipped
+  `msvcrt_get_thread_data(&local, arg, sizeof)` where the C has `memcpy(...)`, `memcpy(arg)`
+  where it has `free(arg)`, and `free(local.arglist)` in place of the
+  `local.start_address(local.arglist)` call that is the whole point of the function — a thread
+  that leaks its argument block and never runs the user's entry point. Every sealed callee
+  appeared exactly once and executable, so the closed-SET invariant was satisfied by a slide.
+  `_arity_disagreements` exists precisely to catch a slid envelope and HAD the evidence —
+  `msvcrt_get_thread_data` takes zero arguments and was called with three — but it skipped any
+  site whose argument text mentioned `::<`, and the third argument was
+  `core::mem::size_of::<T>()`. That is not a corner: it is how nearly every `memcpy` lowering
+  spells its length, so one over-broad guard disabled arity checking across a whole call family.
+  **Fix (landed): `_mask_turbofish_commas` blanks only the commas inside a `::<…>` span** —
+  length-preserving, `->`-aware, nesting-aware — instead of discarding the site; a callee-side
+  turbofish needs no handling because `_argument_count` already returns None when anything sits
+  between the name and the `(`. Tell for a reviewer: the shipped body was byte-for-byte
+  reproducible by replaying the seal, and a near-identical sibling 40 lines away
+  (`_beginthreadex_trampoline`) came back correct — **nearby-body contrast is the cheapest
+  signal that the fault is placement rather than comprehension.**
+
   **An ABSENT constant is not sealed — it is INVENTED, and no audit fires.** Sealing can only
   seal a name the `-sys` island CARRIES; a constant the island lacks never becomes a token, so
   the model writes it from memory and the envelope has nothing to check. This is the mirror of

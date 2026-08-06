@@ -235,3 +235,11 @@ pub mod process;
 pub mod cpp;
 #[cfg(feature = "cpp")]
 pub mod cpp_rtti;
+
+// lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
+// together behind `threading` because the host harness supplies its own `_lock`,
+// `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.
+#[cfg(feature = "threading")]
+pub mod lock;
+#[cfg(feature = "threading")]
+pub mod thread;
