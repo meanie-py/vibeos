@@ -7,9 +7,9 @@ use core::ffi::c_void;
 pub struct _SETTINGS_DATA {
     pub DisplayDeviceList: PDISPLAY_DEVICE_ENTRY,
     pub CurrentDisplayDevice: PDISPLAY_DEVICE_ENTRY,
-    pub hSpectrumBitmaps: [HBITMAP; NUM_SPECTRUM_BITMAPS],
-    pub cxSource: [i32; NUM_SPECTRUM_BITMAPS],
-    pub cySource: [i32; NUM_SPECTRUM_BITMAPS],
+    pub hSpectrumBitmaps: [HBITMAP; (NUM_SPECTRUM_BITMAPS) as usize],
+    pub cxSource: [i32; (NUM_SPECTRUM_BITMAPS) as usize],
+    pub cySource: [i32; (NUM_SPECTRUM_BITMAPS) as usize],
 }
 pub type SETTINGS_DATA = _SETTINGS_DATA;
 pub type PSETTINGS_DATA = *mut _SETTINGS_DATA;
@@ -29,9 +29,9 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
     let hwndMonSel: HWND;
     let mut info: MONSL_MONINFO = core::mem::zeroed();
 
-    LoadString(hApplet, IDS_PIXEL, Pixel.as_mut_ptr(), _countof!(Pixel));
+    LoadString(hApplet, IDS_PIXEL, Pixel.as_mut_ptr(), (_countof!(Pixel)) as i32);
     _stprintf(Buffer.as_mut_ptr(), Pixel.as_ptr(), (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth, (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight, Pixel.as_ptr());
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION_TEXT, WM_SETTEXT, 0, Buffer.as_ptr() as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION_TEXT) as i32, WM_SETTEXT, 0, Buffer.as_ptr() as LPARAM);
 
     index = 0;
     while index < (*(*pData).CurrentDisplayDevice).ResolutionsCount {
@@ -39,22 +39,22 @@ unsafe extern "C" fn UpdateDisplay(hwndDlg: HWND, pData: PSETTINGS_DATA, bUpdate
            (*(*(*pData).CurrentDisplayDevice).Resolutions.offset(index as isize)).dmPelsHeight == (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight
         {
             if bUpdateThumb != 0 {
-                SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_SETPOS, TRUE, index);
+                (SendDlgItemMessage) as i32(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETPOS, (TRUE) as u64, (index) as i64);
             }
             break;
         }
         index = index + 1;
     }
 
-    if LoadString(hApplet, (2900 + (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmBitsPerPel), Buffer.as_mut_ptr(), _countof!(Buffer)) != 0 {
-        SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_SELECTSTRING, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM);
+    if LoadString(hApplet, (2900 + (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmBitsPerPel), Buffer.as_mut_ptr(), (_countof!(Buffer)) as i32) != 0 {
+        SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_SELECTSTRING, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM);
     }
 
-    hwndMonSel = GetDlgItem(hwndDlg, IDC_SETTINGS_MONSEL);
+    hwndMonSel = GetDlgItem(hwndDlg, (IDC_SETTINGS_MONSEL) as i32);
     index = SendMessage(hwndMonSel, MSLM_GETCURSEL, 0, 0) as INT as DWORD;
     if index != (-1 as i32) as DWORD && SendMessage(hwndMonSel, MSLM_GETMONITORINFO, index, core::ptr::addr_of_mut!(info) as LPARAM) != 0 {
-        info.Size.cx = (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth;
-        info.Size.cy = (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight;
+        info.Size.cx = ((*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth) as i32;
+        info.Size.cy = ((*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsHeight) as i32;
         SendMessage(hwndMonSel, MSLM_SETMONITORINFO, index, core::ptr::addr_of_mut!(info) as LPARAM);
     }
 }
@@ -100,10 +100,10 @@ unsafe extern "C" fn GetPossibleSettings(
 
     *CurrentSettings = core::ptr::null_mut();
     hDC = CreateIC(core::ptr::null_mut(), DeviceName, core::ptr::null_mut(), core::ptr::null_mut());
-    bpp = GetDeviceCaps(hDC, PLANES)
-        * GetDeviceCaps(hDC, BITSPIXEL);
-    xres = GetDeviceCaps(hDC, HORZRES);
-    yres = GetDeviceCaps(hDC, VERTRES);
+    bpp = (GetDeviceCaps(hDC, (PLANES) as i32)
+        * GetDeviceCaps(hDC, (BITSPIXEL) as i32)) as u32;
+    xres = (GetDeviceCaps(hDC, (HORZRES) as i32)) as u32;
+    yres = (GetDeviceCaps(hDC, (VERTRES) as i32)) as u32;
     DeleteDC(hDC);
 
     devmode.dmSize = core::mem::size_of::<DEVMODE>() as WORD;
@@ -133,7 +133,7 @@ unsafe extern "C" fn GetPossibleSettings(
         Current = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<SETTINGS_ENTRY>(),
+            (core::mem::size_of::<SETTINGS_ENTRY>()) as SIZE_T,
         ) as PSETTINGS_ENTRY;
         if !Current.is_null() {
             let mut Previous: PSETTINGS_ENTRY = core::ptr::null_mut();
@@ -192,7 +192,7 @@ unsafe extern "C" fn AddDisplayDevice(
     let mut i: DWORD;
 
     'ByeBye: loop {
-        newEntry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<DISPLAY_DEVICE_ENTRY>()) as PDISPLAY_DEVICE_ENTRY;
+        newEntry = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<DISPLAY_DEVICE_ENTRY>()) as SIZE_T) as PDISPLAY_DEVICE_ENTRY;
         if newEntry.is_null() {
             break 'ByeBye;
         }
@@ -225,7 +225,7 @@ unsafe extern "C" fn AddDisplayDevice(
         (*newEntry).Resolutions = HeapAlloc(
             GetProcessHeap(),
             0,
-            (ResolutionsCount as usize) * core::mem::size_of::<RESOLUTION_INFO>(),
+            ((ResolutionsCount as usize) * core::mem::size_of::<RESOLUTION_INFO>()) as SIZE_T,
         ) as *mut RESOLUTION_INFO;
         if (*newEntry).Resolutions.is_null() {
             break 'ByeBye;
@@ -248,46 +248,46 @@ unsafe extern "C" fn AddDisplayDevice(
             Current = (*Current).Flink;
         }
 
-        descriptionSize = (_tcslen((*DisplayDevice).DeviceString.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>();
+        descriptionSize = ((_tcslen((*DisplayDevice).DeviceString.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32;
         description = HeapAlloc(GetProcessHeap(), 0, descriptionSize) as LPTSTR;
         if description.is_null() {
             break 'ByeBye;
         }
 
-        nameSize = (_tcslen((*DisplayDevice).DeviceName.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>();
+        nameSize = ((_tcslen((*DisplayDevice).DeviceName.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32;
         name = HeapAlloc(GetProcessHeap(), 0, nameSize) as LPTSTR;
         if name.is_null() {
             break 'ByeBye;
         }
 
-        keySize = (_tcslen((*DisplayDevice).DeviceKey.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>();
+        keySize = ((_tcslen((*DisplayDevice).DeviceKey.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32;
         key = HeapAlloc(GetProcessHeap(), 0, keySize) as LPTSTR;
         if key.is_null() {
             break 'ByeBye;
         }
 
-        devidSize = (_tcslen((*DisplayDevice).DeviceID.as_ptr()) + 1)
-            * core::mem::size_of::<TCHAR>();
+        devidSize = ((_tcslen((*DisplayDevice).DeviceID.as_ptr()) + 1)
+            * core::mem::size_of::<TCHAR>()) as u32;
         devid = HeapAlloc(GetProcessHeap(), 0, devidSize) as LPTSTR;
         if devid.is_null() {
             break 'ByeBye;
         }
 
-        memcpy(description as *mut core::ffi::c_void, (*DisplayDevice).DeviceString.as_ptr() as *const core::ffi::c_void, descriptionSize);
-        memcpy(name as *mut core::ffi::c_void, (*DisplayDevice).DeviceName.as_ptr() as *const core::ffi::c_void, nameSize);
-        memcpy(key as *mut core::ffi::c_void, (*DisplayDevice).DeviceKey.as_ptr() as *const core::ffi::c_void, keySize);
-        memcpy(devid as *mut core::ffi::c_void, (*DisplayDevice).DeviceID.as_ptr() as *const core::ffi::c_void, devidSize);
-        (*newEntry).DeviceDescription = description;
-        (*newEntry).DeviceName = name;
-        (*newEntry).DeviceKey = key;
-        (*newEntry).DeviceID = devid;
+        memcpy(description as *mut core::ffi::c_void, (*DisplayDevice).DeviceString.as_ptr() as *const core::ffi::c_void, (descriptionSize) as usize);
+        memcpy(name as *mut core::ffi::c_void, (*DisplayDevice).DeviceName.as_ptr() as *const core::ffi::c_void, (nameSize) as usize);
+        memcpy(key as *mut core::ffi::c_void, (*DisplayDevice).DeviceKey.as_ptr() as *const core::ffi::c_void, (keySize) as usize);
+        memcpy(devid as *mut core::ffi::c_void, (*DisplayDevice).DeviceID.as_ptr() as *const core::ffi::c_void, (devidSize) as usize);
+        (*newEntry).DeviceDescription = (description).cast();
+        (*newEntry).DeviceName = (name).cast();
+        (*newEntry).DeviceKey = (key).cast();
+        (*newEntry).DeviceID = (devid).cast();
         (*newEntry).DeviceStateFlags = (*DisplayDevice).StateFlags;
         (*newEntry).Flink = (*pData).DisplayDeviceList;
         (*pData).DisplayDeviceList = newEntry;
-        return TRUE;
+        return (TRUE) as i32;
     }
 
     if !newEntry.is_null() {
@@ -313,7 +313,7 @@ unsafe extern "C" fn AddDisplayDevice(
     if !key.is_null() {
         HeapFree(GetProcessHeap(), 0, key as *mut core::ffi::c_void);
     }
-    FALSE
+    (FALSE) as i32
 }
 unsafe extern "C" fn OnDisplayDeviceChanged(hwndDlg: HWND, pData: PSETTINGS_DATA, pDeviceEntry: PDISPLAY_DEVICE_ENTRY) {
     let mut Current: PSETTINGS_ENTRY;
@@ -321,26 +321,26 @@ unsafe extern "C" fn OnDisplayDeviceChanged(hwndDlg: HWND, pData: PSETTINGS_DATA
 
     (*pData).CurrentDisplayDevice = pDeviceEntry;
 
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_RESETCONTENT, 0, 0);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_RESETCONTENT, 0, 0);
     Current = (*pDeviceEntry).Settings;
     while !Current.is_null() {
         let mut Buffer: [u16; 64] = [0; 64];
-        if LoadString(hApplet, (2900 + (*Current).dmBitsPerPel), Buffer.as_mut_ptr(), _countof!(Buffer)) != 0 {
-            index = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_FINDSTRINGEXACT, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM) as u32;
+        if LoadString(hApplet, (2900 + (*Current).dmBitsPerPel), Buffer.as_mut_ptr(), (_countof!(Buffer)) as i32) != 0 {
+            index = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_FINDSTRINGEXACT, (-1 as i32) as WPARAM, Buffer.as_ptr() as LPARAM) as u32;
             if index == CB_ERR as u32 {
-                index = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_ADDSTRING, 0, Buffer.as_ptr() as LPARAM) as u32;
-                SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_SETITEMDATA, index as WPARAM, (*Current).dmBitsPerPel as LPARAM);
+                index = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_ADDSTRING, 0, Buffer.as_ptr() as LPARAM) as u32;
+                SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_SETITEMDATA, index as WPARAM, (*Current).dmBitsPerPel as LPARAM);
             }
         }
         Current = (*Current).Flink;
     }
 
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_DEVICE, WM_SETTEXT, 0, (*pDeviceEntry).DeviceDescription as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_DEVICE) as i32, WM_SETTEXT, 0, (*pDeviceEntry).DeviceDescription as LPARAM);
 
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_CLEARTICS, TRUE, 0);
-    SendDlgItemMessage(hwndDlg, IDC_SETTINGS_RESOLUTION, TBM_SETRANGE, TRUE, MAKELONG!(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_CLEARTICS, (TRUE) as u32, 0);
+    SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32, TBM_SETRANGE, (TRUE) as u32, MAKELONG!(0, (*pDeviceEntry).ResolutionsCount - 1) as LPARAM);
 
-    UpdateDisplay(hwndDlg, pData, TRUE);
+    UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
 }
 unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
     let mut bitmap: BITMAP = core::mem::zeroed();
@@ -350,12 +350,12 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
     let mut displayDevice: DISPLAY_DEVICE = core::mem::zeroed();
     let pData: PSETTINGS_DATA;
 
-    pData = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<SETTINGS_DATA>()) as PSETTINGS_DATA;
+    pData = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<SETTINGS_DATA>()) as SIZE_T) as PSETTINGS_DATA;
     if pData.is_null() {
         return;
     }
 
-    SetWindowLongPtr(hwndDlg, DWLP_USER, pData as isize);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, (pData as isize) as i32);
 
     (*pData).DisplayDeviceList = core::ptr::null_mut();
     displayDevice.cb = core::mem::size_of::<DISPLAY_DEVICE>() as u32;
@@ -369,11 +369,11 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
     }
 
     if Result == 0 {
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_BPP), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_RESOLUTION), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_RESOLUTION_TEXT), FALSE);
-        EnableWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_ADVANCED), FALSE);
-        ShowWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_SPECTRUM), SW_HIDE);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_BPP) as i32), (FALSE) as BOOL);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_RESOLUTION) as i32), (FALSE) as BOOL);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_RESOLUTION_TEXT) as i32), (FALSE) as BOOL);
+        EnableWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_ADVANCED) as i32), (FALSE) as BOOL);
+        ShowWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_SPECTRUM) as i32), (SW_HIDE) as i32);
 
         memset(
             (*pData).hSpectrumBitmaps.as_mut_ptr() as *mut core::ffi::c_void,
@@ -386,8 +386,8 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
 
         OnDisplayDeviceChanged(hwndDlg, pData, (*pData).DisplayDeviceList);
 
-        ShowWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_MONTEXT), SW_HIDE);
-        ShowWindow(GetDlgItem(hwndDlg, IDC_SETTINGS_MONSEL), SW_HIDE);
+        ShowWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_MONTEXT) as i32), (SW_HIDE) as i32);
+        ShowWindow(GetDlgItem(hwndDlg, (IDC_SETTINGS_MONSEL) as i32), (SW_HIDE) as i32);
 
         monitors.Position.x = 0;
         monitors.Position.y = 0;
@@ -396,7 +396,7 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
         monitors.Flags = 0;
         SendDlgItemMessage(
             hwndDlg,
-            IDC_SETTINGS_MONSEL,
+            (IDC_SETTINGS_MONSEL) as i32,
             MSLM_SETMONITORSINFO,
             1,
             &monitors as *const _ as LPARAM,
@@ -406,12 +406,12 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
 
         OnDisplayDeviceChanged(hwndDlg, pData, (*pData).DisplayDeviceList);
 
-        ShowWindow(GetDlgItem(hwndDlg, IDC_RESOLUTION_PREVIEW), SW_HIDE);
+        ShowWindow(GetDlgItem(hwndDlg, (IDC_RESOLUTION_PREVIEW) as i32), (SW_HIDE) as i32);
 
         pMonitors = HeapAlloc(
             GetProcessHeap(),
             0,
-            core::mem::size_of::<MONSL_MONINFO>() * Result as usize,
+            (core::mem::size_of::<MONSL_MONINFO>() * (Result) as usize) as SIZE_T,
         ) as PMONSL_MONINFO;
         if !pMonitors.is_null() {
             let hack: u32 = 1280;
@@ -427,7 +427,7 @@ unsafe extern "C" fn SettingsOnInitDialog(hwndDlg: HWND) {
 
             SendDlgItemMessage(
                 hwndDlg,
-                IDC_SETTINGS_MONSEL,
+                (IDC_SETTINGS_MONSEL) as i32,
                 MSLM_SETMONITORSINFO,
                 Result as WPARAM,
                 pMonitors as LPARAM,
@@ -470,18 +470,18 @@ unsafe extern "C" fn ShowResolutionPreview(draw: LPDRAWITEMSTRUCT, pData: PSETTI
     let hDC: HDC;
     let hOldObj: HGDIOBJ;
     let mut rcItem: RECT = RECT {
-        left: MONITOR_LEFT,
-        top: MONITOR_TOP,
-        right: MONITOR_RIGHT,
-        bottom: MONITOR_BOTTOM,
+        left: (MONITOR_LEFT) as i32,
+        top: (MONITOR_TOP) as i32,
+        right: (MONITOR_RIGHT) as i32,
+        bottom: (MONITOR_BOTTOM) as i32,
     };
 
     hDC = CreateCompatibleDC((*draw).hDC);
-    hOldObj = SelectObject(hDC, g_GlobalData.hMonitorBitmap);
+    hOldObj = SelectObject(hDC, (g_GlobalData.hMonitorBitmap).cast());
 
     hBrush = CreateSolidBrush(g_GlobalData.desktop_color);
     FillRect(hDC, &mut rcItem, hBrush);
-    DeleteObject(hBrush);
+    DeleteObject((hBrush).cast());
 
     GdiTransparentBlt(
         (*draw).hDC,
@@ -529,8 +529,8 @@ unsafe extern "C" fn ShowColorSpectrum(
 
     if SelectObject(
         hdcMem,
-        (*pData).hSpectrumBitmaps[iBitmap as usize],
-    ) != 0
+        ((*pData).hSpectrumBitmaps[iBitmap as usize]).cast(),
+    ) != (0) as *mut c_void
     {
         StretchBlt(
             hDC,
@@ -557,10 +557,10 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
     let hSpectrumControl: HWND;
     let mut client: RECT = core::mem::zeroed();
 
-    index = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_GETCURSEL, 0, 0) as u32;
-    dmNewBitsPerPel = SendDlgItemMessage(hwndDlg, IDC_SETTINGS_BPP, CB_GETITEMDATA, index, 0) as u32;
+    index = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_GETCURSEL, 0, 0) as u32;
+    dmNewBitsPerPel = SendDlgItemMessage(hwndDlg, (IDC_SETTINGS_BPP) as i32, CB_GETITEMDATA, index, 0) as u32;
 
-    hSpectrumControl = GetDlgItem(hwndDlg, IDC_SETTINGS_SPECTRUM);
+    hSpectrumControl = GetDlgItem(hwndDlg, (IDC_SETTINGS_SPECTRUM) as i32);
     hSpectrumDC = GetDC(hSpectrumControl);
     if hSpectrumDC == core::ptr::null_mut() {
         return;
@@ -585,7 +585,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
                 && (*Current).dmPelsWidth == (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth
             {
                 (*(*pData).CurrentDisplayDevice).CurrentSettings = Current;
-                UpdateDisplay(hwndDlg, pData, TRUE);
+                UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
                 return;
             }
             Current = (*Current).Blink;
@@ -598,7 +598,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
                 && (*Current).dmPelsWidth == (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmPelsWidth
             {
                 (*(*pData).CurrentDisplayDevice).CurrentSettings = Current;
-                UpdateDisplay(hwndDlg, pData, TRUE);
+                UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
                 return;
             }
             Current = (*Current).Flink;
@@ -609,7 +609,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
     while Current != core::ptr::null_mut() {
         if (*Current).dmBitsPerPel == dmNewBitsPerPel {
             (*(*pData).CurrentDisplayDevice).CurrentSettings = Current;
-            UpdateDisplay(hwndDlg, pData, TRUE);
+            UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
             return;
         }
         Current = (*Current).Blink;
@@ -619,7 +619,7 @@ unsafe extern "C" fn OnBPPChanged(hwndDlg: HWND, pData: PSETTINGS_DATA) {
     while Current != core::ptr::null_mut() {
         if (*Current).dmBitsPerPel == dmNewBitsPerPel {
             (*(*pData).CurrentDisplayDevice).CurrentSettings = Current;
-            UpdateDisplay(hwndDlg, pData, TRUE);
+            UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
             return;
         }
         Current = (*Current).Flink;
@@ -643,7 +643,7 @@ unsafe extern "C" fn OnResolutionChanged(
     }
 
     PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
-    InvalidateRect(GetDlgItem(hwndDlg, IDC_RESOLUTION_PREVIEW), core::ptr::null_mut(), TRUE);
+    InvalidateRect(GetDlgItem(hwndDlg, (IDC_RESOLUTION_PREVIEW) as i32), core::ptr::null_mut(), (TRUE) as BOOL);
 
     dmBitsPerPel = (*Current).dmBitsPerPel;
     dmDisplayFrequency = (*Current).dmDisplayFrequency;
@@ -706,7 +706,7 @@ pub unsafe extern "system" fn SettingsPageCallbackProc(
 
     match uMsg {
         PSPCB_CREATE => {
-            Ret = RegisterMonitorSelectionControl(hApplet);
+            Ret = (RegisterMonitorSelectionControl(hApplet)) as u32;
         }
         PSPCB_RELEASE => {
             UnregisterMonitorSelectionControl(hApplet);
@@ -731,7 +731,7 @@ unsafe extern "system" fn ConfirmDlgProc(
             pData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<TIMEOUTDATA>(),
+                (core::mem::size_of::<TIMEOUTDATA>()) as SIZE_T,
             ) as PTIMEOUTDATA;
             if pData.is_null() {
                 return FALSE;
@@ -745,7 +745,7 @@ unsafe extern "system" fn ConfirmDlgProc(
                 hApplet,
                 IDS_TIMEOUTTEXT,
                 (*pData).szRawBuffer.as_mut_ptr(),
-                _countof!((*pData).szRawBuffer),
+                (_countof!((*pData).szRawBuffer)) as i32,
             );
 
             _stprintf(
@@ -755,7 +755,7 @@ unsafe extern "system" fn ConfirmDlgProc(
             );
             SetDlgItemText(
                 hwndDlg,
-                IDC_TIMEOUTTEXT,
+                (IDC_TIMEOUTTEXT) as i32,
                 (*pData).szCookedBuffer.as_ptr(),
             );
 
@@ -777,19 +777,19 @@ unsafe extern "system" fn ConfirmDlgProc(
             );
             SetDlgItemText(
                 hwndDlg,
-                IDC_TIMEOUTTEXT,
+                (IDC_TIMEOUTTEXT) as i32,
                 (*pData).szCookedBuffer.as_ptr(),
             );
 
             if (*pData).nTimeout == 0 {
                 KillTimer(hwndDlg, 1);
-                EndDialog(hwndDlg, IDNO);
+                EndDialog(hwndDlg, (IDNO) as INT_PTR);
             }
         }
 
         WM_COMMAND => {
             KillTimer(hwndDlg, 1);
-            EndDialog(hwndDlg, LOWORD!(wParam));
+            EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
         }
 
         WM_DESTROY => {
@@ -832,30 +832,30 @@ pub unsafe extern "C" fn SwitchDisplayMode(
         core::ptr::null_mut(),
     );
 
-    match *rc {
+    match (((*rc) as u32) as i32) as u32 {
         DISP_CHANGE_SUCCESSFUL => {}
         DISP_CHANGE_RESTART => {
-            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-            LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), _countof!(Message));
+            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+            LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONINFORMATION);
-            return FALSE;
+            return (FALSE) as u8;
         }
         DISP_CHANGE_FAILED => {
-            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-            LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), _countof!(Message));
+            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+            LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-            return FALSE;
+            return (FALSE) as u8;
         }
         _ => {
-            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-            LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), _countof!(Message));
+            LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+            LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
             MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-            return FALSE;
+            return (FALSE) as u8;
         }
     }
 
-    if DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_CONFIRMSETTINGS), hwndDlg, ConfirmDlgProc) == IDYES {
-        return TRUE;
+    if DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_CONFIRMSETTINGS), hwndDlg, ConfirmDlgProc) == (IDYES) as i32 {
+        return (TRUE) as u8;
     } else {
         devmode.dmPelsWidth = (*seInit).dmPelsWidth;
         devmode.dmPelsHeight = (*seInit).dmPelsHeight;
@@ -870,27 +870,27 @@ pub unsafe extern "C" fn SwitchDisplayMode(
             core::ptr::null_mut(),
         );
 
-        match *rc {
+        match (((*rc) as u32) as i32) as u32 {
             DISP_CHANGE_SUCCESSFUL => {
-                return FALSE;
+                return (FALSE) as u8;
             }
             DISP_CHANGE_RESTART => {
-                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-                LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), _countof!(Message));
+                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+                LoadString(hApplet, IDS_APPLY_NEEDS_RESTART, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONINFORMATION);
-                return FALSE;
+                return (FALSE) as u8;
             }
             DISP_CHANGE_FAILED => {
-                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-                LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), _countof!(Message));
+                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+                LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-                return FALSE;
+                return (FALSE) as u8;
             }
             _ => {
-                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), _countof!(Title));
-                LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), _countof!(Message));
+                LoadString(hApplet, IDS_DISPLAY_SETTINGS, Title.as_mut_ptr(), (_countof!(Title)) as i32);
+                LoadString(hApplet, IDS_APPLY_FAILED, Message.as_mut_ptr(), (_countof!(Message)) as i32);
                 MessageBox(hwndDlg, Message.as_ptr(), Title.as_ptr(), MB_OK | MB_ICONSTOP);
-                return FALSE;
+                return (FALSE) as u8;
             }
         }
     }
@@ -902,7 +902,7 @@ unsafe extern "C" fn FindBestElement(
     let mut BestEntry: PSETTINGS_ENTRY = core::ptr::null_mut();
     let mut Current: PSETTINGS_ENTRY;
     let mut Distance: LONG;
-    let mut NearestDistance: LONG = MAXLONG;
+    let mut NearestDistance: LONG = (MAXLONG) as i32;
 
     Current = (*pDevice).Settings;
     while !Current.is_null() {
@@ -929,13 +929,13 @@ unsafe extern "C" fn ApplyDisplaySettings(hwndDlg: HWND, pData: PSETTINGS_DATA) 
 
     let Ret: u8 = SwitchDisplayMode(
         hwndDlg,
-        (*(*pData).CurrentDisplayDevice).DeviceName,
+        ((*(*pData).CurrentDisplayDevice).DeviceName).cast(),
         core::ptr::addr_of_mut!((*(*pData).CurrentDisplayDevice).InitialSettings),
         (*(*pData).CurrentDisplayDevice).CurrentSettings,
         core::ptr::addr_of_mut!(rc),
     );
 
-    if rc != DISP_CHANGE_SUCCESSFUL {
+    if rc != (DISP_CHANGE_SUCCESSFUL) as i32 {
         return;
     }
 
@@ -946,7 +946,7 @@ unsafe extern "C" fn ApplyDisplaySettings(hwndDlg: HWND, pData: PSETTINGS_DATA) 
         (*(*pData).CurrentDisplayDevice).InitialSettings.dmDisplayFrequency = (*(*(*pData).CurrentDisplayDevice).CurrentSettings).dmDisplayFrequency;
     } else {
         (*(*pData).CurrentDisplayDevice).CurrentSettings = FindBestElement((*pData).CurrentDisplayDevice);
-        UpdateDisplay(hwndDlg, pData, TRUE);
+        UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
     }
 }
 #[no_mangle]
@@ -993,7 +993,7 @@ pub unsafe extern "system" fn SettingsPageProc(
                     );
                     devmode.dmSize = core::mem::size_of::<DEVMODE>() as WORD;
                     if EnumDisplaySettingsExW(
-                        (*(*pData).CurrentDisplayDevice).DeviceName,
+                        ((*(*pData).CurrentDisplayDevice).DeviceName) as *const u16,
                         ENUM_CURRENT_SETTINGS,
                         core::ptr::addr_of_mut!(devmode),
                         0,
@@ -1007,7 +1007,7 @@ pub unsafe extern "system" fn SettingsPageProc(
                         (*pInitialSettings).dmDisplayFrequency = devmode.dmDisplayFrequency;
                         (*(*pData).CurrentDisplayDevice).CurrentSettings =
                             FindBestElement((*pData).CurrentDisplayDevice);
-                        UpdateDisplay(hwndDlg, pData, TRUE);
+                        UpdateDisplay(hwndDlg, pData, (TRUE) as BOOL);
                     }
                 }
             } else if controlId == IDC_SETTINGS_BPP && command == CBN_SELCHANGE {
@@ -1015,7 +1015,7 @@ pub unsafe extern "system" fn SettingsPageProc(
             }
         }
         WM_HSCROLL => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 TB_LINEUP
                 | TB_LINEDOWN
                 | TB_PAGEUP
@@ -1025,15 +1025,15 @@ pub unsafe extern "system" fn SettingsPageProc(
                 | TB_ENDTRACK => {
                     let newPosition: DWORD = SendDlgItemMessage(
                         hwndDlg,
-                        IDC_SETTINGS_RESOLUTION,
+                        (IDC_SETTINGS_RESOLUTION) as i32,
                         TBM_GETPOS,
                         0,
                         0,
                     ) as DWORD;
-                    OnResolutionChanged(hwndDlg, pData, newPosition, TRUE);
+                    OnResolutionChanged(hwndDlg, pData, newPosition, (TRUE) as BOOL);
                 }
                 TB_THUMBTRACK => {
-                    OnResolutionChanged(hwndDlg, pData, HIWORD!(wParam), FALSE);
+                    OnResolutionChanged(hwndDlg, pData, (HIWORD!(wParam)) as DWORD, FALSE);
                 }
                 _ => {}
             }
@@ -1066,7 +1066,7 @@ pub unsafe extern "system" fn SettingsPageProc(
             pt.x = LOWORD!(lParam) as i16 as i32;
             pt.y = HIWORD!(lParam) as i16 as i32;
 
-            let hwndMonSel: HWND = GetDlgItem(hwndDlg, IDC_SETTINGS_MONSEL);
+            let hwndMonSel: HWND = GetDlgItem(hwndDlg, (IDC_SETTINGS_MONSEL) as i32);
             if wParam as HWND == hwndMonSel {
                 let Index: INT;
                 if pt.x == -(1 as i32) && pt.y == -(1 as i32) {

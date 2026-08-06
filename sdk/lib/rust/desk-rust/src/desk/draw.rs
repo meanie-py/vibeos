@@ -64,11 +64,11 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     let mut RBpenplus: i32 = 0;
     let hbr: HBRUSH;
 
-    LTInnerPen = GetStockObject(NULL_PEN) as HPEN;
+    LTInnerPen = GetStockObject((NULL_PEN) as i32) as HPEN;
     LTOuterPen = LTInnerPen;
     RBInnerPen = LTInnerPen;
     RBOuterPen = LTInnerPen;
-    SavePen = SelectObject(hdc, LTInnerPen) as HPEN;
+    SavePen = SelectObject(hdc, (LTInnerPen).cast()) as HPEN;
 
     LTInnerI = LTInnerNormal[(uType & (BDR_INNER|BDR_OUTER)) as usize];
     LTOuterI = LTOuterNormal[(uType & (BDR_INNER|BDR_OUTER)) as usize];
@@ -95,13 +95,13 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     FillRect(hdc, &mut InnerRect, hbr);
-    DeleteObject(hbr);
+    DeleteObject((hbr).cast());
 
     MoveToEx(hdc, 0, 0, &mut SavePoint);
 
     if LTOuterI != -1 {
-        LTOuterPen = GetStockObject(DC_PEN);
-        SelectObject(hdc, LTOuterPen);
+        LTOuterPen = (GetStockObject((DC_PEN) as i32)).cast();
+        SelectObject(hdc, (LTOuterPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[LTOuterI as usize]);
         if (uFlags & BF_TOP) != 0 {
             MoveToEx(hdc, InnerRect.left, InnerRect.top, core::ptr::null_mut());
@@ -114,8 +114,8 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if RBOuterI != -1 {
-        RBOuterPen = GetStockObject(DC_PEN);
-        SelectObject(hdc, RBOuterPen);
+        RBOuterPen = (GetStockObject((DC_PEN) as i32)).cast();
+        SelectObject(hdc, (RBOuterPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[RBOuterI as usize]);
         if (uFlags & BF_BOTTOM) != 0 {
             MoveToEx(hdc, InnerRect.left, InnerRect.bottom-1, core::ptr::null_mut());
@@ -128,8 +128,8 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if LTInnerI != -1 {
-        LTInnerPen = GetStockObject(DC_PEN);
-        SelectObject(hdc, LTInnerPen);
+        LTInnerPen = (GetStockObject((DC_PEN) as i32)).cast();
+        SelectObject(hdc, (LTInnerPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[LTInnerI as usize]);
         if (uFlags & BF_TOP) != 0 {
             MoveToEx(hdc, InnerRect.left+LTpenplus, InnerRect.top+1, core::ptr::null_mut());
@@ -142,8 +142,8 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
     }
 
     if RBInnerI != -1 {
-        RBInnerPen = GetStockObject(DC_PEN);
-        SelectObject(hdc, RBInnerPen);
+        RBInnerPen = (GetStockObject((DC_PEN) as i32)).cast();
+        SelectObject(hdc, (RBInnerPen).cast());
         SetDCPenColor(hdc, (*scheme).crColor[RBInnerI as usize]);
         if (uFlags & BF_BOTTOM) != 0 {
             MoveToEx(hdc, InnerRect.left+LBpenplus, InnerRect.bottom-2, core::ptr::null_mut());
@@ -177,9 +177,9 @@ unsafe extern "C" fn MyIntDrawRectEdge(hdc: HDC, rc: LPRECT, uType: UINT, uFlags
         }
     }
 
-    SelectObject(hdc, SavePen);
+    SelectObject(hdc, (SavePen).cast());
     MoveToEx(hdc, SavePoint.x, SavePoint.y, core::ptr::null_mut());
-    return TRUE;
+    return (TRUE) as i32;
 }
 unsafe extern "C" fn MyDrawFrameButton(hdc: HDC, rc: LPRECT, uState: UINT, scheme: *mut COLOR_SCHEME) -> BOOL {
     let edge: UINT;
@@ -233,7 +233,7 @@ unsafe extern "C" fn MyDrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT, scheme
             Symbol = '2' as TCHAR;
         }
         _ => {
-            return FALSE;
+            return (FALSE) as i32;
         }
     }
 
@@ -251,16 +251,16 @@ unsafe extern "C" fn MyDrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT, scheme
 
     lf.lfHeight = myr.bottom - myr.top;
     lf.lfWidth = 0;
-    lf.lfWeight = FW_NORMAL;
-    lf.lfCharSet = DEFAULT_CHARSET;
+    lf.lfWeight = (FW_NORMAL) as i32;
+    lf.lfCharSet = (DEFAULT_CHARSET) as u8;
     lstrcpy(lf.lfFaceName.as_mut_ptr(), w!("Marlett"));
 
     hFont = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
-    hOldFont = SelectObject(dc, hFont as *mut core::ffi::c_void);
+    hOldFont = (SelectObject(dc, hFont as *mut core::ffi::c_void)).cast();
     clrsave = GetTextColor(dc);
     bkmode = GetBkMode(dc);
 
-    SetBkMode(dc, TRANSPARENT);
+    SetBkMode(dc, (TRANSPARENT) as i32);
 
     if (uFlags & DFCS_INACTIVE) != 0 {
         SetTextColor(dc, (*scheme).crColor[COLOR_BTNHIGHLIGHT as usize]);
@@ -271,11 +271,11 @@ unsafe extern "C" fn MyDrawFrameCaption(dc: HDC, r: LPRECT, uFlags: UINT, scheme
     TextOut(dc, myr.left, myr.top, core::ptr::addr_of!(Symbol), 1);
 
     SetTextColor(dc, clrsave);
-    SelectObject(dc, hOldFont);
+    SelectObject(dc, (hOldFont).cast());
     SetBkMode(dc, bkmode);
     DeleteObject(hFont as *mut core::ffi::c_void);
 
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme: *mut COLOR_SCHEME) -> BOOL {
     let mut lf: LOGFONT = core::mem::zeroed();
@@ -300,7 +300,7 @@ unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme:
             Symbol = '4' as TCHAR;
         }
         _ => {
-            return FALSE;
+            return (FALSE) as i32;
         }
     }
 
@@ -318,16 +318,16 @@ unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme:
 
     lf.lfHeight = myr.bottom - myr.top;
     lf.lfWidth = 0;
-    lf.lfWeight = FW_NORMAL;
-    lf.lfCharSet = DEFAULT_CHARSET;
+    lf.lfWeight = (FW_NORMAL) as i32;
+    lf.lfCharSet = (DEFAULT_CHARSET) as u8;
     lstrcpy(lf.lfFaceName.as_mut_ptr(), w!("Marlett"));
 
     hFont = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
-    hOldFont = SelectObject(dc, hFont as *mut core::ffi::c_void);
+    hOldFont = (SelectObject(dc, hFont as *mut core::ffi::c_void)).cast();
     clrsave = GetTextColor(dc);
     bkmode = GetBkMode(dc);
 
-    SetBkMode(dc, TRANSPARENT);
+    SetBkMode(dc, (TRANSPARENT) as i32);
 
     if (uFlags & DFCS_INACTIVE) != 0 {
         SetTextColor(dc, (*scheme).crColor[COLOR_BTNHIGHLIGHT as usize]);
@@ -342,7 +342,7 @@ unsafe extern "C" fn MyDrawFrameScroll(dc: HDC, r: LPRECT, uFlags: UINT, scheme:
     SetBkMode(dc, bkmode);
     DeleteObject(hFont as *mut core::ffi::c_void);
 
-    TRUE
+    (TRUE) as i32
 }
 #[no_mangle]
 pub unsafe extern "C" fn MyDrawFrameControl(hDC: HDC, rc: LPRECT, uType: UINT, uState: UINT, scheme: *mut COLOR_SCHEME) -> BOOL {
@@ -358,7 +358,7 @@ pub unsafe extern "C" fn MyDrawFrameControl(hDC: HDC, rc: LPRECT, uType: UINT, u
         }
         _ => {}
     }
-    return FALSE;
+    return (FALSE) as i32;
 }
 
 #[no_mangle]
@@ -485,11 +485,11 @@ pub unsafe extern "C" fn MyDrawCaptionTemp(
             hbr = CreateSolidBrush((*scheme).crColor[COLOR_INACTIVECAPTION as usize]);
         }
         FillRect(hdc, rect, hbr);
-        DeleteObject(hbr);
+        DeleteObject((hbr).cast());
     }
 
-    hFontOld = SelectObject(hdc, hFont);
-    SetBkMode(hdc, TRANSPARENT);
+    hFontOld = SelectObject(hdc, (hFont).cast());
+    SetBkMode(hdc, (TRANSPARENT) as i32);
     if uFlags & DC_ACTIVE != 0 {
         SetTextColor(hdc, (*scheme).crColor[COLOR_CAPTIONTEXT as usize]);
     } else {
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn MyDrawCaptionTemp(
     rc.bottom = (*rect).bottom;
     DrawTextW(hdc, str, -(1 as i32), &mut rc, DT_SINGLELINE | DT_VCENTER);
     SelectObject(hdc, hFontOld);
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn MyDrawMenuBarTemp(
@@ -532,21 +532,21 @@ pub unsafe extern "C" fn MyDrawMenuBarTemp(
         hbr = CreateSolidBrush((*scheme).crColor[COLOR_MENU as usize]);
     }
     FillRect(DC, Rect, hbr);
-    DeleteObject(hbr);
+    DeleteObject((hbr).cast());
 
-    hPen = CreatePen(PS_SOLID, 0, (*scheme).crColor[COLOR_3DFACE as usize]);
-    hPenOld = SelectObject(DC, hPen);
+    hPen = CreatePen((PS_SOLID) as i32, 0, (*scheme).crColor[COLOR_3DFACE as usize]);
+    hPenOld = SelectObject(DC, (hPen).cast());
     MoveToEx(DC, (*Rect).left, (*Rect).bottom - 1, core::ptr::null_mut());
     LineTo(DC, (*Rect).right, (*Rect).bottom - 1);
     SelectObject(DC, hPenOld);
-    DeleteObject(hPen);
+    DeleteObject((hPen).cast());
 
-    bkgnd = if flat_menu != 0 { COLOR_MENUBAR } else { COLOR_MENU };
+    bkgnd = if flat_menu != 0 { (COLOR_MENUBAR) as i32 } else { (COLOR_MENU) as i32 };
     x = (*Rect).left;
-    hFontOld = SelectObject(DC, Font);
+    hFontOld = SelectObject(DC, (Font).cast());
     i = 0;
     while i < 3 {
-        GetMenuStringW(Menu, i, Text.as_mut_ptr(), 128, MF_BYPOSITION);
+        GetMenuStringW(Menu, (i) as UINT, Text.as_mut_ptr(), 128, MF_BYPOSITION);
 
         rect.left = x;
         rect.right = x;
@@ -565,12 +565,12 @@ pub unsafe extern "C" fn MyDrawMenuBarTemp(
                 InflateRect(&mut rect, -1, -1);
                 hbr = CreateSolidBrush((*scheme).crColor[COLOR_MENUHILIGHT as usize]);
                 FillRect(DC, &mut rect, hbr);
-                DeleteObject(hbr);
+                DeleteObject((hbr).cast());
 
                 InflateRect(&mut rect, 1, 1);
                 hbr = CreateSolidBrush((*scheme).crColor[COLOR_HIGHLIGHT as usize]);
                 FrameRect(DC, &mut rect, hbr);
-                DeleteObject(hbr);
+                DeleteObject((hbr).cast());
             } else {
                 SetTextColor(DC, (*scheme).crColor[COLOR_MENUTEXT as usize]);
                 SetBkColor(DC, (*scheme).crColor[COLOR_MENU as usize]);
@@ -586,10 +586,10 @@ pub unsafe extern "C" fn MyDrawMenuBarTemp(
             SetBkColor(DC, (*scheme).crColor[bkgnd as usize]);
             hbr = CreateSolidBrush((*scheme).crColor[bkgnd as usize]);
             FillRect(DC, &mut rect, hbr);
-            DeleteObject(hbr);
+            DeleteObject((hbr).cast());
         }
 
-        SetBkMode(DC, TRANSPARENT);
+        SetBkMode(DC, (TRANSPARENT) as i32);
 
         rect.left += MENU_BAR_ITEMS_SPACE / 2;
         rect.right -= MENU_BAR_ITEMS_SPACE / 2;
@@ -613,7 +613,7 @@ pub unsafe extern "C" fn MyDrawMenuBarTemp(
     }
     SelectObject(DC, hFontOld);
 
-    return TRUE;
+    return (TRUE) as u32;
 }
 
 

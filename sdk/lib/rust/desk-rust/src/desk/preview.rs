@@ -58,18 +58,18 @@ pub struct PREVIEW_DATA {
 pub type PPREVIEW_DATA = *mut PREVIEW_DATA;
 unsafe extern "C" fn UpdatePreviewTheme(hwnd: HWND, pPreviewData: *mut PREVIEW_DATA, scheme: *mut COLOR_SCHEME) {
     if (*pPreviewData).hbrScrollbar != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hbrScrollbar);
+        DeleteObject(((*pPreviewData).hbrScrollbar).cast());
     }
-    (*pPreviewData).hbrScrollbar = CreateSolidBrush((*scheme).crColor[COLOR_SCROLLBAR]);
+    (*pPreviewData).hbrScrollbar = CreateSolidBrush((*scheme).crColor[(COLOR_SCROLLBAR) as usize]);
     if (*pPreviewData).hbrDesktop != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hbrDesktop);
+        DeleteObject(((*pPreviewData).hbrDesktop).cast());
     }
 
-    (*pPreviewData).hbrDesktop = CreateSolidBrush((*scheme).crColor[COLOR_DESKTOP]);
+    (*pPreviewData).hbrDesktop = CreateSolidBrush((*scheme).crColor[(COLOR_DESKTOP) as usize]);
     if (*pPreviewData).hbrWindow != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hbrWindow);
+        DeleteObject(((*pPreviewData).hbrWindow).cast());
     }
-    (*pPreviewData).hbrWindow = CreateSolidBrush((*scheme).crColor[COLOR_WINDOW]);
+    (*pPreviewData).hbrWindow = CreateSolidBrush((*scheme).crColor[(COLOR_WINDOW) as usize]);
 
     (*pPreviewData).cxEdge = 2;
     (*pPreviewData).cyEdge = 2;
@@ -82,27 +82,27 @@ unsafe extern "C" fn UpdatePreviewTheme(hwnd: HWND, pPreviewData: *mut PREVIEW_D
     (*pPreviewData).cyBorder = (*scheme).ncMetrics.iBorderWidth;
 
     if (*pPreviewData).hCaptionFont != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hCaptionFont);
+        DeleteObject(((*pPreviewData).hCaptionFont).cast());
     }
     (*pPreviewData).hCaptionFont = CreateFontIndirect(core::ptr::addr_of_mut!((*scheme).ncMetrics.lfCaptionFont));
 
     if (*pPreviewData).hMenuFont != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hMenuFont);
+        DeleteObject(((*pPreviewData).hMenuFont).cast());
     }
     (*pPreviewData).hMenuFont = CreateFontIndirect(core::ptr::addr_of_mut!((*scheme).ncMetrics.lfMenuFont));
 
     if (*pPreviewData).hMessageFont != core::ptr::null_mut() {
-        DeleteObject((*pPreviewData).hMessageFont);
+        DeleteObject(((*pPreviewData).hMessageFont).cast());
     }
     (*pPreviewData).hMessageFont = CreateFontIndirect(core::ptr::addr_of_mut!((*scheme).ncMetrics.lfMessageFont));
 
     (*pPreviewData).Scheme = *scheme;
-    InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+    InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
 }
 unsafe extern "C" fn OnCreate(hwnd: HWND, pPreviewData: *mut PREVIEW_DATA) {
     let mut scheme: *mut COLOR_SCHEME;
 
-    (*pPreviewData).hClientFont = GetStockObject(DEFAULT_GUI_FONT) as HFONT;
+    (*pPreviewData).hClientFont = GetStockObject((DEFAULT_GUI_FONT) as i32) as HFONT;
 
     (*pPreviewData).hMenu = LoadMenu(hApplet, MAKEINTRESOURCE!(IDR_PREVIEW_MENU));
     EnableMenuItem((*pPreviewData).hMenu,
@@ -228,16 +228,16 @@ unsafe extern "C" fn OnPaint(hwnd: HWND, pPreviewData: *mut PREVIEW_DATA) {
     FillRect(hdc, &(*pPreviewData).rcDesktop, (*pPreviewData).hbrDesktop);
 
     MyDrawEdge(hdc, &(*pPreviewData).rcInactiveFrame, EDGE_RAISED, BF_RECT | BF_MIDDLE | MY_BF_INACTIVEBORDER, scheme);
-    SetTextColor(hdc, (*scheme).crColor[COLOR_INACTIVECAPTIONTEXT]);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_INACTIVECAPTIONTEXT) as usize]);
     MyDrawCaptionTemp(core::ptr::null_mut(), hdc, &(*pPreviewData).rcInactiveCaption, (*pPreviewData).hCaptionFont,
                       core::ptr::null_mut(), (*pPreviewData).lpInAct, DC_GRADIENT | DC_ICON | DC_TEXT, scheme);
-    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcInactiveCaption, TRUE, (*pPreviewData).cyCaption - 2, scheme);
+    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcInactiveCaption, (TRUE) as BOOL, (*pPreviewData).cyCaption - 2, scheme);
 
     MyDrawEdge(hdc, &(*pPreviewData).rcActiveFrame, EDGE_RAISED, BF_RECT | BF_MIDDLE | MY_BF_ACTIVEBORDER, scheme);
-    SetTextColor(hdc, (*scheme).crColor[COLOR_CAPTIONTEXT]);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_CAPTIONTEXT) as usize]);
     MyDrawCaptionTemp(core::ptr::null_mut(), hdc, &(*pPreviewData).rcActiveCaption, (*pPreviewData).hCaptionFont,
                       core::ptr::null_mut(), (*pPreviewData).lpAct, DC_ACTIVE | DC_GRADIENT | DC_ICON | DC_TEXT, scheme);
-    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcActiveCaption, TRUE, (*pPreviewData).cyCaption - 2, scheme);
+    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcActiveCaption, (TRUE) as BOOL, (*pPreviewData).cyCaption - 2, scheme);
 
     MyDrawMenuBarTemp(hwnd, hdc, &(*pPreviewData).rcActiveMenuBar,
                       (*pPreviewData).hMenu,
@@ -250,33 +250,33 @@ unsafe extern "C" fn OnPaint(hwnd: HWND, pPreviewData: *mut PREVIEW_DATA) {
     CopyRect(&mut rc, &(*pPreviewData).rcActiveClient);
     rc.left += 4;
     rc.top += 2;
-    SetTextColor(hdc, (*scheme).crColor[COLOR_WINDOWTEXT]);
-    hOldFont = SelectObject(hdc, (*pPreviewData).hClientFont);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_WINDOWTEXT) as usize]);
+    hOldFont = (SelectObject(hdc, ((*pPreviewData).hClientFont).cast())).cast();
     DrawText(hdc, (*pPreviewData).lpWinTxt, -1, &mut rc, DT_LEFT);
-    SelectObject(hdc, hOldFont);
+    SelectObject(hdc, (hOldFont).cast());
 
     MyDrawScrollbar(hdc, &(*pPreviewData).rcActiveScroll, (*pPreviewData).hbrScrollbar, scheme);
 
     MyDrawEdge(hdc, &(*pPreviewData).rcDialogFrame, EDGE_RAISED, BF_RECT | BF_MIDDLE, scheme);
-    SetTextColor(hdc, (*scheme).crColor[COLOR_WINDOW]);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_WINDOW) as usize]);
     MyDrawCaptionTemp(core::ptr::null_mut(), hdc, &(*pPreviewData).rcDialogCaption, (*pPreviewData).hCaptionFont,
                       core::ptr::null_mut(), (*pPreviewData).lpMessBox, DC_ACTIVE | DC_GRADIENT | DC_ICON | DC_TEXT, scheme);
-    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcDialogCaption, FALSE, (*pPreviewData).cyCaption - 2, scheme);
+    MyDrawCaptionButtons(hdc, &(*pPreviewData).rcDialogCaption, (FALSE) as BOOL, (*pPreviewData).cyCaption - 2, scheme);
 
     CopyRect(&mut rc, &(*pPreviewData).rcDialogClient);
     rc.left += 4;
     rc.top += 2;
-    SetTextColor(hdc, (*scheme).crColor[COLOR_WINDOWTEXT]);
-    hOldFont = SelectObject(hdc, (*pPreviewData).hMessageFont);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_WINDOWTEXT) as usize]);
+    hOldFont = (SelectObject(hdc, ((*pPreviewData).hMessageFont).cast())).cast();
     DrawText(hdc, (*pPreviewData).lpMessText, -1, &mut rc, DT_LEFT);
-    SelectObject(hdc, hOldFont);
+    SelectObject(hdc, (hOldFont).cast());
 
     MyDrawFrameControl(hdc, &(*pPreviewData).rcDialogButton, DFC_BUTTON, DFCS_BUTTONPUSH, scheme);
     CopyRect(&mut rc, &(*pPreviewData).rcDialogButton);
-    SetTextColor(hdc, (*scheme).crColor[COLOR_BTNTEXT]);
-    hOldFont = SelectObject(hdc, (*pPreviewData).hMessageFont);
+    SetTextColor(hdc, (*scheme).crColor[(COLOR_BTNTEXT) as usize]);
+    hOldFont = (SelectObject(hdc, ((*pPreviewData).hMessageFont).cast())).cast();
     DrawText(hdc, (*pPreviewData).lpButText, -1, &mut rc, DT_VCENTER | DT_CENTER | DT_SINGLELINE);
-    SelectObject(hdc, hOldFont);
+    SelectObject(hdc, (hOldFont).cast());
 
     EndPaint(hwnd, &mut ps);
 }
@@ -345,13 +345,13 @@ unsafe extern "C" fn OnLButtonDown(hwnd: HWND, xPos: i32, yPos: i32, pPreviewDat
                 type_ as LPARAM);
 }
 unsafe extern "C" fn OnDestroy(pPreviewData: *mut PREVIEW_DATA) {
-    DeleteObject((*pPreviewData).hbrScrollbar);
-    DeleteObject((*pPreviewData).hbrDesktop);
-    DeleteObject((*pPreviewData).hbrWindow);
+    DeleteObject(((*pPreviewData).hbrScrollbar).cast());
+    DeleteObject(((*pPreviewData).hbrDesktop).cast());
+    DeleteObject(((*pPreviewData).hbrWindow).cast());
 
-    DeleteObject((*pPreviewData).hCaptionFont);
-    DeleteObject((*pPreviewData).hMenuFont);
-    DeleteObject((*pPreviewData).hMessageFont);
+    DeleteObject(((*pPreviewData).hCaptionFont).cast());
+    DeleteObject(((*pPreviewData).hMenuFont).cast());
+    DeleteObject(((*pPreviewData).hMessageFont).cast());
 
     DestroyMenu((*pPreviewData).hMenu);
 
@@ -377,18 +377,18 @@ unsafe extern "system" fn PreviewWndProc(
             pPreviewData = HeapAlloc(
                 GetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                core::mem::size_of::<PREVIEW_DATA>(),
+                (core::mem::size_of::<PREVIEW_DATA>()) as SIZE_T,
             ) as *mut PREVIEW_DATA;
             if pPreviewData.is_null() {
                 return -1;
             }
 
-            SetWindowLongPtr(hwnd, GWLP_USERDATA, pPreviewData as isize);
+            SetWindowLongPtr(hwnd, GWLP_USERDATA, (pPreviewData as isize) as i32);
             OnCreate(hwnd, pPreviewData);
         }
 
         WM_SIZE => {
-            OnSize(LOWORD!(lParam), HIWORD!(lParam), pPreviewData);
+            OnSize((LOWORD!(lParam)) as i32, (HIWORD!(lParam)) as i32, pPreviewData);
         }
 
         WM_PAINT => {
@@ -396,7 +396,7 @@ unsafe extern "system" fn PreviewWndProc(
         }
 
         WM_LBUTTONDOWN => {
-            OnLButtonDown(hwnd, LOWORD!(lParam), HIWORD!(lParam), pPreviewData);
+            OnLButtonDown(hwnd, (LOWORD!(lParam)) as i32, (HIWORD!(lParam)) as i32, pPreviewData);
         }
 
         WM_DESTROY => {
@@ -411,14 +411,14 @@ unsafe extern "system" fn PreviewWndProc(
         PVM_UPDATETHEME => {
             UpdatePreviewTheme(hwnd, pPreviewData, lParam as *mut COLOR_SCHEME);
             CalculateItemSize(pPreviewData);
-            InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+            InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
         }
 
         PVM_SETSIZE => {
             SchemeSetMetric(
                 core::ptr::addr_of_mut!((*pPreviewData).Scheme),
-                wParam,
-                lParam,
+                (wParam) as i32,
+                (lParam) as i32,
             );
             (*pPreviewData).cySizeFrame = (*pPreviewData).Scheme.ncMetrics.iBorderWidth;
             (*pPreviewData).cyCaption =
@@ -427,7 +427,7 @@ unsafe extern "system" fn PreviewWndProc(
             (*pPreviewData).cxScrollbar = (*pPreviewData).Scheme.ncMetrics.iScrollWidth;
             (*pPreviewData).cyBorder = (*pPreviewData).Scheme.ncMetrics.iBorderWidth;
             CalculateItemSize(pPreviewData);
-            InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+            InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
         }
 
         PVM_SETFONT => {
@@ -443,7 +443,7 @@ unsafe extern "system" fn PreviewWndProc(
 
             plfFont = SchemeGetFont(
                 core::ptr::addr_of_mut!((*pPreviewData).Scheme),
-                wParam,
+                (wParam) as i32,
             );
             memcpy(
                 plfFont as *mut _,
@@ -451,28 +451,28 @@ unsafe extern "system" fn PreviewWndProc(
                 core::mem::size_of::<LOGFONTW>(),
             );
 
-            DeleteObject(*phFont);
+            DeleteObject((*phFont).cast());
             *phFont = CreateFontIndirect(plfFont);
 
-            InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+            InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
         }
 
         PVM_SETCOLOR => {
             (*pPreviewData).Scheme.crColor[wParam as usize] = lParam as u32;
             match wParam {
                 COLOR_SCROLLBAR => {
-                    DeleteObject((*pPreviewData).hbrScrollbar);
+                    DeleteObject(((*pPreviewData).hbrScrollbar).cast());
                     (*pPreviewData).hbrScrollbar = CreateSolidBrush(
                         (*pPreviewData).Scheme.crColor[wParam as usize],
                     );
                 }
                 COLOR_DESKTOP => {
-                    DeleteObject((*pPreviewData).hbrDesktop);
+                    DeleteObject(((*pPreviewData).hbrDesktop).cast());
                     (*pPreviewData).hbrDesktop =
                         CreateSolidBrush((*pPreviewData).Scheme.crColor[wParam as usize]);
                 }
                 COLOR_WINDOW => {
-                    DeleteObject((*pPreviewData).hbrWindow);
+                    DeleteObject(((*pPreviewData).hbrWindow).cast());
                     (*pPreviewData).hbrWindow =
                         CreateSolidBrush((*pPreviewData).Scheme.crColor[wParam as usize]);
                 }
@@ -480,20 +480,20 @@ unsafe extern "system" fn PreviewWndProc(
             }
 
             CalculateItemSize(pPreviewData);
-            InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+            InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
         }
 
         PVM_GETSIZE => {
-            return SchemeGetMetric(
+            return ((SchemeGetMetric(
                 core::ptr::addr_of_mut!((*pPreviewData).Scheme),
-                wParam,
-            );
+                (wParam) as i32,
+            )) as i64) as i32;
         }
 
         PVM_GETFONT => {
             return SchemeGetFont(
                 core::ptr::addr_of_mut!((*pPreviewData).Scheme),
-                wParam,
+                (wParam) as i32,
             ) as LRESULT;
         }
 
@@ -503,7 +503,7 @@ unsafe extern "system" fn PreviewWndProc(
 
         PVM_SET_HDC_PREVIEW => {
             (*pPreviewData).hdcPreview = lParam as HDC;
-            InvalidateRect(hwnd, core::ptr::null_mut(), FALSE);
+            InvalidateRect(hwnd, core::ptr::null_mut(), (FALSE) as BOOL);
         }
 
         _ => {
@@ -522,7 +522,7 @@ pub unsafe extern "C" fn RegisterPreviewControl(hInstance: HINSTANCE) -> u32 {
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(core::ptr::null_mut(), IDC_ARROW);
     wc.hbrBackground = core::ptr::null_mut();
-    wc.lpszClassName = szPreviewWndClass.as_ptr();
+    wc.lpszClassName = (szPreviewWndClass.as_ptr()).cast();
 
     (RegisterClassEx(&mut wc) != 0 as ATOM) as u32
 }

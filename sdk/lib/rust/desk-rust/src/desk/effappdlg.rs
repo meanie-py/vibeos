@@ -9,31 +9,31 @@ use core::ffi::c_void;
 unsafe extern "C" fn EffAppearanceDlgUpdateControls(hwndDlg: HWND, g: *mut GLOBALS) {
     let mut state: WPARAM;
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_ANIMATION, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.Effects.bMenuAnimation = ((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_ANIMATION == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_ANIMATION) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.Effects.bMenuAnimation = (((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_ANIMATION == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8) as i32;
 
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_ANIMATIONTYPE, CB_SETCURSEL, (*g).SchemeAdv.Effects.bMenuFade as WPARAM, 0);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_EFFAPPEARANCE_ANIMATIONTYPE), (*g).SchemeAdv.Effects.bMenuAnimation as i32);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_ANIMATIONTYPE) as i32, CB_SETCURSEL, (*g).SchemeAdv.Effects.bMenuFade as WPARAM, 0);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_EFFAPPEARANCE_ANIMATIONTYPE) as i32), (*g).SchemeAdv.Effects.bMenuAnimation as i32);
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_SMOOTHING, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.Effects.bFontSmoothing = ((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_SMOOTHING == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_SMOOTHING) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.Effects.bFontSmoothing = (((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_SMOOTHING == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8) as i32;
 
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_SMOOTHINGTYPE, CB_SETCURSEL, ((*g).SchemeAdv.Effects.uiFontSmoothingType - 1) as WPARAM, 0);
-    EnableWindow(GetDlgItem(hwndDlg, IDC_EFFAPPEARANCE_SMOOTHINGTYPE), (*g).SchemeAdv.Effects.bFontSmoothing as i32);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_SMOOTHINGTYPE) as i32, CB_SETCURSEL, ((*g).SchemeAdv.Effects.uiFontSmoothingType - 1) as WPARAM, 0);
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_EFFAPPEARANCE_SMOOTHINGTYPE) as i32), (*g).SchemeAdv.Effects.bFontSmoothing as i32);
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_SETDROPSHADOW, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.Effects.bDropShadow = ((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_SETDROPSHADOW == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_SETDROPSHADOW) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.Effects.bDropShadow = (((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_SETDROPSHADOW == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8) as i32;
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_DRAGFULLWINDOWS, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.Effects.bDragFullWindows = ((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_DRAGFULLWINDOWS == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_DRAGFULLWINDOWS) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.Effects.bDragFullWindows = (((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_DRAGFULLWINDOWS == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8) as i32;
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_KEYBOARDCUES, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.Effects.bKeyboardCues = ((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_KEYBOARDCUES == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_KEYBOARDCUES) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.Effects.bKeyboardCues = (((state == BST_CHECKED) != (IDC_EFFAPPEARANCE_KEYBOARDCUES == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as u8) as i32;
 
-    state = SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_FLATMENUS, BM_GETCHECK, 0, 0);
-    (*g).SchemeAdv.bFlatMenus = (state == BST_CHECKED) as u8;
+    state = (SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_FLATMENUS) as i32, BM_GETCHECK, 0, 0)) as u32;
+    (*g).SchemeAdv.bFlatMenus = ((state == BST_CHECKED) as u8) as i32;
 
-    (*g).bSchemeChanged = 1u8;
+    (*g).bSchemeChanged = (1u8) as i32;
 }
 
 unsafe extern "C" fn EffAppearanceDlgSaveCurrentValues(hwndDlg: HWND, g: *mut GLOBALS) {}
@@ -47,7 +47,7 @@ unsafe extern "C" fn AddToCombobox(Combo: INT, hwndDlg: HWND, From: INT, To: INT
             hApplet,
             iElement as u32,
             tstrText.as_mut_ptr() as LPTSTR,
-            _countof!(tstrText),
+            (_countof!(tstrText)) as i32,
         );
         SendDlgItemMessage(
             hwndDlg,
@@ -64,51 +64,51 @@ unsafe extern "C" fn EffAppearanceDlg_Init(hwndDlg: HWND, g: *mut GLOBALS) {
 
     (*g).SchemeAdv = (*g).Scheme;
 
-    state = if (*g).SchemeAdv.Effects.bMenuAnimation != (IDC_EFFAPPEARANCE_ANIMATION == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if (*g).SchemeAdv.Effects.bMenuAnimation != (((IDC_EFFAPPEARANCE_ANIMATION == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as i32) {
         BST_CHECKED as WPARAM
     } else {
         BST_UNCHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_ANIMATION, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_ANIMATION) as i32, BM_SETCHECK, state, 0);
 
-    AddToCombobox(IDC_EFFAPPEARANCE_ANIMATIONTYPE, hwndDlg, IDS_SLIDEEFFECT, IDS_FADEEFFECT);
+    AddToCombobox((IDC_EFFAPPEARANCE_ANIMATIONTYPE) as INT, hwndDlg, (IDS_SLIDEEFFECT) as INT, (IDS_FADEEFFECT) as INT);
 
-    state = if (*g).SchemeAdv.Effects.bFontSmoothing != (IDC_EFFAPPEARANCE_SMOOTHING == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if (*g).SchemeAdv.Effects.bFontSmoothing != (((IDC_EFFAPPEARANCE_SMOOTHING == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as i32) {
         BST_CHECKED as WPARAM
     } else {
         BST_UNCHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_SMOOTHING, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_SMOOTHING) as i32, BM_SETCHECK, state, 0);
 
-    AddToCombobox(IDC_EFFAPPEARANCE_SMOOTHINGTYPE, hwndDlg, IDS_STANDARDEFFECT, IDS_CLEARTYPEEFFECT);
+    AddToCombobox((IDC_EFFAPPEARANCE_SMOOTHINGTYPE) as INT, hwndDlg, (IDS_STANDARDEFFECT) as INT, (IDS_CLEARTYPEEFFECT) as INT);
 
-    state = if (*g).SchemeAdv.Effects.bDropShadow != (IDC_EFFAPPEARANCE_SETDROPSHADOW == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if (*g).SchemeAdv.Effects.bDropShadow != (((IDC_EFFAPPEARANCE_SETDROPSHADOW == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as i32) {
         BST_CHECKED as WPARAM
     } else {
         BST_UNCHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_SETDROPSHADOW, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_SETDROPSHADOW) as i32, BM_SETCHECK, state, 0);
 
-    state = if (*g).SchemeAdv.Effects.bDragFullWindows != (IDC_EFFAPPEARANCE_DRAGFULLWINDOWS == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if (*g).SchemeAdv.Effects.bDragFullWindows != (((IDC_EFFAPPEARANCE_DRAGFULLWINDOWS == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as i32) {
         BST_CHECKED as WPARAM
     } else {
         BST_UNCHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_DRAGFULLWINDOWS, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_DRAGFULLWINDOWS) as i32, BM_SETCHECK, state, 0);
 
-    state = if (*g).SchemeAdv.Effects.bKeyboardCues != (IDC_EFFAPPEARANCE_KEYBOARDCUES == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if (*g).SchemeAdv.Effects.bKeyboardCues != (((IDC_EFFAPPEARANCE_KEYBOARDCUES == IDC_EFFAPPEARANCE_KEYBOARDCUES)) as i32) {
         BST_CHECKED as WPARAM
     } else {
         BST_UNCHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_KEYBOARDCUES, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_KEYBOARDCUES) as i32, BM_SETCHECK, state, 0);
 
-    state = if ((*g).SchemeAdv.bFlatMenus == 1u8) == (IDC_EFFAPPEARANCE_FLATMENUS == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
+    state = if ((*g).SchemeAdv.bFlatMenus == (1u8) as i32) == (IDC_EFFAPPEARANCE_FLATMENUS == IDC_EFFAPPEARANCE_KEYBOARDCUES) {
         BST_UNCHECKED as WPARAM
     } else {
         BST_CHECKED as WPARAM
     };
-    SendDlgItemMessageW(hwndDlg, IDC_EFFAPPEARANCE_FLATMENUS, BM_SETCHECK, state, 0);
+    SendDlgItemMessageW(hwndDlg, (IDC_EFFAPPEARANCE_FLATMENUS) as i32, BM_SETCHECK, state, 0);
 
     EffAppearanceDlgUpdateControls(hwndDlg, g);
 }
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             let g = lParam as *mut GLOBALS;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, g as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, (g as isize) as i32);
             EffAppearanceDlg_Init(hwndDlg, g);
         }
 
@@ -136,12 +136,12 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
             match LOWORD!(wParam) as u32 {
                 IDOK => {
                     EffAppearanceDlgSaveCurrentValues(hwndDlg, g);
-                    EndDialog(hwndDlg, IDOK);
+                    EndDialog(hwndDlg, (IDOK) as INT_PTR);
                 }
 
                 IDCANCEL => {
                     (*g).SchemeAdv = (*g).Scheme;
-                    EndDialog(hwndDlg, IDCANCEL);
+                    EndDialog(hwndDlg, (IDCANCEL) as INT_PTR);
                 }
 
                 IDC_EFFAPPEARANCE_ANIMATION
@@ -159,23 +159,23 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
                     if HIWORD!(wParam) as u32 == CBN_SELCHANGE {
                         let Index = SendDlgItemMessageW(
                             hwndDlg,
-                            IDC_EFFAPPEARANCE_SMOOTHINGTYPE,
+                            (IDC_EFFAPPEARANCE_SMOOTHINGTYPE) as i32,
                             CB_GETCURSEL,
                             0,
                             0,
                         );
 
-                        (*g).SchemeAdv.Effects.bMenuFade = SendDlgItemMessageW(
+                        (*g).SchemeAdv.Effects.bMenuFade = (SendDlgItemMessageW(
                             hwndDlg,
-                            IDC_EFFAPPEARANCE_ANIMATIONTYPE,
+                            (IDC_EFFAPPEARANCE_ANIMATIONTYPE) as i32,
                             CB_GETCURSEL,
                             0,
                             0,
-                        );
+                        )) as i32;
                         (*g).SchemeAdv.Effects.uiFontSmoothingType = if Index == CB_ERR {
                             0
                         } else {
-                            Index + 1
+                            (Index + 1) as u32
                         };
 
                         EffAppearanceDlgUpdateControls(hwndDlg, g);
@@ -189,7 +189,7 @@ pub unsafe extern "system" fn EffAppearanceDlgProc(
         }
 
         _ => {
-            return FALSE;
+            return ((FALSE) as i64) as i32;
         }
     }
 

@@ -12,7 +12,7 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
     let mut dwValue: u32;
     let mut dwType: u32;
 
-    hFontSize = GetDlgItem(hWnd, IDC_FONTSIZE_COMBO);
+    hFontSize = GetDlgItem(hWnd, (IDC_FONTSIZE_COMBO) as i32);
 
     hInf = SetupOpenInfFile(w!("font.inf"), core::ptr::null_mut(),
                             INF_STYLE_WIN4, core::ptr::null_mut());
@@ -20,12 +20,12 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
     if hInf != INVALID_HANDLE_VALUE {
         if SetupFindFirstLine(hInf, w!("Font Sizes"), core::ptr::null_mut(), Context.as_mut_ptr() as *mut _) != 0 {
             if RegOpenKeyEx(HKEY_LOCAL_MACHINE, w!("SYSTEM\\CurrentControlSet\\Hardware Profiles\\Current\\Software\\Fonts"),
-                             0, KEY_READ, &mut hKey) == ERROR_SUCCESS {
+                             0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
                 dwSize = MAX_PATH;
                 dwType = REG_DWORD;
 
                 if RegQueryValueEx(hKey, w!("LogPixels"), core::ptr::null_mut(), &mut dwType,
-                                    (&mut dwValue as *mut u32) as LPBYTE, &mut dwSize) != ERROR_SUCCESS {
+                                    (&mut dwValue as *mut u32) as LPBYTE, &mut dwSize) != (ERROR_SUCCESS) as i32 {
                     dwValue = 0;
                 }
 
@@ -33,10 +33,10 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
             }
 
             loop {
-                let mut Buffer: [TCHAR; LINE_LEN] = core::mem::zeroed();
-                let mut Desc: [TCHAR; LINE_LEN] = core::mem::zeroed();
+                let mut Buffer: [TCHAR; (LINE_LEN) as usize] = core::mem::zeroed();
+                let mut Desc: [TCHAR; (LINE_LEN) as usize] = core::mem::zeroed();
 
-                if SetupGetStringField(Context.as_mut_ptr() as *mut _, 0, Buffer.as_mut_ptr(), Buffer.len() / core::mem::size_of::<TCHAR>(), core::ptr::null_mut()) != 0 &&
+                if SetupGetStringField(Context.as_mut_ptr() as *mut _, 0, Buffer.as_mut_ptr(), (Buffer.len() / core::mem::size_of::<TCHAR>()) as u32, core::ptr::null_mut()) != 0 &&
                     SetupGetIntField(Context.as_mut_ptr() as *mut _, 1, &mut ci) != 0 {
                     _stprintf(Desc.as_mut_ptr(), w!("%s (%d DPI)"), Buffer.as_ptr(), ci);
                     i = SendMessage(hFontSize, CB_ADDSTRING, 0, Desc.as_ptr() as LPARAM) as i32;
@@ -46,7 +46,7 @@ unsafe extern "C" fn InitFontSizeList(hWnd: HWND) {
 
                     if dwValue as i32 == ci {
                         SendMessage(hFontSize, CB_SETCURSEL, i as WPARAM, 0);
-                        SetWindowText(GetDlgItem(hWnd, IDC_FONTSIZE_CUSTOM), Desc.as_ptr());
+                        SetWindowText(GetDlgItem(hWnd, (IDC_FONTSIZE_CUSTOM) as i32), Desc.as_ptr());
                     } else {
                         SendMessage(hFontSize, CB_SETCURSEL, 0, 0);
                     }
@@ -66,38 +66,38 @@ unsafe extern "C" fn InitRadioButtons(hWnd: HWND) {
 
     if RegOpenKeyEx(HKEY_CURRENT_USER,
                      w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Controls Folder\\Display"),
-                     0, KEY_READ, &mut hKey) == ERROR_SUCCESS
+                     0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32
     {
         let mut szBuf: [TCHAR; 64] = [0; 64];
         let mut dwSize: u32 = 64;
 
-        if RegQueryValueEx(hKey, w!("DynaSettingsChange"), 0, core::ptr::null_mut(),
-                            szBuf.as_mut_ptr() as LPBYTE, &mut dwSize) == ERROR_SUCCESS
+        if RegQueryValueEx(hKey, w!("DynaSettingsChange"), (0) as *mut u32, core::ptr::null_mut(),
+                            szBuf.as_mut_ptr() as LPBYTE, &mut dwSize) == (ERROR_SUCCESS) as i32
         {
             match _ttoi(szBuf.as_ptr())
             {
                 0 => {
-                    SendDlgItemMessage(hWnd, IDC_RESTART_RB, BM_SETCHECK, 1, 1);
+                    SendDlgItemMessage(hWnd, (IDC_RESTART_RB) as i32, BM_SETCHECK, 1, 1);
                 }
                 1 => {
-                    SendDlgItemMessage(hWnd, IDC_WITHOUTREBOOT_RB, BM_SETCHECK, 1, 1);
+                    SendDlgItemMessage(hWnd, (IDC_WITHOUTREBOOT_RB) as i32, BM_SETCHECK, 1, 1);
                 }
                 3 => {
-                    SendDlgItemMessage(hWnd, IDC_ASKME_RB, BM_SETCHECK, 1, 1);
+                    SendDlgItemMessage(hWnd, (IDC_ASKME_RB) as i32, BM_SETCHECK, 1, 1);
                 }
                 _ => {}
             }
         }
         else
         {
-            SendDlgItemMessage(hWnd, IDC_WITHOUTREBOOT_RB, BM_SETCHECK, 1, 1);
+            SendDlgItemMessage(hWnd, (IDC_WITHOUTREBOOT_RB) as i32, BM_SETCHECK, 1, 1);
         }
 
         RegCloseKey(hKey);
     }
     else
     {
-        SendDlgItemMessage(hWnd, IDC_WITHOUTREBOOT_RB, BM_SETCHECK, 1, 1);
+        SendDlgItemMessage(hWnd, (IDC_WITHOUTREBOOT_RB) as i32, BM_SETCHECK, 1, 1);
     }
 }
 #[no_mangle]
@@ -117,7 +117,7 @@ pub unsafe extern "system" fn AdvGeneralPageProc(
     match uMsg {
         WM_INITDIALOG => {
             DispDevice = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PDISPLAY_DEVICE_ENTRY;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, DispDevice as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, (DispDevice as isize) as i32);
 
             InitFontSizeList(hwndDlg);
             InitRadioButtons(hwndDlg);
@@ -125,9 +125,9 @@ pub unsafe extern "system" fn AdvGeneralPageProc(
             Ret = TRUE;
         }
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_FONTSIZE_COMBO => {
-                    if HIWORD!(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                     }
                 }

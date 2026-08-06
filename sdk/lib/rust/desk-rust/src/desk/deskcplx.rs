@@ -37,7 +37,7 @@ pub unsafe fn QueryDeskCplString(pdo: *mut IDataObject, cfFormat: UINT) -> LPTST
         let BufLen: SIZE_T = (wcslen(lpRecvBuffer) + 1) as SIZE_T;
         lpStr = LocalAlloc(
             LMEM_FIXED,
-            BufLen as usize * core::mem::size_of::<TCHAR>(),
+            (BufLen as usize * core::mem::size_of::<TCHAR>()) as SIZE_T,
         ) as LPTSTR;
         if !lpStr.is_null() {
             wcscpy(lpStr, lpRecvBuffer);

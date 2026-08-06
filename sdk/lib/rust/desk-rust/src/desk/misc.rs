@@ -20,7 +20,7 @@ unsafe extern "C" fn LengthOfStrResource(
     if !hrSrc.is_null() {
         hRes = LoadResource(hInst, hrSrc);
         if !hRes.is_null() {
-            lpStr = LockResource(hRes);
+            lpStr = (LockResource(hRes)).cast();
             if !lpStr.is_null() {
                 let mut x: u32;
                 let mut uID = uID;
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn AllocAndLoadString(
     ln = LengthOfStrResource(hInst, uID);
     ln += 1;
     if ln - 1 > 0 {
-        *lpTarget = LocalAlloc(LMEM_FIXED, (ln as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+        *lpTarget = LocalAlloc(LMEM_FIXED, ((ln as usize) * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
         if !(*lpTarget).is_null() {
             let Ret: i32;
             Ret = LoadString(hInst, uID, *lpTarget, ln);
@@ -105,13 +105,13 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
         return CDRF_DODEFAULT;
     }
 
-    nPadW = GetSystemMetrics(SM_CXFOCUSBORDER) + MARGIN;
-    nPadH = GetSystemMetrics(SM_CYFOCUSBORDER) + MARGIN;
+    nPadW = GetSystemMetrics((SM_CXFOCUSBORDER) as i32) + MARGIN;
+    nPadH = GetSystemMetrics((SM_CYFOCUSBORDER) as i32) + MARGIN;
 
     hTheme = GetWindowTheme((*pCD).hdr.hwndFrom);
     if !hTheme.is_null() {
         let mut margins: MARGINS = core::mem::zeroed();
-        GetThemeMargins(hTheme, (*pCD).hdc, BP_PUSHBUTTON, PBS_NORMAL, TMT_CONTENTMARGINS, core::ptr::null_mut(), &mut margins);
+        GetThemeMargins(hTheme, (*pCD).hdc, (BP_PUSHBUTTON) as i32, (PBS_NORMAL) as i32, (TMT_CONTENTMARGINS) as i32, core::ptr::null_mut(), &mut margins);
         r.left += margins.cxLeftWidth + nPadW;
         r.top += margins.cyTopHeight + nPadH;
         r.right -= margins.cxRightWidth + nPadW;
@@ -122,9 +122,9 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
         InflateRect(&mut r, -(nPadW + FOCUSADJUST), -(nPadH + FOCUSADJUST));
     }
 
-    hOrgPen = SelectObject((*pCD).hdc, GetStockObject(DC_PEN));
-    hOrgBrush = SelectObject((*pCD).hdc, GetStockObject(DC_BRUSH));
-    clrWidget = GetSysColor(COLOR_BTNTEXT);
+    hOrgPen = SelectObject((*pCD).hdc, GetStockObject((DC_PEN) as i32));
+    hOrgBrush = SelectObject((*pCD).hdc, GetStockObject((DC_BRUSH) as i32));
+    clrWidget = GetSysColor((COLOR_BTNTEXT) as i32);
     clrOrgPen = SetDCPenColor((*pCD).hdc, clrWidget);
     clrOrgBrush = SetDCBrushColor((*pCD).hdc, Color);
 
@@ -139,10 +139,10 @@ pub unsafe extern "C" fn ClrBtn_CustomDraw(
     pts[1].y = pts[0].y;
     pts[2].x = pts[0].x + nArrow / 2;
     pts[2].y = pts[1].y + nArrow / 2;
-    Polygon((*pCD).hdc, pts.as_mut_ptr(), _countof!(pts));
+    Polygon((*pCD).hdc, pts.as_mut_ptr(), (_countof!(pts)) as i32);
 
     r.left = r.right - nHalf - SEPLINE * 3 / 2;
-    DrawEtchedLine(hTheme, (*pCD).hdc, BP_PUSHBUTTON, PBS_NORMAL, &mut r, BF_LEFT);
+    DrawEtchedLine(hTheme, (*pCD).hdc, (BP_PUSHBUTTON) as i32, (PBS_NORMAL) as i32, &mut r, BF_LEFT);
 
     SetDCBrushColor((*pCD).hdc, clrOrgBrush);
     SetDCPenColor((*pCD).hdc, clrOrgPen);

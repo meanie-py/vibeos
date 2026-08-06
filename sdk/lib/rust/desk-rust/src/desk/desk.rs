@@ -8,9 +8,9 @@ pub static mut hCPLWindow: HWND = core::ptr::null_mut();
 
 pub static mut Applets: [APPLET; 1] = [
     APPLET {
-        idIcon: IDC_DESK_ICON,
-        idName: IDS_CPLNAME,
-        idDescription: IDS_CPLDESCRIPTION,
+        idIcon: (IDC_DESK_ICON) as i32,
+        idName: (IDS_CPLNAME) as i32,
+        idDescription: (IDS_CPLDESCRIPTION) as i32,
         AppletProc: Some(DisplayApplet),
     }
 ];
@@ -23,32 +23,32 @@ pub struct PropPageEntry {
     pub Name: LPWSTR,
 }
 
-pub static PropPages: [PropPageEntry; 4] = [
+pub static PropPages: SyncTable<[PropPageEntry; 4]> = SyncTable([
     PropPageEntry {
-        idDlg: IDD_BACKGROUND,
+        idDlg: (IDD_BACKGROUND) as u16,
         DlgProc: Some(BackgroundPageProc),
         Callback: None,
         Name: w!("Desktop") as LPWSTR,
     },
     PropPageEntry {
-        idDlg: IDD_SCREENSAVER,
+        idDlg: (IDD_SCREENSAVER) as u16,
         DlgProc: Some(ScreenSaverPageProc),
         Callback: None,
         Name: w!("Screen Saver") as LPWSTR,
     },
     PropPageEntry {
-        idDlg: IDD_APPEARANCE,
+        idDlg: (IDD_APPEARANCE) as u16,
         DlgProc: Some(AppearancePageProc),
         Callback: None,
         Name: w!("Appearance") as LPWSTR,
     },
     PropPageEntry {
-        idDlg: IDD_SETTINGS,
+        idDlg: (IDD_SETTINGS) as u16,
         DlgProc: Some(SettingsPageProc),
         Callback: Some(SettingsPageCallbackProc),
         Name: w!("Settings") as LPWSTR,
     },
-];
+]);
 #[no_mangle]
 pub unsafe extern "C" fn LoadPopupMenu(
     hInstance: HINSTANCE,
@@ -83,10 +83,10 @@ unsafe extern "system" fn DisplayAppletPropSheetAddPage(
     if !ppsh.is_null() && (*ppsh).nPages < MAX_DESK_PAGES {
         *(*ppsh).__bindgen_anon_3.phpage.offset((*ppsh).nPages as isize) = hpage;
         (*ppsh).nPages = (*ppsh).nPages + 1;
-        return TRUE;
+        return (TRUE) as i32;
     }
 
-    FALSE
+    (FALSE) as i32
 }
 unsafe extern "C" fn InitPropSheetPage(
     ppsh: *mut PROPSHEETHEADER,
@@ -118,21 +118,21 @@ unsafe extern "C" fn InitPropSheetPage(
         }
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDC_DESK_ICON));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
+            SendMessageW(hwndDlg, WM_SETICON, (ICON_BIG) as WPARAM, hIcon as LPARAM);
         }
         _ => {}
     }
     return 0;
 }
 unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, lParam: LPARAM) -> i32 {
-    let mut hpsp: [*mut core::ffi::c_void; MAX_DESK_PAGES] = [core::ptr::null_mut(); MAX_DESK_PAGES];
+    let mut hpsp: [*mut core::ffi::c_void; (MAX_DESK_PAGES) as usize] = [core::ptr::null_mut(); (MAX_DESK_PAGES) as usize];
     let mut psh: PROPSHEETHEADER = core::mem::zeroed();
     let mut hpsxa: HPSXA = core::ptr::null_mut();
     let mut i: u32;
@@ -178,11 +178,11 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
 
         g_GlobalData.pwszFile = pwszFile;
         g_GlobalData.pwszAction = pwszAction;
-        g_GlobalData.desktop_color = GetSysColor(COLOR_DESKTOP);
+        g_GlobalData.desktop_color = GetSysColor((COLOR_DESKTOP) as i32);
 
         g_GlobalData.hMonitorBitmap = LoadBitmapW(hApplet, MAKEINTRESOURCEW!(IDC_MONITOR));
         if !g_GlobalData.hMonitorBitmap.is_null() {
-            GetObjectW(g_GlobalData.hMonitorBitmap, core::mem::size_of::<BITMAP>() as i32, &mut bitmap as *mut _ as LPVOID);
+            GetObjectW((g_GlobalData.hMonitorBitmap).cast(), core::mem::size_of::<BITMAP>() as i32, &mut bitmap as *mut _ as LPVOID);
 
             g_GlobalData.bmMonWidth = bitmap.bmWidth;
             g_GlobalData.bmMonHeight = bitmap.bmHeight;
@@ -197,7 +197,7 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
         psh.pszCaption = MAKEINTRESOURCEW!(IDS_CPLNAME);
         psh.nPages = 0;
         psh.__bindgen_anon_2.nStartPage = 0;
-        psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
+        psh.__bindgen_anon_3.phpage = (hpsp.as_mut_ptr()).cast();
         psh.pfnCallback = Some(PropSheetProc);
 
         hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\Desk"), MAX_DESK_PAGES - psh.nPages);
@@ -208,7 +208,7 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
                 psh.__bindgen_anon_2.nStartPage = i;
             }
 
-            if PropPages[i as usize].idDlg == IDD_BACKGROUND && !hpsxa.is_null() &&
+            if PropPages[i as usize].idDlg == (IDD_BACKGROUND) as u16 && !hpsxa.is_null() &&
                 SHReplaceFromPropSheetExtArray(hpsxa, CPLPAGE_DISPLAY_BACKGROUND, DisplayAppletPropSheetAddPage, &mut psh as *mut _ as LPARAM) != 0 {
                 i += 1;
                 continue;
@@ -227,7 +227,7 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
         break;
     }
 
-    DeleteObject(g_GlobalData.hMonitorBitmap);
+    DeleteObject((g_GlobalData.hMonitorBitmap).cast());
 
     if !hpsxa.is_null() {
         SHDestroyPropSheetExtArray(hpsxa);
@@ -237,7 +237,7 @@ unsafe extern "system" fn DisplayApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM, l
         LocalFree(argv as LPVOID);
     }
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn CPlApplet(
@@ -250,7 +250,7 @@ pub unsafe extern "system" fn CPlApplet(
 
     match uMsg {
         CPL_INIT => {
-            return TRUE;
+            return (TRUE) as i32;
         }
 
         CPL_GETCOUNT => {
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn CPlApplet(
                 (*CPlInfo).idName = Applets[i as usize].idName;
                 (*CPlInfo).idInfo = Applets[i as usize].idDescription;
             } else {
-                return TRUE;
+                return (TRUE) as i32;
             }
         }
 
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn CPlApplet(
             if (i as usize) < _countof!(Applets) as usize {
                 (Applets[i as usize].AppletProc.unwrap())(hwndCPl, uMsg, lParam1, lParam2);
             } else {
-                return TRUE;
+                return (TRUE) as i32;
             }
         }
 
@@ -286,7 +286,7 @@ pub unsafe extern "system" fn CPlApplet(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn InstallScreenSaverW(
@@ -299,7 +299,7 @@ pub unsafe extern "system" fn InstallScreenSaverW(
     let mut regKey: HKEY = core::ptr::null_mut();
     let mut Timeout: i32;
     let mut dwLen: u32;
-    let mut szFullPath: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szFullPath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
     if pszFile.is_null() {
         // DPRINT removed
@@ -315,7 +315,7 @@ pub unsafe extern "system" fn InstallScreenSaverW(
         KEY_SET_VALUE,
         &mut regKey,
     );
-    if rc == ERROR_SUCCESS {
+    if rc == (ERROR_SUCCESS) as i32 {
         let Length: usize = (wcslen(pszFile) + 1) * core::mem::size_of::<u16>();
         rc = RegSetValueExW(
             regKey,
@@ -327,15 +327,15 @@ pub unsafe extern "system" fn InstallScreenSaverW(
         );
         RegCloseKey(regKey);
     }
-    if rc != ERROR_SUCCESS {
+    if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
         return;
     }
 
     SystemParametersInfoW(
         SPI_SETSCREENSAVEACTIVE,
-        TRUE,
-        0,
+        (TRUE) as UINT,
+        (0) as *mut c_void,
         SPIF_UPDATEINIFILE,
     );
 
@@ -350,7 +350,7 @@ pub unsafe extern "system" fn InstallScreenSaverW(
         SystemParametersInfoW(
             SPI_SETSCREENSAVETIMEOUT,
             600,
-            0,
+            (0) as *mut c_void,
             SPIF_UPDATEINIFILE,
         );
     }
@@ -359,14 +359,14 @@ pub unsafe extern "system" fn InstallScreenSaverW(
     if dwLen == 0 || GetLastError() == ERROR_INSUFFICIENT_BUFFER {
         StringCchCopyW(
             szFullPath.as_mut_ptr(),
-            _countof!(szFullPath),
+            (_countof!(szFullPath)) as usize,
             w!("desk.cpl") as LPCWSTR,
         );
     }
 
     rc = StringCchCatW(
         szFullPath.as_mut_ptr(),
-        _countof!(szFullPath),
+        (_countof!(szFullPath)) as usize,
         w!(",,1") as LPCWSTR,
     );
     if rc < 0 {
@@ -374,7 +374,7 @@ pub unsafe extern "system" fn InstallScreenSaverW(
     }
 
     // DPRINT removed
-    Control_RunDLLW(hWindow, hInstance, szFullPath.as_ptr(), nCmdShow);
+    Control_RunDLLW(hWindow, hInstance, szFullPath.as_ptr(), (nCmdShow) as i32);
 }
 #[no_mangle]
 pub unsafe extern "system" fn InstallScreenSaverA(
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn InstallScreenSaverA(
     if nLength != 0 {
         lpwString = LocalAlloc(
             LMEM_FIXED,
-            (nLength as usize) * core::mem::size_of::<u16>(),
+            ((nLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as LPWSTR;
         if !lpwString.is_null() {
             if MultiByteToWideChar(
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn DllMain(
         _ => {}
     }
 
-    TRUE
+    (TRUE) as i32
 }
 
 

@@ -30,44 +30,44 @@ pub static g_SelectedStyle: [u16; 14] = [
     b'S' as u16, b't' as u16, b'y' as u16, b'l' as u16, b'e' as u16, 0,
 ];
 
-pub static g_RegColorNames: [PCWSTR; 31] = [
-    [b'S' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b'l' as u16, b'l' as u16, b'b' as u16, b'a' as u16, b'r' as u16, 0].as_ptr(),
-    [b'B' as u16, b'a' as u16, b'c' as u16, b'k' as u16, b'g' as u16, b'r' as u16, b'o' as u16, b'u' as u16, b'n' as u16, b'd' as u16, 0].as_ptr(),
-    [b'A' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, 0].as_ptr(),
-    [b'I' as u16, b'n' as u16, b'a' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, 0].as_ptr(),
-    [b'M' as u16, b'e' as u16, b'n' as u16, b'u' as u16, 0].as_ptr(),
-    [b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0].as_ptr(),
-    [b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b'F' as u16, b'r' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0].as_ptr(),
-    [b'M' as u16, b'e' as u16, b'n' as u16, b'u' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'A' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'B' as u16, b'o' as u16, b'r' as u16, b'd' as u16, b'e' as u16, b'r' as u16, 0].as_ptr(),
-    [b'I' as u16, b'n' as u16, b'a' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'B' as u16, b'o' as u16, b'r' as u16, b'd' as u16, b'e' as u16, b'r' as u16, 0].as_ptr(),
-    [b'A' as u16, b'p' as u16, b'p' as u16, b'W' as u16, b'o' as u16, b'r' as u16, b'k' as u16, b'S' as u16, b'p' as u16, b'a' as u16, b'c' as u16, b'e' as u16, 0].as_ptr(),
-    [b'H' as u16, b'i' as u16, b'l' as u16, b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, 0].as_ptr(),
-    [b'H' as u16, b'i' as u16, b'l' as u16, b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'F' as u16, b'a' as u16, b'c' as u16, b'e' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'S' as u16, b'h' as u16, b'a' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0].as_ptr(),
-    [b'G' as u16, b'r' as u16, b'a' as u16, b'y' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'I' as u16, b'n' as u16, b'a' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'H' as u16, b'i' as u16, b'l' as u16, b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'D' as u16, b'k' as u16, b'S' as u16, b'h' as u16, b'a' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'L' as u16, b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, 0].as_ptr(),
-    [b'I' as u16, b'n' as u16, b'f' as u16, b'o' as u16, b'T' as u16, b'e' as u16, b'x' as u16, b't' as u16, 0].as_ptr(),
-    [b'I' as u16, b'n' as u16, b'f' as u16, b'o' as u16, b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0].as_ptr(),
-    [b'B' as u16, b'u' as u16, b't' as u16, b't' as u16, b'o' as u16, b'n' as u16, b'A' as u16, b'l' as u16, b't' as u16, b'e' as u16, b'r' as u16, b'n' as u16, b'a' as u16, b't' as u16, b'e' as u16, b'F' as u16, b'a' as u16, b'c' as u16, b'e' as u16, 0].as_ptr(),
-    [b'H' as u16, b'o' as u16, b't' as u16, b'T' as u16, b'r' as u16, b'a' as u16, b'c' as u16, b'k' as u16, b'i' as u16, b'n' as u16, b'g' as u16, b'C' as u16, b'o' as u16, b'l' as u16, b'o' as u16, b'r' as u16, 0].as_ptr(),
-    [b'G' as u16, b'r' as u16, b'a' as u16, b'd' as u16, b'i' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'A' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, 0].as_ptr(),
-    [b'G' as u16, b'r' as u16, b'a' as u16, b'd' as u16, b'i' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'I' as u16, b'n' as u16, b'a' as u16, b'c' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, b'T' as u16, b'i' as u16, b't' as u16, b'l' as u16, b'e' as u16, 0].as_ptr(),
-    [b'M' as u16, b'e' as u16, b'n' as u16, b'u' as u16, b'H' as u16, b'i' as u16, b'l' as u16, b'i' as u16, b'g' as u16, b'h' as u16, b't' as u16, 0].as_ptr(),
-    [b'M' as u16, b'e' as u16, b'n' as u16, b'u' as u16, b'B' as u16, b'a' as u16, b'r' as u16, 0].as_ptr(),
-];
+pub static g_RegColorNames: SyncTable<[PCWSTR; 31]> = SyncTable([
+    w!("Scrollbar"),
+    w!("Background"),
+    w!("ActiveTitle"),
+    w!("InactiveTitle"),
+    w!("Menu"),
+    w!("Window"),
+    w!("WindowFrame"),
+    w!("MenuText"),
+    w!("WindowText"),
+    w!("TitleText"),
+    w!("ActiveBorder"),
+    w!("InactiveBorder"),
+    w!("AppWorkSpace"),
+    w!("Hilight"),
+    w!("HilightText"),
+    w!("ButtonFace"),
+    w!("ButtonShadow"),
+    w!("GrayText"),
+    w!("ButtonText"),
+    w!("InactiveTitleText"),
+    w!("ButtonHilight"),
+    w!("ButtonDkShadow"),
+    w!("ButtonLight"),
+    w!("InfoText"),
+    w!("InfoWindow"),
+    w!("ButtonAlternateFace"),
+    w!("HotTrackingColor"),
+    w!("GradientActiveTitle"),
+    w!("GradientInactiveTitle"),
+    w!("MenuHilight"),
+    w!("MenuBar"),
+]);
 
 pub type ENUMTHEMESTYLE = Option<unsafe extern "system" fn(LPCWSTR, LPWSTR, u32, PTHEMENAMES) -> HRESULT>;
 #[no_mangle]
 pub unsafe extern "C" fn SchemeSetMetric(scheme: *mut COLOR_SCHEME, id: i32, value: i32) {
-    match id {
+    match (id) as u32 {
         SIZE_BORDER_WIDTH => (*scheme).ncMetrics.iBorderWidth = value,
         SIZE_SCROLL_WIDTH => (*scheme).ncMetrics.iScrollWidth = value,
         SIZE_SCROLL_HEIGHT => (*scheme).ncMetrics.iScrollHeight = value,
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn SchemeSetMetric(scheme: *mut COLOR_SCHEME, id: i32, val
 }
 #[no_mangle]
 pub unsafe extern "C" fn SchemeGetMetric(scheme: *mut COLOR_SCHEME, id: i32) -> i32 {
-    match id {
+    match (id) as u32 {
         SIZE_BORDER_WIDTH => (*scheme).ncMetrics.iBorderWidth,
         SIZE_SCROLL_WIDTH => (*scheme).ncMetrics.iScrollWidth,
         SIZE_SCROLL_HEIGHT => (*scheme).ncMetrics.iScrollHeight,
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn SchemeGetMetric(scheme: *mut COLOR_SCHEME, id: i32) -> 
 }
 #[no_mangle]
 pub unsafe extern "C" fn SchemeGetFont(scheme: *mut COLOR_SCHEME, id: i32) -> PLOGFONTW {
-    match id {
+    match (id) as u32 {
         FONT_CAPTION => core::ptr::addr_of_mut!((*scheme).ncMetrics.lfCaptionFont),
         FONT_SMCAPTION => core::ptr::addr_of_mut!((*scheme).ncMetrics.lfSmCaptionFont),
         FONT_MENU => core::ptr::addr_of_mut!((*scheme).ncMetrics.lfMenuFont),
@@ -123,10 +123,10 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
     let mut osvi: OSVERSIONINFO = core::mem::zeroed();
 
     for i in 0..NUM_COLORS {
-        (*scheme).crColor[i as usize] = GetSysColor(i) as COLORREF;
+        (*scheme).crColor[i as usize] = GetSysColor((i) as i32) as COLORREF;
     }
 
-    (*scheme).ncMetrics.cbSize = core::mem::size_of::<NONCLIENTMETRICSW>();
+    (*scheme).ncMetrics.cbSize = (core::mem::size_of::<NONCLIENTMETRICSW>()) as u32;
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
@@ -139,23 +139,23 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
 
     ret = SystemParametersInfoW(
         SPI_GETNONCLIENTMETRICS,
-        core::mem::size_of::<NONCLIENTMETRICSW>(),
+        (core::mem::size_of::<NONCLIENTMETRICSW>()) as UINT,
         core::ptr::addr_of_mut!((*scheme).ncMetrics) as LPVOID,
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
-    (*scheme).icMetrics.cbSize = core::mem::size_of::<ICONMETRICSW>();
+    (*scheme).icMetrics.cbSize = (core::mem::size_of::<ICONMETRICSW>()) as u32;
     ret = SystemParametersInfoW(
         SPI_GETICONMETRICS,
-        core::mem::size_of::<ICONMETRICSW>(),
+        (core::mem::size_of::<ICONMETRICSW>()) as UINT,
         core::ptr::addr_of_mut!((*scheme).icMetrics) as LPVOID,
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -185,7 +185,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     (*scheme).Effects.bTooltipAnimation = (*scheme).Effects.bMenuAnimation;
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     ret = SystemParametersInfoW(
@@ -238,27 +238,27 @@ pub unsafe extern "C" fn LoadCurrentScheme(scheme: *mut COLOR_SCHEME) -> i32 {
         0,
     );
     if ret == 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     Result = RegOpenKeyW(HKEY_CURRENT_USER, g_CPMetrics.as_ptr(), core::ptr::addr_of_mut!(hKey));
-    if Result == ERROR_SUCCESS {
+    if Result == (ERROR_SUCCESS) as i32 {
         (*scheme).iIconSize = SHRegGetIntW(hKey, w!("Shell Icon Size"), 32);
         RegCloseKey(hKey);
     }
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn LoadSchemeFromReg(scheme: *mut COLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL {
     let mut i: INT;
     let mut strValueName: [u16; 10] = [0; 10];
-    let mut strSchemeKey: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut strSchemeKey: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let mut hkScheme: HKEY = core::ptr::null_mut();
     let mut dwType: DWORD = 0;
     let mut dwLength: DWORD = 0;
     let mut iSize: UINT64 = 0;
-    let mut Ret: BOOL = TRUE;
+    let mut Ret: BOOL = (TRUE) as i32;
     let mut result: LONG;
 
     wsprintf(
@@ -270,14 +270,14 @@ pub unsafe extern "C" fn LoadSchemeFromReg(scheme: *mut COLOR_SCHEME, pSelectedT
     );
 
     result = RegOpenKeyW(HKEY_CURRENT_USER, strSchemeKey.as_ptr(), &mut hkScheme);
-    if result != ERROR_SUCCESS {
-        return FALSE;
+    if result != (ERROR_SUCCESS) as i32 {
+        return (FALSE) as i32;
     }
 
     (*scheme).bFlatMenus = SHRegGetIntW(hkScheme, w!("FlatMenus"), 0);
 
     i = 0;
-    while i < NUM_COLORS {
+    while i < (NUM_COLORS) as i32 {
         wsprintf(strValueName.as_mut_ptr(), w!("Color #%d"), i);
         dwLength = core::mem::size_of::<COLORREF>() as DWORD;
         result = RegQueryValueExW(
@@ -288,14 +288,14 @@ pub unsafe extern "C" fn LoadSchemeFromReg(scheme: *mut COLOR_SCHEME, pSelectedT
             core::ptr::addr_of_mut!((*scheme).crColor[i as usize]) as LPBYTE,
             &mut dwLength
         );
-        if result != ERROR_SUCCESS || dwType != REG_DWORD {
+        if result != (ERROR_SUCCESS) as i32 || dwType != REG_DWORD {
             (*scheme).crColor[i as usize] = GetSysColor(i);
         }
         i += 1;
     }
 
     i = 0;
-    while i < NUM_FONTS {
+    while i < (NUM_FONTS) as i32 {
         let lpfFont: PLOGFONTW = SchemeGetFont(scheme, i);
 
         wsprintf(strValueName.as_mut_ptr(), w!("Font #%d"), i);
@@ -308,15 +308,15 @@ pub unsafe extern "C" fn LoadSchemeFromReg(scheme: *mut COLOR_SCHEME, pSelectedT
             lpfFont as LPBYTE,
             &mut dwLength
         );
-        if result != ERROR_SUCCESS || dwType != REG_BINARY ||
+        if result != (ERROR_SUCCESS) as i32 || dwType != REG_BINARY ||
            dwLength != core::mem::size_of::<LOGFONT>() as DWORD {
-            Ret = FALSE;
+            Ret = (FALSE) as i32;
         }
         i += 1;
     }
 
     i = 0;
-    while i < NUM_SIZES {
+    while i < (NUM_SIZES) as i32 {
         wsprintf(strValueName.as_mut_ptr(), w!("Size #%d"), i);
         dwLength = core::mem::size_of::<UINT64>() as DWORD;
         result = RegQueryValueExW(
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn LoadSchemeFromReg(scheme: *mut COLOR_SCHEME, pSelectedT
             core::ptr::addr_of_mut!(iSize) as LPBYTE,
             &mut dwLength
         );
-        if result != ERROR_SUCCESS || dwType != REG_QWORD ||
+        if result != (ERROR_SUCCESS) as i32 || dwType != REG_QWORD ||
            dwLength != core::mem::size_of::<UINT64>() as DWORD {
         } else {
             SchemeSetMetric(scheme, i, iSize as i32);
@@ -346,19 +346,19 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut clText: [u16; 16] = [0; 16];
     let mut StyleName: *mut u16;
-    let mut ColorList: [i32; NUM_COLORS] = [0; NUM_COLORS];
+    let mut ColorList: [i32; (NUM_COLORS) as usize] = [0; (NUM_COLORS) as usize];
 
     i = 0;
-    while i < NUM_COLORS {
+    while i < (NUM_COLORS) as i32 {
         ColorList[i as usize] = i;
         i += 1;
     }
-    SetSysColors(NUM_COLORS, ColorList.as_mut_ptr(), (*scheme).crColor.as_mut_ptr());
+    SetSysColors((NUM_COLORS) as i32, ColorList.as_mut_ptr(), (*scheme).crColor.as_mut_ptr());
 
     Result = RegCreateKeyW(HKEY_CURRENT_USER, g_CPColors.as_ptr(), core::ptr::addr_of_mut!(hKey));
-    if Result == ERROR_SUCCESS {
+    if Result == (ERROR_SUCCESS) as i32 {
         i = 0;
-        while i < NUM_COLORS {
+        while i < (NUM_COLORS) as i32 {
             wsprintf(
                 clText.as_mut_ptr(),
                 w!("%d %d %d"),
@@ -374,7 +374,7 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
                 0,
                 REG_SZ,
                 clText.as_mut_ptr() as LPBYTE,
-                (lstrlen(clText.as_ptr()) + 1) * core::mem::size_of::<u16>() as i32
+                ((lstrlen(clText.as_ptr()) + 1) * (core::mem::size_of::<u16>()) as i32) as DWORD
             );
             i += 1;
         }
@@ -401,14 +401,14 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
     SystemParametersInfoW(SPI_SETMENUANIMATION, 0, IntToPtr!((*scheme).Effects.bMenuAnimation), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     SystemParametersInfoW(SPI_SETMENUFADE, 0, IntToPtr!((*scheme).Effects.bMenuFade), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
-    SystemParametersInfoW(SPI_SETFONTSMOOTHING, (*scheme).Effects.bFontSmoothing, 0, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    SystemParametersInfoW(SPI_SETFONTSMOOTHING, ((*scheme).Effects.bFontSmoothing) as UINT, (0) as *mut c_void, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     SystemParametersInfoW(SPI_SETFONTSMOOTHINGTYPE, 0, IntToPtr!((*scheme).Effects.uiFontSmoothingType), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
-    InvalidateRect(core::ptr::null_mut(), core::ptr::null_mut(), TRUE);
+    InvalidateRect(core::ptr::null_mut(), core::ptr::null_mut(), (TRUE) as BOOL);
 
     SystemParametersInfoW(SPI_SETDROPSHADOW, 0, IntToPtr!((*scheme).Effects.bDropShadow), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
-    SystemParametersInfoW(SPI_SETDRAGFULLWINDOWS, (*scheme).Effects.bDragFullWindows, 0, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    SystemParametersInfoW(SPI_SETDRAGFULLWINDOWS, ((*scheme).Effects.bDragFullWindows) as UINT, (0) as *mut c_void, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
     SystemParametersInfoW(SPI_SETKEYBOARDCUES, 0, IntToPtr!((*scheme).Effects.bKeyboardCues), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
@@ -417,15 +417,15 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
     SystemParametersInfoW(SPI_SETTOOLTIPANIMATION, 0, IntToPtr!((*scheme).Effects.bTooltipAnimation), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     SystemParametersInfoW(SPI_SETTOOLTIPFADE, 0, IntToPtr!((*scheme).Effects.bTooltipFade), SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 
-    if !(*pSelectedTheme).Theme.is_null() && (*pSelectedTheme).ThemeActive == FALSE {
+    if !(*pSelectedTheme).Theme.is_null() && (*pSelectedTheme).ThemeActive == (FALSE) as i32 {
         StyleName = (*(*pSelectedTheme).Color).StyleName;
         SHSetValueW(
             HKEY_CURRENT_USER,
             g_CPANewSchemes.as_ptr(),
             g_SelectedStyle.as_ptr(),
             REG_SZ,
-            StyleName as *const u8,
-            (lstrlenW(StyleName) + 1) * core::mem::size_of::<u16>() as u32
+            (StyleName as *const u8).cast(),
+            ((lstrlenW(StyleName) + 1) * (core::mem::size_of::<u16>()) as i32) as DWORD
         );
     }
 
@@ -434,9 +434,9 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
         SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("NewCurrent"), REG_SZ, core::ptr::null_mut(), 0);
     } else if !(*pSelectedTheme).Color.is_null() {
         let ClassicSchemeName: PCWSTR = (*(*pSelectedTheme).Color).DisplayName;
-        let cb: u32 = (lstrlenW(ClassicSchemeName) + 1) * core::mem::size_of::<u16>() as u32;
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("Current"), REG_SZ, ClassicSchemeName as *const u8, cb);
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("NewCurrent"), REG_SZ, ClassicSchemeName as *const u8, cb);
+        let cb: u32 = ((lstrlenW(ClassicSchemeName) + 1) * (core::mem::size_of::<u16>() as u32) as i32) as u32;
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("Current"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("NewCurrent"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
     }
 }
 unsafe extern "C" fn CreateTheme(pszName: LPCWSTR, pszDisplayName: LPCWSTR) -> *mut THEME {
@@ -505,15 +505,15 @@ unsafe extern "C" fn CleanupStyles(pStylesList: PTHEME_STYLE) {
             CleanupStyles((*pStyle).ChildStyle);
         }
         if !(*pStyle).DisplayName.is_null() {
-            free((*pStyle).DisplayName);
+            free(((*pStyle).DisplayName).cast());
         }
         if !(*pStyle).StyleName.is_null() {
-            free((*pStyle).StyleName);
+            free(((*pStyle).StyleName).cast());
         }
 
         pStyleOld = pStyle;
         pStyle = (*pStyle).NextStyle;
-        free(pStyleOld);
+        free((pStyleOld).cast());
     }
 }
 #[no_mangle]
@@ -528,15 +528,15 @@ pub unsafe extern "C" fn CleanupThemes(mut pThemeList: PTHEME) {
             CleanupStyles((*pTheme).SizesList);
         }
         if !(*pTheme).DisplayName.is_null() {
-            free((*pTheme).DisplayName);
+            free(((*pTheme).DisplayName).cast());
         }
         if !(*pTheme).ThemeFileName.is_null() {
-            free((*pTheme).ThemeFileName);
+            free(((*pTheme).ThemeFileName).cast());
         }
 
         pThemeOld = pTheme;
         pTheme = (*pTheme).NextTheme;
-        free(pThemeOld);
+        free((pThemeOld).cast());
     }
 }
 unsafe extern "C" fn FindStyle(pStylesList: PTHEME_STYLE, StyleName: PCWSTR) -> PTHEME_STYLE {
@@ -561,16 +561,16 @@ unsafe extern "C" fn LoadSchemeSizes(hkScheme: HKEY) -> *mut THEME_STYLE {
     let mut pCurrentStyle: *mut THEME_STYLE;
 
     Result = RegOpenKeyW(hkScheme, w!("Sizes"), &mut hkSizes);
-    if Result != ERROR_SUCCESS {
+    if Result != (ERROR_SUCCESS) as i32 {
         return core::ptr::null_mut();
     }
 
     iStyle = 0;
-    while RegEnumKeyW(hkSizes, iStyle, wstrSizeName.as_mut_ptr(), 5) == ERROR_SUCCESS {
+    while RegEnumKeyW(hkSizes, (iStyle) as DWORD, wstrSizeName.as_mut_ptr(), 5) == (ERROR_SUCCESS) as i32 {
         iStyle += 1;
 
         Result = RegOpenKeyW(hkSizes, wstrSizeName.as_ptr(), &mut hkSize);
-        if Result != ERROR_SUCCESS {
+        if Result != (ERROR_SUCCESS) as i32 {
             continue;
         }
 
@@ -583,7 +583,7 @@ unsafe extern "C" fn LoadSchemeSizes(hkScheme: HKEY) -> *mut THEME_STYLE {
             0,
             core::ptr::null_mut(),
         );
-        if Result != ERROR_SUCCESS {
+        if Result != (ERROR_SUCCESS) as i32 {
             Result = RegLoadMUIStringW(
                 hkSize,
                 w!("LegacyName"),
@@ -595,7 +595,7 @@ unsafe extern "C" fn LoadSchemeSizes(hkScheme: HKEY) -> *mut THEME_STYLE {
             );
         }
 
-        if Result == ERROR_SUCCESS {
+        if Result == (ERROR_SUCCESS) as i32 {
             pCurrentStyle = CreateStyle(wstrSizeName.as_ptr(), wstrDisplayName.as_ptr());
         } else {
             pCurrentStyle = CreateStyle(wstrSizeName.as_ptr(), wstrSizeName.as_ptr());
@@ -623,16 +623,16 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
     let mut pCurrentStyle: *mut THEME_STYLE;
 
     Result = RegOpenKeyW(HKEY_CURRENT_USER, g_CPANewSchemes.as_ptr(), &mut hkNewSchemes);
-    if Result != ERROR_SUCCESS {
+    if Result != (ERROR_SUCCESS) as i32 {
         return core::ptr::null_mut();
     }
 
     iStyle = 0;
-    while RegEnumKeyW(hkNewSchemes, iStyle, wstrStyleName.as_mut_ptr(), 5) == ERROR_SUCCESS {
+    while RegEnumKeyW(hkNewSchemes, (iStyle) as DWORD, wstrStyleName.as_mut_ptr(), 5) == (ERROR_SUCCESS) as i32 {
         iStyle += 1;
 
         Result = RegOpenKeyW(hkNewSchemes, wstrStyleName.as_ptr(), &mut hkScheme);
-        if Result != ERROR_SUCCESS {
+        if Result != (ERROR_SUCCESS) as i32 {
             continue;
         }
 
@@ -645,7 +645,7 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
             0,
             core::ptr::null_mut(),
         );
-        if Result != ERROR_SUCCESS {
+        if Result != (ERROR_SUCCESS) as i32 {
             Result = RegLoadMUIStringW(
                 hkScheme,
                 w!("LegacyName"),
@@ -657,7 +657,7 @@ unsafe extern "C" fn LoadClassicColorSchemes() -> THEME_STYLE {
             );
         }
 
-        if Result == ERROR_SUCCESS {
+        if Result == (ERROR_SUCCESS) as i32 {
             pCurrentStyle = CreateStyle(wstrStyleName.as_ptr(), wstrDisplayName.as_ptr());
         } else {
             pCurrentStyle = CreateStyle(wstrStyleName.as_ptr(), wstrStyleName.as_ptr());
@@ -730,20 +730,20 @@ pub unsafe extern "system" fn EnumThemeProc(
     let List: *mut *mut THEME = lpData as *mut *mut THEME;
     let pTheme = LoadTheme(pszThemeFileName, pszThemeName);
     if pTheme == core::ptr::null_mut() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     (*pTheme).NextTheme = *List;
     *List = pTheme;
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn LoadThemes() -> *mut THEME {
     let mut hret: HRESULT;
     let mut pClassicTheme: *mut THEME;
     let mut strClassicTheme: [u16; 40] = [0; 40];
-    let mut szThemesPath: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szThemesPath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let pszClassicTheme: LPCWSTR;
     let res: i32;
 
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn LoadThemes() -> *mut THEME {
     (*pClassicTheme).ColoursList = LoadClassicColorSchemes();
 
     ZeroMemory!(szThemesPath.as_mut_ptr() as LPVOID, core::mem::size_of_val(&szThemesPath));
-    hret = SHGetFolderPathW(core::ptr::null_mut(), CSIDL_RESOURCES, core::ptr::null_mut(), SHGFP_TYPE_DEFAULT, szThemesPath.as_mut_ptr());
+    hret = SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_RESOURCES) as i32, core::ptr::null_mut(), SHGFP_TYPE_DEFAULT, szThemesPath.as_mut_ptr());
     if hret < 0 {
         return pClassicTheme;
     }
@@ -770,7 +770,7 @@ pub unsafe extern "C" fn LoadThemes() -> *mut THEME {
     if hret < 0 {
         (*pClassicTheme).NextTheme = core::ptr::null_mut();
         if (*pClassicTheme).ColoursList.is_null() {
-            free((*pClassicTheme).DisplayName);
+            free(((*pClassicTheme).DisplayName).cast());
             free(pClassicTheme as LPVOID);
             return core::ptr::null_mut();
         }
@@ -814,13 +814,13 @@ pub unsafe extern "C" fn FindOrAppendTheme(
     if pFoundTheme.is_null() {
         pFoundTheme = LoadTheme(pwszThemeFileName, pwszThemeFileName);
         if pFoundTheme.is_null() {
-            return FALSE;
+            return (FALSE) as i32;
         }
 
         (*pTheme).NextTheme = pFoundTheme;
     }
 
-    (*pSelectedTheme).ThemeActive = TRUE;
+    (*pSelectedTheme).ThemeActive = (TRUE) as i32;
     (*pSelectedTheme).Theme = pFoundTheme;
     if !pwszColorBuff.is_null() {
         (*pSelectedTheme).Color = FindStyle((*pFoundTheme).ColoursList, pwszColorBuff);
@@ -834,25 +834,25 @@ pub unsafe extern "C" fn FindOrAppendTheme(
         (*pSelectedTheme).Size = (*pFoundTheme).SizesList;
     }
 
-    TRUE
+    (TRUE) as i32
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetActiveTheme(pThemeList: *mut THEME, pSelectedTheme: *mut THEME_SELECTION) -> BOOL {
-    let mut szThemeFileName: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szColorBuff: [u16; MAX_PATH] = [0; MAX_PATH];
-    let mut szSizeBuff: [u16; MAX_PATH] = [0; MAX_PATH];
+    let mut szThemeFileName: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szColorBuff: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut szSizeBuff: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
     let hret: HRESULT;
 
     hret = GetCurrentThemeName(
         szThemeFileName.as_mut_ptr(),
-        MAX_PATH,
+        (MAX_PATH) as i32,
         szColorBuff.as_mut_ptr(),
-        MAX_PATH,
+        (MAX_PATH) as i32,
         szSizeBuff.as_mut_ptr(),
-        MAX_PATH,
+        (MAX_PATH) as i32,
     );
     if ((hret) < 0) < 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     return FindOrAppendTheme(
@@ -880,8 +880,8 @@ pub unsafe extern "C" fn GetActiveClassicTheme(pThemeList: PTHEME, pSelectedThem
     szSelectedClassicSize[0] = 0;
 
     Result = RegOpenKeyW(HKEY_CURRENT_USER, g_CPANewSchemes.as_ptr(), &mut hkNewSchemes);
-    if Result != ERROR_SUCCESS {
-        return FALSE;
+    if Result != (ERROR_SUCCESS) as i32 {
+        return (FALSE) as i32;
     }
 
     dwType = REG_SZ;
@@ -894,17 +894,17 @@ pub unsafe extern "C" fn GetActiveClassicTheme(pThemeList: PTHEME, pSelectedThem
         szSelectedClassicScheme.as_mut_ptr() as LPBYTE,
         &mut dwDisplayNameLength,
     );
-    if Result == ERROR_SUCCESS {
+    if Result == (ERROR_SUCCESS) as i32 {
         dwType = REG_SZ;
         dwDisplayNameLength = core::mem::size_of_val(&szSelectedClassicSize) as DWORD;
-        Result = SHGetValue(
+        Result = (SHGetValue(
             hkNewSchemes,
             szSelectedClassicScheme.as_ptr(),
             w!("SelectedSize"),
             &mut dwType,
             szSelectedClassicSize.as_mut_ptr() as LPVOID,
             &mut dwDisplayNameLength,
-        );
+        )) as i32;
     }
 
     RegCloseKey(hkNewSchemes);
@@ -916,11 +916,11 @@ pub unsafe extern "C" fn GetActiveClassicTheme(pThemeList: PTHEME, pSelectedThem
     (*pSelectedTheme).Color = pCurrentStyle;
     (*pSelectedTheme).Size = pCurrentSize;
 
-    TRUE
+    (TRUE) as i32
 }
 #[no_mangle]
 pub unsafe extern "C" fn ActivateTheme(pSelectedTheme: PTHEME_SELECTION) -> i32 {
-    let mut hThemeFile: HTHEMEFILE = 0;
+    let mut hThemeFile: HTHEMEFILE = (0) as *mut c_void;
     let mut hret: HRESULT;
 
     if (*pSelectedTheme).ThemeActive != 0 {
@@ -933,11 +933,11 @@ pub unsafe extern "C" fn ActivateTheme(pSelectedTheme: PTHEME_SELECTION) -> i32 
         );
 
         if !((hret) >= 0) {
-            return FALSE;
+            return (FALSE) as i32;
         }
     }
 
-    hret = ApplyTheme(hThemeFile, 0, 0);
+    hret = ApplyTheme(hThemeFile, 0, (0) as *mut HWND__);
 
     if (*pSelectedTheme).ThemeActive != 0 {
         CloseThemeFile(hThemeFile);
@@ -947,7 +947,7 @@ pub unsafe extern "C" fn ActivateTheme(pSelectedTheme: PTHEME_SELECTION) -> i32 
 }
 #[no_mangle]
 pub unsafe extern "C" fn LoadSchemeFromTheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: *mut THEME_SELECTION) -> i32 {
-    let mut hThemeFile: HTHEMEFILE = 0;
+    let mut hThemeFile: HTHEMEFILE = (0) as *mut c_void;
     let hret: HRESULT;
     let hTheme: HTHEME;
     let mut i: i32;
@@ -961,7 +961,7 @@ pub unsafe extern "C" fn LoadSchemeFromTheme(scheme: *mut COLOR_SCHEME, pSelecte
     );
 
     if !((hret) >= 0) {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     hTheme = OpenThemeDataFromFile(
@@ -972,37 +972,37 @@ pub unsafe extern "C" fn LoadSchemeFromTheme(scheme: *mut COLOR_SCHEME, pSelecte
     );
 
     if hTheme.is_null() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     i = 0;
-    while i < NUM_COLORS {
+    while i < (NUM_COLORS) as i32 {
         (*scheme).crColor[i as usize] = GetThemeSysColor(hTheme, i);
         i += 1;
     }
 
-    (*scheme).ncMetrics.iBorderWidth = GetThemeSysSize(hTheme, SM_CXFRAME);
-    (*scheme).ncMetrics.iScrollWidth = GetThemeSysSize(hTheme, SM_CXVSCROLL);
-    (*scheme).ncMetrics.iScrollHeight = GetThemeSysSize(hTheme, SM_CYHSCROLL);
-    (*scheme).ncMetrics.iCaptionWidth = GetThemeSysSize(hTheme, SM_CXSIZE);
-    (*scheme).ncMetrics.iCaptionHeight = GetThemeSysSize(hTheme, SM_CYSIZE);
-    (*scheme).ncMetrics.iSmCaptionWidth = GetThemeSysSize(hTheme, SM_CXSMSIZE);
-    (*scheme).ncMetrics.iSmCaptionHeight = GetThemeSysSize(hTheme, SM_CYSMSIZE);
-    (*scheme).ncMetrics.iMenuWidth = GetThemeSysSize(hTheme, SM_CXMENUSIZE);
-    (*scheme).ncMetrics.iMenuHeight = GetThemeSysSize(hTheme, SM_CYMENUSIZE);
+    (*scheme).ncMetrics.iBorderWidth = GetThemeSysSize(hTheme, (SM_CXFRAME) as i32);
+    (*scheme).ncMetrics.iScrollWidth = GetThemeSysSize(hTheme, (SM_CXVSCROLL) as i32);
+    (*scheme).ncMetrics.iScrollHeight = GetThemeSysSize(hTheme, (SM_CYHSCROLL) as i32);
+    (*scheme).ncMetrics.iCaptionWidth = GetThemeSysSize(hTheme, (SM_CXSIZE) as i32);
+    (*scheme).ncMetrics.iCaptionHeight = GetThemeSysSize(hTheme, (SM_CYSIZE) as i32);
+    (*scheme).ncMetrics.iSmCaptionWidth = GetThemeSysSize(hTheme, (SM_CXSMSIZE) as i32);
+    (*scheme).ncMetrics.iSmCaptionHeight = GetThemeSysSize(hTheme, (SM_CYSMSIZE) as i32);
+    (*scheme).ncMetrics.iMenuWidth = GetThemeSysSize(hTheme, (SM_CXMENUSIZE) as i32);
+    (*scheme).ncMetrics.iMenuHeight = GetThemeSysSize(hTheme, (SM_CYMENUSIZE) as i32);
 
-    GetThemeSysFont(hTheme, TMT_CAPTIONFONT, &mut (*scheme).ncMetrics.lfCaptionFont);
-    GetThemeSysFont(hTheme, TMT_SMALLCAPTIONFONT, &mut (*scheme).ncMetrics.lfSmCaptionFont);
-    GetThemeSysFont(hTheme, TMT_MENUFONT, &mut (*scheme).ncMetrics.lfMenuFont);
-    GetThemeSysFont(hTheme, TMT_STATUSFONT, &mut (*scheme).ncMetrics.lfStatusFont);
-    GetThemeSysFont(hTheme, TMT_MSGBOXFONT, &mut (*scheme).ncMetrics.lfMessageFont);
-    GetThemeSysFont(hTheme, TMT_ICONTITLEFONT, &mut (*scheme).icMetrics.lfFont);
+    GetThemeSysFont(hTheme, (TMT_CAPTIONFONT) as i32, &mut (*scheme).ncMetrics.lfCaptionFont);
+    GetThemeSysFont(hTheme, (TMT_SMALLCAPTIONFONT) as i32, &mut (*scheme).ncMetrics.lfSmCaptionFont);
+    GetThemeSysFont(hTheme, (TMT_MENUFONT) as i32, &mut (*scheme).ncMetrics.lfMenuFont);
+    GetThemeSysFont(hTheme, (TMT_STATUSFONT) as i32, &mut (*scheme).ncMetrics.lfStatusFont);
+    GetThemeSysFont(hTheme, (TMT_MSGBOXFONT) as i32, &mut (*scheme).ncMetrics.lfMessageFont);
+    GetThemeSysFont(hTheme, (TMT_ICONTITLEFONT) as i32, &mut (*scheme).icMetrics.lfFont);
 
-    (*scheme).bFlatMenus = GetThemeSysBool(hTheme, TMT_FLATMENUS);
+    (*scheme).bFlatMenus = GetThemeSysBool(hTheme, (TMT_FLATMENUS) as i32);
 
     CloseThemeData(hTheme);
 
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn DrawThemePreview(
@@ -1014,10 +1014,10 @@ pub unsafe extern "C" fn DrawThemePreview(
     let hbrBack: HBRUSH;
     let hres: HRESULT;
 
-    hbrBack = CreateSolidBrush((*scheme).crColor[COLOR_DESKTOP]);
+    hbrBack = CreateSolidBrush((*scheme).crColor[(COLOR_DESKTOP) as usize]);
 
     FillRect(hdcMem, prcWindow, hbrBack);
-    DeleteObject(hbrBack);
+    DeleteObject((hbrBack).cast());
 
     InflateRect(prcWindow, -8, -8);
     (*prcWindow).bottom -= 12;
@@ -1040,11 +1040,11 @@ pub unsafe extern "C" fn ActivateThemeFile(pwszFile: LPCWSTR) -> BOOL {
     let mut pThemes: PTHEME;
     let mut selection: THEME_SELECTION = core::mem::zeroed();
     let mut scheme: COLOR_SCHEME = core::mem::zeroed();
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = (FALSE) as i32;
 
     pThemes = LoadThemes();
     if pThemes.is_null() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     'cleanup: {
@@ -1079,7 +1079,7 @@ pub unsafe extern "C" fn ActivateThemeFile(pwszFile: LPCWSTR) -> BOOL {
 
         ApplyScheme(&mut scheme, &mut selection);
 
-        ret = TRUE;
+        ret = (TRUE) as i32;
     }
 
     CleanupThemes(pThemes);
@@ -1103,7 +1103,7 @@ pub unsafe extern "system" fn ThemesPageProc(
 
         WM_NOTIFY => {
             lpnm = lParam as LPNMHDR;
-            match (*lpnm).code {
+            match ((*lpnm).code) as i32 {
                 PSN_APPLY => {
                     SendMessage(
                         HWND_BROADCAST,

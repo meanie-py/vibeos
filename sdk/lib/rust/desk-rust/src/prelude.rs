@@ -189,6 +189,14 @@ pub use crate::types::{
     LVCOLUMNW as LVCOLUMN, LVCOLUMNW as LV_COLUMN, LVFINDINFOW as LV_FINDINFO,
     LVITEMW as LV_ITEM,
 };
+// The A/W STRUCT family, for exactly the reason spelled out below: ntdll-sys is built WITHOUT
+// UNICODE, so its glob supplies `WIN32_FIND_DATA = WIN32_FIND_DATAA` and friends, and a UNICODE
+// module that picks those up passes an ANSI layout to a `...W` API — which links and then reads
+// the wrong bytes, since the two structs differ in the width of every character field.
+pub use crate::types::{
+    STARTUPINFOW as STARTUPINFO, WIN32_FIND_DATAW as WIN32_FIND_DATA,
+    WNDCLASSEXW as WNDCLASSEX, WNDCLASSW as WNDCLASS,
+};
 // The TCHAR TYPE family, spelled out rather than inherited: ntdll-sys is built WITHOUT UNICODE,
 // so its glob supplies `LPTSTR = LPSTR`, and a UNICODE module that picks that up has a
 // correctness bug rather than a compile error — a `size_of::<TCHAR>()` allocation would compile
@@ -232,6 +240,16 @@ pub use crate::types::{
 // Cast expressions and macro expressions in their headers, so the island carries none of them.
 // The value is transcribed WITH the header and line, because a hand-typed constant that is
 // merely plausible is exactly how a `match` arm ends up comparing against the wrong number.
+// ntdll-sys's island types these `u32` (bindgen's default for a bare `#define 1`), but every
+// use in this module is a BOOL — a return value, a struct field, a Win32 argument — and BOOL is
+// a signed LONG. Shadowing the glob here is two lines; the alternative was ~90 per-site casts,
+// each of which would have had to be checked for being the RIGHT cast.
+pub const TRUE: BOOL = 1;
+pub const FALSE: BOOL = 0;
+// gdiplustypes.h's `Status` enum, whose OK member is spelled `Ok`. Left unaliased it resolves
+// to Rust's own `Result::Ok` — which is a CONSTRUCTOR, so `!= Ok` compiles as far as a type
+// error rather than a name error, and on a less lucky day would compile outright.
+pub use crate::types::Status_Ok as Ok;
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE; // winbase.h:294 `(HANDLE)(-1)`
 pub const ENUM_CURRENT_SETTINGS: DWORD = 0xFFFFFFFF; // winuser.h:179 `((DWORD)-1)`
 pub const HWND_BROADCAST: HWND = 0xffffusize as HWND; // winuser.h:1215 `((HWND)0xffff)`

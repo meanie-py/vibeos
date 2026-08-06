@@ -10,12 +10,12 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     let mut InstallParams: SP_DEVINSTALL_PARAMS = core::mem::zeroed();
     let mut DriverInfoData: SP_DRVINFO_DATA = core::mem::zeroed();
     let mut hInf: HINF = INVALID_HANDLE_VALUE;
-    let mut SectionName: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut ServiceName: [TCHAR; MAX_SERVICE_NAME_LEN] = [0; MAX_SERVICE_NAME_LEN];
+    let mut SectionName: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
+    let mut ServiceName: [TCHAR; (MAX_SERVICE_NAME_LEN) as usize] = [0; (MAX_SERVICE_NAME_LEN) as usize];
     let mut DeviceName: [TCHAR; 12] = [0; 12];
     let mut DriverInfoDetailData: SP_DRVINFO_DETAIL_DATA = core::mem::zeroed();
     let mut DisplayDevice: DISPLAY_DEVICE = core::mem::zeroed();
-    let mut hDriverKey: HKEY = INVALID_HANDLE_VALUE;
+    let mut hDriverKey: HKEY = (INVALID_HANDLE_VALUE).cast();
     let mut hSettingsKey: HKEY = core::ptr::null_mut();
     let mut hServicesKey: HKEY = core::ptr::null_mut();
     let mut hServiceKey: HKEY = core::ptr::null_mut();
@@ -35,13 +35,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     InstallParams.cbSize = core::mem::size_of::<SP_DEVINSTALL_PARAMS>() as u32;
     result = SetupDiGetDeviceInstallParams(DeviceInfoSet, DeviceInfoData, &mut InstallParams);
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -64,13 +64,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
 
     result = SetupDiSetDeviceInstallParams(DeviceInfoSet, DeviceInfoData, &mut InstallParams);
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -91,13 +91,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
 
     result = SetupDiInstallDevice(DeviceInfoSet, DeviceInfoData);
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -119,13 +119,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     DriverInfoData.cbSize = core::mem::size_of::<SP_DRVINFO_DATA>() as u32;
     result = SetupDiGetSelectedDriver(DeviceInfoSet, DeviceInfoData, &mut DriverInfoData);
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -154,13 +154,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if result == 0 && GetLastError() != ERROR_INSUFFICIENT_BUFFER {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -186,13 +186,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if hInf == INVALID_HANDLE_VALUE {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -224,13 +224,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -249,17 +249,17 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         }
     }
     hr = StringCbCat(
-        SectionName.as_mut_ptr() as *mut core::ffi::c_void,
+        (SectionName.as_mut_ptr() as *mut core::ffi::c_void).cast(),
         core::mem::size_of_val(&SectionName),
         w!(".SoftwareSettings"),
     );
     if hr < 0 {
-        rc = ERROR_INSUFFICIENT_BUFFER;
+        rc = (ERROR_INSUFFICIENT_BUFFER) as i32;
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -286,14 +286,14 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         DIREG_DRV,
         KEY_CREATE_SUB_KEY,
     );
-    if hDriverKey == INVALID_HANDLE_VALUE {
-        rc = GetLastError();
+    if hDriverKey == (INVALID_HANDLE_VALUE).cast() {
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -328,13 +328,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         &mut hSettingsKey,
         &mut disposition,
     );
-    if rc != ERROR_SUCCESS {
+    if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -367,13 +367,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -402,13 +402,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -434,13 +434,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         KEY_ENUMERATE_SUB_KEYS,
         &mut hServicesKey,
     );
-    if rc != ERROR_SUCCESS {
+    if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -465,13 +465,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         KEY_CREATE_SUB_KEY,
         &mut hServiceKey,
     );
-    if rc != ERROR_SUCCESS {
+    if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -509,13 +509,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
             &mut hDeviceSubKey,
             &mut disposition,
         );
-        if rc != ERROR_SUCCESS {
+        if rc != (ERROR_SUCCESS) as i32 {
             // DPRINT removed
             'cleanup: loop {
                 if hInf != INVALID_HANDLE_VALUE {
                     SetupCloseInfFile(hInf);
                 }
-                if hDriverKey != INVALID_HANDLE_VALUE {
+                if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                     RegCloseKey(hDriverKey);
                 }
                 if !hSettingsKey.is_null() {
@@ -539,13 +539,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         }
 
         if wIndex == 9999 {
-            rc = ERROR_GEN_FAILURE;
+            rc = (ERROR_GEN_FAILURE) as i32;
             // DPRINT removed
             'cleanup: loop {
                 if hInf != INVALID_HANDLE_VALUE {
                     SetupCloseInfFile(hInf);
                 }
-                if hDriverKey != INVALID_HANDLE_VALUE {
+                if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                     RegCloseKey(hDriverKey);
                 }
                 if !hSettingsKey.is_null() {
@@ -584,13 +584,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         core::ptr::null_mut(),
     );
     if result == 0 {
-        rc = GetLastError();
+        rc = (GetLastError()) as i32;
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -618,13 +618,13 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         DriverInfoData.Description.as_ptr() as *const u8,
         cbData,
     );
-    if rc != ERROR_SUCCESS {
+    if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
         'cleanup: loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
-            if hDriverKey != INVALID_HANDLE_VALUE {
+            if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
                 RegCloseKey(hDriverKey);
             }
             if !hSettingsKey.is_null() {
@@ -651,12 +651,12 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         0,
     );
 
-    rc = ERROR_SUCCESS;
+    rc = (ERROR_SUCCESS) as i32;
 
     if hInf != INVALID_HANDLE_VALUE {
         SetupCloseInfFile(hInf);
     }
-    if hDriverKey != INVALID_HANDLE_VALUE {
+    if hDriverKey != (INVALID_HANDLE_VALUE).cast() {
         RegCloseKey(hDriverKey);
     }
     if !hSettingsKey.is_null() {
