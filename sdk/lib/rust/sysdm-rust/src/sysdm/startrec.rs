@@ -35,8 +35,8 @@ unsafe extern "C" fn SetTimeout(hwndDlg: HWND, Timeout: INT) {
         EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTUPDWN) as i32), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECLISTEDIT) as i32), TRUE);
     }
-    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
-    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG!(999 as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECLISTUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG!(Timeout as i16, 0) as LPARAM);
 }
 unsafe extern "C" fn SetRecoveryTimeout(hwndDlg: HWND, Timeout: INT) {
     if Timeout == 0 {
@@ -46,8 +46,8 @@ unsafe extern "C" fn SetRecoveryTimeout(hwndDlg: HWND, Timeout: INT) {
         EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECUPDWN) as i32), TRUE);
         EnableWindow(GetDlgItem(hwndDlg, (IDC_STRRECRECEDIT) as i32), TRUE);
     }
-    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG(999 as i16, 0) as LPARAM);
-    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG(Timeout as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG!(999 as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_STRRECRECUPDWN) as i32, UDM_SETPOS, 0 as WPARAM, MAKELONG!(Timeout as i16, 0) as LPARAM);
 }
 unsafe extern "C" fn GetSystemDrive(szSystemDrive: *mut *mut u16) -> u32 {
     let mut dwBufSize: u32;
@@ -772,7 +772,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
     let mut lResult: LRESULT;
     let mut szTimeout: [u16; 10] = [0; 10];
 
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     pStartInfo = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSTARTINFO;
 
@@ -796,7 +796,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_STRRECEDIT => {
                     ShellExecuteW(
                         0,
@@ -883,12 +883,12 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         WriteStartupRecoveryOptions(hwndDlg, pStartInfo);
                     }
 
-                    EndDialog(hwndDlg, LOWORD(wParam) as i32);
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
 
                 IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam) as i32);
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
 
@@ -923,7 +923,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                 }
 
                 IDC_STRRECDEBUGCOMBO => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         let lResult: LRESULT;
 
                         lResult = SendDlgItemMessage(

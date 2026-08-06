@@ -751,7 +751,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
 ) -> INT_PTR {
     let mut pVirtMem: PVIRTMEM;
 
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     pVirtMem = GetWindowLongPtr(hwndDlg, DWLP_USER) as PVIRTMEM;
 
@@ -777,7 +777,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
                     return TRUE;
@@ -810,7 +810,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
                 }
 
                 IDC_PAGEFILELIST => {
-                    match HIWORD(wParam) {
+                    match (HIWORD!(wParam)) as u32 {
                         LBN_SELCHANGE => {
                             OnSelChange(pVirtMem);
                             return TRUE;

@@ -95,7 +95,7 @@ pub unsafe extern "system" fn SysSettingsDlgProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -103,7 +103,7 @@ pub unsafe extern "system" fn SysSettingsDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     OnOK(hwndDlg);
                     EndDialog(hwndDlg, 0);
@@ -132,48 +132,48 @@ pub unsafe extern "system" fn AdvancedPageProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     match uMsg {
         WM_INITDIALOG => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_PERFOR => {
                     ShowPerformanceOptions(hwndDlg);
                 }
 
                 IDC_USERPROFILE => {
-                    DialogBox(
+                    DialogBox!(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_USERPROFILE),
+                        MAKEINTRESOURCE!(IDD_USERPROFILE),
                         hwndDlg,
                         UserProfileDlgProc,
                     );
                 }
 
                 IDC_STAREC => {
-                    DialogBox(
+                    DialogBox!(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_STARTUPRECOVERY),
+                        MAKEINTRESOURCE!(IDD_STARTUPRECOVERY),
                         hwndDlg,
                         StartRecDlgProc,
                     );
                 }
 
                 IDC_SYSSETTINGS => {
-                    DialogBox(
+                    DialogBox!(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_SYSSETTINGS),
+                        MAKEINTRESOURCE!(IDD_SYSSETTINGS),
                         hwndDlg,
                         SysSettingsDlgProc,
                     );
                 }
 
                 IDC_ENVVAR => {
-                    DialogBox(
+                    DialogBox!(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_ENVIRONMENT_VARIABLES),
+                        MAKEINTRESOURCE!(IDD_ENVIRONMENT_VARIABLES),
                         hwndDlg,
                         EnvironmentDlgProc,
                     );

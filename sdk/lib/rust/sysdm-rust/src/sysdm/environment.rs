@@ -115,7 +115,7 @@ unsafe extern "C" fn GatherDataFromListView(
     let mut i: DWORD;
     let mut szData: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
-    NumberOfItems = ListView_GetItemCount(hwndListView);
+    NumberOfItems = ListView_GetItemCount!(hwndListView);
     if NumberOfItems == 0 {
         return 0;
     }
@@ -124,7 +124,7 @@ unsafe extern "C" fn GatherDataFromListView(
 
     i = 0;
     while i < NumberOfItems {
-        ListView_GetItemText(
+        ListView_GetItemText!(
             hwndListView,
             i as i32,
             0,
@@ -159,7 +159,7 @@ unsafe extern "C" fn GatherDataFromListView(
                 _T(b";\0".as_ptr() as *const i8),
             );
         }
-        ListView_GetItemText(
+        ListView_GetItemText!(
             hwndListView,
             i as i32,
             0,
@@ -252,13 +252,13 @@ unsafe extern "C" fn AddEmptyItem(
 ) {
     let mut lvi: LV_ITEM = core::mem::zeroed();
 
-    ZeroMemory(&mut lvi as *mut _ as *mut _, core::mem::size_of::<LV_ITEM>());
+    ZeroMemory!(&mut lvi as *mut _ as *mut _, core::mem::size_of::<LV_ITEM>());
     lvi.mask = LVIF_TEXT | LVIF_STATE;
     lvi.cchTextMax = (MAX_PATH) as i32;
     lvi.pszText = _T(b"\0".as_ptr() as *const i8) as *mut _;
     lvi.iItem = dwSelectedValueIndex as i32;
     lvi.iSubItem = 0;
-    ListView_InsertItem(hwndListView, &mut lvi as *mut _);
+    ListView_InsertItem!(hwndListView, &mut lvi as *mut _);
 }
 unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DATA) {
     let mut column: TCHAR = core::mem::zeroed();
@@ -270,11 +270,11 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
     let lpTemp: LPTSTR;
     let mut lpToken: LPTSTR;
 
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(column) as *mut core::ffi::c_void,
         core::mem::size_of_val(&column),
     );
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(lvi) as *mut core::ffi::c_void,
         core::mem::size_of_val(&lvi),
     );
@@ -285,7 +285,7 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
 
     (*core::ptr::addr_of_mut!(column)).mask = LVCF_WIDTH;
     (*core::ptr::addr_of_mut!(column)).cx = rItem.right;
-    ListView_InsertColumn(hwndListView, 0, core::ptr::addr_of_mut!(column));
+    ListView_InsertColumn!(hwndListView, 0, core::ptr::addr_of_mut!(column));
     ShowScrollBar(hwndListView, (SB_HORZ) as i32, FALSE);
 
     (*core::ptr::addr_of_mut!(lvi)).mask = LVIF_TEXT | LVIF_STATE;
@@ -313,22 +313,22 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
         } else {
             0
         };
-        ListView_InsertItem(hwndListView, core::ptr::addr_of_mut!(lvi));
+        ListView_InsertItem!(hwndListView, core::ptr::addr_of_mut!(lvi));
 
         lpToken = _tcstok(core::ptr::null_mut(), _T(b";\0".as_ptr() as *const TCHAR));
         i += 1;
     }
 
     (*DlgData).dwSelectedValueIndex = 0;
-    ListView_SetExtendedListViewStyle(hwndListView, LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
-    ListView_SetItemState(
+    ListView_SetExtendedListViewStyle!(hwndListView, LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
+    ListView_SetItemState!(
         hwndListView,
         (*DlgData).dwSelectedValueIndex,
         LVIS_FOCUSED | LVIS_SELECTED,
         LVIS_FOCUSED | LVIS_SELECTED,
     );
 
-    ListView_Update(hwndListView, (*DlgData).dwSelectedValueIndex);
+    ListView_Update!(hwndListView, (*DlgData).dwSelectedValueIndex);
     GlobalFree(lpTemp as *mut core::ffi::c_void);
 }
 unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
@@ -341,7 +341,7 @@ unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
 
     LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof!(szFilter.as_ptr()));
 
-    ZeroMemory(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
+    ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
     ofn.lStructSize = core::mem::size_of::<OPENFILENAME>() as u32;
     ofn.hwndOwner = hwndDlg;
@@ -364,7 +364,7 @@ unsafe extern "C" fn BrowseRequiredFolder(
     let mut bi: BROWSEINFO = core::mem::zeroed();
     let mut pidllist: LPITEMIDLIST;
 
-    ZeroMemory(
+    ZeroMemory!(
         &mut bi as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<BROWSEINFO>(),
     );
@@ -381,16 +381,16 @@ unsafe extern "C" fn BrowseRequiredFolder(
     if SHGetPathFromIDList(pidllist, szDir.as_mut_ptr()) != 0 {
         if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
             if (*DlgData).bIsItemSelected == 0 {
-                (*DlgData).dwSelectedValueIndex = ListView_GetItemCount(hwndListView) as DWORD;
+                (*DlgData).dwSelectedValueIndex = ListView_GetItemCount!(hwndListView) as DWORD;
                 AddEmptyItem(hwndListView, (*DlgData).dwSelectedValueIndex);
             }
-            ListView_SetItemText(
+            ListView_SetItemText!(
                 hwndListView,
                 (*DlgData).dwSelectedValueIndex as i32,
                 0,
                 szDir.as_mut_ptr(),
             );
-            ListView_SetItemState(
+            ListView_SetItemState!(
                 hwndListView,
                 (*DlgData).dwSelectedValueIndex as i32,
                 LVIS_FOCUSED | LVIS_SELECTED,
@@ -417,7 +417,7 @@ unsafe extern "C" fn MoveListItem(
 
     hwndListView = GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32);
 
-    dwLastIndex = ListView_GetItemCount(hwndListView) - 1;
+    dwLastIndex = (ListView_GetItemCount!(hwndListView) - 1) as u32;
     dwSrcIndex = (*DlgData).dwSelectedValueIndex;
     dwDestIndex = if bMoveUp != 0 {
         dwSrcIndex - 1
@@ -426,14 +426,14 @@ unsafe extern "C" fn MoveListItem(
     };
 
     if (bMoveUp != 0 && dwSrcIndex > 0) || (bMoveUp == 0 && dwSrcIndex < dwLastIndex) {
-        ListView_GetItemText(
+        ListView_GetItemText!(
             hwndListView,
             dwSrcIndex,
             0,
             szDest.as_mut_ptr(),
             _countof!(szDest.as_mut_ptr()),
         );
-        ListView_GetItemText(
+        ListView_GetItemText!(
             hwndListView,
             dwDestIndex,
             0,
@@ -441,13 +441,13 @@ unsafe extern "C" fn MoveListItem(
             _countof!(szSource.as_mut_ptr()),
         );
 
-        ListView_SetItemText(
+        ListView_SetItemText!(
             hwndListView,
             dwDestIndex,
             0,
             szDest.as_mut_ptr(),
         );
-        ListView_SetItemText(
+        ListView_SetItemText!(
             hwndListView,
             dwSrcIndex,
             0,
@@ -455,7 +455,7 @@ unsafe extern "C" fn MoveListItem(
         );
 
         (*DlgData).dwSelectedValueIndex = dwDestIndex;
-        ListView_SetItemState(
+        ListView_SetItemState!(
             hwndListView,
             (*DlgData).dwSelectedValueIndex,
             LVIS_FOCUSED | LVIS_SELECTED,
@@ -546,7 +546,7 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
                 (rect.bottom - rect.top) + (cy as i32 - (*DlgData).cyOld as i32),
                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
             );
-            ListView_SetColumnWidth(
+            ListView_SetColumnWidth!(
                 hItemWnd,
                 0,
                 (rect.right - rect.left) + (cx as i32 - (*DlgData).cxOld as i32),
@@ -782,7 +782,7 @@ unsafe extern "C" fn OnEnvironmentEditDlgResize(
     (*DlgData).cyOld = cy;
 }
 unsafe extern "C" fn OnBeginLabelEdit(pnmv: *mut NMLVDISPINFO) -> BOOL {
-    let hwndEdit: HWND = ListView_GetEditControl((*pnmv).hdr.hwndFrom);
+    let hwndEdit: HWND = ListView_GetEditControl!((*pnmv).hdr.hwndFrom);
     if hwndEdit == core::ptr::null_mut() {
         return TRUE;
     }
@@ -796,7 +796,7 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
     let mut szOldDir: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut szNewDir: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
 
-    hwndEdit = ListView_GetEditControl((*pnmv).hdr.hwndFrom);
+    hwndEdit = ListView_GetEditControl!((*pnmv).hdr.hwndFrom);
     if hwndEdit == core::ptr::null_mut() {
         return TRUE;
     }
@@ -805,7 +805,7 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
         return FALSE;
     }
 
-    ListView_GetItemText(
+    ListView_GetItemText!(
         (*pnmv).hdr.hwndFrom,
         (*pnmv).item.iItem,
         0,
@@ -821,8 +821,8 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
     );
 
     if _tcslen(szNewDir.as_ptr()) == 0 {
-        ListView_DeleteItem((*pnmv).hdr.hwndFrom, (*pnmv).item.iItem);
-        ListView_SetItemState(
+        ListView_DeleteItem!((*pnmv).hdr.hwndFrom, (*pnmv).item.iItem);
+        ListView_SetItemState!(
             (*pnmv).hdr.hwndFrom,
             (*pnmv).item.iItem - 1,
             LVIS_FOCUSED | LVIS_SELECTED,
@@ -835,7 +835,7 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
         return FALSE;
     }
 
-    ListView_SetItemText(
+    ListView_SetItemText!(
         (*pnmv).hdr.hwndFrom,
         (*pnmv).item.iItem,
         0,
@@ -861,7 +861,7 @@ unsafe extern "C" fn OnNotifyEditVariableDlg(hwndDlg: HWND, DlgData: PEDIT_DIALO
                     if (*lpnmlv).iItem == -1 {
                         SendMessage(GetDlgItem(hwndDlg, (IDC_BUTTON_NEW) as i32), BM_CLICK, 0, 0);
                     } else {
-                        ListView_EditLabel(GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32), (*DlgData).dwSelectedValueIndex as i32);
+                        ListView_EditLabel!(GetDlgItem(hwndDlg, (IDC_LIST_VARIABLE_VALUE) as i32), (*DlgData).dwSelectedValueIndex as i32);
                     }
                 }
 
@@ -927,7 +927,7 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
         }
 
         WM_SIZE => {
-            OnEnvironmentEditDlgResize(hwndDlg, DlgData, LOWORD(lParam), HIWORD(lParam));
+            OnEnvironmentEditDlgResize(hwndDlg, DlgData, (LOWORD!(lParam)) as DWORD, (HIWORD!(lParam)) as DWORD);
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
             return TRUE;
         }
@@ -976,7 +976,7 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     let mut p: LPTSTR;
                     let dwValueLength: DWORD;
@@ -1053,14 +1053,14 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
                 IDC_BUTTON_DELETE => {
                     let dwLastIndex: DWORD;
 
-                    dwLastIndex = (ListView_GetItemCount(hwndListView) - 1) as DWORD;
-                    ListView_DeleteItem(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    dwLastIndex = (ListView_GetItemCount!(hwndListView) - 1) as DWORD;
+                    ListView_DeleteItem!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
 
                     if dwLastIndex == (*DlgData).dwSelectedValueIndex {
                         (*DlgData).dwSelectedValueIndex = (*DlgData).dwSelectedValueIndex.wrapping_sub(1);
                     }
 
-                    ListView_SetItemState(
+                    ListView_SetItemState!(
                         hwndListView,
                         (*DlgData).dwSelectedValueIndex as i32,
                         LVIS_FOCUSED | LVIS_SELECTED,
@@ -1090,13 +1090,13 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
                 }
 
                 IDC_BUTTON_NEW => {
-                    (*DlgData).dwSelectedValueIndex = ListView_GetItemCount(hwndListView) as DWORD;
+                    (*DlgData).dwSelectedValueIndex = ListView_GetItemCount!(hwndListView) as DWORD;
                     AddEmptyItem(hwndListView, (*DlgData).dwSelectedValueIndex);
-                    ListView_EditLabel(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
                 }
 
                 IDC_BUTTON_EDIT => {
-                    ListView_EditLabel(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
                 }
 
                 _ => {}
@@ -1155,7 +1155,7 @@ unsafe extern "C" fn EditVariableDlgProc(
         }
 
         WM_SIZE => {
-            OnEnvironmentEditDlgResize(hwndDlg, DlgData, LOWORD(lParam), HIWORD(lParam));
+            OnEnvironmentEditDlgResize(hwndDlg, DlgData, (LOWORD!(lParam)) as DWORD, (HIWORD!(lParam)) as DWORD);
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
             return TRUE;
         }
@@ -1204,7 +1204,7 @@ unsafe extern "C" fn EditVariableDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     let mut p: LPTSTR;
                     let dwValueLength: DWORD;
@@ -1281,14 +1281,14 @@ unsafe extern "C" fn EditVariableDlgProc(
                 IDC_BUTTON_DELETE => {
                     let dwLastIndex: DWORD;
 
-                    dwLastIndex = (ListView_GetItemCount(hwndListView) - 1) as DWORD;
-                    ListView_DeleteItem(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    dwLastIndex = (ListView_GetItemCount!(hwndListView) - 1) as DWORD;
+                    ListView_DeleteItem!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
 
                     if dwLastIndex == (*DlgData).dwSelectedValueIndex {
                         (*DlgData).dwSelectedValueIndex = (*DlgData).dwSelectedValueIndex.wrapping_sub(1);
                     }
 
-                    ListView_SetItemState(
+                    ListView_SetItemState!(
                         hwndListView,
                         (*DlgData).dwSelectedValueIndex as i32,
                         LVIS_FOCUSED | LVIS_SELECTED,
@@ -1318,13 +1318,13 @@ unsafe extern "C" fn EditVariableDlgProc(
                 }
 
                 IDC_BUTTON_NEW => {
-                    (*DlgData).dwSelectedValueIndex = ListView_GetItemCount(hwndListView) as DWORD;
+                    (*DlgData).dwSelectedValueIndex = ListView_GetItemCount!(hwndListView) as DWORD;
                     AddEmptyItem(hwndListView, (*DlgData).dwSelectedValueIndex);
-                    ListView_EditLabel(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
                 }
 
                 IDC_BUTTON_EDIT => {
-                    ListView_EditLabel(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
+                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
                 }
 
                 _ => {}
@@ -1485,9 +1485,9 @@ unsafe extern "C" fn GetEnvironmentVariables(
         } else {
             0
         };
-        iItem = ListView_InsertItem(hwndListView, &mut lvi);
+        iItem = ListView_InsertItem!(hwndListView, &mut lvi);
 
-        ListView_SetItemText(hwndListView, iItem, 1, (*VarData).lpCookedValue);
+        ListView_SetItemText!(hwndListView, iItem, 1, (*VarData).lpCookedValue);
 
         i += 1;
     }
@@ -1511,20 +1511,20 @@ unsafe extern "C" fn SetEnvironmentDialogListViewColumns(hwndListView: HWND) {
     column.iSubItem = 0;
     LoadString(hApplet, IDS_VARIABLE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of_val(&szStr[0])) as i32);
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 0, &mut column);
+    ListView_InsertColumn!(hwndListView, 0, &mut column);
 
     column.cx = ((rect.right - rect.left) * 0.63) as INT;
     column.iSubItem = 1;
     LoadString(hApplet, IDS_VALUE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of_val(&szStr[0])) as i32);
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 1, &mut column);
+    ListView_InsertColumn!(hwndListView, 1, &mut column);
 }
 unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     let mut hwndListView: HWND;
 
     hwndListView = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
 
-    ListView_SetExtendedListViewStyle(hwndListView, LVS_EX_FULLROWSELECT);
+    ListView_SetExtendedListViewStyle!(hwndListView, LVS_EX_FULLROWSELECT);
 
     SetEnvironmentDialogListViewColumns(hwndListView);
 
@@ -1534,20 +1534,20 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
         _T(b"Environment\0".as_ptr() as *const i8),
     );
 
-    ListView_SetColumnWidth(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
+    ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
 
-    ListView_SetItemState(
+    ListView_SetItemState!(
         hwndListView,
         0,
         LVIS_FOCUSED | LVIS_SELECTED,
         LVIS_FOCUSED | LVIS_SELECTED,
     );
 
-    ListView_Update(hwndListView, 0);
+    ListView_Update!(hwndListView, 0);
 
     hwndListView = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
 
-    ListView_SetExtendedListViewStyle(hwndListView, LVS_EX_FULLROWSELECT);
+    ListView_SetExtendedListViewStyle!(hwndListView, LVS_EX_FULLROWSELECT);
 
     SetEnvironmentDialogListViewColumns(hwndListView);
 
@@ -1557,16 +1557,16 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
         _T(b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0".as_ptr() as *const i8),
     );
 
-    ListView_SetColumnWidth(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
+    ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
 
-    ListView_SetItemState(
+    ListView_SetItemState!(
         hwndListView,
         0,
         LVIS_FOCUSED | LVIS_SELECTED,
         LVIS_FOCUSED | LVIS_SELECTED,
     );
 
-    ListView_Update(hwndListView, 0);
+    ListView_Update!(hwndListView, 0);
 }
 unsafe extern "C" fn OnNewVariable(
     hwndDlg: HWND,
@@ -1593,7 +1593,7 @@ unsafe extern "C" fn OnNewVariable(
 
     if DialogBoxParam(
         hApplet,
-        MAKEINTRESOURCE((*DlgData).dwDlgID),
+        MAKEINTRESOURCE!((*DlgData).dwDlgID),
         hwndDlg,
         EditVariableDlgProc,
         DlgData as LPARAM,
@@ -1617,7 +1617,7 @@ unsafe extern "C" fn OnNewVariable(
             && (!(*(*DlgData).VarData).lpCookedValue.is_null()
                 || !(*(*DlgData).VarData).lpRawValue.is_null())
         {
-            ZeroMemory(
+            ZeroMemory!(
                 core::ptr::addr_of_mut!(lvi) as *mut _,
                 core::mem::size_of_val(&lvi),
             );
@@ -1625,9 +1625,9 @@ unsafe extern "C" fn OnNewVariable(
             lvi.lParam = (*DlgData).VarData as LPARAM;
             lvi.pszText = (*(*DlgData).VarData).lpName;
             lvi.state = 0;
-            iItem = ListView_InsertItem(hwndListView, core::ptr::addr_of_mut!(lvi));
+            iItem = ListView_InsertItem!(hwndListView, core::ptr::addr_of_mut!(lvi));
 
-            ListView_SetItemText(
+            ListView_SetItemText!(
                 hwndListView,
                 iItem,
                 1,
@@ -1658,11 +1658,11 @@ unsafe extern "C" fn OnEditVariable(
 
     iItem = GetSelectedListViewItem(hwndListView);
     if iItem != (1 as i32).wrapping_neg() {
-        ZeroMemory(&mut lvi as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&lvi));
+        ZeroMemory!(&mut lvi as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&lvi));
         lvi.mask = LVIF_PARAM;
         lvi.iItem = iItem;
 
-        if ListView_GetItem(hwndListView, &mut lvi) != 0 {
+        if ListView_GetItem!(hwndListView, &mut lvi) != 0 {
             (*DlgData).VarData = lvi.lParam as *mut VARIABLE_DATA;
 
             if DetermineDialogBoxType((*(*DlgData).VarData).lpRawValue) != 0 {
@@ -1671,7 +1671,7 @@ unsafe extern "C" fn OnEditVariable(
 
             iRet = (DialogBoxParam(
                 hApplet,
-                MAKEINTRESOURCE((*DlgData).dwDlgID),
+                MAKEINTRESOURCE!((*DlgData).dwDlgID),
                 hwndDlg,
                 EditVariableDlgProc,
                 DlgData as LPARAM,
@@ -1681,7 +1681,7 @@ unsafe extern "C" fn OnEditVariable(
                 (*DlgData).dwDlgID = IDD_EDIT_VARIABLE;
                 iRet = (DialogBoxParam(
                     hApplet,
-                    MAKEINTRESOURCE((*DlgData).dwDlgID),
+                    MAKEINTRESOURCE!((*DlgData).dwDlgID),
                     hwndDlg,
                     EditVariableDlgProc,
                     DlgData as LPARAM,
@@ -1689,8 +1689,8 @@ unsafe extern "C" fn OnEditVariable(
             }
 
             if iRet > 0 {
-                ListView_SetItemText(hwndListView, iItem, 0, (*(*DlgData).VarData).lpName);
-                ListView_SetItemText(hwndListView, iItem, 1, (*(*DlgData).VarData).lpCookedValue);
+                ListView_SetItemText!(hwndListView, iItem, 0, (*(*DlgData).VarData).lpName);
+                ListView_SetItemText!(hwndListView, iItem, 1, (*(*DlgData).VarData).lpCookedValue);
             }
         }
 
@@ -1715,7 +1715,7 @@ unsafe extern "C" fn OnDeleteVariable(hwndDlg: HWND, iDlgItem: i32) {
         lvi.mask = LVIF_PARAM;
         lvi.iItem = iItem;
 
-        if ListView_GetItem(hwndListView, &mut lvi) != 0 {
+        if ListView_GetItem!(hwndListView, &mut lvi) != 0 {
             VarData = lvi.lParam as *mut VARIABLE_DATA;
             if !VarData.is_null() {
                 if !(*VarData).lpName.is_null() {
@@ -1735,13 +1735,13 @@ unsafe extern "C" fn OnDeleteVariable(hwndDlg: HWND, iDlgItem: i32) {
             }
         }
 
-        ListView_DeleteItem(hwndListView, iItem);
+        ListView_DeleteItem!(hwndListView, iItem);
 
         if iItem > 0 {
             iItem -= 1;
         }
 
-        ListView_SetItemState(
+        ListView_SetItemState!(
             hwndListView,
             iItem,
             LVIS_FOCUSED | LVIS_SELECTED,
@@ -1819,8 +1819,8 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
             (rect.bottom - rect.top) + y,
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        Colx = ListView_GetColumnWidth(hItemWnd, 1);
-        ListView_SetColumnWidth(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
+        Colx = ListView_GetColumnWidth!(hItemWnd, 1);
+        ListView_SetColumnWidth!(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
     }
 
     hItemWnd = GetDlgItem(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
@@ -1837,8 +1837,8 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
             (rect.bottom - rect.top) + y,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
-        Colx = ListView_GetColumnWidth(hItemWnd, 1);
-        ListView_SetColumnWidth(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
+        Colx = ListView_GetColumnWidth!(hItemWnd, 1);
+        ListView_SetColumnWidth!(hItemWnd, 1, Colx + (cx - (*DlgData).cxOld) as i32);
     }
 
     hItemWnd = GetDlgItem(hwndDlg, (IDC_USER_VARIABLE_NEW) as i32);
@@ -2007,13 +2007,13 @@ unsafe extern "C" fn ReleaseListViewItems(hwndDlg: HWND, iDlgItem: i32) {
         core::mem::size_of::<LV_ITEM>(),
     );
 
-    nItemCount = ListView_GetItemCount(hwndListView);
+    nItemCount = ListView_GetItemCount!(hwndListView);
     i = 0;
     while i < nItemCount {
         lvi.mask = LVIF_PARAM;
         lvi.iItem = i;
 
-        if ListView_GetItem(hwndListView, core::ptr::addr_of_mut!(lvi)) != 0 {
+        if ListView_GetItem!(hwndListView, core::ptr::addr_of_mut!(lvi)) != 0 {
             VarData = lvi.lParam as *mut VARIABLE_DATA;
             if !VarData.is_null() {
                 if !(*VarData).lpName.is_null() {
@@ -2148,7 +2148,7 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
         }
     }
 
-    while ListView_GetItem(hwndListView, &mut lvi) != 0 {
+    while ListView_GetItem!(hwndListView, &mut lvi) != 0 {
         VarData = lvi.lParam as *mut VARIABLE_DATA;
         if VarData != core::ptr::null_mut() {
             if RegSetValueEx(
@@ -2232,7 +2232,7 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         }
 
         WM_SIZE => {
-            OnEnvironmentDlgResize(hwndDlg, DlgData, LOWORD(lParam as u32), HIWORD(lParam as u32));
+            OnEnvironmentDlgResize(hwndDlg, DlgData, (LOWORD!(lParam as u32)) as DWORD, (HIWORD!(lParam as u32)) as DWORD);
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
             return TRUE;
         }
@@ -2265,7 +2265,7 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam as u32) {
+            match (LOWORD!(wParam as u32)) as u32 {
                 IDC_USER_VARIABLE_NEW => {
                     OnNewVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
                     return TRUE;

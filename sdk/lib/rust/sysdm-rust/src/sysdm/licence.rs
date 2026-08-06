@@ -20,7 +20,7 @@ pub unsafe extern "system" fn LicenceDlgProc(
 ) -> INT_PTR {
     let mut pLicInfo: *mut LIC_CONTEXT;
 
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     pLicInfo = GetWindowLongPtr(hDlg, DWLP_USER) as *mut LIC_CONTEXT;
 
@@ -54,8 +54,8 @@ pub unsafe extern "system" fn LicenceDlgProc(
         }
 
         WM_COMMAND => {
-            if (LOWORD(wParam) == IDOK) || (LOWORD(wParam) == IDCANCEL) {
-                EndDialog(hDlg, LOWORD(wParam));
+            if (LOWORD!(wParam) == (IDOK) as u16) || (LOWORD!(wParam) == (IDCANCEL) as u16) {
+                EndDialog(hDlg, (LOWORD!(wParam)) as INT_PTR);
                 return TRUE;
             }
         }

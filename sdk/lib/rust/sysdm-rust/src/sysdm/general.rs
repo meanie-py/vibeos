@@ -85,11 +85,11 @@ unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
             break 'Cleanup;
         }
 
-        ZeroMemory(pImgInfo as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&*pImgInfo));
-        ZeroMemory(&mut bmpi as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
+        ZeroMemory!(pImgInfo as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&*pImgInfo));
+        ZeroMemory!(&mut bmpi as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<BITMAPINFO>());
 
-        hLogo = LoadImageW(hApplet, MAKEINTRESOURCEW(IDB_ROSBMP), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR) as HBITMAP;
-        hMask = LoadImageW(hApplet, MAKEINTRESOURCEW(IDB_ROSMASK), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR) as HBITMAP;
+        hLogo = LoadImageW(hApplet, MAKEINTRESOURCEW!(IDB_ROSBMP), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR) as HBITMAP;
+        hMask = LoadImageW(hApplet, MAKEINTRESOURCEW!(IDB_ROSMASK), IMAGE_BITMAP, 0, 0, LR_DEFAULTCOLOR) as HBITMAP;
 
         if hLogo.is_null() || hMask.is_null() {
             break 'Cleanup;
@@ -128,9 +128,9 @@ unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
                 let g: u32;
                 let b: u32;
 
-                r = GetRValue(Color) as u32 * alpha / 255;
-                g = GetGValue(Color) as u32 * alpha / 255;
-                b = GetBValue(Color) as u32 * alpha / 255;
+                r = GetRValue!(Color) as u32 * alpha / 255;
+                g = GetGValue!(Color) as u32 * alpha / 255;
+                b = GetBValue!(Color) as u32 * alpha / 255;
 
                 *pBits = b | (g << 8) | (r << 16) | (alpha << 24);
                 pBits = pBits.offset(1);
@@ -437,7 +437,7 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
     let mut Type: u32 = REG_SZ;
     let mut ppi: PROCESSOR_POWER_INFORMATION = core::mem::zeroed();
 
-    ZeroMemory(
+    ZeroMemory!(
         &mut ppi as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<PROCESSOR_POWER_INFORMATION>(),
     );
@@ -671,8 +671,8 @@ unsafe extern "C" fn InitSystemUptime(hwndDlg: HWND) {
 }
 #[no_mangle]
 pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
-    UNREFERENCED_PARAMETER(lParam);
-    UNREFERENCED_PARAMETER(wParam);
+    UNREFERENCED_PARAMETER!(lParam);
+    UNREFERENCED_PARAMETER!(wParam);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -706,8 +706,8 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
         }
 
         WM_COMMAND => {
-            if LOWORD(wParam) == IDC_LICENCE {
-                DialogBox(hApplet, MAKEINTRESOURCE(IDD_LICENCE), hwndDlg, LicenceDlgProc);
+            if LOWORD!(wParam) == (IDC_LICENCE) as u16 {
+                DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_LICENCE), hwndDlg, LicenceDlgProc);
 
                 return TRUE;
             }

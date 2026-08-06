@@ -20,12 +20,12 @@ unsafe extern "C" fn RegTreeOpt_OnTreeViewClick(pRTO: *mut IRegTreeOptions, hWnd
     HitTest.pt.x = GET_X_LPARAM(dwPos);
     HitTest.pt.y = GET_Y_LPARAM(dwPos);
     ScreenToClient(hWndTree, &mut HitTest.pt);
-    let hItem: HTREEITEM = TreeView_HitTest(hWndTree, &mut HitTest);
+    let hItem: HTREEITEM = TreeView_HitTest!(hWndTree, &mut HitTest);
     return RegTreeOpt_ToggleCheckItem(pRTO, hItem);
 }
 unsafe extern "C" fn RegTreeOpt_OnTreeViewKeyDown(pRTO: *mut IRegTreeOptions, hWndTree: HWND, pKey: *mut TV_KEYDOWN) -> BOOL {
     if (*pKey).wVKey == (VK_SPACE) as u16 {
-        return RegTreeOpt_ToggleCheckItem(pRTO, TreeView_GetSelection(hWndTree));
+        return RegTreeOpt_ToggleCheckItem(pRTO, TreeView_GetSelection!(hWndTree));
     } else if (*pKey).wVKey == (VK_F5) as u16 && !pRTO.is_null() {
         IRegTreeOptions_WalkTree(pRTO, WALK_TREE_REFRESH);
     }
@@ -77,13 +77,13 @@ unsafe extern "stdcall" fn VisualEffectsDlgProc(
             match (*(lParam as LPNMHDR)).code {
                 NM_CLICK => {
                     if RegTreeOpt_OnTreeViewClick(pRTO, hWndTree) != 0 {
-                        PropSheet_Changed(GetParent(hDlg), hDlg);
+                        PropSheet_Changed!(GetParent(hDlg), hDlg);
                     }
                 }
 
                 TVN_KEYDOWN => {
                     if RegTreeOpt_OnTreeViewKeyDown(pRTO, hWndTree, lParam as *mut TV_KEYDOWN) != 0 {
-                        PropSheet_Changed(GetParent(hDlg), hDlg);
+                        PropSheet_Changed!(GetParent(hDlg), hDlg);
                     }
                 }
 
@@ -152,13 +152,13 @@ unsafe extern "C" fn VisualEffectsDlgProc(
             match (*(lParam as LPNMHDR)).code {
                 NM_CLICK => {
                     if RegTreeOpt_OnTreeViewClick(pRTO, hWndTree) != 0 {
-                        PropSheet_Changed(GetParent(hDlg), hDlg);
+                        PropSheet_Changed!(GetParent(hDlg), hDlg);
                     }
                 }
 
                 TVN_KEYDOWN => {
                     if RegTreeOpt_OnTreeViewKeyDown(pRTO, hWndTree, lParam as *mut TV_KEYDOWN) != 0 {
-                        PropSheet_Changed(GetParent(hDlg), hDlg);
+                        PropSheet_Changed!(GetParent(hDlg), hDlg);
                     }
                 }
 
@@ -194,9 +194,9 @@ unsafe extern "stdcall" fn AdvancedDlgProc(
             return TRUE;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDC_CHANGESWAP => {
-                    DialogBoxW(hApplet, MAKEINTRESOURCEW(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
+                    DialogBoxW(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
                 }
                 _ => {}
             }
@@ -220,9 +220,9 @@ unsafe extern "C" fn AdvancedDlgProc(
             return TRUE;
         }
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDC_CHANGESWAP => {
-                    DialogBoxW(hApplet, MAKEINTRESOURCEW(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
+                    DialogBoxW(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
                 }
                 _ => {}
             }
@@ -252,17 +252,17 @@ pub unsafe extern "C" fn ShowPerformanceOptions(hDlg: HWND) {
 
     pages[0].dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;
     pages[0].hInstance = hApplet;
-    pages[0].__bindgen_anon_1.pszTemplate = MAKEINTRESOURCEW(IDD_VISUALEFFECTS);
+    pages[0].__bindgen_anon_1.pszTemplate = MAKEINTRESOURCEW!(IDD_VISUALEFFECTS);
     pages[0].pfnDlgProc = Some(VisualEffectsDlgProc);
 
     pages[1].dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;
     pages[1].hInstance = hApplet;
-    pages[1].__bindgen_anon_1.pszTemplate = MAKEINTRESOURCEW(IDD_ADVANCEDPERF);
+    pages[1].__bindgen_anon_1.pszTemplate = MAKEINTRESOURCEW!(IDD_ADVANCEDPERF);
     pages[1].pfnDlgProc = Some(AdvancedDlgProc);
 
     psh.hwndParent = hDlg;
     psh.hInstance = hApplet;
-    psh.pszCaption = MAKEINTRESOURCEW(IDS_PERFORMANCEOPTIONS);
+    psh.pszCaption = MAKEINTRESOURCEW!(IDS_PERFORMANCEOPTIONS);
     psh.nPages = _countof!(pages);
     psh.__bindgen_anon_3.ppsp = pages.as_ptr();
 

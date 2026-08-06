@@ -1601,8 +1601,13 @@ def _index_usize_rule(
     )
 
 
-#: E0423 ``expected function, found macro `X` `` — a header macro rendered as a call.
-_RE_FOUND_MACRO = re.compile(r"expected function, found macro `(?P<name>\w+)`")
+#: E0423 ``expected function[, tuple struct or tuple variant], found macro `X` `` — a header
+#: macro rendered as a call. rustc uses the long wording at most call sites and the short one at
+#: the rest; matching only the short one found 1 site of 61 on sysdm.cpl and looked like a rule
+#: that simply had little to do.
+_RE_FOUND_MACRO = re.compile(
+    r"expected function(?:, tuple struct or tuple variant)?, found macro `(?P<name>\w+)`"
+)
 #: E0423 ``expected value, found type alias `X` `` — a C ``sizeof(TYPE)`` that lost its operator.
 _RE_FOUND_TYPE = re.compile(
     r"expected value, found (?:type alias|struct|builtin type) `(?P<name>\w+)`"

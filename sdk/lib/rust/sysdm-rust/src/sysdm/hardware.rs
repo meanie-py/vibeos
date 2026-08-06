@@ -62,13 +62,13 @@ pub unsafe extern "system" fn HardwarePageProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    UNREFERENCED_PARAMETER(lParam);
+    UNREFERENCED_PARAMETER!(lParam);
 
     match uMsg {
         WM_INITDIALOG => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_HARDWARE_DEVICE_MANAGER => {
                     if LaunchDeviceManager(hwndDlg) == 0 {
                         /* FIXME */
@@ -82,9 +82,9 @@ pub unsafe extern "system" fn HardwarePageProc(
                 }
 
                 IDC_HARDWARE_PROFILE => {
-                    DialogBox(
+                    DialogBox!(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_HARDWAREPROFILES),
+                        MAKEINTRESOURCE!(IDD_HARDWAREPROFILES),
                         hwndDlg,
                         HardProfDlgProc,
                     );

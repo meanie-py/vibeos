@@ -55,7 +55,7 @@ unsafe extern "C" fn OnProfileTypeInit(
     SetDlgItemText(hwndDlg, (IDC_USERPROFILE_TYPE_TEXT) as i32, pszCookedBuffer);
 
     EnableWindow(GetDlgItem(hwndDlg, (IDC_USERPROFILE_TYPE_ROAMING) as i32), FALSE);
-    Button_SetCheck(GetDlgItem(hwndDlg, (IDC_USERPROFILE_TYPE_LOCAL) as i32), BST_CHECKED);
+    Button_SetCheck!(GetDlgItem(hwndDlg, (IDC_USERPROFILE_TYPE_LOCAL) as i32), BST_CHECKED);
     EnableWindow(GetDlgItem(hwndDlg, (IDOK) as i32), FALSE);
 
     if !pszCookedBuffer.is_null() {
@@ -84,9 +84,9 @@ unsafe extern "stdcall" fn UserProfileTypeDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
                 _ => {}
@@ -115,9 +115,9 @@ unsafe extern "C" fn UserProfileTypeDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
                 _ => {}
@@ -142,15 +142,15 @@ unsafe extern "C" fn ChangeUserProfileType(
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
 
-    ZeroMemory(core::ptr::addr_of_mut!(Item) as LPVOID, core::mem::size_of::<LVITEM>());
+    ZeroMemory!(core::ptr::addr_of_mut!(Item) as LPVOID, core::mem::size_of::<LVITEM>());
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
-    if ListView_GetItem(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
+    if ListView_GetItem!(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
         return FALSE;
     }
 
@@ -159,7 +159,7 @@ unsafe extern "C" fn ChangeUserProfileType(
     }
 
     if DialogBoxParam(hApplet,
-                       MAKEINTRESOURCE(IDD_USERPROFILE_TYPE),
+                       MAKEINTRESOURCE!(IDD_USERPROFILE_TYPE),
                        hwndDlg,
                        UserProfileTypeDlgProc,
                        Item.lParam as LPARAM) == IDOK
@@ -180,18 +180,18 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(Item) as *mut core::ffi::c_void,
         core::mem::size_of::<LVITEM>(),
     );
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
-    if ListView_GetItem(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
+    if ListView_GetItem!(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
         return FALSE;
     }
 
@@ -233,9 +233,9 @@ unsafe extern "stdcall" fn CopyUserProfileDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
                 _ => {}
@@ -263,9 +263,9 @@ unsafe extern "C" fn CopyUserProfileDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
                 _ => {}
@@ -291,18 +291,18 @@ unsafe extern "C" fn CopyUserProfile(
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         core::ptr::addr_of_mut!(Item) as *mut core::ffi::c_void,
         core::mem::size_of::<LVITEM>()
     );
     Item.mask = LVIF_PARAM;
     Item.iItem = iSelected;
-    if ListView_GetItem(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
+    if ListView_GetItem!(hwndListView, core::ptr::addr_of_mut!(Item)) == 0 {
         return FALSE;
     }
 
@@ -312,7 +312,7 @@ unsafe extern "C" fn CopyUserProfile(
 
     if DialogBoxParam(
         hApplet,
-        MAKEINTRESOURCE(IDD_USERPROFILE_COPY),
+        MAKEINTRESOURCE!(IDD_USERPROFILE_COPY),
         hwndDlg,
         CopyUserProfileDlgProc,
         Item.lParam as LPARAM
@@ -336,37 +336,37 @@ unsafe extern "C" fn SetListViewColumns(hwndListView: HWND) {
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.40) as INT;
     column.iSubItem = 0;
-    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 0, &mut column);
+    ListView_InsertColumn!(hwndListView, 0, &mut column);
 
     column.fmt = (LVCFMT_RIGHT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 1;
-    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 1, &mut column);
+    ListView_InsertColumn!(hwndListView, 1, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 2;
-    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 2, &mut column);
+    ListView_InsertColumn!(hwndListView, 2, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT;
     column.iSubItem = 3;
-    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 3, &mut column);
+    ListView_InsertColumn!(hwndListView, 3, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) * 0.15) as INT - GetSystemMetrics((SM_CYHSCROLL) as i32);
     column.iSubItem = 4;
-    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
     column.pszText = szStr.as_mut_ptr();
-    ListView_InsertColumn(hwndListView, 4, &mut column);
+    ListView_InsertColumn!(hwndListView, 4, &mut column);
 }
 unsafe extern "C" fn GetProfileSize(
     pszProfilePath: PWSTR,
@@ -453,8 +453,8 @@ unsafe extern "C" fn GetProfileName(
     let mut dwDomainNameSize: u32;
     let mut Use: u32 = 0;
 
-    dwAccountNameSize = ARRAYSIZE(szAccountName);
-    dwDomainNameSize = ARRAYSIZE(szDomainName);
+    dwAccountNameSize = ARRAYSIZE!(szAccountName);
+    dwDomainNameSize = ARRAYSIZE!(szDomainName);
     if LookupAccountSidW(
         core::ptr::null_mut(),
         pProfileSid,
@@ -553,7 +553,7 @@ unsafe extern "C" fn AddUserProfile(
 
     if GetProfileName(
         pProfileSid,
-        ARRAYSIZE(szNameBuffer.as_ptr()),
+        ARRAYSIZE!(szNameBuffer.as_ptr()),
         szNameBuffer.as_mut_ptr(),
         (core::ptr::addr_of_mut!(bUnknownProfile)).cast(),
     ) == 0
@@ -617,10 +617,10 @@ unsafe extern "C" fn AddUserProfile(
     lvi.pszText = (*pProfileData).pszFullName;
     lvi.state = 0;
     lvi.lParam = pProfileData as LPARAM;
-    iItem = ListView_InsertItem(hwndListView, core::ptr::addr_of_mut!(lvi));
+    iItem = ListView_InsertItem!(hwndListView, core::ptr::addr_of_mut!(lvi));
 
-    StrFormatByteSizeW((ullProfileSize) as LONGLONG, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()) - 1);
-    ListView_SetItemText(hwndListView, iItem, 1, szNameBuffer.as_mut_ptr());
+    StrFormatByteSizeW((ullProfileSize) as LONGLONG, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()) - 1);
+    ListView_SetItemText!(hwndListView, iItem, 1, szNameBuffer.as_mut_ptr());
 
     if dwState & 0x0010 != 0 {
         nId = (IDS_USERPROFILE_ROAMING) as i32;
@@ -628,9 +628,9 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()));
 
-    ListView_SetItemText(hwndListView, iItem, 2, szNameBuffer.as_mut_ptr());
+    ListView_SetItemText!(hwndListView, iItem, 2, szNameBuffer.as_mut_ptr());
 
     if dwState & 0x0001 != 0 {
         nId = (IDS_USERPROFILE_MANDATORY) as i32;
@@ -640,9 +640,9 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE(szNameBuffer.as_ptr()));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()));
 
-    ListView_SetItemText(hwndListView, iItem, 3, szNameBuffer.as_mut_ptr());
+    ListView_SetItemText!(hwndListView, iItem, 3, szNameBuffer.as_mut_ptr());
 
     FileTimeToSystemTime(
         core::ptr::addr_of_mut!(FindData.ftLastWriteTime),
@@ -655,10 +655,10 @@ unsafe extern "C" fn AddUserProfile(
         core::ptr::addr_of_mut!(SystemTime),
         core::ptr::null_mut(),
         szNameBuffer.as_mut_ptr(),
-        ARRAYSIZE(szNameBuffer.as_ptr()),
+        ARRAYSIZE!(szNameBuffer.as_ptr()),
     );
 
-    ListView_SetItemText(hwndListView, iItem, 4, szNameBuffer.as_mut_ptr());
+    ListView_SetItemText!(hwndListView, iItem, 4, szNameBuffer.as_mut_ptr());
 }
 unsafe extern "C" fn UpdateButtonState(
     hwndDlg: HWND,
@@ -670,15 +670,15 @@ unsafe extern "C" fn UpdateButtonState(
     let mut bDelete: i32 = FALSE;
     let pProfileData: *mut PROFILEDATA;
 
-    if ListView_GetSelectedCount(hwndListView) != 0
+    if ListView_GetSelectedCount!(hwndListView) != 0
     {
-        iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+        iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
         if iSelected != -1
         {
-            ZeroMemory(&mut Item as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEM>());
+            ZeroMemory!(&mut Item as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEM>());
             Item.mask = LVIF_PARAM;
             Item.iItem = iSelected;
-            if ListView_GetItem(hwndListView, &mut Item) != 0
+            if ListView_GetItem!(hwndListView, &mut Item) != 0
             {
                 if Item.lParam != 0
                 {
@@ -756,7 +756,7 @@ unsafe extern "C" fn AddUserProfiles(
         if bAdmin != 0 {
             dwIndex = 0;
             loop {
-                dwSidLength = ARRAYSIZE(szProfileSid.as_ptr());
+                dwSidLength = ARRAYSIZE!(szProfileSid.as_ptr());
                 if RegEnumKeyExW(
                     hKeyUserProfiles,
                     dwIndex,
@@ -807,8 +807,8 @@ unsafe extern "C" fn AddUserProfiles(
             }
         }
 
-        if ListView_GetItemCount(hwndListView) != 0 {
-            ListView_SetItemState(
+        if ListView_GetItemCount!(hwndListView) != 0 {
+            ListView_SetItemState!(
                 hwndListView,
                 0,
                 LVIS_SELECTED | LVIS_FOCUSED,
@@ -883,9 +883,9 @@ pub unsafe extern "system" fn UserProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
 

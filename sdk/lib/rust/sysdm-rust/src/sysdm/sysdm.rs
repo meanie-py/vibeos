@@ -74,11 +74,11 @@ unsafe extern "C" fn InitPropSheetPage(ppsh: *mut PROPSHEETHEADER, idDlg: WORD, 
     let mut psp: PROPSHEETPAGE;
 
     if (*ppsh).nPages < MAX_SYSTEM_PAGES {
-        ZeroMemory(core::ptr::addr_of_mut!(psp) as LPVOID, core::mem::size_of::<PROPSHEETPAGE>());
+        ZeroMemory!(core::ptr::addr_of_mut!(psp) as LPVOID, core::mem::size_of::<PROPSHEETPAGE>());
         psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
         psp.dwFlags = PSP_DEFAULT;
         psp.hInstance = hApplet;
-        psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE(idDlg);
+        psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(idDlg);
         psp.pfnDlgProc = DlgProc;
 
         hPage = CreatePropertySheetPage(core::ptr::addr_of_mut!(psp));
@@ -128,7 +128,7 @@ unsafe extern "stdcall" fn PropSheetProc(
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(
                 hApplet,
-                MAKEINTRESOURCEW(IDI_CPLSYSTEM),
+                MAKEINTRESOURCEW!(IDI_CPLSYSTEM),
             );
             SendMessageW(
                 hwndDlg,
@@ -153,7 +153,7 @@ unsafe extern "C" fn PropSheetProc(
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(
                 hApplet,
-                MAKEINTRESOURCEW(IDI_CPLSYSTEM),
+                MAKEINTRESOURCEW!(IDI_CPLSYSTEM),
             );
             SendMessageW(
                 hwndDlg,
@@ -192,13 +192,13 @@ pub unsafe extern "system" fn SystemApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM
         return TRUE;
     }
 
-    ZeroMemory(core::ptr::addr_of_mut!(psh) as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
+    ZeroMemory!(core::ptr::addr_of_mut!(psh) as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
     psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
     psh.dwFlags = PSH_PROPTITLE | PSH_USEICONID | PSH_USECALLBACK;
     psh.hwndParent = hwnd;
     psh.hInstance = hApplet;
-    psh.__bindgen_anon_1.pszIcon = MAKEINTRESOURCEW(IDI_CPLSYSTEM);
-    psh.pszCaption = MAKEINTRESOURCE(IDS_CPLSYSTEMNAME);
+    psh.__bindgen_anon_1.pszIcon = MAKEINTRESOURCEW!(IDI_CPLSYSTEM);
+    psh.pszCaption = MAKEINTRESOURCE!(IDS_CPLSYSTEMNAME);
     psh.nPages = 0;
     psh.__bindgen_anon_2.nStartPage = 0;
     psh.__bindgen_anon_3.phpage = hpsp.as_mut_ptr();
@@ -241,7 +241,7 @@ pub unsafe extern "system" fn CPlApplet(
 ) -> i32 {
     let i = lParam1 as u32;
 
-    UNREFERENCED_PARAMETER(hwndCPl);
+    UNREFERENCED_PARAMETER!(hwndCPl);
 
     match uMsg {
         CPL_INIT => {
@@ -290,7 +290,7 @@ pub unsafe extern "system" fn DllMain(
     dwReason: u32,
     lpvReserved: LPVOID,
 ) -> i32 {
-    UNREFERENCED_PARAMETER(lpvReserved);
+    UNREFERENCED_PARAMETER!(lpvReserved);
 
     match dwReason {
         DLL_PROCESS_ATTACH | DLL_THREAD_ATTACH => {

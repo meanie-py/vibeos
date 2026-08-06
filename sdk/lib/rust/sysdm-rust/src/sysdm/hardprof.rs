@@ -102,7 +102,7 @@ unsafe extern "stdcall" fn CopyProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    IDC_COPYPROFILETO,
@@ -158,7 +158,7 @@ unsafe extern "C" fn CopyProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    (IDC_COPYPROFILETO) as i32,
@@ -210,7 +210,7 @@ unsafe extern "C" fn CopyHardwareProfile(
     ProfileNames.pProfileData = pProfileData;
 
     if DialogBoxParam(hApplet,
-                       MAKEINTRESOURCE(IDD_COPYPROFILE),
+                       MAKEINTRESOURCE!(IDD_COPYPROFILE),
                        hwndDlg,
                        CopyProfileDlgProc,
                        &ProfileNames as *const _ as LPARAM) != IDOK {
@@ -235,7 +235,7 @@ unsafe extern "C" fn CopyHardwareProfile(
 
     pNewProfile = &mut (*pProfileData).pProfiles.offset(((*pProfileData).dwProfileCount - 1) as isize);
 
-    CopyMemory(pNewProfile as *mut _ as *mut _, pProfile as *const _ as *const _, core::mem::size_of::<PROFILE>());
+    CopyMemory!(pNewProfile as *mut _ as *mut _, pProfile as *const _ as *const _, core::mem::size_of::<PROFILE>());
 
     wcscpy((*pNewProfile).szFriendlyName.as_mut_ptr(), ProfileNames.szDestinationName.as_ptr());
 
@@ -272,7 +272,7 @@ unsafe extern "stdcall" fn RenameProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    IDC_RENPROFEDITTO,
@@ -328,7 +328,7 @@ unsafe extern "C" fn RenameProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match LOWORD!(wParam) {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    (IDC_RENPROFEDITTO) as i32,
@@ -377,7 +377,7 @@ unsafe extern "C" fn RenameHardwareProfile(
     ProfileNames.pProfileData = pProfileData;
 
     if DialogBoxParam(hApplet,
-                       MAKEINTRESOURCE(IDD_RENAMEPROFILE),
+                       MAKEINTRESOURCE!(IDD_RENAMEPROFILE),
                        hwndDlg,
                        RenameProfileDlgProc,
                        core::ptr::addr_of_mut!(ProfileNames) as LPARAM) != IDOK
@@ -466,17 +466,17 @@ unsafe extern "C" fn MoveHardwareProfile(
     pSrcProfile = &mut (*pProfileData).pProfiles.offset(dwSrcIndex as isize);
     pDstProfile = &mut (*pProfileData).pProfiles.offset(dwDstIndex as isize);
 
-    CopyMemory(
+    CopyMemory!(
         &mut TempProfile as *mut _ as *mut u8,
         pDstProfile as *const _ as *const u8,
         core::mem::size_of::<PROFILE>(),
     );
-    CopyMemory(
+    CopyMemory!(
         pDstProfile as *mut u8,
         pSrcProfile as *const _ as *const u8,
         core::mem::size_of::<PROFILE>(),
     );
-    CopyMemory(
+    CopyMemory!(
         pSrcProfile as *mut u8,
         &TempProfile as *const _ as *const u8,
         core::mem::size_of::<PROFILE>(),
@@ -515,9 +515,9 @@ unsafe extern "stdcall" fn HardwareProfilePropertiesDlgProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    UNREFERENCED_PARAMETER(hwndDlg);
-    UNREFERENCED_PARAMETER(lParam);
-    UNREFERENCED_PARAMETER(wParam);
+    UNREFERENCED_PARAMETER!(hwndDlg);
+    UNREFERENCED_PARAMETER!(lParam);
+    UNREFERENCED_PARAMETER!(wParam);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -536,9 +536,9 @@ unsafe extern "C" fn HardwareProfilePropertiesDlgProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    UNREFERENCED_PARAMETER(hwndDlg);
-    UNREFERENCED_PARAMETER(lParam);
-    UNREFERENCED_PARAMETER(wParam);
+    UNREFERENCED_PARAMETER!(hwndDlg);
+    UNREFERENCED_PARAMETER!(lParam);
+    UNREFERENCED_PARAMETER!(wParam);
 
     match uMsg {
         WM_INITDIALOG => {
@@ -554,7 +554,7 @@ unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARA
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW(IDI_HARDPROF));
+            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDI_HARDPROF));
             SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
         }
         _ => {}
@@ -567,7 +567,7 @@ unsafe extern "C" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> 
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
-            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW(IDI_HARDPROF));
+            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDI_HARDPROF));
             SendMessageW(hwndDlg, WM_SETICON, (ICON_BIG) as WPARAM, hIcon as LPARAM);
         }
         _ => {}
@@ -794,16 +794,16 @@ unsafe extern "C" fn OnInitHardProfDialog(hwndDlg: HWND) -> i32 {
 
     SendMessage(GetDlgItem(hwndDlg, (IDC_HRDPROFUP) as i32),
                 BM_SETIMAGE, IMAGE_ICON as WPARAM,
-                LoadIcon(hApplet, MAKEINTRESOURCE(IDI_UP)) as LPARAM);
+                LoadIcon(hApplet, MAKEINTRESOURCE!(IDI_UP)) as LPARAM);
     SendMessage(GetDlgItem(hwndDlg, (IDC_HRDPROFDWN) as i32),
                 BM_SETIMAGE, IMAGE_ICON as WPARAM,
-                LoadIcon(hApplet, MAKEINTRESOURCE(IDI_DOWN)) as LPARAM);
+                LoadIcon(hApplet, MAKEINTRESOURCE!(IDI_DOWN)) as LPARAM);
 
     if GetProfiles(hwndDlg) == 0 {
         return FALSE;
     }
 
-    SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG(500 as i16, 0) as LPARAM);
+    SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG!(500 as i16, 0) as LPARAM);
 
     dwWaitInterval = GetUserWaitInterval();
     if dwWaitInterval == 1.wrapping_neg() as DWORD {
@@ -823,7 +823,7 @@ unsafe extern "C" fn OnOk(hwndDlg: HWND) {
     if IsDlgButtonChecked(hwndDlg, (IDC_HRDPROFWAIT) as i32) == BST_CHECKED {
         dwWaitInterval = (-1) as DWORD;
     } else {
-        dwWaitInterval = LOWORD(SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_GETPOS, 0, 0));
+        dwWaitInterval = LOWORD!(SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_GETPOS, 0, 0));
     }
 
     SetUserWaitInterval(dwWaitInterval);
@@ -837,9 +837,9 @@ pub unsafe extern "system" fn HardProfDlgProc(
 ) -> INT_PTR {
     let pProfileData: *mut PROFILEDATA;
 
-    UNREFERENCED_PARAMETER(lParam);
-    UNREFERENCED_PARAMETER(wParam);
-    UNREFERENCED_PARAMETER(hwndDlg);
+    UNREFERENCED_PARAMETER!(lParam);
+    UNREFERENCED_PARAMETER!(wParam);
+    UNREFERENCED_PARAMETER!(hwndDlg);
 
     pProfileData = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut PROFILEDATA;
 
@@ -858,7 +858,7 @@ pub unsafe extern "system" fn HardProfDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_HRDPROFPROP => {
                     HardwareProfileProperties(hwndDlg, pProfileData);
                 }
@@ -894,7 +894,7 @@ pub unsafe extern "system" fn HardProfDlgProc(
                 }
 
                 IDC_HRDPROFLSTBOX => {
-                    if HIWORD(wParam) == LBN_SELCHANGE {
+                    if HIWORD!(wParam) == (LBN_SELCHANGE) as u16 {
                         (*pProfileData).dwSelectedProfileIndex = SendDlgItemMessage(hwndDlg, (IDC_HRDPROFLSTBOX) as i32, LB_GETCURSEL, 0, 0) as u32;
                         UpdateButtons(hwndDlg, pProfileData);
                     }
@@ -903,12 +903,12 @@ pub unsafe extern "system" fn HardProfDlgProc(
 
                 IDOK => {
                     OnOk(hwndDlg);
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
 
                 IDCANCEL => {
-                    EndDialog(hwndDlg, LOWORD(wParam));
+                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
                 }
 

@@ -1316,6 +1316,24 @@ def test_a_macro_called_as_a_function_gets_its_bang():
     assert not plan.edits[0].requires_target_agreement
 
 
+def test_the_long_rustc_wording_is_matched_too():
+    """rustc says "expected function, tuple struct or tuple variant, found macro" at most sites.
+
+    Regression: matching only the short wording caught 1 of 61 sites on sysdm.cpl, and a rule
+    that fires once looks like a rule with little to do rather than a broken pattern.
+    """
+    at = _MACRO_SRC.index(b"_countof")
+    diagnostic = _diag(
+        "expected function, tuple struct or tuple variant, found macro `_countof`",
+        code="E0423",
+        spans=[_span("src/a.rs", at, at + 8, is_primary=True, line=2)],
+    )
+    plan = propose_edits(
+        [diagnostic], _reader({"src/a.rs": _MACRO_SRC}), target="i386", rules=[RULE_MACRO_CALL]
+    )
+    assert [e.replacement for e in plan.edits] == ["_countof!"]
+
+
 def test_a_macro_not_in_call_position_is_declined():
     """Appending `!` where no `(` follows does not even parse."""
     src = b"pub fn f() -> u32 {\n    let x = _countof;\n    0\n}\n"
