@@ -887,12 +887,30 @@ still-C when it is 3).
 | `except_arm64.c` | 5 | **0** — flipped in wave 31 |
 | `handler4.c` | 0 | **0** — 97% dead, compiles to an object with no symbols |
 | `concurrency.c` | 0 | **0** — 98% dead, same |
-| `ucrt_tls_sup.c` | 4 | 3 |
-| `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
-| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
+| `ucrt_tls_sup.c` | 4 | 3 — but see below: NOT msvcrt.dll's surface |
+| `wcs.c` | 176 | **0** — the last 3 flipped in wave 32 |
+| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) — defined but UNREFERENCED, see below |
 | `main.c` | 1 | 1 (`DllMain`) |
 | `sincos.c` | 2 | 1 (`sincosf`) |
 | `scanf.c` | 44 | **0** — fully flipped |
+
+Three corrections to that table, all from re-measuring it against the linker on 2026-08-05:
+
+* **`ucrt_tls_sup.c` is not in msvcrt.dll at all.** It is in `msvcrt_shared` only, and
+  `MSVCRT_SOURCE` does not list it — it belongs to **ucrtbase**, which links `msvcrt_shared`
+  and no Rust archive whatsoever. Flipping it needs a ucrtbase cohab that does not exist yet,
+  so it is a different lane, not a straggler of this one.
+* **string.c's three `fpnum_*` are already Rust** — `fpnum_double`, `fpnum_ldouble` and
+  `fpnum_parse` live in `msvcrt-crt-rust/src/fpnum.rs` as private `fn`s, because the Rust
+  `strtod` family is their only caller. The C copies stay linker-visible because nothing
+  overrides those *names*, and stay linked because string.c's own dead `strtod` still
+  references them. Dead weight, not a divergence.
+* **`sincos.c` is `#pragma makedep implib`** — its two symbols are in the import library, not
+  the DLL export table, and they exist so a compiler folding `sin`+`cos` into `sincos` resolves.
+  `sincos` is already Rust (cnt-rust `cabi/math.rs`); `sincosf` is not, and flipping it would
+  buy a Rust wrapper over the still-C `sinf`/`cosf`. Left alone deliberately.
+
+So msvcrt.dll's genuinely-still-C **exported** surface is now **`DllMain` and nothing else**.
 
 So the remaining real surface was **the exception dispatcher and nothing else of size**:
 except.c + except_i386.c were 34 of the 45 symbols still served by C. Waves 29 and 30 took both.
@@ -907,6 +925,16 @@ Each compiles to a **396-byte object with zero defined symbols** on all three ar
 "still to translate" column. `profile_derive`'s `DEAD_TU` finding had been saying so
 pre-payment; it was read straight past, because in a module whose constants are named
 `ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
+
+**Wave 32 — wcs.c's last three, $0.** `_wcsdup`, `towctrans` and `wcstombs`, hand-written into
+`wcs_rest.rs`. Wave 16 left them because each delegates to something that was still C at the
+time; all three delegates (`_towupper_l`/`_towlower_l`, and wcs_rest's own private
+`wcsrtombs_l`) are Rust now, so these are three wrappers, not a paid re-translation of a file
+that already has output. Two details kept rather than tidied: `_wcsdup` sizes its own copy and
+`memcpy`s where `_strdup` calls `strcpy`, and `towctrans` folds *every* category that is not 1
+to lower, including ones this msvcrt never issues. `wctrans_t` is spelled against
+`msvcrt/include/wctype.h` in the file — it is a typedef, so it has no symbol for the island to
+snapshot.
 
 **Wave 31 — except_x86_64.c + except_arm64.c (10/10), $0.04.** The other two arms of the arch
 gate wave 30 opened, and the end of the except family: `except.rs`'s `unsafe extern "C"` block
