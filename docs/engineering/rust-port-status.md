@@ -875,6 +875,37 @@ needs its own single-threaded thread_data it can inspect between cases. PORTED, 
 the substrate is Win32 (TLS slots, CRITICAL_SECTIONs, CreateThread), not an algorithm a host
 harness can reproduce.
 
+**What is actually left in msvcrt (census, 2026-08-05).** Measured, not estimated: for each
+compiled TU, the symbols it defines minus everything that wins first-match — the Rust archive
+plus the `rust_*_shim.c` trampolines, which live in the msvcrt MODULE and so beat
+`msvcrt_static`. Forget the shims and the answer is wrong by 70 symbols (wcs.c reads as 33
+still-C when it is 3).
+
+| file | defines | still reached in C |
+|---|---|---|
+| `except.c` | 21 | **21** |
+| `except_i386.c` | 13 | **13** |
+| `ucrt_tls_sup.c` | 4 | 3 |
+| `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
+| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
+| `main.c` | 1 | 1 (`DllMain`) |
+| `sincos.c` | 2 | 1 (`sincosf`) |
+| `scanf.c` | 44 | **0** — fully flipped |
+
+So the remaining real surface is **the exception dispatcher and nothing else of size**:
+except.c + except_i386.c are 34 of the 45 symbols still served by C. Wave 29 is the last
+meaty chunk of this library; the rest is a handful of stragglers.
+
+**Two files that look meaty and are phantoms — do not target them.** `concurrency.c` (3,839
+lines, the largest untranslated file in the module) sits entirely inside
+`#if _MSVCR_VER >= 100`, and `handler4.c` (775) inside
+`defined(__x86_64__) && _MSVCR_VER>=140`. msvcrt compiles at `-D_MSVCR_VER=0`, so **both build
+to a 396-byte object with zero defined symbols.** `profile_derive` was blind to this — its
+dead-code audit only knew wine's `config.h` `#undef`s, not a module's own `-DNAME=<int>` — and
+the two together are 10.6% of the module, under the 15% module-wide threshold, so nothing
+would have warned. It now evaluates integer gates and reports `DEAD_TU` at ERROR for any
+single TU ≥90% dead; both are flagged.
+
 **Wave 27 (2026-08-05) — cpp.c FLIPPED ($0.21). The C++ RTTI/exception subsystem.**
 
 47 spec exports, 51 compiled functions: the `type_info` / `exception` / `bad_cast` /
