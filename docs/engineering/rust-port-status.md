@@ -1224,6 +1224,82 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
   `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
   translatable and left `CEnumMergedFolder` with only its activation shape.
+  **Re-measured 2026-08-05 after three more flips, now per-TU** (`rustconv cpp-tu` over every
+  live TU). Gap (3), object-field RAII, is the cheapest to close and blocks exactly three:
+  `CIDLDataObj` (`CSimpleArray<FORMATETC>`/`<STGMEDIUM>`), `CDefaultContextMenu`
+  (`CAtlList<>` ×2, 1,995 lines) and `CRecycleBinFolderViewCB` (`CComHeapPtr<ITEMIDLIST>
+  m_pidls[2]`). The leverage is that `atl.rs` **already implements** CComPtr / CHeapPtr /
+  CComHeapPtr / CSimpleArray with `Drop` restoring the dropped destructors, and
+  `--local-raii NAME=PATH` already performs exactly this substitution for BODY-locals — there
+  is simply no equivalent for a class's STATE fields.
+  **Closed for two of the three, 2026-08-05, and the third turned out to be a different gap.**
+  The scaffold now keeps an ATL container's TYPE in the Rust owner (it cannot be flattened to
+  a pointer the way `CComPtr` is, because its destructor walks storage the scaffold does not
+  own), initialises it with `new()` instead of `zeroed()`, and emits a `drop_in_place` per
+  container in the generated `Release` — after the explicit dtor body, which is C++'s own
+  order. `CComHeapPtr<T> name[N]` is accepted too, freeing each element. `CIDLDataObj` is
+  preflight-green; `CRecycleBinFolderViewCB` has its state field accepted and is now blocked
+  only on activation. **`CDefaultContextMenu` is not an object-field-RAII case at all** —
+  `CAtlList<DynamicShellEntry>` and `<StaticShellEntry>` hold C++ objects with their OWN
+  destructors (`CComPtr<IContextMenu>`, `CStringW`), and `atl.rs`'s container `Drop` runs one
+  `drop_in_place` per element, which reproduces the C++ only when the element is trivially
+  destructible. So the element type must be PROVEN trivially destructible or the container is
+  refused, and the proof is the bindgen island: bindgen only ever renders C declarations, so a
+  name it emits as a struct came from a C header. A C++ class is never in that set.
+  **CLOSED 2026-08-05.** The island is one of TWO safe families; the other is a
+  source-discovered POD **rendered owning**. Two defects sat behind it: the element type was
+  never discovered at all (the candidate scan only matched a plain `Type name`, so an element
+  inside a template argument was invisible — which made the refusal accidentally-correct rather
+  than a proof of anything), and the POD renderer spelled ATL members with the COM *owner's*
+  type. That is right for an owner, whose generated `Release` releases explicitly, and fatal in a
+  POD, whose field types are its entire destructor. `PlainStateField.owned_rust_type` keeps the
+  owning spelling (`CComPtr<T>`/`CComHeapPtr<T>`/`CStringW`), all `repr(transparent)`, so
+  layout is unchanged and Rust's field-drop order *is* the C++ implicit destructor. The
+  free-function renderer had the same bug and the shipped `brfolder.rs` is what proved it — it
+  already had the owning spelling while the generator did not, so a regeneration would have
+  downgraded a correct file. Repo sweep: 12 C++ structs hold ATL members, only `BrItemData` has
+  a Rust port, so nothing shipped carried the leak. `CAtlList<T>` itself is implemented in `atl.rs` (the
+  measured surface: GetHeadPosition/GetNext ×7, IsEmpty ×5, RemoveAll/GetAt/FindIndex/AddTail
+  ×2, AddHead ×1) and returns a null POSITION on OOM where ATL throws, which is stated at the
+  type because it silently drops an entry rather than abandoning the operation.
+  **`CIDLDataObj.cpp` is flipped on the back of it** (2026-08-05, $0.16) — the shell's
+  `IDataObject`/`IAsyncOperation` for a PIDL selection, its `IEnumFORMATETC`, and the TU's four
+  constructors, as three modules: the assembler writes one file per class slice, and a TU only
+  leaves CMake when every slice has an owner. No bridge was needed (both constructors sit inside
+  `wine/shell32_main.h`'s own `extern "C"`; both `SHCreate*DataObject` are WINAPI in shlobj.h).
+  The container contract held — the model wrote `m_Formats.GetAt(n)` from the sealed usage
+  mapping instead of inventing a wrapper. Three tool fixes fell out of the grind, each of which
+  had been paid by hand before: `--seal-facts` was sealing the function's OWN parameter TYPES
+  (unsatisfiable for a COM method, whose signature comes from the vtable authority — the whole
+  parameter list is excluded now); the SDK-record renderer emitted a template-erased SHADOW of
+  `CSimpleArray` that beat the real one by scope; and the stitcher's substrate globs collide
+  with the scaffold's prelude glob on every shared name, which is what those 339/339/399 opening
+  error counts were. Defects worth naming in the paid bodies: the free-function slice INVENTED a
+  `CIDLDataObj` struct (it cannot see the slice that owns the real one), `Clone` used the
+  generated worker name as a VTABLE SLOT, and `SHAlloc(size)` passed a DWORD to a SIZE_T
+  parameter — invisible on i386, caught by both 64-bit targets.
+  **`CDefaultContextMenu.cpp` is BOUGHT but NOT FLIPPED** (2026-08-05, $0.41, 43/45 workers) —
+  the 2,024-line TU behind every right-click. Preflight is fully green now: 5 interfaces, 33
+  vtable slots, both `CAtlList` fields resolved, and the element PODs rendering owning. The
+  assembly is parked at `~/vibeos-rust-staging/CDefaultContextMenu-cppcom/` with a RESUME.md,
+  and it re-assembles for $0 from the resume cache. Three more tool fixes fell out, two of which
+  recovered already-paid bodies at $0 on replay: a free helper and a method may share a name and
+  C++ resolves it by SCOPE (`MapVerbToCmdId/5` static vs `/3` member — the binder knew only the
+  free one and hard-failed the whole TU); `--seal-calls` hid sibling call sites from the pass
+  that inserts the implicit `this`, so the envelope demanded a receiver the responsible pass
+  could not see (5 of the 7 rejects); and cpp_com's dropped-constant audit demanded back a
+  `const_cast<T>` type argument that `fact_seal` already knew has no Rust landing site. What
+  remains is exactly two bodies: `InvokeRegVerb` needs `CRegKey` + `CScopedSetObjectWithSite`
+  and a real vtable-subobject cast — the same `--local-raii` lowering that blocks
+  `COpenWithMenu`, so build it once for both — and `DoCreateNewFolder` is hand-written in the
+  parked file because every sample silently FIXED a real ReactOS leak (the C frees `pidl` once
+  and leaks it when `SelectItem` fails), which the envelope is right to refuse and which
+  retrying cannot change.
+  Gap (2), inherited layout, blocks
+  `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
+  and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
+  (`CFileSysBindData`, `CExtractIcon`, `COpenWithList`/`COpenWithDialog`, `CRegFolderInfo`,
+  `CChangeNotifyBroker`).
   **Three more whole-TU flips landed 2026-08-05** — `droptargets/CFSDropTarget.cpp`,
   `droptargets/CRecyclerDropTarget.cpp` and `CDefViewBckgrndMenu.cpp` — and between them they
   settled the per-module type-ownership question that had CFSDropTarget parked

@@ -1,17 +1,15 @@
 
-//! ORPHAN-BY-DESIGN: paid translation banked ahead of its flip — the 64 inline-asm sites
-//! must be rewritten by hand first (see below). Nothing is hidden from the smoke harness:
-//! this file has never been in the build.
+//! `dll/win32/msvcrt/math.c`, translated whole. **WIRED** — `mod.rs:197` says `pub mod math;`,
+//! so this file compiles and ships.
 //!
-//! `dll/win32/msvcrt/math.c`, translated whole — **BANKED, NOT FLIPPED.**
+//! The `ORPHAN-BY-DESIGN` banner that used to sit here was removed on 2026-08-05 because it
+//! had become false, and a false banner is not merely untidy: `scan_extern_arity` and
+//! `scan_cc_mismatch` both SKIP a file the moment they see it, on the premise that nothing
+//! compiles it. Unmasking this file was measured against both scanners first — zero new
+//! findings — so nothing is being papered over by the removal.
 //!
-//! There is no `pub mod math;` in `mod.rs` yet, and that is a deliberate state, not an
-//! oversight and not the "commented-out module" anti-pattern: this file has never been in
-//! the build, so nothing is being HIDDEN from the smoke harness. It is the netcfgx
-//! disposition — paid output kept in the tree, readable and diffable, until the work below
-//! is done. Deleting or re-buying it would cost a real API call for output that exists.
-//!
-//! WHAT IS OWED, in the order it has to happen:
+//! WHAT WAS OWED WHEN IT WAS BANKED, and is worth re-reading before touching the asm or the
+//! flagged bodies:
 //!
 //! 1. **The 64 inline-asm sites are wrong and must be rewritten by hand.** math.c reaches
 //!    the x87 control word and MXCSR through GCC memory operands —

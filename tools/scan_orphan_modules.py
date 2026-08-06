@@ -31,6 +31,16 @@ top, where the person reading it will see it:
 
 Baseline is EMPTY = strict. A new unexplained orphan fails the gate.
 
+The banner is an ASSERTION, so it is also checked in the other direction: a file that
+carries it and IS reachable from a `mod` chain is a [STALE-BANNER] finding. That matters
+beyond tidiness — `scan_extern_arity`, `scan_cc_mismatch` and `scan_silent_failures` all
+skip a file the moment they see the banner, on the premise that nothing compiles it. When
+the premise goes false the exemption stops being free and starts hiding a live module from
+three gates. It found two real `.unwrap()`s in shipping shlfileop.rs on its first run.
+
+Before stripping a banner, run all three: `grep -rl ORPHAN-BY-DESIGN tools/*.py` is the
+authoritative list, because it grows.
+
 WHAT IS NOT AN ORPHAN:
   build.rs / tests/ / benches/ / examples/ (cargo compiles these by their own
   rules), files pulled in by `include!`, and every file of a crate whose root does
@@ -83,7 +93,7 @@ def has_crate_root(crate_dir):
 
 
 def scan(roots):
-    findings, declared, rootless = [], [], []
+    findings, declared, rootless, stale = [], [], [], []
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -112,10 +122,21 @@ def scan(roots):
                 if not live:  # unparseable crate -> fail open
                     continue
                 if os.path.realpath(path) in {os.path.realpath(x) for x in live}:
+                    # WIRED. If it still carries the banner, that banner is a LIE, and a
+                    # lying banner is worse than no banner: `scan_extern_arity` and
+                    # `scan_cc_mismatch` both skip a file on sight of it, on the stated
+                    # premise that nothing compiles it. Once the file is wired the premise
+                    # is false and the exemption silently hides a live module from two
+                    # gates — five flipped, shipping shell32 modules were in exactly that
+                    # state on 2026-08-05, including the arity check whose whole subject is
+                    # a real cross-language bug class. Nothing verified the premise because
+                    # the banner is a hand-written assertion; this is the verifier.
+                    if banner_reason(path):
+                        stale.append(path)
                     continue
                 reason = banner_reason(path)
                 (declared if reason else findings).append((path, reason))
-    return findings, declared, rootless
+    return findings, declared, rootless, stale
 
 
 def main():
@@ -132,7 +153,7 @@ def main():
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     roots = args.paths or [os.path.join(repo, "sdk", "lib", "rust")]
-    findings, declared, rootless = scan(roots)
+    findings, declared, rootless, stale = scan(roots)
 
     for path, _ in findings:
         rel = os.path.relpath(path, repo)
@@ -156,15 +177,23 @@ def main():
             f"above this file — nothing compiles it; scaffold the crate, or declare it "
             f"with a `//! {BANNER} <reason>` banner"
         )
+    for path in stale:
+        print(
+            f"{os.path.relpath(path, repo)}:1: [STALE-BANNER] a `mod` chain DOES reach this "
+            f"file, so its `{BANNER}` banner is false — and scan_extern_arity, scan_cc_mismatch "
+            f"and scan_silent_failures all skip a file on sight of that banner. Delete the banner "
+            f"now that the file is wired."
+        )
     if args.show_declared:
         for path, reason in declared:
             print(f"{os.path.relpath(path, repo)}:1: [DECLARED] {reason}")
 
     print(
         f"\nSUMMARY: undeclared-orphans={len(findings)}  "
-        f"rootless={len(rootless)} ({rootless_lines} lines)  declared={len(declared)}"
+        f"rootless={len(rootless)} ({rootless_lines} lines)  declared={len(declared)}  "
+        f"stale-banners={len(stale)}"
     )
-    return 1 if (findings or rootless) else 0
+    return 1 if (findings or rootless or stale) else 0
 
 
 if __name__ == "__main__":

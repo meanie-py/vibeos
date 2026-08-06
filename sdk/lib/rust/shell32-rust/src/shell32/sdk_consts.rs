@@ -1,4 +1,4 @@
-//! ORPHAN-BY-DESIGN: substrate for the parked Wave-5 TUs, unwired until they are.
+//! WIRED: the Wave-5 TUs this exists for are flipped, so this is compiled too.
 //! SDK constants for the Wave-5 free-function TUs — GENERATED, do not hand-edit.
 //!
 //! Produced by `rustconv.sdk_facts`, which asks the real cross-compiler to evaluate each
