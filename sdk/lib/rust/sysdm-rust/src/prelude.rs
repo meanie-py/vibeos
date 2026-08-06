@@ -551,6 +551,103 @@ extern "C" {
     ) -> INT;
 }
 
+
+// The A/W pairs desk's block did not carry. sysdm compiles -DUNICODE, so every unsuffixed
+// spelling in the C is the W entry point — the same rule winuser.h/winbase.h apply with their
+// own `#define X XW`. Aliased, never re-declared: a second `extern` for a symbol the island
+// already has is where a pointer level goes missing silently.
+pub use crate::types::{
+    ConvertStringSidToSidW as ConvertStringSidToSid,
+    FormatMessageW as FormatMessage,
+    GetDiskFreeSpaceExW as GetDiskFreeSpaceEx,
+    GetDriveTypeW as GetDriveType,
+    GetLocaleInfoW as GetLocaleInfo,
+    GetLogicalDriveStringsW as GetLogicalDriveStrings,
+    GetVolumeInformationW as GetVolumeInformation,
+    GetWindowTextW as GetWindowText,
+    LoadIconW as LoadIcon,
+    LoadLibraryW as LoadLibrary,
+    MoveFileExW as MoveFileEx,
+    RegEnumValueW as RegEnumValue,
+    RegQueryInfoKeyW as RegQueryInfoKey,
+    SHBrowseForFolderW as SHBrowseForFolder,
+    SHGetPathFromIDListW as SHGetPathFromIDList,
+    ShellExecuteW as ShellExecute,
+    ShellExecuteExW as ShellExecuteEx,
+};
+// strsafe.h's TCHAR spellings, from the shared crate.
+pub use strsafe_rust::{StringCchCatW as StringCchCat, StringCchCopyW as StringCchCopy};
+// The VARIADIC strsafe entries sysdm reaches. Bodies are in strsafe-rust; the `...` entry
+// points are trampolines in dll/cpl/sysdm/rust_varargs_shim.c. `extern "C"` because no ABI
+// on our targets has a variadic stdcall.
+extern "C" {
+    pub fn StringCchPrintfW(d: *mut WCHAR, cch: usize, f: *const WCHAR, ...) -> HRESULT;
+}
+pub use self::StringCchPrintfW as StringCchPrintf;
+
+
+// ================= COM (COBJMACROS) ===========================================================
+// performance.c drives shell32's IRegTreeOptions through objbase.h's COBJMACROS, which expand to
+// `(This)->lpVtbl->Method(This, ..)`. bindgen emits the vtbl but not the macros, so each call is
+// a shim here — same shape desk-rust uses for IDataObject. `unwrap_unchecked` and not `unwrap`:
+// a None slot in a vtable a COM server just handed us is not a recoverable condition, and
+// `unwrap` would put a panic path in a no_std staticlib (scan_silent_failures flags it).
+#[inline(always)]
+pub unsafe fn IRegTreeOptions_InitTree<T>(
+    p: *mut T, hTV: HWND, hKey: HKEY, SubKey: LPCSTR, pUnknown: *const c_char,
+) -> HRESULT {
+    let vtbl = *(p as *mut *const IRegTreeOptionsVtbl);
+    ((*vtbl).InitTree.unwrap_unchecked())(p as *mut IRegTreeOptions, hTV, hKey, SubKey, pUnknown)
+}
+#[inline(always)]
+pub unsafe fn IRegTreeOptions_WalkTree<T>(p: *mut T, cmd: WALK_TREE_CMD) -> HRESULT {
+    let vtbl = *(p as *mut *const IRegTreeOptionsVtbl);
+    ((*vtbl).WalkTree.unwrap_unchecked())(p as *mut IRegTreeOptions, cmd)
+}
+#[inline(always)]
+pub unsafe fn IRegTreeOptions_ToggleItem<T>(p: *mut T, hTI: HTREEITEM) -> HRESULT {
+    let vtbl = *(p as *mut *const IRegTreeOptionsVtbl);
+    ((*vtbl).ToggleItem.unwrap_unchecked())(p as *mut IRegTreeOptions, hTI)
+}
+#[inline(always)]
+pub unsafe fn IRegTreeOptions_Release<T>(p: *mut T) -> ULONG {
+    let vtbl = *(p as *mut *const IRegTreeOptionsVtbl);
+    ((*vtbl).Release.unwrap_unchecked())(p as *mut IRegTreeOptions)
+}
+
+// ---- imports the island did not carry ----
+// ole32 (objbase.h declares them, but performance.c is the only caller and the allowlist that
+// brought IRegTreeOptions in did not reach these loose prototypes) and shell32's undocumented
+// broadcast helper.
+extern "system" {
+    pub fn CoTaskMemFree(pv: LPVOID);
+    pub fn CoUninitialize();
+    pub fn SHSendMessageBroadcastW(uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+}
+
+// winuser.h `#define DialogBox(i,t,p,f) DialogBoxParam(i,t,p,f,0)` and prsht.h
+// `#define PropSheet_HwndToIndex(hDlg,hwnd) SNDMSG(hDlg,PSM_HWNDTOINDEX,(WPARAM)hwnd,0)`.
+#[macro_export]
+macro_rules! DialogBoxW {
+    ($inst:expr, $tmpl:expr, $parent:expr, $proc:expr $(,)?) => {
+        $crate::prelude::DialogBoxParamW($inst, $tmpl, $parent, $proc, 0)
+    };
+}
+#[macro_export]
+macro_rules! PropSheet_HwndToIndex {
+    ($hdlg:expr, $hwnd:expr $(,)?) => {
+        $crate::prelude::SendMessageW($hdlg, PSM_HWNDTOINDEX, $hwnd as WPARAM, 0) as c_int
+    };
+}
+// windowsx.h:`#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))` — the SHORT cast is the whole
+// point: a coordinate can be negative on a multi-monitor desktop, and dropping it turns -1 into
+// 65535. Same for Y.
+#[macro_export]
+macro_rules! GET_X_LPARAM { ($lp:expr $(,)?) => { ($crate::LOWORD!($lp) as i16) as c_int }; }
+#[macro_export]
+macro_rules! GET_Y_LPARAM { ($lp:expr $(,)?) => { ($crate::HIWORD!($lp) as i16) as c_int }; }
+pub use crate::{DialogBoxW, GET_X_LPARAM, GET_Y_LPARAM, PropSheet_HwndToIndex};
+
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an
 // out-of-line forwarder is an optimization barrier that uncloaks latent ABI mismatches (§9.65).
