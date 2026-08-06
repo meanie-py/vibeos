@@ -185,6 +185,20 @@ pub mod def_view_dual;
 #[path = "shell32/CDefViewBckgrndMenu.rs"]
 pub mod def_view_bckgrnd_menu;
 
+// CDefaultContextMenu — the shell's default item context menu. Two rustconv runs, because
+// `--cpp-com --class` translates the class only and the TU also carries 22 free functions
+// (`DCMA_*`, `SHCreateDefaultContextMenu`, the `*_RustBridge` entry points). The support
+// module is HAND-WRITTEN — ports of the utils.h/shellutils.h inlines the TU calls, plus the
+// constants and externs outside the bindgen island's closure. It lives in its own file
+// because a re-run overwrites each generated half wholesale, so hand-written code parked
+// inside either of them is lost the next time the TU is re-assembled.
+#[path = "shell32/cdefaultcontextmenu_support.rs"]
+pub mod default_context_menu_support;
+#[path = "shell32/CDefaultContextMenu.rs"]
+pub mod default_context_menu;
+#[path = "shell32/CDefaultContextMenu_tu.rs"]
+pub mod default_context_menu_tu;
+
 // The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
 // these two are the retained closure that kept the .cpp compiled — its free helpers and
 // `*_RustBridge` entry points, and the CNetFolderEnum enumerator. Two files because one TU

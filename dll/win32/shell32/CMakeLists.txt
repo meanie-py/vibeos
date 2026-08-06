@@ -197,7 +197,21 @@ list(APPEND SOURCE
     # stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
     # systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
     # CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
-    CDefaultContextMenu.cpp
+    # CDefaultContextMenu.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip,
+    # assembled in two halves because one rustconv run cannot cover a TU that holds both a COM
+    # class and free functions: shell32/CDefaultContextMenu.rs is the `--cpp-com --class` half
+    # and shell32/CDefaultContextMenu_tu.rs the `--free-functions` half, with the header inlines
+    # they share hand-written in shell32/cdefaultcontextmenu_support.rs.
+    #   The exported entry points (SHCreateDefaultContextMenu, CDefFolderMenu_Create2) are
+    # declared extern "C" WINAPI in shlobj.h, so Rust's `#[no_mangle] extern "system"` already
+    # matches what CRegFolder.cpp links against. `_InsertMenuItemW` likewise, via
+    # wine/shell32_main.h's extern "C" block. The two that did NOT match were MapFcidmCmdToVerb
+    # and MapVerbToDfmCmd, declared with C++ linkage in precomp.h and still called from the
+    # C++ CDefView.cpp and utils.cpp — both declarations are now EXTERN_C.
+    #   The three DCMA_*_RustBridge wrappers moved with the file: they existed because the DCMA
+    # entry points had C++ linkage and the Rust CFSDropTarget could not name them, and Rust now
+    # publishes the bridges itself under the same names.
+    #   CDefaultContextMenu.cpp
     # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
     # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.
     COpenWithMenu.cpp

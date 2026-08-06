@@ -505,7 +505,8 @@ constants, or the runtime call set to the model:
 # Preview is guaranteed inspection-only; --prompt forces --dry-run.
 python -m rustconv --arch amd64 translate path/to/Class.cpp \
   --target shell32 --cpp-com --class CClass --fn CClass_Method \
-  --mode mechanical --model deepseek --seal-facts --seal-calls --prompt
+  --mode mechanical --seal-facts --seal-calls --prompt
+# (--model deepseek is the DEFAULT since 2026-08-06; spell it only to escalate, e.g. -m sonnet)
 
 # Batch N candidate/base replacements, one cargo invocation per architecture.
 python -m rustconv candidate-check candidates.json

@@ -214,9 +214,13 @@ DCMA_InsertMenuItems(
 
 EXTERN_C HRESULT
 SHELL32_DefaultContextMenuCallBack(IShellFolder *psf, IDataObject *pdo, UINT msg);
-PCSTR
+/* Both are Rust-owned now (shell32-rust/src/shell32/CDefaultContextMenu_tu.rs) and Rust
+ * publishes them unmangled, so these declarations are EXTERN_C — the same treatment
+ * CDefViewUtil's helpers and CDefViewBckgrndMenu_CreateInstance already got. The two live
+ * C++ callers are CDefView.cpp (MapFcidmCmdToVerb) and utils.cpp (MapVerbToDfmCmd). */
+EXTERN_C PCSTR
 MapFcidmCmdToVerb(_In_ UINT_PTR CmdId);
-UINT
+EXTERN_C UINT
 MapVerbToDfmCmd(_In_ LPCSTR verba);
 UINT
 GetDfmCmd(_In_ IContextMenu *pCM, _In_ LPCSTR verba);
