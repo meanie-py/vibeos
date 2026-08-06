@@ -185,3 +185,53 @@ def test_symbolic_elements_are_unchecked_not_passed(tmp_path):
     c = _c(tmp_path, "static const BYTE t[2] = { FOO, BAR };\n")
     (d,) = audit_tables(c, "static t: [u8; 2] = [FOO, BAZ];")
     assert d.kind == "ok" and "2 symbolic (unchecked)" in d.detail
+
+
+# --- an apostrophe inside a STRING is data, not a char-literal delimiter --------------------
+
+
+def test_rust_table_with_an_apostrophe_in_a_string_parses():
+    """Regression: sysdm's SMBIOS vendor list contains `L"INT'L"`.
+
+    Both scanners tracked only CHAR literals and toggled on every `'`, so the apostrophe flipped
+    the toggle mid-table, every `[`/`]` after it stopped counting, and the initializer came back
+    "unbalanced" — a hard TableParseError that aborted assembly of an already-PAID file.
+    """
+    rust = (
+        "static RedundantWords: [REDUNDANT_WORD; 3] = [\n"
+        '    REDUNDANT_WORD { pwStr: b"C\\0o\\0r\\0p\\0\\0\\0".as_ptr(), b: FALSE },\n'
+        # the apostrophe this test exists for, inside a byte STRING
+        '    REDUNDANT_WORD { pwStr: b"I\\0N\\0T\\0\'\\0L\\0\\0\\0".as_ptr(), b: FALSE },\n'
+        '    REDUNDANT_WORD { pwStr: b"G\\0r\\0p\\0\\0\\0".as_ptr(), b: FALSE },\n'
+        "];\n"
+    )
+    tables, _ = parse_rust_tables(rust)
+    # Rows, not fields: a comma inside the `{ .. }` of one row is depth-1 and never splits.
+    assert len(tables["RedundantWords"][0]) == 3
+
+
+def test_c_table_with_an_apostrophe_in_a_string_parses(tmp_path):
+    """The C side had the same bug, and there it MIS-COMPARES instead of crashing."""
+    c = _c(tmp_path, 'static const REDUNDANT_WORD t[3] = { {L"Corp"}, {L"INT\'L"}, {L"Grp"} };\n')
+    tables = parse_c_tables(c)
+    assert len(tables["t"]) == 3
+
+
+def test_a_comma_inside_a_string_does_not_split_an_element():
+    """`{ L"CO.,LTD", X }` is ONE element; the old scanner made it two."""
+    rust = 'static t: [&str; 2] = ["CO.,LTD", "X"];\n'
+    tables, _ = parse_rust_tables(rust)
+    assert tables["t"][0] == ['"CO.,LTD"', '"X"']
+
+
+def test_a_real_char_literal_is_still_a_char_literal():
+    rust = "static t: [u8; 3] = [b'A', b'\\n', 0];"
+    tables, _ = parse_rust_tables(rust)
+    assert [normalize_element(e) for e in tables["t"][0]] == [65, 10, 0]
+
+
+def test_a_lifetime_is_not_a_char_literal():
+    """`&'static str` has a lone `'`; toggling on it desynchronises everything after."""
+    rust = 'static t: [&\'static str; 2] = ["a", "b"];'
+    tables, _ = parse_rust_tables(rust)
+    assert len(tables["t"][0]) == 2
