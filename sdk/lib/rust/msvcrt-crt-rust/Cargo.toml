@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp", "threading"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp", "threading", "dllmain"]
 
 # heap.c (`src/msvcrt/heap.rs`) — the allocator. ON for every build that produces
 # msvcrt.dll, OFF for both host harnesses, and this one is not a convenience gate like the
@@ -231,6 +231,18 @@ data = ["dir-environ"]
 # ctype.c's 44 FUNCTIONS are NOT behind this gate and never were: they are hand-written in
 # lib.rs and graded MATCH against reference TU #3 today.
 ctype-tables = []
+
+# main.c's `DllMain` (`src/msvcrt/main.rs`) — msvcrt.dll's ENTRY POINT, plus the
+# `msvcrt_tls_index` slot it allocates. Default ON, absent from both host harnesses, and
+# unlike the gates above the reason is not a duplicate symbol: a Linux test binary has no
+# DLL_PROCESS_ATTACH to be called on, so the whole module is meaningless there.
+#
+# It lists every feature it CALLS INTO rather than assuming the default set, because a
+# `--no-default-features --features dllmain` build is otherwise a DllMain that initialises
+# subsystems no longer in the link. That is not a compile error — the C copies satisfy the
+# names — it is msvcrt.dll booting with half its init sequence pointed at the wrong
+# implementations.
+dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }

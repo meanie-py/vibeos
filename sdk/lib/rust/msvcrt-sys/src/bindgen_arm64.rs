@@ -5758,6 +5758,14 @@ pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
 unsafe extern "C" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
+unsafe extern "C" {
+    pub fn RtlUnwind(
+        TargetFrame: PVOID,
+        TargetIp: PVOID,
+        ExceptionRecord: PEXCEPTION_RECORD,
+        ReturnValue: PVOID,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OSVERSIONINFOW {
@@ -8283,6 +8291,9 @@ pub union _IO_STATUS_BLOCK__bindgen_ty_1 {
 }
 pub type IO_STATUS_BLOCK = _IO_STATUS_BLOCK;
 pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
+unsafe extern "C" {
+    pub fn LdrAddRefDll(arg1: ULONG, arg2: HMODULE) -> NTSTATUS;
+}
 unsafe extern "C" {
     pub fn NtQueryInformationFile(
         arg1: HANDLE,

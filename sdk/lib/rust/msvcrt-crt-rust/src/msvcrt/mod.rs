@@ -272,6 +272,17 @@ pub mod except_i386;
 #[cfg(all(feature = "cpp", target_arch = "x86"))]
 pub mod seh_i386;
 
+// The other two arms of the same gate, and the reason `except.rs`'s `unsafe extern "C"` block
+// declaring `call_catch_handler`/`call_unwind_handler`/`get_exception_pc`/`handle_fpieee_flt`
+// is now satisfied by Rust on every arch rather than by a surviving C sibling. Each is tiny —
+// four bodies and one `__ASM_GLOBAL_FUNC` — because that is genuinely all the 64-bit
+// dispatcher cannot say portably. Both carry their asm inline instead of a `seh_*` companion;
+// one thunk does not earn a module.
+#[cfg(all(feature = "cpp", target_arch = "x86_64"))]
+pub mod except_x86_64;
+#[cfg(all(feature = "cpp", target_arch = "aarch64"))]
+pub mod except_arm64;
+
 // lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
 // together behind `threading` because the host harness supplies its own `_lock`,
 // `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.
@@ -279,3 +290,10 @@ pub mod seh_i386;
 pub mod lock;
 #[cfg(feature = "threading")]
 pub mod thread;
+
+// main.c — `DllMain`, msvcrt.dll's ENTRY POINT, and the `msvcrt_tls_index` slot every
+// `msvcrt_get_thread_data` reaches through. Its own feature because a Linux host harness has
+// no DLL_PROCESS_ATTACH to be called on, and because the feature has to pull in every
+// subsystem DllMain initialises — see Cargo.toml.
+#[cfg(feature = "dllmain")]
+pub mod main;

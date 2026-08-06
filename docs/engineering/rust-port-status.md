@@ -885,17 +885,118 @@ still-C when it is 3).
 |---|---|---|
 | `except.c` | 21 | **0** — flipped in wave 29 |
 | `except_i386.c` | 13 | **0** — flipped in wave 30 |
-| `ucrt_tls_sup.c` | 4 | 3 |
-| `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
-| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
-| `main.c` | 1 | 1 (`DllMain`) |
-| `sincos.c` | 2 | 1 (`sincosf`) |
+| `except_x86_64.c` | 5 | **0** — flipped in wave 31 |
+| `except_arm64.c` | 5 | **0** — flipped in wave 31 |
+| `handler4.c` | 0 | **0** — 97% dead, compiles to an object with no symbols |
+| `concurrency.c` | 0 | **0** — 98% dead, same |
+| `ucrt_tls_sup.c` | 4 | 3 — but see below: NOT msvcrt.dll's surface |
+| `wcs.c` | 176 | **0** — the last 3 flipped in wave 32 |
+| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) — defined but UNREFERENCED, see below |
+| `main.c` | 1 | **0** — flipped in wave 33 |
+| `sincos.c` | 2 | 1 (`sincosf`) — implib-only, see below |
 | `scanf.c` | 44 | **0** — fully flipped |
+
+Three corrections to that table, all from re-measuring it against the linker on 2026-08-05:
+
+* **`ucrt_tls_sup.c` is not in msvcrt.dll at all.** It is in `msvcrt_shared` only, and
+  `MSVCRT_SOURCE` does not list it — it belongs to **ucrtbase**, which links `msvcrt_shared`
+  and no Rust archive whatsoever. Flipping it needs a ucrtbase cohab that does not exist yet,
+  so it is a different lane, not a straggler of this one.
+* **string.c's three `fpnum_*` are already Rust** — `fpnum_double`, `fpnum_ldouble` and
+  `fpnum_parse` live in `msvcrt-crt-rust/src/fpnum.rs` as private `fn`s, because the Rust
+  `strtod` family is their only caller. The C copies stay linker-visible because nothing
+  overrides those *names*, and stay linked because string.c's own dead `strtod` still
+  references them. Dead weight, not a divergence.
+* **`sincos.c` is `#pragma makedep implib`** — its two symbols are in the import library, not
+  the DLL export table, and they exist so a compiler folding `sin`+`cos` into `sincos` resolves.
+  `sincos` is already Rust (cnt-rust `cabi/math.rs`); `sincosf` is not, and flipping it would
+  buy a Rust wrapper over the still-C `sinf`/`cosf`. Left alone deliberately.
+
+So msvcrt.dll's genuinely-still-C **exported** surface is now **`DllMain` and nothing else**.
 
 So the remaining real surface was **the exception dispatcher and nothing else of size**:
 except.c + except_i386.c were 34 of the 45 symbols still served by C. Waves 29 and 30 took both.
 What is left is a handful of stragglers — `ucrt_tls_sup.c`'s 3, `wcs.c`'s 3, `string.c`'s 3,
 `DllMain`, `sincosf` — and nothing in msvcrt is now bigger than one function.
+
+**And two of the biggest-LOOKING files left were never work at all.** `handler4.c` (775 lines)
+and `concurrency.c` (3,839) each sit wholly inside one outermost `#if` decided by the module's
+own `-D_MSVCR_VER=0` — `#if defined(__x86_64__) && _MSVCR_VER>=140` and `#if _MSVCR_VER >= 100`.
+Each compiles to a **396-byte object with zero defined symbols** on all three arches
+(`llvm-nm --defined-only`, not inference). 4,614 lines that every prior census carried in the
+"still to translate" column. `profile_derive`'s `DEAD_TU` finding had been saying so
+pre-payment; it was read straight past, because in a module whose constants are named
+`ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
+
+**Wave 33 — main.c's `DllMain`, $0. msvcrt.dll's exported surface is Rust.** The last C
+function in the DLL, and the one every prior wave routed around: `set_module_type(msvcrt
+win32dll ENTRYPOINT DllMain 12)` means this is the *entry point*, and it is what decides the
+order in which the heap, the locks, the locale, the fd table, the signal table, argv and the
+clock come up. Every one of those was already Rust before this file existed — what was left in
+C was the sequencing, and the TLS slot index they all reach through.
+
+`msvcrt_tls_index` had to move in the SAME commit, and prelude.rs's old comment is why: it
+warned that duplicating the definition on the Rust side would give the reader *"a second,
+always-zero index"*. That was exactly right while the C's `DllMain` was the only WRITER — a
+Rust definition would have been a slot nobody filled in. It stops being true the moment the
+writer is Rust too, which is the whole reason these two things are one change.
+
+Two checks that cost nothing and are worth repeating on any entry-point flip:
+
+* **`nm` the decorated name before building anything.** `extern "system"` + `#[no_mangle]`
+  through `rustc --emit=obj --target i686-pc-windows-gnu` gives `_DllMain@12` — the same
+  stdcall decoration the C emits, and the same `12` the CMake `set_module_type` line names.
+  `msvcrt_tls_index` comes out `B` (BSS) on both sides too. A mismatch there is a linker error
+  at best and a silently-unused entry point at worst, and one `rustc --emit=obj` settles it
+  without a build.
+* **The feature has to name what it calls.** `dllmain` lists `heap`, `stdio`, `locale`,
+  `data`, `cpp`, `conio-exit` and `threading` rather than assuming the default set. A
+  `--no-default-features --features dllmain` build would otherwise compile — the C copies
+  satisfy the names — and boot msvcrt with half its init sequence pointed at implementations
+  that are no longer in the link.
+
+Absent on purpose, all `_MSVCR_VER = 0`: the three `handler4` calls, the three `concurrency`
+ones, and `_set_printf_count_output(0)`. The `#if _MSVCR_VER == 0` arm — `LdrAddRefDll`
+pinning msvcrt so it can never be unloaded and re-initialised over a live fd table — is the
+one that IS live, and is the branch a translation working from the wine original rather than
+this tree's flags would drop.
+
+**Wave 32 — wcs.c's last three, $0.** `_wcsdup`, `towctrans` and `wcstombs`, hand-written into
+`wcs_rest.rs`. Wave 16 left them because each delegates to something that was still C at the
+time; all three delegates (`_towupper_l`/`_towlower_l`, and wcs_rest's own private
+`wcsrtombs_l`) are Rust now, so these are three wrappers, not a paid re-translation of a file
+that already has output. Two details kept rather than tidied: `_wcsdup` sizes its own copy and
+`memcpy`s where `_strdup` calls `strcpy`, and `towctrans` folds *every* category that is not 1
+to lower, including ones this msvcrt never issues. `wctrans_t` is spelled against
+`msvcrt/include/wctype.h` in the file — it is a typedef, so it has no symbol for the island to
+snapshot.
+
+**Wave 31 — except_x86_64.c + except_arm64.c (10/10), $0.04.** The other two arms of the arch
+gate wave 30 opened, and the end of the except family: `except.rs`'s `unsafe extern "C"` block
+for `call_catch_handler` / `call_unwind_handler` / `get_exception_pc` / `handle_fpieee_flt` is
+now answered by Rust on every arch instead of by a surviving C sibling. Both files are tiny —
+four bodies and one `__ASM_GLOBAL_FUNC` each — because that is genuinely all the 64-bit
+dispatcher cannot say portably: how to enter a handler on somebody else's frame, and where this
+architecture keeps the faulting PC. Neither earns a `seh_*` companion module; one thunk stays
+inline.
+
+Worth carrying forward:
+
+* **The asm proof generalises, including the unwind data.** `-d` agreement is necessary and not
+  sufficient for a `.seh_*`-carrying thunk: a dropped `.seh_save_regp` leaves the instructions
+  identical and the unwind info wrong. Comparing `.xdata` **and** `.pdata` against the C's own
+  object closes it — arm64 `call_exc_handler` matches its 16-byte `.xdata` record exactly, and
+  `_setjmp` and `get_exception_pc` have no `.pdata` entry on *either* side, which is the
+  agreement that says the packed-vs-`.xdata` decision came out the same way.
+* **A one-line `RtlUnwind` needed an island change on two arches and none on the third.** The
+  `-DRtlUnwind=__wine_RtlUnwind` rename is inside `if(ARCH STREQUAL "i386")`, so bindgen sees
+  the plain declaration on amd64/arm64 and the renamed one on i386. The allowlist now carries
+  both spellings; they are never both present in one island.
+* **A wine channel's ARGUMENTS can be the dangerous part.** `handle_fpieee_flt`'s FIXME prints
+  `*(ULONG64*)ep->ContextRecord->Rip` — a load through the faulting PC, which the C performs
+  only when the seh channel is on. Our sink is unconditional, so the arguments are deliberately
+  left unevaluated; evaluating them to silence an unused-parameter warning would take a second
+  fault inside a filter that is about to return CONTINUE_SEARCH.
 
 **Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
 linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
