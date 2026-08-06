@@ -31952,54 +31952,6 @@ pub type PAPPLET = *mut _APPLET;
 unsafe extern "C" {
     pub static mut hApplet: HINSTANCE;
 }
-unsafe extern "C" {
-    pub fn ShowLastWin32Error(hWndOwner: HWND);
-}
-unsafe extern "C" {
-    pub fn GeneralPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn HardwarePageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn AdvancedPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn ShowPerformanceOptions(hDlg: HWND);
-}
-unsafe extern "C" {
-    pub fn HardProfDlgProc(hDlg: HWND, message: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn UserProfileDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn EnvironmentDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn StartRecDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn VirtMemDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn LicenceDlgProc(hDlg: HWND, message: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn GetSystemName(pBuf: PWSTR, cchBuf: SIZE_T) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn ResourceMessageBox(
-        hInstance: HINSTANCE,
-        hwnd: HWND,
-        uType: UINT,
-        uCaption: UINT,
-        uText: UINT,
-        ...
-    ) -> INT;
-}
 pub type __CDHOOKPROC = ::core::option::Option<
     unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> UINT_PTR,
 >;
@@ -34747,6 +34699,26 @@ unsafe extern "C" {
         pDataInner: *mut IDataObject,
         ppDataObj: *mut *mut IDataObject,
     ) -> HRESULT;
+}
+pub const _ID_STRINGS_ID_NONE: _ID_STRINGS = 0;
+pub const _ID_STRINGS_BIOS_VENDOR: _ID_STRINGS = 1;
+pub const _ID_STRINGS_BIOS_VERSION: _ID_STRINGS = 2;
+pub const _ID_STRINGS_BIOS_DATE: _ID_STRINGS = 3;
+pub const _ID_STRINGS_SYS_VENDOR: _ID_STRINGS = 4;
+pub const _ID_STRINGS_SYS_PRODUCT: _ID_STRINGS = 5;
+pub const _ID_STRINGS_SYS_VERSION: _ID_STRINGS = 6;
+pub const _ID_STRINGS_SYS_SERIAL: _ID_STRINGS = 7;
+pub const _ID_STRINGS_SYS_SKU: _ID_STRINGS = 8;
+pub const _ID_STRINGS_SYS_FAMILY: _ID_STRINGS = 9;
+pub const _ID_STRINGS_BOARD_VENDOR: _ID_STRINGS = 10;
+pub const _ID_STRINGS_BOARD_NAME: _ID_STRINGS = 11;
+pub const _ID_STRINGS_BOARD_VERSION: _ID_STRINGS = 12;
+pub const _ID_STRINGS_BOARD_SERIAL: _ID_STRINGS = 13;
+pub const _ID_STRINGS_BOARD_ASSET_TAG: _ID_STRINGS = 14;
+pub const _ID_STRINGS_ID_STRINGS_MAX: _ID_STRINGS = 15;
+pub type _ID_STRINGS = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub fn ParseSMBiosTables(SMBiosTables: PVOID, TableSize: ULONG, Strings: *mut PCHAR);
 }
 unsafe extern "C" {
     pub fn LoadSMBiosData(Strings: *mut PCHAR) -> PVOID;

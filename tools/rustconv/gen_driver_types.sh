@@ -1823,6 +1823,14 @@ case "$DRIVER" in
                   # LoadSMBiosData / TrimDmiStringW / GetSMBiosStringW / FreeSMBiosData, the
                   # sdk/lib/udmihelp static lib smbios.c drives.
                   --allowlist-file '.*[/\\]udmihelp\.h'
+                  # udmihelp.h's own dependency, and the owner of the DMI string INDEX enum
+                  # (SYS_VENDOR / SYS_PRODUCT / SYS_VERSION / SYS_FAMILY / BOARD_* /
+                  # ID_STRINGS_MAX) that smbios.c uses by BARE MEMBER NAME to index
+                  # `PCHAR DmiStrings[ID_STRINGS_MAX]`. The derive excluded it as depth-2 SDK
+                  # because these are array subscripts rather than `case` labels, so the switch
+                  # audit had nothing to say — but an absent one is still a name that does not
+                  # resolve, and here it would be 60 unresolved indices.
+                  --allowlist-file '.*[/\\]dmilib\.h'
                   --allowlist-file '.*[/\\]windowsx\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
