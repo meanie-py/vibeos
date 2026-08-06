@@ -236,6 +236,24 @@ pub mod cpp;
 #[cfg(feature = "cpp")]
 pub mod cpp_rtti;
 
+// except.c: the exception DISPATCHER — the C signal layer (`signal`/`raise` and the SEH
+// filter that turns a hardware fault into a C signal) plus the C++ frame handler that walks
+// a function's try blocks looking for a catch. 21 of the 21 symbols msvcrt.dll's copy of
+// this TU defines.
+//
+// Rides the `cpp` feature with cpp.c because it is not separable from it: the catch-matching
+// path calls `find_caught_type` and `copy_exception`, cppexcept.h inlines that live in
+// `cpp_rtti`, and both are equally unlinkable in an ELF host binary.
+//
+// The arch split is the thing to know before editing: everything from `ip_to_state` to
+// `__CxxFrameHandler` is `#[cfg(not(target_arch = "x86"))]` because it is inside
+// `#ifndef __i386__` in the C, where i386 gets a DIFFERENT implementation from except_i386.c.
+// Cohab resolves by first-match, so an ungated body there would replace except_i386.c's
+// 32-bit SEH walk with the RVA one and link without complaint. `dump_function_descr` and
+// `find_catch_handler` sit above that gate and are called BY those still-C arch files.
+#[cfg(feature = "cpp")]
+pub mod except;
+
 // lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
 // together behind `threading` because the host harness supplies its own `_lock`,
 // `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.

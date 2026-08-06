@@ -4141,6 +4141,8 @@ pub const PF_AVX512F_INSTRUCTIONS_AVAILABLE: u32 = 41;
 pub const PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE: u32 = 43;
 pub const PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE: u32 = 44;
 pub const PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE: u32 = 45;
+pub const STATUS_LONGJUMP: i32 = -2147483610;
+pub const STATUS_UNWIND_CONSOLIDATE: i32 = -2147483607;
 pub const STATUS_FLOAT_DENORMAL_OPERAND: i32 = -1073741683;
 pub const STATUS_FLOAT_DIVIDE_BY_ZERO: i32 = -1073741682;
 pub const STATUS_FLOAT_INEXACT_RESULT: i32 = -1073741681;
@@ -4196,6 +4198,9 @@ pub const RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO: u32 = 268435456;
 pub const RTL_CRITICAL_SECTION_FLAG_RESERVED: u32 = 3758096384;
 pub const EXCEPTION_NONCONTINUABLE: u32 = 1;
 pub const EXCEPTION_UNWINDING: u32 = 2;
+pub const EXCEPTION_EXIT_UNWIND: u32 = 4;
+pub const EXCEPTION_TARGET_UNWIND: u32 = 32;
+pub const EXCEPTION_COLLIDED_UNWIND: u32 = 64;
 pub const DELETE: u32 = 65536;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
@@ -4738,6 +4743,13 @@ pub const CXX_FRAME_MAGIC_VC7: u32 = 429065505;
 pub const CXX_FRAME_MAGIC_VC8: u32 = 429065506;
 pub const CXX_EXCEPTION: u32 = 3765269347;
 pub const CXX_EXCEPTION_PARAMS: u32 = 4;
+pub const FUNC_DESCR_SYNCHRONOUS: u32 = 1;
+pub const FUNC_DESCR_NOEXCEPT: u32 = 4;
+pub const CLASS_IS_SIMPLE_TYPE: u32 = 1;
+pub const CLASS_HAS_VIRTUAL_BASE_CLASS: u32 = 4;
+pub const TYPE_FLAG_CONST: u32 = 1;
+pub const TYPE_FLAG_VOLATILE: u32 = 2;
+pub const TYPE_FLAG_REFERENCE: u32 = 8;
 // PINNED by generate_bindings.py: corecrt.h: the signed twin, same reasoning.
 // bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also
 // compiled for the linux host that builds msvcrt-difftest -- see
@@ -5034,6 +5046,12 @@ pub type LPVOID = *mut ::core::ffi::c_void;
 pub type LPCVOID = *const ::core::ffi::c_void;
 pub type INT = ::core::ffi::c_int;
 pub type UINT = ::core::ffi::c_uint;
+pub const _EXCEPTION_DISPOSITION_ExceptionContinueExecution: _EXCEPTION_DISPOSITION = 0;
+pub const _EXCEPTION_DISPOSITION_ExceptionContinueSearch: _EXCEPTION_DISPOSITION = 1;
+pub const _EXCEPTION_DISPOSITION_ExceptionNestedException: _EXCEPTION_DISPOSITION = 2;
+pub const _EXCEPTION_DISPOSITION_ExceptionCollidedUnwind: _EXCEPTION_DISPOSITION = 3;
+pub type _EXCEPTION_DISPOSITION = ::core::ffi::c_uint;
+pub use self::_EXCEPTION_DISPOSITION as EXCEPTION_DISPOSITION;
 pub type INT_PTR = ::core::ffi::c_longlong;
 pub type LONG_PTR = ::core::ffi::c_longlong;
 pub type ULONG_PTR = ::core::ffi::c_ulonglong;
@@ -5042,6 +5060,7 @@ pub type DWORD_PTR = ULONG_PTR;
 pub type INT64 = ::core::ffi::c_longlong;
 pub type ULONG64 = ::core::ffi::c_ulonglong;
 pub type DWORD64 = ::core::ffi::c_ulonglong;
+pub type PDWORD64 = *mut ::core::ffi::c_ulonglong;
 pub type UINT64 = ::core::ffi::c_ulonglong;
 pub type KAFFINITY = ULONG_PTR;
 #[repr(C)]
@@ -5131,6 +5150,15 @@ pub struct _LIST_ENTRY {
     pub Blink: *mut _LIST_ENTRY,
 }
 pub type LIST_ENTRY = _LIST_ENTRY;
+pub type EXCEPTION_ROUTINE = ::core::option::Option<
+    unsafe extern "C" fn(
+        ExceptionRecord: *mut _EXCEPTION_RECORD,
+        EstablisherFrame: PVOID,
+        ContextRecord: *mut _CONTEXT,
+        DispatcherContext: PVOID,
+    ) -> EXCEPTION_DISPOSITION,
+>;
+pub type PEXCEPTION_ROUTINE = EXCEPTION_ROUTINE;
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Debug, Copy, Clone)]
@@ -5260,6 +5288,67 @@ pub struct _CONTEXT__bindgen_ty_1__bindgen_ty_1 {
     pub Xmm15: M128A,
 }
 pub type CONTEXT = _CONTEXT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RUNTIME_FUNCTION {
+    pub BeginAddress: DWORD,
+    pub EndAddress: DWORD,
+    pub UnwindData: DWORD,
+}
+pub type PRUNTIME_FUNCTION = *mut _RUNTIME_FUNCTION;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _UNWIND_HISTORY_TABLE_ENTRY {
+    pub ImageBase: DWORD64,
+    pub FunctionEntry: PRUNTIME_FUNCTION,
+}
+pub type UNWIND_HISTORY_TABLE_ENTRY = _UNWIND_HISTORY_TABLE_ENTRY;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _UNWIND_HISTORY_TABLE {
+    pub Count: DWORD,
+    pub LocalHint: BYTE,
+    pub GlobalHint: BYTE,
+    pub Search: BYTE,
+    pub Once: BYTE,
+    pub LowAddress: ULONG64,
+    pub HighAddress: ULONG64,
+    pub Entry: [UNWIND_HISTORY_TABLE_ENTRY; 12usize],
+}
+pub type PUNWIND_HISTORY_TABLE = *mut _UNWIND_HISTORY_TABLE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DISPATCHER_CONTEXT {
+    pub ControlPc: ULONG64,
+    pub ImageBase: ULONG64,
+    pub FunctionEntry: PRUNTIME_FUNCTION,
+    pub EstablisherFrame: ULONG64,
+    pub TargetIp: ULONG64,
+    pub ContextRecord: *mut _CONTEXT,
+    pub LanguageHandler: PEXCEPTION_ROUTINE,
+    pub HandlerData: PVOID,
+    pub HistoryTable: PUNWIND_HISTORY_TABLE,
+    pub ScopeIndex: ULONG,
+    pub Fill0: ULONG,
+}
+pub type DISPATCHER_CONTEXT = _DISPATCHER_CONTEXT;
+unsafe extern "C" {
+    pub fn RtlLookupFunctionEntry(
+        ControlPc: DWORD64,
+        ImageBase: PDWORD64,
+        HistoryTable: PUNWIND_HISTORY_TABLE,
+    ) -> PRUNTIME_FUNCTION;
+}
+unsafe extern "C" {
+    pub fn RtlUnwindEx(
+        TargetFrame: PVOID,
+        TargetIp: PVOID,
+        ExceptionRecord: *mut _EXCEPTION_RECORD,
+        ReturnValue: PVOID,
+        ContextRecord: *mut _CONTEXT,
+        HistoryTable: PUNWIND_HISTORY_TABLE,
+    );
+}
 pub type PCONTEXT = *mut CONTEXT;
 #[repr(C)]
 #[repr(align(16))]
@@ -5393,6 +5482,7 @@ pub struct _EXCEPTION_POINTERS {
     pub ContextRecord: PCONTEXT,
 }
 pub type EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
+pub type PEXCEPTION_POINTERS = *mut _EXCEPTION_POINTERS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SECURITY_ATTRIBUTES {
@@ -5687,6 +5777,7 @@ pub type LPPROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
 unsafe extern "C" {
     pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
 }
+pub type LPEXCEPTION_POINTERS = PEXCEPTION_POINTERS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _WIN32_FILE_ATTRIBUTE_DATA {
@@ -5711,6 +5802,9 @@ pub struct _TIME_ZONE_INFORMATION {
 }
 pub type TIME_ZONE_INFORMATION = _TIME_ZONE_INFORMATION;
 pub type LPTIME_ZONE_INFORMATION = *mut _TIME_ZONE_INFORMATION;
+pub type PTOP_LEVEL_EXCEPTION_FILTER =
+    ::core::option::Option<unsafe extern "C" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
+pub type LPTOP_LEVEL_EXCEPTION_FILTER = PTOP_LEVEL_EXCEPTION_FILTER;
 unsafe extern "C" {
     pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
@@ -6284,6 +6378,13 @@ pub struct _frame_info {
 pub type frame_info = _frame_info;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct cxx_frame_info {
+    pub frame_info: frame_info,
+    pub rec: *mut EXCEPTION_RECORD,
+    pub context: *mut CONTEXT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct __thread_data {
     pub tid: DWORD,
     pub handle: HANDLE,
@@ -6479,6 +6580,7 @@ pub struct _COORD {
     pub Y: SHORT,
 }
 pub type COORD = _COORD;
+pub type PHANDLER_ROUTINE = ::core::option::Option<unsafe extern "C" fn(CtrlType: DWORD) -> BOOL>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _KEY_EVENT_RECORD {
@@ -6578,6 +6680,9 @@ unsafe extern "C" {
         nLength: DWORD,
         lpNumberOfEventsRead: LPDWORD,
     ) -> BOOL;
+}
+unsafe extern "C" {
+    pub fn SetConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE, Add: BOOL) -> BOOL;
 }
 unsafe extern "C" {
     pub fn SetConsoleMode(hConsoleHandle: HANDLE, dwMode: DWORD) -> BOOL;
@@ -8043,8 +8148,508 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
+pub type __sighandler_t = ::core::option::Option<unsafe extern "C" fn(arg1: ::core::ffi::c_int)>;
 unsafe extern "C" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
+}
+pub const _FPIEEE_PRECISION__FpPrecisionFull: _FPIEEE_PRECISION = 0;
+pub const _FPIEEE_PRECISION__FpPrecision53: _FPIEEE_PRECISION = 1;
+pub const _FPIEEE_PRECISION__FpPrecision24: _FPIEEE_PRECISION = 2;
+pub type _FPIEEE_PRECISION = ::core::ffi::c_uint;
+pub type _FP32 = f32;
+pub type _FP64 = f64;
+pub type _I16 = ::core::ffi::c_short;
+pub type _I32 = ::core::ffi::c_int;
+pub type _U16 = ::core::ffi::c_ushort;
+pub type _U32 = ::core::ffi::c_uint;
+pub type _Q64 = ::core::ffi::c_longlong;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FP80 {
+    pub W: [::core::ffi::c_ushort; 5usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FP128 {
+    pub W: [__msvcrt_ulong; 4usize],
+}
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct _I64 {
+    pub W: [__msvcrt_ulong; 2usize],
+}
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct _U64 {
+    pub W: [__msvcrt_ulong; 2usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _BCD80 {
+    pub W: [::core::ffi::c_ushort; 5usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FPQ64 {
+    pub W: [_Q64; 2usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub struct _FPIEEE_VALUE {
+    pub Value: _FPIEEE_VALUE__bindgen_ty_1,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_padding_0: [u8; 15usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub union _FPIEEE_VALUE__bindgen_ty_1 {
+    pub Fp32Value: _FP32,
+    pub Fp64Value: _FP64,
+    pub Fp80Value: _FP80,
+    pub Fp128Value: _FP128,
+    pub I16Value: _I16,
+    pub I32Value: _I32,
+    pub I64Value: _I64,
+    pub U16Value: _U16,
+    pub U32Value: _U32,
+    pub U64Value: _U64,
+    pub Bcd80Value: _BCD80,
+    pub StringValue: *mut ::core::ffi::c_char,
+    pub CompareValue: ::core::ffi::c_int,
+    pub Q64Value: _Q64,
+    pub Fpq64Value: _FPQ64,
+}
+impl _FPIEEE_VALUE {
+    #[inline]
+    pub fn OperandValid(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_OperandValid(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn OperandValid_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_OperandValid_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Format(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 4u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Format(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Format_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                4u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Format_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        OperandValid: ::core::ffi::c_uint,
+        Format: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let OperandValid: u32 = unsafe { ::core::mem::transmute(OperandValid) };
+            OperandValid as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 4u8, {
+            let Format: u32 = unsafe { ::core::mem::transmute(Format) };
+            Format as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[repr(align(4))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FPIEEE_EXCEPTION_FLAGS {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+impl _FPIEEE_EXCEPTION_FLAGS {
+    #[inline]
+    pub fn Inexact(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Inexact(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Inexact_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Inexact_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Underflow(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Underflow(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Underflow_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Underflow_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Overflow(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Overflow(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Overflow_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Overflow_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn ZeroDivide(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(3usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_ZeroDivide(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(3usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn ZeroDivide_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                3usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_ZeroDivide_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                3usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn InvalidOperation(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_InvalidOperation(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn InvalidOperation_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_InvalidOperation_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        Inexact: ::core::ffi::c_uint,
+        Underflow: ::core::ffi::c_uint,
+        Overflow: ::core::ffi::c_uint,
+        ZeroDivide: ::core::ffi::c_uint,
+        InvalidOperation: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let Inexact: u32 = unsafe { ::core::mem::transmute(Inexact) };
+            Inexact as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let Underflow: u32 = unsafe { ::core::mem::transmute(Underflow) };
+            Underflow as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 1u8, {
+            let Overflow: u32 = unsafe { ::core::mem::transmute(Overflow) };
+            Overflow as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 1u8, {
+            let ZeroDivide: u32 = unsafe { ::core::mem::transmute(ZeroDivide) };
+            ZeroDivide as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 1u8, {
+            let InvalidOperation: u32 = unsafe { ::core::mem::transmute(InvalidOperation) };
+            InvalidOperation as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub struct _FPIEEE_RECORD {
+    pub _bitfield_align_1: [u16; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 3usize]>,
+    pub Cause: _FPIEEE_EXCEPTION_FLAGS,
+    pub Enable: _FPIEEE_EXCEPTION_FLAGS,
+    pub Status: _FPIEEE_EXCEPTION_FLAGS,
+    pub Operand1: _FPIEEE_VALUE,
+    pub Operand2: _FPIEEE_VALUE,
+    pub Result: _FPIEEE_VALUE,
+}
+impl _FPIEEE_RECORD {
+    #[inline]
+    pub fn RoundingMode(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u32) }
+    }
+    #[inline]
+    pub fn set_RoundingMode(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 2u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn RoundingMode_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                2u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_RoundingMode_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                2u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Precision(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 3u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Precision(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Precision_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                3u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Precision_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Operation(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(5usize, 12u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Operation(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(5usize, 12u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Operation_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                5usize,
+                12u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Operation_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                5usize,
+                12u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        RoundingMode: ::core::ffi::c_uint,
+        Precision: ::core::ffi::c_uint,
+        Operation: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 3usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 3usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 2u8, {
+            let RoundingMode: u32 = unsafe { ::core::mem::transmute(RoundingMode) };
+            RoundingMode as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 3u8, {
+            let Precision: u32 = unsafe { ::core::mem::transmute(Precision) };
+            Precision as u64
+        });
+        __bindgen_bitfield_unit.set(5usize, 12u8, {
+            let Operation: u32 = unsafe { ::core::mem::transmute(Operation) };
+            Operation as u64
+        });
+        __bindgen_bitfield_unit
+    }
 }
 pub type vtable_ptr = ::core::option::Option<unsafe extern "C" fn()>;
 #[repr(C)]
@@ -8123,6 +8728,132 @@ pub struct cxx_exception_type {
     pub destructor: ::core::ffi::c_uint,
     pub custom_handler: ::core::ffi::c_uint,
     pub type_info_table: ::core::ffi::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ipmap_info {
+    pub ip: UINT,
+    pub state: ::core::ffi::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct catchblock_info {
+    pub flags: UINT,
+    pub type_info: UINT,
+    pub offset: ::core::ffi::c_int,
+    pub handler: UINT,
+    pub frame: UINT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tryblock_info {
+    pub start_level: ::core::ffi::c_int,
+    pub end_level: ::core::ffi::c_int,
+    pub catch_level: ::core::ffi::c_int,
+    pub catchblock_count: UINT,
+    pub catchblock: UINT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct unwind_info {
+    pub prev: ::core::ffi::c_int,
+    pub handler: UINT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cxx_function_descr {
+    pub _bitfield_align_1: [u32; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,
+    pub unwind_count: UINT,
+    pub unwind_table: UINT,
+    pub tryblock_count: UINT,
+    pub tryblock: UINT,
+    pub ipmap_count: UINT,
+    pub ipmap: UINT,
+    pub unwind_help: ::core::ffi::c_int,
+    pub expect_list: UINT,
+    pub flags: UINT,
+}
+impl cxx_function_descr {
+    #[inline]
+    pub fn magic(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 29u8) as u32) }
+    }
+    #[inline]
+    pub fn set_magic(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 29u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn magic_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                29u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_magic_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                29u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn bbt_flags(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(29usize, 3u8) as u32) }
+    }
+    #[inline]
+    pub fn set_bbt_flags(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(29usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn bbt_flags_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                29usize,
+                3u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_bbt_flags_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                29usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(magic: UINT, bbt_flags: UINT) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 29u8, {
+            let magic: u32 = unsafe { ::core::mem::transmute(magic) };
+            magic as u64
+        });
+        __bindgen_bitfield_unit.set(29usize, 3u8, {
+            let bbt_flags: u32 = unsafe { ::core::mem::transmute(bbt_flags) };
+            bbt_flags as u64
+        });
+        __bindgen_bitfield_unit
+    }
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
