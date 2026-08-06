@@ -230,6 +230,14 @@ change stops the caller being dead-stripped.
 - **`SharedUserData`** is a C macro for a fixed VA, not a symbol (amd64 `KeQuerySystemTime`
   inline references it). Provide a crate-local `#[no_mangle] pub static mut` at
   `0xFFFFF78000000000`.
+- **A GUID-SPELLED name can be a function-like macro.** shell32's `IID_PPV_ARG(T, &p)` and
+  `IID_NULL_PPV_ARG(T, &p)` match `IID_*`, so the cpp-com extern harvest emitted
+  `static IID_NULL_PPV_ARG: GUID;` — a symbol in no library. It was excluded by a
+  hand-maintained denylist naming `IID_PPV_ARG` alone, so the first new member of the family
+  shipped the phantom. Decide it POSITIONALLY instead: a GUID constant is referenced, never
+  called. Measured over `dll/ base/ sdk/include/ modules/`, every `(IID|SID|CLSID)_*` name
+  followed by `(` outside a literal is a function-like macro; the only real IIDs that look
+  called sit inside wine-test format strings, which `mask_code` blanks first.
 - **Before writing `extern { fn Foo }`, confirm `Foo` is a real out-of-line symbol** (`nm`, or
   grep for a definition), not a header macro.
 
@@ -870,6 +878,14 @@ size-verified. Real damage:
   first `-smp 2` boot.
 - **A per-file mini-mirror placing a field at offset 0** clobbers the real struct;
   `type X = c_void` makes `size_of::<X>() == 0` → a zero-byte allocation.
+- **A GENERATED fallback mirror shadows the real port silently.** The cpp-com support block
+  emits local `CStringW` / `CComHeapPtr` when it sees those names, and a local `pub struct`
+  beats a prelude glob with no warning at either site. In shell32's CDefaultContextMenu that
+  hid `crate::atl`'s ports, whose methods the translated bodies call — but the layout is the
+  real damage: the fallback `CStringW` is a 3-word `{buffer,len,capacity}` where ATL's is ONE
+  pointer, and `StaticShellEntry` is `#[repr(C)]` with a `CStringW Verb` field, so the shadow
+  silently re-laid-out a struct that has to match C++. Delete the fallbacks after every
+  re-assembly; the missing-method errors are the *symptom*, not the bug.
 - **Pin every mirror you must keep** with an arch-gated `const _: () = assert!(size_of::<T>()
   == 0xNNNN);` matching the C's `C_ASSERT` (basesrv `BASE_STATIC_SERVER_DATA` == 0x1AC8 on
   i386). Never feed a helper a pointer to a private mirror — pass
@@ -2405,6 +2421,34 @@ That converted one of the two immediately.
 Replay the stored `__rejected__` reply through the audit by hand; if it passes now, the harness
 moved and the body was never wrong. `translate` does this automatically — a reject is paid
 artifact, and it is re-audited before that function is bought again.
+
+### A COM-class TU is only HALF translated by `--cpp-com`, and nothing says so
+
+**Symptom.** `rustconv translate --cpp-com --class X` reports every worker accepted and
+assembles a file, but the TU's free functions are simply absent from it. On shell32's
+`CDefaultContextMenu.cpp` that was 14 of 57 top-level definitions — the whole `DCMA_*` menu
+array API, both `*_RustBridge` entry points, `SHCreateDefaultContextMenu`, the file-scope
+`g_StaticInvokeCmdMap` verb table. Nothing in the run's output is red; the gap only surfaces
+as a pile of `cannot find function` errors once the module is wired, and it is easy to
+misread those as missing HEADER inlines and start hand-writing ports of functions the TU
+already contains.
+
+**Cause.** `--cpp-com` translates the class; the rest of the TU is a separate
+`--free-functions` run. That is by design (it is the shape `CNetFolder` used), but the class
+run does not enumerate what it left behind. The one hint is easy to miss, in the integrate
+line: `[c-source] embedded only this slice's C; elided N line(s) belonging to functions
+another module owns`.
+
+**Fix.** Diff the C++'s top-level definitions against the assembled Rust before wiring
+anything, then do the second run. **It needs `-o`:** both runs derive their output path from
+the same TU, so the second would overwrite the first — rustconv refuses rather than discard,
+which is the fail-loud behaviour working, and names the flag. Give the free half its own
+`<TU>_tu.rs`, and expect an overlap of a few helpers the class run already pulled in for its
+own callers (they are `_body`-suffixed there, so they do not clash).
+
+**Corollary — hand-written code does not survive a re-run.** Each half is overwritten
+wholesale. Anything hand-written that both halves need (header-inline ports, constants the
+island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
 ### A convention macro that also carries the RETURN TYPE deletes the function
 
@@ -4678,6 +4722,23 @@ automated span-keyed rewrite: when the reported span is inside one, the finding 
 expansion, and the tool has no way from that span to reach the code that has to change. Until
 `crate-repair` refuses those spans, diff the prelude after every run — the edits are silent
 and each one compiles.
+
+Three more rules for any hand-rolled span applier, all of them measured on shell32's
+CDefaultContextMenu grind, and all of them silent (they produce a file that no longer parses,
+so the NEXT `cargo check` reports two syntax errors and hides the other two hundred):
+
+- **Byte offsets go stale the moment a pass writes.** Running two different appliers against
+  one `cargo check --message-format=json` corrupts the second's edits. Re-run the check
+  between every pass.
+- **Reject OVERLAPPING spans.** Applying end-to-start is necessary but not sufficient: two
+  diagnostics can cover nested ranges, and the inner edit then lands inside the outer's
+  replacement text.
+- **Only rustc's own `MachineApplicable` suggestions are safe to bulk-apply.** A
+  home-grown "wrap the span in `(expr) as T`" rule looks equivalent and is not: rustc's
+  primary span for a mismatched *call* covers the callee, so wrapping produced
+  `(SHUnicodeToAnsi) as i32((*mut pEntry).Verb, …)`. Convert rustc's
+  `.try_into().unwrap()` suggestions to `as` casts (C truncates silently; the suggestion
+  inserts a panic), but take the SPAN from a suggestion rustc actually authored.
 
 ### A generator can only flag what its TYPE SOURCE can see `[§9.115]`
 Three near-identical crashes: an unmodified stock i386 applet added to the suite kept dying,
