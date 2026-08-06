@@ -67,7 +67,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from .dead_regions import KNOWN_DEFINED, cond_truth  # noqa: F401  (KNOWN_DEFINED re-exported)
+from .dead_regions import (  # noqa: F401  (KNOWN_DEFINED re-exported)
+    KNOWN_DEFINED,
+    cond_truth,
+    eval_int_guard,
+    pinned_int_macros,
+)
 
 # ---------------------------------------------------------------------------
 # Errors + findings
@@ -998,79 +1003,20 @@ _GUARD_OPEN_RE = re.compile(r"^\s*#\s*if(n?)def\s+([A-Za-z_]\w*)\s*$", re.M)
 
 # `#if <expr>` — the whole expression, for the integer-gate evaluator below.
 _IF_EXPR_RE = re.compile(r"^\s*#\s*if\s+(.+?)\s*$")
-# One `MACRO <op> <int>` comparison. The literal may be decimal or hex, with an
-# optional L/U suffix, because a version macro is routinely spelled `0x0601` or `100L`.
-_INT_CMP_RE = re.compile(
-    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*"
-    r"(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*\)*$"
-)
 
 
 def _pinned_int_macros(module) -> dict[str, int]:
-    """Macros this module pins to an integer literal via `-DNAME=<int>`.
+    """`pinned_int_macros` over a parsed module's own `-D` list.
 
-    A `target_compile_definitions(msvcrt_static PRIVATE _MSVCR_VER=0)` is every bit as
-    decidable as wine's `/* #undef HAVE_LDAP */` — it is on the compile command for every
-    TU in the target — but nothing was reading the VALUE, only the name.
+    The evaluator itself lives in `dead_regions` because the SAME question -- is this
+    `#if` decidably false for this target? -- decides two things: whether a switch label
+    is real (here) and whether a function body is on the bill (`never_compiled_lines`).
+    Two copies drifted once already.
     """
-    pinned: dict[str, int] = {}
-    for d in module.definitions:
-        if not d.startswith("-D") or "=" not in d:
-            continue
-        name, _, value = d[2:].partition("=")
-        value = value.strip().rstrip("uUlL")
-        try:
-            pinned[name.strip()] = int(value, 0)
-        except ValueError:
-            continue
-    return pinned
+    return pinned_int_macros(module.definitions)
 
 
-def _eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
-    """Evaluate a `#if` over pinned integer macros. True/False, or None when undecidable.
-
-    Deliberately narrow: a chain of `&&` OR a chain of `||`, never a mix, because getting
-    C's precedence subtly wrong here would mark LIVE code dead and send someone to delete
-    a body the compiler is really building. A term is either `MACRO <op> <int>` against a
-    pinned macro or a `defined(X)` we cannot settle; anything else is undecidable.
-
-    Short-circuit still resolves the mixed-certainty cases that matter: one decidably-false
-    conjunct kills the block however unknown its neighbours are. That is what settles
-    handler4.c's `defined(__x86_64__) && _MSVCR_VER>=140` on all three arches -- we never
-    learn whether __x86_64__ is defined, and we do not need to.
-    """
-    if "&&" in expr and "||" in expr:
-        return None
-    joiner = "&&" if "&&" in expr else ("||" if "||" in expr else None)
-    terms = expr.split(joiner) if joiner else [expr]
-
-    verdicts: list[bool | None] = []
-    for term in terms:
-        term = term.strip()
-        m = _INT_CMP_RE.match(term)
-        if m is not None and m.group(1) in pinned:
-            lhs, op, rhs = pinned[m.group(1)], m.group(2), int(m.group(3), 0)
-            verdicts.append(
-                {
-                    "==": lhs == rhs,
-                    "!=": lhs != rhs,
-                    "<=": lhs <= rhs,
-                    ">=": lhs >= rhs,
-                    "<": lhs < rhs,
-                    ">": lhs > rhs,
-                }[op]
-            )
-            continue
-        # A `defined(X)` term we cannot settle, or anything else: unknown.
-        verdicts.append(None)
-
-    if joiner == "&&" or joiner is None:
-        if any(v is False for v in verdicts):
-            return False
-        return True if all(v is True for v in verdicts) else None
-    if any(v is True for v in verdicts):
-        return True
-    return False if all(v is False for v in verdicts) else None
+_eval_int_guard = eval_int_guard
 
 
 def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:

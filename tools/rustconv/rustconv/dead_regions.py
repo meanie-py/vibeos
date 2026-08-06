@@ -95,13 +95,90 @@ KNOWN_DEFINED = frozenset({"__REACTOS__"})
 _COND_OPEN_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if)\b(.*)$")
 _COND_ANY_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if|elif|else|endif)\b(.*)$")
 
+# One `MACRO <op> <int>` comparison. The literal may be decimal or hex, with an
+# optional L/U suffix, because a version macro is routinely spelled `0x0601` or `100L`.
+_INT_CMP_RE = re.compile(
+    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*\)*$"
+)
 
-def cond_truth(line: str) -> bool | None:
+
+def pinned_int_macros(definitions: object) -> dict[str, int]:
+    """Macros a module pins to an integer literal via `-DNAME=<int>`.
+
+    `definitions` is the module's raw `-D` list. A `-D_MSVCR_VER=0` is every bit as
+    decidable as a `#undef` -- it is on the compile command for every TU in the target --
+    but for a long time nothing read the VALUE, only the name.
+    """
+    pinned: dict[str, int] = {}
+    for d in definitions:  # type: ignore[attr-defined]
+        if not d.startswith("-D") or "=" not in d:
+            continue
+        name, _, value = d[2:].partition("=")
+        value = value.strip().rstrip("uUlL")
+        try:
+            pinned[name.strip()] = int(value, 0)
+        except ValueError:
+            continue
+    return pinned
+
+
+def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
+    """Evaluate a `#if` over pinned integer macros. True/False, or None when undecidable.
+
+    Deliberately narrow: a chain of `&&` OR a chain of `||`, never a mix, because getting
+    C's precedence subtly wrong here would mark LIVE code dead and send someone to delete
+    a body the compiler is really building. A term is either `MACRO <op> <int>` against a
+    pinned macro or a `defined(X)` we cannot settle; anything else is undecidable.
+
+    Short-circuit still resolves the mixed-certainty cases that matter: one decidably-false
+    conjunct kills the block however unknown its neighbours are. That is what settles
+    handler4.c's `defined(__x86_64__) && _MSVCR_VER>=140` on all three arches -- we never
+    learn whether __x86_64__ is defined, and we do not need to.
+    """
+    if "&&" in expr and "||" in expr:
+        return None
+    joiner = "&&" if "&&" in expr else ("||" if "||" in expr else None)
+    terms = expr.split(joiner) if joiner else [expr]
+
+    verdicts: list[bool | None] = []
+    for term in terms:
+        term = term.strip()
+        m = _INT_CMP_RE.match(term)
+        if m is not None and m.group(1) in pinned:
+            lhs, op, rhs = pinned[m.group(1)], m.group(2), int(m.group(3), 0)
+            verdicts.append(
+                {
+                    "==": lhs == rhs,
+                    "!=": lhs != rhs,
+                    "<=": lhs <= rhs,
+                    ">=": lhs >= rhs,
+                    "<": lhs < rhs,
+                    ">": lhs > rhs,
+                }[op]
+            )
+            continue
+        # A `defined(X)` term we cannot settle, or anything else: unknown.
+        verdicts.append(None)
+
+    if joiner == "&&" or joiner is None:
+        if any(v is False for v in verdicts):
+            return False
+        return True if all(v is True for v in verdicts) else None
+    if any(v is True for v in verdicts):
+        return True
+    return False if all(v is False for v in verdicts) else None
+
+
+def cond_truth(line: str, pinned: dict[str, int] | None = None) -> bool | None:
     """``True``/``False`` when a preprocessor condition is FIXED for this tree, else ``None``.
 
     Deliberately narrow. Everything it cannot settle is ``None``, and every caller treats
     ``None`` as live -- over-reporting live code is the safe direction, mistaking live code
     for dead is not.
+
+    `pinned` carries the module's `-DNAME=<int>` (see :func:`pinned_int_macros`). Without it
+    only the tree-wide :data:`KNOWN_DEFINED` names decide anything, which is the correct
+    default for a caller that does not know which CMake target owns the file.
     """
     m = _COND_OPEN_RE.match(line)
     if m is None:
@@ -117,10 +194,12 @@ def cond_truth(line: str) -> bool | None:
     m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
     if m2 and m2.group(2) in KNOWN_DEFINED:
         return m2.group(1) is None
+    if pinned:
+        return eval_int_guard(rest, pinned)
     return None
 
 
-def never_compiled_lines(text: str) -> set[int]:
+def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set[int]:
     """The 1-based line numbers this tree's compiler never sees.
 
     A function whose definition starts on one of these lines does not exist in any object
@@ -128,6 +207,11 @@ def never_compiled_lines(text: str) -> set[int]:
     per function is what that costs. `except_i386.c` alone carries seven: `_global_unwind2`,
     `_except_handler2/3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`, all
     inside `#ifndef __REACTOS__`, all confirmed absent from the object file.
+
+    `pinned` extends that to the module's own `-DNAME=<int>`, and in msvcrt that is the
+    bigger half: ~200 `#if _MSVCR_VER >= 80/100/110/120/140` directives across the tree are
+    all decidably FALSE at the `-D_MSVCR_VER=0` the CMakeLists pins, and every body inside
+    one has been on the bill.
 
     Only FIXED conditions (:func:`cond_truth`) mark anything dead. An `#if` this module
     cannot settle leaves its whole subtree live, and a dead outer arm keeps its inner
@@ -146,7 +230,7 @@ def never_compiled_lines(text: str) -> set[int]:
             continue
         directive = m.group(1)
         if directive in ("if", "ifdef", "ifndef"):
-            truth = cond_truth(line)
+            truth = cond_truth(line, pinned)
             stack.append((truth is False, truth is not None, truth is True))
         elif directive in ("else", "elif") and stack:
             _, known, taken = stack[-1]
