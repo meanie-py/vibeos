@@ -290,3 +290,10 @@ pub mod except_arm64;
 pub mod lock;
 #[cfg(feature = "threading")]
 pub mod thread;
+
+// main.c — `DllMain`, msvcrt.dll's ENTRY POINT, and the `msvcrt_tls_index` slot every
+// `msvcrt_get_thread_data` reaches through. Its own feature because a Linux host harness has
+// no DLL_PROCESS_ATTACH to be called on, and because the feature has to pull in every
+// subsystem DllMain initialises — see Cargo.toml.
+#[cfg(feature = "dllmain")]
+pub mod main;

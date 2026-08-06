@@ -8103,6 +8103,9 @@ pub union _IO_STATUS_BLOCK__bindgen_ty_1 {
 pub type IO_STATUS_BLOCK = _IO_STATUS_BLOCK;
 pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
 unsafe extern "C" {
+    pub fn LdrAddRefDll(arg1: ULONG, arg2: HMODULE) -> NTSTATUS;
+}
+unsafe extern "C" {
     pub fn NtQueryInformationFile(
         arg1: HANDLE,
         arg2: PIO_STATUS_BLOCK,

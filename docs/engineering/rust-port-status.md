@@ -890,8 +890,8 @@ still-C when it is 3).
 | `ucrt_tls_sup.c` | 4 | 3 — but see below: NOT msvcrt.dll's surface |
 | `wcs.c` | 176 | **0** — the last 3 flipped in wave 32 |
 | `string.c` | 106 | 3 (the `fpnum_*` bignum internals) — defined but UNREFERENCED, see below |
-| `main.c` | 1 | 1 (`DllMain`) |
-| `sincos.c` | 2 | 1 (`sincosf`) |
+| `main.c` | 1 | **0** — flipped in wave 33 |
+| `sincos.c` | 2 | 1 (`sincosf`) — implib-only, see below |
 | `scanf.c` | 44 | **0** — fully flipped |
 
 Three corrections to that table, all from re-measuring it against the linker on 2026-08-05:
@@ -925,6 +925,39 @@ Each compiles to a **396-byte object with zero defined symbols** on all three ar
 "still to translate" column. `profile_derive`'s `DEAD_TU` finding had been saying so
 pre-payment; it was read straight past, because in a module whose constants are named
 `ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
+
+**Wave 33 — main.c's `DllMain`, $0. msvcrt.dll's exported surface is Rust.** The last C
+function in the DLL, and the one every prior wave routed around: `set_module_type(msvcrt
+win32dll ENTRYPOINT DllMain 12)` means this is the *entry point*, and it is what decides the
+order in which the heap, the locks, the locale, the fd table, the signal table, argv and the
+clock come up. Every one of those was already Rust before this file existed — what was left in
+C was the sequencing, and the TLS slot index they all reach through.
+
+`msvcrt_tls_index` had to move in the SAME commit, and prelude.rs's old comment is why: it
+warned that duplicating the definition on the Rust side would give the reader *"a second,
+always-zero index"*. That was exactly right while the C's `DllMain` was the only WRITER — a
+Rust definition would have been a slot nobody filled in. It stops being true the moment the
+writer is Rust too, which is the whole reason these two things are one change.
+
+Two checks that cost nothing and are worth repeating on any entry-point flip:
+
+* **`nm` the decorated name before building anything.** `extern "system"` + `#[no_mangle]`
+  through `rustc --emit=obj --target i686-pc-windows-gnu` gives `_DllMain@12` — the same
+  stdcall decoration the C emits, and the same `12` the CMake `set_module_type` line names.
+  `msvcrt_tls_index` comes out `B` (BSS) on both sides too. A mismatch there is a linker error
+  at best and a silently-unused entry point at worst, and one `rustc --emit=obj` settles it
+  without a build.
+* **The feature has to name what it calls.** `dllmain` lists `heap`, `stdio`, `locale`,
+  `data`, `cpp`, `conio-exit` and `threading` rather than assuming the default set. A
+  `--no-default-features --features dllmain` build would otherwise compile — the C copies
+  satisfy the names — and boot msvcrt with half its init sequence pointed at implementations
+  that are no longer in the link.
+
+Absent on purpose, all `_MSVCR_VER = 0`: the three `handler4` calls, the three `concurrency`
+ones, and `_set_printf_count_output(0)`. The `#if _MSVCR_VER == 0` arm — `LdrAddRefDll`
+pinning msvcrt so it can never be unloaded and re-initialised over a live fd table — is the
+one that IS live, and is the branch a translation working from the wine original rather than
+this tree's flags would drop.
 
 **Wave 32 — wcs.c's last three, $0.** `_wcsdup`, `towctrans` and `wcstombs`, hand-written into
 `wcs_rest.rs`. Wave 16 left them because each delegates to something that was still C at the
