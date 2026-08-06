@@ -3,7 +3,7 @@
  * Stable Rust cannot DEFINE a C-variadic function (`va_start` is only legal inside one —
  * c_variadic, rust-lang/rust#44930). desk reaches three of strsafe.h's variadic entry points,
  * so each one lives here: it does the `va_start` Rust can't, then tail-calls the fixed-arity
- * `*_v` twin in desk-rust (src/desk/strsafe.rs), which holds the real ported body. This is the
+ * `*_v` twin in the shared strsafe-rust crate, which holds the real ported body. This is the
  * sanctioned varargs-rust trampoline pattern (AGENTS.md "c_variadic",
  * sdk/lib/rust/varargs-rust/rust_varargs_shim.c.template), NOT a translation reverted to C.
  *
@@ -12,10 +12,12 @@
  * desk's .c took the last one with it. The non-variadic ones are ported into strsafe.rs; only
  * the `...` entry points need a C hop.
  *
- * WHY WE PASS THE va_list VALUE (not &ap): each `_v` twin forwards the va_list straight on to
- * _vsnwprintf, whose last parameter IS a va_list. On all three targets (i686/x86_64/aarch64
- * -pc-windows-gnu) `va_list` is `char*` — a single pointer — so handing it through a `void*`
- * is exact.
+ * WHY WE PASS `&ap` AND NOT `ap`: handing Rust a POINTER to the va_list avoids assuming a
+ * va_list is itself a single pointer. It happens to be `char*` on all three of our Windows
+ * targets, but it is an array-of-struct on SysV x86-64, and the by-pointer form is correct on
+ * both — which is also what lets the mechanism be exercised natively on the host. This is
+ * varargs-rust's documented convention (sdk/lib/rust/varargs-rust/rust_varargs_shim.c.template),
+ * and the shared strsafe-rust crate that now holds these bodies follows it.
  *
  * Deliberately NOT #include <strsafe.h>: the header's own `static __inline` definitions have
  * internal linkage and would be a redefinition of the external ones this file provides.
@@ -30,7 +32,7 @@
 #include <winbase.h>
 #include <windows.h>
 
-extern HRESULT StringCchPrintfW_v(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, void *ap);
+extern HRESULT StringCchPrintfW_v(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, void *app);
 
 HRESULT StringCchPrintfW(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, ...)
 {
@@ -38,12 +40,12 @@ HRESULT StringCchPrintfW(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat,
     va_list ap;
 
     va_start(ap, pszFormat);
-    hr = StringCchPrintfW_v(pszDest, cchDest, pszFormat, (void *)ap);
+    hr = StringCchPrintfW_v(pszDest, cchDest, pszFormat, (void *)&ap);
     va_end(ap);
     return hr;
 }
 
-extern HRESULT StringCbPrintfW_v(WCHAR *pszDest, size_t cbDest, const WCHAR *pszFormat, void *ap);
+extern HRESULT StringCbPrintfW_v(WCHAR *pszDest, size_t cbDest, const WCHAR *pszFormat, void *app);
 
 HRESULT StringCbPrintfW(WCHAR *pszDest, size_t cbDest, const WCHAR *pszFormat, ...)
 {
@@ -51,7 +53,7 @@ HRESULT StringCbPrintfW(WCHAR *pszDest, size_t cbDest, const WCHAR *pszFormat, .
     va_list ap;
 
     va_start(ap, pszFormat);
-    hr = StringCbPrintfW_v(pszDest, cbDest, pszFormat, (void *)ap);
+    hr = StringCbPrintfW_v(pszDest, cbDest, pszFormat, (void *)&ap);
     va_end(ap);
     return hr;
 }
@@ -62,7 +64,7 @@ extern HRESULT StringCbPrintfExW_v(WCHAR *pszDest,
                                    size_t *pcbRemaining,
                                    DWORD dwFlags,
                                    const WCHAR *pszFormat,
-                                   void *ap);
+                                   void *app);
 
 HRESULT StringCbPrintfExW(WCHAR *pszDest,
                           size_t cbDest,
@@ -76,7 +78,7 @@ HRESULT StringCbPrintfExW(WCHAR *pszDest,
     va_list ap;
 
     va_start(ap, pszFormat);
-    hr = StringCbPrintfExW_v(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags, pszFormat, (void *)ap);
+    hr = StringCbPrintfExW_v(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags, pszFormat, (void *)&ap);
     va_end(ap);
     return hr;
 }

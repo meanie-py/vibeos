@@ -485,6 +485,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
 ]
 
 [[package]]
@@ -1292,6 +1293,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
  "winlogon-sys",
 ]
 
@@ -2241,6 +2243,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "strsafe-rust"
+version = "0.1.0"
+
+[[package]]
 name = "svcctl-stub"
 version = "0.1.0"
 dependencies = [
@@ -2282,6 +2288,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
 ]
 
 [[package]]
