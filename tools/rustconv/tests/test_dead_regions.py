@@ -8,6 +8,7 @@ retry for every one of them.
 import pytest
 from rustconv.call_seal import CallSealError, seal_calls, unseal_calls
 from rustconv.dead_regions import (
+    never_compiled_lines,
     dead_region_spans,
     dummy_pseh_except_spans,
     preprocessor_conditional_spans,
@@ -181,3 +182,76 @@ def test_no_dead_regions_means_every_call_stays_required():
     assert [call.dead for call in sealed.calls] == [False, False]
     with pytest.raises(CallSealError):
         unseal_calls("pub unsafe fn f() -> i32 { 0 }", sealed)
+
+
+# ---------------------------------------------------------------------------
+# never_compiled_lines: keeping a body the build never sees OUT OF THE BILL.
+#
+# `translate` charges one paid call per function, so a function inside
+# `#ifndef __REACTOS__` is a bill for code that exists in no object we produce.
+# except_i386.c is 7 of 23 that way.
+# ---------------------------------------------------------------------------
+
+WINE_REACTOS_FORK = """\
+#ifdef __i386__
+
+static void live_one(void) { }
+
+#ifndef __REACTOS__
+void CDECL _global_unwind2(EXCEPTION_REGISTRATION_RECORD* frame)
+{
+    RtlUnwind( frame, 0, 0, 0 );
+}
+#endif
+
+#ifdef __REACTOS__
+void CDECL live_two(void);
+#else
+int CDECL _except_handler2(void)
+{
+    return 0;
+}
+#endif
+
+#if SOMETHING_WE_CANNOT_SETTLE
+void maybe_live(void) { }
+#endif
+
+#endif  /* __i386__ */
+"""
+
+
+def _line_of(text: str, needle: str) -> int:
+    for n, line in enumerate(text.splitlines(), 1):
+        if needle in line:
+            return n
+    raise AssertionError(f"{needle!r} not in the fixture")
+
+
+def test_a_body_under_ifndef_REACTOS_is_never_compiled():
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "void CDECL _global_unwind2") in dead
+
+
+def test_the_else_arm_of_ifdef_REACTOS_is_never_compiled():
+    """The other half of the same idiom, and the one a naive scan gets backwards."""
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "int CDECL _except_handler2") in dead
+    # ...while its live sibling arm is untouched.
+    assert _line_of(WINE_REACTOS_FORK, "void CDECL live_two") not in dead
+
+
+def test_an_undecidable_condition_leaves_its_body_LIVE():
+    """Over-reporting live code costs money; under-reporting it drops a real body."""
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "void maybe_live") not in dead
+
+
+def test_unconditional_code_is_live():
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "static void live_one") not in dead
+
+
+def test_a_live_looking_inner_arm_nested_in_a_dead_one_is_still_dead():
+    src = "#ifndef __REACTOS__\n#ifdef __REACTOS__\nvoid buried(void) { }\n#endif\n#endif\n"
+    assert _line_of(src, "void buried") in never_compiled_lines(src)

@@ -562,7 +562,24 @@ in except.c.obj on amd64/arm64 and absent on i386). Same reasoning applies to a 
 TWICE under different `-D` — except.c is built into both msvcrt_static and msvcrt_shared, and
 its `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)` block is live in exactly one of them. No
 source-level analysis can settle a disjunction with an unknown term, and none should try; the
-per-target object already knows.
+per-target object already knows. The mirror-image case is worth naming too: when the whole TU is
+inside `#ifdef __i386__`, the `not(x86)` twin of every emitted pair is unreachable by
+construction. Delete it — left in place it reads like an arch gate that is doing work, and it is
+the same page-shape as the bug above.
+
+**Transcribing `__ASM_GLOBAL_FUNC` (or any .s) into `global_asm!`: keep AT&T and then PROVE it.**
+Symptom: an asm thunk translated to Intel syntax by hand, with no way to tell whether the
+conversion was faithful. Cause: converting syntax is a re-derivation, and a re-derivation of
+machine code is exactly what you cannot eyeball. Fix: pass `options(att_syntax)` and paste the
+C's operand strings unchanged, so "transcribed" means byte-for-byte; then `llvm-objdump -d` the
+rlib's asm object against the C `.obj` and diff. msvcrt's six except_i386.c thunks came out
+instruction-for-instruction identical at every offset including the relocation record, which is
+a total check for one objdump. Note what the macro expands to on PE — `.text`, `.align 4`,
+`.globl`, and `.def NAME; .scl 2; .type 32; .endef` — and that `__ASM_CFI(...)` expands to
+NOTHING there (no `__GCC_HAVE_DWARF2_CFI_ASM`), so omitting the CFI lines is the same object and
+not a dropped directive. These thunks exist because each runs on a frame belonging to someone
+else (`call_handler` sets `%ebp` to the throwing function's before calling its `__finally`
+block); no Rust `fn` with a normal prologue can replace one.
 
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it

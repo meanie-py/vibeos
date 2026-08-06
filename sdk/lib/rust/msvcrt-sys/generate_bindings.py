@@ -396,6 +396,14 @@ ALLOWLIST_TYPES = [
     "_FPIEEE_EXCEPTION_FLAGS",
     "_FPIEEE_ROUND",
     "_FPIEEE_PRECISION",
+    # The two ENUMS whose members `handle_fpieee_flt` stores into that record:
+    # `rec.Operation = _FpCodeDivide`, `rec.Operand1.Format = _FpFormatFp80`. Allowlisting
+    # the record types alone does NOT bring them -- and an unresolved enum member in Rust is
+    # not an error, it is a fresh binding, which is the silent catch-all class. `_FpCodeDivide`
+    # is member 4 of a 60-member enum, so a hand-written `4` would be right until someone
+    # inserts an operation above it.
+    "_FP_OPERATION_CODE",
+    "_FPIEEE_FORMAT",
     # <signal.h>: `signal`'s handler type. Named because both `signal` and `raise` spell
     # it in their own signatures and the whole `sighandlers[NSIG]` table is an array of
     # it. NOTE the three sentinels SIG_DFL/SIG_IGN/SIG_ERR are NOT derivable -- they are
@@ -420,6 +428,20 @@ ALLOWLIST_TYPES = [
     "ULONG_PTR",
     "uintptr_t",
     "LPTOP_LEVEL_EXCEPTION_FILTER",
+    # ── except_i386.c (the 32-bit SEH dispatcher) ─
+    # The registration record itself. The struct TAG is already here via `_NT_TIB`
+    # (`ExceptionList` points at one), but the code spells the TYPEDEF everywhere -- in
+    # every handler signature, in `__wine_push_frame`, and as the first member of the two
+    # frame structs the file declares itself. Same reason the `P*` aliases above are
+    # named: allowlisting a tag does not emit the typedef the source actually says.
+    "EXCEPTION_REGISTRATION_RECORD",
+    "PEXCEPTION_REGISTRATION_RECORD",
+    # <setjmp.h>: what `__CxxLongjmpUnwind` and the two `_seh_longjmp_unwind*` entry
+    # points are handed. Its layout is the setjmp buffer's REGISTER SAVE AREA followed by
+    # the SEH fields those three read (`Registration`, `TryLevel`, `UnwindData[]`), and
+    # it is arch-shaped -- reading `TryLevel` from the wrong offset unwinds to a
+    # fabricated try level, which is a silent wrong-frame unwind rather than a fault.
+    "_JUMP_BUFFER",
 ]
 
 # The fields we actually touch, and therefore the fields we GUARD.
@@ -849,6 +871,15 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # architecture-shaped records, and neither exists on i386 — which is exactly why
         # the block that calls them is `#ifndef __i386__` in the C.
         "|RtlLookupFunctionEntry|RtlUnwindEx"
+        # except_i386.c's unwind, and note the NAME. The module compiles with
+        # `-DRtlUnwind=__wine_RtlUnwind` (a module-wide define, and the substitute is
+        # msvcrt's own `i386/__wine_RtlUnwind.s`), so by the time bindgen reads winnt.h
+        # the declaration is already spelled `__wine_RtlUnwind` and allowlisting
+        # `RtlUnwind` would match nothing at all -- silently, with a clean regeneration.
+        # Exactly the SystemFunction036 trap recorded below. It is stdcall@16 on i386,
+        # which is the other reason not to hand-write it: on i386 stdcall IS the symbol
+        # name, so an `extern "C"` copy would link to nothing.
+        "|__wine_RtlUnwind"
         # except.c's always-on diagnostics. wine's ERR/FIXME channels are ON by default
         # upstream, so dropping them ships silence where the C would have said why — the
         # class `tools/scan_dropped_prints.py` exists to catch. OutputDebugStringA is the

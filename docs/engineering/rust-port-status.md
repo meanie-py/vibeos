@@ -884,7 +884,7 @@ still-C when it is 3).
 | file | defines | still reached in C |
 |---|---|---|
 | `except.c` | 21 | **0** — flipped in wave 29 |
-| `except_i386.c` | 13 | **13** |
+| `except_i386.c` | 13 | **0** — flipped in wave 30 |
 | `ucrt_tls_sup.c` | 4 | 3 |
 | `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
 | `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
@@ -893,8 +893,39 @@ still-C when it is 3).
 | `scanf.c` | 44 | **0** — fully flipped |
 
 So the remaining real surface was **the exception dispatcher and nothing else of size**:
-except.c + except_i386.c were 34 of the 45 symbols still served by C. Wave 29 took except.c's
-21; what is left is `except_i386.c`'s 13 plus a handful of stragglers.
+except.c + except_i386.c were 34 of the 45 symbols still served by C. Waves 29 and 30 took both.
+What is left is a handful of stragglers — `ucrt_tls_sup.c`'s 3, `wcs.c`'s 3, `string.c`'s 3,
+`DllMain`, `sincosf` — and nothing in msvcrt is now bigger than one function.
+
+**Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
+linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
+frame up by PC in a table. Same exports, different implementations — which is what the
+`#ifdef __i386__` around the whole TU and the `#ifndef __i386__` inside except.c mean, and why
+both modules are `#![cfg(target_arch = "x86")]`-shaped rather than sharing bodies. rustconv
+emitted the same **convention dual** here (`se_translation_filter` as a stdcall/cdecl pair);
+this time the `not(x86)` twin was unreachable by construction and was deleted.
+
+Three things generalise:
+
+* **A dead preprocessor arm was on the paid bill.** `translate` charges per function and was
+  quoting for the 7 bodies inside `#ifndef __REACTOS__` — a 30% surcharge for code in no object
+  we build, on every wine-derived module. `dead_regions.never_compiled_lines` now drops them
+  before anything is bought, and records each as an audit finding that says *absent on purpose,
+  nothing owed* (as opposed to `--skip-fn`'s *hand-write it*).
+* **`__ASM_GLOBAL_FUNC` has no C text, so it never reaches the translation** — it arrives only
+  as commented-out C. The six thunks live in a hand-written `seh_i386` companion (the
+  relationship `cpp_rtti` has to `cpp`), transcribed **verbatim in AT&T syntax** via
+  `options(att_syntax)` rather than converted to Intel, so "transcribed" can be checked rather
+  than trusted: `llvm-objdump -d` of the rlib's asm object against `except_i386.c.obj` is
+  instruction-for-instruction identical at every offset, with the same
+  `IMAGE_REL_I386_REL32 _cxx_frame_handler` relocation at 0x50. **Do this on any asm
+  transcription** — it is a total check and costs one objdump.
+* **A bitfield the island exposes as `set_X()` is a lucky compile error.** `handle_fpieee_flt`
+  is a positional transcription of the x87 control and status words into `_FPIEEE_RECORD`, in
+  which each of five flags appears three times (Status from the exception, Enable from the
+  mask, Cause = Enable & Status). Plain field writes would have compiled if the fields were
+  plain; because they are bitfields the body had to be rewritten against the C by hand. A pair
+  swapped between two of those three slots is invisible to every other check we run.
 
 **Wave 29 — except.c (21/21), behind the `cpp` feature.** The signal layer (`signal`/`raise`,
 the `sighandlers` table, the SEH filter that maps a hardware fault to a C signal) and the C++

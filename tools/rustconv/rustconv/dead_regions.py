@@ -86,6 +86,81 @@ def preprocessor_conditional_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
+# Macros whose truth value is FIXED for every build in this tree, so a branch guarded on
+# one of them is not "conditional" -- it is dead code, or live code, and we can say which.
+# `__REACTOS__` is defined by the root CMakeLists for every TU, which makes the
+# wine-derived `#ifndef __REACTOS__` idiom unambiguously dead.
+KNOWN_DEFINED = frozenset({"__REACTOS__"})
+
+_COND_OPEN_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if)\b(.*)$")
+_COND_ANY_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if|elif|else|endif)\b(.*)$")
+
+
+def cond_truth(line: str) -> bool | None:
+    """``True``/``False`` when a preprocessor condition is FIXED for this tree, else ``None``.
+
+    Deliberately narrow. Everything it cannot settle is ``None``, and every caller treats
+    ``None`` as live -- over-reporting live code is the safe direction, mistaking live code
+    for dead is not.
+    """
+    m = _COND_OPEN_RE.match(line)
+    if m is None:
+        return None
+    kind, rest = m.group(1), m.group(2).strip()
+    if kind in ("ifdef", "ifndef"):
+        sym = rest.split()[0] if rest.split() else ""
+        if sym in KNOWN_DEFINED:
+            return kind == "ifdef"
+        return None
+    if re.fullmatch(r"0+", rest):
+        return False
+    m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
+    if m2 and m2.group(2) in KNOWN_DEFINED:
+        return m2.group(1) is None
+    return None
+
+
+def never_compiled_lines(text: str) -> set[int]:
+    """The 1-based line numbers this tree's compiler never sees.
+
+    A function whose definition starts on one of these lines does not exist in any object
+    we build, so translating it buys a body that nothing can ever call -- and one paid call
+    per function is what that costs. `except_i386.c` alone carries seven: `_global_unwind2`,
+    `_except_handler2/3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`, all
+    inside `#ifndef __REACTOS__`, all confirmed absent from the object file.
+
+    Only FIXED conditions (:func:`cond_truth`) mark anything dead. An `#if` this module
+    cannot settle leaves its whole subtree live, and a dead outer arm keeps its inner
+    conditionals dead regardless of what they say -- which is the one asymmetry worth
+    stating, since a live-looking `#ifdef __REACTOS__` nested inside a dead
+    `#ifndef __REACTOS__` is still dead.
+    """
+    dead: set[int] = set()
+    # stack frames: (this arm is dead, the condition was decidable, some arm already taken)
+    stack: list[tuple[bool, bool, bool]] = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = _COND_ANY_RE.match(line)
+        if m is None:
+            if any(d for d, _, _ in stack):
+                dead.add(n)
+            continue
+        directive = m.group(1)
+        if directive in ("if", "ifdef", "ifndef"):
+            truth = cond_truth(line)
+            stack.append((truth is False, truth is not None, truth is True))
+        elif directive in ("else", "elif") and stack:
+            _, known, taken = stack[-1]
+            if directive == "else" and known:
+                stack[-1] = (taken, True, True)
+            else:
+                # An `#elif` on a decidable chain is only reachable if no arm was taken,
+                # and we cannot decide the `#elif` itself -- so call it live.
+                stack[-1] = (False, False, taken)
+        elif directive == "endif" and stack:
+            stack.pop()
+    return dead
+
+
 def _matching_brace(text: str, opening: int) -> int | None:
     depth = 0
     for pos in range(opening, len(text)):
