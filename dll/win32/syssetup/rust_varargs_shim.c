@@ -57,10 +57,18 @@ void FatalError(char *pszFmt, ...)
  * StringCchPrintfW_v; this is only the va_start.
  *
  * Deliberately NOT #include <strsafe.h>: the header's own `static __inline` definition has
- * internal linkage and would be a redefinition of the external one this file provides. */
+ * internal linkage and would be a redefinition of the external one this file provides.
+ *
+ * NOTE the `&ap` here against the plain `ap` in the two trampolines above. The strsafe bodies
+ * moved to the SHARED sdk/lib/rust/strsafe-rust crate, which follows varargs-rust's documented
+ * by-POINTER convention: it does not assume a va_list is itself a single pointer (true on all
+ * three of our Windows targets, false on SysV x86-64), and it is what lets the mechanism be
+ * exercised natively on the host. The two syssetup-private trampolines still pass by value
+ * because their `_v` twins in syssetup-rust take it that way; converting them is a separate
+ * change with no bug behind it. */
 #include <windows.h>
 
-extern HRESULT StringCchPrintfW_v(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, void *ap);
+extern HRESULT StringCchPrintfW_v(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, void *app);
 
 HRESULT WINAPI StringCchPrintfW(WCHAR *pszDest, size_t cchDest, const WCHAR *pszFormat, ...)
 {
@@ -68,7 +76,7 @@ HRESULT WINAPI StringCchPrintfW(WCHAR *pszDest, size_t cchDest, const WCHAR *psz
     va_list ap;
 
     va_start(ap, pszFormat);
-    hr = StringCchPrintfW_v(pszDest, cchDest, pszFormat, (void *)ap);
+    hr = StringCchPrintfW_v(pszDest, cchDest, pszFormat, (void *)&ap);
     va_end(ap);
     return hr;
 }

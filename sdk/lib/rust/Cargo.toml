@@ -102,6 +102,10 @@ members = [
     # for width-varying parameters; crate-repair's `width_alias_cast` rule now supplies it.
     "syssetup-rust",
     "desk-rust",
+    # strsafe.h's `static __inline` bounded string ops, ported ONCE. No object file in the tree
+    # defines them, so every flipped module used to port the header again — four divergent
+    # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
+    "strsafe-rust",
     "access",
     "avltable",
     "bitmap",
