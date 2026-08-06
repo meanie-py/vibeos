@@ -129,10 +129,11 @@ becomes a deliberate decision, not a silent behaviour change.
 
 **Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
 repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
-fix compile errors. Eight rules, each with a closed authority — diagnostic-driven
+fix compile errors. Ten rules, each with a closed authority — diagnostic-driven
 (`width_alias_cast`, `truncating_numeric_cast`, `match_scrutinee_cast`, `anon_union_field`,
-`no_std_path`, `raw_pointer_cast`) and source-driven (`flex_array_index`, `panicking_cast`);
-everything else stays RED and bucketed by shape for triage. Three properties worth knowing:
+`packed_field_ptr`, `index_usize`, `no_std_path`, `raw_pointer_cast`) and source-driven
+(`flex_array_index`, `panicking_cast`); everything else stays RED and bucketed by shape for
+triage. Three properties worth knowing:
 - It **refuses rustc's own `.try_into().unwrap()` suggestion** — that converts C's silent
   truncation into a panic in a live service and trips `tools/scan_silent_failures.py`.
 - Span repairs are driven off the `expected X, found Y` **labels**, not the primary span: in
@@ -167,6 +168,15 @@ everything else stays RED and bucketed by shape for triage. Three properties wor
   differently — or that one arch declares directly — is dropped rather than guessed. It
   deliberately declines the E0560 struct-LITERAL spelling: `S { a.b: v }` is not legal Rust, so
   the repair there is a zeroed value plus field stores, which is a rewrite and not a splice.
+- **`packed_field_ptr`** (E0793) rewrites `packed.array.as_ptr()` to
+  `core::ptr::addr_of!(packed.array).cast()`. `as_ptr()` goes through `&[T; N]`, and forming a
+  reference to a field of a `#[repr(packed)]` struct is UB even if never read — `addr_of!` takes
+  the address without ever forming one, and `.cast()` is C's array-to-pointer decay.
+  `SP_DRVINFO_DETAIL_DATA` and `SHFILEINFO` are both packed in the SDK.
+- **`index_usize`** (E0277) casts a non-`usize` array index. rustc reports this as a missing
+  `Index<u32>` impl, NOT as a type mismatch, so there is no `expected X, found Y` label and
+  `truncating_numeric_cast` never sees the site. `usize` is the width-varying alias itself, so
+  the cast is portable and needs no cross-target agreement.
 - **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
   `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
   `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn

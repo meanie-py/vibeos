@@ -53,6 +53,8 @@ RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
 RULE_ANON_UNION = "anon_union_field"
 RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
+RULE_PACKED_FIELD_PTR = "packed_field_ptr"
+RULE_INDEX_USIZE = "index_usize"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -64,6 +66,8 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_NO_STD_PATH,
     RULE_POINTER_CAST,
     RULE_ANON_UNION,
+    RULE_PACKED_FIELD_PTR,
+    RULE_INDEX_USIZE,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1457,6 +1461,142 @@ def _anon_union_rule(
     )
 
 
+#: ``.as_ptr()`` / ``.as_mut_ptr()`` immediately after the offending place expression.
+_RE_AS_PTR = re.compile(r"\.as_(?P<mut>mut_)?ptr\(\)")
+
+
+def _packed_field_ptr_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``packed.array.as_ptr()`` -> ``addr_of!(packed.array).cast()`` (E0793).
+
+    ``as_ptr()`` goes through ``&[T; N]``, and forming a reference to a field of a
+    ``#[repr(packed)]`` struct is undefined behaviour even when it is never read — which is why
+    rustc makes it a hard error rather than a lint. ``SP_DRVINFO_DETAIL_DATA`` and ``SHFILEINFO``
+    are both packed in the SDK and the C simply takes the address, so the faithful translation
+    is the one that never forms the reference.
+
+    ``addr_of!`` does exactly that; ``.cast()`` turns the resulting ``*const [T; N]`` into the
+    ``*const T`` the callee wants, which is what C's array-to-pointer decay says anyway. No
+    width is baked, so no cross-target agreement is needed.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0793":
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
+    tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
+    place = data[start:end].decode("utf-8", "replace")
+    if tail is None or not _balanced(masked[start:end]):
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_PACKED_FIELD_PTR,
+                    "not_an_as_ptr_call",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`{place[:60]}` is a packed-field reference rustc rejects, but it is not "
+                    "the `.as_ptr()` shape this rule knows how to rewrite",
+                )
+            ],
+            False,
+        )
+    macro = "addr_of_mut!" if tail.group("mut") else "addr_of!"
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end + tail.end(),
+                replacement=f"core::ptr::{macro}({place}).cast()",
+                rule=RULE_PACKED_FIELD_PTR,
+                authority=(
+                    f"rustc E0793: `{place[:40]}` is a field of a #[repr(packed)] struct, so "
+                    f"`as_ptr()`'s intermediate reference is UB; `{macro}` takes the address "
+                    "without ever forming one"
+                ),
+                original=f"{place}{tail.group(0)}",
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0277 ``the type `[T]` cannot be indexed by `u32` ``.
+_RE_CANNOT_INDEX = re.compile(r"cannot be indexed by `(?P<index>\w+)`")
+
+
+def _index_usize_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """Array/slice index of a non-``usize`` integer -> ``as usize``.
+
+    C indexes with whatever integer is handy. rustc reports the Rust requirement as E0277 (no
+    ``Index<u32>`` impl), NOT as a type mismatch, so no ``expected X, found Y`` label exists and
+    ``RULE_NUMERIC_CAST`` never sees the site at all.
+
+    ``usize`` is the width-varying alias itself, so the cast is portable by construction and
+    needs no cross-target agreement — unlike a concrete ``as u32``. The index type is required
+    to be an integer primitive so the rule cannot "fix" indexing by a struct.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    match = _RE_CANNOT_INDEX.search(str(diagnostic.get("message") or ""))
+    if match is None or match.group("index") not in INT_PRIMITIVES:
+        return [], [], False
+    span = next((item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if start >= end:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    if re.search(r"\bas\s+usize\s*$", text):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}) as usize",
+                rule=RULE_INDEX_USIZE,
+                authority=(
+                    f"rustc E0277: the indexed type has no `Index<{match.group('index')}>`; "
+                    "`usize` is the width-varying alias itself, so the cast is portable"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -1466,6 +1606,8 @@ _RULE_TABLE: dict[
     RULE_NO_STD_PATH: _no_std_path_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
     RULE_ANON_UNION: _anon_union_rule,
+    RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_INDEX_USIZE: _index_usize_rule,
 }
 
 

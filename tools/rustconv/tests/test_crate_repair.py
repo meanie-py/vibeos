@@ -23,9 +23,11 @@ import pytest
 from rustconv.crate_repair import (
     RULE_ANON_UNION,
     RULE_FLEX_ARRAY,
+    RULE_INDEX_USIZE,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
+    RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
     CargoCheckRun,
     Edit,
@@ -1175,3 +1177,113 @@ def test_non_arm_mismatch_is_not_treated_as_a_scrutinee():
     )
     assert not plan.edits
     assert [item.code for item in plan.red] == ["E0308"]
+
+
+# --- rule: packed-field pointer ---------------------------------------------------------------
+
+_PACKED_SRC = b"""pub unsafe fn f(d: *mut SP_DRVINFO_DETAIL_DATA_W) -> *const WCHAR {
+    (*d).HardwareID.as_ptr()
+}
+"""
+
+
+def _packed_diag(place: bytes, src: bytes = _PACKED_SRC) -> dict:
+    at = src.index(place)
+    return _diag(
+        "reference to packed field is unaligned",
+        code="E0793",
+        spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
+    )
+
+
+def test_packed_field_as_ptr_becomes_addr_of():
+    plan = propose_edits(
+        [_packed_diag(b"(*d).HardwareID")],
+        _reader({"src/a.rs": _PACKED_SRC}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert [e.replacement for e in plan.edits] == ["core::ptr::addr_of!((*d).HardwareID).cast()"]
+    edit = plan.edits[0]
+    # The `.as_ptr()` call must be consumed, not left dangling after the macro.
+    assert _PACKED_SRC[edit.byte_start : edit.byte_end] == b"(*d).HardwareID.as_ptr()"
+    assert not edit.requires_target_agreement  # no width is baked
+
+
+def test_packed_field_as_mut_ptr_uses_addr_of_mut():
+    src = _PACKED_SRC.replace(b".as_ptr()", b".as_mut_ptr()")
+    plan = propose_edits(
+        [_packed_diag(b"(*d).HardwareID", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert [e.replacement for e in plan.edits] == [
+        "core::ptr::addr_of_mut!((*d).HardwareID).cast()"
+    ]
+
+
+def test_packed_field_that_is_not_an_as_ptr_call_is_declined():
+    """E0793 also fires on a plain `&packed.field`, which this rewrite would corrupt."""
+    src = b"pub unsafe fn f(d: *mut S) {\n    g(&(*d).field);\n}\n"
+    at = src.index(b"(*d).field")
+    plan = propose_edits(
+        [
+            _diag(
+                "reference to packed field is unaligned",
+                code="E0793",
+                spans=[_span("src/a.rs", at, at + len(b"(*d).field"), is_primary=True, line=2)],
+            )
+        ],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["not_an_as_ptr_call"]
+
+
+# --- rule: index cast to usize ----------------------------------------------------------------
+
+_INDEX_SRC = b"pub fn f(t: &[u8], i: UINT) -> u8 {\n    t[i]\n}\n"
+
+
+def _index_diag(index_type: str = "u32", place: bytes = b"i", src: bytes = _INDEX_SRC) -> dict:
+    at = src.index(place, src.index(b"t["))
+    return _diag(
+        f"the type `[u8]` cannot be indexed by `{index_type}`",
+        code="E0277",
+        spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
+    )
+
+
+def test_non_usize_index_is_cast_to_usize():
+    plan = propose_edits(
+        [_index_diag()], _reader({"src/a.rs": _INDEX_SRC}), target="i386", rules=[RULE_INDEX_USIZE]
+    )
+    assert [e.replacement for e in plan.edits] == ["(i) as usize"]
+    # `usize` is the width-varying alias itself, so one target's answer is portable.
+    assert not plan.edits[0].requires_target_agreement
+
+
+def test_index_by_a_non_integer_is_left_alone():
+    """E0277 also covers `map[key]`; only an integer index has an `as usize` answer."""
+    plan = propose_edits(
+        [_index_diag(index_type="String")],
+        _reader({"src/a.rs": _INDEX_SRC}),
+        target="i386",
+        rules=[RULE_INDEX_USIZE],
+    )
+    assert not plan.edits
+    assert [item.code for item in plan.red] == ["E0277"]
+
+
+def test_index_already_cast_is_not_cast_again():
+    src = _INDEX_SRC.replace(b"t[i]", b"t[(i) as usize]")
+    plan = propose_edits(
+        [_index_diag(place=b"(i) as usize", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_INDEX_USIZE],
+    )
+    assert not plan.edits
