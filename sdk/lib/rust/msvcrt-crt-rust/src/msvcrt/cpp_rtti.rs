@@ -30,6 +30,9 @@ use crate::prelude::*;
 use super::cpp::*;
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use msvcrt_sys::*;
+// Disambiguate the two globs' `FALSE`/`TRUE` (prelude u8, island u32); every use in this
+// file is a Win32 BOOL.
+use msvcrt_sys::{FALSE, TRUE};
 
 // ── vtables ──────────────────────────────────────────────────────────────────
 //
@@ -129,6 +132,41 @@ pub unsafe fn rtti_rva_base<T>(_ptr: *const T) -> usize {
 pub unsafe fn rtti_rva_base<T>(ptr: *const T) -> usize {
     let mut base: *mut c_void = core::ptr::null_mut();
     RtlPcToFileHeader(ptr as *mut c_void, core::ptr::addr_of_mut!(base)) as usize
+}
+
+/// `if (descr->field)` — is a descriptor reference set? Same duality as `rtti_rva`: the
+/// field is a real pointer on i386 and a 32-bit RVA elsewhere, so "unset" is `NULL` on one
+/// arm and `0` on the other. The i386 arm is generic because the fields that need this are
+/// not all the same Rust type — `catchblock_info.type_info` is a `*const type_info` and
+/// `.handler` is an `Option<fn>` — but every one of them is pointer-sized, which is what
+/// makes the reinterpretation sound.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub fn rtti_is_set<T: Copy>(v: T) -> bool {
+    const { assert!(core::mem::size_of::<T>() == core::mem::size_of::<usize>()) };
+    unsafe { core::mem::transmute_copy::<T, usize>(&v) != 0 }
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)]
+pub fn rtti_is_set(rva: c_uint) -> bool {
+    rva != 0
+}
+
+/// A descriptor's `handler` field as a plain code address. `rtti_rva` cannot serve here on
+/// i386: the field is already a *function* pointer (`void *(*)(void)`), not a `*const T`,
+/// so there is nothing to add a base to and the conversion is a reinterpretation.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn rtti_handler<T: Copy>(h: T, _base: usize) -> *mut c_void {
+    const { assert!(core::mem::size_of::<T>() == core::mem::size_of::<usize>()) };
+    core::mem::transmute_copy::<T, *mut c_void>(&h)
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)]
+pub unsafe fn rtti_handler(rva: c_uint, base: usize) -> *mut c_void {
+    base.wrapping_add(rva as usize) as *mut c_void
 }
 
 /// cppexcept.h's `get_this_pointer`. The virtual-base hop runs only when `vbase_descr >= 0`
@@ -632,6 +670,175 @@ thiscall_fn! {
         }
         this as *mut c_void
     }
+}
+
+// ── cppexcept.h's `static inline` helpers ────────────────────────────────────
+//
+// These five are `static inline` in cppexcept.h, so they have NO SYMBOL in any object and
+// rustconv — which reads .c files — never sees them. cpp.c and except.c both include the
+// header and both get their own inlined copy; here they are written once and shared, which
+// is the same arrangement `get_this_pointer` above already has.
+//
+// `call_dtor`/`call_copy_ctor` are the exception: on i386 the header declares them EXTERN
+// and they are real asm thunks in dll/win32/msvcrt/i386/exception_ptr.s, because a
+// `__thiscall` call through a function POINTER cannot be spelled in C there. Everywhere
+// else __thiscall is the ordinary convention and the header inlines the cast. That split is
+// why these are a cfg pair and not one body.
+
+/// cppexcept.h's `is_cxx_exception`. All three tests matter and the middle one is the
+/// interesting one: `CXX_EXCEPTION_PARAMS` is 3 on i386 and 4 on 64-bit, so a record
+/// carrying the wrong count is not ours even though its code says it is.
+#[inline]
+pub unsafe fn is_cxx_exception(rec: *mut EXCEPTION_RECORD) -> BOOL {
+    if (*rec).ExceptionCode != CXX_EXCEPTION {
+        return FALSE as BOOL;
+    }
+    if (*rec).NumberParameters != CXX_EXCEPTION_PARAMS {
+        return FALSE as BOOL;
+    }
+    // ExceptionInformation is ULONG_PTR: u32 on i386, u64 elsewhere. Widen the magic to
+    // whatever that is rather than narrowing the parameter.
+    let magic = (*rec).ExceptionInformation[0];
+    (magic >= CXX_FRAME_MAGIC_VC6 as _ && magic <= CXX_FRAME_MAGIC_VC8 as _) as BOOL
+}
+
+/// cppexcept.h's `call_dtor` — i386 arm: the real `__thiscall` thunk in
+/// `i386/exception_ptr.s`, reached as an extern exactly as the C reaches it.
+#[cfg(target_arch = "x86")]
+extern "C" {
+    pub fn call_dtor(func: *mut c_void, this: *mut c_void);
+    pub fn call_copy_ctor(func: *mut c_void, this: *mut c_void, src: *mut c_void, has_vbase: c_int);
+}
+
+/// cppexcept.h's `call_dtor` — non-i386 arm: `__thiscall` IS the default convention, so
+/// the header just casts the pointer and calls it. So do we.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn call_dtor(func: *mut c_void, this: *mut c_void) {
+    let f: unsafe extern "C" fn(*mut c_void) = core::mem::transmute(func);
+    f(this);
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn call_copy_ctor(
+    func: *mut c_void,
+    this: *mut c_void,
+    src: *mut c_void,
+    has_vbase: c_int,
+) {
+    if has_vbase != 0 {
+        let f: unsafe extern "C" fn(*mut c_void, *mut c_void, BOOL) = core::mem::transmute(func);
+        f(this, src, 1);
+    } else {
+        let f: unsafe extern "C" fn(*mut c_void, *mut c_void) = core::mem::transmute(func);
+        f(this, src);
+    }
+}
+
+/// cppexcept.h's `find_caught_type` — does this catch block catch this thrown type?
+///
+/// A null `catch_ti` is `catch(...)` and matches the first entry outright. Otherwise the
+/// match is by MANGLED NAME rather than by pointer, because the thrown type and the caught
+/// type are two different static descriptors when the throw and the catch are in different
+/// images; the pointer compare is only a fast path in front of the `strcmp`.
+///
+/// The two flag tests are one-directional on purpose, and inverting either would be silent:
+/// a `const`-qualified exception may NOT be caught by a non-const handler, but a plain
+/// exception is perfectly catchable by a `const` one.
+#[inline]
+pub unsafe fn find_caught_type(
+    exc_type: *mut cxx_exception_type,
+    base: usize,
+    catch_ti: *const type_info,
+    catch_flags: UINT,
+) -> *const cxx_type_info {
+    let type_info_table: *const cxx_type_info_table = rtti_rva((*exc_type).type_info_table, base);
+    let mut i: UINT = 0;
+    while i < (*type_info_table).count {
+        let ty: *const cxx_type_info = rtti_rva((*type_info_table).info[i as usize], base);
+        let ti: *const type_info = rtti_rva((*ty).type_info, base);
+
+        if catch_ti.is_null() {
+            return ty; /* catch(...) matches any type */
+        }
+        if catch_ti != ti
+            && strcmp(
+                core::ptr::addr_of!((*catch_ti).mangled) as *const c_char,
+                core::ptr::addr_of!((*ti).mangled) as *const c_char,
+            ) != 0
+        {
+            i += 1;
+            continue;
+        }
+        /* type is the same, now check the flags */
+        if ((*exc_type).flags & TYPE_FLAG_CONST) != 0 && (catch_flags & TYPE_FLAG_CONST) == 0 {
+            i += 1;
+            continue;
+        }
+        if ((*exc_type).flags & TYPE_FLAG_VOLATILE) != 0 && (catch_flags & TYPE_FLAG_VOLATILE) == 0
+        {
+            i += 1;
+            continue;
+        }
+        return ty; /* it matched */
+    }
+    core::ptr::null()
+}
+
+/// cppexcept.h's `copy_exception` — put the thrown object where the catch block wants it.
+///
+/// Three genuinely different copies, chosen by flag bits, which is why those bits are
+/// derived from the header rather than transcribed:
+///   * `TYPE_FLAG_REFERENCE` — bind, do not copy. `*dest` becomes the object itself.
+///   * `CLASS_IS_SIMPLE_TYPE` — copy the bytes. The pointer-sized case is re-adjusted
+///     afterwards because a copied POINTER still needs its `this` fixed up.
+///   * otherwise — run the copy constructor, or `memmove` if the class has none.
+#[inline]
+pub unsafe fn copy_exception(
+    object: *mut c_void,
+    dest: *mut *mut c_void,
+    catch_flags: UINT,
+    ty: *const cxx_type_info,
+    base: usize,
+) {
+    if (catch_flags & TYPE_FLAG_REFERENCE) != 0 {
+        *dest = get_this_pointer(core::ptr::addr_of!((*ty).offsets), object);
+    } else if ((*ty).flags & CLASS_IS_SIMPLE_TYPE) != 0 {
+        memmove(dest as *mut c_void, object, (*ty).size as usize);
+        /* if it is a pointer, adjust it */
+        if (*ty).size as usize == core::mem::size_of::<*mut c_void>() {
+            *dest = get_this_pointer(core::ptr::addr_of!((*ty).offsets), *dest);
+        }
+    } else if !rtti_is_null_ctor((*ty).copy_ctor) {
+        call_copy_ctor(
+            rtti_rva((*ty).copy_ctor, base),
+            dest as *mut c_void,
+            get_this_pointer(core::ptr::addr_of!((*ty).offsets), object),
+            ((*ty).flags & CLASS_HAS_VIRTUAL_BASE_CLASS) as c_int,
+        );
+    } else {
+        memmove(
+            dest as *mut c_void,
+            get_this_pointer(core::ptr::addr_of!((*ty).offsets), object),
+            (*ty).size as usize,
+        );
+    }
+}
+
+/// `if (type->copy_ctor)` — one test, two field types. `copy_ctor` is a real pointer on
+/// i386 and a 32-bit RVA elsewhere, and "is it set" is spelled differently for each. Same
+/// shape as `rtti_rva` above, and it exists so `copy_exception` can stay one body.
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+fn rtti_is_null_ctor(p: *mut c_void) -> bool {
+    p.is_null()
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline(always)]
+fn rtti_is_null_ctor(rva: c_uint) -> bool {
+    rva == 0
 }
 
 // ── DUMMY_PSEH ───────────────────────────────────────────────────────────────

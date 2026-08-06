@@ -311,3 +311,39 @@ def test_a_shared_case_label_is_not_a_fallthrough():
             "    }\n}",
             sealed,
         )
+
+
+def test_a_turbofish_in_an_argument_does_not_disable_the_arity_check():
+    """thread.c's `_beginthread_trampoline` shipped through exactly this hole.
+
+    `msvcrt_get_thread_data` takes ZERO arguments. The model slid its token onto the
+    `memcpy` site, where it wore three -- one of them `core::mem::size_of::<T>()`. The
+    old rule skipped any site whose arguments mentioned `::<`, so the disagreement was
+    never compared, and a thread that leaks its argument block and never calls the user's
+    entry point passed the envelope.
+    """
+    sealed = seal_calls("void f(void) { get(); }", {"get"})
+    with pytest.raises(CallSealError, match="argument count"):
+        unseal_calls(
+            "unsafe fn f() { __RUSTCONV_CALL_0000__(&mut local as *mut _, arg, "
+            "core::mem::size_of::<T>()); }",
+            sealed,
+        )
+
+
+def test_a_turbofish_with_its_own_comma_still_counts_as_one_argument():
+    """The commas that belong to `::<A, B>` are blanked, not the site."""
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(core::mem::transmute::<A, B>(x)); }", sealed
+    )
+    assert "Take(core::mem::transmute::<A, B>(x))" in restored
+
+
+def test_a_nested_turbofish_does_not_close_early():
+    sealed = seal_calls("void f(void) { Take(x); }", {"Take"})
+    restored = unseal_calls(
+        "unsafe fn f() { __RUSTCONV_CALL_0000__(transmute::<Option<A>, fn(B) -> C>(x)); }",
+        sealed,
+    )
+    assert "Take(transmute::<Option<A>, fn(B) -> C>(x))" in restored

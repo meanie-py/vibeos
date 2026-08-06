@@ -5,7 +5,6 @@
       "dll/win32/shell32/shellrecyclebin/guid.c"
     ],
     "dynamic": [
-      "dll/win32/shell32/CIDLDataObj.cpp",
       "dll/win32/shell32/CEnumIDListBase.cpp",
       "dll/win32/shell32/CExtractIcon.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
@@ -43,11 +42,12 @@
   },
   "removed": {
     "dead_after_class_flip": [
-      "dll/win32/shell32/CShellLink.cpp",
+      "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
       "dll/win32/shell32/CDefViewDual.cpp",
+      "dll/win32/shell32/CIDLDataObj.cpp",
+      "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
-      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
-      "dll/win32/shell32/CDefViewBckgrndMenu.cpp"
+      "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp"
     ],
     "free_function_tu": [
       "dll/win32/shell32/dialogs/dialogs.cpp",
@@ -94,18 +94,18 @@
     ]
   },
   "sanctioned": {
-    "variadic_abi": [
-      "dll/win32/shell32/rust_varargs_shim.c"
-    ],
-    "phantom_inline_linkage": [
-      "dll/win32/shell32/rust_strsafe_shim.c"
-    ],
     "atl_window_class": [
       "dll/win32/shell32/rust_folder_options_stub.cpp",
       "dll/win32/shell32/rust_changenotify_broker_stub.cpp"
     ],
     "cpp_only_companion_bridge": [
       "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"
+    ],
+    "phantom_inline_linkage": [
+      "dll/win32/shell32/rust_strsafe_shim.c"
+    ],
+    "variadic_abi": [
+      "dll/win32/shell32/rust_varargs_shim.c"
     ]
   },
   "version": 1

@@ -81,6 +81,7 @@ from .cpp_com import (
     parse_widl_interface,
     prepare_helper_closure,
     provided_raii_contract,
+    raii_container_contract,
     render_class_scaffold,
     render_cpp_support,
     render_interface,
@@ -91,6 +92,7 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
+from .dead_regions import never_compiled_lines
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -2242,6 +2244,20 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if cpp_com_cls is not None:
+            container_fields = [
+                state
+                for state in cpp_com_cls.plain_state_fields()
+                if state.raii_container is not None
+            ]
+            for dep in sorted_deps:
+                touched = [
+                    state
+                    for state in container_fields
+                    if re.search(rf"\b{re.escape(state.name)}\b", dep.body_text)
+                ]
+                if touched:
+                    deterministic_contracts[dep.name] += raii_container_contract(touched)
 
         # WHAT each worker had hidden from it, as names rather than token indices.
         # The response cache compares this directionally: an entry sealed at least as
@@ -2290,6 +2306,25 @@ def cmd_translate(args):
         # `msvcrt_spawn` and `_wpopen` blocked 48 accepted bodies across nine runs).
         # The skip is never silent: each name becomes an audit finding, so the assembled
         # file always says out loud which bodies a human still owes.
+        # Bodies the BUILD never compiles are dropped before anything is bought. A function
+        # inside `#ifndef __REACTOS__` is in no object file we produce, so a translation of
+        # it can never be called — and `translate` bills one paid call PER FUNCTION, so
+        # leaving them in the worklist is a bill for code that does not exist.
+        # except_i386.c is 7 of 23 that way: `_global_unwind2`, `_except_handler2`,
+        # `_except_handler3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`,
+        # every one confirmed absent from the object with `nm`. The rule is the narrow one
+        # `dead_regions.cond_truth` can prove; anything it cannot settle stays live and gets
+        # translated, because paying for a live body is a cost and dropping one is a bug.
+        dead_lines = never_compiled_lines(c_file.read_text(errors="replace"))
+        skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
+        if skipped_dead:
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]
+            print(
+                f"  dead branch: {len(skipped_dead)} body/bodies the build never compiles, "
+                f"not translated and not billed: {', '.join(skipped_dead)}",
+                file=sys.stderr,
+            )
+
         skipped_by_request: list[str] = []
         if getattr(args, "skip_fn", None):
             requested = {name.strip() for name in args.skip_fn if name.strip()}
@@ -3489,11 +3524,42 @@ def cmd_translate(args):
             ),
         )
 
+        # A local DEFINITION shadows a glob import, but a second GLOB does not — it
+        # COLLIDES. The COM scaffold opens island-first modules with `use crate::prelude::*;`
+        # while the stitcher adds shellcom/types/win32, and every name the two share
+        # (REFIID, HRESULT, ULONG, ...) is then an E0659 ambiguity. Three assembled shell32
+        # TUs opened with 339, 339 and 399 errors that were nothing else, and each was
+        # collapsed by hand before anyone read the next one. Done here rather than in the
+        # stitcher because the prelude line lives in the scaffold, which the stitcher never
+        # sees; only the composed text knows both are present. The prelude is the wider and
+        # newer authority, so it wins — the narrow globs go.
+        #
+        # The prelude line itself comes from crate_integrate, which only runs on the
+        # crate-assembly path — so a `-o` slice never got one. That matters because a TU
+        # holding more than one class MUST use `-o` for every slice after the first (the
+        # assembler refuses to let two classes overwrite one file), which handed the slices
+        # of a single TU two different substrates. CIDLDataObj.cpp is three slices and hit
+        # exactly that. shell32's COM path is island-first by decision, so put every slice
+        # on the prelude regardless of how it was written out.
+        if rustconv_target.name == "shell32" and (cpp_com_mode or args.free_functions):
+            narrow = r"^use crate::(?:shellcom|types|win32)::\*;\n"
+            if re.search(narrow, code, re.M):
+                code = re.sub(narrow, "", code, flags=re.M)
+                if not re.search(r"^use crate::prelude::\*;$", code, re.M):
+                    code = "use crate::prelude::*;\n" + code
+        elif re.search(r"^use crate::prelude::\*;$", code, re.M):
+            code = re.sub(r"^use crate::(?:shellcom|types|win32)::\*;\n", "", code, flags=re.M)
+
         # --- Post-translation audits -------------------------------------
         # These catch the SILENT class: output that compiles, links and boots but
         # is wrong. A dropped struct is a compile error and finds itself; a table
         # with one wrong byte does not.
         file_findings: list[str] = []
+        for name in skipped_dead:
+            file_findings.append(
+                f"dead branch: '{name}' is inside a preprocessor arm this tree never "
+                f"compiles, so it is absent from the output ON PURPOSE — nothing is owed"
+            )
         for name in skipped_by_request:
             file_findings.append(
                 f"--skip-fn: '{name}' was NOT translated and is absent from the output — "

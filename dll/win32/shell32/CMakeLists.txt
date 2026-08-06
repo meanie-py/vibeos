@@ -21,7 +21,13 @@ list(APPEND SOURCE
     # brfolder.cpp — replaced by Rust (shell32-rust/src/shell32/brfolder.rs); cohab via libshell32_rust.a
     # CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
     CActiveDesktop.h
-    CIDLDataObj.cpp
+    # CIDLDataObj.cpp — replaced by Rust: shell32/CIDLDataObj.rs (the IDataObject/
+    # IAsyncOperation), shell32/IEnumFORMATETCImpl.rs (the enumerator it hands out) and
+    # shell32/cidldataobj_free.rs (the TU's four constructors). Three modules for one TU
+    # because the assembler writes one file per class slice. No bridge: both constructors
+    # are declared inside wine/shell32_main.h's own `extern "C"` block and both
+    # SHCreate*DataObject are WINAPI in shlobj.h, so C++ callers already expect the
+    # undecorated/stdcall names the Rust exports.
     # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
     # (shell32-rust/src/query_associations.rs).
     # changenotify.cpp — replaced by Rust (shell32-rust/src/shell32/changenotify.rs); cohab via

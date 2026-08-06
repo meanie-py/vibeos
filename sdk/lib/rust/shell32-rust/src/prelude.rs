@@ -70,17 +70,17 @@ pub use crate::shellcom::{
 // `atl.rs` documents the three invariants those call sites lean on (zeroable, transparent,
 // Drop-as-destructor).
 pub use crate::atl::{
-    CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator, CSimpleArray,
-    CStringW,
+    CAtlList, CComAllocator, CComHeapPtr, CComPtr, CCRTAllocator, CHeapPtr, CLocalAllocator,
+    CRegKey, CSimpleArray, CStringW,
 };
 
 // shellutils.h / utils.h header inlines. The explicit `use` deliberately shadows the island
 // glob for `CCidaChildArrayHelper`: bindgen renders the C++ class as a bare layout with no
 // constructor, and the translated call sites need the real one.
 pub use crate::shellutils::{
-    hida_clipformat, CCidaChildArrayHelper, CCoInit, COleInit, DataObject_GetData,
-    DataObject_GetOffset, DataObject_SetData, DataObject_SetOffset, DestroyCIDA,
-    HIDA_GetPIDLFolder, HIDA_GetPIDLItem, ILIsSingle, ReleaseStgMedium, SHAlloc,
+    hida_clipformat, CCidaChildArrayHelper, CCoInit, COleInit, CScopedSetObjectWithSite,
+    DataObject_GetData, DataObject_GetOffset, DataObject_SetData, DataObject_SetOffset,
+    DestroyCIDA, HIDA_GetPIDLFolder, HIDA_GetPIDLItem, ILIsSingle, ReleaseStgMedium, SHAlloc,
 };
 
 // Accessor macros from `win32.rs`, but ONLY the ones whose signatures are type-neutral:

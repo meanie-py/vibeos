@@ -67,6 +67,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from .dead_regions import KNOWN_DEFINED, cond_truth  # noqa: F401  (KNOWN_DEFINED re-exported)
+
 # ---------------------------------------------------------------------------
 # Errors + findings
 # ---------------------------------------------------------------------------
@@ -901,26 +903,10 @@ _BUILD_SDK_RE = re.compile(r"^build-[^/]+/sdk/")
 # the wine-derived `#ifndef __REACTOS__` idiom (a `case DLL_WINE_PREATTACH:` that ReactOS
 # never compiles) unambiguously dead. Reading those arms produced a FALSE §9.112 alarm, and a
 # checker that cries wolf gets ignored.
-KNOWN_DEFINED = frozenset({"__REACTOS__"})
-
-
-def _cond_truth(line: str) -> bool | None:
-    """``True``/``False`` when a preprocessor condition is fixed for this tree, else ``None``."""
-    m = re.match(r"^\s*#\s*(ifdef|ifndef|if)\b(.*)$", line)
-    if m is None:
-        return None
-    kind, rest = m.group(1), m.group(2).strip()
-    if kind in ("ifdef", "ifndef"):
-        sym = rest.split()[0] if rest.split() else ""
-        if sym in KNOWN_DEFINED:
-            return kind == "ifdef"
-        return None
-    if re.fullmatch(r"0+", rest):
-        return False
-    m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
-    if m2 and m2.group(2) in KNOWN_DEFINED:
-        return m2.group(1) is None
-    return None
+# One rule, one home: `dead_regions` owns it, because `translate` needs the same verdict to
+# keep a dead body out of the PAID worklist and two copies of "is this branch compiled" is
+# exactly the drift that would let the two disagree about the same `#ifndef`.
+_cond_truth = cond_truth
 
 
 def scan_includes(text: str) -> list[Include]:
@@ -1010,6 +996,82 @@ def _guard_macro(line: str) -> tuple[str, bool] | None:
 
 _GUARD_OPEN_RE = re.compile(r"^\s*#\s*if(n?)def\s+([A-Za-z_]\w*)\s*$", re.M)
 
+# `#if <expr>` — the whole expression, for the integer-gate evaluator below.
+_IF_EXPR_RE = re.compile(r"^\s*#\s*if\s+(.+?)\s*$")
+# One `MACRO <op> <int>` comparison. The literal may be decimal or hex, with an
+# optional L/U suffix, because a version macro is routinely spelled `0x0601` or `100L`.
+_INT_CMP_RE = re.compile(
+    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*"
+    r"(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*\)*$"
+)
+
+
+def _pinned_int_macros(module) -> dict[str, int]:
+    """Macros this module pins to an integer literal via `-DNAME=<int>`.
+
+    A `target_compile_definitions(msvcrt_static PRIVATE _MSVCR_VER=0)` is every bit as
+    decidable as wine's `/* #undef HAVE_LDAP */` — it is on the compile command for every
+    TU in the target — but nothing was reading the VALUE, only the name.
+    """
+    pinned: dict[str, int] = {}
+    for d in module.definitions:
+        if not d.startswith("-D") or "=" not in d:
+            continue
+        name, _, value = d[2:].partition("=")
+        value = value.strip().rstrip("uUlL")
+        try:
+            pinned[name.strip()] = int(value, 0)
+        except ValueError:
+            continue
+    return pinned
+
+
+def _eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
+    """Evaluate a `#if` over pinned integer macros. True/False, or None when undecidable.
+
+    Deliberately narrow: a chain of `&&` OR a chain of `||`, never a mix, because getting
+    C's precedence subtly wrong here would mark LIVE code dead and send someone to delete
+    a body the compiler is really building. A term is either `MACRO <op> <int>` against a
+    pinned macro or a `defined(X)` we cannot settle; anything else is undecidable.
+
+    Short-circuit still resolves the mixed-certainty cases that matter: one decidably-false
+    conjunct kills the block however unknown its neighbours are. That is what settles
+    handler4.c's `defined(__x86_64__) && _MSVCR_VER>=140` on all three arches -- we never
+    learn whether __x86_64__ is defined, and we do not need to.
+    """
+    if "&&" in expr and "||" in expr:
+        return None
+    joiner = "&&" if "&&" in expr else ("||" if "||" in expr else None)
+    terms = expr.split(joiner) if joiner else [expr]
+
+    verdicts: list[bool | None] = []
+    for term in terms:
+        term = term.strip()
+        m = _INT_CMP_RE.match(term)
+        if m is not None and m.group(1) in pinned:
+            lhs, op, rhs = pinned[m.group(1)], m.group(2), int(m.group(3), 0)
+            verdicts.append(
+                {
+                    "==": lhs == rhs,
+                    "!=": lhs != rhs,
+                    "<=": lhs <= rhs,
+                    ">=": lhs >= rhs,
+                    "<": lhs < rhs,
+                    ">": lhs > rhs,
+                }[op]
+            )
+            continue
+        # A `defined(X)` term we cannot settle, or anything else: unknown.
+        verdicts.append(None)
+
+    if joiner == "&&" or joiner is None:
+        if any(v is False for v in verdicts):
+            return False
+        return True if all(v is True for v in verdicts) else None
+    if any(v is True for v in verdicts):
+        return True
+    return False if all(v is False for v in verdicts) else None
+
 
 def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
     """Warn when most of a module's CODE sits in a decidably-FALSE `#ifdef`.
@@ -1024,9 +1086,22 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
 
     The dead-region seal already tolerates an omission inside such a block, but tolerating
     is not the same as telling you the module is a stub before you pay.
+
+    TWO classes of gate, and BOTH are needed. wine's `#undef` settles `#ifdef HAVE_LDAP`;
+    the module's own `-DNAME=<int>` settles `#if _MSVCR_VER >= 100`. msvcrt is the case
+    that proved the second one is not optional: concurrency.c is 3,839 lines wholly inside
+    `#if _MSVCR_VER >= 100`, handler4.c 775 more inside
+    `defined(__x86_64__) && _MSVCR_VER>=140`, and msvcrt pins `_MSVCR_VER=0`. Both compile
+    to a 396-byte object with ZERO defined symbols.
+
+    AND the finding has to be PER-TU, not just module-wide. Those two files are 10.6% of
+    msvcrt's compiled lines — under the 15% module threshold, so the module-wide warning
+    stayed silent on 4,614 lines of guaranteed-dead code. You choose a FILE to translate,
+    so a wholly-dead file is the finding that actually saves the money.
     """
     undefs = _wine_config_undefs(repo_root)
-    if not undefs:
+    pinned = _pinned_int_macros(module)
+    if not undefs and not pinned:
         return
     total_lines = 0
     dead_lines = 0
@@ -1038,6 +1113,8 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
             continue
         lines = text.splitlines()
         total_lines += len(lines)
+        tu_lines = len(lines)
+        tu_dead = 0
         depth_dead = 0
         stack: list[bool | None] = []
         for line in lines:
@@ -1050,6 +1127,18 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
                     depth_dead += 1
                     culprits[macro] = culprits.get(macro, 0) + 1
                 continue
+            m = _IF_EXPR_RE.match(line)
+            if m is not None:
+                expr = m.group(1)
+                verdict = _eval_int_guard(expr, pinned) if pinned else None
+                # `None` (undecidable) must stay None, not False: the `#else` inverter
+                # below only flips a verdict it actually knows.
+                stack.append(None if verdict is None else not verdict)
+                if verdict is False:
+                    depth_dead += 1
+                    for name in set(re.findall(r"[A-Za-z_]\w*", expr)) & set(pinned):
+                        culprits[name] = culprits.get(name, 0) + 1
+                continue
             if re.match(r"^\s*#\s*else\s*$", line) and stack:
                 if stack[-1] is not None:
                     if stack[-1]:
@@ -1058,12 +1147,37 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
                     if stack[-1]:
                         depth_dead += 1
                 continue
+            if re.match(r"^\s*#\s*elif\b", line) and stack:
+                # An `#elif` arm is live exactly when the arms before it were false, which
+                # is a question this evaluator does not answer. Drop to UNKNOWN rather than
+                # inheriting the previous arm's verdict — inheriting it would report the
+                # `#elif` body as dead on the strength of a test that no longer applies.
+                if stack[-1]:
+                    depth_dead -= 1
+                stack[-1] = None
+                continue
             if re.match(r"^\s*#\s*endif\b", line) and stack:
                 if stack.pop():
                     depth_dead -= 1
                 continue
             if depth_dead > 0:
                 dead_lines += 1
+                tu_dead += 1
+        # A file that is ~entirely dead is its own finding, at ERROR: the module-wide
+        # percentage below can be under threshold while a specific file you are about to
+        # pay for is 100% dead. msvcrt is exactly that shape.
+        if tu_lines and 100 * tu_dead / tu_lines >= 90:
+            findings.append(
+                Finding(
+                    "error",
+                    "DEAD_TU",
+                    f"{_rel(tu, repo_root)} is {100 * tu_dead / tu_lines:.0f}% dead: "
+                    f"{tu_dead} of its {tu_lines} lines sit inside a decidably-FALSE "
+                    "`#if`, so this TU compiles to (almost) nothing — verify with "
+                    "`nm` on its .obj. It is in the source list, so it LOOKS live and "
+                    "the DEAD_SOURCE check cannot see it. DO NOT PAY TO TRANSLATE IT.",
+                )
+            )
     if not total_lines or not culprits:
         return
     pct = 100 * dead_lines / total_lines
@@ -1077,8 +1191,9 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
             "warn",
             "MOSTLY_DEAD_BODIES",
             f"{pct:.0f}% of this module's compiled lines are inside a decidably-FALSE "
-            f"#ifdef ({top}) — wine's config.h #undefs it, so the compiler throws that code "
-            "away and the real module is far smaller than it looks (often a pure stub). "
+            f"#if ({top}) — wine's config.h #undefs it, or the module pins it to a value "
+            "with -D, so the compiler throws that code away and the real module is far "
+            "smaller than it looks (often a pure stub). "
             "PAYING TO TRANSLATE IT BUYS THE PATH THAT IS NOT BUILT, and the output is "
             "unconditional Rust that changes behaviour and calls symbols this tree does not "
             "have. Read what the module actually compiles to BEFORE translating.",

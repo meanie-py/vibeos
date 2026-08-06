@@ -4142,6 +4142,8 @@ pub const PF_AVX512F_INSTRUCTIONS_AVAILABLE: u32 = 41;
 pub const PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE: u32 = 43;
 pub const PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE: u32 = 44;
 pub const PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE: u32 = 45;
+pub const STATUS_LONGJUMP: i32 = -2147483610;
+pub const STATUS_UNWIND_CONSOLIDATE: i32 = -2147483607;
 pub const STATUS_FLOAT_DENORMAL_OPERAND: i32 = -1073741683;
 pub const STATUS_FLOAT_DIVIDE_BY_ZERO: i32 = -1073741682;
 pub const STATUS_FLOAT_INEXACT_RESULT: i32 = -1073741681;
@@ -4197,6 +4199,9 @@ pub const RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO: u32 = 268435456;
 pub const RTL_CRITICAL_SECTION_FLAG_RESERVED: u32 = 3758096384;
 pub const EXCEPTION_NONCONTINUABLE: u32 = 1;
 pub const EXCEPTION_UNWINDING: u32 = 2;
+pub const EXCEPTION_EXIT_UNWIND: u32 = 4;
+pub const EXCEPTION_TARGET_UNWIND: u32 = 32;
+pub const EXCEPTION_COLLIDED_UNWIND: u32 = 64;
 pub const DELETE: u32 = 65536;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
@@ -4496,6 +4501,38 @@ pub const LOCALE_IDIGITSUBSTITUTION: u32 = 4116;
 pub const LOCALE_IPAPERSIZE: u32 = 4106;
 pub const LOCALE_FREE: u32 = 1;
 pub const LOCALE_THREAD: u32 = 2;
+pub const _RT_STACK: u32 = 0;
+pub const _RT_NULLPTR: u32 = 1;
+pub const _RT_FLOAT: u32 = 2;
+pub const _RT_INTDIV: u32 = 3;
+pub const _RT_EXECMEM: u32 = 5;
+pub const _RT_EXECFORM: u32 = 6;
+pub const _RT_EXECENV: u32 = 7;
+pub const _RT_SPACEARG: u32 = 8;
+pub const _RT_SPACEENV: u32 = 9;
+pub const _RT_ABORT: u32 = 10;
+pub const _RT_NPTR: u32 = 12;
+pub const _RT_FPTR: u32 = 13;
+pub const _RT_BREAK: u32 = 14;
+pub const _RT_INT: u32 = 15;
+pub const _RT_THREAD: u32 = 16;
+pub const _RT_LOCK: u32 = 17;
+pub const _RT_HEAP: u32 = 18;
+pub const _RT_OPENCON: u32 = 19;
+pub const _RT_QWIN: u32 = 20;
+pub const _RT_NOMAIN: u32 = 21;
+pub const _RT_NONCONT: u32 = 22;
+pub const _RT_INVALDISP: u32 = 23;
+pub const _RT_ONEXIT: u32 = 24;
+pub const _RT_PUREVIRT: u32 = 25;
+pub const _RT_STDIOINIT: u32 = 26;
+pub const _RT_LOWIOINIT: u32 = 27;
+pub const _RT_HEAPINIT: u32 = 28;
+pub const _RT_DOMAIN: u32 = 120;
+pub const _RT_SING: u32 = 121;
+pub const _RT_TLOSS: u32 = 122;
+pub const _RT_CRNL: u32 = 252;
+pub const _RT_BANNER: u32 = 255;
 pub const _MAX__TIME64_T: u64 = 32535244799;
 pub const _O_RDONLY: u32 = 0;
 pub const _O_WRONLY: u32 = 1;
@@ -4568,6 +4605,7 @@ pub const _TIME_LOCK: u32 = 11;
 pub const _EXIT_LOCK1: u32 = 13;
 pub const _EXIT_LOCK2: u32 = 14;
 pub const _POPEN_LOCK: u32 = 16;
+pub const _LOCKTAB_LOCK: u32 = 17;
 pub const _SETLOCALE_LOCK: u32 = 19;
 pub const _MB_CP_LOCK: u32 = 25;
 pub const _STREAM_LOCKS: u32 = 28;
@@ -4706,6 +4744,13 @@ pub const CXX_FRAME_MAGIC_VC7: u32 = 429065505;
 pub const CXX_FRAME_MAGIC_VC8: u32 = 429065506;
 pub const CXX_EXCEPTION: u32 = 3765269347;
 pub const CXX_EXCEPTION_PARAMS: u32 = 3;
+pub const FUNC_DESCR_SYNCHRONOUS: u32 = 1;
+pub const FUNC_DESCR_NOEXCEPT: u32 = 4;
+pub const CLASS_IS_SIMPLE_TYPE: u32 = 1;
+pub const CLASS_HAS_VIRTUAL_BASE_CLASS: u32 = 4;
+pub const TYPE_FLAG_CONST: u32 = 1;
+pub const TYPE_FLAG_VOLATILE: u32 = 2;
+pub const TYPE_FLAG_REFERENCE: u32 = 8;
 // PINNED by generate_bindings.py: corecrt.h: the signed twin, same reasoning.
 // bindgen's own spelling is HOST-dependent here, and msvcrt-sys is also
 // compiled for the linux host that builds msvcrt-difftest -- see
@@ -5000,6 +5045,12 @@ pub type LPVOID = *mut ::core::ffi::c_void;
 pub type LPCVOID = *const ::core::ffi::c_void;
 pub type INT = ::core::ffi::c_int;
 pub type UINT = ::core::ffi::c_uint;
+pub const _EXCEPTION_DISPOSITION_ExceptionContinueExecution: _EXCEPTION_DISPOSITION = 0;
+pub const _EXCEPTION_DISPOSITION_ExceptionContinueSearch: _EXCEPTION_DISPOSITION = 1;
+pub const _EXCEPTION_DISPOSITION_ExceptionNestedException: _EXCEPTION_DISPOSITION = 2;
+pub const _EXCEPTION_DISPOSITION_ExceptionCollidedUnwind: _EXCEPTION_DISPOSITION = 3;
+pub type _EXCEPTION_DISPOSITION = ::core::ffi::c_uint;
+pub use self::_EXCEPTION_DISPOSITION as EXCEPTION_DISPOSITION;
 pub type INT_PTR = ::core::ffi::c_int;
 pub type LONG_PTR = ::core::ffi::c_long;
 pub type ULONG_PTR = ::core::ffi::c_ulong;
@@ -5017,6 +5068,22 @@ pub struct _GUID {
     pub Data4: [::core::ffi::c_uchar; 8usize],
 }
 pub type GUID = _GUID;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __JUMP_BUFFER {
+    pub Ebp: ::core::ffi::c_ulong,
+    pub Ebx: ::core::ffi::c_ulong,
+    pub Edi: ::core::ffi::c_ulong,
+    pub Esi: ::core::ffi::c_ulong,
+    pub Esp: ::core::ffi::c_ulong,
+    pub Eip: ::core::ffi::c_ulong,
+    pub Registration: ::core::ffi::c_ulong,
+    pub TryLevel: ::core::ffi::c_ulong,
+    pub Cookie: ::core::ffi::c_ulong,
+    pub UnwindFunc: ::core::ffi::c_ulong,
+    pub UnwindData: [::core::ffi::c_ulong; 6usize],
+}
+pub type _JUMP_BUFFER = __JUMP_BUFFER;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _heapinfo {
@@ -5159,6 +5226,7 @@ pub struct _EXCEPTION_POINTERS {
     pub ContextRecord: PCONTEXT,
 }
 pub type EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
+pub type PEXCEPTION_POINTERS = *mut _EXCEPTION_POINTERS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SECURITY_ATTRIBUTES {
@@ -5210,6 +5278,14 @@ pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
 unsafe extern "stdcall" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
+unsafe extern "stdcall" {
+    pub fn __wine_RtlUnwind(
+        TargetFrame: PVOID,
+        TargetIp: PVOID,
+        ExceptionRecord: PEXCEPTION_RECORD,
+        ReturnValue: PVOID,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _OSVERSIONINFOW {
@@ -5254,6 +5330,7 @@ pub struct _EXCEPTION_REGISTRATION_RECORD {
     pub Prev: *mut _EXCEPTION_REGISTRATION_RECORD,
     pub Handler: PEXCEPTION_HANDLER,
 }
+pub type EXCEPTION_REGISTRATION_RECORD = _EXCEPTION_REGISTRATION_RECORD;
 pub type LPARAM = LONG_PTR;
 pub type FARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
 #[repr(C)]
@@ -5284,6 +5361,9 @@ pub struct tagPOINT {
     pub y: LONG,
 }
 pub type POINT = tagPOINT;
+pub type PTHREAD_START_ROUTINE =
+    ::core::option::Option<unsafe extern "stdcall" fn(lpThreadParameter: LPVOID) -> DWORD>;
+pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _OVERLAPPED {
@@ -5450,6 +5530,7 @@ pub type LPPROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
 unsafe extern "stdcall" {
     pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
 }
+pub type LPEXCEPTION_POINTERS = PEXCEPTION_POINTERS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _WIN32_FILE_ATTRIBUTE_DATA {
@@ -5474,6 +5555,9 @@ pub struct _TIME_ZONE_INFORMATION {
 }
 pub type TIME_ZONE_INFORMATION = _TIME_ZONE_INFORMATION;
 pub type LPTIME_ZONE_INFORMATION = *mut _TIME_ZONE_INFORMATION;
+pub type PTOP_LEVEL_EXCEPTION_FILTER =
+    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
+pub type LPTOP_LEVEL_EXCEPTION_FILTER = PTOP_LEVEL_EXCEPTION_FILTER;
 unsafe extern "stdcall" {
     pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
@@ -5531,6 +5615,16 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn CreateThread(
+        arg1: LPSECURITY_ATTRIBUTES,
+        arg2: DWORD,
+        arg3: LPTHREAD_START_ROUTINE,
+        arg4: PVOID,
+        arg5: DWORD,
+        arg6: PDWORD,
+    ) -> HANDLE;
+}
+unsafe extern "stdcall" {
     pub fn DebugBreak();
 }
 unsafe extern "stdcall" {
@@ -5555,6 +5649,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn ExitProcess(arg1: UINT) -> !;
+}
+unsafe extern "stdcall" {
+    pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
 unsafe extern "stdcall" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
@@ -5602,6 +5699,9 @@ unsafe extern "stdcall" {
     pub fn GetCurrentProcessId() -> DWORD;
 }
 unsafe extern "stdcall" {
+    pub fn GetCurrentThreadId() -> DWORD;
+}
+unsafe extern "stdcall" {
     pub fn GetDiskFreeSpaceW(
         arg1: LPCWSTR,
         arg2: PDWORD,
@@ -5621,6 +5721,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
@@ -5726,6 +5829,9 @@ unsafe extern "stdcall" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn OutputDebugStringA(arg1: LPCSTR);
+}
+unsafe extern "stdcall" {
     pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
 }
 unsafe extern "stdcall" {
@@ -5739,6 +5845,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn ResumeThread(arg1: HANDLE) -> DWORD;
 }
 unsafe extern "stdcall" {
     pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
@@ -5772,6 +5881,9 @@ unsafe extern "stdcall" {
     ) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn SetLastError(arg1: DWORD);
+}
+unsafe extern "stdcall" {
     pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
 }
 unsafe extern "stdcall" {
@@ -5789,6 +5901,18 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TlsAlloc() -> DWORD;
+}
+unsafe extern "stdcall" {
+    pub fn TlsFree(arg1: DWORD) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn TlsGetValue(arg1: DWORD) -> PVOID;
+}
+unsafe extern "stdcall" {
+    pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
@@ -6011,6 +6135,13 @@ pub struct _frame_info {
 pub type frame_info = _frame_info;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct cxx_frame_info {
+    pub frame_info: frame_info,
+    pub rec: *mut EXCEPTION_RECORD,
+    pub context: *mut CONTEXT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct __thread_data {
     pub tid: DWORD,
     pub handle: HANDLE,
@@ -6057,6 +6188,9 @@ pub struct __thread_data {
 pub type thread_data_t = __thread_data;
 unsafe extern "C" {
     pub fn msvcrt_get_thread_data() -> *mut thread_data_t;
+}
+unsafe extern "C" {
+    pub fn _amsg_exit(errnum: ::core::ffi::c_int);
 }
 unsafe extern "C" {
     pub fn msvcrt_wstrdupa(arg1: *const ::core::ffi::c_char) -> *mut wchar_t;
@@ -6203,6 +6337,8 @@ pub struct _COORD {
     pub Y: SHORT,
 }
 pub type COORD = _COORD;
+pub type PHANDLER_ROUTINE =
+    ::core::option::Option<unsafe extern "stdcall" fn(CtrlType: DWORD) -> BOOL>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _KEY_EVENT_RECORD {
@@ -6302,6 +6438,9 @@ unsafe extern "stdcall" {
         nLength: DWORD,
         lpNumberOfEventsRead: LPDWORD,
     ) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn SetConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE, Add: BOOL) -> BOOL;
 }
 unsafe extern "stdcall" {
     pub fn SetConsoleMode(hConsoleHandle: HANDLE, dwMode: DWORD) -> BOOL;
@@ -7667,6 +7806,11 @@ pub struct _onexit_table_t {
     pub _last: *mut _PVFV,
     pub _end: *mut _PVFV,
 }
+pub type _beginthread_start_routine_t =
+    ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>;
+pub type _beginthreadex_start_routine_t = ::core::option::Option<
+    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void) -> ::core::ffi::c_uint,
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct tagHELPINFO {
@@ -7699,8 +7843,627 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
+pub type __sighandler_t = ::core::option::Option<unsafe extern "C" fn(arg1: ::core::ffi::c_int)>;
 unsafe extern "stdcall" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
+}
+pub const _FPIEEE_FORMAT__FpFormatFp32: _FPIEEE_FORMAT = 0;
+pub const _FPIEEE_FORMAT__FpFormatFp64: _FPIEEE_FORMAT = 1;
+pub const _FPIEEE_FORMAT__FpFormatFp80: _FPIEEE_FORMAT = 2;
+pub const _FPIEEE_FORMAT__FpFormatFp128: _FPIEEE_FORMAT = 3;
+pub const _FPIEEE_FORMAT__FpFormatI16: _FPIEEE_FORMAT = 4;
+pub const _FPIEEE_FORMAT__FpFormatI32: _FPIEEE_FORMAT = 5;
+pub const _FPIEEE_FORMAT__FpFormatI64: _FPIEEE_FORMAT = 6;
+pub const _FPIEEE_FORMAT__FpFormatU16: _FPIEEE_FORMAT = 7;
+pub const _FPIEEE_FORMAT__FpFormatU32: _FPIEEE_FORMAT = 8;
+pub const _FPIEEE_FORMAT__FpFormatU64: _FPIEEE_FORMAT = 9;
+pub const _FPIEEE_FORMAT__FpFormatBcd80: _FPIEEE_FORMAT = 10;
+pub const _FPIEEE_FORMAT__FpFormatCompare: _FPIEEE_FORMAT = 11;
+pub const _FPIEEE_FORMAT__FpFormatString: _FPIEEE_FORMAT = 12;
+pub type _FPIEEE_FORMAT = ::core::ffi::c_uint;
+pub const _FP_OPERATION_CODE__FpCodeUnspecified: _FP_OPERATION_CODE = 0;
+pub const _FP_OPERATION_CODE__FpCodeAdd: _FP_OPERATION_CODE = 1;
+pub const _FP_OPERATION_CODE__FpCodeSubtract: _FP_OPERATION_CODE = 2;
+pub const _FP_OPERATION_CODE__FpCodeMultiply: _FP_OPERATION_CODE = 3;
+pub const _FP_OPERATION_CODE__FpCodeDivide: _FP_OPERATION_CODE = 4;
+pub const _FP_OPERATION_CODE__FpCodeSquareRoot: _FP_OPERATION_CODE = 5;
+pub const _FP_OPERATION_CODE__FpCodeRemainder: _FP_OPERATION_CODE = 6;
+pub const _FP_OPERATION_CODE__FpCodeCompare: _FP_OPERATION_CODE = 7;
+pub const _FP_OPERATION_CODE__FpCodeConvert: _FP_OPERATION_CODE = 8;
+pub const _FP_OPERATION_CODE__FpCodeRound: _FP_OPERATION_CODE = 9;
+pub const _FP_OPERATION_CODE__FpCodeTruncate: _FP_OPERATION_CODE = 10;
+pub const _FP_OPERATION_CODE__FpCodeFloor: _FP_OPERATION_CODE = 11;
+pub const _FP_OPERATION_CODE__FpCodeCeil: _FP_OPERATION_CODE = 12;
+pub const _FP_OPERATION_CODE__FpCodeAcos: _FP_OPERATION_CODE = 13;
+pub const _FP_OPERATION_CODE__FpCodeAsin: _FP_OPERATION_CODE = 14;
+pub const _FP_OPERATION_CODE__FpCodeAtan: _FP_OPERATION_CODE = 15;
+pub const _FP_OPERATION_CODE__FpCodeAtan2: _FP_OPERATION_CODE = 16;
+pub const _FP_OPERATION_CODE__FpCodeCabs: _FP_OPERATION_CODE = 17;
+pub const _FP_OPERATION_CODE__FpCodeCos: _FP_OPERATION_CODE = 18;
+pub const _FP_OPERATION_CODE__FpCodeCosh: _FP_OPERATION_CODE = 19;
+pub const _FP_OPERATION_CODE__FpCodeExp: _FP_OPERATION_CODE = 20;
+pub const _FP_OPERATION_CODE__FpCodeFabs: _FP_OPERATION_CODE = 21;
+pub const _FP_OPERATION_CODE__FpCodeFmod: _FP_OPERATION_CODE = 22;
+pub const _FP_OPERATION_CODE__FpCodeFrexp: _FP_OPERATION_CODE = 23;
+pub const _FP_OPERATION_CODE__FpCodeHypot: _FP_OPERATION_CODE = 24;
+pub const _FP_OPERATION_CODE__FpCodeLdexp: _FP_OPERATION_CODE = 25;
+pub const _FP_OPERATION_CODE__FpCodeLog: _FP_OPERATION_CODE = 26;
+pub const _FP_OPERATION_CODE__FpCodeLog10: _FP_OPERATION_CODE = 27;
+pub const _FP_OPERATION_CODE__FpCodeModf: _FP_OPERATION_CODE = 28;
+pub const _FP_OPERATION_CODE__FpCodePow: _FP_OPERATION_CODE = 29;
+pub const _FP_OPERATION_CODE__FpCodeSin: _FP_OPERATION_CODE = 30;
+pub const _FP_OPERATION_CODE__FpCodeSinh: _FP_OPERATION_CODE = 31;
+pub const _FP_OPERATION_CODE__FpCodeTan: _FP_OPERATION_CODE = 32;
+pub const _FP_OPERATION_CODE__FpCodeTanh: _FP_OPERATION_CODE = 33;
+pub const _FP_OPERATION_CODE__FpCodeY0: _FP_OPERATION_CODE = 34;
+pub const _FP_OPERATION_CODE__FpCodeY1: _FP_OPERATION_CODE = 35;
+pub const _FP_OPERATION_CODE__FpCodeYn: _FP_OPERATION_CODE = 36;
+pub const _FP_OPERATION_CODE__FpCodeLogb: _FP_OPERATION_CODE = 37;
+pub const _FP_OPERATION_CODE__FpCodeNextafter: _FP_OPERATION_CODE = 38;
+pub const _FP_OPERATION_CODE__FpCodeNegate: _FP_OPERATION_CODE = 39;
+pub const _FP_OPERATION_CODE__FpCodeFmin: _FP_OPERATION_CODE = 40;
+pub const _FP_OPERATION_CODE__FpCodeFmax: _FP_OPERATION_CODE = 41;
+pub const _FP_OPERATION_CODE__FpCodeConvertTrunc: _FP_OPERATION_CODE = 42;
+pub const _FP_OPERATION_CODE__XMMIAddps: _FP_OPERATION_CODE = 43;
+pub const _FP_OPERATION_CODE__XMMIAddss: _FP_OPERATION_CODE = 44;
+pub const _FP_OPERATION_CODE__XMMISubps: _FP_OPERATION_CODE = 45;
+pub const _FP_OPERATION_CODE__XMMISubss: _FP_OPERATION_CODE = 46;
+pub const _FP_OPERATION_CODE__XMMIMulps: _FP_OPERATION_CODE = 47;
+pub const _FP_OPERATION_CODE__XMMIMulss: _FP_OPERATION_CODE = 48;
+pub const _FP_OPERATION_CODE__XMMIDivps: _FP_OPERATION_CODE = 49;
+pub const _FP_OPERATION_CODE__XMMIDivss: _FP_OPERATION_CODE = 50;
+pub const _FP_OPERATION_CODE__XMMISqrtps: _FP_OPERATION_CODE = 51;
+pub const _FP_OPERATION_CODE__XMMISqrtss: _FP_OPERATION_CODE = 52;
+pub const _FP_OPERATION_CODE__XMMIMaxps: _FP_OPERATION_CODE = 53;
+pub const _FP_OPERATION_CODE__XMMIMaxss: _FP_OPERATION_CODE = 54;
+pub const _FP_OPERATION_CODE__XMMIMinps: _FP_OPERATION_CODE = 55;
+pub const _FP_OPERATION_CODE__XMMIMinss: _FP_OPERATION_CODE = 56;
+pub const _FP_OPERATION_CODE__XMMICmpps: _FP_OPERATION_CODE = 57;
+pub const _FP_OPERATION_CODE__XMMICmpss: _FP_OPERATION_CODE = 58;
+pub const _FP_OPERATION_CODE__XMMIComiss: _FP_OPERATION_CODE = 59;
+pub const _FP_OPERATION_CODE__XMMIUComiss: _FP_OPERATION_CODE = 60;
+pub const _FP_OPERATION_CODE__XMMICvtpi2ps: _FP_OPERATION_CODE = 61;
+pub const _FP_OPERATION_CODE__XMMICvtsi2ss: _FP_OPERATION_CODE = 62;
+pub const _FP_OPERATION_CODE__XMMICvtps2pi: _FP_OPERATION_CODE = 63;
+pub const _FP_OPERATION_CODE__XMMICvtss2si: _FP_OPERATION_CODE = 64;
+pub const _FP_OPERATION_CODE__XMMICvttps2pi: _FP_OPERATION_CODE = 65;
+pub const _FP_OPERATION_CODE__XMMICvttss2si: _FP_OPERATION_CODE = 66;
+pub const _FP_OPERATION_CODE__XMMIAddsubps: _FP_OPERATION_CODE = 67;
+pub const _FP_OPERATION_CODE__XMMIHaddps: _FP_OPERATION_CODE = 68;
+pub const _FP_OPERATION_CODE__XMMIHsubps: _FP_OPERATION_CODE = 69;
+pub const _FP_OPERATION_CODE__XMMI2Addpd: _FP_OPERATION_CODE = 70;
+pub const _FP_OPERATION_CODE__XMMI2Addsd: _FP_OPERATION_CODE = 71;
+pub const _FP_OPERATION_CODE__XMMI2Subpd: _FP_OPERATION_CODE = 72;
+pub const _FP_OPERATION_CODE__XMMI2Subsd: _FP_OPERATION_CODE = 73;
+pub const _FP_OPERATION_CODE__XMMI2Mulpd: _FP_OPERATION_CODE = 74;
+pub const _FP_OPERATION_CODE__XMMI2Mulsd: _FP_OPERATION_CODE = 75;
+pub const _FP_OPERATION_CODE__XMMI2Divpd: _FP_OPERATION_CODE = 76;
+pub const _FP_OPERATION_CODE__XMMI2Divsd: _FP_OPERATION_CODE = 77;
+pub const _FP_OPERATION_CODE__XMMI2Sqrtpd: _FP_OPERATION_CODE = 78;
+pub const _FP_OPERATION_CODE__XMMI2Sqrtsd: _FP_OPERATION_CODE = 79;
+pub const _FP_OPERATION_CODE__XMMI2Maxpd: _FP_OPERATION_CODE = 80;
+pub const _FP_OPERATION_CODE__XMMI2Maxsd: _FP_OPERATION_CODE = 81;
+pub const _FP_OPERATION_CODE__XMMI2Minpd: _FP_OPERATION_CODE = 82;
+pub const _FP_OPERATION_CODE__XMMI2Minsd: _FP_OPERATION_CODE = 83;
+pub const _FP_OPERATION_CODE__XMMI2Cmppd: _FP_OPERATION_CODE = 84;
+pub const _FP_OPERATION_CODE__XMMI2Cmpsd: _FP_OPERATION_CODE = 85;
+pub const _FP_OPERATION_CODE__XMMI2Comisd: _FP_OPERATION_CODE = 86;
+pub const _FP_OPERATION_CODE__XMMI2UComisd: _FP_OPERATION_CODE = 87;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2pi: _FP_OPERATION_CODE = 88;
+pub const _FP_OPERATION_CODE__XMMI2Cvtsd2si: _FP_OPERATION_CODE = 89;
+pub const _FP_OPERATION_CODE__XMMI2Cvttpd2pi: _FP_OPERATION_CODE = 90;
+pub const _FP_OPERATION_CODE__XMMI2Cvttsd2si: _FP_OPERATION_CODE = 91;
+pub const _FP_OPERATION_CODE__XMMI2Cvtps2pd: _FP_OPERATION_CODE = 92;
+pub const _FP_OPERATION_CODE__XMMI2Cvtss2sd: _FP_OPERATION_CODE = 93;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2ps: _FP_OPERATION_CODE = 94;
+pub const _FP_OPERATION_CODE__XMMI2Cvtsd2ss: _FP_OPERATION_CODE = 95;
+pub const _FP_OPERATION_CODE__XMMI2Cvtdq2ps: _FP_OPERATION_CODE = 96;
+pub const _FP_OPERATION_CODE__XMMI2Cvttps2dq: _FP_OPERATION_CODE = 97;
+pub const _FP_OPERATION_CODE__XMMI2Cvtps2dq: _FP_OPERATION_CODE = 98;
+pub const _FP_OPERATION_CODE__XMMI2Cvttpd2dq: _FP_OPERATION_CODE = 99;
+pub const _FP_OPERATION_CODE__XMMI2Cvtpd2dq: _FP_OPERATION_CODE = 100;
+pub const _FP_OPERATION_CODE__XMMI2Addsubpd: _FP_OPERATION_CODE = 101;
+pub const _FP_OPERATION_CODE__XMMI2Haddpd: _FP_OPERATION_CODE = 102;
+pub const _FP_OPERATION_CODE__XMMI2Hsubpd: _FP_OPERATION_CODE = 103;
+pub type _FP_OPERATION_CODE = ::core::ffi::c_uint;
+pub const _FPIEEE_PRECISION__FpPrecisionFull: _FPIEEE_PRECISION = 0;
+pub const _FPIEEE_PRECISION__FpPrecision53: _FPIEEE_PRECISION = 1;
+pub const _FPIEEE_PRECISION__FpPrecision24: _FPIEEE_PRECISION = 2;
+pub type _FPIEEE_PRECISION = ::core::ffi::c_uint;
+pub type _FP32 = f32;
+pub type _FP64 = f64;
+pub type _I16 = ::core::ffi::c_short;
+pub type _I32 = ::core::ffi::c_int;
+pub type _U16 = ::core::ffi::c_ushort;
+pub type _U32 = ::core::ffi::c_uint;
+pub type _Q64 = ::core::ffi::c_longlong;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FP80 {
+    pub W: [::core::ffi::c_ushort; 5usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FP128 {
+    pub W: [__msvcrt_ulong; 4usize],
+}
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct _I64 {
+    pub W: [__msvcrt_ulong; 2usize],
+}
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct _U64 {
+    pub W: [__msvcrt_ulong; 2usize],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _BCD80 {
+    pub W: [::core::ffi::c_ushort; 5usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FPQ64 {
+    pub W: [_Q64; 2usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub struct _FPIEEE_VALUE {
+    pub Value: _FPIEEE_VALUE__bindgen_ty_1,
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_padding_0: [u8; 15usize],
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub union _FPIEEE_VALUE__bindgen_ty_1 {
+    pub Fp32Value: _FP32,
+    pub Fp64Value: _FP64,
+    pub Fp80Value: _FP80,
+    pub Fp128Value: _FP128,
+    pub I16Value: _I16,
+    pub I32Value: _I32,
+    pub I64Value: _I64,
+    pub U16Value: _U16,
+    pub U32Value: _U32,
+    pub U64Value: _U64,
+    pub Bcd80Value: _BCD80,
+    pub StringValue: *mut ::core::ffi::c_char,
+    pub CompareValue: ::core::ffi::c_int,
+    pub Q64Value: _Q64,
+    pub Fpq64Value: _FPQ64,
+}
+impl _FPIEEE_VALUE {
+    #[inline]
+    pub fn OperandValid(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_OperandValid(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn OperandValid_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_OperandValid_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Format(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 4u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Format(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 4u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Format_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                4u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Format_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                4u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        OperandValid: ::core::ffi::c_uint,
+        Format: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let OperandValid: u32 = unsafe { ::core::mem::transmute(OperandValid) };
+            OperandValid as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 4u8, {
+            let Format: u32 = unsafe { ::core::mem::transmute(Format) };
+            Format as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[repr(align(4))]
+#[derive(Debug, Copy, Clone)]
+pub struct _FPIEEE_EXCEPTION_FLAGS {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+impl _FPIEEE_EXCEPTION_FLAGS {
+    #[inline]
+    pub fn Inexact(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Inexact(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Inexact_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Inexact_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Underflow(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Underflow(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Underflow_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Underflow_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Overflow(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Overflow(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Overflow_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Overflow_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn ZeroDivide(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(3usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_ZeroDivide(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(3usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn ZeroDivide_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                3usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_ZeroDivide_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                3usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn InvalidOperation(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(4usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_InvalidOperation(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(4usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn InvalidOperation_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                4usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_InvalidOperation_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                4usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        Inexact: ::core::ffi::c_uint,
+        Underflow: ::core::ffi::c_uint,
+        Overflow: ::core::ffi::c_uint,
+        ZeroDivide: ::core::ffi::c_uint,
+        InvalidOperation: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let Inexact: u32 = unsafe { ::core::mem::transmute(Inexact) };
+            Inexact as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let Underflow: u32 = unsafe { ::core::mem::transmute(Underflow) };
+            Underflow as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 1u8, {
+            let Overflow: u32 = unsafe { ::core::mem::transmute(Overflow) };
+            Overflow as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 1u8, {
+            let ZeroDivide: u32 = unsafe { ::core::mem::transmute(ZeroDivide) };
+            ZeroDivide as u64
+        });
+        __bindgen_bitfield_unit.set(4usize, 1u8, {
+            let InvalidOperation: u32 = unsafe { ::core::mem::transmute(InvalidOperation) };
+            InvalidOperation as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[repr(align(16))]
+#[derive(Copy, Clone)]
+pub struct _FPIEEE_RECORD {
+    pub _bitfield_align_1: [u16; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 3usize]>,
+    pub Cause: _FPIEEE_EXCEPTION_FLAGS,
+    pub Enable: _FPIEEE_EXCEPTION_FLAGS,
+    pub Status: _FPIEEE_EXCEPTION_FLAGS,
+    pub Operand1: _FPIEEE_VALUE,
+    pub Operand2: _FPIEEE_VALUE,
+    pub Result: _FPIEEE_VALUE,
+}
+impl _FPIEEE_RECORD {
+    #[inline]
+    pub fn RoundingMode(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u32) }
+    }
+    #[inline]
+    pub fn set_RoundingMode(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 2u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn RoundingMode_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                2u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_RoundingMode_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                2u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Precision(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 3u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Precision(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(2usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Precision_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                2usize,
+                3u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Precision_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                2usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Operation(&self) -> ::core::ffi::c_uint {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(5usize, 12u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Operation(&mut self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(5usize, 12u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Operation_raw(this: *const Self) -> ::core::ffi::c_uint {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 3usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                5usize,
+                12u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Operation_raw(this: *mut Self, val: ::core::ffi::c_uint) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 3usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                5usize,
+                12u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        RoundingMode: ::core::ffi::c_uint,
+        Precision: ::core::ffi::c_uint,
+        Operation: ::core::ffi::c_uint,
+    ) -> __BindgenBitfieldUnit<[u8; 3usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 3usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 2u8, {
+            let RoundingMode: u32 = unsafe { ::core::mem::transmute(RoundingMode) };
+            RoundingMode as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 3u8, {
+            let Precision: u32 = unsafe { ::core::mem::transmute(Precision) };
+            Precision as u64
+        });
+        __bindgen_bitfield_unit.set(5usize, 12u8, {
+            let Operation: u32 = unsafe { ::core::mem::transmute(Operation) };
+            Operation as u64
+        });
+        __bindgen_bitfield_unit
+    }
 }
 pub type vtable_ptr = ::core::option::Option<unsafe extern "C" fn()>;
 #[repr(C)]
@@ -7782,6 +8545,130 @@ pub struct cxx_exception_type {
     pub destructor: *mut ::core::ffi::c_void,
     pub custom_handler: *mut ::core::ffi::c_void,
     pub type_info_table: *const cxx_type_info_table,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ipmap_info {
+    pub ip: UINT,
+    pub state: ::core::ffi::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct catchblock_info {
+    pub flags: UINT,
+    pub type_info: *const type_info,
+    pub offset: ::core::ffi::c_int,
+    pub handler: ::core::option::Option<unsafe extern "C" fn() -> *mut ::core::ffi::c_void>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tryblock_info {
+    pub start_level: ::core::ffi::c_int,
+    pub end_level: ::core::ffi::c_int,
+    pub catch_level: ::core::ffi::c_int,
+    pub catchblock_count: ::core::ffi::c_uint,
+    pub catchblock: *const catchblock_info,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct unwind_info {
+    pub prev: ::core::ffi::c_int,
+    pub handler: ::core::option::Option<unsafe extern "C" fn() -> *mut ::core::ffi::c_void>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct cxx_function_descr {
+    pub _bitfield_align_1: [u32; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,
+    pub unwind_count: UINT,
+    pub unwind_table: *const unwind_info,
+    pub tryblock_count: UINT,
+    pub tryblock: *const tryblock_info,
+    pub ipmap_count: UINT,
+    pub ipmap: *const ipmap_info,
+    pub expect_list: *const ::core::ffi::c_void,
+    pub flags: UINT,
+}
+impl cxx_function_descr {
+    #[inline]
+    pub fn magic(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 29u8) as u32) }
+    }
+    #[inline]
+    pub fn set_magic(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 29u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn magic_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                29u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_magic_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                29u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn bbt_flags(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(29usize, 3u8) as u32) }
+    }
+    #[inline]
+    pub fn set_bbt_flags(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(29usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn bbt_flags_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                29usize,
+                3u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_bbt_flags_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                29usize,
+                3u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(magic: UINT, bbt_flags: UINT) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 29u8, {
+            let magic: u32 = unsafe { ::core::mem::transmute(magic) };
+            magic as u64
+        });
+        __bindgen_bitfield_unit.set(29usize, 3u8, {
+            let bbt_flags: u32 = unsafe { ::core::mem::transmute(bbt_flags) };
+            bbt_flags as u64
+        });
+        __bindgen_bitfield_unit
+    }
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

@@ -248,22 +248,34 @@ def _aggregate_zero_init_spans(masked: str) -> set[tuple[int, int]]:
 
 
 def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
-    """Ranges inside the function's OWN parameter list that a Rust signature cannot hold.
+    """The function's OWN parameter list — nothing in it can be sealed.
 
-    Two constructs, one rule: the value exists only in C/C++ declarator syntax, so there is
-    nowhere in the translated signature to put a token standing for it, and the audit then
-    rejects every attempt no matter how correct the body is.
+    One rule, and by now three constructs that proved it: the thing sealing would protect
+    exists only in C/C++ declarator syntax, so there is nowhere in the TRANSLATED signature
+    to put a token standing for it. rustconv generates that signature deterministically and
+    the model never writes it, so the audit rejects every attempt no matter how correct the
+    body is — the envelope is unsatisfiable, not merely hard.
 
     * An ARRAY PARAMETER's bound. A C array parameter decays to a pointer, so the `2` in
       `LPITEMIDLIST apidls[2]` has no counterpart in the Rust signature. shell32's
       `DoGetAliasPIDLs` burned four paid retries on this before the prompt was read.
     * A DEFAULT ARGUMENT's value. Rust has no default arguments at all, so the `FALSE` in
       `BOOL AllowFolder = FALSE` cannot appear either — `ExtensionFromPidl` burned three.
+    * A PARAMETER TYPE that is a typedef. `IEnumFORMATETCImpl::Clone(LPENUMFORMATETC* ppenum)`
+      sealed `LPENUMFORMATETC`, and for a COM method the signature comes from the flattened
+      vtable authority rather than the C declaration, so the token had nowhere to land at
+      all. Rejected on every sample, including the sanctioned retry.
+
+    That last one generalises the whole helper: a parameter list holds types, parameter
+    names, bounds and defaults, and NONE of those is a value. So the exclusion is now the
+    entire list rather than two special cases. This only ever seals LESS, and the resume
+    cache compares seals directionally — a banked entry sealed more tightly than a run wants
+    is still sound — so widening it re-bills nothing.
 
     Scoped to the PARAMETER LIST specifically — the first balanced `(...)` of the signature —
     and not merely "before the first brace". `int a[2] = {0, 1};` has its first brace at the
     INITIALIZER, so the looser rule silently stopped sealing a real local array's bound.
-    A bound, or an `=`, in the BODY is a genuine value and must stay sealed.
+    A bound, an `=`, or a type name in the BODY is a genuine value and must stay sealed.
     """
     body = masked.find("{")
     opening = masked.find("(")
@@ -281,46 +293,18 @@ def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
                 break
     if closing < 0:
         return []
-
-    spans: list[tuple[int, int]] = []
-    depth = 0
-    start = -1
-    for index in range(opening, closing):
-        char = masked[index]
-        if char == "[":
-            if depth == 0:
-                start = index
-            depth += 1
-        elif char == "]" and depth > 0:
-            depth -= 1
-            if depth == 0:
-                spans.append((start, index + 1))
-
-    # Default arguments: a top-level `=` runs to the next top-level `,` or the `)`.
-    depth = 0
-    default_start = -1
-    for index in range(opening + 1, closing):
-        char = masked[index]
-        if char in "([":
-            depth += 1
-        elif char in ")]":
-            depth -= 1
-        elif depth != 0:
-            continue
-        elif char == "=":
-            # Not a comparison/compound operator: `==`, `!=`, `<=`, `>=`.
-            following = masked[index + 1 : index + 2]
-            preceding = masked[index - 1 : index]
-            if following == "=" or preceding in ("=", "!", "<", ">"):
-                continue
-            if default_start < 0:
-                default_start = index
-        elif char == "," and default_start >= 0:
-            spans.append((default_start, index))
-            default_start = -1
-    if default_start >= 0:
-        spans.append((default_start, closing))
-    return spans
+    # PROVE it is a definition header before excluding the whole span. The old
+    # bounds-and-defaults rule was safe on a fragment that merely happens to start with a
+    # call — `Call(TRUE); Call(FALSE);` has no `[` and no top-level `=`, so it excluded
+    # nothing. Excluding the whole parenthesised range is not safe that way: it would
+    # unseal TRUE, and `n = Len - sizeof(UNICODE_NULL)` likewise. A real definition's
+    # parameter list is followed by the body `{`, a ctor initialiser list `:`, or a C++
+    # trailing qualifier and then one of those.
+    tail = masked[closing + 1 :]
+    tail = re.sub(r"^(?:\s|\bconst\b|\bvolatile\b|\bnoexcept\b|\boverride\b|\bfinal\b)*", "", tail)
+    if not tail.startswith(("{", ":")):
+        return []
+    return [(opening, closing + 1)]
 
 
 def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:

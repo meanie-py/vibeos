@@ -235,3 +235,47 @@ pub mod process;
 pub mod cpp;
 #[cfg(feature = "cpp")]
 pub mod cpp_rtti;
+
+// except.c: the exception DISPATCHER — the C signal layer (`signal`/`raise` and the SEH
+// filter that turns a hardware fault into a C signal) plus the C++ frame handler that walks
+// a function's try blocks looking for a catch. 21 of the 21 symbols msvcrt.dll's copy of
+// this TU defines.
+//
+// Rides the `cpp` feature with cpp.c because it is not separable from it: the catch-matching
+// path calls `find_caught_type` and `copy_exception`, cppexcept.h inlines that live in
+// `cpp_rtti`, and both are equally unlinkable in an ELF host binary.
+//
+// The arch split is the thing to know before editing: everything from `ip_to_state` to
+// `__CxxFrameHandler` is `#[cfg(not(target_arch = "x86"))]` because it is inside
+// `#ifndef __i386__` in the C, where i386 gets a DIFFERENT implementation from except_i386.c.
+// Cohab resolves by first-match, so an ungated body there would replace except_i386.c's
+// 32-bit SEH walk with the RVA one and link without complaint. `dump_function_descr` and
+// `find_catch_handler` sit above that gate and are called BY those still-C arch files.
+#[cfg(feature = "cpp")]
+pub mod except;
+
+// except_i386.c: the OTHER side of that gate — 32-bit SEH, where an exception frame is a
+// linked list threaded through `fs:0` rather than a table the unwinder looks up by PC. The
+// `#ifdef __i386__` around the whole TU is why both modules are `#![cfg(target_arch = "x86")]`
+// from the inside as well as gated here: on amd64/arm64 this file compiles to nothing at all,
+// and `except.rs` supplies the same exported names from the other implementation.
+//
+// `seh_i386` is its hand-written companion, the same relationship `cpp_rtti` has to `cpp`: six
+// `__ASM_GLOBAL_FUNC` thunks that run on somebody else's frame, and wine/exception.h's two
+// `static inline` frame-list helpers. None of them has C text a translator could read.
+//
+// Seven bodies of the C are NOT here, on purpose: `_global_unwind2`, `_except_handler2/3`,
+// `_local_unwind2`, `longjmp` and the two `__regs__setjmp*` are all inside `#ifndef
+// __REACTOS__` and are in no object this tree builds.
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod except_i386;
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod seh_i386;
+
+// lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
+// together behind `threading` because the host harness supplies its own `_lock`,
+// `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.
+#[cfg(feature = "threading")]
+pub mod lock;
+#[cfg(feature = "threading")]
+pub mod thread;

@@ -1,9 +1,5 @@
-//! ORPHAN-BY-DESIGN: translated shell32 TU, parked pending substrate closure.
-//! Unblocked by the 2026-07-25 seal fixes (macro authority, Rust-label masking,
-//! goto replication, prototype/named-cast types); still needs SDK externs, Win32
-//! constants and resource IDs resolved before it compiles. Wiring it in this state
-//! would break the build for every lane rather than expose a regression.
-//! This is a PAID artifact — do not delete it to tidy up.
+//! FLIPPED: this TU is wired into the crate and shipping; the C++ original is
+//! commented out of dll/win32/shell32/CMakeLists.txt.
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_2CBECA8C1D10: [WCHAR; 3] = [0x002A, 0x003F, 0x0000];
 pub static CPP_COM_WSTR_77ECA80E282A: [WCHAR; 3] = [0x002E, 0x002E, 0x0000];
@@ -2141,7 +2137,7 @@ unsafe extern "C" fn move_files(
         return ERROR_CANCELLED;
     }
 
-    if PathFileExistsW((*flTo).feFiles.offset(0 as isize).as_ref().unwrap().szDirectory)
+    if PathFileExistsW((*(*flTo).feFiles.offset(0 as isize)).szDirectory)
         == 0
     {
         return ERROR_CANCELLED;
@@ -2166,7 +2162,7 @@ unsafe extern "C" fn move_files(
             }
             fileDest = (*flTo).feFiles.offset(i as isize);
             if mismatched != 0 && (*fileDest).bExists == 0 {
-                create_dest_dirs((*flTo).feFiles.offset(i as isize).as_ref().unwrap().szFullPath);
+                create_dest_dirs((*(*flTo).feFiles.offset(i as isize)).szFullPath);
                 (*fileDest).bExists = TRUE;
                 (*fileDest).attributes = FILE_ATTRIBUTE_DIRECTORY;
             }

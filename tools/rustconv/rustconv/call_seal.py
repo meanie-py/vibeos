@@ -29,6 +29,10 @@ class SealedCall:
     # Upper bound when the callee has C++ DEFAULT ARGUMENTS: the C site may omit them, a
     # faithful Rust lowering cannot. None means "no defaults, exact match required".
     argc_max: int | None = None
+    # This callee is a C++ METHOD, so `argc` above already counts the leading `this` that
+    # the C site spells implicitly. Recorded because the Rust site can then be REPAIRED
+    # rather than rejected -- see `repair_dropped_receivers`.
+    receiver: bool = False
 
 
 @dataclass(frozen=True)
@@ -249,7 +253,8 @@ def seal_calls(
         # reason this matters -- ACCEPTS a body that dropped `this`: `CDrivesFolderEnum_dtor`
         # shipped `DeleteList_body()` against a fn whose first parameter is `this`, and the
         # envelope called it good because 0 matched the C site's 0.
-        if original in receiver_callees:
+        is_receiver = original in receiver_callees
+        if is_receiver:
             if argc is not None:
                 argc += 1
             if argc_max is not None:
@@ -261,6 +266,7 @@ def seal_calls(
                 in_dead_region(dead_spans, start, end),
                 argc,
                 argc_max,
+                is_receiver,
             )
         )
         result = result[:start] + placeholder + result[end:]
@@ -536,6 +542,45 @@ def _defaulted_param_count(masked: str, callee: str) -> int | None:
     return None
 
 
+def _mask_turbofish_commas(text: str) -> str:
+    """Blank the commas inside `::<...>` spans, leaving every other byte and the LENGTH alone.
+
+    `_argument_count` tracks `()[]{}` depth but not `<>`, so `transmute::<A, B>(x)` reads as
+    two arguments where the C had one. The old defence was to skip any site whose argument
+    text mentioned `::<` at all -- which also skipped every site containing a harmless
+    `size_of::<T>()`, and that is not a corner: it is how nearly every `memcpy` lowering
+    spells its length. thread.c's `_beginthread_trampoline` shipped through that hole with
+    `msvcrt_get_thread_data` -- a ZERO-argument function -- wearing the memcpy's three
+    arguments, and no finding was raised.
+
+    A callee-side turbofish needs no handling here: `_argument_count` already returns None
+    when anything sits between the name and the `(`.
+
+    Length is preserved so callers can keep indexing the unmasked string.
+    """
+    out = list(text)
+    i = 0
+    while (start := text.find("::<", i)) >= 0:
+        depth, pos = 0, start + 2
+        while pos < len(text):
+            ch = text[pos]
+            if ch == "<":
+                depth += 1
+            # `->` inside a `fn(A) -> B` type argument is not a closing angle bracket.
+            elif ch == ">" and text[pos - 1] != "-":
+                depth -= 1
+                if depth == 0:
+                    break
+            pos += 1
+        else:
+            break
+        for p in range(start, pos):
+            if out[p] == ",":
+                out[p] = " "
+        i = pos + 1
+    return "".join(out)
+
+
 def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     """Tokens whose Rust call site takes a different number of arguments than the C one.
 
@@ -545,11 +590,14 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     site and it now wraps two arguments where the C had three.
 
     Skipped rather than judged wherever the count is not a fair comparison: a C site
-    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`), an
-    unbalanced Rust site, and a turbofish, whose `::<A, B>` commas sit at the same depth
-    as real arguments. A token that appears more than once — the `goto` replication
-    region — needs only ONE occurrence to agree, since the copies are the same call.
+    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`) and
+    an unbalanced Rust site. A turbofish used to skip the site too; it now only has its
+    own commas blanked, because discarding the whole site is what let a three-argument
+    call to a zero-argument callee ship — see `_mask_turbofish_commas`. A token that
+    appears more than once — the `goto` replication region — needs only ONE occurrence to
+    agree, since the copies are the same call.
     """
+    exec_mask = _mask_turbofish_commas(exec_mask)
     findings = []
     for call in sealed.calls:
         if call.argc is None:
@@ -558,7 +606,6 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
             counted
             for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", exec_mask)
             if (counted := _argument_count(exec_mask, match.end())) is not None
-            and "::<" not in counted[1]
         ]
         hi = call.argc_max if call.argc_max is not None else call.argc
         if not counts or any(call.argc <= count <= hi for count, _ in counts):
@@ -568,6 +615,52 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     return findings
 
 
+def repair_dropped_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[str]]:
+    """Insert the explicit `this` a sibling METHOD call site is missing.
+
+    The C++ receiver is implicit, so the prepared C reads `_DoCallback_body(a, b, c)`
+    while the Rust worker's first parameter is `this`. Making that explicit is a
+    mechanical lowering the tool owns -- `normalize_worker_semantics` has always done it
+    on the unsealed path -- but it is keyed to the callee NAME, and under `--seal-calls`
+    the name is an opaque token, so it could never fire. The envelope's arity check then
+    rejected a body whose ONLY defect was the receiver the tool was supposed to add: five
+    of seven rejects on CDefaultContextMenu, each re-billed on retry, for a repair that
+    costs nothing.
+
+    Deliberately narrow. A site is repaired only when it is short by EXACTLY the receiver
+    and does not already lead with `this`; anything else is a real disagreement and stays
+    a hard failure. The receiver can only ever be `this` here, because the helper binder
+    refused any sibling call with a different receiver long before this point.
+    """
+    if not any(call.receiver for call in sealed.calls):
+        return rust, []
+    insertions: list[tuple[int, str, str]] = []
+    masked = _code_mask(rust)
+    for call in sealed.calls:
+        if not call.receiver or call.argc is None:
+            continue
+        for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", masked):
+            counted = _argument_count(masked, match.end())
+            if counted is None or "::<" in counted[1]:
+                continue
+            count, text = counted
+            if count != call.argc - 1:
+                continue
+            if re.match(r"\s*this\b", text):
+                continue
+            opening = masked.find("(", match.end())
+            insertions.append(
+                (
+                    opening + 1,
+                    "this" + (", " if count else ""),
+                    f"{call.placeholder}={call.original}",
+                )
+            )
+    for position, insertion, _ in sorted(insertions, reverse=True):
+        rust = rust[:position] + insertion + rust[position:]
+    return rust, sorted({repaired for _, _, repaired in insertions})
+
+
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
     """Verify the closed call set and restore the callee names.
 
@@ -575,6 +668,7 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
     omitted that lives only in non-executed code -- accepted, but reported.
     """
     rust = scrub_comment_token_echoes(rust)
+    rust, _repaired = repair_dropped_receivers(rust, sealed)
     expected = {call.placeholder for call in sealed.calls}
     masked = _code_mask(rust)
     executable = _PLACEHOLDER_RE.findall(masked)

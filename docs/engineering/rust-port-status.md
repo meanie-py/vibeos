@@ -830,6 +830,136 @@ and `msvcrt_wstrdupa` itself.
 Lane doc: `docs/engineering/active-lanes/msvcrt-from-pieces-plan.md`. Field manual: §9.60,
 §9.61, §9.63, §9.64, **§9.66**.
 
+**Wave 28 (2026-08-05) — lock.c + thread.c FLIPPED ($0.13). The lock table and per-thread state.**
+
+6 spec exports (`_lock`, `_unlock`, `_beginthread`, `_beginthreadex`, `_endthread`,
+`_endthreadex`) plus the three internals main.c calls (`msvcrt_init_mt_locks`,
+`msvcrt_free_locks`, `msvcrt_get_thread_data`). 434 lines, 14 live functions; small, but the
+most-executed code in the crate — `_lock`/`_unlock` run on every `malloc` through heap.rs's
+`LOCK_HEAP`, and `msvcrt_get_thread_data` is the per-thread accessor nearly every other
+translated module calls. That is the point of taking it now: unlike except.c, a defect here
+fails the boot loudly instead of hiding.
+
+**One real defect, and it is the CALL-side twin of the `_tzset` constant permutation.**
+`_beginthread_trampoline` came back with its call set slid one slot: `msvcrt_get_thread_data`
+— a zero-argument function — wearing the `memcpy`'s three arguments, `memcpy` wearing the
+`free`'s one, and `free` in place of the `start_address(arglist)` call that is the entire
+point of the trampoline. The thread would have leaked its argument block and never run the
+user's entry point. `--seal-calls` accepted it because every callee appeared exactly once and
+executable, which is all a closed SET can check.
+
+`rustconv`'s arity oracle exists for exactly this and had the evidence, but skipped the site:
+it discarded any call whose argument text mentioned `::<`, and the third argument was
+`core::mem::size_of::<T>()` — which is how essentially every `memcpy` lowering spells its
+length, so one over-broad guard had disabled arity checking across a whole call family. Fixed
+by blanking only the turbofish's own commas (`_mask_turbofish_commas`, length-preserving and
+`->`/nesting aware); replaying the real body through the seal now rejects it with
+`msvcrt_get_thread_data wants 0, got 3`. Three regression tests.
+
+**Substrate.** The two thread-entry typedefs are DERIVED, not hand-written, and the reason is
+visible in the output: `_beginthreadex_start_routine_t` is `extern "stdcall"` on i386 and
+`extern "C"` on amd64/arm64, because `__stdcall` is a real convention only on x86 — a
+hand-written pair would have been right on one arch and silently wrong on two. Also added
+`SetLastError` (the other half of the `GetLastError` save/restore `msvcrt_get_thread_data`
+goes out of its way to do) and `ResumeThread`. `msvcrt_tls_index` stays `extern`: main.c is
+still C and owns the `TlsAlloc()` that fills it, and a second Rust definition would give the
+reader an always-zero index.
+
+Both trampolines' per-arch convention duals are thin wrappers over one shared `_body`, because
+only half a `cfg` dual is ever compiled — a later hand-edit to the wrong twin is invisible to
+`cargo check` on every target that does not select it.
+
+Behind a `threading` feature, default-on, dropped by the host harness for a DUPLICATE
+definition rather than a missing one: `msvcrt-difftest/refimpl.c:310` defines
+`msvcrt_get_thread_data` and `fileimpl.c:1220` defines `_lock`/`_unlock`, since the harness
+needs its own single-threaded thread_data it can inspect between cases. PORTED, NOT GRADED —
+the substrate is Win32 (TLS slots, CRITICAL_SECTIONs, CreateThread), not an algorithm a host
+harness can reproduce.
+
+**What is actually left in msvcrt (census, 2026-08-05).** Measured, not estimated: for each
+compiled TU, the symbols it defines minus everything that wins first-match — the Rust archive
+plus the `rust_*_shim.c` trampolines, which live in the msvcrt MODULE and so beat
+`msvcrt_static`. Forget the shims and the answer is wrong by 70 symbols (wcs.c reads as 33
+still-C when it is 3).
+
+| file | defines | still reached in C |
+|---|---|---|
+| `except.c` | 21 | **0** — flipped in wave 29 |
+| `except_i386.c` | 13 | **0** — flipped in wave 30 |
+| `ucrt_tls_sup.c` | 4 | 3 |
+| `wcs.c` | 176 | 3 (`_wcsdup`, `towctrans`, `wcstombs`) |
+| `string.c` | 106 | 3 (the `fpnum_*` bignum internals) |
+| `main.c` | 1 | 1 (`DllMain`) |
+| `sincos.c` | 2 | 1 (`sincosf`) |
+| `scanf.c` | 44 | **0** — fully flipped |
+
+So the remaining real surface was **the exception dispatcher and nothing else of size**:
+except.c + except_i386.c were 34 of the 45 symbols still served by C. Waves 29 and 30 took both.
+What is left is a handful of stragglers — `ucrt_tls_sup.c`'s 3, `wcs.c`'s 3, `string.c`'s 3,
+`DllMain`, `sincosf` — and nothing in msvcrt is now bigger than one function.
+
+**Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
+linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
+frame up by PC in a table. Same exports, different implementations — which is what the
+`#ifdef __i386__` around the whole TU and the `#ifndef __i386__` inside except.c mean, and why
+both modules are `#![cfg(target_arch = "x86")]`-shaped rather than sharing bodies. rustconv
+emitted the same **convention dual** here (`se_translation_filter` as a stdcall/cdecl pair);
+this time the `not(x86)` twin was unreachable by construction and was deleted.
+
+Three things generalise:
+
+* **A dead preprocessor arm was on the paid bill.** `translate` charges per function and was
+  quoting for the 7 bodies inside `#ifndef __REACTOS__` — a 30% surcharge for code in no object
+  we build, on every wine-derived module. `dead_regions.never_compiled_lines` now drops them
+  before anything is bought, and records each as an audit finding that says *absent on purpose,
+  nothing owed* (as opposed to `--skip-fn`'s *hand-write it*).
+* **`__ASM_GLOBAL_FUNC` has no C text, so it never reaches the translation** — it arrives only
+  as commented-out C. The six thunks live in a hand-written `seh_i386` companion (the
+  relationship `cpp_rtti` has to `cpp`), transcribed **verbatim in AT&T syntax** via
+  `options(att_syntax)` rather than converted to Intel, so "transcribed" can be checked rather
+  than trusted: `llvm-objdump -d` of the rlib's asm object against `except_i386.c.obj` is
+  instruction-for-instruction identical at every offset, with the same
+  `IMAGE_REL_I386_REL32 _cxx_frame_handler` relocation at 0x50. **Do this on any asm
+  transcription** — it is a total check and costs one objdump.
+* **A bitfield the island exposes as `set_X()` is a lucky compile error.** `handle_fpieee_flt`
+  is a positional transcription of the x87 control and status words into `_FPIEEE_RECORD`, in
+  which each of five flags appears three times (Status from the exception, Enable from the
+  mask, Cause = Enable & Status). Plain field writes would have compiled if the fields were
+  plain; because they are bitfields the body had to be rewritten against the C by hand. A pair
+  swapped between two of those three slots is invisible to every other check we run.
+
+**Wave 29 — except.c (21/21), behind the `cpp` feature.** The signal layer (`signal`/`raise`,
+the `sighandlers` table, the SEH filter that maps a hardware fault to a C signal) and the C++
+frame handler, in one TU because they share one thread_data block. $0.28 sealed; no
+`UNVERIFIED CONSTANTS` findings, and `find_catch_block`'s EIGHT positional arguments were
+diffed against both C call sites by hand regardless.
+
+Two things here generalise beyond msvcrt:
+
+* **A convention dual is not an arch gate, and it looks like one.** rustconv emitted
+  `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not(...))] extern "C"` pairs for the
+  callbacks — correct, and unrelated to the fact that this file's whole 64-bit frame handler
+  is inside `#ifndef __i386__`. Left ungated, the Rust `__CxxFrameHandler` would have won
+  first-match over except_i386.c's completely different 32-bit SEH implementation, and
+  **linked clean**. The object is the oracle: except.c.obj defines `__CxxFrameHandler`,
+  `call_catch_block` and `cxx_local_unwind` on amd64/arm64 and none of them on i386.
+* **A TU compiled TWICE with different `-D` has two different live sets.** except.c is built
+  into `msvcrt_static` (msvcrt.dll, no `__UCRTSUPPORT__`) *and* `msvcrt_shared`
+  (ucrtbase.dll, with it). Its `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)` block is
+  undecidable from source — correctly so, since neither `profile_derive` nor rustconv can
+  settle a disjunction with an unknown term — but the *object* settles it per target. Five
+  bodies were `--skip-fn`'d on that evidence and recorded as audit findings.
+
+**Two files that look meaty and are phantoms — do not target them.** `concurrency.c` (3,839
+lines, the largest untranslated file in the module) sits entirely inside
+`#if _MSVCR_VER >= 100`, and `handler4.c` (775) inside
+`defined(__x86_64__) && _MSVCR_VER>=140`. msvcrt compiles at `-D_MSVCR_VER=0`, so **both build
+to a 396-byte object with zero defined symbols.** `profile_derive` was blind to this — its
+dead-code audit only knew wine's `config.h` `#undef`s, not a module's own `-DNAME=<int>` — and
+the two together are 10.6% of the module, under the 15% module-wide threshold, so nothing
+would have warned. It now evaluates integer gates and reports `DEAD_TU` at ERROR for any
+single TU ≥90% dead; both are flagged.
+
 **Wave 27 (2026-08-05) — cpp.c FLIPPED ($0.21). The C++ RTTI/exception subsystem.**
 
 47 spec exports, 51 compiled functions: the `type_info` / `exception` / `bad_cast` /
@@ -1148,6 +1278,97 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
   `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
   translatable and left `CEnumMergedFolder` with only its activation shape.
+  **Re-measured 2026-08-05 after three more flips, now per-TU** (`rustconv cpp-tu` over every
+  live TU). Gap (3), object-field RAII, is the cheapest to close and blocks exactly three:
+  `CIDLDataObj` (`CSimpleArray<FORMATETC>`/`<STGMEDIUM>`), `CDefaultContextMenu`
+  (`CAtlList<>` ×2, 1,995 lines) and `CRecycleBinFolderViewCB` (`CComHeapPtr<ITEMIDLIST>
+  m_pidls[2]`). The leverage is that `atl.rs` **already implements** CComPtr / CHeapPtr /
+  CComHeapPtr / CSimpleArray with `Drop` restoring the dropped destructors, and
+  `--local-raii NAME=PATH` already performs exactly this substitution for BODY-locals — there
+  is simply no equivalent for a class's STATE fields.
+  **Closed for two of the three, 2026-08-05, and the third turned out to be a different gap.**
+  The scaffold now keeps an ATL container's TYPE in the Rust owner (it cannot be flattened to
+  a pointer the way `CComPtr` is, because its destructor walks storage the scaffold does not
+  own), initialises it with `new()` instead of `zeroed()`, and emits a `drop_in_place` per
+  container in the generated `Release` — after the explicit dtor body, which is C++'s own
+  order. `CComHeapPtr<T> name[N]` is accepted too, freeing each element. `CIDLDataObj` is
+  preflight-green; `CRecycleBinFolderViewCB` has its state field accepted and is now blocked
+  only on activation. **`CDefaultContextMenu` is not an object-field-RAII case at all** —
+  `CAtlList<DynamicShellEntry>` and `<StaticShellEntry>` hold C++ objects with their OWN
+  destructors (`CComPtr<IContextMenu>`, `CStringW`), and `atl.rs`'s container `Drop` runs one
+  `drop_in_place` per element, which reproduces the C++ only when the element is trivially
+  destructible. So the element type must be PROVEN trivially destructible or the container is
+  refused, and the proof is the bindgen island: bindgen only ever renders C declarations, so a
+  name it emits as a struct came from a C header. A C++ class is never in that set.
+  **CLOSED 2026-08-05.** The island is one of TWO safe families; the other is a
+  source-discovered POD **rendered owning**. Two defects sat behind it: the element type was
+  never discovered at all (the candidate scan only matched a plain `Type name`, so an element
+  inside a template argument was invisible — which made the refusal accidentally-correct rather
+  than a proof of anything), and the POD renderer spelled ATL members with the COM *owner's*
+  type. That is right for an owner, whose generated `Release` releases explicitly, and fatal in a
+  POD, whose field types are its entire destructor. `PlainStateField.owned_rust_type` keeps the
+  owning spelling (`CComPtr<T>`/`CComHeapPtr<T>`/`CStringW`), all `repr(transparent)`, so
+  layout is unchanged and Rust's field-drop order *is* the C++ implicit destructor. The
+  free-function renderer had the same bug and the shipped `brfolder.rs` is what proved it — it
+  already had the owning spelling while the generator did not, so a regeneration would have
+  downgraded a correct file. Repo sweep: 12 C++ structs hold ATL members, only `BrItemData` has
+  a Rust port, so nothing shipped carried the leak. `CAtlList<T>` itself is implemented in `atl.rs` (the
+  measured surface: GetHeadPosition/GetNext ×7, IsEmpty ×5, RemoveAll/GetAt/FindIndex/AddTail
+  ×2, AddHead ×1) and returns a null POSITION on OOM where ATL throws, which is stated at the
+  type because it silently drops an entry rather than abandoning the operation.
+  **`CIDLDataObj.cpp` is flipped on the back of it** (2026-08-05, $0.16) — the shell's
+  `IDataObject`/`IAsyncOperation` for a PIDL selection, its `IEnumFORMATETC`, and the TU's four
+  constructors, as three modules: the assembler writes one file per class slice, and a TU only
+  leaves CMake when every slice has an owner. No bridge was needed (both constructors sit inside
+  `wine/shell32_main.h`'s own `extern "C"`; both `SHCreate*DataObject` are WINAPI in shlobj.h).
+  The container contract held — the model wrote `m_Formats.GetAt(n)` from the sealed usage
+  mapping instead of inventing a wrapper. Three tool fixes fell out of the grind, each of which
+  had been paid by hand before: `--seal-facts` was sealing the function's OWN parameter TYPES
+  (unsatisfiable for a COM method, whose signature comes from the vtable authority — the whole
+  parameter list is excluded now); the SDK-record renderer emitted a template-erased SHADOW of
+  `CSimpleArray` that beat the real one by scope; and the stitcher's substrate globs collide
+  with the scaffold's prelude glob on every shared name, which is what those 339/339/399 opening
+  error counts were. Defects worth naming in the paid bodies: the free-function slice INVENTED a
+  `CIDLDataObj` struct (it cannot see the slice that owns the real one), `Clone` used the
+  generated worker name as a VTABLE SLOT, and `SHAlloc(size)` passed a DWORD to a SIZE_T
+  parameter — invisible on i386, caught by both 64-bit targets.
+  **`CDefaultContextMenu.cpp` is BOUGHT but NOT FLIPPED** (2026-08-05, $0.41, 43/45 workers) —
+  the 2,024-line TU behind every right-click. Preflight is fully green now: 5 interfaces, 33
+  vtable slots, both `CAtlList` fields resolved, and the element PODs rendering owning. The
+  assembly is parked at `~/vibeos-rust-staging/CDefaultContextMenu-cppcom/` with a RESUME.md,
+  and it re-assembles for $0 from the resume cache. Three more tool fixes fell out, two of which
+  recovered already-paid bodies at $0 on replay: a free helper and a method may share a name and
+  C++ resolves it by SCOPE (`MapVerbToCmdId/5` static vs `/3` member — the binder knew only the
+  free one and hard-failed the whole TU); `--seal-calls` hid sibling call sites from the pass
+  that inserts the implicit `this`, so the envelope demanded a receiver the responsible pass
+  could not see (5 of the 7 rejects); and cpp_com's dropped-constant audit demanded back a
+  `const_cast<T>` type argument that `fact_seal` already knew has no Rust landing site. The two
+  bodies the workers could not produce are now hand-written in the parked file:
+  `DoCreateNewFolder`, because every sample silently FIXED a real ReactOS leak (the C frees
+  `pidl` once and leaks it when `SelectItem` fails), which the envelope is right to refuse and
+  which retrying cannot change; and `InvokeRegVerb`, whose three missing constructs now exist —
+  **`CRegKey` ported in `atl.rs` and `CScopedSetObjectWithSite` in `shellutils.rs` (LANDED)**,
+  and the `static_cast<IContextMenu*>(this)` is the file's own `QueryInterface` answer,
+  `addr_of_mut!((*this).IContextMenu3_iface).cast()`. That is the same `--local-raii` substrate
+  that blocks `COpenWithMenu`, so that lane is unblocked too.
+  **Second session (2026-08-05): the free-function half is bought as well — $0.13, 22/22, so
+  $0.54 for the whole TU.** `--cpp-com --class` translates the CLASS ONLY; this TU's other 14
+  top-level definitions (the `DCMA_*` menu-array API, both `*_RustBridge` entry points,
+  `SHCreateDefaultContextMenu`, `CDefFolderMenu_Create2`, the `g_StaticInvokeCmdMap` verb
+  table) needed a separate `--free-functions` run — the same two-run shape `CNetFolder` used.
+  Both runs derive their output path from the TU, so the second **requires `-o`**: rustconv
+  refuses to write rather than discard the first, which is fail-loud working as designed.
+  Still NOT FLIPPED — wired together the crate sits at **201 errors on i386**, all inside the
+  two generated halves and concentrated in this crate's known three-way substrate conflict
+  (`crate::shellcom` vs the bindgen island vs `com_sys`: `IDataObject`, `_GUID`, and which
+  interfaces expose `lpVtbl` slots as `Option<fn>`). Everything the safe automation reaches is
+  done; the RESUME.md records the four span-applier traps that cost time here, so the next
+  pass starts from the residue instead of re-deriving them.
+  Gap (2), inherited layout, blocks
+  `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
+  and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
+  (`CFileSysBindData`, `CExtractIcon`, `COpenWithList`/`COpenWithDialog`, `CRegFolderInfo`,
+  `CChangeNotifyBroker`).
   **Three more whole-TU flips landed 2026-08-05** — `droptargets/CFSDropTarget.cpp`,
   `droptargets/CRecyclerDropTarget.cpp` and `CDefViewBckgrndMenu.cpp` — and between them they
   settled the per-module type-ownership question that had CFSDropTarget parked
