@@ -514,6 +514,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   deliberately left the call unmarshalled rather than convert an honest failure into a
   success with garbage. It stays on the marshalgen-audit baseline until the kernel side is
   real (2 entries).
+- **OPEN: msgina's `StringCchPrintfW`/`StringCbPrintfW` dropped their bound — a stack overrun.**
+  `msgina-rust/src/lib.rs` renders both as macros that DISCARD the count argument and forward to
+  user32's variadic `wsprintfW`, which bounds to 1024 wchars internally. `shutdown.rs:1091`
+  formats a resource-loaded format string plus `gContext.UserName` into `szBuffer2: [u16; 256]`,
+  so a long user name writes up to 768 wchars past the end of a stack array; the C
+  (`StringCchPrintfW(szBuffer2, ARRAYSIZE(szBuffer2), ...)`) truncates safely and returns
+  `STRSAFE_E_INSUFFICIENT_BUFFER`. Introduced by the msgina translation, not present upstream.
+  Two other msgina strsafe entry points are hand-approximations of the same header
+  (`StringCbCopyNExW` drops the fill paths, the `IGNORE_NULLS` handling, and computes
+  `pcbRemaining` differently from the worker). Fix is task #48: one shared `strsafe-rust` crate
+  carrying the faithful header port, which msgina/syssetup/desk/sysdm all consume — the four
+  divergent copies are what made this possible.
 - **FIXED (2026-08-01): the registry's `HIVE_*` flag family was open-coded and half wrong.**
   `scan_mask_drift`'s first sweep found eight bare literals across five config-rust files, four
   of them with the wrong value. `CmLoadKey` set `0x4` and `CmUnloadKey` set `0x40` for
