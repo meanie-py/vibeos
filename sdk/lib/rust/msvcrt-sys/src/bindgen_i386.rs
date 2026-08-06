@@ -5804,6 +5804,9 @@ unsafe extern "stdcall" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
 unsafe extern "stdcall" {
+    pub fn OutputDebugStringA(arg1: LPCSTR);
+}
+unsafe extern "stdcall" {
     pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
 }
 unsafe extern "stdcall" {

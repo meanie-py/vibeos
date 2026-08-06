@@ -849,6 +849,11 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # architecture-shaped records, and neither exists on i386 — which is exactly why
         # the block that calls them is `#ifndef __i386__` in the C.
         "|RtlLookupFunctionEntry|RtlUnwindEx"
+        # except.c's always-on diagnostics. wine's ERR/FIXME channels are ON by default
+        # upstream, so dropping them ships silence where the C would have said why — the
+        # class `tools/scan_dropped_prints.py` exists to catch. OutputDebugStringA is the
+        # live sink user-mode Rust already uses in this tree (explorer-rust).
+        "|OutputDebugStringA"
         "|ReadConsoleInputA|ReadConsoleInputW|PeekConsoleInputA"
         "|GetNumberOfConsoleInputEvents"
         # winuser.h / winbase.h / ntsecapi.h: exit.c's message-box path and misc.c's four.

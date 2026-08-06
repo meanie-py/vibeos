@@ -45,7 +45,7 @@ use super::cpp_rtti::{
     rtti_rva,
 };
 use crate::prelude::*;
-use core::ffi::c_void;
+use core::ffi::{c_char, c_void};
 // cpp.c's `terminate`, called by `check_noexcept` when an exception escapes a noexcept
 // function. Same TU family, same feature gate.
 use super::cpp::terminate;
@@ -117,6 +117,30 @@ extern "C" {
         ep: *mut EXCEPTION_POINTERS,
         handler: Option<unsafe extern "C" fn(*mut _FPIEEE_RECORD) -> c_int>,
     ) -> c_int;
+}
+
+// except.c's ALWAYS-ON wine channels. `ERR` and `FIXME` are on by default upstream, so
+// lowering them to nothing ships silence exactly where the C would have said why — the class
+// tools/scan_dropped_prints.py exists to catch, and it scores a no-op print as absent no
+// matter how much it reads like a call. These go to the same OutputDebugStringA sink
+// user-mode Rust already uses in this tree, and carry wine's own `err:`/`fixme:` prefix.
+//
+// TRACE and WARN deliberately get NO body: they are off by default upstream, so dropping
+// them loses nothing upstream would have printed either.
+//
+// The format ARGUMENTS are dropped and the static sentence kept. Formatting would mean
+// running a printf on a failure path inside the exception dispatcher; the sentence is what
+// identifies the event, and the variable part is recoverable from a debugger once you know
+// which branch fired.
+macro_rules! ERR {
+    ($msg:literal $(, $($arg:tt)*)?) => {{
+        OutputDebugStringA(concat!("err:seh:", $msg, "\0").as_ptr() as *const c_char);
+    }};
+}
+macro_rules! FIXME {
+    ($msg:literal $(, $($arg:tt)*)?) => {{
+        OutputDebugStringA(concat!("fixme:seh:", $msg, "\0").as_ptr() as *const c_char);
+    }};
 }
 
 // ---- file-scope preamble (translated) ----
@@ -300,6 +324,7 @@ unsafe extern "C" fn cxx_local_unwind(
 
     while trylevel > last_level {
         if trylevel < 0 || trylevel >= ((*descr).unwind_count) as i32 {
+            ERR!("invalid trylevel %d\n", trylevel);
             terminate();
         }
         if rtti_is_set((*unwind_table.offset(trylevel as isize)).handler) {
@@ -552,6 +577,7 @@ unsafe extern "C" fn check_noexcept(
         && (*descr).magic() >= CXX_FRAME_MAGIC_VC8
         && ((*descr).flags & FUNC_DESCR_NOEXCEPT) != 0
     {
+        ERR!("noexcept function propagating exception\n");
         terminate();
     }
 }
@@ -574,6 +600,7 @@ unsafe extern "C" fn cxx_frame_handler(
     let mut unwindlevel: i32 = -1;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
+        FIXME!("unhandled frame magic %x\n", (*descr).magic());
         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
     }
 
@@ -667,7 +694,9 @@ unsafe extern "C" fn cxx_frame_handler(
 
             except_ptrs.ExceptionRecord = rec;
             except_ptrs.ContextRecord = context;
-            (*data).se_translator.unwrap()((*rec).ExceptionCode, &mut except_ptrs);
+            if let Some(xlat) = (*data).se_translator {
+                xlat((*rec).ExceptionCode, &mut except_ptrs);
+            }
 
             // __EXCEPT_CTX(se_translation_filter, &ctx) — never entered under DUMMY_PSEH.
             if _SEH2_Volatile0 != 0 {
@@ -703,11 +732,13 @@ unsafe extern "stdcall" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
 
     match ctrlType as DWORD {
         CTRL_C_EVENT => {
-            // The C is `sig_addr(sighandlers[SIGINT as usize]) != 0`, and SIG_DFL is the null handler,
-            // so `is_some()` is that test — not a null-pointer check on a raw pointer.
+            // The C tests `sighandlers[SIGINT] != SIG_DFL`, and SIG_DFL is the null handler
+            // — so this is that test, through the address rather than the pointer itself.
             if sig_addr(sighandlers[SIGINT as usize]) != 0 {
                 if sig_addr(sighandlers[SIGINT as usize]) != SIG_IGN_ADDR {
-                    (sighandlers[SIGINT as usize].unwrap())(SIGINT as c_int);
+                    if let Some(h) = sighandlers[SIGINT as usize] {
+                        h(SIGINT as c_int);
+                    }
                 }
                 ret = TRUE as BOOL;
             }
@@ -723,11 +754,13 @@ unsafe extern "C" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
 
     match ctrlType as DWORD {
         CTRL_C_EVENT => {
-            // The C is `sig_addr(sighandlers[SIGINT as usize]) != 0`, and SIG_DFL is the null handler,
-            // so `is_some()` is that test — not a null-pointer check on a raw pointer.
+            // The C tests `sighandlers[SIGINT] != SIG_DFL`, and SIG_DFL is the null handler
+            // — so this is that test, through the address rather than the pointer itself.
             if sig_addr(sighandlers[SIGINT as usize]) != 0 {
                 if sig_addr(sighandlers[SIGINT as usize]) != SIG_IGN_ADDR {
-                    (sighandlers[SIGINT as usize].unwrap())(SIGINT as c_int);
+                    if let Some(h) = sighandlers[SIGINT as usize] {
+                        h(SIGINT as c_int);
+                    }
                 }
                 ret = TRUE as BOOL;
             }
@@ -762,7 +795,9 @@ unsafe extern "C" fn msvcrt_exception_filter(except: *mut _EXCEPTION_POINTERS) -
                     old_ep = *ep;
                     *ep = except;
                     sighandlers[SIGSEGV as usize] = SIG_DFL;
-                    (handler.unwrap())(SIGSEGV as c_int);
+                    if let Some(h) = handler {
+                        h(SIGSEGV as c_int);
+                    }
                     *ep = old_ep;
                 }
                 ret = EXCEPTION_CONTINUE_EXECUTION;
@@ -807,7 +842,9 @@ unsafe extern "C" fn msvcrt_exception_filter(except: *mut _EXCEPTION_POINTERS) -
                     old_ep = *ep;
                     *ep = except;
                     sighandlers[SIGILL as usize] = SIG_DFL;
-                    (handler.unwrap())(SIGILL as c_int);
+                    if let Some(h) = handler {
+                        h(SIGILL as c_int);
+                    }
                     *ep = old_ep;
                 }
                 ret = EXCEPTION_CONTINUE_EXECUTION;
@@ -867,7 +904,9 @@ pub unsafe extern "C" fn raise(sig: i32) -> i32 {
                     let float_fn = core::mem::transmute::<__sighandler_t, unsafe extern "C" fn(i32, i32)>(handler);
                     float_fn(sig, (_FPE_EXPLICITGEN) as i32);
                 } else {
-                    (handler.unwrap())(sig);
+                    if let Some(h) = handler {
+                    h(sig);
+                }
                 }
                 *ep = old_ep;
             }
@@ -879,7 +918,9 @@ pub unsafe extern "C" fn raise(sig: i32) -> i32 {
             }
             if sig_addr(handler) != SIG_IGN_ADDR {
                 sighandlers[sig as usize] = SIG_DFL;
-                (handler.unwrap())(sig);
+                if let Some(h) = handler {
+                    h(sig);
+                }
             }
         }
         _ => {
@@ -979,7 +1020,7 @@ pub unsafe extern "C" fn __CxxQueryExceptionSize() -> u32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn __intrinsic_abnormal_termination() -> i32 {
-    // FIXME("(void)stub\n");
+    FIXME!("(void)stub\n");
     0
 }
 
@@ -1029,6 +1070,8 @@ pub unsafe extern "C" fn _FindAndUnlinkFrame(fi: *mut frame_info) {
         }
         cur = (*cur).next;
     }
+
+    ERR!("frame not found, native crashes in this case\n");
 }
 #[no_mangle]
 pub unsafe extern "C" fn _IsExceptionObjectToBeDestroyed(obj: *const core::ffi::c_void) -> i32 {
@@ -1149,6 +1192,9 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 // WINE_DEFAULT_DEBUG_CHANNEL(seh);
 //
+// #if _MSVCR_VER>=70 && _MSVCR_VER<=71
+// static MSVCRT_security_error_handler security_error_handler;
+// #endif
 //
 // static __sighandler_t sighandlers[NSIG] = { SIG_DFL };
 //
@@ -1292,7 +1338,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     unwind_help[0] = trylevel;
 // }
 //
-// static LONG __stdcall cxx_rethrow_filter(PEXCEPTION_POINTERS eptrs, void *c)
+// static LONG CALLBACK cxx_rethrow_filter(PEXCEPTION_POINTERS eptrs, void *c)
 // {
 //     EXCEPTION_RECORD *rec = eptrs->ExceptionRecord;
 //     cxx_catch_ctx *ctx = c;
@@ -1306,13 +1352,13 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     return EXCEPTION_CONTINUE_SEARCH;
 // }
 //
-// static void __stdcall cxx_catch_cleanup(BOOL normal, void *c)
+// static void CALLBACK cxx_catch_cleanup(BOOL normal, void *c)
 // {
 //     cxx_catch_ctx *ctx = c;
 //     __CxxUnregisterExceptionObject(&ctx->frame_info, ctx->rethrow);
 // }
 //
-// static void*  call_catch_block(EXCEPTION_RECORD *rec)
+// static void* WINAPI call_catch_block(EXCEPTION_RECORD *rec)
 // {
 //     ULONG_PTR frame = rec->ExceptionInformation[1];
 //     const cxx_function_descr *descr = (void*)rec->ExceptionInformation[2];
@@ -1421,7 +1467,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 //         /* unwind stack and call catch */
 //         memset(&catch_record, 0, sizeof(catch_record));
-//         catch_record.ExceptionCode = STATUS_UNWIND_CONSOLIDATE as u32;
+//         catch_record.ExceptionCode = STATUS_UNWIND_CONSOLIDATE;
 //         catch_record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
 //         catch_record.NumberParameters = 11;
 //         catch_record.ExceptionInformation[0] = (ULONG_PTR)call_catch_block;
@@ -1441,7 +1487,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     data->processing_throw--;
 // }
 //
-// static LONG __stdcall se_translation_filter(EXCEPTION_POINTERS *ep, void *c)
+// static LONG CALLBACK se_translation_filter(EXCEPTION_POINTERS *ep, void *c)
 // {
 //     se_translator_ctx *ctx = (se_translator_ctx *)c;
 //     EXCEPTION_RECORD *rec = ep->ExceptionRecord;
@@ -1458,7 +1504,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //                      ctx->descr, exc_type, ctx->orig_frame);
 //
 //     __DestructExceptionObject(rec);
-//     return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
+//     return ExceptionContinueSearch;
 // }
 //
 // static void check_noexcept( PEXCEPTION_RECORD rec,
@@ -1489,15 +1535,15 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     if (descr->magic<CXX_FRAME_MAGIC_VC6 || descr->magic>CXX_FRAME_MAGIC_VC8)
 //     {
 //         FIXME("unhandled frame magic %x\n", descr->magic);
-//         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
+//         return ExceptionContinueSearch;
 //     }
 //
 //     if (descr->magic >= CXX_FRAME_MAGIC_VC8 &&
 //         (descr->flags & FUNC_DESCR_SYNCHRONOUS) &&
 //         (rec->ExceptionCode != CXX_EXCEPTION &&
 //         !cxx_is_consolidate(rec) &&
-//         rec->ExceptionCode != STATUS_LONGJUMP as u32))
-//         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;  /* handle only c++ exceptions */
+//         rec->ExceptionCode != STATUS_LONGJUMP))
+//         return ExceptionContinueSearch;  /* handle only c++ exceptions */
 //
 //     /* update orig_frame if it's a nested exception */
 //     throw_func_off = RtlLookupFunctionEntry(dispatch->ControlPc, &throw_base, NULL)->BeginAddress;
@@ -1536,12 +1582,12 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //                 cxx_is_consolidate(rec) ? rec->ExceptionInformation[3] : trylevel);
 //         else
 //             cxx_local_unwind(orig_frame, dispatch, descr, unwindlevel);
-//         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
+//         return ExceptionContinueSearch;
 //     }
 //     if (!descr->tryblock_count)
 //     {
 //         check_noexcept(rec, descr, orig_frame != frame);
-//         return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
+//         return ExceptionContinueSearch;
 //     }
 //
 //     if (rec->ExceptionCode == CXX_EXCEPTION &&
@@ -1593,7 +1639,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 //     find_catch_block(rec, context, NULL, frame, dispatch, descr, exc_type, orig_frame);
 //     check_noexcept(rec, descr, orig_frame != frame);
-//     return _EXCEPTION_DISPOSITION_ExceptionContinueSearch;
+//     return ExceptionContinueSearch;
 // }
 //
 // /*********************************************************************
@@ -1616,10 +1662,10 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     switch (ctrlType)
 //     {
 //     case CTRL_C_EVENT:
-//         if (sighandlers[SIGINT as usize])
+//         if (sighandlers[SIGINT])
 //         {
-//             if (sighandlers[SIGINT as usize] != SIG_IGN)
-//                 (sighandlers[SIGINT as usize].unwrap())(SIGINT as c_int);
+//             if (sighandlers[SIGINT] != SIG_IGN)
+//                 sighandlers[SIGINT](SIGINT);
 //             ret = TRUE;
 //         }
 //         break;
@@ -1631,7 +1677,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 // /*********************************************************************
 //  *              __pxcptinfoptrs (MSVCRT.@)
 //  */
-// void**  __pxcptinfoptrs(void)
+// void** CDECL __pxcptinfoptrs(void)
 // {
 //     return (void**)&msvcrt_get_thread_data()->xcptinfo;
 // }
@@ -1665,7 +1711,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     switch (except->ExceptionRecord->ExceptionCode)
 //     {
 //     case EXCEPTION_ACCESS_VIOLATION:
-//         if ((handler = sighandlers[SIGSEGV as usize]) != SIG_DFL)
+//         if ((handler = sighandlers[SIGSEGV]) != SIG_DFL)
 //         {
 //             if (handler != SIG_IGN)
 //             {
@@ -1673,8 +1719,8 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 //                 old_ep = *ep;
 //                 *ep = except;
-//                 sighandlers[SIGSEGV as usize] = SIG_DFL;
-//                 (handler.unwrap())(SIGSEGV as c_int);
+//                 sighandlers[SIGSEGV] = SIG_DFL;
+//                 handler(SIGSEGV);
 //                 *ep = old_ep;
 //             }
 //             ret = EXCEPTION_CONTINUE_EXECUTION;
@@ -1691,7 +1737,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     case EXCEPTION_FLT_OVERFLOW:
 //     case EXCEPTION_FLT_STACK_CHECK:
 //     case EXCEPTION_FLT_UNDERFLOW:
-//         if ((handler = sighandlers[SIGFPE as usize]) != SIG_DFL)
+//         if ((handler = sighandlers[SIGFPE]) != SIG_DFL)
 //         {
 //             if (handler != SIG_IGN)
 //             {
@@ -1699,7 +1745,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //                 unsigned int i;
 //                 int float_signal = _FPE_INVALID;
 //
-//                 sighandlers[SIGFPE as usize] = SIG_DFL;
+//                 sighandlers[SIGFPE] = SIG_DFL;
 //                 for (i = 0; i < ARRAY_SIZE(float_exception_map); i++)
 //                 {
 //                     if (float_exception_map[i].status ==
@@ -1720,7 +1766,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //         break;
 //     case EXCEPTION_ILLEGAL_INSTRUCTION:
 //     case EXCEPTION_PRIV_INSTRUCTION:
-//         if ((handler = sighandlers[SIGILL as usize]) != SIG_DFL)
+//         if ((handler = sighandlers[SIGILL]) != SIG_DFL)
 //         {
 //             if (handler != SIG_IGN)
 //             {
@@ -1728,8 +1774,8 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 //                 old_ep = *ep;
 //                 *ep = except;
-//                 sighandlers[SIGILL as usize] = SIG_DFL;
-//                 (handler.unwrap())(SIGILL as c_int);
+//                 sighandlers[SIGILL] = SIG_DFL;
+//                 handler(SIGILL);
 //                 *ep = old_ep;
 //             }
 //             ret = EXCEPTION_CONTINUE_EXECUTION;
@@ -1757,11 +1803,11 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //  */
 // __sighandler_t CDECL signal(int sig, __sighandler_t func)
 // {
-//     __sighandler_t ret = SIG_ERR();
+//     __sighandler_t ret = SIG_ERR;
 //
 //     TRACE("(%d, %p)\n", sig, func);
 //
-//     if (sig_addr(func) == SIG_ERR_ADDR) return SIG_ERR();
+//     if (func == SIG_ERR) return SIG_ERR;
 //
 //     switch (sig)
 //     {
@@ -1779,7 +1825,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //         sighandlers[sig] = func;
 //         break;
 //     default:
-//         ret = SIG_ERR();
+//         ret = SIG_ERR;
 //     }
 //     return ret;
 // }
@@ -1799,7 +1845,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     case SIGILL:
 //     case SIGSEGV:
 //         handler = sighandlers[sig];
-//         if (sig_addr(handler) == 0) _exit(3);
+//         if (handler == SIG_DFL) _exit(3);
 //         if (handler != SIG_IGN)
 //         {
 //             EXCEPTION_POINTERS **ep = (EXCEPTION_POINTERS**)__pxcptinfoptrs(), *old_ep;
@@ -1811,7 +1857,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //             if (sig == SIGFPE)
 //                 ((float_handler)handler)(sig, _FPE_EXPLICITGEN);
 //             else
-//                 (handler.unwrap())(sig);
+//                 handler(sig);
 //             *ep = old_ep;
 //         }
 //         break;
@@ -1820,7 +1866,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     case SIGTERM:
 //     case SIGBREAK:
 //         handler = sighandlers[sig];
-//         if (sig_addr(handler) == 0) _exit(3);
+//         if (handler == SIG_DFL) _exit(3);
 //         if (handler != SIG_IGN)
 //         {
 //             sighandlers[sig] = SIG_DFL;
@@ -1951,12 +1997,51 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //     }
 // }
 //
+// #if _MSVCR_VER>=70 && _MSVCR_VER<=71
 //
+// /*********************************************************************
+//  *		_set_security_error_handler (MSVCR70.@)
+//  */
+// MSVCRT_security_error_handler CDECL _set_security_error_handler(
+//     MSVCRT_security_error_handler handler )
+// {
+//     MSVCRT_security_error_handler old = security_error_handler;
+//
+//     TRACE("(%p)\n", handler);
+//
+//     security_error_handler = handler;
+//     return old;
+// }
+//
+// /*********************************************************************
+//  *		__security_error_handler (MSVCR70.@)
+//  */
+// void CDECL __security_error_handler(int code, void *data)
+// {
+//     if(security_error_handler)
+//         security_error_handler(code, data);
+//     else
+//         FIXME("(%d, %p) stub\n", code, data);
+//
+//     _exit(3);
+// }
+//
+// #endif /* _MSVCR_VER>=70 && _MSVCR_VER<=71 */
+//
+// #if _MSVCR_VER>=110
+// /*********************************************************************
+//  *  __crtSetUnhandledExceptionFilter (MSVCR110.@)
+//  */
+// LPTOP_LEVEL_EXCEPTION_FILTER CDECL __crtSetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER filter)
+// {
+//     return SetUnhandledExceptionFilter(filter);
+// }
+// #endif
 //
 // /*********************************************************************
 //  * _CreateFrameInfo (MSVCR80.@)
 //  */
-// frame_info*  _CreateFrameInfo(frame_info *fi, void *obj)
+// frame_info* CDECL _CreateFrameInfo(frame_info *fi, void *obj)
 // {
 //     thread_data_t *data = msvcrt_get_thread_data();
 //
@@ -2116,7 +2201,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 // /*********************************************************************
 //  *  __current_exception (UCRTBASE.@)
 //  */
-// void**  __current_exception(void)
+// void** CDECL __current_exception(void)
 // {
 //     TRACE("()\n");
 //     return (void**)&msvcrt_get_thread_data()->exc_record;
@@ -2125,7 +2210,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 // /*********************************************************************
 //  *  __current_exception_context (UCRTBASE.@)
 //  */
-// void**  __current_exception_context(void)
+// void** CDECL __current_exception_context(void)
 // {
 //     TRACE("()\n");
 //     return (void**)&msvcrt_get_thread_data()->ctx_record;
@@ -2134,7 +2219,7 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 // /*********************************************************************
 //  *  __processing_throw (UCRTBASE.@)
 //  */
-// int*  __processing_throw(void)
+// int* CDECL __processing_throw(void)
 // {
 //     TRACE("()\n");
 //     return &msvcrt_get_thread_data()->processing_throw;
@@ -2142,6 +2227,3 @@ pub unsafe extern "C" fn __CxxUnregisterExceptionObject(frame_info: *mut cxx_fra
 //
 // #endif /* _MSVCR_VER>=140 */
 //
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================
