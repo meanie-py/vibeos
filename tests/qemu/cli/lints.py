@@ -747,7 +747,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         (
             "scan_arg_side_effects",
-            [py, str(ase), "--lint"] if ase.is_file() else ["MISSING"],
+            [py, str(ase)] if ase.is_file() else ["MISSING"],
             "stdout",
         )
     )

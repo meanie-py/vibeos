@@ -41,15 +41,22 @@ Expressions are joined across source lines before matching. The msvcrt bug spann
 them — the `*sym->current++` on the first and the dependent `sym` on the fourth — so a
 per-line scan misses precisely the shape worth finding.
 
+BASELINE
+--------
+Findings go to STDOUT, one per line, and nothing else does — `vibeos-cli check` owns the
+comparison against `tools/lint-baseline/scan_arg_side_effects.txt` and treats every stdout
+line as a finding. A summary line printed there counts as one, which is how this scanner's
+first gate run reported "1 new" while the scanner itself said "0 new, 5 total". The count
+goes to stderr.
+
 USAGE
-    scan_arg_side_effects.py            # report
-    scan_arg_side_effects.py --lint     # baseline-compared, for vibeos-cli check
+    scan_arg_side_effects.py            # findings on stdout, count on stderr
 """
 
 from __future__ import annotations
 
-import argparse
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -174,10 +181,6 @@ def scan_file(path: Path) -> list[tuple[int, str, str, str]]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--lint", action="store_true", help="compare against the baseline")
-    args = ap.parse_args()
-
     findings = []
     for d in SRC_DIRS:
         base = ROOT / d
@@ -191,20 +194,9 @@ def main() -> int:
                     f"check the Rust performs the side effect BEFORE the dependent operand"
                 )
 
-    baseline_path = ROOT / "tools" / "lint-baseline" / "scan_arg_side_effects.txt"
-    if args.lint:
-        baseline = set()
-        if baseline_path.is_file():
-            baseline = {ln for ln in baseline_path.read_text().splitlines() if ln.strip()}
-        new = [f for f in findings if f not in baseline]
-        for f in new:
-            print(f)
-        print(f"\nscan_arg_side_effects: {len(new)} new, {len(findings)} total")
-        return 1 if new else 0
-
     for f in findings:
         print(f)
-    print(f"\nscan_arg_side_effects: {len(findings)} site(s)")
+    print(f"scan_arg_side_effects: {len(findings)} site(s)", file=sys.stderr)
     return 0
 
 
