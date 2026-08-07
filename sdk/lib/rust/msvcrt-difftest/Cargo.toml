@@ -147,6 +147,15 @@ name = "undname"
 path = "tests/undname.rs"
 harness = false
 
+# misc.c — reference TU #9. Its own binary because `qsort`'s contract includes the
+# COMPARISON SEQUENCE — misc.c says so itself, above qsort_s: "trying to sort data doing
+# identical comparisons as native does" — and watching that needs a recording comparator,
+# which needs a `fn main()` rather than a generated case.
+[[test]]
+name = "misc"
+path = "tests/misc.rs"
+harness = false
+
 # Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
 # drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
 # sides' tables have to start empty and stay in lockstep for the fd numbers to be
