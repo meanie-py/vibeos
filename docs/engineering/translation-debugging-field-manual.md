@@ -4567,6 +4567,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
   private header. **Audit the whole block against the SDK, not just the one that got caught**
   (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
+- **…and the sibling that "prefer including the real header" CREATES: a HOST constant leaking
+  into the oracle by inclusion.** msvcrt-difftest's refstub pulls glibc's `<stdlib.h>` for the
+  narrow string family, and glibc defines `RAND_MAX` as `0x7FFFFFFF`. msvcrt's is `0x7FFF`.
+  `rand()` ends in `(seed >> 16) & RAND_MAX`, so the REFERENCE returned 16-bit numbers where
+  msvcrt returns 15-bit ones — and the divergence reads as a Rust bug until you check which
+  side is wrong. Harder to find than the hand-typed kind precisely because nobody typed it:
+  grepping the refstub for the constant finds nothing. **Any macro the host header and the
+  Windows header both define, and define differently, is an oracle bug waiting for its first
+  row** — the refstub already `#undef`s `LONG_MAX`/`ULONG_MAX` for exactly this reason, and
+  that list is a starting point, not a complete one. When a new reference TU touches a
+  `<limits.h>`- or `<stdlib.h>`-shaped constant, diff the two headers before trusting a row.
 - **A shim that DISCARDS an input argument makes that argument ungradeable, and every row
   over it is vacuous.** msvcrt-difftest's `CreateFileW` had `(void)share;` and ignored
   `dwFlagsAndAttributes`. Both are inputs Win32 acts on and POSIX has no equivalent for, so
