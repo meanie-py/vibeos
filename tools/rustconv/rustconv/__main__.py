@@ -81,6 +81,7 @@ from .cpp_com import (
     parse_widl_interface,
     prepare_helper_closure,
     provided_raii_contract,
+    raii_container_contract,
     render_class_scaffold,
     render_cpp_support,
     render_interface,
@@ -2293,6 +2294,20 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if cpp_com_cls is not None:
+            container_fields = [
+                state
+                for state in cpp_com_cls.plain_state_fields()
+                if state.raii_container is not None
+            ]
+            for dep in sorted_deps:
+                touched = [
+                    state
+                    for state in container_fields
+                    if re.search(rf"\b{re.escape(state.name)}\b", dep.body_text)
+                ]
+                if touched:
+                    deterministic_contracts[dep.name] += raii_container_contract(touched)
 
         # WHAT each worker had hidden from it, as names rather than token indices.
         # The response cache compares this directionally: an entry sealed at least as
@@ -3565,6 +3580,32 @@ def cmd_translate(args):
                 else ""
             ),
         )
+
+        # A local DEFINITION shadows a glob import, but a second GLOB does not — it
+        # COLLIDES. The COM scaffold opens island-first modules with `use crate::prelude::*;`
+        # while the stitcher adds shellcom/types/win32, and every name the two share
+        # (REFIID, HRESULT, ULONG, ...) is then an E0659 ambiguity. Three assembled shell32
+        # TUs opened with 339, 339 and 399 errors that were nothing else, and each was
+        # collapsed by hand before anyone read the next one. Done here rather than in the
+        # stitcher because the prelude line lives in the scaffold, which the stitcher never
+        # sees; only the composed text knows both are present. The prelude is the wider and
+        # newer authority, so it wins — the narrow globs go.
+        #
+        # The prelude line itself comes from crate_integrate, which only runs on the
+        # crate-assembly path — so a `-o` slice never got one. That matters because a TU
+        # holding more than one class MUST use `-o` for every slice after the first (the
+        # assembler refuses to let two classes overwrite one file), which handed the slices
+        # of a single TU two different substrates. CIDLDataObj.cpp is three slices and hit
+        # exactly that. shell32's COM path is island-first by decision, so put every slice
+        # on the prelude regardless of how it was written out.
+        if rustconv_target.name == "shell32" and (cpp_com_mode or args.free_functions):
+            narrow = r"^use crate::(?:shellcom|types|win32)::\*;\n"
+            if re.search(narrow, code, re.M):
+                code = re.sub(narrow, "", code, flags=re.M)
+                if not re.search(r"^use crate::prelude::\*;$", code, re.M):
+                    code = "use crate::prelude::*;\n" + code
+        elif re.search(r"^use crate::prelude::\*;$", code, re.M):
+            code = re.sub(r"^use crate::(?:shellcom|types|win32)::\*;\n", "", code, flags=re.M)
 
         # --- Post-translation audits -------------------------------------
         # These catch the SILENT class: output that compiles, links and boots but

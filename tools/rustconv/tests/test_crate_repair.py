@@ -21,9 +21,13 @@ from pathlib import Path
 import pytest
 
 from rustconv.crate_repair import (
+    RULE_ANON_UNION,
     RULE_FLEX_ARRAY,
+    RULE_INDEX_USIZE,
+    RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
+    RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
     CargoCheckRun,
     Edit,
@@ -31,6 +35,7 @@ from rustconv.crate_repair import (
     apply_edits,
     count_errors,
     flex_array_decls,
+    harvest_anon_unions,
     merge_plans,
     parse_cargo_messages,
     pointer_width,
@@ -374,6 +379,28 @@ def test_pointer_width_cast_applies_when_two_targets_agree():
     assert merged.edits[0].targets == ("amd64", "i386")
     assert "agreed by amd64,i386" in merged.edits[0].authority
     assert merged.withheld == ()
+
+
+def test_a_target_that_reported_nothing_vetoes_a_width_bake():
+    """desk.cpl: 54 call sites that COMPILED on i386 were broken by amd64+arm64 agreeing.
+
+    `SendDlgItemMessage(.., CB_INSERTSTRING, PLACEMENT_CENTER, ..)` needs no cast on i386 --
+    WPARAM is u32 there and so is the constant -- so i386 proposes nothing while the 64-bit pair
+    both ask for `as u64`. Two targets agreeing is not agreement: silence is evidence the site is
+    already right, and the honest answer is the callee's declared name (`as WPARAM`).
+    """
+    merged = merge_plans(
+        {
+            "i386": propose_edits(
+                [], _reader({"src/a.rs": _ARG_SRC}), target="i386", rules=[RULE_NUMERIC_CAST]
+            ),
+            "amd64": _width_plan("amd64", "u64"),
+            "arm64": _width_plan("arm64", "u64"),
+        }
+    )
+    assert merged.edits == ()
+    assert [item.reason for item in merged.withheld] == ["width_unproven"]
+    assert "i386 reported nothing here" in merged.withheld[0].detail
 
 
 def test_divergent_widths_are_withheld_not_guessed():
@@ -866,3 +893,397 @@ pub struct _MIB_IFTABLE {
     assert flex_array_decls("pub struct S { pub f: [u8; 1], }").fields["f"] == "u8"
     # A non-1 length is still not a flexible array.
     assert "f" not in flex_array_decls("pub struct S { pub f: [u8; 8usize], }").fields
+
+
+# --- rule: anonymous-union field routing ------------------------------------------------------
+
+# The real prsht.h shape: one struct with two nested anonymous unions, one of whose members
+# (`pszIcon`) is ALSO spelled directly on the outer struct in the C header's other arm.
+_PSH_ISLAND = b"""
+#[repr(C)]
+pub struct _PROPSHEETHEADERW {
+    pub dwSize: DWORD,
+    pub dwFlags: DWORD,
+    pub __bindgen_anon_1: _PROPSHEETHEADERW__bindgen_ty_1,
+    pub pszCaption: LPCWSTR,
+    pub nPages: UINT,
+    pub __bindgen_anon_2: _PROPSHEETHEADERW__bindgen_ty_2,
+}
+#[repr(C)]
+pub union _PROPSHEETHEADERW__bindgen_ty_1 {
+    pub hIcon: HICON,
+    pub pszIcon: LPCWSTR,
+}
+#[repr(C)]
+pub union _PROPSHEETHEADERW__bindgen_ty_2 {
+    pub nStartPage: UINT,
+    pub pStartPage: LPCWSTR,
+}
+"""
+
+
+def _no_field_diag(field: str, ty: str, file_name: str, at: tuple[int, int], line: int = 1) -> dict:
+    return _diag(
+        f"no field `{field}` on type `{ty}`",
+        code="E0609",
+        spans=[_span(file_name, at[0], at[1], is_primary=True, line=line)],
+    )
+
+
+def test_anon_union_field_is_routed_through_the_bindgen_union():
+    src = b"pub unsafe fn f(psh: &mut _PROPSHEETHEADERW) {\n    psh.nStartPage = 0;\n}\n"
+    at = (src.index(b"nStartPage"), src.index(b"nStartPage") + len(b"nStartPage"))
+    plan = propose_edits(
+        [_no_field_diag("nStartPage", "_PROPSHEETHEADERW", "src/a.rs", at, line=2)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions({"types_i386.rs": _PSH_ISLAND}),
+    )
+    assert [e.replacement for e in plan.edits] == ["__bindgen_anon_2.nStartPage"]
+    assert plan.edits[0].original == "nStartPage"
+    assert not plan.red
+
+
+def test_anon_union_rule_reads_through_a_raw_pointer_type():
+    """rustc spells the type `*mut S` when the access is through a pointer — same struct."""
+    src = b"pub unsafe fn f(p: *mut _PROPSHEETHEADERW) {\n    (*p).hIcon = h;\n}\n"
+    at = (src.index(b"hIcon"), src.index(b"hIcon") + len(b"hIcon"))
+    plan = propose_edits(
+        [_no_field_diag("hIcon", "*mut _PROPSHEETHEADERW", "src/a.rs", at, line=2)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions({"types_i386.rs": _PSH_ISLAND}),
+    )
+    assert [e.replacement for e in plan.edits] == ["__bindgen_anon_1.hIcon"]
+
+
+def test_anon_union_rule_declines_a_struct_literal_field():
+    """E0560 looks like the same mistake but `S { a.b: v }` is not legal Rust.
+
+    Regression guard: the hand-rolled version of this pass rewrote E0560 sites and every one
+    came back a parse error on the next pass.
+    """
+    src = b"pub fn f() -> _PROPSHEETHEADERW {\n    _PROPSHEETHEADERW { nStartPage: 0 }\n}\n"
+    at = (src.index(b"nStartPage"), src.index(b"nStartPage") + len(b"nStartPage"))
+    plan = propose_edits(
+        [
+            _diag(
+                "struct `_PROPSHEETHEADERW` has no field named `nStartPage`",
+                code="E0560",
+                spans=[_span("src/a.rs", *at, is_primary=True, line=2)],
+            )
+        ],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions({"types_i386.rs": _PSH_ISLAND}),
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["struct_literal_field"]
+    # Declining is not claiming: the diagnostic still has to show up as RED for a human.
+    assert [item.code for item in plan.red] == ["E0560"]
+
+
+def test_anon_union_map_never_shadows_an_outer_field():
+    """C's anonymous-member injection loses to an outer member of the same name."""
+    island = b"""
+pub struct S {
+    pub x: DWORD,
+    pub __bindgen_anon_1: S__bindgen_ty_1,
+}
+pub union S__bindgen_ty_1 {
+    pub x: UINT,
+    pub y: UINT,
+}
+"""
+    amap = harvest_anon_unions({"types_i386.rs": island})
+    assert ("S", "x") not in amap
+    assert amap[("S", "y")] == "__bindgen_anon_1.y"
+
+
+def test_anon_union_map_drops_a_field_the_arches_route_differently():
+    """Three islands, three bindgen runs: numbering need not agree, and a guess is not allowed."""
+    i386 = b"""
+pub struct S {
+    pub __bindgen_anon_1: A,
+}
+pub union A {
+    pub y: UINT,
+}
+"""
+    amd64 = b"""
+pub struct S {
+    pub __bindgen_anon_2: A,
+}
+pub union A {
+    pub y: UINT,
+}
+"""
+    assert harvest_anon_unions({"i.rs": i386})[("S", "y")] == "__bindgen_anon_1.y"
+    assert ("S", "y") not in harvest_anon_unions({"i.rs": i386, "a.rs": amd64})
+
+
+def test_anon_union_map_drops_a_field_that_is_direct_on_another_arch():
+    """Direct on i386, unionised on amd64: routing it would break the arch that compiles."""
+    i386 = b"pub struct S {\n    pub y: UINT,\n}\n"
+    amd64 = b"""
+pub struct S {
+    pub __bindgen_anon_1: A,
+}
+pub union A {
+    pub y: UINT,
+}
+"""
+    assert harvest_anon_unions({"a.rs": amd64})[("S", "y")] == "__bindgen_anon_1.y"
+    assert ("S", "y") not in harvest_anon_unions({"i.rs": i386, "a.rs": amd64})
+
+
+def test_anon_union_rule_declines_a_span_that_is_not_the_field():
+    src = b"pub unsafe fn f(psh: &mut _PROPSHEETHEADERW) {\n    psh.nStartPage = 0;\n}\n"
+    plan = propose_edits(
+        [_no_field_diag("nStartPage", "_PROPSHEETHEADERW", "src/a.rs", (0, 3), line=1)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions({"types_i386.rs": _PSH_ISLAND}),
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["span_is_not_the_field"]
+
+
+def test_anon_union_rule_without_a_map_contributes_nothing():
+    """No island parsed -> the rule stands down; it never invents `__bindgen_anon_1`."""
+    src = b"pub unsafe fn f(psh: &mut _PROPSHEETHEADERW) {\n    psh.nStartPage = 0;\n}\n"
+    at = (src.index(b"nStartPage"), src.index(b"nStartPage") + len(b"nStartPage"))
+    plan = propose_edits(
+        [_no_field_diag("nStartPage", "_PROPSHEETHEADERW", "src/a.rs", at, line=2)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+    )
+    assert not plan.edits
+    assert [item.code for item in plan.red] == ["E0609"]
+
+
+# --- rule: match-scrutinee cast ---------------------------------------------------------------
+
+_MATCH_SRC = b"""pub unsafe fn f(code: UINT) -> i32 {
+    match code {
+        PSN_APPLY => 1,
+        PSN_RESET => 2,
+        _ => 0,
+    }
+}
+"""
+
+
+def _arm_diag(arm: bytes, expected: str, found: str, src: bytes = _MATCH_SRC) -> dict:
+    at = src.index(arm)
+    return _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                at,
+                at + len(arm),
+                is_primary=True,
+                label=f"expected `{expected}`, found `{found}`",
+                line=3,
+            )
+        ],
+    )
+
+
+def test_match_arm_mismatch_casts_the_scrutinee_not_the_pattern():
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32")],
+        _reader({"src/a.rs": _MATCH_SRC}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert len(plan.edits) == 1
+    edit = plan.edits[0]
+    assert edit.original == "code"
+    assert edit.replacement == "(code) as i32"
+    # The ARM bytes must be untouched: rewriting a constant in a pattern is the §9.112 shape.
+    assert _MATCH_SRC[edit.byte_start : edit.byte_end] == b"code"
+
+
+def test_match_scrutinee_cast_uses_found_not_expected():
+    """`expected` is the SCRUTINEE's type; casting to it writes a no-op that burns a pass."""
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32")],
+        _reader({"src/a.rs": _MATCH_SRC}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert plan.edits[0].replacement.endswith("as i32")
+
+
+def test_match_with_arms_that_disagree_is_left_alone():
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32"), _arm_diag(b"PSN_RESET", "u32", "u16")],
+        _reader({"src/a.rs": _MATCH_SRC}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["arms_disagree"]
+    assert "i32" in plan.skipped[0].detail and "u16" in plan.skipped[0].detail
+
+
+def test_match_arms_that_agree_produce_exactly_one_edit():
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32"), _arm_diag(b"PSN_RESET", "u32", "i32")],
+        _reader({"src/a.rs": _MATCH_SRC}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert len(plan.edits) == 1
+
+
+def test_match_scrutinee_already_cast_is_not_cast_again():
+    """Otherwise the cast stack grows once per pass and the loop never reaches a fixpoint."""
+    src = _MATCH_SRC.replace(b"match code {", b"match (code) as i32 {")
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert not plan.edits
+
+
+def test_match_scrutinee_edit_needs_cross_target_agreement():
+    """`found` is a resolved primitive, so one target's answer can bake that arch's width."""
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "u32", "i32")],
+        _reader({"src/a.rs": _MATCH_SRC}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert plan.edits[0].requires_target_agreement
+    merged = merge_plans({"i386": plan})
+    assert not merged.edits
+    assert [item.reason for item in merged.withheld] == ["width_unproven"]
+
+
+def test_non_arm_mismatch_is_not_treated_as_a_scrutinee():
+    """A plain argument mismatch has no enclosing match; the rule must not invent one."""
+    plan = propose_edits(
+        [_arg_diag()], _reader({"src/a.rs": _ARG_SRC}), target="amd64", rules=[RULE_MATCH_SCRUTINEE]
+    )
+    assert not plan.edits
+    assert [item.code for item in plan.red] == ["E0308"]
+
+
+# --- rule: packed-field pointer ---------------------------------------------------------------
+
+_PACKED_SRC = b"""pub unsafe fn f(d: *mut SP_DRVINFO_DETAIL_DATA_W) -> *const WCHAR {
+    (*d).HardwareID.as_ptr()
+}
+"""
+
+
+def _packed_diag(place: bytes, src: bytes = _PACKED_SRC) -> dict:
+    at = src.index(place)
+    return _diag(
+        "reference to packed field is unaligned",
+        code="E0793",
+        spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
+    )
+
+
+def test_packed_field_as_ptr_becomes_addr_of():
+    plan = propose_edits(
+        [_packed_diag(b"(*d).HardwareID")],
+        _reader({"src/a.rs": _PACKED_SRC}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert [e.replacement for e in plan.edits] == ["core::ptr::addr_of!((*d).HardwareID).cast()"]
+    edit = plan.edits[0]
+    # The `.as_ptr()` call must be consumed, not left dangling after the macro.
+    assert _PACKED_SRC[edit.byte_start : edit.byte_end] == b"(*d).HardwareID.as_ptr()"
+    assert not edit.requires_target_agreement  # no width is baked
+
+
+def test_packed_field_as_mut_ptr_uses_addr_of_mut():
+    src = _PACKED_SRC.replace(b".as_ptr()", b".as_mut_ptr()")
+    plan = propose_edits(
+        [_packed_diag(b"(*d).HardwareID", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert [e.replacement for e in plan.edits] == [
+        "core::ptr::addr_of_mut!((*d).HardwareID).cast()"
+    ]
+
+
+def test_packed_field_that_is_not_an_as_ptr_call_is_declined():
+    """E0793 also fires on a plain `&packed.field`, which this rewrite would corrupt."""
+    src = b"pub unsafe fn f(d: *mut S) {\n    g(&(*d).field);\n}\n"
+    at = src.index(b"(*d).field")
+    plan = propose_edits(
+        [
+            _diag(
+                "reference to packed field is unaligned",
+                code="E0793",
+                spans=[_span("src/a.rs", at, at + len(b"(*d).field"), is_primary=True, line=2)],
+            )
+        ],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_PACKED_FIELD_PTR],
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["not_an_as_ptr_call"]
+
+
+# --- rule: index cast to usize ----------------------------------------------------------------
+
+_INDEX_SRC = b"pub fn f(t: &[u8], i: UINT) -> u8 {\n    t[i]\n}\n"
+
+
+def _index_diag(index_type: str = "u32", place: bytes = b"i", src: bytes = _INDEX_SRC) -> dict:
+    at = src.index(place, src.index(b"t["))
+    return _diag(
+        f"the type `[u8]` cannot be indexed by `{index_type}`",
+        code="E0277",
+        spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
+    )
+
+
+def test_non_usize_index_is_cast_to_usize():
+    plan = propose_edits(
+        [_index_diag()], _reader({"src/a.rs": _INDEX_SRC}), target="i386", rules=[RULE_INDEX_USIZE]
+    )
+    assert [e.replacement for e in plan.edits] == ["(i) as usize"]
+    # `usize` is the width-varying alias itself, so one target's answer is portable.
+    assert not plan.edits[0].requires_target_agreement
+
+
+def test_index_by_a_non_integer_is_left_alone():
+    """E0277 also covers `map[key]`; only an integer index has an `as usize` answer."""
+    plan = propose_edits(
+        [_index_diag(index_type="String")],
+        _reader({"src/a.rs": _INDEX_SRC}),
+        target="i386",
+        rules=[RULE_INDEX_USIZE],
+    )
+    assert not plan.edits
+    assert [item.code for item in plan.red] == ["E0277"]
+
+
+def test_index_already_cast_is_not_cast_again():
+    src = _INDEX_SRC.replace(b"t[i]", b"t[(i) as usize]")
+    plan = propose_edits(
+        [_index_diag(place=b"(i) as usize", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_INDEX_USIZE],
+    )
+    assert not plan.edits

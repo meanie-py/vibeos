@@ -99,7 +99,7 @@ unsafe extern "C" fn InstallInfSections(
         hKey,
         core::ptr::null(),
         (SP_COPY_NEWER) as u32,
-        SetupDefaultQueueCallbackW,
+        Some(SetupDefaultQueueCallbackW),
         Context,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -421,7 +421,7 @@ unsafe extern "C" fn CheckInfFile(
                 (*pComponentInfo).pszInfSection = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (dwLength as usize) * core::mem::size_of::<u16>(),
+                    ((dwLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
                 ) as PWSTR;
                 if !(*pComponentInfo).pszInfSection.is_null() {
                     SetupGetStringFieldW(
@@ -444,7 +444,7 @@ unsafe extern "C" fn CheckInfFile(
                 (*pComponentInfo).pszDescription = HeapAlloc(
                     GetProcessHeap(),
                     0,
-                    (dwLength as usize) * core::mem::size_of::<u16>(),
+                    ((dwLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
                 ) as PWSTR;
                 if !(*pComponentInfo).pszDescription.is_null() {
                     SetupGetStringFieldW(
@@ -474,7 +474,7 @@ unsafe extern "C" fn CheckInfFile(
                     (*pComponentInfo).pszClassGuid = HeapAlloc(
                         GetProcessHeap(),
                         0,
-                        (dwLength as usize) * core::mem::size_of::<u16>(),
+                        ((dwLength as usize) * core::mem::size_of::<u16>()) as SIZE_T,
                     ) as PWSTR;
                     if !(*pComponentInfo).pszInfSection.is_null() {
                         SetupGetStringFieldW(
@@ -565,7 +565,7 @@ unsafe extern "C" fn ScanForInfFile(
             (*pComponentInfo).pszInfPath = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (wcslen(fdw.cFileName.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+                ((wcslen(fdw.cFileName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !(*pComponentInfo).pszInfPath.is_null() {
                 wcscpy((*pComponentInfo).pszInfPath, fdw.cFileName.as_ptr());
@@ -574,7 +574,7 @@ unsafe extern "C" fn ScanForInfFile(
             (*pComponentInfo).pszComponentId = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (wcslen(pszComponentId) + 1) * core::mem::size_of::<u16>(),
+                ((wcslen(pszComponentId) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as PWSTR;
             if !(*pComponentInfo).pszComponentId.is_null() {
                 wcscpy((*pComponentInfo).pszComponentId, pszComponentId);

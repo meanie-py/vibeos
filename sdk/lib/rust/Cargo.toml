@@ -97,12 +97,15 @@ members = [
     # The user-mode PnP manager service — the SERVER half of pnp.idl, which cfgmgr32/setupapi
     # speak as clients.
     "umpnpmgr-rust",
-    # PARKED (2026-08-05): syssetup-rust is translated in full but still RED — 176 cargo-check
-    # errors on i386, 177 on amd64/arm64, down from 1392. It stays OUT of members until it is
-    # green: a red member turns every other lane's workspace check red too. Re-add this line to
-    # resume (crate-repair needs membership, it drives `cargo check -p`). The remainder needs
-    # task #45's --width-generic, not more grinding: see 69b485598cd for the measurements.
-    #   "syssetup-rust",
+    # The system setup DLL: the second-stage GUI wizard, the account/security policy writer, and
+    # the PS/2 mouse property page. Was parked RED at 176/177/177 for want of a portable spelling
+    # for width-varying parameters; crate-repair's `width_alias_cast` rule now supplies it.
+    "syssetup-rust",
+    "desk-rust",
+    # strsafe.h's `static __inline` bounded string ops, ported ONCE. No object file in the tree
+    # defines them, so every flipped module used to port the header again — four divergent
+    # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
+    "strsafe-rust",
     "access",
     "avltable",
     "bitmap",

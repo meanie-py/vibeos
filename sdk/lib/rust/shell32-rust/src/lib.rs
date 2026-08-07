@@ -80,15 +80,11 @@ pub mod file_def_ext;
 #[path = "dialogs/view.rs"]
 pub mod dialogs_view;
 pub mod drop_target_helper;
-// droptargets/CFSDropTarget.rs is TRANSLATED AND ON DISK but deliberately NOT a module yet, so
-// this crate keeps compiling. 19 of its 21 bodies are paid artifact, `_RepositionItems` came back
-// on the sanctioned retry, and `_DoDrop` is hand-written (the model refused it twice on the
-// envelope). What is left is not a grind but one decision: the file declares its own
-// IDataObject/IUnknown/IShellFolderView/STGMEDIUM/CFSDropTarget while the island declares another
-// set and shellcom a third, and ~78 errors are that identity mismatch plus its knock-on. Enabling
-// it before that is settled would mean guessing a vtable shape, which does not fail loudly.
-// #[path = "droptargets/CFSDropTarget.rs"]
-// pub mod fs_drop_target;
+// Assembled at the C tree's path (droptargets/) by rustconv; keep that path stable for re-runs.
+#[path = "droptargets/CFSDropTarget.rs"]
+pub mod fs_drop_target;
+#[path = "droptargets/CRecyclerDropTarget.rs"]
+pub mod recycler_drop_target;
 pub mod exe_drop_handler;
 pub mod fonts_folder;
 pub mod folder_options;
@@ -182,6 +178,26 @@ pub mod dialogs_dialogs;
 // free-function TUs, so it is wired here instead of from shell32/mod.rs.
 #[path = "shell32/CDefViewDual.rs"]
 pub mod def_view_dual;
+
+// CDefViewBckgrndMenu — the folder-background context menu. Same wiring rationale as
+// CDefViewDual above: assembled under shell32/ to keep the re-run path stable, wired here
+// because it is a COM class and not one of that module's free-function TUs.
+#[path = "shell32/CDefViewBckgrndMenu.rs"]
+pub mod def_view_bckgrnd_menu;
+
+// CDefaultContextMenu — the shell's default item context menu. Two rustconv runs, because
+// `--cpp-com --class` translates the class only and the TU also carries 22 free functions
+// (`DCMA_*`, `SHCreateDefaultContextMenu`, the `*_RustBridge` entry points). The support
+// module is HAND-WRITTEN — ports of the utils.h/shellutils.h inlines the TU calls, plus the
+// constants and externs outside the bindgen island's closure. It lives in its own file
+// because a re-run overwrites each generated half wholesale, so hand-written code parked
+// inside either of them is lost the next time the TU is re-assembled.
+#[path = "shell32/cdefaultcontextmenu_support.rs"]
+pub mod default_context_menu_support;
+#[path = "shell32/CDefaultContextMenu.rs"]
+pub mod default_context_menu;
+#[path = "shell32/CDefaultContextMenu_tu.rs"]
+pub mod default_context_menu_tu;
 
 // The rest of folders/CNetFolder.cpp. `net_folder` already owns the CNetFolder class itself;
 // these two are the retained closure that kept the .cpp compiled — its free helpers and

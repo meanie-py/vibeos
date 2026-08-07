@@ -1651,6 +1651,195 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
 
+  # ---- Tier-3 batch G: desk.cpl, the Display Properties control panel. Plain C: the
+  # background/appearance/screensaver/settings/theme property pages, the owner-drawn monitor
+  # selection control, and the display-device settings plumbing over setupapi. ----
+  desk)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-05 from dll/cpl/desk/CMakeLists.txt
+    # (20 compiled TU(s), 203 headers in the include closure, 166 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). No ERROR findings and no MOSTLY_DEAD_BODIES — desk
+    # is real code, unlike wldap32's stub surface.
+    USERMODE=1
+    # Emit the header function surface, minus what the crate defines. desk is a thin driver of
+    # other people's APIs — user32/gdi32/comctl32/shell32/setupapi/uxtheme/gdiplus — so
+    # BLOCKLIST_FUNCS=1 would mean hand-writing several hundred prototypes, and a hand-written
+    # prototype wrong by one pointer level links and then corrupts silently. Same call as
+    # syssetup and umpnpmgr; the derive defaults to 1 and does not know the module's shape.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MACRO_SIGNED is set by MEASURING — generate both islands and count one cargo check. Two
+    # modules running (umpnpmgr, syssetup) the resemblance argument lost, both times to the same
+    # mistake: a property-sheet module LOOKS like it wants signed `int` control ids, and spends
+    # more of its time handing constants to UNSIGNED Win32 parameters.
+    # desk is the third: MEASURED 2026-08-05 on the same tree, i386, one cargo check each.
+    #   MACRO_SIGNED=0 -> 1,517 errors (1,276 E0308,  68 E0277)
+    #   MACRO_SIGNED=1 -> 1,820 errors (1,508 E0308, 113 E0277)
+    # 0 wins by 303. Do not "fix" this by resemblance.
+    MACRO_SIGNED=0
+    # UNBLOCK so THIS island owns every callback type desk INSTALLS: ntdll-sys spells each with
+    # the arch's literal convention, and normalize_island_abi only rewrites a crate's OWN
+    # islands, so an -sys-owned slot would stay `stdcall` while the Rust body is
+    # `extern "system"` (Rust compares fn-pointer ABIs NOMINALLY). The containers have to come
+    # too — a struct whose field type still resolves to the -sys typedef reintroduces the
+    # mismatch at the assignment.
+    #
+    # The TCHAR FAMILY is unblocked for a different and sharper reason: ntdll-sys is built
+    # WITHOUT UNICODE, so its glob says `TCHAR = c_char`, and desk.h's own structs are declared
+    # `TCHAR szPath[MAX_PATH]`. Inheriting the glob's TCHAR makes _ICON_PATH 260 bytes where the
+    # real one is 520 — a layout bug that compiles clean, and the kind that shows up much later
+    # as a truncated path. Unblocked, THIS island emits them from its own -DUNICODE compile.
+    UNBLOCK="DLGPROC WNDPROC LPFNPSPCALLBACKW LPFNPSPCALLBACKA PFNPROPSHEETCALLBACK
+             LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE
+             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW
+             TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C FLATTENS them
+    # (`psp.pszTemplate = ..`), which the `__BindgenUnionField<T>` emulation cannot accept.
+    REAL_UNIONS=1
+    # wtypes.h's `uCLSSPEC` tagged union, which came in with the COM headers above and which
+    # desk never touches. bindgen emits its two anonymous member STRUCTS without `Copy`, and a
+    # non-Copy field cannot live in a real Rust union — so with REAL_UNIONS=1 the island itself
+    # stops compiling (E0740 + E0204) over a type nothing in the module names.
+    # The pattern has to reach the NESTED name too (`..._00000009___WIDL_..._00000008`),
+    # hence the trailing `.*`. It stays anchored at `__WIDL`, so the `_userCLIPFORMAT___WIDL_`
+    # family — which IS used, as STGMEDIUM's wire type — is untouched.
+    EXTRA_BL_ITEMS=( '__WIDL_wtypes_generated_name_0000000[89].*' uCLSSPEC )
+    DRIVER_DIR="${SRC}/dll/cpl/desk"
+    WRAPPER_INC=$'#include "desk.h"\n#include <shellapi.h>\n#include <shlwapi.h>\n#include <windowsx.h>\n#include <debug.h>\n#include <cplext.h>\n#include <winnls.h>\n#define NDEBUG\n#include <cfgmgr32.h>\n#include <uxtheme.h>\n#include <vsstyle.h>\n#include <vssym32.h>\n#include <uxundoc.h>\n#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <wingdi.h>\n#include <objbase.h>\n#include <initguid.h>\n#include <gdiplus.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]cplext\.h'
+                  --allowlist-file '.*[/\\]dll[/\\]desk[/\\]deskcplx\.h'
+                  # The gdiplus FAMILY, not just the umbrella header. gdiplus.h's C branch
+                  # is nothing but #includes (gdiplusflat.h for the flat API, gdiplusgpstubs
+                  # /gdiplustypes/gdiplusenums/gdipluspixelformats/gdiplusimaging for GpImage,
+                  # GpStatus, ImageCodecInfo, PixelFormat*, ImageLockMode*), and
+                  # --allowlist-file matches where an item is DEFINED. Allowlisting only
+                  # `gdiplus\.h` therefore emitted ZERO of them: 19 Gdip* functions and 8
+                  # types that dibitmap.c and preview.c call directly.
+                  --allowlist-file '.*[/\\]gdiplus[a-z]*\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  # The widl-GENERATED COM headers, which own three enum families desk uses
+                  # by bare member name: DVASPECT_* (wtypes.h), TYMED_* and DATADIR_*
+                  # (objidl.h). objbase.h merely #includes them, and --allowlist-file matches
+                  # the DEFINITION site, so the island carried `IDataObject` (a struct, pulled
+                  # in as a dependency of an allowlisted signature) while every constant those
+                  # same call sites pass stayed absent. Hand-typing an enum value is the
+                  # §9.112 shape; let bindgen read the header.
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h'
+                  --allowlist-file '.*[/\\]wtypesbase\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]uxundoc\.h'
+                  --allowlist-file '.*[/\\]vsstyle\.h'
+                  --allowlist-file '.*[/\\]vssym32\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  # The two headers that own the module's actual Win32 surface — desk reaches
+                  # user32/kernel32 through ordinary calls, and the derive only adds a header
+                  # when it owns a `case` label.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*desk[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/desk" -I"${SRC}/build-i386/dll/cpl/desk" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_WIN32 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
+  # ---- Tier-3 batch H: sysdm.cpl, the System control panel. Plain C, 12 TUs: the
+  # General/Hardware/Advanced property sheets, the environment-variable, user-profile,
+  # hardware-profile, virtual-memory and startup/recovery dialogs, and the SMBIOS/DMI
+  # device-name reader. ----
+  sysdm)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-05 from dll/cpl/sysdm/CMakeLists.txt
+    # (12 compiled TU(s), 205 headers in the include closure, 77 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). No ERROR findings and no MOSTLY_DEAD_BODIES.
+    USERMODE=1
+    # Same call as desk/syssetup/umpnpmgr, and for the same reason: sysdm is a thin driver of
+    # other people's APIs (user32/gdi32/comctl32/setupapi/shell32/shlwapi/powrprof/udmihelp),
+    # so BLOCKLIST_FUNCS=1 would mean hand-writing several hundred prototypes, and a hand-written
+    # prototype wrong by one pointer level links and then corrupts silently. The derive defaults
+    # to 1 and does not know the module's shape.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MEASURE, do not resemble. FOUR property-sheet modules in a row (umpnpmgr, syssetup, desk,
+    # and this one) have wanted UNSIGNED against the "dialog module, so signed int control ids"
+    # argument. Measured 2026-08-05, i386, one cargo check each: see the commit that sets this.
+    MACRO_SIGNED=0
+    # UNBLOCK so THIS island owns every callback type sysdm INSTALLS. general.c:708 subclasses a
+    # static with SetWindowLongPtr(GWLP_WNDPROC, RosImageProc), and the property sheets install
+    # DLGPROCs; ntdll-sys spells each with the arch's literal convention and normalize_island_abi
+    # only rewrites a crate's OWN islands, so an -sys-owned slot stays `stdcall` while the Rust
+    # body is `extern "system"` (Rust compares fn-pointer ABIs NOMINALLY). The containers have to
+    # come too — a struct whose field type still resolves to the -sys typedef reintroduces the
+    # mismatch at the assignment. TCHAR family for desk's reason: ntdll-sys is built WITHOUT
+    # UNICODE, so its glob says `TCHAR = c_char`, and sysdm builds -DUNICODE.
+    UNBLOCK="DLGPROC WNDPROC LPFNPSPCALLBACKW LPFNPSPCALLBACKA PFNPROPSHEETCALLBACK
+             LPTHREAD_START_ROUTINE PTHREAD_START_ROUTINE
+             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW
+             TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C FLATTENS them
+    # (`psh.nStartPage`, `psh.pszCaption`, `psp.pszTemplate`), which the `__BindgenUnionField<T>`
+    # emulation cannot accept. crate-repair's `anon_union_field` rule routes the call sites.
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/dll/cpl/sysdm"
+    WRAPPER_INC=$'#include "precomp.h"\n#define NTOS_MODE_USER\n#include <ndk/pstypes.h> /* For SharedUserData */\n#include <commctrl.h>\n#include <commdlg.h>\n#include <string.h>\n#include <winnls.h>\n#include <powrprof.h>\n#include <buildno.h>\n#include <debug.h>\n#include <shlguid_undoc.h> // CLSID_CRegTreeOptions\n#include <shlobj_undoc.h> // IRegTreeOptions\n#include <udmihelp.h>\n#include <shlwapi.h>\n#include <regstr.h>\n#include <sddl.h>\n#include <ndk/pstypes.h>\n#define NDEBUG'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]buildno\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]powrprof\.h'
+                  # Owns PSCB_INITIALIZED, a `case` label in hardprof.c. The derive adds a
+                  # header the moment it owns one (§9.112: an omitted const becomes a
+                  # catch-all match arm that swallows every case).
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  # performance.c drives IRegTreeOptions by COBJMACROS. shlobj_undoc.h owns the
+                  # interface and its WALK_TREE_* constants; shlguid_undoc.h owns
+                  # CLSID_CRegTreeOptions / IID_IRegTreeOptions, which sysdm gets as DATA from
+                  # the `uuid` import lib — so unlike aclui and desk there is no guid.c here.
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlobj_undoc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  # LoadSMBiosData / TrimDmiStringW / GetSMBiosStringW / FreeSMBiosData, the
+                  # sdk/lib/udmihelp static lib smbios.c drives.
+                  --allowlist-file '.*[/\\]udmihelp\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  # The two headers that own the module's actual Win32 surface — sysdm reaches
+                  # user32/kernel32 through ordinary calls, and the derive only adds a header
+                  # when it owns a `case` label.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*sysdm[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/sysdm" -I"${SRC}/build-i386/dll/cpl/sysdm" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/lib/udmihelp" -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+
   # ---- Tier-3 batch F: syssetup, the system setup DLL. Plain C, no COM substrate: the
   # second-stage GUI installer (the wizard), the device/DLL registration pass, the account
   # and security-policy setup, and the mouse property page. ----
@@ -1697,6 +1886,12 @@ case "$DRIVER" in
     # EXTRA_RAW_LINES for its COM interfaces).
     EXTRA_BL_ITEMS=( _TIMEZONE_ENTRY TIMEZONE_ENTRY PTIMEZONE_ENTRY )
     EXTRA_RAW_LINES=( 'pub use crate::syssetup::wizard::_TIMEZONE_ENTRY;' )
+    # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union: pszTemplate/pResource,
+    # nStartPage/pStartPage, hbmWatermark/pszbmWatermark, hbmHeader/pszbmHeader. In the C those
+    # are FLATTENED (`psp.pszTemplate = ..`), so the translation writes plain field assignments
+    # and the `__BindgenUnionField<T>` emulation cannot accept one. New crate, so this is the
+    # opt-in case the knob is for.
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/dll/win32/syssetup"
     WRAPPER_INC=$'#include "precomp.h"\n#define NDEBUG\n#include <debug.h>\n#define COBJMACROS\n#include <io.h>\n#include <wincon.h>\n#include <winnls.h>\n#include <winsvc.h>\n#include <userenv.h>\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <shobjidl.h>\n#include <rpcproxy.h>\n#include <ndk/cmfuncs.h>\n#include <stdarg.h>\n#include <rpc.h>\n#include <ntlsa.h>\n#include <ntsecapi.h>\n#include <ntsam.h>\n#include <sddl.h>\n#include <stdlib.h>\n#include <time.h>\n#include <windowsx.h>\n#include <tzlib.h>\n#include <strsafe.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'

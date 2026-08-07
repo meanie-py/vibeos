@@ -3,6 +3,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+#[no_mangle]
 pub static mut hDllInstance: HINSTANCE = core::ptr::null_mut();
 
 #[no_mangle]

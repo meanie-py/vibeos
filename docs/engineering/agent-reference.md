@@ -523,6 +523,17 @@ All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64
 
 Model shortcuts: `sonnet`, `haiku`, `opus`, `gemini-pro`, `gemini-flash`, `deepseek`, or full model ID.
 
+**The default is `deepseek-v4-pro` ($0.28/$1.10 per 1M) — you do not pass `-m` to get the cheap
+lane, you pass it to LEAVE.** `get_backend()` prefers `DEEPSEEK_API_KEY` over
+`ANTHROPIC_API_KEY`, so an unflagged `translate`/`submit`/`batch` bills DeepSeek. Sonnet is
+**12.2× the list price** and is an escalation, not a floor: route substrate-clean high-band
+compile failures to `-m sonnet` when agent repair time matters, and keep low/medium and
+deterministic shapes on the default. Retrying a rejected worker with a stronger model measured
+0/3 accepted for $0.13 — a reject is substrate work, not a model-capacity problem.
+
+Switching models never re-bills: the resume-cache key (`preparation_namespace`) is mode + seal
+flags, with no model component, so a unit banked by any model replays for $0 under any other.
+
 `rustconv translate` accepts HAL paths and is HAL-aware (separate `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is ~70% useful for HAL — review before integrating.
 
 The pipeline has multiple stages: Stage 1 (C → Rust, `submit`/`batch`), Stage 2 (probe migration, `probe-migrate` — `ProbeForRead`/`Write` → `Result<T>`; SE+OB done), Stage 3 (Result+Drop-RAII idiomation, planned). See `docs/engineering/rustconv-pipeline.md` for the per-stage design.

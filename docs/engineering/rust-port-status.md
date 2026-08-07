@@ -48,7 +48,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **user32 / gdi32 / secur32 / msafd** | 0 active body C; cohab-flipped | **~100%** |
 | **kernel32.dll** | body Rust; only NLS `locale.c` + resources left | **~95%** |
 | **advapi32.dll** | only `wine/security.c` + generated RPC stubs left | **~90%** |
-| **msgina.dll** | 7 `.c` flipped; one C++ leaf (`dimmedwindow.cpp`) | **~88%** |
+| **msgina.dll** | 7 `.c` flipped; one C++ leaf (`dimmedwindow.cpp`). Its strsafe printf wrappers were macros that DROPPED the caller's bound and forwarded to `wsprintfW` (1024-wchar internal bound) — a stack overrun on a `WCHAR[256]`, plus a `[WCHAR; 256]` passed to the variadic by value. Both fixed 2026-08-05 by the shared `strsafe-rust` crate + msgina's first `rust_varargs_shim.c` | **~88%** |
 | **ole32.dll** (COM runtime) | `ole32-rust`: **the entire DLL is Rust — all 29 TUs.** The COM core (compobj + marshal/stubmanager/rpc/ftmarshal/git); the mechanical ring (task allocator + streams + lockbytes, the Running Object Table + all 6 monikers, `bindctx`/`errorinfo`/`enumx`/`dictionary`, `ole2`/`ole2impl`/`ole32_main`, `clipboard`, `comcat`, `oleproxy`, the NDR `usrmarshal`); and the storage/embedding cluster (`storage32` — the compound-file implementation, `stg_stream`, `stg_prop`, `datacache`, `defaulthandler`, `oleobj`). The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3. `guid.c` stays C permanently (an `initguid.h` TU whose job is emitting the moniker CLSIDs as data) | **done** |
 | **oleaut32.dll** (OLE automation) | `oleaut32-rust`: **the entire DLL is Rust — all 14 TUs.** The automation core: BSTR (`oleaut`), VARIANT (`variant`), the VarXxxFromYyy coercion matrix (`vartype`), SAFEARRAY (`safearray`), the typelib reader/writer + ITypeInfo/ITypeLib (`typelib` + submodules), IDispatch (`dispatch`), user-marshal (`usrmarshal`), `hash`. Plus the OLE-control cluster (2026-07-13): `olefont` (IFont/IFontDisp), `olepicture` (IPicture + OleLoadPicture*), `varformat` (the VarFormat engine), `connpt` (connection points), `recinfo` (IRecordInfo), `olepropframe`. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3. `export_audit` clean: all 398 spec exports have a `#[no_mangle]` Rust definition with the spec's convention | **done** |
 | **ws2_32.dll** (winsock client) | `ws2_32-rust`: **the entire DLL is Rust — all 34 compiled TUs.** The socket API (`socklife`/`sockctrl`/`send`/`recv`/`select`/`ioctl`/`event`/`qos`/`dupsock`), the transport + namespace catalogs (`dcatalog`/`dcatitem`/`nscatalo`/`nscatent`/`nspinstl`/`spinstal`), the object model (`dprocess`/`dprovide`/`dsocket`/`dthread`/`nsprovid`/`nsquery`), the WSP upcall table (`sputil`), async getXbyY (`async`/`getxbyxx`/`getproto`), name resolution (`rnr`/`qshelpr`/`addrinfo`/`addrconv`/`enumprot`/`rasdial`), and startup/dllmain/wsautil/bhook. The C `SOURCE` list in the CMakeLists is EMPTY. Boots ×3, and `test_usermode_winsock_roundtrip` (the M5 capstone) passes ON the Rust: TCP echo + UDP DNS + a **real HTTP request to the public internet**, all via ws2_32→msafd→AFD→netstack→smoltcp. `verify_lost_exports` + `verify_c_signatures` clean | **done** |
@@ -63,6 +63,9 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **msv1_0** (Tier 3, batch D) | **FULL FLIP — all 7 compiled `.c` → msv1_0-rust, `cargo check` clean on all three arches, and NO C left in the module** (no variadic entry point, no inline asm; just the generated `.def` + stubs). 2,983 LOC / 61 functions for **$0.73**; 323 cargo-check errors to zero. The MSV1_0 authentication package — the LSA-side and user-side halves of NTLM/interactive logon that lsasrv dispatches through `SECPKG_FUNCTION_TABLE`. **`ntlm/global.c` never went through `translate`**: it defines six globals and no functions, so there was nothing to buy, and its absence was invisible to `cargo check` (the island declares all six `extern`) right up to the link. Hand-carried into `src/ntlm/global.rs`, with the 27- and 14-slot dispatch tables emitted **mechanically** from the C's designated initializers — the risk in 41 near-identical `LsaSp*`/`UsrSp*` names is transposition, not translation, and a swapped pair compiles, links, boots and then misauthenticates. Three substrate decisions did most of the work: the profile moved to `BLOCKLIST_FUNCS_FROM_CRATE` (a thin module over samsrv/lsasrv delay imports would otherwise need ~60 hand-written RPC-shaped prototypes whose pointer levels nothing checks) and allowlists winbase.h for the four kernel32 calls; `NT_SUCCESS`/`RtlEqualMemory` are `bool` in Rust so the C's `== 0` idiom was rewritten rather than the predicates re-typed. **Four real bugs the compiler could not have found:** `*(UINT64*)&UserInfo->All.AccountExpires` came back as `.QuadPart as *const UINT64` — a *timestamp value dereferenced as an address*, loud here only because OLD_LARGE_INTEGER has no `QuadPart`; `LogonListResource`'s initializer invented six RTL_RESOURCE field names (recalled, not read) where the C is a bare tentative definition; `sizeof(MSV1_0_PROTOCOL_MESSAGE_TYPE)` and `sizeof(LSA_STRING)` lost their `sizeof` entirely, leaving the bare type name as the operand; and three wide literals were hand-encoded UTF-16 byte strings. Two tool fixes fell out: `normalize_island_abi.py` now projects the i386 witness THROUGH aliases (a C function *type* is a named alias on the 64-bit twins but inlined on i386, so 40 SECPKG slots stayed `extern "C"` on amd64/arm64 only), and the field manual gained the `let`-binding-captured-by-a-glob-const entry (`TokenGroups` is both the C's local and a `TOKEN_INFORMATION_CLASS` member). | **flipped** |
 | **aclui** (Tier 3, batch D) | **FLIPPED — all 4 translatable `.c` → aclui-rust, `cargo check` clean on all three arches.** The ACL editor: the "Security" property page plus the owner-drawn check-list control it is built around. `guid.c` stays C on purpose (it is `#include <initguid.h>` and says "NO CODE HERE" — macro-generated data, nothing to buy), and `rust_varargs_shim.c` carries `LoadAndFormatString`'s `va_start` because stable Rust cannot DEFINE a C-variadic. **628 cargo-check errors to zero.** What actually moved the number: `BLOCKLIST_FUNCS_FROM_CRATE` (~290 errors, replacing ~200 hand-written user32/comctl32 prototypes); **collapsing the 5 per-arch `#[cfg]` twin pairs** — 1,369 duplicated lines, and while they existed `crate-repair` withheld **119 of 119** repairs because two targets can never agree about a site that exists on only one of them (105 applied on the next run); and `UNBLOCK`ing DLGPROC/WNDPROC/LPTHREAD_START_ROUTINE into this island so one `extern "system"` definition of each callback serves all three arches. **Four bugs the compiler could not have found:** `PaintControl` (~180 lines) was never in the plan at all — checklist.c closes an `#if SUPPORT_UXTHEME` between an `if` and its body, which does not parse in one pass; one of the three `GetKeyState` sites read `VK_BACK` where the C reads `VK_SHIFT`, for a variable named `Shift`; `AddSelectedPrincipal`'s first parameter lost its `IDsObjectPicker` type to `c_void`; and the whole TCHAR type family was resolving to the ANSI one out of ntdll-sys's glob, in a module compiled `-DUNICODE`. | **flipped** |
 | **netcfgx** (Tier 3) | **FULL FLIP — all 11 compiled `.c` → netcfgx-rust, `cargo check` clean on all three arches, links.** 9,100 LOC for **$0.36 total**. Stuck at 6 of 11 since 2026-07-26 on "one or two functions per TU the call-seal keeps rejecting across two samplings"; finished 2026-08-03 for $0.08 once the three real causes were found, and all three were in the harness. (1) `_audit_paid_body` unsealed the plain-C reply TWICE, and the second pass — which sees no tokens — rejected bodies the first had accepted, four of them here. (2) The first pass then ACCEPTED a SHIFTED envelope: `ApplyOrCancelChanges` spent CALL_0000 on `IsEqualGUID`, a function-like macro that by design gets no token, and every later token slid one call to the left, so unsealing restored `swprintf`'s name onto `StringFromCLSID`'s site. A shift is a permutation and passes every count-based check, so the envelope now also compares the ARGUMENT COUNT at each token's C and Rust site (0 disagreements over all 164 banked bodies; catches this on the first pass). The envelope additionally NAMES the untokenized macros now instead of only disclaiming them in general — three interleaved windowsx.h macros were enough to make `ReadParameterValue` invent three token numbers. (3) `netcfgx.c` was refused outright: its three `STDAPI` exports are unextractable, because `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE` and the scanner normalized it to a bare `__stdcall`, deleting the return type — same class as the `TYPE * CDECL fn()` drop. `KW_EXPANSION` now carries the eleven aliases that are really `[linkage] <TYPE> <conv>`. The 2,758-error `cargo check` came down in the documented order — 236 missing symbols closed by a generated substrate (the 110 Win32 externs are bindgen output from the same header set and `-D` flags the `.c` compiles with, checked identical across all three arches; the 40 COBJMACROS dispatch shims are generated from the island's own `IFACEVtbl` structs, so a parameter list cannot drift from the vtable it dispatches through), then `MACRO_SIGNED=1` on the profile (bindgen's u32 default cost 715 E0308s on `rc != ERROR_SUCCESS` and `GetDlgItem(hDlg, IDC_*)` alone), then `crate-repair` ×2 (1,186 → 375), then the residue by hand. `UNBLOCK="DLGPROC"` is what lets one definition of each of the twelve dialog procs serve all three targets — Rust compares fn-pointer ABIs nominally, and ntdll-sys spells DLGPROC `stdcall` on i386 and `C` on the 64-bit targets, so without it every proc needs a `#[cfg]` twin (field manual, the fn-pointer-typedef entry). **Six real bugs the compiler could not have found**, all caught by checking the output against the C: 157 wide literals spelled as Rust BYTE strings (plain ASCII cast to a wide pointer, hand-encoded UTF-16 with a half-width terminator, and the C `L` prefix carried into the content) — of which `L"\Device\"` had silently lost its trailing separator; four `RegSetValueExW` calls whose wide-literal DATA argument was dropped entirely, leaving the bare type name `LPBYTE`; `SUCCEEDED(hr)`/`FAILED(hr)` expanded and then compared against zero a second time; `ZeroMemory` given memset's three arguments; `CheckInfFile` returning `u32` where the C returns `BOOL`; and `MergePropPages`'s `pszStartPage` typed `*const LPCWSTR` against netcfgn.h's `LPCWSTR *`. Two bodies needed judgement rather than sampling and both were the model IMPROVING on the C: `CreateInstanceKey` hoisted the `goto done` tail per path and lost `if (ret == FALSE)`, fixed by feeding the audit finding back into the retry; `ScanForInfFile` refused three samplings to reproduce a `continue` that skips its own `FindNextFileW` (an infinite loop, unreachable because `\inf\*.inf` cannot match `.` or `..`), repaired by hand in its stored reject and adopted for $0 through the new re-audit path. | **flipped** |
+| **umpnpmgr** (Tier 3, batch E) | **FULL FLIP — all 4 compiled `src/*.c` → umpnpmgr-rust, `cargo check` clean on all three arches.** The user-mode PnP manager service: the SERVER half of pnp.idl that cfgmgr32 and setupapi speak as clients, owning device enumeration/installation, the kernel PnP event pump (`NtGetPlugPlayEvent`) and the device-install worker. 7,038 LOC, 1,150 cargo-check errors to zero for **$0.47**. `pnp_s.c` (MIDL server stubs) and `umpnpmgr_stubs.c` (spec2def) stay C — build products, nothing to translate. **`MACRO_SIGNED=0` was MEASURED, and the resemblance argument was wrong**: netcfgx and aclui both want it ON because their constants are `int` control ids and window messages, and umpnpmgr looks the same — but it spends its time passing DBT_/WM_/CM_/SERVICE_ constants into UNSIGNED Win32 parameters, so signing them cost 90 extra E0308s (165 signed against 76 unsigned). Generate both islands and count; it is one cargo check. | **flipped** |
+| **syssetup** (Tier 3, batch F) | **FULL FLIP — all 8 compiled `.c` → syssetup-rust, `cargo check` clean on all three arches, links.** The system setup DLL: the second-stage GUI wizard (welcome/product/owner/computer/locale/date-time/theme/process/finish pages), the account and security-policy writer that drives LSA and SAM, the network-component installer, the setup action log, and the PS/2 mouse property page. ~20K lines for **$2.94**; 1,392 → 0 cargo-check errors. **Parked RED at 176/177/177 for a session** because the residue had no width answer — of the 17 integer sites erroring on all three targets exactly ONE had three-way agreement, since the parameters genuinely differ per arch (SIZE_T, WPARAM, UINT_PTR). Cross-target agreement is a filter, not a repair. Unstuck by `crate-repair`'s new **`width_alias_cast`** rule, which reads the callee's DECLARED parameter type out of the crate's own island and casts to the NAME (34 sites; 55 more claimed so the width-baked rule stood down). `syssetup_stubs.c` stays C (spec2def) and `rust_varargs_shim.c` owns the three variadic ENTRY points stable Rust cannot define — `pSetupDebugPrint` (`@ varargs` in the .spec, so a real export), `FatalError`, and strsafe's `StringCchPrintfW`. **strsafe.h's other bounded string ops now come from the shared `strsafe-rust` crate** (they were ported here first, in `src/syssetup/strsafe.rs`, which is now a re-export): they are `static __inline`, so no object file in the tree ever defined them and the prelude's `extern` block named a strsafe static lib the module does not link — invisible until the last C TU was flipped. Profile: `REAL_UNIONS=1` (PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C flattens them), `UNBLOCK` of the DLGPROC/PROPSHEET family, and `MACRO_SIGNED=0` measured (483 signed against 432 unsigned) — the second module running where the shape argument lost to the measurement. **Six bugs the compiler could not have found**: `CreateTimeZoneList` dropped its callback entirely (`EnumerateTimeZoneList(RetrieveTimeZone, SetupData)` became `(SetupData, NULL)`, so the time-zone list would have been empty); `PFNREQUESTWIZARDPAGES` lost a pointer level; ADMIN_INFO's three LPWSTR fields were initialised as `[0; 256]` arrays; proppage stored the PMOUSE_INFO through a 32-bit truncation on 64-bit; five of wizard.c's six registry-path statics had the wrong declared `[WCHAR; N]`; and 54 wide literals arrived spelled out elementwise as `['S' as u16, …]`, which dangles in a function body. | **flipped** |
+| **desk.cpl** (Tier 3, batch G) | **FULL FLIP — all 19 compiled `.c` → desk-rust, `cargo check` clean on all three arches, links.** The Display control panel: the Background/Screen Saver/Appearance/Settings/Desktop-items property sheets, the classic-and-visual theme reader and applier, the monitor-selection and preview custom controls, the GDI+ wallpaper loader, the display class installer, and the `CDevSettings` IDataObject carrying the desk.cpl ↔ display-driver shell-extension protocol. ~14K lines; 2,261 cargo-check errors to zero. `guid.c` stays C (an `initguid.h` TU that emits CLSIDs as data — zero functions) and `rust_varargs_shim.c` owns strsafe's three variadic ENTRY points; the rest of strsafe.h now comes from the shared `strsafe-rust` crate (task #48; desk's copy was the superset the crate was built from). **desk was reported FLIPPED-READY at 20/20 TUs when it was 17** — `settings.c` and `theme.c` had never been translated, and nothing could see it: `lib.rs` declared modules for files that did not exist, a crate out of `workspace.members` is never compiled, and no source scanner opens a path that is absent. `scan_orphan_modules` now reports that as `[PHANTOM]`, the dual of its orphan finding, with no banner escape — an orphan can be parked on purpose, a `mod` pointing at nothing never can. **`MACRO_SIGNED=0` MEASURED** (1,517 unsigned against 1,820 signed): the third property-sheet module where the resemblance argument would have lost. **Two island bugs that compiled clean:** three constant families desk uses by bare name (DVASPECT_*, TYMED_*, DATADIR_*) were absent because `--allowlist-file` matches where an item is DEFINED and objbase.h only `#include`s the widl-GENERATED objidl.h/wtypes.h — so the island carried `IDataObject` but none of the constants its own call sites pass; and `TCHAR` resolved to ntdll-sys's `c_char`, making desk.h's `TCHAR szPath[MAX_PATH]` structs HALF-SIZED, hidden behind `.cast()`s the translation had sprinkled to make the narrow pointers fit. Both fixed in the profile (allowlist + `UNBLOCK` of the TCHAR family), never in the prelude. **Bugs the compiler could not have found:** `REGSTR_PATH_CONTROLSFOLDER TEXT("\\Desk")` is C string-literal CONCATENATION and came across as a COMMA, turning a 4-argument call into a 5-argument one; the `DesktopIcons` table shipped four invented resource ids (1001/1004/1000/1347 where the header says 3901–3904), which would have wired every desktop-icon checkbox to a control that does not exist; `devsett.c`'s `vtblIDataObject` was dropped entirely, so every COM slot came across but not the table wiring them together; 104 wide literals arrived in four broken spellings (narrow bytes behind a wide pointer, the C source text `L"…"` quotes and all, hand-interleaved UTF-16 at alignment 1, and decimal character codes typed `i32`); the two bitfield structs lost their accessors; `SwitchDisplayMode` narrowed BOOL to `u8` and `SettingsPageCallbackProc`'s third parameter LPPROPSHEETPAGE to `*mut u32`; and **two `#if` directives were read as ARCHITECTURE tests** — classinst.c's `#if _WIN32_WINNT >= 0x502` became `#[cfg(target_pointer_width)]` on two argument expressions, and theme.c's `#if (WINVER >= 0x0600)` became `#[cfg(target_arch)]`. A version test and an architecture test look alike and are never interchangeable. | **flipped** |
 | **hal** (x86 + arm64 stub) | 42+ cohab markers; `.S` NT-ABI + setjmp glue *(not re-verified this pass)*. **i386 default flavor is now APIC** (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock — i386-apic-hal lane, 2026-07-16); the legacy 8259 PIC HAL is preserved in-tree, gated off, behind `vibeos-cli build --hal-pic` (`VIBEOS_PIC_HAL`). amd64 was already APIC | **~97%** |
 | **rtl** static lib | 80/82 `.c` flipped; `dbgprint_variadic.c` + asm floor | **~100%** |
 | Cohab helper libs (cmlib, rossym, evtlib, inflib, …) | real `.c` flipped for kernel/cross consumers | **~100%** |
@@ -1525,13 +1528,144 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   to sit alongside these is **gone**: `island_integer_aliases` now resolves alias chains into the
   `-sys` crate (176 -> 417 proven types), which alone moved `CRegFolderEnum` from UNSUPPORTED to
   translatable and left `CEnumMergedFolder` with only its activation shape.
-  `droptargets/CFSDropTarget.cpp` is **bought and banked but not flipped**: all 21 bodies are in
-  `shell32-rust/src/droptargets/CFSDropTarget.rs` (19 paid, one on the sanctioned retry, `_DoDrop`
-  hand-written after two envelope refusals), carrying an `ORPHAN-BY-DESIGN` banner because the
-  file, the island and `shellcom` each declare their own
-  `IDataObject`/`IUnknown`/`IShellFolderView`/`STGMEDIUM`/`CFSDropTarget` and deciding which module
-  owns each is the actual remaining work — a wrong vtable there corrupts on drag-and-drop rather
-  than failing to build.
+  **Re-measured 2026-08-05 after three more flips, now per-TU** (`rustconv cpp-tu` over every
+  live TU). Gap (3), object-field RAII, is the cheapest to close and blocks exactly three:
+  `CIDLDataObj` (`CSimpleArray<FORMATETC>`/`<STGMEDIUM>`), `CDefaultContextMenu`
+  (`CAtlList<>` ×2, 1,995 lines) and `CRecycleBinFolderViewCB` (`CComHeapPtr<ITEMIDLIST>
+  m_pidls[2]`). The leverage is that `atl.rs` **already implements** CComPtr / CHeapPtr /
+  CComHeapPtr / CSimpleArray with `Drop` restoring the dropped destructors, and
+  `--local-raii NAME=PATH` already performs exactly this substitution for BODY-locals — there
+  is simply no equivalent for a class's STATE fields.
+  **Closed for two of the three, 2026-08-05, and the third turned out to be a different gap.**
+  The scaffold now keeps an ATL container's TYPE in the Rust owner (it cannot be flattened to
+  a pointer the way `CComPtr` is, because its destructor walks storage the scaffold does not
+  own), initialises it with `new()` instead of `zeroed()`, and emits a `drop_in_place` per
+  container in the generated `Release` — after the explicit dtor body, which is C++'s own
+  order. `CComHeapPtr<T> name[N]` is accepted too, freeing each element. `CIDLDataObj` is
+  preflight-green; `CRecycleBinFolderViewCB` has its state field accepted and is now blocked
+  only on activation. **`CDefaultContextMenu` is not an object-field-RAII case at all** —
+  `CAtlList<DynamicShellEntry>` and `<StaticShellEntry>` hold C++ objects with their OWN
+  destructors (`CComPtr<IContextMenu>`, `CStringW`), and `atl.rs`'s container `Drop` runs one
+  `drop_in_place` per element, which reproduces the C++ only when the element is trivially
+  destructible. So the element type must be PROVEN trivially destructible or the container is
+  refused, and the proof is the bindgen island: bindgen only ever renders C declarations, so a
+  name it emits as a struct came from a C header. A C++ class is never in that set.
+  **CLOSED 2026-08-05.** The island is one of TWO safe families; the other is a
+  source-discovered POD **rendered owning**. Two defects sat behind it: the element type was
+  never discovered at all (the candidate scan only matched a plain `Type name`, so an element
+  inside a template argument was invisible — which made the refusal accidentally-correct rather
+  than a proof of anything), and the POD renderer spelled ATL members with the COM *owner's*
+  type. That is right for an owner, whose generated `Release` releases explicitly, and fatal in a
+  POD, whose field types are its entire destructor. `PlainStateField.owned_rust_type` keeps the
+  owning spelling (`CComPtr<T>`/`CComHeapPtr<T>`/`CStringW`), all `repr(transparent)`, so
+  layout is unchanged and Rust's field-drop order *is* the C++ implicit destructor. The
+  free-function renderer had the same bug and the shipped `brfolder.rs` is what proved it — it
+  already had the owning spelling while the generator did not, so a regeneration would have
+  downgraded a correct file. Repo sweep: 12 C++ structs hold ATL members, only `BrItemData` has
+  a Rust port, so nothing shipped carried the leak. `CAtlList<T>` itself is implemented in `atl.rs` (the
+  measured surface: GetHeadPosition/GetNext ×7, IsEmpty ×5, RemoveAll/GetAt/FindIndex/AddTail
+  ×2, AddHead ×1) and returns a null POSITION on OOM where ATL throws, which is stated at the
+  type because it silently drops an entry rather than abandoning the operation.
+  **`CIDLDataObj.cpp` is flipped on the back of it** (2026-08-05, $0.16) — the shell's
+  `IDataObject`/`IAsyncOperation` for a PIDL selection, its `IEnumFORMATETC`, and the TU's four
+  constructors, as three modules: the assembler writes one file per class slice, and a TU only
+  leaves CMake when every slice has an owner. No bridge was needed (both constructors sit inside
+  `wine/shell32_main.h`'s own `extern "C"`; both `SHCreate*DataObject` are WINAPI in shlobj.h).
+  The container contract held — the model wrote `m_Formats.GetAt(n)` from the sealed usage
+  mapping instead of inventing a wrapper. Three tool fixes fell out of the grind, each of which
+  had been paid by hand before: `--seal-facts` was sealing the function's OWN parameter TYPES
+  (unsatisfiable for a COM method, whose signature comes from the vtable authority — the whole
+  parameter list is excluded now); the SDK-record renderer emitted a template-erased SHADOW of
+  `CSimpleArray` that beat the real one by scope; and the stitcher's substrate globs collide
+  with the scaffold's prelude glob on every shared name, which is what those 339/339/399 opening
+  error counts were. Defects worth naming in the paid bodies: the free-function slice INVENTED a
+  `CIDLDataObj` struct (it cannot see the slice that owns the real one), `Clone` used the
+  generated worker name as a VTABLE SLOT, and `SHAlloc(size)` passed a DWORD to a SIZE_T
+  parameter — invisible on i386, caught by both 64-bit targets.
+  **`CDefaultContextMenu.cpp` is BOUGHT but NOT FLIPPED** (2026-08-05, $0.41, 43/45 workers) —
+  the 2,024-line TU behind every right-click. Preflight is fully green now: 5 interfaces, 33
+  vtable slots, both `CAtlList` fields resolved, and the element PODs rendering owning. The
+  assembly is parked at `~/vibeos-rust-staging/CDefaultContextMenu-cppcom/` with a RESUME.md,
+  and it re-assembles for $0 from the resume cache. Three more tool fixes fell out, two of which
+  recovered already-paid bodies at $0 on replay: a free helper and a method may share a name and
+  C++ resolves it by SCOPE (`MapVerbToCmdId/5` static vs `/3` member — the binder knew only the
+  free one and hard-failed the whole TU); `--seal-calls` hid sibling call sites from the pass
+  that inserts the implicit `this`, so the envelope demanded a receiver the responsible pass
+  could not see (5 of the 7 rejects); and cpp_com's dropped-constant audit demanded back a
+  `const_cast<T>` type argument that `fact_seal` already knew has no Rust landing site. The two
+  bodies the workers could not produce are now hand-written in the parked file:
+  `DoCreateNewFolder`, because every sample silently FIXED a real ReactOS leak (the C frees
+  `pidl` once and leaks it when `SelectItem` fails), which the envelope is right to refuse and
+  which retrying cannot change; and `InvokeRegVerb`, whose three missing constructs now exist —
+  **`CRegKey` ported in `atl.rs` and `CScopedSetObjectWithSite` in `shellutils.rs` (LANDED)**,
+  and the `static_cast<IContextMenu*>(this)` is the file's own `QueryInterface` answer,
+  `addr_of_mut!((*this).IContextMenu3_iface).cast()`. That is the same `--local-raii` substrate
+  that blocks `COpenWithMenu`, so that lane is unblocked too.
+  **Second session (2026-08-05): the free-function half is bought as well — $0.13, 22/22, so
+  $0.54 for the whole TU.** `--cpp-com --class` translates the CLASS ONLY; this TU's other 14
+  top-level definitions (the `DCMA_*` menu-array API, both `*_RustBridge` entry points,
+  `SHCreateDefaultContextMenu`, `CDefFolderMenu_Create2`, the `g_StaticInvokeCmdMap` verb
+  table) needed a separate `--free-functions` run — the same two-run shape `CNetFolder` used.
+  Both runs derive their output path from the TU, so the second **requires `-o`**: rustconv
+  refuses to write rather than discard the first, which is fail-loud working as designed.
+  **FLIPPED (2026-08-05, third session): 201 errors -> 0 on all three arches, `.cpp` out of
+  CMake.** The residue was the three-way substrate conflict this crate is known for
+  (`crate::shellcom` vs the bindgen island vs `com_sys`/`ntdll_sys`), and it resolved as three
+  mechanical classes plus a hand tail. `IContextMenu` is declared ONCE, by the class half, with
+  every slot typed, and both the TU half and the support module import that one — which is what
+  keeps `DCMENTRY.pCM` and `DynamicShellEntry.pCM` the same nominal type; the TU half's
+  generated duplicates of `DynamicShellEntry`/`StaticShellEntry` were dead AND typed `pCM` as a
+  raw pointer where the C++ has `CComPtr<IContextMenu>`, so they were deleted rather than
+  reconciled. `IShellExtInit` and `IShellFolderView` are declared file-locally in the
+  hand-written support module, as shellcom.rs's own header directs. `DCMENTRY` is re-declared
+  there too, for one reason: the island types its `pCM` as the bindgen C++ class with an opaque
+  `vtable_`, which no call site can go through.
+  Defects worth naming beyond the substrate: `_InsertMenuItemW` lost the `LOWORD(dwTypeData)`
+  argument to `LoadStringW` and shifted the rest left (a `/* i32 */` placeholder, so it failed
+  loudly); `AddStaticEntry` rendered C's `!_wcsicmp(...)` as Rust's BITWISE `!`, which would
+  have inverted the "open verb goes first" rule; `QCMINFO`'s 5th field was named `NULL` after
+  its initializer; the ctor transposed `m_iIdSCMFirst(0)` and `*m_DefVerbs = UNICODE_NULL`;
+  `StrIsNullOrEmpty` is C++-OVERLOADED and the wide overload was chosen for the ANSI
+  `lpParameters`; and both `*_RustBridge` wrappers came back as `#[no_mangle]` GENERICS
+  returning `CY` (tagCY, the CURRENCY union) instead of `UINT`/`HRESULT` — CFSDropTarget imports
+  those two by name, so they had to be right.
+  The flip itself needed only two linkage changes: `MapFcidmCmdToVerb` and `MapVerbToDfmCmd`
+  are declared with C++ linkage in precomp.h and still called from the C++ `CDefView.cpp` and
+  `utils.cpp`, so both declarations became `EXTERN_C`. Everything else already matched —
+  `SHCreateDefaultContextMenu` and `CDefFolderMenu_Create2` are `extern "C" WINAPI` in
+  shlobj.h, and `_InsertMenuItemW` sits inside wine/shell32_main.h's `extern "C"` block.
+  Three PHANTOM symbols only the link could find, all macros: `SID_IShellBrowser` and
+  `SID_SFolderView` are `#define`s ALIASING `IID_IShellBrowser`/`IID_IFolderView`, and
+  `DSA_GetItemCount(hdsa)` is `(*(int *)(hdsa))`. `cargo check` is green with all three
+  declared `extern`; only the linker knows they are not symbols.
+  Gap (2), inherited layout, blocks
+  `CFolder`/`CFolderItems` (`IDispatchImpl<>`), `CStubWindow32`/`CDefView` (`CWindowImpl<>`)
+  and `CShell32Module` (`CAtlModuleT<>`). The rest are assorted activation shapes
+  (`CFileSysBindData`, `CExtractIcon`, `COpenWithList`/`COpenWithDialog`, `CRegFolderInfo`,
+  `CChangeNotifyBroker`).
+  **Three more whole-TU flips landed 2026-08-05** — `droptargets/CFSDropTarget.cpp`,
+  `droptargets/CRecyclerDropTarget.cpp` and `CDefViewBckgrndMenu.cpp` — and between them they
+  settled the per-module type-ownership question that had CFSDropTarget parked
+  `ORPHAN-BY-DESIGN`. The answer is three-way and none of it is optional:
+  **`shellcom` owns the COM vtable ABI** (imported explicitly, which outranks the prelude's
+  island glob, and the GUID family has to move WITH it — taking some and not the rest merely
+  relocates the mismatch from the vtable slots to the `IID_*` statics);
+  **the island owns data layouts**, so every PIDL / POINT / STRRET / GUID crossing INTO a
+  shellcom slot takes a `.cast()` at the call site (shellcom.rs:91 already says why it keeps
+  layout-identical copies and that the cast is the price);
+  **the file owns whatever neither has** — e.g. `IShellFolderView`, whose island form is
+  bindgen's opaque `vtable_: *const c_void` with no callable slot, and `_DoDropData`, whose
+  island form names the island's ATL-shaped `CFSDropTarget` and would read `data->This` at the
+  wrong offsets on the receiving thread.
+  A fourth rule fell out of CDefViewBckgrndMenu and is worth knowing before the next flip: the
+  island renders IDropTarget's vtable slots as `Option<fn>` where shellcom uses raw fn pointers,
+  so an island-typed interface pointer cannot be CALLED at all (E0618, not a mismatch).
+  Two shellcom vtables grew trailing slots to make this work, and both are additive for the same
+  reason — a `usize` slot is the same SIZE as a fn pointer and cannot be called, so typing one
+  changes the vtable's type and not its layout, and nothing in the tree builds either as a
+  literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
+  `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
+  shobjidl.idl:866.
   **Free-function TUs — the island-first recipe is proven; 2 wired, 7 still parked** (2026-07-26).
   `dialogs/general.cpp` and `dialogs/recycler_prop.cpp` are cohab-flipped and green on all three
   arches: they are the first shell32 TUs to take their substrate from the **bindgen island**
