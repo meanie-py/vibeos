@@ -88,6 +88,8 @@ typedef int                 BOOL;
 #endif
 typedef unsigned char       UCHAR;
 typedef unsigned char       BOOLEAN;   /* NT's one-byte bool; RtlGenRandom returns it */
+typedef unsigned int        UINT32;    /* math.c's float/bits unions */
+typedef unsigned long long  UINT64;    /*   …and its double ones */
 typedef unsigned char       BYTE;
 typedef unsigned short      WORD;
 typedef unsigned int        DWORD;   /* Windows DWORD is 32-bit */
@@ -463,6 +465,14 @@ typedef struct __thread_data {
      * subject's copy is msvcrt-sys's real `thread_data_t`; this one carries only what the
      * reference TUs touch, which is why the field arrives per-TU rather than up front. */
     unsigned int    random_seed;
+    /* math.c's `__fpecode` slot (dll/win32/msvcrt/msvcrt.h:198). Arrives with math.c for
+     * the same reason `random_seed` arrived with misc.c: this struct carries only what the
+     * reference TUs actually touch. */
+    int             fpecode;
+    /* `_ecvt`/`_fcvt` hand out pointers INTO this buffer and it is lazily malloc'd, so it is
+     * per-thread state the rows observe directly — the same aliasing contract errno.c's
+     * strerror buffers carry (dll/win32/msvcrt/msvcrt.h:204). */
+    char           *efcvt_buffer;
     int             locale_flags;
     pthreadmbcinfo  mbcinfo;
     /* file.c's tmpnam/_wtmpnam scratch — same slots as the real
@@ -507,6 +517,112 @@ int __cdecl _toupper_l(int c, _locale_t locale);
  * refimpl.c includes this header WITHOUT the prelude, so that macro is live in it. The
  * prelude's own `#define isdigit ref_isdigit` is object-like and still applies. */
 int __cdecl (isdigit)(int c);
+
+/* ── what the math.c reference TU needs ────────────────────────────────
+ *
+ * `struct _exception` is the matherr record, VERBATIM from sdk/include/crt/math.h:20-26 —
+ * the host's <math.h> has SVID's `struct exception`, which is a different type with a
+ * different name, so nothing here can be borrowed. `_matherr` takes a pointer to this and
+ * `math_error` builds one on the stack, so the field ORDER is part of the contract: a
+ * harness copy with the members transposed would grade a struct msvcrt never builds. */
+/* sdk/include/crt/math.h:31-33 — `_cabs`'s BY-VALUE parameter, so its layout is an ABI
+ * contract and not merely a type: two doubles, x then y. */
+struct _complex {
+    double x, y;
+};
+
+struct _exception {
+    int    type;
+    char  *name;
+    double arg1;
+    double arg2;
+    double retval;
+};
+int __cdecl _matherr(struct _exception *e);
+
+/* wcs.c's `_scprintf`/`_snprintf`, which math.c's `_ecvt`/`_gcvt` family calls. Declared
+ * HERE, i.e. AFTER the prelude's stage-1 rename, so these become the prototypes for
+ * `ref__scprintf`/`ref__snprintf` — wcs.c's own bodies. Same move `isdigit` made for
+ * undname.c, and for the same reason: the host header that would otherwise declare them
+ * runs BEFORE the rename and so only ever declares the plain names, leaving the call to
+ * degrade into an implicit `int f()` that returns garbage for a `size_t`. */
+int WINAPIV _scprintf(const char *format, ...);
+int WINAPIV _snprintf(char *str, size_t len, const char *format, ...);
+
+/* xdk/ketypes.h:186. `msvcrt_init_math` indexes KUSER_SHARED_DATA's processor-feature array
+ * with it — at the hard-coded address 0x7FFE0274, which is why that one function is
+ * COMPILE-ONLY here and no row may call it. The constant still has to be right: a wrong
+ * index would read a different feature bit, and on a host with no page there at all the
+ * failure is a fault rather than a wrong answer. */
+#define PF_XMMI64_INSTRUCTIONS_AVAILABLE 10
+
+/* `_fpclass`'s return codes, LIFTED VERBATIM from sdk/include/ucrt/float.h:197-206. The
+ * third constant family math.c needs and the third that the host cannot supply — glibc has
+ * no `_FPCLASS_*` at all, so this one fails to compile rather than compiling wrong, which
+ * makes it the friendly member of the set. Kept in the header's own order and spelling so a
+ * diff against it is a diff, not a reading exercise. */
+#define _FPCLASS_SNAN  0x0001
+#define _FPCLASS_QNAN  0x0002
+#define _FPCLASS_NINF  0x0004
+#define _FPCLASS_NN    0x0008
+#define _FPCLASS_ND    0x0010
+#define _FPCLASS_NZ    0x0020
+#define _FPCLASS_PZ    0x0040
+#define _FPCLASS_PD    0x0080
+#define _FPCLASS_PN    0x0100
+#define _FPCLASS_PINF  0x0200
+
+/* The x87/SSE CONTROL-WORD masks that `_control87`/`_controlfp`/`_controlfp_s` translate
+ * between, lifted verbatim from sdk/include/ucrt/float.h:131-164. These are the whole
+ * contract of those three functions -- each is a bit-shuffle between the hardware word and
+ * msvcrt's abstract one -- so a wrong mask here would grade the shuffle against the wrong
+ * layout and agree with nothing. Lifted rather than typed for the reason the FP_* table
+ * above gives, and kept in the header's order so a diff against it stays a diff. */
+#define _EM_AMBIGUIOUS  0x80000000
+#define _EM_AMBIGUOUS   0x80000000
+#define _MCW_EM         0x0008001f
+#define _EM_INEXACT     0x00000001
+#define _EM_UNDERFLOW   0x00000002
+#define _EM_OVERFLOW    0x00000004
+#define _EM_ZERODIVIDE  0x00000008
+#define _EM_INVALID     0x00000010
+#define _EM_DENORMAL    0x00080000
+#define _MCW_RC         0x00000300
+#define _RC_NEAR        0x00000000
+#define _RC_DOWN        0x00000100
+#define _RC_UP          0x00000200
+#define _RC_CHOP        0x00000300
+#define _MCW_PC         0x00030000
+#define _PC_64          0x00000000
+#define _PC_53          0x00010000
+#define _PC_24          0x00020000
+#define _MCW_IC         0x00040000
+#define _IC_AFFINE      0x00040000
+#define _IC_PROJECTIVE  0x00000000
+#define _MCW_DN         0x03000000
+#define _DN_SAVE        0x00000000
+#define _DN_FLUSH       0x01000000
+#define _DN_FLUSH_OPERANDS_SAVE_RESULTS 0x02000000
+#define _DN_SAVE_OPERANDS_FLUSH_RESULTS 0x03000000
+
+/* `_statusfp`/`_clearfp`'s status-word bits, same header, same reason
+ * (sdk/include/ucrt/float.h). The host has FE_* for the same concepts at different values,
+ * which is why gcc suggests `FE_INVALID` here -- taking that suggestion would compile and
+ * grade the wrong bit. */
+#define _SW_INEXACT     0x00000001
+#define _SW_UNDERFLOW   0x00000002
+#define _SW_OVERFLOW    0x00000004
+#define _SW_ZERODIVIDE  0x00000008
+#define _SW_INVALID     0x00000010
+#define _SW_DENORMAL    0x00080000
+#define _SW_UNEMULATED          0x0040
+#define _SW_SQRTNEG             0x0080
+#define _SW_STACKOVERFLOW       0x0200
+#define _SW_STACKUNDERFLOW      0x0400
+
+/* xmmintrin.h:54 -- the SSE function attribute, empty in the configuration msvcrt builds
+ * under. math.c puts it on `_set_SSE2_enable`'s helpers; on the host it only has to parse. */
+#define __ATTRIBUTE_SSE__
 
 /* ── what the misc.c reference TU needs ────────────────────────────────
  *
