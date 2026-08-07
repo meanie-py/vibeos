@@ -33,11 +33,12 @@ use core::ptr::{addr_of, addr_of_mut};
 use msvcrt_difftest::fixture::CODEPAGES;
 use msvcrt_sys::thread_data_t;
 
-/// `msvcrt.h:172-173`.
-const LOCALE_FREE: i32 = 0x1;
-const LOCALE_THREAD: i32 = 0x2;
-/// `errno.h`. What `_setmbcp` reports for a codepage `create_mbcinfo` refuses.
-const EINVAL: i32 = 22;
+/// `msvcrt.h:172-173` and `errno.h`, THROUGH THE ISLAND — not retyped here. A hand-written
+/// `const EINVAL: i32 = 22` is a value the oracle asserts against rather than one it reads
+/// from the same place the code under test does, and `scan_const_contradictions` caught
+/// exactly that on the first run of this file. Cast at the use site; bindgen types all
+/// three `u32` and `_setmbcp` compares them against an `int`.
+use msvcrt_sys::{EINVAL, LOCALE_FREE, LOCALE_THREAD};
 
 extern "C" {
     /// The shipping Rust, and the genuine C compiled by build.rs.
@@ -138,9 +139,9 @@ fn main() {
         // the second one tells the two arms apart.
         unsafe {
             let subj = msvcrt_get_thread_data();
-            (*subj).locale_flags = LOCALE_THREAD;
+            (*subj).locale_flags = LOCALE_THREAD as i32;
             (*subj).mbcinfo = core::ptr::null_mut();
-            ref_set_locale_flags(LOCALE_THREAD);
+            ref_set_locale_flags(LOCALE_THREAD as i32);
             ref_set_thread_mbcinfo(core::ptr::null_mut());
 
             MSVCRT_locale = core::ptr::null_mut();
@@ -187,8 +188,8 @@ fn main() {
             let subj = msvcrt_get_thread_data();
             let subj_old = (*subj).mbcinfo as *mut c_void;
             let ref_old = ref_get_thread_mbcinfo();
-            (*subj).locale_flags = LOCALE_THREAD | LOCALE_FREE;
-            ref_set_locale_flags(LOCALE_THREAD | LOCALE_FREE);
+            (*subj).locale_flags = (LOCALE_THREAD | LOCALE_FREE) as i32;
+            ref_set_locale_flags((LOCALE_THREAD | LOCALE_FREE) as i32);
 
             mbcs_reset_freed();
             assert_eq!(_setmbcp(cp as i32), 0);
@@ -269,8 +270,8 @@ fn main() {
     // ── the refusal path ────────────────────────────────────────────────────────────
     unsafe {
         let subj = msvcrt_get_thread_data();
-        (*subj).locale_flags = LOCALE_THREAD;
-        ref_set_locale_flags(LOCALE_THREAD);
+        (*subj).locale_flags = LOCALE_THREAD as i32;
+        ref_set_locale_flags(LOCALE_THREAD as i32);
         let before: Vec<u8> = subj_table(n).to_vec();
         let ref_before: Vec<u8> = ref_table(n).to_vec();
 
@@ -284,7 +285,7 @@ fn main() {
         assert_eq!(ref__setmbcp(bad), -1, "reference accepted it");
         assert_eq!(
             (*_errno(), *msvcrt_ref__errno()),
-            (EINVAL, EINVAL),
+            (EINVAL as i32, EINVAL as i32),
             "a refused _setmbcp must leave EINVAL on both sides"
         );
         assert!(
