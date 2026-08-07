@@ -311,6 +311,13 @@ pub const PSN_SETACTIVE: UINT = crate::types::PSN_SETACTIVE as UINT;
 pub const LVN_ITEMCHANGED: UINT = crate::types::LVN_ITEMCHANGED as UINT;
 pub const LVN_DELETEITEM: UINT = crate::types::LVN_DELETEITEM as UINT;
 pub const TVN_KEYDOWN: UINT = crate::types::TVN_KEYDOWN as UINT;
+// commctrl.h:3163 `#define LVN_BEGINLABELEDIT __MINGW_NAME_AW(LVN_BEGINLABELEDIT)` — the
+// PREPROCESSOR picks the half, so bindgen emits only the A and W names. Left unresolved, the
+// bare name in a `match` arm is a fresh BINDING that matches everything (§9.112): the
+// LVN_BEGINLABELEDIT arm was swallowing every notification the list view sent, and the
+// LVN_ENDLABELEDIT arm below it was dead. -DUNICODE, so W.
+pub const LVN_BEGINLABELEDIT: UINT = crate::types::LVN_BEGINLABELEDITW as UINT;
+pub const LVN_ENDLABELEDIT: UINT = crate::types::LVN_ENDLABELEDITW as UINT;
 pub const LVN_KEYDOWN: UINT = crate::types::LVN_KEYDOWN as UINT;
 // ChangeDisplaySettingsEx returns a LONG and winuser.h:190-196 spells this family as plain
 // signed integers, but bindgen splits it: the two non-negative members come out `u32` and the
