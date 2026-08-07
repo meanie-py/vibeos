@@ -573,12 +573,12 @@ void CDECL free_locale_noalloc(_locale_t locale)
     (void)locale;
 }
 
-/* printf's %e exponent width.  msvcrt's default is the 3-digit form; the
- * 2-digit form is opt-in via _set_output_format.  Return the default. */
-unsigned int __cdecl _get_output_format(void)
-{
-    return 0;
-}
+/* `_get_output_format` USED to live here, as a constant 0 — printf's %e exponent width,
+ * with a comment explaining that the 3-digit form is msvcrt's default.  That made OUR
+ * choice the oracle for every `%e` row.  misc.c DEFINES it, so as of reference TU #9 it is
+ * a reference EXPORT reading the genuine `output_format` static, and the prelude renames it
+ * to `ref__get_output_format` like every other one. Same move `_mbtowc_l` made for mbcs.c
+ * and `_isspace_l` for ctype.c. */
 
 /* `_mbtowc_l` USED to live here — a C-locale ASCII stub, because wcs.c called it and
  * nothing defined it.  mbcs.c DEFINES it, so as of the mbcs TU it is a reference

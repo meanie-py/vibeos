@@ -138,6 +138,15 @@ name = "mbcs_setmbcp"
 path = "tests/mbcs_setmbcp.rs"
 harness = false
 
+# undname.c — reference TU #8, and 1,788 lines of Rust that had no differential coverage at
+# all. Its own binary for the ordinary reason (a `fn main()` sweeping a generated corpus),
+# not because it needs isolation: the demangler touches no global state, and takes its
+# allocator as parameters, which is what makes the allocation ledger possible.
+[[test]]
+name = "undname"
+path = "tests/undname.rs"
+harness = false
+
 # Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
 # drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
 # sides' tables have to start empty and stay in lockstep for the fd numbers to be

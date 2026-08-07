@@ -3391,6 +3391,20 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **A SIDE EFFECT inside a call argument, hoisted out of the condition it lived in.** Rust has
+  no `++`, so `f(*p++)` has to become two statements — and WHERE the second one lands is the
+  whole meaning. msvcrt's demangler reads
+  `if (!get_calling_convention(*sym->current++, …) || !demangle_datatype(sym, …))`: the `++`
+  runs before `demangle_datatype` sees the same `sym`. The translation put the increment after
+  the entire `if`, so every function signature parsed its RETURN TYPE from the
+  calling-convention letter — `A` reads as a reference, and `void * (__cdecl*)(long)` demangled
+  as ` & (__cdecl*)(void,long)`, with the real return type shifted into the argument list.
+  **Both forms advance the cursor exactly once**, so nothing leaks, nothing faults, and no
+  bounds or lifetime check can fire; only the ORDER differs. It survived a build, a boot and
+  every scanner we own, and was found by the first differential row that reached it. When a
+  translated function takes a cursor or an index, diff the SEQUENCE POINTS, not just the
+  arithmetic: for every `x++` / `++x` the C evaluates inside an argument, a condition, or a
+  comma expression, ask which later operand in that same expression observes the new value.
 - **A BOUNDED API substituted by an UNBOUNDED one — the buffer's size argument is dropped, and
   the substitute has its own, larger, internal bound.** msgina rendered strsafe.h's
   `StringCchPrintfW`/`StringCbPrintfW` as `macro_rules!` wrappers that discarded the count and
@@ -3718,6 +3732,13 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A pointer difference with an adjustment folded into `offset_from`, and then applied
+  AGAIN.** `sym->current - 1 - ptr` parses as `(current - 1) - ptr`; the translation correctly
+  turned `current - ptr` into `offset_from(ptr)` and then kept the `- 1` as well, so msvcrt's
+  demangler subtracted it twice and every identifier came out one byte short —
+  `CBaseUnknown` as `CBaseUnknow`, in the shipping DLL, on every C++ symbol. The shape to
+  distrust is any `a - K - b` where `a` and `b` are pointers: the `K` belongs to ONE of the two
+  operands, and once `a - b` becomes a method call the reader can no longer see which.
 - **Cast-before-offset**: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun.
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
