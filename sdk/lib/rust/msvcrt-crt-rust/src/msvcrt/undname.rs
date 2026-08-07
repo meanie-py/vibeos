@@ -794,7 +794,13 @@ unsafe extern "C" fn get_literal_string(sym: *mut parsed_symbol) -> *mut i8 {
         }
     }
     (*sym).current = (*sym).current.offset(1);
-    if str_array_push(sym, ptr, (*sym).current.offset_from(ptr) as i32 - 1 - 1, core::ptr::addr_of_mut!((*sym).names)) == 0 {
+    // `sym->current - 1 - ptr` in the C, which parses as `(current - 1) - ptr`: `current` is
+    // one PAST the '@', so `current - 1` is the '@' itself and the difference is the
+    // identifier's length. The translation folded `current - ptr` into `offset_from` and then
+    // kept the `- 1` as well, subtracting it twice — so every identifier came out one byte
+    // short. `CBaseUnknown` demangled as `CBaseUnknow`, in the shipping DLL, on every C++
+    // symbol. Nothing could see it until undname.c became a reference TU.
+    if str_array_push(sym, ptr, (*sym).current.offset_from(ptr) as i32 - 1, core::ptr::addr_of_mut!((*sym).names)) == 0 {
         return core::ptr::null_mut();
     }
 
@@ -1024,21 +1030,30 @@ unsafe extern "C" fn get_extended_type(c: i8) -> *const i8 {
 unsafe extern "C" fn get_function_signature(sym: *mut parsed_symbol, fs: *mut function_signature) -> i32 {
     let mark = (*sym).stack.num;
 
+    // `get_calling_convention(*sym->current++, …)` in the C. The `++` is a side effect
+    // INSIDE the first argument, so the cursor moves past the calling-convention letter
+    // BEFORE `demangle_datatype` runs on the same `sym`. The translation hoisted it out of
+    // the condition and to AFTER the whole `if`, which left the return type being parsed
+    // from the calling-convention letter itself — `A` reads as a reference, so every
+    // function signature in the DLL came out with a return type of ` &` and its real return
+    // type shifted into the argument list. `void * (__cdecl*)(long)` demangled as
+    // ` & (__cdecl*)(void,long)`.
+    //
+    // Sequencing, not arithmetic: both forms advance the cursor exactly once, so nothing
+    // leaks and nothing crashes. Only the ORDER differs, which is why it survived a build,
+    // a boot, and every scanner.
+    let call_conv_char = *(*sym).current;
+    (*sym).current = (*sym).current.offset(1);
     if get_calling_convention(
-        *(*sym).current,
+        call_conv_char,
         core::ptr::addr_of_mut!((*fs).call_conv),
         core::ptr::addr_of_mut!((*fs).exported),
         (*sym).flags & !UNDNAME_NO_ALLOCATION_LANGUAGE,
-    ) == 0 || demangle_datatype(
-        sym,
-        core::ptr::addr_of_mut!((*fs).return_ct),
-        0,
     ) == 0
+        || demangle_datatype(sym, core::ptr::addr_of_mut!((*fs).return_ct), 0) == 0
     {
-        (*sym).current = (*sym).current.offset(1);
         return (FALSE) as i32;
     }
-    (*sym).current = (*sym).current.offset(1);
 
     (*fs).arguments = get_args(sym, (TRUE) as u8, '(' as i8, ')' as i8);
     if (*fs).arguments.is_null() {

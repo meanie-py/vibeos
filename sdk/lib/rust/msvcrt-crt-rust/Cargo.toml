@@ -40,7 +40,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp"]
+default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", "data", "ctype-tables", "heap", "cpp", "threading", "dllmain"]
 
 # heap.c (`src/msvcrt/heap.rs`) — the allocator. ON for every build that produces
 # msvcrt.dll, OFF for both host harnesses, and this one is not a convenience gate like the
@@ -69,6 +69,25 @@ heap = []
 # base through `RtlPcToFileHeader`. An ELF host binary has neither, so the module cannot
 # link there at all — this gate is what keeps msvcrt-difftest buildable.
 cpp = []
+
+# lock.c + thread.c (`src/msvcrt/lock.rs`, `src/msvcrt/thread.rs`) — the CRT's mutual
+# exclusion table and its per-thread state block. ON for every build that produces
+# msvcrt.dll, OFF for both host harnesses, and the reason is a DUPLICATE DEFINITION rather
+# than a missing one: `msvcrt-difftest/refimpl.c:310` defines `msvcrt_get_thread_data` and
+# `fileimpl.c:1220` defines `_lock`/`_unlock`, because the harness needs its own
+# single-threaded thread_data it can inspect between cases. Linking these two modules in
+# would collide with all three.
+#
+# The two travel together and cannot be split: `_beginthread`'s trampoline is the only
+# writer of `thread_data_t::handle`, and `_lock` is what every `malloc` in heap.rs takes
+# before touching the free list.
+#
+# Status is PORTED, NOT GRADED for the same reason as `heap` — the substrate is Win32
+# (TLS slots, CRITICAL_SECTIONs, CreateThread), not an algorithm a host harness can
+# reproduce. Unlike heap.c, though, the gate signal here is strong: `_lock`/`_unlock` run
+# on every allocation and `msvcrt_get_thread_data` is called by nearly every other module
+# in this crate, so a defect surfaces as a boot failure rather than as silence.
+threading = []
 
 
 # errno.c's `_invalid_parameter` (`src/msvcrt/errno.rs`). ON for every build that produces
@@ -212,6 +231,18 @@ data = ["dir-environ"]
 # ctype.c's 44 FUNCTIONS are NOT behind this gate and never were: they are hand-written in
 # lib.rs and graded MATCH against reference TU #3 today.
 ctype-tables = []
+
+# main.c's `DllMain` (`src/msvcrt/main.rs`) — msvcrt.dll's ENTRY POINT, plus the
+# `msvcrt_tls_index` slot it allocates. Default ON, absent from both host harnesses, and
+# unlike the gates above the reason is not a duplicate symbol: a Linux test binary has no
+# DLL_PROCESS_ATTACH to be called on, so the whole module is meaningless there.
+#
+# It lists every feature it CALLS INTO rather than assuming the default set, because a
+# `--no-default-features --features dllmain` build is otherwise a DllMain that initialises
+# subsystems no longer in the link. That is not a compile error — the C copies satisfy the
+# names — it is msvcrt.dll booting with half its init sequence pointed at the wrong
+# implementations.
+dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }

@@ -1,6 +1,18 @@
 # msvcrt / ucrtbase from pieces — lane plan
 
-> **Lane:** `msvcrt-homebrew` · **Status:** planning (survey done 2026-07-12) · **Size:** M–L
+> **Lane:** `msvcrt-homebrew` · **Status:** the DLL is done; the debt is GRADING (2026-08-07) · **Size:** M–L
+>
+> **Status, measured not asserted** (`tools/export_census.py --module msvcrt --arch amd64`):
+> **1,060 of 1,226 exports are Rust and ZERO are backed by msvcrt's own C.** What is left is
+> 109 `va_start` trampolines and 4 setjmp bodies stable Rust cannot express, 24 stubs and 4
+> forwarders with nothing to port, one ntdll import thunk, and 24 exports in `sdk/lib/crt`
+> (crtmath 18 + dbgrpt 6) that are shared by five DLLs and belong to their own lane.
+> **The open work is not translation, it is oracles**: 9 reference TUs exist (string, wcs,
+> ctype, mbcs, scanf, file, errno, undname, misc) and math.c/process.c/time.c/except_* are
+> PORTED AND UNGRADED. The two demangler bugs found on 2026-08-07 — both shipping, both
+> invisible to every value-based check — are the argument for closing that debt before
+> adding more Rust. Per-file detail lives in `docs/engineering/rust-port-status.md`; this
+> file keeps the strategy below.
 > **Roadmap home:** `docs/product/vibeos-roadmap.md` Tier 2 ("msvcrt / ucrtbase from pieces").
 > **Thesis:** the Rust user-mode CRT is not a translation project — it is an *assembly* project.
 > Most of the pure-algorithm CRT is **already translated and battle-tested** inside `cnt-rust`,

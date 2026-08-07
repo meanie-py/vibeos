@@ -16,6 +16,10 @@ list(APPEND SOURCE
     # stubs.c    — replaced by Rust (sdk/lib/rust/msgina-rust/src/stubs.rs)
     # tui.c      — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
     # utils.c    — replaced by Rust (sdk/lib/rust/msgina-rust/src/utils.rs)
+    #
+    # NOT a translation reverted to C: rust_varargs_shim.c holds the `va_start` for strsafe.h's
+    # two variadic entry points, which stable Rust can declare but not define. See its header.
+    rust_varargs_shim.c
     )
 
 list(APPEND PCH_SKIP_SOURCE

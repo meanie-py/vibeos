@@ -3,8 +3,13 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static szMonitorSelWndClass: [TCHAR; 18] = [
-    'M' as TCHAR, 'O' as TCHAR, 'N' as TCHAR, 'I' as TCHAR, 'T' as TCHAR, 'O' as TCHAR, 'R' as TCHAR, 'S' as TCHAR, 'E' as TCHAR, 'L' as TCHAR, 'W' as TCHAR, 'N' as TCHAR, 'D' as TCHAR, 'C' as TCHAR, 'L' as TCHAR, 'A' as TCHAR, 'S' as TCHAR, 'S' as TCHAR,
+// 19, not 18: the C is `static const TCHAR szMonitorSelWndClass[] = TEXT("MONITORSELWNDCLASS")`
+// (monslctl.c:3), which the compiler sizes at 19 to hold the NUL. Hand-counting the characters
+// dropped the terminator, so RegisterClassEx/CreateWindow/UnregisterClass all read past the
+// array into whatever .rdata follows. rustc cannot see it -- the array is well-formed at any
+// length -- and it survives by luck for as long as the three calls read the same garbage.
+pub static szMonitorSelWndClass: [TCHAR; 19] = [
+    'M' as TCHAR, 'O' as TCHAR, 'N' as TCHAR, 'I' as TCHAR, 'T' as TCHAR, 'O' as TCHAR, 'R' as TCHAR, 'S' as TCHAR, 'E' as TCHAR, 'L' as TCHAR, 'W' as TCHAR, 'N' as TCHAR, 'D' as TCHAR, 'C' as TCHAR, 'L' as TCHAR, 'A' as TCHAR, 'S' as TCHAR, 'S' as TCHAR, 0,
 ];
 
 #[repr(C)]
@@ -51,8 +56,60 @@ pub union MONITORSELWND__bindgen_ty_1 {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct MONITORSELWND__bindgen_ty_1__bindgen_ty_1 {
     pub _bitfield_1: u32,
+}
+
+// The C's anonymous union/struct members, which C injects into MONITORSELWND's own name
+// scope. Bit 0..4 in declaration order — LSB first, as every compiler
+// targeting these three ABIs allocates them.
+impl MONITORSELWND {
+    #[inline(always)]
+    pub unsafe fn Enabled(&self) -> UINT {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 0) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_Enabled(&mut self, value: UINT) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 0)) | (((value != 0) as UINT) << 0);
+    }
+    #[inline(always)]
+    pub unsafe fn HasFocus(&self) -> UINT {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 1) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_HasFocus(&mut self, value: UINT) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 1)) | (((value != 0) as UINT) << 1);
+    }
+    #[inline(always)]
+    pub unsafe fn CanDisplay(&self) -> UINT {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 2) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_CanDisplay(&mut self, value: UINT) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 2)) | (((value != 0) as UINT) << 2);
+    }
+    #[inline(always)]
+    pub unsafe fn LeftBtnDown(&self) -> UINT {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 3) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_LeftBtnDown(&mut self, value: UINT) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 3)) | (((value != 0) as UINT) << 3);
+    }
+    #[inline(always)]
+    pub unsafe fn IsDraggingMonitor(&self) -> UINT {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 4) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_IsDraggingMonitor(&mut self, value: UINT) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 4)) | (((value != 0) as UINT) << 4);
+    }
 }
 
 pub type PMONITORSELWND = *mut MONITORSELWND;
@@ -91,7 +148,7 @@ unsafe extern "C" fn MonSelNotifyMonitor(
     if Index >= 0 {
         (*pmonnmh).MonitorInfo = (*infoPtr).MonitorInfo.offset(Index as isize).read();
     } else {
-        ZeroMemory(
+        ZeroMemory!(
             core::ptr::addr_of_mut!((*pmonnmh).MonitorInfo) as *mut _,
             core::mem::size_of_val(&(*pmonnmh).MonitorInfo),
         );
@@ -111,7 +168,7 @@ unsafe extern "C" fn MonSelChangeFont(
         InvalidateRect(
             (*infoPtr).hSelf,
             core::ptr::null_mut(),
-            TRUE,
+            (TRUE) as BOOL,
         );
     }
 
@@ -154,7 +211,7 @@ unsafe extern "C" fn MonSelHitTest(
     let mut Index: INT;
     let mut Ret: INT = -1;
 
-    if (*infoPtr).CanDisplay != 0 {
+    if (*infoPtr).CanDisplay() != 0 {
         MonSelScreenToPt(
             infoPtr,
             ppt,
@@ -164,7 +221,7 @@ unsafe extern "C" fn MonSelHitTest(
         Index = 0;
         while Index < (*infoPtr).MonitorsCount as INT {
             if PtInRect(
-                &(*infoPtr).Monitors.offset(Index as isize).rc,
+                &(*(*infoPtr).Monitors.offset(Index as isize)).rc,
                 pt,
             ) != 0
             {
@@ -183,14 +240,14 @@ unsafe extern "C" fn MonSelUpdateExtent(infoPtr: *mut MONITORSELWND) {
 
     if (*infoPtr).MonitorsCount > 0 {
         MonSelMonInfoToRect(
-            &(*infoPtr).MonitorInfo.offset(0 as isize),
+            (*infoPtr).MonitorInfo.offset(0 as isize),
             &mut (*infoPtr).rcExtent,
         );
 
         Index = 1;
         while Index < (*infoPtr).MonitorsCount {
             MonSelMonInfoToRect(
-                &(*infoPtr).MonitorInfo.offset(Index as isize),
+                (*infoPtr).MonitorInfo.offset(Index as isize),
                 &mut rcMonitor,
             );
 
@@ -203,7 +260,7 @@ unsafe extern "C" fn MonSelUpdateExtent(infoPtr: *mut MONITORSELWND) {
             Index += 1;
         }
     } else {
-        ZeroMemory(
+        ZeroMemory!(
             &mut (*infoPtr).rcExtent as *mut _ as *mut core::ffi::c_void,
             core::mem::size_of_val(&(*infoPtr).rcExtent),
         );
@@ -268,7 +325,7 @@ unsafe extern "C" fn MonSelRepaint(infoPtr: *mut MONITORSELWND) {
     InvalidateRect(
         (*infoPtr).hSelf,
         &rc,
-        TRUE,
+        (TRUE) as BOOL,
     );
 
     if EqualRect(
@@ -278,7 +335,7 @@ unsafe extern "C" fn MonSelRepaint(infoPtr: *mut MONITORSELWND) {
         && (*infoPtr).rcOldMonitors.right != (*infoPtr).rcOldMonitors.left
     {
         MonSelRectToScreen(infoPtr, core::ptr::addr_of!((*infoPtr).rcOldMonitors), &mut rc);
-        InvalidateRect((*infoPtr).hSelf, &rc, TRUE);
+        InvalidateRect((*infoPtr).hSelf, &rc, (TRUE) as BOOL);
         (*infoPtr).rcOldMonitors = (*infoPtr).rcMonitors;
     }
 }
@@ -287,7 +344,7 @@ unsafe extern "C" fn MonSelRepaintMonitor(
     Index: DWORD,
 ) {
     let mut rc: RECT = core::mem::zeroed();
-    let mut NoRepaint: BOOL = FALSE;
+    let mut NoRepaint: BOOL = (FALSE) as i32;
 
     if Index < (*infoPtr).MonitorsCount {
         if Index == (*infoPtr).DraggingMonitor as DWORD {
@@ -298,7 +355,7 @@ unsafe extern "C" fn MonSelRepaintMonitor(
                     &mut rc,
                 );
             } else {
-                NoRepaint = TRUE;
+                NoRepaint = (TRUE) as i32;
             }
         } else {
             MonSelRectToScreen(
@@ -312,7 +369,7 @@ unsafe extern "C" fn MonSelRepaintMonitor(
             InvalidateRect(
                 (*infoPtr).hSelf,
                 &rc,
-                TRUE,
+                (TRUE) as BOOL,
             );
         }
     }
@@ -328,7 +385,7 @@ unsafe extern "C" fn MonSelResetMonitors(infoPtr: PMONITORSELWND) {
     Index = 0;
     while Index < (*infoPtr).MonitorsCount {
         if (*(*infoPtr).Monitors.offset(Index as isize)).hFont != core::ptr::null_mut() {
-            DeleteObject((*(*infoPtr).Monitors.offset(Index as isize)).hFont);
+            DeleteObject(((*(*infoPtr).Monitors.offset(Index as isize)).hFont).cast());
             (*(*infoPtr).Monitors.offset(Index as isize)).hFont = core::ptr::null_mut();
         }
         Index = Index.wrapping_add(1);
@@ -344,11 +401,11 @@ unsafe extern "C" fn MonSelUpdateMonitorsInfo(
 
     MonSelUpdateExtent(infoPtr);
 
-    (*infoPtr).CanDisplay = ((*infoPtr).MonitorsCount != 0 &&
+    (*infoPtr).set_CanDisplay(((*infoPtr).MonitorsCount != 0 &&
                             ((*infoPtr).ClientSize.cx > (2 * ((*infoPtr).Margin.cx + (*infoPtr).SelectionFrame.cx))) &&
-                            ((*infoPtr).ClientSize.cy > (2 * ((*infoPtr).Margin.cy + (*infoPtr).SelectionFrame.cy)))) as u32;
+                            ((*infoPtr).ClientSize.cy > (2 * ((*infoPtr).Margin.cy + (*infoPtr).SelectionFrame.cy)))) as u32);
 
-    if (*infoPtr).CanDisplay != 0 {
+    if (*infoPtr).CanDisplay() != 0 {
         rcExtSurface.left = (*infoPtr).Margin.cx;
         rcExtSurface.top = (*infoPtr).Margin.cy;
         rcExtSurface.right = rcExtSurface.left + (*infoPtr).ClientSize.cx - (2 * (*infoPtr).Margin.cx);
@@ -393,7 +450,7 @@ unsafe extern "C" fn MonSelUpdateMonitorsInfo(
         InvalidateRect(
             (*infoPtr).hSelf,
             core::ptr::null_mut(),
-            TRUE,
+            (TRUE) as BOOL,
         );
     }
 }
@@ -403,10 +460,10 @@ unsafe extern "C" fn MonSelSetMonitorsInfo(
     MonitorsInfo: *const MONSL_MONINFO,
 ) -> BOOL {
     let mut Index: DWORD;
-    let mut Ret: BOOL = TRUE;
+    let mut Ret: BOOL = (TRUE) as i32;
 
     if (*infoPtr).DraggingMonitor >= 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     if (*infoPtr).MonitorInfo != core::ptr::null_mut() {
@@ -424,20 +481,20 @@ unsafe extern "C" fn MonSelSetMonitorsInfo(
     if dwMonitors != 0 {
         (*infoPtr).MonitorInfo = LocalAlloc(
             LMEM_FIXED,
-            dwMonitors * core::mem::size_of::<MONSL_MONINFO>() as DWORD,
+            (dwMonitors * core::mem::size_of::<MONSL_MONINFO>() as DWORD) as SIZE_T,
         ) as PMONSL_MONINFO;
         if (*infoPtr).MonitorInfo != core::ptr::null_mut() {
             (*infoPtr).Monitors = LocalAlloc(
                 LMEM_FIXED,
-                dwMonitors * core::mem::size_of::<MONSL_MON>() as DWORD,
+                (dwMonitors * core::mem::size_of::<MONSL_MON>() as DWORD) as SIZE_T,
             ) as PMONSL_MON;
             if (*infoPtr).Monitors != core::ptr::null_mut() {
-                CopyMemory(
+                CopyMemory!(
                     (*infoPtr).MonitorInfo as *mut core::ffi::c_void,
                     MonitorsInfo as *const core::ffi::c_void,
                     dwMonitors * core::mem::size_of::<MONSL_MONINFO>() as DWORD,
                 );
-                ZeroMemory(
+                ZeroMemory!(
                     (*infoPtr).Monitors as *mut core::ffi::c_void,
                     dwMonitors * core::mem::size_of::<MONSL_MON>() as DWORD,
                 );
@@ -446,7 +503,7 @@ unsafe extern "C" fn MonSelSetMonitorsInfo(
                 while Index < dwMonitors {
                     _stprintf(
                         (*(*infoPtr).Monitors.offset(Index as isize)).szCaption.as_mut_ptr(),
-                        _T(b"%u\0".as_ptr()),
+                        w!("%u"),
                         Index + 1,
                     );
                     Index += 1;
@@ -464,15 +521,15 @@ unsafe extern "C" fn MonSelSetMonitorsInfo(
                     (*infoPtr).SelectedMonitor = 0;
                 }
 
-                MonSelUpdateMonitorsInfo(infoPtr, TRUE);
+                MonSelUpdateMonitorsInfo(infoPtr, (TRUE) as BOOL);
             } else {
                 LocalFree((*infoPtr).MonitorInfo as HLOCAL);
                 (*infoPtr).MonitorInfo = core::ptr::null_mut();
 
-                Ret = FALSE;
+                Ret = (FALSE) as i32;
             }
         } else {
-            Ret = FALSE;
+            Ret = (FALSE) as i32;
         }
     }
 
@@ -484,7 +541,7 @@ unsafe extern "C" fn MonSelSetMonitorsInfo(
         InvalidateRect(
             (*infoPtr).hSelf,
             core::ptr::null_mut(),
-            TRUE,
+            (TRUE) as BOOL,
         );
     }
 
@@ -501,7 +558,7 @@ unsafe extern "C" fn MonSelGetMonitorsInfo(
             dwMonitors = (*infoPtr).MonitorsCount;
         }
 
-        CopyMemory(
+        CopyMemory!(
             MonitorsInfo as *mut core::ffi::c_void,
             (*infoPtr).MonitorInfo as *const core::ffi::c_void,
             (dwMonitors as usize) * core::mem::size_of::<MONSL_MONINFO>(),
@@ -519,7 +576,7 @@ unsafe extern "C" fn MonSelSetMonitorInfo(
     if (*infoPtr).DraggingMonitor < 0 &&
         Index >= 0 && Index < (*infoPtr).MonitorsCount as INT
     {
-        CopyMemory(
+        CopyMemory!(
             &mut (*infoPtr).MonitorInfo.offset(Index as isize),
             MonitorsInfo as *const core::ffi::c_void,
             core::mem::size_of::<MONSL_MONINFO>(),
@@ -527,12 +584,12 @@ unsafe extern "C" fn MonSelSetMonitorInfo(
 
         MonSelUpdateMonitorsInfo(
             infoPtr,
-            TRUE,
+            (TRUE) as BOOL,
         );
-        return TRUE;
+        return (TRUE) as i32;
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 unsafe extern "C" fn MonSelGetMonitorInfo(
     infoPtr: PMONITORSELWND,
@@ -540,15 +597,15 @@ unsafe extern "C" fn MonSelGetMonitorInfo(
     MonitorsInfo: PMONSL_MONINFO,
 ) -> BOOL {
     if Index >= 0 && Index < (*infoPtr).MonitorsCount as INT {
-        CopyMemory(
+        CopyMemory!(
             MonitorsInfo as *mut core::ffi::c_void,
             core::ptr::addr_of!((*(*infoPtr).MonitorInfo.offset(Index as isize))) as *const core::ffi::c_void,
             core::mem::size_of::<MONSL_MONINFO>(),
         );
-        return TRUE;
+        return (TRUE) as i32;
     }
 
-    FALSE
+    (FALSE) as i32
 }
 unsafe extern "C" fn MonSelGetMonitorRect(
     infoPtr: *mut MONITORSELWND,
@@ -562,7 +619,7 @@ unsafe extern "C" fn MonSelGetMonitorRect(
         return -1;
     }
 
-    if (*infoPtr).CanDisplay == 0 {
+    if (*infoPtr).CanDisplay() == 0 {
         return 0;
     }
 
@@ -577,7 +634,7 @@ unsafe extern "C" fn MonSelGetMonitorRect(
     rcClient.right = (*infoPtr).ClientSize.cx;
     rcClient.bottom = (*infoPtr).ClientSize.cy;
 
-    (IntersectRect(core::ptr::addr_of_mut!(rc), core::ptr::addr_of!(rcClient), prc) != FALSE) as INT
+    (IntersectRect(core::ptr::addr_of_mut!(rc), core::ptr::addr_of!(rcClient), prc) != (FALSE) as i32) as INT
 }
 unsafe extern "C" fn MonSelSetCurSelMonitor(
     infoPtr: *mut MONITORSELWND,
@@ -585,8 +642,8 @@ unsafe extern "C" fn MonSelSetCurSelMonitor(
     bNotify: BOOL,
 ) -> BOOL {
     let mut PrevSel: INT;
-    let mut PreventSelect: BOOL = FALSE;
-    let mut Ret: BOOL = FALSE;
+    let mut PreventSelect: BOOL = (FALSE) as i32;
+    let mut Ret: BOOL = (FALSE) as i32;
 
     if (*infoPtr).DraggingMonitor < 0
         && (Index == -1 || Index < (*infoPtr).MonitorsCount as INT)
@@ -595,14 +652,14 @@ unsafe extern "C" fn MonSelSetCurSelMonitor(
             if ((*(*infoPtr).MonitorInfo.offset(Index as isize)).Flags & MSL_MIF_DISABLED != 0)
                 && ((*infoPtr).ControlExStyle & MSLM_EX_ALLOWSELECTDISABLED == 0)
             {
-                PreventSelect = TRUE;
+                PreventSelect = (TRUE) as i32;
             }
 
             if PreventSelect == 0 && bNotify != 0 {
                 let mut nmi: MONSL_MONNMMONITORCHANGING = core::mem::zeroed();
 
                 nmi.PreviousSelected = (*infoPtr).SelectedMonitor;
-                nmi.AllowChanging = TRUE;
+                nmi.AllowChanging = (TRUE) as i32;
 
                 MonSelNotifyMonitor(
                     infoPtr,
@@ -611,7 +668,7 @@ unsafe extern "C" fn MonSelSetCurSelMonitor(
                     &mut nmi.hdr,
                 );
 
-                PreventSelect = if nmi.AllowChanging == FALSE { 1 } else { 0 };
+                PreventSelect = if nmi.AllowChanging == (FALSE) as i32 { 1 } else { 0 };
             }
 
             if PreventSelect == 0 {
@@ -639,7 +696,7 @@ unsafe extern "C" fn MonSelSetCurSelMonitor(
             }
         }
 
-        Ret = TRUE;
+        Ret = (TRUE) as i32;
     }
 
     Ret
@@ -662,12 +719,12 @@ unsafe extern "C" fn MonSelDestroy(infoPtr: PMONITORSELWND) {
     );
 
     if (*infoPtr).hbrDisabled != core::ptr::null_mut() {
-        DeleteObject((*infoPtr).hbrDisabled);
+        DeleteObject(((*infoPtr).hbrDisabled).cast());
         (*infoPtr).hbrDisabled = core::ptr::null_mut();
     }
 
     if (*infoPtr).hbmDisabledPattern != core::ptr::null_mut() {
-        DeleteObject((*infoPtr).hbmDisabledPattern);
+        DeleteObject(((*infoPtr).hbmDisabledPattern).cast());
         (*infoPtr).hbmDisabledPattern = core::ptr::null_mut();
     }
 }
@@ -676,7 +733,7 @@ unsafe extern "C" fn MonSelSetExtendedStyle(
     dwExtendedStyle: DWORD,
 ) -> BOOL {
     if (*infoPtr).DraggingMonitor >= 0 {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     if dwExtendedStyle != (*infoPtr).ControlExStyle {
@@ -685,11 +742,11 @@ unsafe extern "C" fn MonSelSetExtendedStyle(
         InvalidateRect(
             (*infoPtr).hSelf,
             core::ptr::null_mut(),
-            TRUE,
+            (TRUE) as BOOL,
         );
     }
 
-    TRUE
+    (TRUE) as i32
 }
 unsafe extern "C" fn MonSelGetExtendedStyle(infoPtr: PMONITORSELWND) -> DWORD {
     (*infoPtr).ControlExStyle
@@ -708,7 +765,7 @@ unsafe extern "C" fn MonSelGetMonitorFont(
     hFont = (*(*infoPtr).Monitors.offset(Index as isize)).hFont;
     if hFont.is_null()
         && GetObject(
-            (*infoPtr).hFont,
+            ((*infoPtr).hFont).cast(),
             core::mem::size_of::<LOGFONT>() as i32,
             &mut lf as *mut _ as *mut core::ffi::c_void,
         ) != 0
@@ -723,13 +780,13 @@ unsafe extern "C" fn MonSelGetMonitorFont(
             - 2;
         rcsize.cy = (rcsize.cy * 60) / 100;
 
-        hPrevFont = SelectObject(hDC, (*infoPtr).hFont);
+        hPrevFont = (SelectObject(hDC, ((*infoPtr).hFont).cast())).cast();
 
         if GetTextMetrics(hDC, &mut tm) != 0 {
-            lf.lfWeight = FW_SEMIBOLD;
+            lf.lfWeight = (FW_SEMIBOLD) as i32;
             lf.lfHeight = -MulDiv(
                 rcsize.cy - tm.tmExternalLeading,
-                GetDeviceCaps(hDC, LOGPIXELSY),
+                GetDeviceCaps(hDC, (LOGPIXELSY) as i32),
                 72,
             );
 
@@ -739,7 +796,7 @@ unsafe extern "C" fn MonSelGetMonitorFont(
             }
         }
 
-        SelectObject(hDC, hPrevFont);
+        SelectObject(hDC, (hPrevFont).cast());
     }
 
     hFont
@@ -749,7 +806,7 @@ unsafe extern "C" fn MonSelDrawDisabledRect(
     hDC: HDC,
     prc: *const RECT,
 ) -> BOOL {
-    let mut Ret: BOOL = FALSE;
+    let mut Ret: BOOL = (FALSE) as i32;
 
     if (*infoPtr).hbrDisabled.is_null() {
         static Pattern: [DWORD; 4] = [
@@ -765,7 +822,7 @@ unsafe extern "C" fn MonSelDrawDisabledRect(
                 8,
                 1,
                 1,
-                Pattern.as_ptr(),
+                (Pattern.as_ptr()).cast(),
             );
         }
 
@@ -798,7 +855,7 @@ unsafe extern "C" fn MonSelPaintMonitor(
             (COLOR_HIGHLIGHT + 1) as HBRUSH,
         );
 
-        if (*infoPtr).HasFocus != 0 && ((*infoPtr).UIState & UISF_HIDEFOCUS) == 0 {
+        if (*infoPtr).HasFocus() != 0 && ((*infoPtr).UIState & UISF_HIDEFOCUS) == 0 {
             crPrevText = SetTextColor(hDC, crDefFontColor);
 
             DrawFocusRect(hDC, prc);
@@ -826,21 +883,21 @@ unsafe extern "C" fn MonSelPaintMonitor(
     if bHideNumber == 0 {
         hFont = MonSelGetMonitorFont(infoPtr, hDC, Index as i32);
         if !hFont.is_null() {
-            hPrevFont = SelectObject(hDC, hFont);
+            hPrevFont = (SelectObject(hDC, (hFont).cast())).cast();
 
             DrawText(
                 hDC,
-                (*infoPtr).Monitors.offset(Index as isize).offset(0).szCaption.as_ptr(),
+                (*(*infoPtr).Monitors.offset(Index as isize)).szCaption.as_ptr(),
                 -1,
                 prc,
                 DT_VCENTER | DT_CENTER | DT_NOPREFIX | DT_SINGLELINE,
             );
 
-            SelectObject(hDC, hPrevFont);
+            SelectObject(hDC, (hPrevFont).cast());
         }
     }
 
-    if ((*infoPtr).MonitorInfo.offset(Index as isize).offset(0).Flags & MSL_MIF_DISABLED) != 0 {
+    if ((*(*infoPtr).MonitorInfo.offset(Index as isize)).Flags & MSL_MIF_DISABLED) != 0 {
         InflateRect(prc, 1, 1);
 
         MonSelDrawDisabledRect(infoPtr, hDC, prc);
@@ -869,19 +926,19 @@ unsafe extern "C" fn MonSelPaint(
         0
     };
 
-    hbBk = GetSysColorBrush(COLOR_BACKGROUND);
-    hpFg = CreatePen(PS_SOLID,
+    hbBk = GetSysColorBrush((COLOR_BACKGROUND) as i32);
+    hpFg = CreatePen((PS_SOLID) as i32,
                      0,
-                     GetSysColor(COLOR_HIGHLIGHTTEXT));
+                     GetSysColor((COLOR_HIGHLIGHTTEXT) as i32));
 
-    hbOldBk = SelectObject(hDC,
-                           hbBk);
-    hpOldFg = SelectObject(hDC,
-                           hpFg);
+    hbOldBk = (SelectObject(hDC,
+                           (hbBk).cast())).cast();
+    hpOldFg = (SelectObject(hDC,
+                           (hpFg).cast())).cast();
     iPrevBkMode = SetBkMode(hDC,
-                            TRANSPARENT);
+                            (TRANSPARENT) as i32);
     crPrevText = SetTextColor(hDC,
-                              GetSysColor(COLOR_HIGHLIGHTTEXT));
+                              GetSysColor((COLOR_HIGHLIGHTTEXT) as i32));
 
     Index = 0;
     while Index < (*infoPtr).MonitorsCount {
@@ -936,11 +993,11 @@ unsafe extern "C" fn MonSelPaint(
     SetBkMode(hDC,
               iPrevBkMode);
     SelectObject(hDC,
-                 hpOldFg);
+                 (hpOldFg).cast());
     SelectObject(hDC,
-                 hbOldBk);
+                 (hbOldBk).cast());
 
-    DeleteObject(hpFg);
+    DeleteObject((hpFg).cast());
 }
 unsafe extern "C" fn MonSelContextMenu(
     infoPtr: PMONITORSELWND,
@@ -950,7 +1007,7 @@ unsafe extern "C" fn MonSelContextMenu(
     let mut nm: MONSL_MONNMBUTTONCLICKED = core::mem::zeroed();
     let Index: INT;
 
-    if (*infoPtr).HasFocus == 0 {
+    if (*infoPtr).HasFocus() == 0 {
         SetFocus((*infoPtr).hSelf);
     }
 
@@ -972,7 +1029,7 @@ unsafe extern "C" fn MonSelContextMenu(
     MapWindowPoints(
         (*infoPtr).hSelf,
         core::ptr::null_mut(),
-        &nm.pt,
+        core::ptr::addr_of_mut!(nm.pt),
         1,
     );
 
@@ -980,7 +1037,7 @@ unsafe extern "C" fn MonSelContextMenu(
         (*infoPtr).hSelf,
         WM_CONTEXTMENU,
         (*infoPtr).hSelf as WPARAM,
-        MAKELPARAM(nm.pt.x, nm.pt.y),
+        MAKELPARAM!(nm.pt.x, nm.pt.y),
     );
 }
 unsafe extern "C" fn MonSelApplyCursorClipping(
@@ -1015,7 +1072,7 @@ unsafe extern "C" fn MonSelMoveDragRect(infoPtr: *mut MONITORSELWND, ppt: *mut P
     let mut hRgnPrev: HRGN;
     let mut hDC: HDC;
 
-    if (*infoPtr).CanDisplay != 0 {
+    if (*infoPtr).CanDisplay() != 0 {
         hDC = GetDC((*infoPtr).hSelf);
         if hDC != core::ptr::null_mut() {
             if (*infoPtr).ptDrag.x != (*ppt).x || (*infoPtr).ptDrag.y != (*ppt).y {
@@ -1049,33 +1106,33 @@ unsafe extern "C" fn MonSelMoveDragRect(infoPtr: *mut MONITORSELWND, ppt: *mut P
                         || InvalidateRgn(
                             (*infoPtr).hSelf,
                             hRgnPrev,
-                            TRUE,
+                            (TRUE) as BOOL,
                         ) == 0
                     {
-                        DeleteObject(hRgnPrev);
+                        DeleteObject((hRgnPrev).cast());
                         InvalidateRect(
                             (*infoPtr).hSelf,
                             core::ptr::addr_of_mut!(rcPrev),
-                            TRUE,
+                            (TRUE) as BOOL,
                         );
                         InvalidateRect(
                             (*infoPtr).hSelf,
                             core::ptr::addr_of_mut!((*infoPtr).rcDragging),
-                            TRUE,
+                            (TRUE) as BOOL,
                         );
                     } else {
-                        DeleteObject(hRgnPrev);
+                        DeleteObject((hRgnPrev).cast());
                     }
                 } else {
                     InvalidateRect(
                         (*infoPtr).hSelf,
                         core::ptr::addr_of_mut!(rcPrev),
-                        TRUE,
+                        (TRUE) as BOOL,
                     );
                     InvalidateRect(
                         (*infoPtr).hSelf,
                         core::ptr::addr_of_mut!((*infoPtr).rcDragging),
-                        TRUE,
+                        (TRUE) as BOOL,
                     );
                 }
             }
@@ -1096,19 +1153,19 @@ unsafe extern "C" fn MonSelCancelDragging(infoPtr: *mut MONITORSELWND) {
         Index = (*infoPtr).DraggingMonitor as DWORD;
         (*infoPtr).DraggingMonitor = -1;
 
-        if (*infoPtr).CanDisplay != 0 {
+        if (*infoPtr).CanDisplay() != 0 {
             MonSelRepaintMonitor(infoPtr, Index);
 
-            (*infoPtr).IsDraggingMonitor = FALSE;
+            (*infoPtr).set_IsDraggingMonitor((FALSE) as u32);
 
             MonSelRepaintMonitor(infoPtr, Index);
         } else {
-            (*infoPtr).IsDraggingMonitor = FALSE;
+            (*infoPtr).set_IsDraggingMonitor((FALSE) as u32);
         }
 
         ReleaseCapture();
 
-        MonSelApplyCursorClipping(infoPtr, FALSE);
+        MonSelApplyCursorClipping(infoPtr, (FALSE) as BOOL);
     }
 }
 unsafe extern "C" fn MonSelInitDragging(
@@ -1119,7 +1176,7 @@ unsafe extern "C" fn MonSelInitDragging(
     let mut pt: POINT = core::mem::zeroed();
 
     MonSelCancelDragging(infoPtr);
-    (*infoPtr).IsDraggingMonitor = FALSE;
+    (*infoPtr).set_IsDraggingMonitor((FALSE) as u32);
 
     MonSelScreenToPt(
         infoPtr,
@@ -1137,7 +1194,7 @@ unsafe extern "C" fn MonSelInitDragging(
 
     MonSelApplyCursorClipping(
         infoPtr,
-        TRUE,
+        (TRUE) as BOOL,
     );
 }
 unsafe extern "C" fn MonSelDrag(infoPtr: PMONITORSELWND, ppt: *mut POINT) {
@@ -1148,9 +1205,9 @@ unsafe extern "C" fn MonSelDrag(infoPtr: PMONITORSELWND, ppt: *mut POINT) {
     if (*infoPtr).DraggingMonitor >= 0 {
         MonSelScreenToPt(infoPtr, ppt, &mut pt);
 
-        if (*infoPtr).IsDraggingMonitor == 0 {
-            szDrag.cx = GetSystemMetrics(SM_CXDRAG);
-            szDrag.cy = GetSystemMetrics(SM_CYDRAG);
+        if (*infoPtr).IsDraggingMonitor() == 0 {
+            szDrag.cx = GetSystemMetrics((SM_CXDRAG) as i32);
+            szDrag.cy = GetSystemMetrics((SM_CYDRAG) as i32);
 
             rcDrag.left = (*(*infoPtr).Monitors.add((*infoPtr).DraggingMonitor as usize)).rc.left
                 + (*infoPtr).DraggingMargin.cx
@@ -1162,7 +1219,7 @@ unsafe extern "C" fn MonSelDrag(infoPtr: PMONITORSELWND, ppt: *mut POINT) {
             rcDrag.bottom = rcDrag.top + szDrag.cy;
 
             if PtInRect(&rcDrag, pt) == 0 {
-                (*infoPtr).IsDraggingMonitor = TRUE;
+                (*infoPtr).set_IsDraggingMonitor((TRUE) as u32);
                 MonSelMoveDragRect(infoPtr, &mut pt);
             }
         } else {
@@ -1170,8 +1227,7 @@ unsafe extern "C" fn MonSelDrag(infoPtr: PMONITORSELWND, ppt: *mut POINT) {
         }
     }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MonitorSelWndProc(
+unsafe extern "system" fn MonitorSelWndProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1193,17 +1249,17 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             let hDC: HDC;
 
             if wParam != 0 {
-                if GetUpdateRect(hwnd, core::ptr::addr_of_mut!(ps.rcPaint), TRUE) == 0 {
+                if GetUpdateRect(hwnd, core::ptr::addr_of_mut!(ps.rcPaint), (TRUE) as BOOL) == 0 {
                 } else {
                     hDC = wParam as HDC;
-                    if (*infoPtr).CanDisplay != 0 {
+                    if (*infoPtr).CanDisplay() != 0 {
                         MonSelPaint(infoPtr, hDC, core::ptr::addr_of!(ps.rcPaint));
                     }
                 }
             } else {
                 hDC = BeginPaint(hwnd, core::ptr::addr_of_mut!(ps));
                 if hDC != core::ptr::null_mut() {
-                    if (*infoPtr).CanDisplay != 0 {
+                    if (*infoPtr).CanDisplay() != 0 {
                         MonSelPaint(infoPtr, hDC, core::ptr::addr_of!(ps.rcPaint));
                     }
                     EndPaint(hwnd, core::ptr::addr_of!(ps));
@@ -1214,12 +1270,12 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
         WM_MOUSEMOVE => {
             let mut pt: POINT = core::mem::zeroed();
 
-            if (wParam & MK_LBUTTON) == 0 {
+            if (wParam & (MK_LBUTTON) as WPARAM) == 0 {
                 MonSelCancelDragging(infoPtr);
             } else {
-                if (*infoPtr).LeftBtnDown != 0 {
-                    pt.x = LOWORD(lParam) as LONG;
-                    pt.y = HIWORD(lParam) as LONG;
+                if (*infoPtr).LeftBtnDown() != 0 {
+                    pt.x = LOWORD!(lParam) as LONG;
+                    pt.y = HIWORD!(lParam) as LONG;
 
                     MonSelDrag(infoPtr, core::ptr::addr_of_mut!(pt));
                 }
@@ -1232,24 +1288,24 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
                 let Index: INT;
                 let mut pt: POINT = core::mem::zeroed();
 
-                if (*infoPtr).HasFocus == 0 {
+                if (*infoPtr).HasFocus() == 0 {
                     SetFocus((*infoPtr).hSelf);
                 }
 
-                pt.x = LOWORD(lParam) as LONG;
-                pt.y = HIWORD(lParam) as LONG;
+                pt.x = LOWORD!(lParam) as LONG;
+                pt.y = HIWORD!(lParam) as LONG;
 
                 Index = MonSelHitTest(infoPtr, core::ptr::addr_of!(pt));
                 if Index >= 0 || ((*infoPtr).ControlExStyle & MSLM_EX_ALLOWSELECTNONE) != 0 {
-                    MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
+                    MonSelSetCurSelMonitor(infoPtr, Index, (TRUE) as BOOL);
                 }
 
                 if Index >= 0 && (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK) {
-                    (*infoPtr).LeftBtnDown = TRUE;
+                    (*infoPtr).set_LeftBtnDown((TRUE) as u32);
                     MonSelInitDragging(infoPtr, Index as DWORD, core::ptr::addr_of_mut!(pt));
                 }
 
-                if (*infoPtr).HasFocus == 0 {
+                if (*infoPtr).HasFocus() == 0 {
                     SetFocus(hwnd);
                 }
             }
@@ -1259,41 +1315,41 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             let Index: INT;
             let mut pt: POINT = core::mem::zeroed();
 
-            if (*infoPtr).HasFocus == 0 {
+            if (*infoPtr).HasFocus() == 0 {
                 SetFocus((*infoPtr).hSelf);
             }
 
-            pt.x = LOWORD(lParam) as LONG;
-            pt.y = HIWORD(lParam) as LONG;
+            pt.x = LOWORD!(lParam) as LONG;
+            pt.y = HIWORD!(lParam) as LONG;
 
             Index = MonSelHitTest(infoPtr, core::ptr::addr_of!(pt));
             if Index >= 0 || ((*infoPtr).ControlExStyle & MSLM_EX_ALLOWSELECTNONE) != 0 {
-                MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
+                MonSelSetCurSelMonitor(infoPtr, Index, (TRUE) as BOOL);
             }
 
             if Index >= 0 && (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK) {
-                (*infoPtr).LeftBtnDown = TRUE;
+                (*infoPtr).set_LeftBtnDown((TRUE) as u32);
                 MonSelInitDragging(infoPtr, Index as DWORD, core::ptr::addr_of_mut!(pt));
             }
 
-            if (*infoPtr).HasFocus == 0 {
+            if (*infoPtr).HasFocus() == 0 {
                 SetFocus(hwnd);
             }
         }
 
         WM_MBUTTONDOWN => {
-            if (*infoPtr).HasFocus == 0 {
+            if (*infoPtr).HasFocus() == 0 {
                 SetFocus(hwnd);
             }
         }
 
         WM_RBUTTONUP => {
-            MonSelContextMenu(infoPtr, LOWORD(lParam) as SHORT, HIWORD(lParam) as SHORT);
+            MonSelContextMenu(infoPtr, LOWORD!(lParam) as SHORT, HIWORD!(lParam) as SHORT);
         }
 
         WM_LBUTTONUP => {
             MonSelCancelDragging(infoPtr);
-            (*infoPtr).LeftBtnDown = FALSE;
+            (*infoPtr).set_LeftBtnDown((FALSE) as u32);
         }
 
         WM_GETDLGCODE => {
@@ -1304,32 +1360,32 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             } else {
                 0
             };
-            match virtKey {
+            match (virtKey) as u32 {
                 VK_TAB => {
                     SendMessage(
                         GetAncestor(hwnd, GA_PARENT),
                         WM_CHANGEUISTATE,
-                        MAKEWPARAM(UIS_INITIALIZE, 0),
+                        MAKEWPARAM!(UIS_INITIALIZE, 0),
                         0,
                     );
                 }
                 _ => {}
             }
 
-            Ret |= DLGC_WANTARROWS;
+            Ret |= ((DLGC_WANTARROWS) as i32) as LPARAM;
 
             if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYNUMKEY) != 0 {
-                Ret |= DLGC_WANTCHARS;
+                Ret |= ((DLGC_WANTCHARS) as i32) as LPARAM;
             }
         }
 
         WM_SETFOCUS => {
-            (*infoPtr).HasFocus = TRUE;
+            (*infoPtr).set_HasFocus((TRUE) as u32);
             MonSelRepaintSelected(infoPtr);
         }
 
         WM_KILLFOCUS => {
-            (*infoPtr).HasFocus = FALSE;
+            (*infoPtr).set_HasFocus((FALSE) as u32);
             MonSelCancelDragging(infoPtr);
             MonSelRepaintSelected(infoPtr);
         }
@@ -1340,13 +1396,13 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             Ret = DefWindowProcW(hwnd, uMsg, wParam, lParam);
 
             OldUIState = (*infoPtr).UIState;
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 UIS_SET => {
-                    (*infoPtr).UIState |= HIWORD(wParam);
+                    (*infoPtr).UIState |= HIWORD!(wParam) as DWORD;
                 }
 
                 UIS_CLEAR => {
-                    (*infoPtr).UIState &= !HIWORD(wParam);
+                    (*infoPtr).UIState &= !HIWORD!(wParam) as DWORD;
                 }
                 _ => {}
             }
@@ -1357,15 +1413,15 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
         }
 
         WM_SETFONT => {
-            Ret = MonSelChangeFont(infoPtr, wParam as HFONT, LOWORD(lParam) as BOOL) as LRESULT;
+            Ret = MonSelChangeFont(infoPtr, wParam as HFONT, LOWORD!(lParam) as BOOL) as LRESULT;
         }
 
         WM_SIZE => {
-            (*infoPtr).ClientSize.cx = LOWORD(lParam) as LONG;
-            (*infoPtr).ClientSize.cy = HIWORD(lParam) as LONG;
+            (*infoPtr).ClientSize.cx = LOWORD!(lParam) as LONG;
+            (*infoPtr).ClientSize.cy = HIWORD!(lParam) as LONG;
 
-            MonSelUpdateMonitorsInfo(infoPtr, FALSE);
-            InvalidateRect((*infoPtr).hSelf, core::ptr::null_mut(), TRUE);
+            MonSelUpdateMonitorsInfo(infoPtr, (FALSE) as BOOL);
+            InvalidateRect((*infoPtr).hSelf, core::ptr::null_mut(), (TRUE) as BOOL);
         }
 
         WM_GETFONT => {
@@ -1373,16 +1429,16 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
         }
 
         WM_ENABLE => {
-            (*infoPtr).Enabled = if wParam as BOOL != FALSE { 1 } else { 0 };
+            (*infoPtr).set_Enabled(if wParam as BOOL != (FALSE) as i32 { 1 } else { 0 });
             MonSelRepaint(infoPtr);
         }
 
         WM_STYLECHANGED => {
-            if wParam == GWL_STYLE {
-                let OldEnabled: u32 = (*infoPtr).Enabled;
-                (*infoPtr).Enabled = if ((*(lParam as LPSTYLESTRUCT)).styleNew & WS_DISABLED) != 0 { 0 } else { 1 };
+            if wParam == ((GWL_STYLE) as u32) as WPARAM {
+                let OldEnabled: u32 = (*infoPtr).Enabled();
+                (*infoPtr).set_Enabled(if ((*(lParam as LPSTYLESTRUCT)).styleNew & WS_DISABLED) != 0 { 0 } else { 1 });
 
-                if OldEnabled != (*infoPtr).Enabled {
+                if OldEnabled != (*infoPtr).Enabled() {
                     MonSelRepaint(infoPtr);
                 }
             }
@@ -1392,7 +1448,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             let mut Index: INT;
 
             if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYARROWKEY) != 0 {
-                match wParam {
+                match (wParam) as u32 {
                     VK_UP | VK_LEFT => {
                         Index = (*infoPtr).SelectedMonitor;
 
@@ -1405,7 +1461,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
                         }
 
                         if Index >= 0 {
-                            MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
+                            MonSelSetCurSelMonitor(infoPtr, Index, (TRUE) as BOOL);
                         }
                     }
 
@@ -1421,7 +1477,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
                         }
 
                         if (*infoPtr).SelectedMonitor < (*infoPtr).MonitorsCount as INT {
-                            MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
+                            MonSelSetCurSelMonitor(infoPtr, Index, (TRUE) as BOOL);
                         }
                     }
                     _ => {}
@@ -1436,7 +1492,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             {
                 let Index: INT = (wParam - '1' as WPARAM) as INT;
                 if Index < (*infoPtr).MonitorsCount as INT {
-                    MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
+                    MonSelSetCurSelMonitor(infoPtr, Index, (TRUE) as BOOL);
                 }
             }
         }
@@ -1458,7 +1514,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
         }
 
         MSLM_SETCURSEL => {
-            Ret = MonSelSetCurSelMonitor(infoPtr, wParam as INT, FALSE) as LRESULT;
+            Ret = MonSelSetCurSelMonitor(infoPtr, wParam as INT, (FALSE) as BOOL) as LRESULT;
         }
 
         MSLM_GETCURSEL => {
@@ -1486,14 +1542,14 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
         }
 
         WM_CREATE => {
-            infoPtr = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<MONITORSELWND>()) as PMONITORSELWND;
+            infoPtr = HeapAlloc(GetProcessHeap(), 0, (core::mem::size_of::<MONITORSELWND>()) as SIZE_T) as PMONITORSELWND;
             if infoPtr == core::ptr::null_mut() {
                 Ret = -1 as LRESULT;
             } else {
-                ZeroMemory(infoPtr as *mut core::ffi::c_void, core::mem::size_of::<MONITORSELWND>());
+                ZeroMemory!(infoPtr as *mut core::ffi::c_void, core::mem::size_of::<MONITORSELWND>());
                 (*infoPtr).hSelf = hwnd;
                 (*infoPtr).hNotify = (*(lParam as LPCREATESTRUCTW)).hwndParent;
-                (*infoPtr).Enabled = if ((*(lParam as LPCREATESTRUCTW)).style & WS_DISABLED) != 0 { 0 } else { 1 };
+                (*infoPtr).set_Enabled(if ((*(lParam as LPCREATESTRUCTW)).style & (WS_DISABLED) as i32) != 0 { 0 } else { 1 });
                 (*infoPtr).UIState = SendMessage(hwnd, WM_QUERYUISTATE, 0, 0) as DWORD;
 
                 SetWindowLongPtrW(hwnd, 0, infoPtr as LONG_PTR);
@@ -1506,354 +1562,7 @@ unsafe extern "stdcall" fn MonitorSelWndProc(
             MonSelDestroy(infoPtr);
 
             HeapFree(GetProcessHeap(), 0, infoPtr as *mut core::ffi::c_void);
-            SetWindowLongPtrW(hwnd, 0, 0 as DWORD_PTR);
-        }
-
-        _ => {
-            Ret = DefWindowProcW(hwnd, uMsg, wParam, lParam);
-        }
-    }
-
-    return Ret;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MonitorSelWndProc(
-    hwnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    let mut infoPtr: PMONITORSELWND;
-    let mut Ret: LRESULT = 0;
-
-    infoPtr = GetWindowLongPtrW(hwnd, 0) as PMONITORSELWND;
-
-    if infoPtr == core::ptr::null_mut() && uMsg != WM_CREATE {
-        Ret = DefWindowProcW(hwnd, uMsg, wParam, lParam);
-        return Ret;
-    }
-
-    match uMsg {
-        WM_PAINT | WM_PRINTCLIENT => {
-            let mut ps: PAINTSTRUCT = core::mem::zeroed();
-            let hDC: HDC;
-
-            if wParam != 0 {
-                if GetUpdateRect(hwnd, core::ptr::addr_of_mut!(ps.rcPaint), TRUE) == 0 {
-                } else {
-                    hDC = wParam as HDC;
-                    if (*infoPtr).CanDisplay != 0 {
-                        MonSelPaint(infoPtr, hDC, core::ptr::addr_of!(ps.rcPaint));
-                    }
-                }
-            } else {
-                hDC = BeginPaint(hwnd, core::ptr::addr_of_mut!(ps));
-                if hDC != core::ptr::null_mut() {
-                    if (*infoPtr).CanDisplay != 0 {
-                        MonSelPaint(infoPtr, hDC, core::ptr::addr_of!(ps.rcPaint));
-                    }
-                    EndPaint(hwnd, core::ptr::addr_of!(ps));
-                }
-            }
-        }
-
-        WM_MOUSEMOVE => {
-            let mut pt: POINT = core::mem::zeroed();
-
-            if (wParam & MK_LBUTTON) == 0 {
-                MonSelCancelDragging(infoPtr);
-            } else {
-                if (*infoPtr).LeftBtnDown != 0 {
-                    pt.x = LOWORD(lParam) as LONG;
-                    pt.y = HIWORD(lParam) as LONG;
-
-                    MonSelDrag(infoPtr, core::ptr::addr_of_mut!(pt));
-                }
-            }
-        }
-
-        WM_RBUTTONDOWN => {
-            if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTONRIGHTCLICK) == 0 {
-            } else {
-                let Index: INT;
-                let mut pt: POINT = core::mem::zeroed();
-
-                if (*infoPtr).HasFocus == 0 {
-                    SetFocus((*infoPtr).hSelf);
-                }
-
-                pt.x = LOWORD(lParam) as LONG;
-                pt.y = HIWORD(lParam) as LONG;
-
-                Index = MonSelHitTest(infoPtr, core::ptr::addr_of!(pt));
-                if Index >= 0 || ((*infoPtr).ControlExStyle & MSLM_EX_ALLOWSELECTNONE) != 0 {
-                    MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
-                }
-
-                if Index >= 0 && (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK) {
-                    (*infoPtr).LeftBtnDown = TRUE;
-                    MonSelInitDragging(infoPtr, Index as DWORD, core::ptr::addr_of_mut!(pt));
-                }
-
-                if (*infoPtr).HasFocus == 0 {
-                    SetFocus(hwnd);
-                }
-            }
-        }
-
-        WM_LBUTTONDBLCLK | WM_LBUTTONDOWN => {
-            let Index: INT;
-            let mut pt: POINT = core::mem::zeroed();
-
-            if (*infoPtr).HasFocus == 0 {
-                SetFocus((*infoPtr).hSelf);
-            }
-
-            pt.x = LOWORD(lParam) as LONG;
-            pt.y = HIWORD(lParam) as LONG;
-
-            Index = MonSelHitTest(infoPtr, core::ptr::addr_of!(pt));
-            if Index >= 0 || ((*infoPtr).ControlExStyle & MSLM_EX_ALLOWSELECTNONE) != 0 {
-                MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
-            }
-
-            if Index >= 0 && (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK) {
-                (*infoPtr).LeftBtnDown = TRUE;
-                MonSelInitDragging(infoPtr, Index as DWORD, core::ptr::addr_of_mut!(pt));
-            }
-
-            if (*infoPtr).HasFocus == 0 {
-                SetFocus(hwnd);
-            }
-        }
-
-        WM_MBUTTONDOWN => {
-            if (*infoPtr).HasFocus == 0 {
-                SetFocus(hwnd);
-            }
-        }
-
-        WM_RBUTTONUP => {
-            MonSelContextMenu(infoPtr, LOWORD(lParam) as SHORT, HIWORD(lParam) as SHORT);
-        }
-
-        WM_LBUTTONUP => {
-            MonSelCancelDragging(infoPtr);
-            (*infoPtr).LeftBtnDown = FALSE;
-        }
-
-        WM_GETDLGCODE => {
-            let virtKey: INT;
-
-            virtKey = if lParam != 0 {
-                (*(lParam as LPMSG)).wParam as INT
-            } else {
-                0
-            };
-            match virtKey {
-                VK_TAB => {
-                    SendMessage(
-                        GetAncestor(hwnd, GA_PARENT),
-                        WM_CHANGEUISTATE,
-                        MAKEWPARAM(UIS_INITIALIZE, 0),
-                        0,
-                    );
-                }
-                _ => {}
-            }
-
-            Ret |= DLGC_WANTARROWS;
-
-            if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYNUMKEY) != 0 {
-                Ret |= DLGC_WANTCHARS;
-            }
-        }
-
-        WM_SETFOCUS => {
-            (*infoPtr).HasFocus = TRUE;
-            MonSelRepaintSelected(infoPtr);
-        }
-
-        WM_KILLFOCUS => {
-            (*infoPtr).HasFocus = FALSE;
-            MonSelCancelDragging(infoPtr);
-            MonSelRepaintSelected(infoPtr);
-        }
-
-        WM_UPDATEUISTATE => {
-            let OldUIState: DWORD;
-
-            Ret = DefWindowProcW(hwnd, uMsg, wParam, lParam);
-
-            OldUIState = (*infoPtr).UIState;
-            match LOWORD(wParam) {
-                UIS_SET => {
-                    (*infoPtr).UIState |= HIWORD(wParam);
-                }
-
-                UIS_CLEAR => {
-                    (*infoPtr).UIState &= !HIWORD(wParam);
-                }
-                _ => {}
-            }
-
-            if (*infoPtr).UIState != OldUIState {
-                MonSelRepaintSelected(infoPtr);
-            }
-        }
-
-        WM_SETFONT => {
-            Ret = MonSelChangeFont(infoPtr, wParam as HFONT, LOWORD(lParam) as BOOL) as LRESULT;
-        }
-
-        WM_SIZE => {
-            (*infoPtr).ClientSize.cx = LOWORD(lParam) as LONG;
-            (*infoPtr).ClientSize.cy = HIWORD(lParam) as LONG;
-
-            MonSelUpdateMonitorsInfo(infoPtr, FALSE);
-            InvalidateRect((*infoPtr).hSelf, core::ptr::null_mut(), TRUE);
-        }
-
-        WM_GETFONT => {
-            Ret = (*infoPtr).hFont as LRESULT;
-        }
-
-        WM_ENABLE => {
-            (*infoPtr).Enabled = if wParam as BOOL != FALSE { 1 } else { 0 };
-            MonSelRepaint(infoPtr);
-        }
-
-        WM_STYLECHANGED => {
-            if wParam == GWL_STYLE {
-                let OldEnabled: u32 = (*infoPtr).Enabled;
-                (*infoPtr).Enabled = if ((*(lParam as LPSTYLESTRUCT)).styleNew & WS_DISABLED) != 0 { 0 } else { 1 };
-
-                if OldEnabled != (*infoPtr).Enabled {
-                    MonSelRepaint(infoPtr);
-                }
-            }
-        }
-
-        WM_KEYDOWN => {
-            let mut Index: INT;
-
-            if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYARROWKEY) != 0 {
-                match wParam {
-                    VK_UP | VK_LEFT => {
-                        Index = (*infoPtr).SelectedMonitor;
-
-                        if (*infoPtr).MonitorsCount != 0 {
-                            if Index < 0 {
-                                Index = 0;
-                            } else if Index > 0 {
-                                Index -= 1;
-                            }
-                        }
-
-                        if Index >= 0 {
-                            MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
-                        }
-                    }
-
-                    VK_DOWN | VK_RIGHT => {
-                        Index = (*infoPtr).SelectedMonitor;
-
-                        if (*infoPtr).MonitorsCount != 0 {
-                            if Index < 0 {
-                                Index = (*infoPtr).MonitorsCount as INT - 1;
-                            } else if Index < (*infoPtr).MonitorsCount as INT - 1 {
-                                Index += 1;
-                            }
-                        }
-
-                        if (*infoPtr).SelectedMonitor < (*infoPtr).MonitorsCount as INT {
-                            MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        WM_CHAR => {
-            if ((*infoPtr).ControlExStyle & MSLM_EX_SELECTBYNUMKEY) != 0
-                && wParam >= '1' as WPARAM
-                && wParam <= '9' as WPARAM
-            {
-                let Index: INT = (wParam - '1' as WPARAM) as INT;
-                if Index < (*infoPtr).MonitorsCount as INT {
-                    MonSelSetCurSelMonitor(infoPtr, Index, TRUE);
-                }
-            }
-        }
-
-        MSLM_SETMONITORSINFO => {
-            Ret = MonSelSetMonitorsInfo(infoPtr, wParam as DWORD, lParam as *const MONSL_MONINFO) as LRESULT;
-        }
-
-        MSLM_GETMONITORSINFO => {
-            Ret = MonSelGetMonitorsInfo(infoPtr, wParam as DWORD, lParam as PMONSL_MONINFO) as LRESULT;
-        }
-
-        MSLM_GETMONITORINFOCOUNT => {
-            Ret = (*infoPtr).MonitorsCount as LRESULT;
-        }
-
-        MSLM_HITTEST => {
-            Ret = MonSelHitTest(infoPtr, wParam as *const POINT) as LRESULT;
-        }
-
-        MSLM_SETCURSEL => {
-            Ret = MonSelSetCurSelMonitor(infoPtr, wParam as INT, FALSE) as LRESULT;
-        }
-
-        MSLM_GETCURSEL => {
-            Ret = (*infoPtr).SelectedMonitor as LRESULT;
-        }
-
-        MSLM_SETMONITORINFO => {
-            Ret = MonSelSetMonitorInfo(infoPtr, wParam as INT, lParam as *const MONSL_MONINFO) as LRESULT;
-        }
-
-        MSLM_GETMONITORINFO => {
-            Ret = MonSelGetMonitorInfo(infoPtr, wParam as INT, lParam as PMONSL_MONINFO) as LRESULT;
-        }
-
-        MSLM_SETEXSTYLE => {
-            Ret = MonSelSetExtendedStyle(infoPtr, lParam as DWORD) as LRESULT;
-        }
-
-        MSLM_GETEXSTYLE => {
-            Ret = MonSelGetExtendedStyle(infoPtr) as LRESULT;
-        }
-
-        MSLM_GETMONITORRECT => {
-            Ret = MonSelGetMonitorRect(infoPtr, wParam as INT, lParam as PRECT) as LRESULT;
-        }
-
-        WM_CREATE => {
-            infoPtr = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<MONITORSELWND>()) as PMONITORSELWND;
-            if infoPtr == core::ptr::null_mut() {
-                Ret = -1 as LRESULT;
-            } else {
-                ZeroMemory(infoPtr as *mut core::ffi::c_void, core::mem::size_of::<MONITORSELWND>());
-                (*infoPtr).hSelf = hwnd;
-                (*infoPtr).hNotify = (*(lParam as LPCREATESTRUCTW)).hwndParent;
-                (*infoPtr).Enabled = if ((*(lParam as LPCREATESTRUCTW)).style & WS_DISABLED) != 0 { 0 } else { 1 };
-                (*infoPtr).UIState = SendMessage(hwnd, WM_QUERYUISTATE, 0, 0) as DWORD;
-
-                SetWindowLongPtrW(hwnd, 0, infoPtr as LONG_PTR);
-
-                MonSelCreate(infoPtr);
-            }
-        }
-
-        WM_DESTROY => {
-            MonSelDestroy(infoPtr);
-
-            HeapFree(GetProcessHeap(), 0, infoPtr as *mut core::ffi::c_void);
-            SetWindowLongPtrW(hwnd, 0, 0 as DWORD_PTR);
+            SetWindowLongPtrW(hwnd, 0, (0 as DWORD_PTR) as LONG_PTR);
         }
 
         _ => {
@@ -1868,7 +1577,7 @@ pub unsafe extern "C" fn RegisterMonitorSelectionControl(hInstance: HINSTANCE) -
     let mut wc: WNDCLASS = core::mem::zeroed();
 
     wc.style = CS_DBLCLKS;
-    wc.lpfnWndProc = Some(MonitorSelWndProc);
+    wc.lpfnWndProc = Some(core::mem::transmute(MonitorSelWndProc as *const ()));
     wc.cbWndExtra = core::mem::size_of::<PMONITORSELWND>() as i32;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursorW(
@@ -1876,7 +1585,7 @@ pub unsafe extern "C" fn RegisterMonitorSelectionControl(hInstance: HINSTANCE) -
         IDC_ARROW as LPWSTR,
     );
     wc.hbrBackground = (COLOR_APPWORKSPACE + 1) as HBRUSH;
-    wc.lpszClassName = szMonitorSelWndClass.as_ptr();
+    wc.lpszClassName = (szMonitorSelWndClass.as_ptr()).cast();
 
     (RegisterClass(&wc) != 0) as BOOL
 }

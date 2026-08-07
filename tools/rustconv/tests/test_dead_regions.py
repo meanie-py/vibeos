@@ -8,8 +8,10 @@ retry for every one of them.
 import pytest
 from rustconv.call_seal import CallSealError, seal_calls, unseal_calls
 from rustconv.dead_regions import (
+    never_compiled_lines,
     dead_region_spans,
     dummy_pseh_except_spans,
+    pinned_int_macros,
     preprocessor_conditional_spans,
 )
 from rustconv.fact_seal import FactSealError, prepare_sealed_source, unseal_facts
@@ -181,3 +183,140 @@ def test_no_dead_regions_means_every_call_stays_required():
     assert [call.dead for call in sealed.calls] == [False, False]
     with pytest.raises(CallSealError):
         unseal_calls("pub unsafe fn f() -> i32 { 0 }", sealed)
+
+
+# ---------------------------------------------------------------------------
+# never_compiled_lines: keeping a body the build never sees OUT OF THE BILL.
+#
+# `translate` charges one paid call per function, so a function inside
+# `#ifndef __REACTOS__` is a bill for code that exists in no object we produce.
+# except_i386.c is 7 of 23 that way.
+# ---------------------------------------------------------------------------
+
+WINE_REACTOS_FORK = """\
+#ifdef __i386__
+
+static void live_one(void) { }
+
+#ifndef __REACTOS__
+void CDECL _global_unwind2(EXCEPTION_REGISTRATION_RECORD* frame)
+{
+    RtlUnwind( frame, 0, 0, 0 );
+}
+#endif
+
+#ifdef __REACTOS__
+void CDECL live_two(void);
+#else
+int CDECL _except_handler2(void)
+{
+    return 0;
+}
+#endif
+
+#if SOMETHING_WE_CANNOT_SETTLE
+void maybe_live(void) { }
+#endif
+
+#endif  /* __i386__ */
+"""
+
+
+def _line_of(text: str, needle: str) -> int:
+    for n, line in enumerate(text.splitlines(), 1):
+        if needle in line:
+            return n
+    raise AssertionError(f"{needle!r} not in the fixture")
+
+
+def test_a_body_under_ifndef_REACTOS_is_never_compiled():
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "void CDECL _global_unwind2") in dead
+
+
+def test_the_else_arm_of_ifdef_REACTOS_is_never_compiled():
+    """The other half of the same idiom, and the one a naive scan gets backwards."""
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "int CDECL _except_handler2") in dead
+    # ...while its live sibling arm is untouched.
+    assert _line_of(WINE_REACTOS_FORK, "void CDECL live_two") not in dead
+
+
+def test_an_undecidable_condition_leaves_its_body_LIVE():
+    """Over-reporting live code costs money; under-reporting it drops a real body."""
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "void maybe_live") not in dead
+
+
+def test_unconditional_code_is_live():
+    dead = never_compiled_lines(WINE_REACTOS_FORK)
+    assert _line_of(WINE_REACTOS_FORK, "static void live_one") not in dead
+
+
+def test_a_live_looking_inner_arm_nested_in_a_dead_one_is_still_dead():
+    src = "#ifndef __REACTOS__\n#ifdef __REACTOS__\nvoid buried(void) { }\n#endif\n#endif\n"
+    assert _line_of(src, "void buried") in never_compiled_lines(src)
+
+
+# `-DNAME=<int>` the module puts on every compile. msvcrt pins `_MSVCR_VER=0`, which decides
+# ~200 `#if _MSVCR_VER >= N` directives -- and two whole TUs, handler4.c and concurrency.c,
+# whose objects carry zero defined symbols.
+MSVCR_VER_GATED = """\
+void live_at_any_version(void) { }
+
+#if _MSVCR_VER >= 110
+void __cdecl __crtCapturePreviousContext( CONTEXT *ctx ) { }
+#endif
+
+#if _MSVCR_VER < 140
+void live_below_140(void) { }
+#endif
+
+#if defined(__x86_64__) && _MSVCR_VER>=140
+void dead_by_one_false_conjunct(void) { }
+#endif
+
+#if _MSVCR_VER >= 100 || SOMETHING_UNKNOWN
+void undecidable_disjunction(void) { }
+#endif
+
+#if _WIN32_WINNT >= 0x0600
+void live_on_this_winnt(void) { }
+#endif
+"""
+
+MSVCRT_PINS = {"_MSVCR_VER": 0, "_WIN32_WINNT": 0x0601}
+
+
+def test_a_version_gated_body_is_dead_at_the_pinned_value():
+    dead = never_compiled_lines(MSVCR_VER_GATED, MSVCRT_PINS)
+    assert _line_of(MSVCR_VER_GATED, "__crtCapturePreviousContext") in dead
+
+
+def test_the_same_body_is_LIVE_without_the_pins():
+    """The pins are what decide it: no `-D` knowledge, no dead code, no silent drop."""
+    dead = never_compiled_lines(MSVCR_VER_GATED)
+    assert _line_of(MSVCR_VER_GATED, "__crtCapturePreviousContext") not in dead
+
+
+def test_a_gate_the_pinned_value_SATISFIES_stays_live():
+    dead = never_compiled_lines(MSVCR_VER_GATED, MSVCRT_PINS)
+    assert _line_of(MSVCR_VER_GATED, "void live_below_140") not in dead
+    assert _line_of(MSVCR_VER_GATED, "void live_at_any_version") not in dead
+    assert _line_of(MSVCR_VER_GATED, "void live_on_this_winnt") not in dead
+
+
+def test_one_false_conjunct_kills_the_block_however_unknown_its_neighbour():
+    """handler4.c's `defined(__x86_64__) && _MSVCR_VER>=140` — dead on all three arches."""
+    dead = never_compiled_lines(MSVCR_VER_GATED, MSVCRT_PINS)
+    assert _line_of(MSVCR_VER_GATED, "dead_by_one_false_conjunct") in dead
+
+
+def test_a_disjunction_with_an_unknown_term_stays_live():
+    dead = never_compiled_lines(MSVCR_VER_GATED, MSVCRT_PINS)
+    assert _line_of(MSVCR_VER_GATED, "undecidable_disjunction") not in dead
+
+
+def test_pinned_int_macros_reads_values_not_just_names():
+    got = pinned_int_macros(["-D_MSVCR_VER=0", "-DWINVER=0x601", "-DN=100L", "-DBARE", "-DX=str"])
+    assert got == {"_MSVCR_VER": 0, "WINVER": 0x601, "N": 100}

@@ -43,14 +43,48 @@ pub union _CDevSettings__bindgen_ty_1 {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct _CDevSettings__bindgen_ty_1__bindgen_ty_1 {
     pub _bitfield_1: DWORD,
+}
+
+// The C's anonymous union/struct members, which C injects into _CDevSettings's own name
+// scope. Bit 0..2 in declaration order — LSB first, as every compiler
+// targeting these three ABIs allocates them.
+impl _CDevSettings {
+    #[inline(always)]
+    pub unsafe fn bModesPruned(&self) -> DWORD {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 0) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_bModesPruned(&mut self, value: DWORD) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 0)) | (((value != 0) as DWORD) << 0);
+    }
+    #[inline(always)]
+    pub unsafe fn bKeyIsReadOnly(&self) -> DWORD {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 1) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_bKeyIsReadOnly(&mut self, value: DWORD) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 1)) | (((value != 0) as DWORD) << 1);
+    }
+    #[inline(always)]
+    pub unsafe fn bPruningOn(&self) -> DWORD {
+        (self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1 >> 2) & 1
+    }
+    #[inline(always)]
+    pub unsafe fn set_bPruningOn(&mut self, value: DWORD) {
+        let bits = &mut self.__bindgen_anon_1.__bindgen_anon_1._bitfield_1;
+        *bits = (*bits & !(1 << 2)) | (((value != 0) as DWORD) << 2);
+    }
 }
 
 pub type CDevSettings = _CDevSettings;
 pub type PCDevSettings = *mut _CDevSettings;
 unsafe extern "C" fn impl_from_IDataObject(iface: *mut IDataObject) -> PCDevSettings {
-    ((iface as ULONG_PTR) - FIELD_OFFSET(CDevSettings, lpIDataObjectVtbl)) as PCDevSettings
+    ((iface as ULONG_PTR) - FIELD_OFFSET!(CDevSettings, lpIDataObjectVtbl)) as PCDevSettings
 }
 unsafe extern "C" fn pCDevSettings_FreeString(psz: *mut PWSTR) {
     if (*psz) != core::ptr::null_mut() {
@@ -63,7 +97,7 @@ unsafe extern "C" fn pCDevSettings_AllocAndCopyString(pszSrc: LPCTSTR) -> PWSTR 
     let mut str: PWSTR;
 
     c = _tcslen(pszSrc) + 1;
-    str = LocalAlloc(LMEM_FIXED, c * core::mem::size_of::<u16>()) as PWSTR;
+    str = LocalAlloc(LMEM_FIXED, (c * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if !str.is_null() {
         #[cfg(feature = "unicode")]
         {
@@ -74,10 +108,10 @@ unsafe extern "C" fn pCDevSettings_AllocAndCopyString(pszSrc: LPCTSTR) -> PWSTR 
             MultiByteToWideChar(
                 CP_ACP,
                 0,
-                pszSrc,
+                (pszSrc).cast(),
                 -1,
                 str,
-                c,
+                (c) as i32,
             );
         }
     }
@@ -109,7 +143,7 @@ unsafe extern "C" fn pCDevSettings_GetMonitorName(pszDisplayDevice: *const u16) 
                 hApplet,
                 IDS_MULTIPLEMONITORS,
                 dd.DeviceString.as_mut_ptr(),
-                core::mem::size_of_val(&dd.DeviceString) / core::mem::size_of_val(&dd.DeviceString[0]),
+                (core::mem::size_of_val(&dd.DeviceString) / core::mem::size_of_val(&dd.DeviceString[0])) as i32,
             );
         }
     } else {
@@ -117,13 +151,13 @@ unsafe extern "C" fn pCDevSettings_GetMonitorName(pszDisplayDevice: *const u16) 
             hApplet,
             IDS_UNKNOWNMONITOR,
             dd.DeviceString.as_mut_ptr(),
-            core::mem::size_of_val(&dd.DeviceString) / core::mem::size_of_val(&dd.DeviceString[0]),
+            (core::mem::size_of_val(&dd.DeviceString) / core::mem::size_of_val(&dd.DeviceString[0])) as i32,
         );
     }
 
     str = LocalAlloc(
         LMEM_FIXED,
-        (wcslen(dd.DeviceString.as_ptr()) + 1) * core::mem::size_of::<u16>(),
+        ((wcslen(dd.DeviceString.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
     ) as *mut u16;
     if !str.is_null() {
         wcscpy(str, dd.DeviceString.as_ptr());
@@ -142,7 +176,7 @@ unsafe extern "C" fn pCDevSettings_GetMonitorDevice(pszDisplayDevice: *const u16
                             0) != 0
     {
         str = LocalAlloc(LMEM_FIXED,
-                         (wcslen(dd.DeviceName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as *mut u16;
+                         ((wcslen(dd.DeviceName.as_ptr()) + 1) * core::mem::size_of::<u16>()) as SIZE_T) as *mut u16;
         if str != core::ptr::null_mut()
         {
             wcscpy(str,
@@ -171,7 +205,7 @@ unsafe extern "C" fn pCDevSettings_GetDeviceInstanceId(pszDevice: *const WCHAR) 
         return core::ptr::null_mut();
     }
 
-    ZeroMemory(
+    ZeroMemory!(
         &mut InfoData as *mut _ as *mut _,
         core::mem::size_of_val(&InfoData),
     );
@@ -195,10 +229,10 @@ unsafe extern "C" fn pCDevSettings_GetDeviceInstanceId(pszDevice: *const WCHAR) 
         return core::ptr::null_mut();
     }
 
-    lpDevInstId = LocalAlloc(
+    lpDevInstId = (LocalAlloc(
         LMEM_FIXED,
-        (BufLen + 1) * core::mem::size_of::<WCHAR>(),
-    );
+        ((BufLen + 1) * (core::mem::size_of::<WCHAR>()) as u32) as SIZE_T,
+    )).cast();
 
     if lpDevInstId.is_null() {
         // DPRINT removed
@@ -258,7 +292,7 @@ unsafe extern "C" fn pCDevSettings_OpenDeviceKey(
             0,
             Access,
             &mut hKey,
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             return hKey;
         }
@@ -314,7 +348,7 @@ pub unsafe extern "system" fn CDevSettings_SetCurrentMode(
     // DPRINT removed
 
     if (*This).DevModes.is_null() {
-        return FALSE;
+        return (FALSE) as i32;
     }
 
     i = 0;
@@ -326,12 +360,12 @@ pub unsafe extern "system" fn CDevSettings_SetCurrentMode(
 
         if *(*This).DevModes.offset(i as isize) == pDevMode {
             (*This).lpCurDevMode = pDevMode;
-            return TRUE;
+            return (TRUE) as i32;
         }
         i = i.wrapping_add(1);
     }
 
-    return FALSE;
+    return (FALSE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "system" fn CDevSettings_GetPruningMode(
@@ -344,9 +378,9 @@ pub unsafe extern "system" fn CDevSettings_GetPruningMode(
 
     // DPRINT removed
 
-    *pbModesPruned = (*This).__bindgen_anon_1.bModesPruned();
-    *pbKeyIsReadOnly = (*This).__bindgen_anon_1.bKeyIsReadOnly();
-    *pbPruningOn = (*This).__bindgen_anon_1.bPruningOn();
+    *pbModesPruned = ((*This).bModesPruned()) as i32;
+    *pbKeyIsReadOnly = ((*This).bKeyIsReadOnly()) as i32;
+    *pbPruningOn = ((*This).bPruningOn()) as i32;
 }
 
 #[no_mangle]
@@ -360,13 +394,13 @@ pub unsafe extern "system" fn CDevSettings_SetPruningMode(
 
     // DPRINT removed
 
-    if (*This).bModesPruned != 0 && (*This).bKeyIsReadOnly == 0 &&
-        (if PruningOn != 0 { 1 } else { 0 }) != (*This).bPruningOn {
-        (*This).bPruningOn = if PruningOn != FALSE { 1 } else { 0 };
+    if (*This).bModesPruned() != 0 && (*This).bKeyIsReadOnly() == 0 &&
+        (if PruningOn != 0 { 1 } else { 0 }) != (*This).bPruningOn() {
+        (*This).set_bPruningOn(if PruningOn != (FALSE) as i32 { 1 } else { 0 });
 
-        hKey = pCDevSettings_OpenDeviceKey(This, FALSE);
+        hKey = pCDevSettings_OpenDeviceKey(This, (FALSE) as BOOL);
         if hKey != core::ptr::null_mut() {
-            dwValue = (*This).bPruningOn;
+            dwValue = (*This).bPruningOn();
 
             RegSetValueEx(
                 hKey,
@@ -401,20 +435,20 @@ unsafe extern "C" fn pCDevSettings_InitializeExtInterface(This: *mut CDevSetting
     let Interface: *mut DESK_EXT_INTERFACE = core::ptr::addr_of_mut!((*This).ExtInterface);
     let mut hKeyDev: HKEY;
 
-    ZeroMemory(
+    ZeroMemory!(
         Interface as *mut core::ffi::c_void,
         core::mem::size_of::<DESK_EXT_INTERFACE>(),
     );
     (*Interface).cbSize = core::mem::size_of::<DESK_EXT_INTERFACE>() as u32;
 
-    (*Interface).Context = impl_to_interface(This, IDataObject) as *mut core::ffi::c_void;
+    (*Interface).Context = impl_to_interface!(This, IDataObject) as *mut core::ffi::c_void;
     (*Interface).EnumAllModes = Some(CDevSettings_EnumAllModes);
     (*Interface).SetCurrentMode = Some(CDevSettings_SetCurrentMode);
     (*Interface).GetCurrentMode = Some(CDevSettings_GetCurrentMode);
     (*Interface).SetPruningMode = Some(CDevSettings_SetPruningMode);
     (*Interface).GetPruningMode = Some(CDevSettings_GetPruningMode);
 
-    hKeyDev = pCDevSettings_OpenDeviceKey(This, TRUE);
+    hKeyDev = pCDevSettings_OpenDeviceKey(This, (TRUE) as BOOL);
     if hKeyDev != core::ptr::null_mut() {
         let mut dwType: DWORD = 0;
         let mut dwMemSize: DWORD = 0;
@@ -427,7 +461,7 @@ unsafe extern "C" fn pCDevSettings_InitializeExtInterface(This: *mut CDevSetting
             core::ptr::addr_of_mut!(dwType),
             core::ptr::addr_of_mut!(dwMemSize) as PBYTE,
             core::ptr::addr_of_mut!(dwSize),
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
             && (dwType == REG_BINARY || dwType == REG_DWORD)
             && dwSize == core::mem::size_of::<DWORD>() as DWORD
         {
@@ -493,38 +527,38 @@ unsafe extern "C" fn pCDevSettings_Initialize(
     (*This).lpCurDevMode = core::ptr::null_mut();
     (*This).DevModes = core::ptr::null_mut();
     (*This).nDevModes = 0;
-    (*This).Flags = 0;
+    (*This).__bindgen_anon_1.Flags = 0;
     (*This).StateFlags = (*DisplayDeviceInfo).DeviceStateFlags;
     // DPRINT removed
 
-    (*This).cfExtInterface = RegisterClipboardFormat(DESK_EXT_EXTINTERFACE);
-    (*This).cfDisplayDevice = RegisterClipboardFormat(DESK_EXT_DISPLAYDEVICE);
-    (*This).cfDisplayName = RegisterClipboardFormat(DESK_EXT_DISPLAYNAME);
-    (*This).cfDisplayId = RegisterClipboardFormat(DESK_EXT_DISPLAYID);
-    (*This).cfDisplayKey = RegisterClipboardFormat(DESK_EXT_DISPLAYKEY);
-    (*This).cfDisplayStateFlags = RegisterClipboardFormat(DESK_EXT_DISPLAYSTATEFLAGS);
-    (*This).cfMonitorName = RegisterClipboardFormat(DESK_EXT_MONITORNAME);
-    (*This).cfMonitorDevice = RegisterClipboardFormat(DESK_EXT_MONITORDEVICE);
-    (*This).cfPruningMode = RegisterClipboardFormat(DESK_EXT_PRUNINGMODE);
+    (*This).cfExtInterface = (RegisterClipboardFormat(DESK_EXT_EXTINTERFACE!())) as u16;
+    (*This).cfDisplayDevice = (RegisterClipboardFormat(DESK_EXT_DISPLAYDEVICE!())) as u16;
+    (*This).cfDisplayName = (RegisterClipboardFormat(DESK_EXT_DISPLAYNAME!())) as u16;
+    (*This).cfDisplayId = (RegisterClipboardFormat(DESK_EXT_DISPLAYID!())) as u16;
+    (*This).cfDisplayKey = (RegisterClipboardFormat(DESK_EXT_DISPLAYKEY!())) as u16;
+    (*This).cfDisplayStateFlags = (RegisterClipboardFormat(DESK_EXT_DISPLAYSTATEFLAGS!())) as u16;
+    (*This).cfMonitorName = (RegisterClipboardFormat(DESK_EXT_MONITORNAME!())) as u16;
+    (*This).cfMonitorDevice = (RegisterClipboardFormat(DESK_EXT_MONITORDEVICE!())) as u16;
+    (*This).cfPruningMode = (RegisterClipboardFormat(DESK_EXT_PRUNINGMODE!())) as u16;
 
-    (*This).pDisplayDevice = pCDevSettings_AllocAndCopyString((*DisplayDeviceInfo).DeviceName);
+    (*This).pDisplayDevice = pCDevSettings_AllocAndCopyString(((*DisplayDeviceInfo).DeviceName) as *const u16);
     // DPRINT removed
-    (*This).pDisplayName = pCDevSettings_AllocAndCopyString((*DisplayDeviceInfo).DeviceDescription);
+    (*This).pDisplayName = pCDevSettings_AllocAndCopyString(((*DisplayDeviceInfo).DeviceDescription) as *const u16);
     // DPRINT removed
-    (*This).pDisplayKey = pCDevSettings_AllocAndCopyString((*DisplayDeviceInfo).DeviceKey);
+    (*This).pDisplayKey = pCDevSettings_AllocAndCopyString(((*DisplayDeviceInfo).DeviceKey) as *const u16);
     // DPRINT removed
-    (*This).pDisplayId = pCDevSettings_GetDeviceInstanceId((*DisplayDeviceInfo).DeviceID);
+    (*This).pDisplayId = pCDevSettings_GetDeviceInstanceId(((*DisplayDeviceInfo).DeviceID) as *const u16);
     // DPRINT removed
     (*This).pMonitorName = pCDevSettings_GetMonitorName((*This).pDisplayDevice);
     // DPRINT removed
     (*This).pMonitorDevice = pCDevSettings_GetMonitorDevice((*This).pDisplayDevice);
     // DPRINT removed
 
-    (*This).bModesPruned = (((*DisplayDeviceInfo).DeviceStateFlags & DISPLAY_DEVICE_MODESPRUNED) != 0) as u32;
-    hKey = pCDevSettings_OpenDeviceKey(This, FALSE);
+    (*This).set_bModesPruned((((*DisplayDeviceInfo).DeviceStateFlags & DISPLAY_DEVICE_MODESPRUNED) != 0) as u32);
+    hKey = pCDevSettings_OpenDeviceKey(This, (FALSE) as BOOL);
     if hKey.is_null() {
-        hKey = pCDevSettings_OpenDeviceKey(This, FALSE);
-        (*This).bKeyIsReadOnly = TRUE;
+        hKey = pCDevSettings_OpenDeviceKey(This, (FALSE) as BOOL);
+        (*This).set_bKeyIsReadOnly((TRUE) as u32);
     }
     if !hKey.is_null() {
         let mut dw: DWORD = 0;
@@ -538,35 +572,35 @@ unsafe extern "C" fn pCDevSettings_Initialize(
             &mut dwType,
             &mut dw as *mut DWORD as PBYTE,
             &mut dwSize,
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             if dwType == REG_DWORD && dwSize == core::mem::size_of_val(&dw) as DWORD {
-                (*This).bPruningOn = (dw != 0) as u32;
+                (*This).set_bPruningOn((dw != 0) as u32);
             }
         }
 
         RegCloseKey(hKey);
     }
 
-    ZeroMemory(&mut devmode as *mut DEVMODEW as *mut core::ffi::c_void, core::mem::size_of::<DEVMODEW>());
+    ZeroMemory!(&mut devmode as *mut DEVMODEW as *mut core::ffi::c_void, core::mem::size_of::<DEVMODEW>());
     devmode.dmSize = core::mem::size_of::<DEVMODEW>() as u16;
     while EnumDisplaySettingsExW((*This).pDisplayDevice, i, &mut devmode, EDS_RAWMODE) != 0 {
         dwSize = devmode.dmSize as DWORD + devmode.dmDriverExtra as DWORD;
-        let pDevMode: *mut DEVMODEW = LocalAlloc(LMEM_FIXED, dwSize) as *mut DEVMODEW;
+        let pDevMode: *mut DEVMODEW = LocalAlloc(LMEM_FIXED, (dwSize) as SIZE_T) as *mut DEVMODEW;
         let mut DevModesNew: *mut *mut DEVMODEW = core::ptr::null_mut();
 
         if !pDevMode.is_null() {
-            CopyMemory(
+            CopyMemory!(
                 pDevMode as *mut core::ffi::c_void,
                 &devmode as *const DEVMODEW as *const core::ffi::c_void,
                 dwSize as usize,
             );
 
             dwSize = ((*This).nDevModes + 1) * core::mem::size_of::<*mut DEVMODEW>() as DWORD;
-            DevModesNew = LocalAlloc(LMEM_FIXED, dwSize) as *mut *mut DEVMODEW;
+            DevModesNew = LocalAlloc(LMEM_FIXED, (dwSize) as SIZE_T) as *mut *mut DEVMODEW;
             if !DevModesNew.is_null() {
                 if !(*This).DevModes.is_null() {
-                    CopyMemory(
+                    CopyMemory!(
                         DevModesNew as *mut core::ffi::c_void,
                         (*This).DevModes as *const core::ffi::c_void,
                         ((*This).nDevModes * core::mem::size_of::<*mut DEVMODEW>() as DWORD) as usize,
@@ -591,7 +625,7 @@ unsafe extern "C" fn pCDevSettings_Initialize(
         i += 1;
     }
 
-    ZeroMemory(&mut devmode as *mut DEVMODEW as *mut core::ffi::c_void, core::mem::size_of::<DEVMODEW>());
+    ZeroMemory!(&mut devmode as *mut DEVMODEW as *mut core::ffi::c_void, core::mem::size_of::<DEVMODEW>());
     devmode.dmSize = core::mem::size_of::<DEVMODEW>() as u16;
     if EnumDisplaySettingsExW((*This).pDisplayDevice, ENUM_CURRENT_SETTINGS, &mut devmode, 0) != 0 {
         i = 0;
@@ -625,7 +659,7 @@ unsafe extern "C" fn pCDevSettings_Free(This: *mut CDevSettings) {
     (*This).lpCurDevMode = core::ptr::null_mut();
     while (*This).nDevModes != 0 {
         (*This).nDevModes -= 1;
-        LocalFree((*(*This).DevModes.offset((*This).nDevModes as isize)));
+        LocalFree(((*(*This).DevModes.offset((*This).nDevModes as isize))).cast());
     }
     LocalFree((*This).DevModes as HLOCAL);
     (*This).DevModes = core::ptr::null_mut();
@@ -637,8 +671,7 @@ unsafe extern "C" fn pCDevSettings_Free(This: *mut CDevSettings) {
     pCDevSettings_FreeString(core::ptr::addr_of_mut!((*This).pMonitorName));
     pCDevSettings_FreeString(core::ptr::addr_of_mut!((*This).pMonitorDevice));
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_QueryInterface(
+unsafe extern "system" fn CDevSettings_QueryInterface(
     iface: *mut IDataObject,
     riid: REFIID,
     ppvObject: *mut *mut core::ffi::c_void,
@@ -647,8 +680,8 @@ unsafe extern "stdcall" fn CDevSettings_QueryInterface(
 
     *ppvObject = core::ptr::null_mut();
 
-    if IsEqualGUID(riid, &IID_IUnknown) != 0 || IsEqualGUID(riid, &IID_IDataObject) != 0 {
-        *ppvObject = impl_to_interface(This, IDataObject) as *mut core::ffi::c_void;
+    if IsEqualGUID!(riid, &IID_IUnknown) != 0 || IsEqualGUID!(riid, &IID_IDataObject) != 0 {
+        *ppvObject = impl_to_interface!(This, IDataObject) as *mut core::ffi::c_void;
         return S_OK;
     } else {
         // DPRINT removed
@@ -656,39 +689,11 @@ unsafe extern "stdcall" fn CDevSettings_QueryInterface(
 
     E_NOINTERFACE
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_QueryInterface(
-    iface: *mut IDataObject,
-    riid: REFIID,
-    ppvObject: *mut *mut core::ffi::c_void,
-) -> HRESULT {
-    let This = impl_from_IDataObject(iface);
-
-    *ppvObject = core::ptr::null_mut();
-
-    if IsEqualGUID(riid, &IID_IUnknown) != 0 || IsEqualGUID(riid, &IID_IDataObject) != 0 {
-        *ppvObject = impl_to_interface(This, IDataObject) as *mut core::ffi::c_void;
-        return S_OK;
-    } else {
-        // DPRINT removed
-    }
-
-    E_NOINTERFACE
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_AddRef(iface: *mut IDataObject) -> ULONG {
+unsafe extern "system" fn CDevSettings_AddRef(iface: *mut IDataObject) -> ULONG {
     let This = impl_from_IDataObject(iface);
     InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_AddRef(iface: *mut IDataObject) -> ULONG {
-    let This = impl_from_IDataObject(iface);
-    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_Release(iface: *mut IDataObject) -> ULONG {
+unsafe extern "system" fn CDevSettings_Release(iface: *mut IDataObject) -> ULONG {
     let refs: ULONG;
     let This: PCDevSettings = impl_from_IDataObject(iface);
     refs = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG;
@@ -698,20 +703,7 @@ unsafe extern "stdcall" fn CDevSettings_Release(iface: *mut IDataObject) -> ULON
 
     return refs;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_Release(iface: *mut IDataObject) -> ULONG {
-    let refs: ULONG;
-    let This: PCDevSettings = impl_from_IDataObject(iface);
-    refs = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG;
-    if refs == 0 {
-        pCDevSettings_Free(This);
-    }
-
-    return refs;
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_GetData(
+unsafe extern "system" fn CDevSettings_GetData(
     iface: *mut IDataObject,
     pformatetcIn: *mut FORMATETC,
     pmedium: *mut STGMEDIUM,
@@ -722,7 +714,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
     let mut pszBuf: PWSTR;
     let This: PCDevSettings = impl_from_IDataObject(iface);
 
-    ZeroMemory(
+    ZeroMemory!(
         pmedium as *mut _,
         core::mem::size_of::<STGMEDIUM>(),
     );
@@ -750,10 +742,10 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
         } else if (*pformatetcIn).cfFormat == (*This).cfExtInterface {
             let pIface: PDESK_EXT_INTERFACE = GlobalAlloc(
                 GPTR,
-                core::mem::size_of::<DESK_EXT_INTERFACE>(),
+                (core::mem::size_of::<DESK_EXT_INTERFACE>()) as SIZE_T,
             ) as PDESK_EXT_INTERFACE;
             if !pIface.is_null() {
-                CopyMemory(
+                CopyMemory!(
                     pIface as *mut _,
                     core::ptr::addr_of!((*This).ExtInterface) as *const _,
                     core::mem::size_of_val(&(*This).ExtInterface),
@@ -762,7 +754,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
                 // DPRINT removed
 
                 (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pIface as *mut _;
+                (*pmedium).__bindgen_anon_1.hGlobal = pIface as *mut _;
 
                 return S_OK;
             } else {
@@ -771,7 +763,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
         } else if (*pformatetcIn).cfFormat == (*This).cfDisplayStateFlags {
             let pdw: PDWORD = GlobalAlloc(
                 GPTR,
-                core::mem::size_of::<DWORD>(),
+                (core::mem::size_of::<DWORD>()) as SIZE_T,
             ) as PDWORD;
             if !pdw.is_null() {
                 *pdw = (*This).StateFlags;
@@ -779,7 +771,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
                 // DPRINT removed
 
                 (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pdw as *mut _;
+                (*pmedium).__bindgen_anon_1.hGlobal = pdw as *mut _;
 
                 return S_OK;
             } else {
@@ -788,17 +780,17 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
         } else if (*pformatetcIn).cfFormat == (*This).cfPruningMode {
             let pb: PBYTE = GlobalAlloc(
                 GPTR,
-                core::mem::size_of::<u8>(),
+                (core::mem::size_of::<u8>()) as SIZE_T,
             ) as PBYTE;
             if !pb.is_null() {
-                *pb = if (*This).bModesPruned != 0 && (*This).bPruningOn != 0 {
+                *pb = if (*This).bModesPruned() != 0 && (*This).bPruningOn() != 0 {
                     1
                 } else {
                     0
                 };
 
                 (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pb as *mut _;
+                (*pmedium).__bindgen_anon_1.hGlobal = pb as *mut _;
 
                 return S_OK;
             } else {
@@ -812,7 +804,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
 
         pszBuf = GlobalAlloc(
             GPTR,
-            (wcslen(pszRet) + 1) * core::mem::size_of::<u16>(),
+            ((wcslen(pszRet) + 1) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         if !pszBuf.is_null() {
             hr = StringCbCopyW(
@@ -826,7 +818,7 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
             }
 
             (*pmedium).tymed = TYMED_HGLOBAL;
-            (*pmedium).hGlobal = pszBuf as *mut _;
+            (*pmedium).__bindgen_anon_1.hGlobal = pszBuf as *mut _;
 
             hr = S_OK;
         } else {
@@ -836,160 +828,18 @@ unsafe extern "stdcall" fn CDevSettings_GetData(
 
     hr
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_GetData(
-    iface: *mut IDataObject,
-    pformatetcIn: *mut FORMATETC,
-    pmedium: *mut STGMEDIUM,
-) -> HRESULT {
-    static szEmpty: [u16; 1] = [0];
-    let mut hr: HRESULT;
-    let mut pszRet: PCWSTR = core::ptr::null();
-    let mut pszBuf: PWSTR;
-    let This: PCDevSettings = impl_from_IDataObject(iface);
-
-    ZeroMemory(
-        pmedium as *mut _,
-        core::mem::size_of::<STGMEDIUM>(),
-    );
-
-    hr = IDataObject_QueryGetData(iface, pformatetcIn);
-    if hr >= 0 {
-        if (*pformatetcIn).cfFormat == (*This).cfDisplayDevice {
-            pszRet = (*This).pDisplayDevice;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfDisplayName {
-            pszRet = (*This).pDisplayName;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfDisplayKey {
-            pszRet = (*This).pDisplayKey;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfDisplayId {
-            pszRet = (*This).pDisplayId;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfMonitorName {
-            pszRet = (*This).pMonitorName;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfMonitorDevice {
-            pszRet = (*This).pMonitorDevice;
-            // DPRINT removed
-        } else if (*pformatetcIn).cfFormat == (*This).cfExtInterface {
-            let pIface: PDESK_EXT_INTERFACE = GlobalAlloc(
-                GPTR,
-                core::mem::size_of::<DESK_EXT_INTERFACE>(),
-            ) as PDESK_EXT_INTERFACE;
-            if !pIface.is_null() {
-                CopyMemory(
-                    pIface as *mut _,
-                    core::ptr::addr_of!((*This).ExtInterface) as *const _,
-                    core::mem::size_of_val(&(*This).ExtInterface),
-                );
-
-                // DPRINT removed
-
-                (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pIface as *mut _;
-
-                return S_OK;
-            } else {
-                return E_OUTOFMEMORY;
-            }
-        } else if (*pformatetcIn).cfFormat == (*This).cfDisplayStateFlags {
-            let pdw: PDWORD = GlobalAlloc(
-                GPTR,
-                core::mem::size_of::<DWORD>(),
-            ) as PDWORD;
-            if !pdw.is_null() {
-                *pdw = (*This).StateFlags;
-
-                // DPRINT removed
-
-                (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pdw as *mut _;
-
-                return S_OK;
-            } else {
-                return E_OUTOFMEMORY;
-            }
-        } else if (*pformatetcIn).cfFormat == (*This).cfPruningMode {
-            let pb: PBYTE = GlobalAlloc(
-                GPTR,
-                core::mem::size_of::<u8>(),
-            ) as PBYTE;
-            if !pb.is_null() {
-                *pb = if (*This).bModesPruned != 0 && (*This).bPruningOn != 0 {
-                    1
-                } else {
-                    0
-                };
-
-                (*pmedium).tymed = TYMED_HGLOBAL;
-                (*pmedium).hGlobal = pb as *mut _;
-
-                return S_OK;
-            } else {
-                return E_OUTOFMEMORY;
-            }
-        }
-
-        if pszRet.is_null() {
-            pszRet = szEmpty.as_ptr();
-        }
-
-        pszBuf = GlobalAlloc(
-            GPTR,
-            (wcslen(pszRet) + 1) * core::mem::size_of::<u16>(),
-        ) as PWSTR;
-        if !pszBuf.is_null() {
-            hr = StringCbCopyW(
-                pszBuf as *mut _,
-                (wcslen(pszRet) + 1) * core::mem::size_of::<u16>(),
-                pszRet,
-            );
-            if hr < 0 {
-                GlobalFree(pszBuf as *mut _);
-                return hr;
-            }
-
-            (*pmedium).tymed = TYMED_HGLOBAL;
-            (*pmedium).hGlobal = pszBuf as *mut _;
-
-            hr = S_OK;
-        } else {
-            hr = E_OUTOFMEMORY;
-        }
-    }
-
-    hr
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_GetDataHere(
+unsafe extern "system" fn CDevSettings_GetDataHere(
     iface: *mut IDataObject,
     pformatetc: *mut FORMATETC,
     pmedium: *mut STGMEDIUM,
 ) -> HRESULT {
-    ZeroMemory(
+    ZeroMemory!(
         pformatetc as *mut _,
         core::mem::size_of::<FORMATETC>(),
     );
     E_NOTIMPL
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_GetDataHere(
-    iface: *mut IDataObject,
-    pformatetc: *mut FORMATETC,
-    pmedium: *mut STGMEDIUM,
-) -> HRESULT {
-    ZeroMemory(
-        pformatetc as *mut _,
-        core::mem::size_of::<FORMATETC>(),
-    );
-    E_NOTIMPL
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_QueryGetData(
+unsafe extern "system" fn CDevSettings_QueryGetData(
     iface: *mut IDataObject,
     pformatetc: *mut FORMATETC,
 ) -> HRESULT {
@@ -1025,9 +875,9 @@ unsafe extern "stdcall" fn CDevSettings_QueryGetData(
     #[cfg(debug_assertions)]
     {
         if GetClipboardFormatName(
-            (*pformatetc).cfFormat,
+            (*pformatetc).cfFormat as UINT,
             szFormatName.as_mut_ptr(),
-            (core::mem::size_of_val(&szFormatName) / core::mem::size_of::<TCHAR>()) as u32,
+            (core::mem::size_of_val(&szFormatName) / core::mem::size_of::<TCHAR>()) as c_int,
         ) != 0
         {
             // DPRINT removed
@@ -1038,59 +888,7 @@ unsafe extern "stdcall" fn CDevSettings_QueryGetData(
 
     DV_E_FORMATETC
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_QueryGetData(
-    iface: *mut IDataObject,
-    pformatetc: *mut FORMATETC,
-) -> HRESULT {
-    #[cfg(debug_assertions)]
-    let mut szFormatName: [TCHAR; 255] = [0; 255];
-
-    let This = impl_from_IDataObject(iface);
-
-    if (*pformatetc).dwAspect != DVASPECT_CONTENT {
-        return DV_E_DVASPECT;
-    }
-
-    if (*pformatetc).lindex != -1 {
-        return DV_E_LINDEX;
-    }
-
-    if ((*pformatetc).tymed & TYMED_HGLOBAL) == 0 {
-        return DV_E_TYMED;
-    }
-
-    if (*pformatetc).cfFormat == (*This).cfExtInterface
-        || (*pformatetc).cfFormat == (*This).cfDisplayDevice
-        || (*pformatetc).cfFormat == (*This).cfDisplayName
-        || (*pformatetc).cfFormat == (*This).cfDisplayId
-        || (*pformatetc).cfFormat == (*This).cfDisplayKey
-        || (*pformatetc).cfFormat == (*This).cfDisplayStateFlags
-        || (*pformatetc).cfFormat == (*This).cfMonitorDevice
-        || (*pformatetc).cfFormat == (*This).cfMonitorName
-        || (*pformatetc).cfFormat == (*This).cfPruningMode
-    {
-        return S_OK;
-    }
-    #[cfg(debug_assertions)]
-    {
-        if GetClipboardFormatName(
-            (*pformatetc).cfFormat,
-            szFormatName.as_mut_ptr(),
-            (core::mem::size_of_val(&szFormatName) / core::mem::size_of::<TCHAR>()) as u32,
-        ) != 0
-        {
-            // DPRINT removed
-        } else {
-            // DPRINT removed
-        }
-    }
-
-    DV_E_FORMATETC
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_GetCanonicalFormatEtc(
+unsafe extern "system" fn CDevSettings_GetCanonicalFormatEtc(
     iface: *mut IDataObject,
     pformatectIn: *mut FORMATETC,
     pformatetcOut: *mut FORMATETC,
@@ -1100,8 +898,8 @@ unsafe extern "stdcall" fn CDevSettings_GetCanonicalFormatEtc(
     // DPRINT removed
 
     hr = IDataObject_QueryGetData(iface, pformatectIn);
-    if ((hr) >= 0) >= 0 {
-        CopyMemory(
+    if hr >= 0 {
+        CopyMemory!(
             pformatetcOut as *mut _,
             pformatectIn as *const _,
             core::mem::size_of::<FORMATETC>(),
@@ -1114,7 +912,7 @@ unsafe extern "stdcall" fn CDevSettings_GetCanonicalFormatEtc(
             hr = S_OK;
         }
     } else {
-        ZeroMemory(
+        ZeroMemory!(
             pformatetcOut as *mut _,
             core::mem::size_of::<FORMATETC>(),
         );
@@ -1122,54 +920,7 @@ unsafe extern "stdcall" fn CDevSettings_GetCanonicalFormatEtc(
 
     hr
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_GetCanonicalFormatEtc(
-    iface: *mut IDataObject,
-    pformatectIn: *mut FORMATETC,
-    pformatetcOut: *mut FORMATETC,
-) -> HRESULT {
-    let mut hr: HRESULT;
-
-    // DPRINT removed
-
-    hr = IDataObject_QueryGetData(iface, pformatectIn);
-    if ((hr) >= 0) >= 0 {
-        CopyMemory(
-            pformatetcOut as *mut _,
-            pformatectIn as *const _,
-            core::mem::size_of::<FORMATETC>(),
-        );
-
-        if (*pformatectIn).ptd == core::ptr::null_mut() {
-            hr = DATA_S_SAMEFORMATETC;
-        } else {
-            (*pformatetcOut).ptd = core::ptr::null_mut();
-            hr = S_OK;
-        }
-    } else {
-        ZeroMemory(
-            pformatetcOut as *mut _,
-            core::mem::size_of::<FORMATETC>(),
-        );
-    }
-
-    hr
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_SetData(
-    iface: *mut IDataObject,
-    pformatetc: *mut FORMATETC,
-    pmedium: *mut STGMEDIUM,
-    fRelease: BOOL,
-) -> HRESULT {
-    // DPRINT1!("CDevSettings::SetData UNIMPLEMENTED\n");
-    E_NOTIMPL
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_SetData(
+unsafe extern "system" fn CDevSettings_SetData(
     iface: *mut IDataObject,
     pformatetc: *mut FORMATETC,
     pmedium: *mut STGMEDIUM,
@@ -1188,8 +939,7 @@ unsafe extern "C" fn pCDevSettings_FillFormatEtc(
     (*pFormatEtc).lindex = -(1 as i32);
     (*pFormatEtc).tymed = TYMED_HGLOBAL;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_EnumFormatEtc(
+unsafe extern "system" fn CDevSettings_EnumFormatEtc(
     iface: *mut IDataObject,
     dwDirection: DWORD,
     ppenumFormatEtc: *mut *mut IEnumFORMATETC,
@@ -1239,7 +989,7 @@ unsafe extern "stdcall" fn CDevSettings_EnumFormatEtc(
         );
 
         hr = SHCreateStdEnumFmtEtc(
-            core::mem::size_of_val(&fetc) / core::mem::size_of_val(&fetc[0]),
+            (core::mem::size_of_val(&fetc) / core::mem::size_of_val(&fetc[0])) as UINT,
             fetc.as_mut_ptr(),
             ppenumFormatEtc,
         );
@@ -1249,70 +999,7 @@ unsafe extern "stdcall" fn CDevSettings_EnumFormatEtc(
 
     hr
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_EnumFormatEtc(
-    iface: *mut IDataObject,
-    dwDirection: DWORD,
-    ppenumFormatEtc: *mut *mut IEnumFORMATETC,
-) -> HRESULT {
-    let mut hr: HRESULT;
-    let mut fetc: [FORMATETC; 9] = core::mem::zeroed();
-    let This: PCDevSettings = impl_from_IDataObject(iface);
-
-    *ppenumFormatEtc = core::ptr::null_mut();
-
-    if dwDirection == DATADIR_GET {
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[0],
-            (*This).cfExtInterface,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[1],
-            (*This).cfDisplayDevice,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[2],
-            (*This).cfDisplayName,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[3],
-            (*This).cfDisplayId,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[4],
-            (*This).cfDisplayKey,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[5],
-            (*This).cfDisplayStateFlags,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[6],
-            (*This).cfMonitorName,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[7],
-            (*This).cfMonitorDevice,
-        );
-        pCDevSettings_FillFormatEtc(
-            &mut fetc[8],
-            (*This).cfPruningMode,
-        );
-
-        hr = SHCreateStdEnumFmtEtc(
-            core::mem::size_of_val(&fetc) / core::mem::size_of_val(&fetc[0]),
-            fetc.as_mut_ptr(),
-            ppenumFormatEtc,
-        );
-    } else {
-        hr = E_NOTIMPL;
-    }
-
-    hr
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_DAdvise(
+unsafe extern "system" fn CDevSettings_DAdvise(
     iface: *mut IDataObject,
     pformatetc: *mut FORMATETC,
     advf: DWORD,
@@ -1322,36 +1009,13 @@ unsafe extern "stdcall" fn CDevSettings_DAdvise(
     *pdwConnection = 0;
     OLE_E_ADVISENOTSUPPORTED
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_DAdvise(
-    iface: *mut IDataObject,
-    pformatetc: *mut FORMATETC,
-    advf: DWORD,
-    pAdvSink: *mut IAdviseSink,
-    pdwConnection: *mut DWORD,
-) -> HRESULT {
-    *pdwConnection = 0;
-    OLE_E_ADVISENOTSUPPORTED
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_DUnadvise(
+unsafe extern "system" fn CDevSettings_DUnadvise(
     iface: *mut IDataObject,
     dwConnection: DWORD,
 ) -> HRESULT {
     OLE_E_ADVISENOTSUPPORTED
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_DUnadvise(
-    iface: *mut IDataObject,
-    dwConnection: DWORD,
-) -> HRESULT {
-    OLE_E_ADVISENOTSUPPORTED
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CDevSettings_EnumDAdvise(
+unsafe extern "system" fn CDevSettings_EnumDAdvise(
     iface: *mut IDataObject,
     ppenumAdvise: *mut *mut IEnumSTATDATA,
 ) -> HRESULT {
@@ -1359,34 +1023,50 @@ unsafe extern "stdcall" fn CDevSettings_EnumDAdvise(
     return OLE_E_ADVISENOTSUPPORTED;
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CDevSettings_EnumDAdvise(
-    iface: *mut IDataObject,
-    ppenumAdvise: *mut *mut IEnumSTATDATA,
-) -> HRESULT {
-    *ppenumAdvise = core::ptr::null_mut();
-    return OLE_E_ADVISENOTSUPPORTED;
-}
+// devsett.c:1029 `static const struct IDataObjectVtbl vtblIDataObject = { ... }` — the vtable
+// itself, which the translation dropped: every slot function came across but the table that
+// wires them into a COM object did not, so `CreateDevSettings` referred to a name nothing
+// defined. Written as a designated-field initialiser rather than the C's positional list, so
+// the slot ORDER is the island's (bindgen read objidl.h) and cannot be miscounted by hand --
+// a positional vtable off by one is a silent call to the wrong method.
+//
+// `static` and not `const`: the C's is one object at one address, and `This->lpIDataObjectVtbl`
+// stores its ADDRESS. A `const` would be inlined into a fresh temporary per use.
+static vtblIDataObject: IDataObjectVtbl = IDataObjectVtbl {
+    QueryInterface: Some(CDevSettings_QueryInterface),
+    AddRef: Some(CDevSettings_AddRef),
+    Release: Some(CDevSettings_Release),
+    GetData: Some(CDevSettings_GetData),
+    GetDataHere: Some(CDevSettings_GetDataHere),
+    QueryGetData: Some(CDevSettings_QueryGetData),
+    GetCanonicalFormatEtc: Some(CDevSettings_GetCanonicalFormatEtc),
+    SetData: Some(CDevSettings_SetData),
+    EnumFormatEtc: Some(CDevSettings_EnumFormatEtc),
+    DAdvise: Some(CDevSettings_DAdvise),
+    DUnadvise: Some(CDevSettings_DUnadvise),
+    EnumDAdvise: Some(CDevSettings_EnumDAdvise),
+};
+
 #[no_mangle]
 pub unsafe extern "C" fn CreateDevSettings(
     DisplayDeviceInfo: PDISPLAY_DEVICE_ENTRY,
 ) -> *mut IDataObject {
     let This: PCDevSettings;
 
-    This = HeapAlloc(
+    This = (HeapAlloc(
         GetProcessHeap(),
         0,
-        core::mem::size_of::<CDevSettings>(),
-    );
+        (core::mem::size_of::<CDevSettings>()) as SIZE_T,
+    )).cast();
     if !This.is_null() {
         (*This).lpIDataObjectVtbl = &vtblIDataObject;
         (*This).ref_ = 1;
 
         if pCDevSettings_Initialize(This, DisplayDeviceInfo) >= 0 {
-            return impl_to_interface(This, IDataObject);
+            return impl_to_interface!(This, IDataObject);
         }
 
-        CDevSettings_Release(impl_to_interface(This, IDataObject));
+        CDevSettings_Release(impl_to_interface!(This, IDataObject));
     }
 
     core::ptr::null_mut()
@@ -1397,7 +1077,7 @@ pub unsafe extern "system" fn DisplaySaveSettings(
     hwndPropSheet: HWND,
 ) -> LONG {
     let This: PCDevSettings = impl_from_IDataObject(pContext as *mut IDataObject);
-    let mut rc: LONG = DISP_CHANGE_SUCCESSFUL;
+    let mut rc: LONG = (DISP_CHANGE_SUCCESSFUL) as i32;
 
     if (*This).lpCurDevMode != (*This).lpOrigDevMode {
         let mut seOrig: SETTINGS_ENTRY = core::mem::zeroed();
@@ -1414,15 +1094,15 @@ pub unsafe extern "system" fn DisplaySaveSettings(
         seCur.dmBitsPerPel = (*(*This).lpCurDevMode).dmBitsPerPel;
         seCur.dmDisplayFrequency = (*(*This).lpCurDevMode).dmDisplayFrequency;
 
-        Ret = SwitchDisplayMode(
+        Ret = (SwitchDisplayMode(
             hwndPropSheet,
             (*This).pDisplayDevice,
             &mut seOrig,
             &mut seCur,
             &mut rc,
-        );
+        )) as i32;
 
-        if rc == DISP_CHANGE_SUCCESSFUL {
+        if rc == (DISP_CHANGE_SUCCESSFUL) as i32 {
             if Ret != 0 {
                 (*This).lpOrigDevMode = (*This).lpCurDevMode;
             } else {

@@ -30,3 +30,4 @@ panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 # The winlogon↔GINA Wlx* dispatch ABI (WLX_DISPATCH_VERSION_1_*, WLX_PROFILE_*, etc.).
 winlogon-sys = { path = "../winlogon-sys" }
+strsafe-rust = { path = "../strsafe-rust" }

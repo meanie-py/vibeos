@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
@@ -39,6 +39,8 @@ from . import (
     user_lock_inventory,
 )
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
+from .bank_audit import audit as bank_audit
+from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
@@ -60,6 +62,7 @@ from .config import (
     OUTPUT_CRATE,
     REACTOS_ROOT,
     RUST_DIR,
+    RUSTCONV_RESPONSES_DIR,
     SHELL32_ISLAND_FILES,
     TARGETS,
     cost_usd,
@@ -92,6 +95,7 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
+from .dead_regions import never_compiled_lines, pinned_int_macros
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -118,6 +122,7 @@ from .probe_migrate import (
     run_probe_migration,
     scan_rust_file,
 )
+from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
 from .prompt_builder import (
     build_file_prompt,
     build_full_prompt,
@@ -1776,6 +1781,78 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
+def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
+    """`-DNAME=<int>` the build puts on EVERY compile of `c_file`, from its CMakeLists.
+
+    Feeds `never_compiled_lines`, so it decides what is on the bill: msvcrt pins
+    `_MSVCR_VER=0` and ~200 `#if _MSVCR_VER >= 80/100/110/120/140` bodies across the module
+    are dead at that value. Getting it WRONG in the permissive direction costs a paid call;
+    wrong in the other direction silently drops a live body. So the rule is agreement:
+    a name survives only if every target that compiles this TU, on every arch, pins it to
+    the same value. A macro pinned only under `if(ARCH STREQUAL ...)`, or only in one of the
+    three targets an msvcrt TU belongs to, decides nothing and the bodies stay live.
+
+    Best-effort by design — an unparseable or absent CMakeLists yields `{}`, which is
+    exactly the pre-existing behaviour (more paid calls, never a dropped body).
+    """
+    cmake = c_file.resolve().parent / "CMakeLists.txt"
+    # A TU can live one directory down from the CMakeLists that lists it
+    # (msvcrt's `reactos/misc.c`), so walk up until one turns up.
+    for _ in range(3):
+        if cmake.is_file():
+            break
+        cmake = cmake.parent.parent / "CMakeLists.txt"
+    if not cmake.is_file():
+        return {}
+
+    repo_root = REACTOS_ROOT
+    wanted = c_file.resolve()
+    agreed: dict[str, int] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        try:
+            names = sorted(_target_names(cmake))
+        except ProfileDeriveError:
+            return {}
+        for name in names:
+            if getattr(args, "target", None) and name != args.target:
+                continue
+            try:
+                module = parse_cmakelists(cmake, repo_root, arch=arch, target=name)
+            except ProfileDeriveError:
+                continue
+            if wanted not in {p.resolve() for p in module.compiled_tus}:
+                continue
+            here = pinned_int_macros(module.definitions)
+            if agreed is None:
+                agreed = here
+            else:
+                agreed = {k: v for k, v in agreed.items() if here.get(k) == v}
+    return agreed or {}
+
+
+def skip_fn_for_file(requested: Iterable[str], present: Iterable[str]) -> list[str]:
+    """Which ``--skip-fn`` names apply to ONE file: the ones that file actually declares.
+
+    A function name belongs to exactly one translation unit, so on a directory run every OTHER
+    file legitimately lacks the name. Treating that as a per-file error — and skipping the file —
+    is how asking to drop one BODY silently dropped eleven FILES: unbought, unassembled, and
+    reported only as one stderr line among eleven identical ones. The name that matched NOTHING
+    across the whole worklist is the real error, and only the caller of the loop can know it;
+    see ``unmatched_skip_fn``.
+    """
+    return sorted(set(requested) & set(present))
+
+
+def unmatched_skip_fn(requested: Iterable[str], matched: Iterable[str]) -> list[str]:
+    """``--skip-fn`` names no file in the worklist carried — i.e. misspelled.
+
+    Loud on purpose and in the AUDIT report rather than a log line: the caller believes a body
+    was left to them to hand-write, and the truth is the opposite — it was translated and
+    SHIPPED. That inverts the whole guarantee of the flag.
+    """
+    return sorted(set(requested) - set(matched))
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
 
@@ -2058,6 +2135,14 @@ def cmd_translate(args):
 
     total_files = len(c_files)
     audit_findings: dict[str, list[str]] = {}
+    #: `--skip-fn` names, and the ones some file actually carried. A name belongs to exactly one
+    #: TU, so on a DIRECTORY run every OTHER file legitimately does not have it — see the
+    #: per-file handling for why that must not be an error there, and the post-loop check for
+    #: where a typo is still caught.
+    skip_fn_requested = {
+        name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
+    }
+    skip_fn_matched: set[str] = set()
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -2315,21 +2400,44 @@ def cmd_translate(args):
         # `msvcrt_spawn` and `_wpopen` blocked 48 accepted bodies across nine runs).
         # The skip is never silent: each name becomes an audit finding, so the assembled
         # file always says out loud which bodies a human still owes.
-        skipped_by_request: list[str] = []
-        if getattr(args, "skip_fn", None):
-            requested = {name.strip() for name in args.skip_fn if name.strip()}
-            present = {d.name for d in sorted_deps}
-            unknown = requested - present
-            if unknown:
-                print(
-                    f"  Error: --skip-fn name(s) not in {c_file.name}: "
-                    f"{', '.join(sorted(unknown))}",
-                    file=sys.stderr,
-                )
-                print(f"  Available: {', '.join(d.name for d in deps)}", file=sys.stderr)
-                continue
-            skipped_by_request = sorted(requested)
-            sorted_deps = [d for d in sorted_deps if d.name not in requested]
+        # Bodies the BUILD never compiles are dropped before anything is bought. A function
+        # inside `#ifndef __REACTOS__` is in no object file we produce, so a translation of
+        # it can never be called — and `translate` bills one paid call PER FUNCTION, so
+        # leaving them in the worklist is a bill for code that does not exist.
+        # except_i386.c is 7 of 23 that way: `_global_unwind2`, `_except_handler2`,
+        # `_except_handler3`, `_local_unwind2`, `longjmp` and the two `__regs__setjmp*`,
+        # every one confirmed absent from the object with `nm`. The rule is the narrow one
+        # `dead_regions.cond_truth` can prove; anything it cannot settle stays live and gets
+        # translated, because paying for a live body is a cost and dropping one is a bug.
+        # TWO classes of gate, and the second is the bigger one in msvcrt: `#ifndef
+        # __REACTOS__` is tree-wide, but the module's own `-D_MSVCR_VER=0` decides ~200
+        # `#if _MSVCR_VER >= 80/100/110/120/140` directives — concurrency.c is 3,839 lines
+        # wholly inside one. `_module_pinned_macros` reads those off the CMakeLists, and
+        # only where every target and every arch agrees on the value.
+        dead_lines = never_compiled_lines(
+            c_file.read_text(errors="replace"), _module_pinned_macros(c_file, args)
+        )
+        skipped_dead = sorted(d.name for d in sorted_deps if d.line_start in dead_lines)
+        if skipped_dead:
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_dead)]
+            print(
+                f"  dead branch: {len(skipped_dead)} body/bodies the build never compiles, "
+                f"not translated and not billed: {', '.join(skipped_dead)}",
+                file=sys.stderr,
+            )
+
+        # A `--skip-fn` name belongs to exactly ONE translation unit, so on a directory run
+        # every other file legitimately does not carry it. Treating that as a per-file error and
+        # `continue`ing skipped those files ENTIRELY — unbought, unassembled, and reported only
+        # as a stderr line among eleven others. Asking to drop one BODY silently dropped eleven
+        # FILES; the run looked like it worked and cost a whole cycle to notice. So a name that
+        # this file does not have is simply not applicable here. A name NO file has is still a
+        # typo, and the post-loop check below is loud about it — that is the case the original
+        # error was really for, and it belongs where the whole worklist is known.
+        skipped_by_request = skip_fn_for_file(skip_fn_requested, (d.name for d in sorted_deps))
+        if skipped_by_request:
+            skip_fn_matched |= set(skipped_by_request)
+            sorted_deps = [d for d in sorted_deps if d.name not in set(skipped_by_request)]
             print(
                 f"  --skip-fn: {len(skipped_by_request)} body/bodies left to hand-writing: "
                 f"{', '.join(skipped_by_request)}",
@@ -3546,6 +3654,11 @@ def cmd_translate(args):
         # is wrong. A dropped struct is a compile error and finds itself; a table
         # with one wrong byte does not.
         file_findings: list[str] = []
+        for name in skipped_dead:
+            file_findings.append(
+                f"dead branch: '{name}' is inside a preprocessor arm this tree never "
+                f"compiles, so it is absent from the output ON PURPOSE — nothing is owed"
+            )
         for name in skipped_by_request:
             file_findings.append(
                 f"--skip-fn: '{name}' was NOT translated and is absent from the output — "
@@ -3626,6 +3739,18 @@ def cmd_translate(args):
     if UNVERIFIED_CONSTANT_BODIES:
         audit_findings.setdefault("UNVERIFIED CONSTANTS (fact envelope ignored)", []).extend(
             UNVERIFIED_CONSTANT_BODIES
+        )
+
+    # A `--skip-fn` name no file in the worklist carried. Per-file this is normal (the name
+    # belongs to one TU); across the WHOLE worklist it means the name is misspelled, and the
+    # caller believes a body was left to them that was in fact translated and shipped. That is
+    # the inverse of the skip's own guarantee, so it is an audit finding, not a log line.
+    unmatched_skip = unmatched_skip_fn(skip_fn_requested, skip_fn_matched)
+    if unmatched_skip:
+        audit_findings.setdefault("--skip-fn NAMES THAT MATCHED NOTHING", []).extend(
+            f"'{name}' is in no file of this worklist — misspelled? Nothing was skipped for it, "
+            "so any body you expected to hand-write was translated and SHIPPED."
+            for name in unmatched_skip
         )
 
     if audit_findings:
@@ -3758,6 +3883,23 @@ def cmd_extern_audit(args):
         run_extern_fix(dry_run=args.dry_run)
     else:
         run_extern_audit(json_output=args.json)
+
+
+def cmd_bank_audit(args):
+    """Report paid translation output that never made it into the tree."""
+    responses = Path(args.responses) if args.responses else RUSTCONV_RESPONSES_DIR
+    rust_root = Path(args.tree) if args.tree else RUST_DIR
+    if not responses.is_dir():
+        raise ValueError(f"no response bank at {responses}")
+    if not rust_root.is_dir():
+        raise ValueError(f"no Rust tree at {rust_root}")
+
+    reports = bank_audit(responses, rust_root)
+    print(format_bank_report(reports, verbose=args.verbose))
+    # Unintegrated paid work is a finding, not a status line — exit nonzero so a
+    # caller that wired this into a gate actually notices.
+    if any(r.absent for r in reports):
+        sys.exit(1)
 
 
 def cmd_trace_catalog(args):
@@ -4532,6 +4674,17 @@ def main():
         "--dry-run", action="store_true", help="Show what --fix would change without writing"
     )
 
+    # bank-audit
+    p = sub.add_parser(
+        "bank-audit",
+        help="Report paid translation output (.responses) that is not in the tree",
+    )
+    p.add_argument("--responses", help="Response bank root (default: tools/rustconv/.responses)")
+    p.add_argument("--tree", help="Rust crate root to check against (default: sdk/lib/rust)")
+    p.add_argument(
+        "--verbose", action="store_true", help="Also list functions resolved via an alias rule"
+    )
+
     # pp (postprocess existing .rs files)
     p = sub.add_parser("pp", help="Run postprocessor on existing .rs files")
     p.add_argument("path", help="Rust file or directory (subsystem under ntoskrnl-rust/src/)")
@@ -4578,6 +4731,7 @@ def main():
         "probe-migrate": cmd_probe_migrate,
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
+        "bank-audit": cmd_bank_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
     }

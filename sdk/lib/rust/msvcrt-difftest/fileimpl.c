@@ -390,21 +390,52 @@ void * WINAPI InterlockedCompareExchangePointer(void * volatile *dst, void *xchg
 HANDLE WINAPI GetCurrentProcess(void)   { return CURRENT_PROCESS_HANDLE; }
 DWORD  WINAPI GetCurrentProcessId(void) { return (DWORD)getpid(); }
 
+/* Also RECORDS its argument, which stopped being incidental when misc.c became reference
+ * TU #9: `_sleep`'s entire body is `Sleep(timeout ? timeout : 1)`, so the zero-to-one
+ * adjustment is its only observable behaviour and is invisible without this. ONE recorder
+ * serving both sides, read immediately after each side's call — the same discipline the
+ * `_lock` recorder below documents, and the reason it works is that the rows are
+ * single-threaded and interleave deliberately. */
+static DWORD ref_last_sleep_ms;
+static DWORD ref_last_beep_freq, ref_last_beep_dur;
+static int   ref_misc_calls;
+
+unsigned int ref_last_sleep(void) { return ref_last_sleep_ms; }
+unsigned int ref_last_beep_f(void) { return ref_last_beep_freq; }
+unsigned int ref_last_beep_d(void) { return ref_last_beep_dur; }
+int  ref_misc_call_count(void) { return ref_misc_calls; }
+void ref_misc_reset(void)
+{
+    ref_last_sleep_ms = ref_last_beep_freq = ref_last_beep_dur = 0;
+    ref_misc_calls = 0;
+}
+
 void WINAPI Sleep(DWORD ms)
 {
-    struct timespec ts = { (time_t)(ms / 1000), (long)(ms % 1000) * 1000000L };
-
-    nanosleep(&ts, NULL);
+    ref_last_sleep_ms = ms;
+    ref_misc_calls++;
+    /* Deliberately NOT nanosleep()ing any more. `_sleep(0)` becomes `Sleep(1)`, and the
+     * rows sweep it across every dataset; a real sleep would buy nothing a recorder does
+     * not already prove and would cost a millisecond a row. */
 }
 
 /* The four misc.c needs.  misc.c is worth linking into this harness rather than gating out
  * (unlike console.c/exit.c, see msvcrt-crt-rust/Cargo.toml `conio-exit`) because qsort,
  * bsearch, _lsearch and rand are pure algorithms with real oracles.  These four stubs are
- * the whole price, and each one is deliberately inert: nothing in misc.c's gradeable surface
- * observes them, so the cheapest correct body is the one that cannot perturb a row. */
+ * the whole price.
+ *
+ * They used to be deliberately INERT, on the reasoning that nothing in misc.c's gradeable
+ * surface observed them. That was true while misc.c was only the SUBJECT's; as reference TU
+ * #9 it is graded, and `_beep` and `_sleep` are then functions whose entire body is the call
+ * — a passthrough and a zero-to-one adjustment. An inert stub makes both ungradeable, so
+ * they record instead. */
 void WINAPI Beep(DWORD freq, DWORD duration)
 {
-    (void)freq; (void)duration;   /* _beep is a passthrough; no oracle, no side effect */
+    /* `_beep` is a passthrough, so its whole contract is that the two arguments arrive
+     * unchanged — which needs a recorder to see, exactly like Sleep above. */
+    ref_last_beep_freq = freq;
+    ref_last_beep_dur  = duration;
+    ref_misc_calls++;
 }
 
 void WINAPI DebugBreak(void)
@@ -414,11 +445,19 @@ void WINAPI DebugBreak(void)
      * links. */
 }
 
-BOOLEAN WINAPI RtlGenRandom(void *buf, ULONG len)
+/* rand_s's entropy source. Named `SystemFunction036`, which is what advapi32 actually
+ * EXPORTS — `RtlGenRandom` is ntsecapi.h's `#define` for it, and misc.c reaches it through
+ * that macro while the Rust binds the real name through msvcrt-sys.
+ *
+ * It was `RtlGenRandom` here until misc.c became reference TU #9, and the mismatch had never
+ * mattered because no test binary referenced `rand_s`: the subject's call sat in an rlib
+ * nothing pulled, so the undefined symbol never reached a link. `cargo check` cannot see
+ * that class at all — the first row to call `rand_s` is what found it.
+ *
+ * Deterministic on purpose: a difftest row wants a reproducible byte pattern, and rand_s's
+ * contract under test is its errno/return behaviour, not the quality of the bytes. */
+BOOLEAN WINAPI SystemFunction036(void *buf, ULONG len)
 {
-    /* rand_s's entropy source.  Deterministic on purpose — a difftest row wants a
-     * reproducible byte pattern, and rand_s's contract under test is its errno/return
-     * behaviour on a NULL pointer, not the quality of the bytes. */
     memset(buf, 0x5A, len);
     return TRUE;
 }

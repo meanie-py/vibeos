@@ -6792,6 +6792,13 @@ pub const SPREG_TIMEOUT: u32 = 5;
 pub const SPREG_UNKNOWN: u32 = 4294967295;
 pub const ST_CASE_SENSITIVE_COMPARE: u32 = 1;
 pub const SUOI_FORCEDELETE: u32 = 1;
+pub const __REQUIRED_RPCNDR_H_VERSION__: u32 = 475;
+pub const ROT_COMPARE_MAX: u32 = 2048;
+pub const ROTFLAGS_REGISTRATIONKEEPSALIVE: u32 = 1;
+pub const ROTFLAGS_ALLOWANYCLIENT: u32 = 2;
+pub const WDT_INPROC_CALL: u32 = 1215587415;
+pub const WDT_REMOTE_CALL: u32 = 1383359575;
+pub const WDT_INPROC64_CALL: u32 = 1349805143;
 pub const STGM_DIRECT: u32 = 0;
 pub const STGM_TRANSACTED: u32 = 65536;
 pub const STGM_SIMPLE: u32 = 134217728;
@@ -7385,6 +7392,259 @@ pub const STRSAFE_IGNORE_NULL_UNICODE_STRINGS: u32 = 65536;
 pub const STRSAFE_UNICODE_STRING_DEST_NULL_TERMINATED: u32 = 131072;
 pub const STRSAFE_VALID_FLAGS: u32 = 8191;
 pub const STRSAFE_UNICODE_STRING_VALID_FLAGS: u32 = 204799;
+pub const GDIP_EMFPLUS_RECORD_BASE: u32 = 16384;
+pub const GDIP_WMF_RECORD_BASE: u32 = 65536;
+pub const FlatnessDefault: f64 = 0.25;
+pub const PixelFormatIndexed: u32 = 65536;
+pub const PixelFormatGDI: u32 = 131072;
+pub const PixelFormatAlpha: u32 = 262144;
+pub const PixelFormatPAlpha: u32 = 524288;
+pub const PixelFormatExtended: u32 = 1048576;
+pub const PixelFormatCanonical: u32 = 2097152;
+pub const PixelFormatUndefined: u32 = 0;
+pub const PixelFormatDontCare: u32 = 0;
+pub const PixelFormat1bppIndexed: u32 = 196865;
+pub const PixelFormat4bppIndexed: u32 = 197634;
+pub const PixelFormat8bppIndexed: u32 = 198659;
+pub const PixelFormat16bppGrayScale: u32 = 1052676;
+pub const PixelFormat16bppRGB555: u32 = 135173;
+pub const PixelFormat16bppRGB565: u32 = 135174;
+pub const PixelFormat16bppARGB1555: u32 = 397319;
+pub const PixelFormat24bppRGB: u32 = 137224;
+pub const PixelFormat32bppRGB: u32 = 139273;
+pub const PixelFormat32bppARGB: u32 = 2498570;
+pub const PixelFormat32bppPARGB: u32 = 925707;
+pub const PixelFormat48bppRGB: u32 = 1060876;
+pub const PixelFormat64bppARGB: u32 = 3424269;
+pub const PixelFormat64bppPARGB: u32 = 1851406;
+pub const PixelFormat32bppCMYK: u32 = 8207;
+pub const PixelFormatMax: u32 = 16;
+pub const GDIP_EMFPLUSFLAGS_DISPLAY: u32 = 1;
+pub const PropertyTagTypeByte: u32 = 1;
+pub const PropertyTagTypeASCII: u32 = 2;
+pub const PropertyTagTypeShort: u32 = 3;
+pub const PropertyTagTypeLong: u32 = 4;
+pub const PropertyTagTypeRational: u32 = 5;
+pub const PropertyTagTypeUndefined: u32 = 7;
+pub const PropertyTagTypeSLONG: u32 = 9;
+pub const PropertyTagTypeSRational: u32 = 10;
+pub const PropertyTagExifIFD: u32 = 34665;
+pub const PropertyTagGpsIFD: u32 = 34853;
+pub const PropertyTagNewSubfileType: u32 = 254;
+pub const PropertyTagSubfileType: u32 = 255;
+pub const PropertyTagImageWidth: u32 = 256;
+pub const PropertyTagImageHeight: u32 = 257;
+pub const PropertyTagBitsPerSample: u32 = 258;
+pub const PropertyTagCompression: u32 = 259;
+pub const PropertyTagPhotometricInterp: u32 = 262;
+pub const PropertyTagThreshHolding: u32 = 263;
+pub const PropertyTagCellWidth: u32 = 264;
+pub const PropertyTagCellHeight: u32 = 265;
+pub const PropertyTagFillOrder: u32 = 266;
+pub const PropertyTagDocumentName: u32 = 269;
+pub const PropertyTagImageDescription: u32 = 270;
+pub const PropertyTagEquipMake: u32 = 271;
+pub const PropertyTagEquipModel: u32 = 272;
+pub const PropertyTagStripOffsets: u32 = 273;
+pub const PropertyTagOrientation: u32 = 274;
+pub const PropertyTagSamplesPerPixel: u32 = 277;
+pub const PropertyTagRowsPerStrip: u32 = 278;
+pub const PropertyTagStripBytesCount: u32 = 279;
+pub const PropertyTagMinSampleValue: u32 = 280;
+pub const PropertyTagMaxSampleValue: u32 = 281;
+pub const PropertyTagXResolution: u32 = 282;
+pub const PropertyTagYResolution: u32 = 283;
+pub const PropertyTagPlanarConfig: u32 = 284;
+pub const PropertyTagPageName: u32 = 285;
+pub const PropertyTagXPosition: u32 = 286;
+pub const PropertyTagYPosition: u32 = 287;
+pub const PropertyTagFreeOffset: u32 = 288;
+pub const PropertyTagFreeByteCounts: u32 = 289;
+pub const PropertyTagGrayResponseUnit: u32 = 290;
+pub const PropertyTagGrayResponseCurve: u32 = 291;
+pub const PropertyTagT4Option: u32 = 292;
+pub const PropertyTagT6Option: u32 = 293;
+pub const PropertyTagResolutionUnit: u32 = 296;
+pub const PropertyTagPageNumber: u32 = 297;
+pub const PropertyTagTransferFuncition: u32 = 301;
+pub const PropertyTagSoftwareUsed: u32 = 305;
+pub const PropertyTagDateTime: u32 = 306;
+pub const PropertyTagArtist: u32 = 315;
+pub const PropertyTagHostComputer: u32 = 316;
+pub const PropertyTagPredictor: u32 = 317;
+pub const PropertyTagWhitePoint: u32 = 318;
+pub const PropertyTagPrimaryChromaticities: u32 = 319;
+pub const PropertyTagColorMap: u32 = 320;
+pub const PropertyTagHalftoneHints: u32 = 321;
+pub const PropertyTagTileWidth: u32 = 322;
+pub const PropertyTagTileLength: u32 = 323;
+pub const PropertyTagTileOffset: u32 = 324;
+pub const PropertyTagTileByteCounts: u32 = 325;
+pub const PropertyTagInkSet: u32 = 332;
+pub const PropertyTagInkNames: u32 = 333;
+pub const PropertyTagNumberOfInks: u32 = 334;
+pub const PropertyTagDotRange: u32 = 336;
+pub const PropertyTagTargetPrinter: u32 = 337;
+pub const PropertyTagExtraSamples: u32 = 338;
+pub const PropertyTagSampleFormat: u32 = 339;
+pub const PropertyTagSMinSampleValue: u32 = 340;
+pub const PropertyTagSMaxSampleValue: u32 = 341;
+pub const PropertyTagTransferRange: u32 = 342;
+pub const PropertyTagJPEGProc: u32 = 512;
+pub const PropertyTagJPEGInterFormat: u32 = 513;
+pub const PropertyTagJPEGInterLength: u32 = 514;
+pub const PropertyTagJPEGRestartInterval: u32 = 515;
+pub const PropertyTagJPEGLosslessPredictors: u32 = 517;
+pub const PropertyTagJPEGPointTransforms: u32 = 518;
+pub const PropertyTagJPEGQTables: u32 = 519;
+pub const PropertyTagJPEGDCTables: u32 = 520;
+pub const PropertyTagJPEGACTables: u32 = 521;
+pub const PropertyTagYCbCrCoefficients: u32 = 529;
+pub const PropertyTagYCbCrSubsampling: u32 = 530;
+pub const PropertyTagYCbCrPositioning: u32 = 531;
+pub const PropertyTagREFBlackWhite: u32 = 532;
+pub const PropertyTagICCProfile: u32 = 34675;
+pub const PropertyTagGamma: u32 = 769;
+pub const PropertyTagICCProfileDescriptor: u32 = 770;
+pub const PropertyTagSRGBRenderingIntent: u32 = 771;
+pub const PropertyTagImageTitle: u32 = 800;
+pub const PropertyTagCopyright: u32 = 33432;
+pub const PropertyTagResolutionXUnit: u32 = 20481;
+pub const PropertyTagResolutionYUnit: u32 = 20482;
+pub const PropertyTagResolutionXLengthUnit: u32 = 20483;
+pub const PropertyTagResolutionYLengthUnit: u32 = 20484;
+pub const PropertyTagPrintFlags: u32 = 20485;
+pub const PropertyTagPrintFlagsVersion: u32 = 20486;
+pub const PropertyTagPrintFlagsCrop: u32 = 20487;
+pub const PropertyTagPrintFlagsBleedWidth: u32 = 20488;
+pub const PropertyTagPrintFlagsBleedWidthScale: u32 = 20489;
+pub const PropertyTagHalftoneLPI: u32 = 20490;
+pub const PropertyTagHalftoneLPIUnit: u32 = 20491;
+pub const PropertyTagHalftoneDegree: u32 = 20492;
+pub const PropertyTagHalftoneShape: u32 = 20493;
+pub const PropertyTagHalftoneMisc: u32 = 20494;
+pub const PropertyTagHalftoneScreen: u32 = 20495;
+pub const PropertyTagJPEGQuality: u32 = 20496;
+pub const PropertyTagGridSize: u32 = 20497;
+pub const PropertyTagThumbnailFormat: u32 = 20498;
+pub const PropertyTagThumbnailWidth: u32 = 20499;
+pub const PropertyTagThumbnailHeight: u32 = 20500;
+pub const PropertyTagThumbnailColorDepth: u32 = 20501;
+pub const PropertyTagThumbnailPlanes: u32 = 20502;
+pub const PropertyTagThumbnailRawBytes: u32 = 20503;
+pub const PropertyTagThumbnailSize: u32 = 20504;
+pub const PropertyTagThumbnailCompressedSize: u32 = 20505;
+pub const PropertyTagColorTransferFunction: u32 = 20506;
+pub const PropertyTagThumbnailData: u32 = 20507;
+pub const PropertyTagThumbnailImageWidth: u32 = 20512;
+pub const PropertyTagThumbnailImageHeight: u32 = 20513;
+pub const PropertyTagThumbnailBitsPerSample: u32 = 20514;
+pub const PropertyTagThumbnailCompression: u32 = 20515;
+pub const PropertyTagThumbnailPhotometricInterp: u32 = 20516;
+pub const PropertyTagThumbnailImageDescription: u32 = 20517;
+pub const PropertyTagThumbnailEquipMake: u32 = 20518;
+pub const PropertyTagThumbnailEquipModel: u32 = 20519;
+pub const PropertyTagThumbnailStripOffsets: u32 = 20520;
+pub const PropertyTagThumbnailOrientation: u32 = 20521;
+pub const PropertyTagThumbnailSamplesPerPixel: u32 = 20522;
+pub const PropertyTagThumbnailRowsPerStrip: u32 = 20523;
+pub const PropertyTagThumbnailStripBytesCount: u32 = 20524;
+pub const PropertyTagThumbnailResolutionX: u32 = 20525;
+pub const PropertyTagThumbnailResolutionY: u32 = 20526;
+pub const PropertyTagThumbnailPlanarConfig: u32 = 20527;
+pub const PropertyTagThumbnailResolutionUnit: u32 = 20528;
+pub const PropertyTagThumbnailTransferFunction: u32 = 20529;
+pub const PropertyTagThumbnailSoftwareUsed: u32 = 20530;
+pub const PropertyTagThumbnailDateTime: u32 = 20531;
+pub const PropertyTagThumbnailArtist: u32 = 20532;
+pub const PropertyTagThumbnailWhitePoint: u32 = 20533;
+pub const PropertyTagThumbnailPrimaryChromaticities: u32 = 20534;
+pub const PropertyTagThumbnailYCbCrCoefficients: u32 = 20535;
+pub const PropertyTagThumbnailYCbCrSubsampling: u32 = 20536;
+pub const PropertyTagThumbnailYCbCrPositioning: u32 = 20537;
+pub const PropertyTagThumbnailRefBlackWhite: u32 = 20538;
+pub const PropertyTagThumbnailCopyRight: u32 = 20539;
+pub const PropertyTagLuminanceTable: u32 = 20624;
+pub const PropertyTagChrominanceTable: u32 = 20625;
+pub const PropertyTagFrameDelay: u32 = 20736;
+pub const PropertyTagLoopCount: u32 = 20737;
+pub const PropertyTagGlobalPalette: u32 = 20738;
+pub const PropertyTagIndexBackground: u32 = 20739;
+pub const PropertyTagIndexTransparent: u32 = 20740;
+pub const PropertyTagPixelUnit: u32 = 20752;
+pub const PropertyTagPixelPerUnitX: u32 = 20753;
+pub const PropertyTagPixelPerUnitY: u32 = 20754;
+pub const PropertyTagPaletteHistogram: u32 = 20755;
+pub const PropertyTagExifExposureTime: u32 = 33434;
+pub const PropertyTagExifFNumber: u32 = 33437;
+pub const PropertyTagExifExposureProg: u32 = 34850;
+pub const PropertyTagExifSpectralSense: u32 = 34852;
+pub const PropertyTagExifISOSpeed: u32 = 34855;
+pub const PropertyTagExifOECF: u32 = 34856;
+pub const PropertyTagExifVer: u32 = 36864;
+pub const PropertyTagExifDTOrig: u32 = 36867;
+pub const PropertyTagExifDTDigitized: u32 = 36868;
+pub const PropertyTagExifCompConfig: u32 = 37121;
+pub const PropertyTagExifCompBPP: u32 = 37122;
+pub const PropertyTagExifShutterSpeed: u32 = 37377;
+pub const PropertyTagExifAperture: u32 = 37378;
+pub const PropertyTagExifBrightness: u32 = 37379;
+pub const PropertyTagExifExposureBias: u32 = 37380;
+pub const PropertyTagExifMaxAperture: u32 = 37381;
+pub const PropertyTagExifSubjectDist: u32 = 37382;
+pub const PropertyTagExifMeteringMode: u32 = 37383;
+pub const PropertyTagExifLightSource: u32 = 37384;
+pub const PropertyTagExifFlash: u32 = 37385;
+pub const PropertyTagExifFocalLength: u32 = 37386;
+pub const PropertyTagExifMakerNote: u32 = 37500;
+pub const PropertyTagExifUserComment: u32 = 37510;
+pub const PropertyTagExifDTSubsec: u32 = 37520;
+pub const PropertyTagExifDTOrigSS: u32 = 37521;
+pub const PropertyTagExifDTDigSS: u32 = 37522;
+pub const PropertyTagExifFPXVer: u32 = 40960;
+pub const PropertyTagExifColorSpace: u32 = 40961;
+pub const PropertyTagExifPixXDim: u32 = 40962;
+pub const PropertyTagExifPixYDim: u32 = 40963;
+pub const PropertyTagExifRelatedWav: u32 = 40964;
+pub const PropertyTagExifInterop: u32 = 40965;
+pub const PropertyTagExifFlashEnergy: u32 = 41483;
+pub const PropertyTagExifSpatialFR: u32 = 41484;
+pub const PropertyTagExifFocalXRes: u32 = 41486;
+pub const PropertyTagExifFocalYRes: u32 = 41487;
+pub const PropertyTagExifFocalResUnit: u32 = 41488;
+pub const PropertyTagExifSubjectLoc: u32 = 41492;
+pub const PropertyTagExifExposureIndex: u32 = 41493;
+pub const PropertyTagExifSensingMethod: u32 = 41495;
+pub const PropertyTagExifFileSource: u32 = 41728;
+pub const PropertyTagExifSceneType: u32 = 41729;
+pub const PropertyTagExifCfaPattern: u32 = 41730;
+pub const PropertyTagGpsVer: u32 = 0;
+pub const PropertyTagGpsLatitudeRef: u32 = 1;
+pub const PropertyTagGpsLatitude: u32 = 2;
+pub const PropertyTagGpsLongitudeRef: u32 = 3;
+pub const PropertyTagGpsLongitude: u32 = 4;
+pub const PropertyTagGpsAltitudeRef: u32 = 5;
+pub const PropertyTagGpsAltitude: u32 = 6;
+pub const PropertyTagGpsGpsTime: u32 = 7;
+pub const PropertyTagGpsGpsSatellites: u32 = 8;
+pub const PropertyTagGpsGpsStatus: u32 = 9;
+pub const PropertyTagGpsGpsMeasureMode: u32 = 10;
+pub const PropertyTagGpsGpsDop: u32 = 11;
+pub const PropertyTagGpsSpeedRef: u32 = 12;
+pub const PropertyTagGpsSpeed: u32 = 13;
+pub const PropertyTagGpsTrackRef: u32 = 14;
+pub const PropertyTagGpsTrack: u32 = 15;
+pub const PropertyTagGpsImgDirRef: u32 = 16;
+pub const PropertyTagGpsImgDir: u32 = 17;
+pub const PropertyTagGpsMapDatum: u32 = 18;
+pub const PropertyTagGpsDestLatRef: u32 = 19;
+pub const PropertyTagGpsDestLat: u32 = 20;
+pub const PropertyTagGpsDestLongRef: u32 = 21;
+pub const PropertyTagGpsDestLong: u32 = 22;
+pub const PropertyTagGpsDestBearRef: u32 = 23;
+pub const PropertyTagGpsDestBear: u32 = 24;
+pub const PropertyTagGpsDestDistRef: u32 = 25;
+pub const PropertyTagGpsDestDist: u32 = 26;
 pub const SIZE_BORDER_WIDTH: u32 = 0;
 pub const SIZE_SCROLL_WIDTH: u32 = 1;
 pub const SIZE_SCROLL_HEIGHT: u32 = 2;
@@ -9036,6 +9296,9 @@ pub const DNCP_ACTIVEWINDOW: u32 = 1;
 pub const DNCP_INACTIVEWINDOW: u32 = 2;
 pub const DNCP_DIALOGWINDOW: u32 = 4;
 pub const DNCP_DRAW_ALL: u32 = 7;
+pub type TCHAR = WCHAR;
+pub type LPTSTR = LPWSTR;
+pub type LPCTSTR = LPCWSTR;
 pub type PTHREAD_START_ROUTINE =
     ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> DWORD>;
 pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
@@ -26286,8 +26549,49 @@ unsafe extern "stdcall" {
 unsafe extern "stdcall" {
     pub fn UnicodeToMultiByte(lpUnicodeStr: PCWSTR, uCodePage: UINT) -> PSTR;
 }
+pub type I_RPC_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_AUTH_IDENTITY_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_AUTHZ_HANDLE = *mut ::core::ffi::c_void;
+pub type RPC_IF_HANDLE = *mut ::core::ffi::c_void;
+pub type RPC_BINDING_HANDLE = I_RPC_HANDLE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _RPC_VERSION {
+    pub MajorVersion: ::core::ffi::c_ushort,
+    pub MinorVersion: ::core::ffi::c_ushort,
+}
+pub type RPC_VERSION = _RPC_VERSION;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _RPC_SYNTAX_IDENTIFIER {
+    pub SyntaxGUID: GUID,
+    pub SyntaxVersion: RPC_VERSION,
+}
+pub type PRPC_SYNTAX_IDENTIFIER = *mut _RPC_SYNTAX_IDENTIFIER;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _RPC_MESSAGE {
+    pub Handle: RPC_BINDING_HANDLE,
+    pub DataRepresentation: ULONG,
+    pub Buffer: *mut ::core::ffi::c_void,
+    pub BufferLength: ::core::ffi::c_uint,
+    pub ProcNum: ::core::ffi::c_uint,
+    pub TransferSyntax: PRPC_SYNTAX_IDENTIFIER,
+    pub RpcInterfaceInformation: *mut ::core::ffi::c_void,
+    pub ReservedForRuntime: *mut ::core::ffi::c_void,
+    pub ManagerEpv: *mut ::core::ffi::c_void,
+    pub ImportContext: *mut ::core::ffi::c_void,
+    pub RpcFlags: ULONG,
+}
+pub type PRPC_MESSAGE = *mut _RPC_MESSAGE;
+pub type byte = ::core::ffi::c_uchar;
+pub type hyper = INT64;
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_c_ifspec: RPC_IF_HANDLE;
+}
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_s_ifspec: RPC_IF_HANDLE;
+}
 pub type DOUBLE = f64;
 pub type OLECHAR = WCHAR;
 pub type LPOLESTR = *mut OLECHAR;
@@ -26317,8 +26621,326 @@ pub struct _COAUTHINFO {
     pub dwCapabilities: DWORD,
 }
 pub type COAUTHINFO = _COAUTHINFO;
+pub const tagMEMCTX_MEMCTX_TASK: tagMEMCTX = 1;
+pub const tagMEMCTX_MEMCTX_SHARED: tagMEMCTX = 2;
+pub const tagMEMCTX_MEMCTX_MACSYSTEM: tagMEMCTX = 3;
+pub const tagMEMCTX_MEMCTX_UNKNOWN: tagMEMCTX = -1;
+pub const tagMEMCTX_MEMCTX_SAME: tagMEMCTX = -2;
+pub type tagMEMCTX = ::core::ffi::c_int;
+pub use self::tagMEMCTX as MEMCTX;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER: tagCLSCTX = 1;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER: tagCLSCTX = 2;
+pub const tagCLSCTX_CLSCTX_LOCAL_SERVER: tagCLSCTX = 4;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER16: tagCLSCTX = 8;
+pub const tagCLSCTX_CLSCTX_REMOTE_SERVER: tagCLSCTX = 16;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER16: tagCLSCTX = 32;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVERX86: tagCLSCTX = 64;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLERX86: tagCLSCTX = 128;
+pub const tagCLSCTX_CLSCTX_ESERVER_HANDLER: tagCLSCTX = 256;
+pub const tagCLSCTX_CLSCTX_NO_CODE_DOWNLOAD: tagCLSCTX = 1024;
+pub const tagCLSCTX_CLSCTX_NO_CUSTOM_MARSHAL: tagCLSCTX = 4096;
+pub const tagCLSCTX_CLSCTX_ENABLE_CODE_DOWNLOAD: tagCLSCTX = 8192;
+pub const tagCLSCTX_CLSCTX_NO_FAILURE_LOG: tagCLSCTX = 16384;
+pub const tagCLSCTX_CLSCTX_DISABLE_AAA: tagCLSCTX = 32768;
+pub const tagCLSCTX_CLSCTX_ENABLE_AAA: tagCLSCTX = 65536;
+pub const tagCLSCTX_CLSCTX_FROM_DEFAULT_CONTEXT: tagCLSCTX = 131072;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_X86_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_32_BIT_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_64_BIT_SERVER: tagCLSCTX = 524288;
+pub const tagCLSCTX_CLSCTX_ENABLE_CLOAKING: tagCLSCTX = 1048576;
+pub const tagCLSCTX_CLSCTX_APPCONTAINER: tagCLSCTX = 4194304;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_AAA_AS_IU: tagCLSCTX = 8388608;
+pub const tagCLSCTX_CLSCTX_RESERVED6: tagCLSCTX = 16777216;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_ARM32_SERVER: tagCLSCTX = 33554432;
+pub const tagCLSCTX_CLSCTX_PS_DLL: tagCLSCTX = 2147483648;
+pub type tagCLSCTX = ::core::ffi::c_uint;
+pub use self::tagCLSCTX as CLSCTX;
+pub const tagMSHLFLAGS_MSHLFLAGS_NORMAL: tagMSHLFLAGS = 0;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLESTRONG: tagMSHLFLAGS = 1;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLEWEAK: tagMSHLFLAGS = 2;
+pub const tagMSHLFLAGS_MSHLFLAGS_NOPING: tagMSHLFLAGS = 4;
+pub type tagMSHLFLAGS = ::core::ffi::c_uint;
+pub use self::tagMSHLFLAGS as MSHLFLAGS;
+pub const tagMSHCTX_MSHCTX_LOCAL: tagMSHCTX = 0;
+pub const tagMSHCTX_MSHCTX_NOSHAREDMEM: tagMSHCTX = 1;
+pub const tagMSHCTX_MSHCTX_DIFFERENTMACHINE: tagMSHCTX = 2;
+pub const tagMSHCTX_MSHCTX_INPROC: tagMSHCTX = 3;
+pub const tagMSHCTX_MSHCTX_CROSSCTX: tagMSHCTX = 4;
+pub type tagMSHCTX = ::core::ffi::c_uint;
+pub use self::tagMSHCTX as MSHCTX;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _BYTE_BLOB {
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type BYTE_BLOB = _BYTE_BLOB;
+pub type UP_BYTE_BLOB = *mut BYTE_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAGGED_BYTE_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type FLAGGED_BYTE_BLOB = _FLAGGED_BYTE_BLOB;
+pub type UP_FLAGGED_BYTE_BLOB = *mut FLAGGED_BYTE_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAGGED_WORD_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub asData: [::core::ffi::c_ushort; 1usize],
+}
+pub type FLAGGED_WORD_BLOB = _FLAGGED_WORD_BLOB;
+pub type UP_FLAGGED_WORD_BLOB = *mut FLAGGED_WORD_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _BYTE_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut byte,
+}
+pub type BYTE_SIZEDARR = _BYTE_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _SHORT_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ::core::ffi::c_ushort,
+}
+pub type WORD_SIZEDARR = _SHORT_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _LONG_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ULONG,
+}
+pub type DWORD_SIZEDARR = _LONG_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _HYPER_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut hyper,
+}
+pub type HYPER_SIZEDARR = _HYPER_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userCLIPFORMAT {
+    pub fContext: LONG,
+    pub u: _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000 {
+    pub dwValue: DWORD,
+    pub pwszName: LPWSTR,
+}
+pub type userCLIPFORMAT = _userCLIPFORMAT;
+pub type wireCLIPFORMAT = *mut userCLIPFORMAT;
 pub type CLIPFORMAT = WORD;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHGLOBAL {
+    pub fNullHGlobal: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHGLOBAL = tagRemHGLOBAL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHGLOBAL {
+    pub fContext: LONG,
+    pub u: _userHGLOBAL___WIDL_wtypes_generated_name_00000001,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHGLOBAL___WIDL_wtypes_generated_name_00000001 {
+    pub hInproc: LONG,
+    pub hRemote: *mut FLAGGED_BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHGLOBAL = _userHGLOBAL;
+pub type wireHGLOBAL = *mut userHGLOBAL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHMETAFILEPICT = tagRemHMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHMETAFILE___WIDL_wtypes_generated_name_00000002,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHMETAFILE___WIDL_wtypes_generated_name_00000002 {
+    pub hInproc: LONG,
+    pub hRemote: *mut BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHMETAFILE = _userHMETAFILE;
+pub type wireHMETAFILE = *mut userHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _remoteMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub hMF: *mut userHMETAFILE,
+}
+pub type remoteMETAFILEPICT = _remoteMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHMETAFILEPICT {
+    pub fContext: LONG,
+    pub u: _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003 {
+    pub hInproc: LONG,
+    pub hRemote: *mut remoteMETAFILEPICT,
+    pub hInproc64: INT64,
+}
+pub type userHMETAFILEPICT = _userHMETAFILEPICT;
+pub type wireHMETAFILEPICT = *mut userHMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHENHMETAFILE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHENHMETAFILE = tagRemHENHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHENHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004 {
+    pub hInproc: LONG,
+    pub hRemote: *mut BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHENHMETAFILE = _userHENHMETAFILE;
+pub type wireHENHMETAFILE = *mut userHENHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHBITMAP {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHBITMAP = tagRemHBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userBITMAP {
+    pub bmType: LONG,
+    pub bmWidth: LONG,
+    pub bmHeight: LONG,
+    pub bmWidthBytes: LONG,
+    pub bmPlanes: WORD,
+    pub bmBitsPixel: WORD,
+    pub cbSize: ULONG,
+    pub pBuffer: [byte; 1usize],
+}
+pub type userBITMAP = _userBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHBITMAP {
+    pub fContext: LONG,
+    pub u: _userHBITMAP___WIDL_wtypes_generated_name_00000005,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHBITMAP___WIDL_wtypes_generated_name_00000005 {
+    pub hInproc: LONG,
+    pub hRemote: *mut userBITMAP,
+    pub hInproc64: INT64,
+}
+pub type userHBITMAP = _userHBITMAP;
+pub type wireHBITMAP = *mut userHBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHPALETTE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHPALETTE = tagRemHPALETTE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagrpcLOGPALETTE {
+    pub palVersion: WORD,
+    pub palNumEntries: WORD,
+    pub palPalEntry: [PALETTEENTRY; 1usize],
+}
+pub type rpcLOGPALETTE = tagrpcLOGPALETTE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHPALETTE {
+    pub fContext: LONG,
+    pub u: _userHPALETTE___WIDL_wtypes_generated_name_00000006,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHPALETTE___WIDL_wtypes_generated_name_00000006 {
+    pub hInproc: LONG,
+    pub hRemote: *mut rpcLOGPALETTE,
+    pub hInproc64: INT64,
+}
+pub type userHPALETTE = _userHPALETTE;
+pub type wireHPALETTE = *mut userHPALETTE;
 pub type HMETAFILEPICT = *mut ::core::ffi::c_void;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _RemotableHandle {
+    pub fContext: LONG,
+    pub u: _RemotableHandle___WIDL_wtypes_generated_name_00000007,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _RemotableHandle___WIDL_wtypes_generated_name_00000007 {
+    pub hInproc: LONG,
+    pub hRemote: LONG,
+}
+pub type RemotableHandle = _RemotableHandle;
+pub type wireHACCEL = *mut RemotableHandle;
+pub type wireHBRUSH = *mut RemotableHandle;
+pub type wireHDC = *mut RemotableHandle;
+pub type wireHFONT = *mut RemotableHandle;
+pub type wireHICON = *mut RemotableHandle;
+pub type wireHMENU = *mut RemotableHandle;
+pub type wireHWND = *mut RemotableHandle;
+pub type wireHMONITOR = *mut RemotableHandle;
+pub const tagDVASPECT_DVASPECT_CONTENT: tagDVASPECT = 1;
+pub const tagDVASPECT_DVASPECT_THUMBNAIL: tagDVASPECT = 2;
+pub const tagDVASPECT_DVASPECT_ICON: tagDVASPECT = 4;
+pub const tagDVASPECT_DVASPECT_DOCPRINT: tagDVASPECT = 8;
+pub type tagDVASPECT = ::core::ffi::c_uint;
+pub use self::tagDVASPECT as DVASPECT;
+pub const tagSTGC_STGC_DEFAULT: tagSTGC = 0;
+pub const tagSTGC_STGC_OVERWRITE: tagSTGC = 1;
+pub const tagSTGC_STGC_ONLYIFCURRENT: tagSTGC = 2;
+pub const tagSTGC_STGC_DANGEROUSLYCOMMITMERELYTODISKCACHE: tagSTGC = 4;
+pub const tagSTGC_STGC_CONSOLIDATE: tagSTGC = 8;
+pub type tagSTGC = ::core::ffi::c_uint;
+pub use self::tagSTGC as STGC;
+pub const tagSTGMOVE_STGMOVE_MOVE: tagSTGMOVE = 0;
+pub const tagSTGMOVE_STGMOVE_COPY: tagSTGMOVE = 1;
+pub const tagSTGMOVE_STGMOVE_SHALLOWCOPY: tagSTGMOVE = 2;
+pub type tagSTGMOVE = ::core::ffi::c_uint;
+pub use self::tagSTGMOVE as STGMOVE;
+pub const tagSTATFLAG_STATFLAG_DEFAULT: tagSTATFLAG = 0;
+pub const tagSTATFLAG_STATFLAG_NONAME: tagSTATFLAG = 1;
+pub const tagSTATFLAG_STATFLAG_NOOPEN: tagSTATFLAG = 2;
+pub type tagSTATFLAG = ::core::ffi::c_uint;
+pub use self::tagSTATFLAG as STATFLAG;
 pub type DATE = f64;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -26341,6 +26963,7 @@ pub struct tagCY__bindgen_ty_1 {
     pub Hi: LONG,
 }
 pub type CY = tagCY;
+pub type LPCY = *mut CY;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagDEC {
@@ -26390,10 +27013,130 @@ pub struct tagDEC__bindgen_ty_2__bindgen_ty_1 {
     pub Mid32: ULONG,
 }
 pub type DECIMAL = tagDEC;
+pub type LPDECIMAL = *mut DECIMAL;
+pub type wireBSTR = *mut FLAGGED_WORD_BLOB;
 pub type BSTR = *mut OLECHAR;
+pub type LPBSTR = *mut BSTR;
 pub type VARIANT_BOOL = ::core::ffi::c_short;
+pub type _VARIANT_BOOL = VARIANT_BOOL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBSTRBLOB {
+    pub cbSize: ULONG,
+    pub pData: *mut BYTE,
+}
+pub type BSTRBLOB = tagBSTRBLOB;
+pub type LPBSTRBLOB = *mut tagBSTRBLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBLOB {
+    pub cbSize: ULONG,
+    pub pBlobData: *mut BYTE,
+}
+pub type BLOB = tagBLOB;
+pub type LPBLOB = *mut tagBLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCLIPDATA {
+    pub cbSize: ULONG,
+    pub ulClipFmt: LONG,
+    pub pClipData: *mut BYTE,
+}
+pub type CLIPDATA = tagCLIPDATA;
+pub type PROPID = ULONG;
 pub type VARTYPE = ::core::ffi::c_ushort;
+pub const VARENUM_VT_EMPTY: VARENUM = 0;
+pub const VARENUM_VT_NULL: VARENUM = 1;
+pub const VARENUM_VT_I2: VARENUM = 2;
+pub const VARENUM_VT_I4: VARENUM = 3;
+pub const VARENUM_VT_R4: VARENUM = 4;
+pub const VARENUM_VT_R8: VARENUM = 5;
+pub const VARENUM_VT_CY: VARENUM = 6;
+pub const VARENUM_VT_DATE: VARENUM = 7;
+pub const VARENUM_VT_BSTR: VARENUM = 8;
+pub const VARENUM_VT_DISPATCH: VARENUM = 9;
+pub const VARENUM_VT_ERROR: VARENUM = 10;
+pub const VARENUM_VT_BOOL: VARENUM = 11;
+pub const VARENUM_VT_VARIANT: VARENUM = 12;
+pub const VARENUM_VT_UNKNOWN: VARENUM = 13;
+pub const VARENUM_VT_DECIMAL: VARENUM = 14;
+pub const VARENUM_VT_I1: VARENUM = 16;
+pub const VARENUM_VT_UI1: VARENUM = 17;
+pub const VARENUM_VT_UI2: VARENUM = 18;
+pub const VARENUM_VT_UI4: VARENUM = 19;
+pub const VARENUM_VT_I8: VARENUM = 20;
+pub const VARENUM_VT_UI8: VARENUM = 21;
+pub const VARENUM_VT_INT: VARENUM = 22;
+pub const VARENUM_VT_UINT: VARENUM = 23;
+pub const VARENUM_VT_VOID: VARENUM = 24;
+pub const VARENUM_VT_HRESULT: VARENUM = 25;
+pub const VARENUM_VT_PTR: VARENUM = 26;
+pub const VARENUM_VT_SAFEARRAY: VARENUM = 27;
+pub const VARENUM_VT_CARRAY: VARENUM = 28;
+pub const VARENUM_VT_USERDEFINED: VARENUM = 29;
+pub const VARENUM_VT_LPSTR: VARENUM = 30;
+pub const VARENUM_VT_LPWSTR: VARENUM = 31;
+pub const VARENUM_VT_RECORD: VARENUM = 36;
+pub const VARENUM_VT_INT_PTR: VARENUM = 37;
+pub const VARENUM_VT_UINT_PTR: VARENUM = 38;
+pub const VARENUM_VT_FILETIME: VARENUM = 64;
+pub const VARENUM_VT_BLOB: VARENUM = 65;
+pub const VARENUM_VT_STREAM: VARENUM = 66;
+pub const VARENUM_VT_STORAGE: VARENUM = 67;
+pub const VARENUM_VT_STREAMED_OBJECT: VARENUM = 68;
+pub const VARENUM_VT_STORED_OBJECT: VARENUM = 69;
+pub const VARENUM_VT_BLOB_OBJECT: VARENUM = 70;
+pub const VARENUM_VT_CF: VARENUM = 71;
+pub const VARENUM_VT_CLSID: VARENUM = 72;
+pub const VARENUM_VT_VERSIONED_STREAM: VARENUM = 73;
+pub const VARENUM_VT_BSTR_BLOB: VARENUM = 4095;
+pub const VARENUM_VT_VECTOR: VARENUM = 4096;
+pub const VARENUM_VT_ARRAY: VARENUM = 8192;
+pub const VARENUM_VT_BYREF: VARENUM = 16384;
+pub const VARENUM_VT_RESERVED: VARENUM = 32768;
+pub const VARENUM_VT_ILLEGAL: VARENUM = 65535;
+pub const VARENUM_VT_ILLEGALMASKED: VARENUM = 4095;
+pub const VARENUM_VT_TYPEMASK: VARENUM = 4095;
+pub type VARENUM = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCSPLATFORM {
+    pub dwPlatformId: DWORD,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+    pub dwProcessorArch: DWORD,
+}
+pub type CSPLATFORM = tagCSPLATFORM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagQUERYCONTEXT {
+    pub dwContext: DWORD,
+    pub Platform: CSPLATFORM,
+    pub Locale: LCID,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+}
+pub type QUERYCONTEXT = tagQUERYCONTEXT;
+pub const tagTYSPEC_TYSPEC_CLSID: tagTYSPEC = 0;
+pub const tagTYSPEC_TYSPEC_FILEEXT: tagTYSPEC = 1;
+pub const tagTYSPEC_TYSPEC_MIMETYPE: tagTYSPEC = 2;
+pub const tagTYSPEC_TYSPEC_PROGID: tagTYSPEC = 3;
+pub const tagTYSPEC_TYSPEC_FILENAME: tagTYSPEC = 4;
+pub const tagTYSPEC_TYSPEC_PACKAGENAME: tagTYSPEC = 5;
+pub const tagTYSPEC_TYSPEC_OBJECTID: tagTYSPEC = 6;
+pub type tagTYSPEC = ::core::ffi::c_uint;
+pub use self::tagTYSPEC as TYSPEC;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _tagpropertykey {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type PROPERTYKEY = _tagpropertykey;
 pub type LPUNKNOWN = *mut IUnknown;
+unsafe extern "C" {
+    pub static IID_IUnknown: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IUnknownVtbl {
@@ -26406,6 +27149,123 @@ pub struct IUnknownVtbl {
 pub struct IUnknown {
     pub lpVtbl: *mut IUnknownVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IUnknown_QueryInterface_Proxy(
+        This: *mut IUnknown,
+        riid: *const IID,
+        ppvObject: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IUnknown_QueryInterface_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IUnknown_AddRef_Proxy(This: *mut IUnknown) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn IUnknown_AddRef_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IUnknown_Release_Proxy(This: *mut IUnknown) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn IUnknown_Release_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+pub type LPCLASSFACTORY = *mut IClassFactory;
+unsafe extern "C" {
+    pub static IID_IClassFactory: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IClassFactoryVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassFactory, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassFactory) -> ULONG>,
+    pub CreateInstance: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassFactory, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub LockServer: ::core::option::Option< unsafe extern "system" fn(This: *mut IClassFactory, fLock: BOOL) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClassFactory {
+    pub lpVtbl: *mut IClassFactoryVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_RemoteCreateInstance_Proxy(
+        This: *mut IClassFactory,
+        riid: *const IID,
+        ppvObject: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_RemoteCreateInstance_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_RemoteLockServer_Proxy(This: *mut IClassFactory, fLock: BOOL) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_RemoteLockServer_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_CreateInstance_Proxy(
+        This: *mut IClassFactory,
+        pUnkOuter: *mut IUnknown,
+        riid: *const IID,
+        ppvObject: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_CreateInstance_Stub(
+        This: *mut IClassFactory,
+        riid: *const IID,
+        ppvObject: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_LockServer_Proxy(This: *mut IClassFactory, fLock: BOOL) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IClassFactory_LockServer_Stub(This: *mut IClassFactory, fLock: BOOL) -> HRESULT;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumContextProps {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IContext {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IObjContext {
+    _unused: [u8; 0],
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _COSERVERINFO {
@@ -26416,6 +27276,9 @@ pub struct _COSERVERINFO {
 }
 pub type COSERVERINFO = _COSERVERINFO;
 pub type LPMARSHAL = *mut IMarshal;
+unsafe extern "C" {
+    pub static IID_IMarshal: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMarshalVtbl {
@@ -26434,6 +27297,115 @@ pub struct IMarshalVtbl {
 pub struct IMarshal {
     pub lpVtbl: *mut IMarshalVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IAgileObject: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAgileObjectVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAgileObject, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileObject) -> ULONG>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileObject {
+    pub lpVtbl: *mut IAgileObjectVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAgileReference: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAgileReferenceVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAgileReference, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAgileReference) -> ULONG>,
+    pub Resolve: ::core::option::Option< unsafe extern "system" fn( This: *mut IAgileReference, riid: *const IID, object: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAgileReference {
+    pub lpVtbl: *mut IAgileReferenceVtbl,
+}
+unsafe extern "C" {
+    pub static IID_INoMarshal: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct INoMarshalVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INoMarshal, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INoMarshal) -> ULONG>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct INoMarshal {
+    pub lpVtbl: *mut INoMarshalVtbl,
+}
+pub type LPMARSHAL2 = *mut IMarshal2;
+unsafe extern "C" {
+    pub static IID_IMarshal2: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IMarshal2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMarshal2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMarshal2) -> ULONG>,
+    pub GetUnmarshalClass: ::core::option::Option< unsafe extern "system" fn( This: *mut IMarshal2, riid: *const IID, pv: *mut ::core::ffi::c_void, dwDestContext: DWORD, pvDestContext: *mut ::core::ffi::c_void, mshlflags: DWORD, pCid: *mut CLSID, ) -> HRESULT, >,
+    pub GetMarshalSizeMax: ::core::option::Option< unsafe extern "system" fn( This: *mut IMarshal2, riid: *const IID, pv: *mut ::core::ffi::c_void, dwDestContext: DWORD, pvDestContext: *mut ::core::ffi::c_void, mshlflags: DWORD, pSize: *mut DWORD, ) -> HRESULT, >,
+    pub MarshalInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMarshal2, pStm: *mut IStream, riid: *const IID, pv: *mut ::core::ffi::c_void, dwDestContext: DWORD, pvDestContext: *mut ::core::ffi::c_void, mshlflags: DWORD, ) -> HRESULT, >,
+    pub UnmarshalInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMarshal2, pStm: *mut IStream, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub ReleaseMarshalData: ::core::option::Option< unsafe extern "system" fn(This: *mut IMarshal2, pStm: *mut IStream) -> HRESULT, >,
+    pub DisconnectObject: ::core::option::Option< unsafe extern "system" fn(This: *mut IMarshal2, dwReserved: DWORD) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMarshal2 {
+    pub lpVtbl: *mut IMarshal2Vtbl,
+}
+pub type LPSTDMARSHALINFO = *mut IStdMarshalInfo;
+unsafe extern "C" {
+    pub static IID_IStdMarshalInfo: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IStdMarshalInfoVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IStdMarshalInfo, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IStdMarshalInfo) -> ULONG>,
+    pub GetClassForHandler: ::core::option::Option< unsafe extern "system" fn( This: *mut IStdMarshalInfo, dwDestContext: DWORD, pvDestContext: *mut ::core::ffi::c_void, pClsid: *mut CLSID, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IStdMarshalInfo {
+    pub lpVtbl: *mut IStdMarshalInfoVtbl,
+}
+pub type LPEXTERNALCONNECTION = *mut IExternalConnection;
+pub const tagEXTCONN_EXTCONN_STRONG: tagEXTCONN = 1;
+pub const tagEXTCONN_EXTCONN_WEAK: tagEXTCONN = 2;
+pub const tagEXTCONN_EXTCONN_CALLABLE: tagEXTCONN = 4;
+pub type tagEXTCONN = ::core::ffi::c_uint;
+pub use self::tagEXTCONN as EXTCONN;
+unsafe extern "C" {
+    pub static IID_IExternalConnection: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IExternalConnectionVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExternalConnection, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExternalConnection) -> ULONG>,
+    pub AddConnection: ::core::option::Option< unsafe extern "system" fn( This: *mut IExternalConnection, extconn: DWORD, reserved: DWORD, ) -> DWORD, >,
+    pub ReleaseConnection: ::core::option::Option< unsafe extern "system" fn( This: *mut IExternalConnection, extconn: DWORD, reserved: DWORD, fLastReleaseCloses: BOOL, ) -> DWORD, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExternalConnection {
+    pub lpVtbl: *mut IExternalConnectionVtbl,
+}
+pub type LPMULTIQI = *mut IMultiQI;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagMULTI_QI {
@@ -26442,7 +27414,26 @@ pub struct tagMULTI_QI {
     pub hr: HRESULT,
 }
 pub type MULTI_QI = tagMULTI_QI;
+unsafe extern "C" {
+    pub static IID_IMultiQI: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IMultiQIVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMultiQI, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMultiQI) -> ULONG>,
+    pub QueryMultipleInterfaces: ::core::option::Option< unsafe extern "system" fn( This: *mut IMultiQI, cMQIs: ULONG, pMQIs: *mut MULTI_QI, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMultiQI {
+    pub lpVtbl: *mut IMultiQIVtbl,
+}
 pub type LPMALLOC = *mut IMalloc;
+unsafe extern "C" {
+    pub static IID_IMalloc: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMallocVtbl {
@@ -26461,7 +27452,78 @@ pub struct IMallocVtbl {
 pub struct IMalloc {
     pub lpVtbl: *mut IMallocVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IInternalUnknown: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IInternalUnknownVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IInternalUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInternalUnknown) -> ULONG>,
+    pub QueryInternalInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IInternalUnknown, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IInternalUnknown {
+    pub lpVtbl: *mut IInternalUnknownVtbl,
+}
+pub type LPENUMUNKNOWN = *mut IEnumUnknown;
+unsafe extern "C" {
+    pub static IID_IEnumUnknown: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IEnumUnknownVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> ULONG>,
+    pub Next: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumUnknown, celt: ULONG, rgelt: *mut *mut IUnknown, pceltFetched: *mut ULONG, ) -> HRESULT, >,
+    pub Skip: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumUnknown, celt: ULONG) -> HRESULT, >,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumUnknown) -> HRESULT>,
+    pub Clone: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumUnknown, ppenum: *mut *mut IEnumUnknown, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumUnknown {
+    pub lpVtbl: *mut IEnumUnknownVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IEnumUnknown_RemoteNext_Proxy(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumUnknown_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumUnknown_Next_Proxy(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumUnknown_Next_Stub(
+        This: *mut IEnumUnknown,
+        celt: ULONG,
+        rgelt: *mut *mut IUnknown,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSURROGATE = *mut ISurrogate;
+unsafe extern "C" {
+    pub static IID_ISurrogate: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ISurrogateVtbl {
@@ -26475,6 +27537,29 @@ pub struct ISurrogateVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct ISurrogate {
     pub lpVtbl: *mut ISurrogateVtbl,
+}
+pub type LPGLOBALINTERFACETABLE = *mut IGlobalInterfaceTable;
+unsafe extern "C" {
+    pub static IID_IGlobalInterfaceTable: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IGlobalInterfaceTableVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalInterfaceTable, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IGlobalInterfaceTable) -> ULONG, >,
+    pub RegisterInterfaceInGlobal: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalInterfaceTable, pUnk: *mut IUnknown, riid: *const IID, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub RevokeInterfaceFromGlobal: ::core::option::Option< unsafe extern "system" fn(This: *mut IGlobalInterfaceTable, dwCookie: DWORD) -> HRESULT, >,
+    pub GetInterfaceFromGlobal: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalInterfaceTable, dwCookie: DWORD, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalInterfaceTable {
+    pub lpVtbl: *mut IGlobalInterfaceTableVtbl,
+}
+pub type LPENUMSTRING = *mut IEnumString;
+unsafe extern "C" {
+    pub static IID_IEnumString: GUID;
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -26492,8 +27577,208 @@ pub struct IEnumStringVtbl {
 pub struct IEnumString {
     pub lpVtbl: *mut IEnumStringVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IEnumString_RemoteNext_Proxy(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumString_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumString_Next_Proxy(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumString_Next_Stub(
+        This: *mut IEnumString,
+        celt: ULONG,
+        rgelt: *mut LPOLESTR,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_ISequentialStream: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISequentialStreamVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISequentialStream, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISequentialStream) -> ULONG>,
+    pub Read: ::core::option::Option< unsafe extern "system" fn( This: *mut ISequentialStream, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG, ) -> HRESULT, >,
+    pub Write: ::core::option::Option< unsafe extern "system" fn( This: *mut ISequentialStream, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISequentialStream {
+    pub lpVtbl: *mut ISequentialStreamVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_RemoteRead_Proxy(
+        This: *mut ISequentialStream,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_RemoteRead_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_RemoteWrite_Proxy(
+        This: *mut ISequentialStream,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_RemoteWrite_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_Read_Proxy(
+        This: *mut ISequentialStream,
+        pv: *mut ::core::ffi::c_void,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_Read_Stub(
+        This: *mut ISequentialStream,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_Write_Proxy(
+        This: *mut ISequentialStream,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ISequentialStream_Write_Stub(
+        This: *mut ISequentialStream,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSTREAM = *mut IStream;
 pub type STATSTG = tagSTATSTG;
+pub const tagSTGTY_STGTY_STORAGE: tagSTGTY = 1;
+pub const tagSTGTY_STGTY_STREAM: tagSTGTY = 2;
+pub const tagSTGTY_STGTY_LOCKBYTES: tagSTGTY = 3;
+pub const tagSTGTY_STGTY_PROPERTY: tagSTGTY = 4;
+pub type tagSTGTY = ::core::ffi::c_uint;
+pub use self::tagSTGTY as STGTY;
+pub const tagSTREAM_SEEK_STREAM_SEEK_SET: tagSTREAM_SEEK = 0;
+pub const tagSTREAM_SEEK_STREAM_SEEK_CUR: tagSTREAM_SEEK = 1;
+pub const tagSTREAM_SEEK_STREAM_SEEK_END: tagSTREAM_SEEK = 2;
+pub type tagSTREAM_SEEK = ::core::ffi::c_uint;
+pub use self::tagSTREAM_SEEK as STREAM_SEEK;
+pub const tagLOCKTYPE_LOCK_WRITE: tagLOCKTYPE = 1;
+pub const tagLOCKTYPE_LOCK_EXCLUSIVE: tagLOCKTYPE = 2;
+pub const tagLOCKTYPE_LOCK_ONLYONCE: tagLOCKTYPE = 4;
+pub type tagLOCKTYPE = ::core::ffi::c_uint;
+pub use self::tagLOCKTYPE as LOCKTYPE;
+unsafe extern "C" {
+    pub static IID_IStream: GUID;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_RemoteSeek_Proxy(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_RemoteSeek_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IStream_RemoteCopyTo_Proxy(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_RemoteCopyTo_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IStream_Seek_Proxy(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_Seek_Stub(
+        This: *mut IStream,
+        dlibMove: LARGE_INTEGER,
+        dwOrigin: DWORD,
+        plibNewPosition: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_CopyTo_Proxy(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStream_CopyTo_Stub(
+        This: *mut IStream,
+        pstm: *mut IStream,
+        cb: ULARGE_INTEGER,
+        pcbRead: *mut ULARGE_INTEGER,
+        pcbWritten: *mut ULARGE_INTEGER,
+    ) -> HRESULT;
+}
+pub type LPRPCCHANNELBUFFER = *mut IRpcChannelBuffer;
 pub type RPCOLEDATAREP = ULONG;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -26507,6 +27792,10 @@ pub struct tagRPCOLEMESSAGE {
     pub rpcFlags: ULONG,
 }
 pub type RPCOLEMESSAGE = tagRPCOLEMESSAGE;
+pub type PRPCOLEMESSAGE = *mut RPCOLEMESSAGE;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IRpcChannelBufferVtbl {
@@ -26523,6 +27812,119 @@ pub struct IRpcChannelBufferVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IRpcChannelBuffer {
     pub lpVtbl: *mut IRpcChannelBufferVtbl,
+}
+pub type LPRPCCHANNELBUFFER2 = *mut IRpcChannelBuffer2;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer2: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcChannelBuffer2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> ULONG>,
+    pub GetBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, pMessage: *mut RPCOLEMESSAGE, riid: *const IID, ) -> HRESULT, >,
+    pub SendReceive: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG, ) -> HRESULT, >,
+    pub FreeBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, pMessage: *mut RPCOLEMESSAGE, ) -> HRESULT, >,
+    pub GetDestCtx: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub IsConnected: ::core::option::Option< unsafe extern "system" fn(This: *mut IRpcChannelBuffer2) -> HRESULT, >,
+    pub GetProtocolVersion: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer2, pdwVersion: *mut DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer2 {
+    pub lpVtbl: *mut IRpcChannelBuffer2Vtbl,
+}
+pub type LPRPCCHANNELBUFFER3 = *mut IRpcChannelBuffer3;
+unsafe extern "C" {
+    pub static IID_IRpcChannelBuffer3: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcChannelBuffer3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> ULONG>,
+    pub GetBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMessage: *mut RPCOLEMESSAGE, riid: *const IID, ) -> HRESULT, >,
+    pub SendReceive: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG, ) -> HRESULT, >,
+    pub FreeBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMessage: *mut RPCOLEMESSAGE, ) -> HRESULT, >,
+    pub GetDestCtx: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub IsConnected: ::core::option::Option< unsafe extern "system" fn(This: *mut IRpcChannelBuffer3) -> HRESULT, >,
+    pub GetProtocolVersion: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pdwVersion: *mut DWORD, ) -> HRESULT, >,
+    pub Send: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, pulStatus: *mut ULONG, ) -> HRESULT, >,
+    pub Receive: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, ulSize: ULONG, pulStatus: *mut ULONG, ) -> HRESULT, >,
+    pub Cancel: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, ) -> HRESULT, >,
+    pub GetCallContext: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, riid: *const IID, pInterface: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetDestCtxEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, pState: *mut DWORD, ) -> HRESULT, >,
+    pub RegisterAsync: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcChannelBuffer3, pMsg: *mut RPCOLEMESSAGE, pAsyncMgr: *mut IAsyncManager, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcChannelBuffer3 {
+    pub lpVtbl: *mut IRpcChannelBuffer3Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAsyncRpcChannelBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAsyncRpcChannelBufferVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> ULONG, >,
+    pub GetBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMessage: *mut RPCOLEMESSAGE, riid: *const IID, ) -> HRESULT, >,
+    pub SendReceive: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG, ) -> HRESULT, >,
+    pub FreeBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMessage: *mut RPCOLEMESSAGE, ) -> HRESULT, >,
+    pub GetDestCtx: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub IsConnected: ::core::option::Option< unsafe extern "system" fn(This: *mut IAsyncRpcChannelBuffer) -> HRESULT, >,
+    pub GetProtocolVersion: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pdwVersion: *mut DWORD, ) -> HRESULT, >,
+    pub Send: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMsg: *mut RPCOLEMESSAGE, pSync: *mut ISynchronize, pulStatus: *mut ULONG, ) -> HRESULT, >,
+    pub Receive: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMsg: *mut RPCOLEMESSAGE, pulStatus: *mut ULONG, ) -> HRESULT, >,
+    pub GetDestCtxEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncRpcChannelBuffer, pMsg: *mut RPCOLEMESSAGE, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncRpcChannelBuffer {
+    pub lpVtbl: *mut IAsyncRpcChannelBufferVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRpcSyntaxNegotiate: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcSyntaxNegotiateVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcSyntaxNegotiate, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcSyntaxNegotiate) -> ULONG>,
+    pub NegotiateSyntax: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcSyntaxNegotiate, pMsg: *mut RPCOLEMESSAGE, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcSyntaxNegotiate {
+    pub lpVtbl: *mut IRpcSyntaxNegotiateVtbl,
+}
+pub type LPRPCPROXYBUFFER = *mut IRpcProxyBuffer;
+unsafe extern "C" {
+    pub static IID_IRpcProxyBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcProxyBufferVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcProxyBuffer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer) -> ULONG>,
+    pub Connect: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcProxyBuffer, pRpcChannelBuffer: *mut IRpcChannelBuffer, ) -> HRESULT, >,
+    pub Disconnect: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcProxyBuffer)>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcProxyBuffer {
+    pub lpVtbl: *mut IRpcProxyBufferVtbl,
+}
+pub type LPRPCSTUBBUFFER = *mut IRpcStubBuffer;
+unsafe extern "C" {
+    pub static IID_IRpcStubBuffer: GUID;
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -26543,6 +27945,38 @@ pub struct IRpcStubBufferVtbl {
 pub struct IRpcStubBuffer {
     pub lpVtbl: *mut IRpcStubBufferVtbl,
 }
+pub type LPPSFACTORYBUFFER = *mut IPSFactoryBuffer;
+unsafe extern "C" {
+    pub static IID_IPSFactoryBuffer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPSFactoryBufferVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPSFactoryBuffer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPSFactoryBuffer) -> ULONG>,
+    pub CreateProxy: ::core::option::Option< unsafe extern "system" fn( This: *mut IPSFactoryBuffer, pUnkOuter: *mut IUnknown, riid: *const IID, ppProxy: *mut *mut IRpcProxyBuffer, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub CreateStub: ::core::option::Option< unsafe extern "system" fn( This: *mut IPSFactoryBuffer, riid: *const IID, pUnkServer: *mut IUnknown, ppStub: *mut *mut IRpcStubBuffer, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPSFactoryBuffer {
+    pub lpVtbl: *mut IPSFactoryBufferVtbl,
+}
+pub type LPCHANNELHOOK = *mut IChannelHook;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct SChannelHookCallInfo {
+    pub iid: IID,
+    pub cbSize: DWORD,
+    pub uCausality: GUID,
+    pub dwServerPid: DWORD,
+    pub iMethod: DWORD,
+    pub pObject: *mut ::core::ffi::c_void,
+}
+unsafe extern "C" {
+    pub static IID_IChannelHook: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IChannelHookVtbl {
@@ -26561,6 +27995,15 @@ pub struct IChannelHookVtbl {
 pub struct IChannelHook {
     pub lpVtbl: *mut IChannelHookVtbl,
 }
+unsafe extern "C" {
+    pub static FMTID_SummaryInformation: FMTID;
+}
+unsafe extern "C" {
+    pub static FMTID_DocSummaryInformation: FMTID;
+}
+unsafe extern "C" {
+    pub static FMTID_UserDefinedProperties: FMTID;
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSOLE_AUTHENTICATION_SERVICE {
@@ -26570,6 +28013,359 @@ pub struct tagSOLE_AUTHENTICATION_SERVICE {
     pub hr: HRESULT,
 }
 pub type SOLE_AUTHENTICATION_SERVICE = tagSOLE_AUTHENTICATION_SERVICE;
+pub type PSOLE_AUTHENTICATION_SERVICE = *mut SOLE_AUTHENTICATION_SERVICE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSOLE_AUTHENTICATION_INFO {
+    pub dwAuthnSvc: DWORD,
+    pub dwAuthzSvc: DWORD,
+    pub pAuthInfo: *mut ::core::ffi::c_void,
+}
+pub type SOLE_AUTHENTICATION_INFO = tagSOLE_AUTHENTICATION_INFO;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSOLE_AUTHENTICATION_LIST {
+    pub cAuthInfo: DWORD,
+    pub aAuthInfo: *mut SOLE_AUTHENTICATION_INFO,
+}
+pub type SOLE_AUTHENTICATION_LIST = tagSOLE_AUTHENTICATION_LIST;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_NONE: tagEOLE_AUTHENTICATION_CAPABILITIES = 0;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_MUTUAL_AUTH:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 1;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_SECURE_REFS:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 2;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_ACCESS_CONTROL:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 4;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_APPID: tagEOLE_AUTHENTICATION_CAPABILITIES = 8;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DYNAMIC: tagEOLE_AUTHENTICATION_CAPABILITIES =
+    16;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_STATIC_CLOAKING:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 32;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DYNAMIC_CLOAKING:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 64;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_ANY_AUTHORITY:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 128;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_MAKE_FULLSIC:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 256;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_REQUIRE_FULLSIC:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 512;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_AUTO_IMPERSONATE:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 1024;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DEFAULT: tagEOLE_AUTHENTICATION_CAPABILITIES =
+    2048;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_DISABLE_AAA:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 4096;
+pub const tagEOLE_AUTHENTICATION_CAPABILITIES_EOAC_NO_CUSTOM_MARSHAL:
+    tagEOLE_AUTHENTICATION_CAPABILITIES = 8192;
+pub type tagEOLE_AUTHENTICATION_CAPABILITIES = ::core::ffi::c_uint;
+pub use self::tagEOLE_AUTHENTICATION_CAPABILITIES as EOLE_AUTHENTICATION_CAPABILITIES;
+unsafe extern "C" {
+    pub static IID_IClientSecurity: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IClientSecurityVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IClientSecurity, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClientSecurity) -> ULONG>,
+    pub QueryBlanket: ::core::option::Option< unsafe extern "system" fn( This: *mut IClientSecurity, pProxy: *mut IUnknown, pAuthnSvc: *mut DWORD, pAuthzSvc: *mut DWORD, pServerPrincName: *mut *mut OLECHAR, pAuthnLevel: *mut DWORD, pImpLevel: *mut DWORD, pAuthInfo: *mut *mut ::core::ffi::c_void, pCapabilities: *mut DWORD, ) -> HRESULT, >,
+    pub SetBlanket: ::core::option::Option< unsafe extern "system" fn( This: *mut IClientSecurity, pProxy: *mut IUnknown, AuthnSvc: DWORD, AuthzSvc: DWORD, pServerPrincName: *mut OLECHAR, AuthnLevel: DWORD, ImpLevel: DWORD, pAuthInfo: *mut ::core::ffi::c_void, Capabilities: DWORD, ) -> HRESULT, >,
+    pub CopyProxy: ::core::option::Option< unsafe extern "system" fn( This: *mut IClientSecurity, pProxy: *mut IUnknown, ppCopy: *mut *mut IUnknown, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClientSecurity {
+    pub lpVtbl: *mut IClientSecurityVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IServerSecurity: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IServerSecurityVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IServerSecurity, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> ULONG>,
+    pub QueryBlanket: ::core::option::Option< unsafe extern "system" fn( This: *mut IServerSecurity, pAuthnSvc: *mut DWORD, pAuthzSvc: *mut DWORD, pServerPrincName: *mut *mut OLECHAR, pAuthnLevel: *mut DWORD, pImpLevel: *mut DWORD, pPrivs: *mut *mut ::core::ffi::c_void, pCapabilities: *mut DWORD, ) -> HRESULT, >,
+    pub ImpersonateClient: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
+    pub RevertToSelf: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> HRESULT>,
+    pub IsImpersonating: ::core::option::Option<unsafe extern "system" fn(This: *mut IServerSecurity) -> BOOL>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IServerSecurity {
+    pub lpVtbl: *mut IServerSecurityVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAsyncSetup: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAsyncSetupVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncSetup, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncSetup) -> ULONG>,
+    pub GetAsyncManager: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncSetup, riid: *const IID, pOuter: *mut IUnknown, dwFlags: DWORD, ppInner: *mut *mut IUnknown, ppAsyncMgr: *mut *mut IAsyncManager, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncSetup {
+    pub lpVtbl: *mut IAsyncSetupVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronize: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISynchronizeVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronize, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> ULONG>,
+    pub Wait: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronize, dwFlags: DWORD, dwMilliseconds: DWORD, ) -> HRESULT, >,
+    pub Signal: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronize) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronize {
+    pub lpVtbl: *mut ISynchronizeVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeHandle: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISynchronizeHandleVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeHandle, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeHandle) -> ULONG>,
+    pub GetHandle: ::core::option::Option< unsafe extern "system" fn(This: *mut ISynchronizeHandle, ph: *mut HANDLE) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeHandle {
+    pub lpVtbl: *mut ISynchronizeHandleVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeEvent: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISynchronizeEventVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeEvent, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeEvent) -> ULONG>,
+    pub GetHandle: ::core::option::Option< unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT, >,
+    pub SetEventHandle: ::core::option::Option< unsafe extern "system" fn(This: *mut ISynchronizeEvent, ph: *mut HANDLE) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeEvent {
+    pub lpVtbl: *mut ISynchronizeEventVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeContainer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISynchronizeContainerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeContainer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut ISynchronizeContainer) -> ULONG, >,
+    pub AddSynchronize: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeContainer, pSync: *mut ISynchronize, ) -> HRESULT, >,
+    pub WaitMultiple: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeContainer, dwFlags: DWORD, dwTimeOut: DWORD, ppSync: *mut *mut ISynchronize, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeContainer {
+    pub lpVtbl: *mut ISynchronizeContainerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISynchronizeMutex: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ISynchronizeMutexVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeMutex, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> ULONG>,
+    pub Wait: ::core::option::Option< unsafe extern "system" fn( This: *mut ISynchronizeMutex, dwFlags: DWORD, dwMilliseconds: DWORD, ) -> HRESULT, >,
+    pub Signal: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+    pub ReleaseMutex: ::core::option::Option<unsafe extern "system" fn(This: *mut ISynchronizeMutex) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISynchronizeMutex {
+    pub lpVtbl: *mut ISynchronizeMutexVtbl,
+}
+pub type LPCANCELMETHODCALLS = *mut ICancelMethodCalls;
+unsafe extern "C" {
+    pub static IID_ICancelMethodCalls: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ICancelMethodCallsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICancelMethodCalls, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> ULONG>,
+    pub Cancel: ::core::option::Option< unsafe extern "system" fn(This: *mut ICancelMethodCalls, ulSeconds: ULONG) -> HRESULT, >,
+    pub TestCancel: ::core::option::Option< unsafe extern "system" fn(This: *mut ICancelMethodCalls) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICancelMethodCalls {
+    pub lpVtbl: *mut ICancelMethodCallsVtbl,
+}
+pub const tagDCOM_CALL_STATE_DCOM_NONE: tagDCOM_CALL_STATE = 0;
+pub const tagDCOM_CALL_STATE_DCOM_CALL_COMPLETE: tagDCOM_CALL_STATE = 1;
+pub const tagDCOM_CALL_STATE_DCOM_CALL_CANCELED: tagDCOM_CALL_STATE = 2;
+pub type tagDCOM_CALL_STATE = ::core::ffi::c_uint;
+pub use self::tagDCOM_CALL_STATE as DCOM_CALL_STATE;
+unsafe extern "C" {
+    pub static IID_IAsyncManager: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAsyncManagerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncManager, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAsyncManager) -> ULONG>,
+    pub CompleteCall: ::core::option::Option< unsafe extern "system" fn(This: *mut IAsyncManager, Result: HRESULT) -> HRESULT, >,
+    pub GetCallContext: ::core::option::Option< unsafe extern "system" fn( This: *mut IAsyncManager, riid: *const IID, pInterface: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn(This: *mut IAsyncManager, pulStateFlags: *mut ULONG) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAsyncManager {
+    pub lpVtbl: *mut IAsyncManagerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ICallFactory: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ICallFactoryVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICallFactory, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICallFactory) -> ULONG>,
+    pub CreateCall: ::core::option::Option< unsafe extern "system" fn( This: *mut ICallFactory, riid: *const IID, pCtrlUnk: *mut IUnknown, riid2: *const IID, ppv: *mut *mut IUnknown, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICallFactory {
+    pub lpVtbl: *mut ICallFactoryVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRpcOptions: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcOptionsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcOptions, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcOptions) -> ULONG>,
+    pub Set: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcOptions, pPrx: *mut IUnknown, dwProperty: DWORD, dwValue: ULONG_PTR, ) -> HRESULT, >,
+    pub Query: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcOptions, pPrx: *mut IUnknown, dwProperty: DWORD, pdwValue: *mut ULONG_PTR, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcOptions {
+    pub lpVtbl: *mut IRpcOptionsVtbl,
+}
+pub const COMBND_RPCTIMEOUT: _bindgen_ty_5 = 1;
+pub const COMBND_SERVER_LOCALITY: _bindgen_ty_5 = 2;
+pub type _bindgen_ty_5 = ::core::ffi::c_uint;
+pub const SERVER_LOCALITY_PROCESS_LOCAL: _bindgen_ty_6 = 0;
+pub const SERVER_LOCALITY_MACHINE_LOCAL: _bindgen_ty_6 = 1;
+pub const SERVER_LOCALITY_REMOTE: _bindgen_ty_6 = 2;
+pub type _bindgen_ty_6 = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IRpcHelper: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRpcHelperVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcHelper, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRpcHelper) -> ULONG>,
+    pub GetDCOMProtocolVersion: ::core::option::Option< unsafe extern "system" fn(This: *mut IRpcHelper, pComVersion: *mut DWORD) -> HRESULT, >,
+    pub GetIIDFromOBJREF: ::core::option::Option< unsafe extern "system" fn( This: *mut IRpcHelper, pObjRef: *mut ::core::ffi::c_void, piid: *mut *mut IID, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRpcHelper {
+    pub lpVtbl: *mut IRpcHelperVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IReleaseMarshalBuffers: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IReleaseMarshalBuffersVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IReleaseMarshalBuffers, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IReleaseMarshalBuffers) -> ULONG, >,
+    pub ReleaseMarshalBuffer: ::core::option::Option< unsafe extern "system" fn( This: *mut IReleaseMarshalBuffers, pMsg: *mut RPCOLEMESSAGE, dwFlags: DWORD, pChnl: *mut IUnknown, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IReleaseMarshalBuffers {
+    pub lpVtbl: *mut IReleaseMarshalBuffersVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IWaitMultiple: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IWaitMultipleVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IWaitMultiple, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IWaitMultiple) -> ULONG>,
+    pub WaitMultiple: ::core::option::Option< unsafe extern "system" fn( This: *mut IWaitMultiple, timeout: DWORD, pSync: *mut *mut ISynchronize, ) -> HRESULT, >,
+    pub AddSynchronize: ::core::option::Option< unsafe extern "system" fn(This: *mut IWaitMultiple, pSync: *mut ISynchronize) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IWaitMultiple {
+    pub lpVtbl: *mut IWaitMultipleVtbl,
+}
+pub type LPADDRTRACKINGCONTROL = *mut IAddrTrackingControl;
+unsafe extern "C" {
+    pub static IID_IAddrTrackingControl: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAddrTrackingControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAddrTrackingControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> ULONG, >,
+    pub EnableCOMDynamicAddrTracking: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT, >,
+    pub DisableCOMDynamicAddrTracking: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrTrackingControl) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrTrackingControl {
+    pub lpVtbl: *mut IAddrTrackingControlVtbl,
+}
+pub type LPADDREXCLUSIONCONTROL = *mut IAddrExclusionControl;
+unsafe extern "C" {
+    pub static IID_IAddrExclusionControl: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAddrExclusionControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAddrExclusionControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IAddrExclusionControl) -> ULONG, >,
+    pub GetCurrentAddrExclusionList: ::core::option::Option< unsafe extern "system" fn( This: *mut IAddrExclusionControl, riid: *const IID, ppEnumerator: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub UpdateAddrExclusionList: ::core::option::Option< unsafe extern "system" fn( This: *mut IAddrExclusionControl, pEnumerator: *mut IUnknown, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAddrExclusionControl {
+    pub lpVtbl: *mut IAddrExclusionControlVtbl,
+}
 pub const _APTTYPE_APTTYPE_CURRENT: _APTTYPE = -1;
 pub const _APTTYPE_APTTYPE_STA: _APTTYPE = 0;
 pub const _APTTYPE_APTTYPE_MTA: _APTTYPE = 1;
@@ -26585,7 +28381,113 @@ pub const _APTTYPEQUALIFIER_APTTYPEQUALIFIER_NA_ON_IMPLICIT_MTA: _APTTYPEQUALIFI
 pub const _APTTYPEQUALIFIER_APTTYPEQUALIFIER_NA_ON_MAINSTA: _APTTYPEQUALIFIER = 5;
 pub type _APTTYPEQUALIFIER = ::core::ffi::c_uint;
 pub use self::_APTTYPEQUALIFIER as APTTYPEQUALIFIER;
+pub const _THDTYPE_THDTYPE_BLOCKMESSAGES: _THDTYPE = 0;
+pub const _THDTYPE_THDTYPE_PROCESSMESSAGES: _THDTYPE = 1;
+pub type _THDTYPE = ::core::ffi::c_uint;
+pub use self::_THDTYPE as THDTYPE;
+unsafe extern "C" {
+    pub static IID_IComThreadingInfo: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IComThreadingInfoVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IComThreadingInfo, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IComThreadingInfo) -> ULONG>,
+    pub GetCurrentApartmentType: ::core::option::Option< unsafe extern "system" fn(This: *mut IComThreadingInfo, pAptType: *mut APTTYPE) -> HRESULT, >,
+    pub GetCurrentThreadType: ::core::option::Option< unsafe extern "system" fn( This: *mut IComThreadingInfo, pThreadType: *mut THDTYPE, ) -> HRESULT, >,
+    pub GetCurrentLogicalThreadId: ::core::option::Option< unsafe extern "system" fn( This: *mut IComThreadingInfo, pguidLogicalThreadId: *mut GUID, ) -> HRESULT, >,
+    pub SetCurrentLogicalThreadId: ::core::option::Option< unsafe extern "system" fn(This: *mut IComThreadingInfo, rguid: *const GUID) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IComThreadingInfo {
+    pub lpVtbl: *mut IComThreadingInfoVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IProcessInitControl: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IProcessInitControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IProcessInitControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProcessInitControl) -> ULONG>,
+    pub ResetInitializerTimeout: ::core::option::Option< unsafe extern "system" fn( This: *mut IProcessInitControl, dwSecondsRemaining: DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProcessInitControl {
+    pub lpVtbl: *mut IProcessInitControlVtbl,
+}
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_EXCEPTION_HANDLING: tagGLOBALOPT_PROPERTIES = 1;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_APPID: tagGLOBALOPT_PROPERTIES = 2;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_RPC_THREADPOOL_SETTING: tagGLOBALOPT_PROPERTIES = 3;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_RO_SETTINGS: tagGLOBALOPT_PROPERTIES = 4;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_UNMARSHALING_POLICY: tagGLOBALOPT_PROPERTIES = 5;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED1: tagGLOBALOPT_PROPERTIES = 6;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED2: tagGLOBALOPT_PROPERTIES = 7;
+pub const tagGLOBALOPT_PROPERTIES_COMGLB_PROPERTIES_RESERVED3: tagGLOBALOPT_PROPERTIES = 8;
+pub type tagGLOBALOPT_PROPERTIES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_PROPERTIES as GLOBALOPT_PROPERTIES;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_HANDLE: tagGLOBALOPT_EH_VALUES = 0;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE_FATAL: tagGLOBALOPT_EH_VALUES = 1;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE: tagGLOBALOPT_EH_VALUES = 1;
+pub const tagGLOBALOPT_EH_VALUES_COMGLB_EXCEPTION_DONOT_HANDLE_ANY: tagGLOBALOPT_EH_VALUES = 2;
+pub type tagGLOBALOPT_EH_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_EH_VALUES as GLOBALOPT_EH_VALUES;
+pub const tagGLOBALOPT_RPCTP_VALUES_COMGLB_RPC_THREADPOOL_SETTING_DEFAULT_POOL:
+    tagGLOBALOPT_RPCTP_VALUES = 0;
+pub const tagGLOBALOPT_RPCTP_VALUES_COMGLB_RPC_THREADPOOL_SETTING_PRIVATE_POOL:
+    tagGLOBALOPT_RPCTP_VALUES = 1;
+pub type tagGLOBALOPT_RPCTP_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_RPCTP_VALUES as GLOBALOPT_RPCTP_VALUES;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_REMOVE_TOUCH_MESSAGES: tagGLOBALOPT_RO_FLAGS =
+    1;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_REMOVE_INPUT_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 2;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_DONOT_REMOVE_INPUT_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 4;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_FAST_RUNDOWN: tagGLOBALOPT_RO_FLAGS = 8;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED1: tagGLOBALOPT_RO_FLAGS = 16;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED2: tagGLOBALOPT_RO_FLAGS = 32;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED3: tagGLOBALOPT_RO_FLAGS = 64;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_STA_MODALLOOP_SHARED_QUEUE_REORDER_POINTER_MESSAGES:
+    tagGLOBALOPT_RO_FLAGS = 128;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED4: tagGLOBALOPT_RO_FLAGS = 256;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED5: tagGLOBALOPT_RO_FLAGS = 512;
+pub const tagGLOBALOPT_RO_FLAGS_COMGLB_RESERVED6: tagGLOBALOPT_RO_FLAGS = 1024;
+pub type tagGLOBALOPT_RO_FLAGS = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_RO_FLAGS as GLOBALOPT_RO_FLAGS;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_NORMAL:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 0;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_STRONG:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 1;
+pub const tagGLOBALOPT_UNMARSHALING_POLICY_VALUES_COMGLB_UNMARSHALING_POLICY_HYBRID:
+    tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = 2;
+pub type tagGLOBALOPT_UNMARSHALING_POLICY_VALUES = ::core::ffi::c_uint;
+pub use self::tagGLOBALOPT_UNMARSHALING_POLICY_VALUES as GLOBALOPT_UNMARSHALING_POLICY_VALUES;
+unsafe extern "C" {
+    pub static IID_IGlobalOptions: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IGlobalOptionsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalOptions, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IGlobalOptions) -> ULONG>,
+    pub Set: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalOptions, property: GLOBALOPT_PROPERTIES, value: ULONG_PTR, ) -> HRESULT, >,
+    pub Query: ::core::option::Option< unsafe extern "system" fn( This: *mut IGlobalOptions, property: GLOBALOPT_PROPERTIES, value: *mut ULONG_PTR, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IGlobalOptions {
+    pub lpVtbl: *mut IGlobalOptionsVtbl,
+}
 pub type LPMALLOCSPY = *mut IMallocSpy;
+unsafe extern "C" {
+    pub static IID_IMallocSpy: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMallocSpyVtbl {
@@ -26610,6 +28512,7 @@ pub struct IMallocSpyVtbl {
 pub struct IMallocSpy {
     pub lpVtbl: *mut IMallocSpyVtbl,
 }
+pub type LPBINDCTX = *mut IBindCtx;
 pub type LPBC = *mut IBindCtx;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -26620,6 +28523,43 @@ pub struct tagBIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 pub type BIND_OPTS = tagBIND_OPTS;
+pub type LPBIND_OPTS = *mut tagBIND_OPTS;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBIND_OPTS2 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+}
+pub type BIND_OPTS2 = tagBIND_OPTS2;
+pub type LPBIND_OPTS2 = *mut tagBIND_OPTS2;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBIND_OPTS3 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+    pub hwnd: HWND,
+}
+pub type BIND_OPTS3 = tagBIND_OPTS3;
+pub type LPBIND_OPTS3 = *mut tagBIND_OPTS3;
+pub const tagBIND_FLAGS_BIND_MAYBOTHERUSER: tagBIND_FLAGS = 1;
+pub const tagBIND_FLAGS_BIND_JUSTTESTEXISTENCE: tagBIND_FLAGS = 2;
+pub type tagBIND_FLAGS = ::core::ffi::c_uint;
+pub use self::tagBIND_FLAGS as BIND_FLAGS;
+unsafe extern "C" {
+    pub static IID_IBindCtx: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IBindCtxVtbl {
@@ -26642,6 +28582,54 @@ pub struct IBindCtxVtbl {
 pub struct IBindCtx {
     pub lpVtbl: *mut IBindCtxVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IBindCtx_RemoteSetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_RemoteSetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_RemoteGetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_RemoteGetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_SetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_SetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_GetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IBindCtx_GetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+pub type LPENUMMONIKER = *mut IEnumMoniker;
+unsafe extern "C" {
+    pub static IID_IEnumMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumMonikerVtbl {
@@ -26658,7 +28646,80 @@ pub struct IEnumMonikerVtbl {
 pub struct IEnumMoniker {
     pub lpVtbl: *mut IEnumMonikerVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IEnumMoniker_RemoteNext_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumMoniker_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumMoniker_Next_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumMoniker_Next_Stub(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPRUNNABLEOBJECT = *mut IRunnableObject;
+unsafe extern "C" {
+    pub static IID_IRunnableObject: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRunnableObjectVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRunnableObject, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub GetRunningClass: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, lpClsid: LPCLSID) -> HRESULT, >,
+    pub Run: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, pbc: LPBINDCTX) -> HRESULT, >,
+    pub IsRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> BOOL>,
+    pub LockRunning: ::core::option::Option< unsafe extern "system" fn( This: *mut IRunnableObject, fLock: BOOL, fLastUnlockCloses: BOOL, ) -> HRESULT, >,
+    pub SetContainedObject: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, fContained: BOOL) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRunnableObject {
+    pub lpVtbl: *mut IRunnableObjectVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IRunnableObject_RemoteIsRunning_Proxy(This: *mut IRunnableObject) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IRunnableObject_RemoteIsRunning_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IRunnableObject_IsRunning_Proxy(This: *mut IRunnableObject) -> BOOL;
+}
+unsafe extern "stdcall" {
+    pub fn IRunnableObject_IsRunning_Stub(This: *mut IRunnableObject) -> HRESULT;
+}
 pub type LPRUNNINGOBJECTTABLE = *mut IRunningObjectTable;
+unsafe extern "C" {
+    pub static IID_IRunningObjectTable: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IRunningObjectTableVtbl {
@@ -26678,7 +28739,66 @@ pub struct IRunningObjectTableVtbl {
 pub struct IRunningObjectTable {
     pub lpVtbl: *mut IRunningObjectTableVtbl,
 }
+pub type LPPERSIST = *mut IPersist;
+unsafe extern "C" {
+    pub static IID_IPersist: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersist, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersist, pClassID: *mut CLSID) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersist {
+    pub lpVtbl: *mut IPersistVtbl,
+}
+pub type LPPERSISTSTREAM = *mut IPersistStream;
+unsafe extern "C" {
+    pub static IID_IPersistStream: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistStreamVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistStream, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStream, pClassID: *mut CLSID) -> HRESULT, >,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStream) -> HRESULT>,
+    pub Load: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStream, pStm: *mut IStream) -> HRESULT, >,
+    pub Save: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistStream, pStm: *mut IStream, fClearDirty: BOOL, ) -> HRESULT, >,
+    pub GetSizeMax: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistStream, pcbSize: *mut ULARGE_INTEGER, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistStream {
+    pub lpVtbl: *mut IPersistStreamVtbl,
+}
 pub type LPMONIKER = *mut IMoniker;
+pub const tagMKSYS_MKSYS_NONE: tagMKSYS = 0;
+pub const tagMKSYS_MKSYS_GENERICCOMPOSITE: tagMKSYS = 1;
+pub const tagMKSYS_MKSYS_FILEMONIKER: tagMKSYS = 2;
+pub const tagMKSYS_MKSYS_ANTIMONIKER: tagMKSYS = 3;
+pub const tagMKSYS_MKSYS_ITEMMONIKER: tagMKSYS = 4;
+pub const tagMKSYS_MKSYS_POINTERMONIKER: tagMKSYS = 5;
+pub const tagMKSYS_MKSYS_CLASSMONIKER: tagMKSYS = 7;
+pub const tagMKSYS_MKSYS_OBJREFMONIKER: tagMKSYS = 8;
+pub const tagMKSYS_MKSYS_SESSIONMONIKER: tagMKSYS = 9;
+pub const tagMKSYS_MKSYS_LUAMONIKER: tagMKSYS = 10;
+pub type tagMKSYS = ::core::ffi::c_uint;
+pub use self::tagMKSYS as MKSYS;
+pub const tagMKREDUCE_MKRREDUCE_ONE: tagMKREDUCE = 196608;
+pub const tagMKREDUCE_MKRREDUCE_TOUSER: tagMKREDUCE = 131072;
+pub const tagMKREDUCE_MKRREDUCE_THROUGHUSER: tagMKREDUCE = 65536;
+pub const tagMKREDUCE_MKRREDUCE_ALL: tagMKREDUCE = 0;
+pub type tagMKREDUCE = ::core::ffi::c_uint;
+pub use self::tagMKREDUCE as MKRREDUCE;
+unsafe extern "C" {
+    pub static IID_IMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMonikerVtbl {
@@ -26711,6 +28831,112 @@ pub struct IMonikerVtbl {
 pub struct IMoniker {
     pub lpVtbl: *mut IMonikerVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IMoniker_RemoteBindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_RemoteBindToObject_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_RemoteBindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_RemoteBindToStorage_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_BindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_BindToObject_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_BindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IMoniker_BindToStorage_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IROTData: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IROTDataVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IROTData, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub GetComparisonData: ::core::option::Option< unsafe extern "system" fn( This: *mut IROTData, pbData: *mut byte, cbMax: ULONG, pcbData: *mut ULONG, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IROTData {
+    pub lpVtbl: *mut IROTDataVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IClassActivator: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IClassActivatorVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassActivator, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub GetClassObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassActivator, rclsid: *const CLSID, dwClassContext: DWORD, locale: LCID, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClassActivator {
+    pub lpVtbl: *mut IClassActivatorVtbl,
+}
+pub type LPENUMSTATSTG = *mut IEnumSTATSTG;
+unsafe extern "C" {
+    pub static IID_IEnumSTATSTG: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumSTATSTGVtbl {
@@ -26727,7 +28953,52 @@ pub struct IEnumSTATSTGVtbl {
 pub struct IEnumSTATSTG {
     pub lpVtbl: *mut IEnumSTATSTGVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IEnumSTATSTG_RemoteNext_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATSTG_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATSTG_Next_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATSTG_Next_Stub(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPSTORAGE = *mut IStorage;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemSNB {
+    pub ulCntStr: ULONG,
+    pub ulCntChar: ULONG,
+    pub rgString: [OLECHAR; 1usize],
+}
+pub type RemSNB = tagRemSNB;
+pub type wireSNB = *mut RemSNB;
 pub type SNB = *mut *mut OLECHAR;
+unsafe extern "C" {
+    pub static IID_IStorage: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IStorageVtbl {
@@ -26755,6 +29026,149 @@ pub struct IStorageVtbl {
 pub struct IStorage {
     pub lpVtbl: *mut IStorageVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IStorage_RemoteOpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_RemoteOpenStream_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_RemoteEnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_RemoteEnumElements_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_OpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        reserved1: *mut ::core::ffi::c_void,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_OpenStream_Stub(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_EnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        reserved2: *mut ::core::ffi::c_void,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IStorage_EnumElements_Stub(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+pub type LPPERSISTFILE = *mut IPersistFile;
+unsafe extern "C" {
+    pub static IID_IPersistFile: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistFileVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, pClassID: *mut CLSID) -> HRESULT, >,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> HRESULT>,
+    pub Load: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, pszFileName: LPCOLESTR, dwMode: DWORD, ) -> HRESULT, >,
+    pub Save: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, pszFileName: LPCOLESTR, fRemember: BOOL, ) -> HRESULT, >,
+    pub SaveCompleted: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, pszFileName: LPCOLESTR) -> HRESULT, >,
+    pub GetCurFile: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, ppszFileName: *mut LPOLESTR) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFile {
+    pub lpVtbl: *mut IPersistFileVtbl,
+}
+pub type LPPERSISTSTORAGE = *mut IPersistStorage;
+unsafe extern "C" {
+    pub static IID_IPersistStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStorage, pClassID: *mut CLSID) -> HRESULT, >,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> HRESULT>,
+    pub InitNew: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT, >,
+    pub Load: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStorage, pStg: *mut IStorage) -> HRESULT, >,
+    pub Save: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistStorage, pStgSave: *mut IStorage, fSameAsLoad: BOOL, ) -> HRESULT, >,
+    pub SaveCompleted: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistStorage, pStgNew: *mut IStorage) -> HRESULT, >,
+    pub HandsOffStorage: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistStorage) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistStorage {
+    pub lpVtbl: *mut IPersistStorageVtbl,
+}
+pub type LPROOTSTORAGE = *mut IRootStorage;
+unsafe extern "C" {
+    pub static IID_IRootStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRootStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRootStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub SwitchToFile: ::core::option::Option< unsafe extern "system" fn(This: *mut IRootStorage, pszFile: LPOLESTR) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRootStorage {
+    pub lpVtbl: *mut IRootStorageVtbl,
+}
+pub type LPLOCKBYTES = *mut ILockBytes;
+unsafe extern "C" {
+    pub static IID_ILockBytes: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ILockBytesVtbl {
@@ -26774,6 +29188,258 @@ pub struct ILockBytesVtbl {
 pub struct ILockBytes {
     pub lpVtbl: *mut ILockBytesVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn ILockBytes_RemoteReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_RemoteReadAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_RemoteWriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_RemoteWriteAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_ReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut ::core::ffi::c_void,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_ReadAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_WriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn ILockBytes_WriteAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IFillLockBytes: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IFillLockBytesVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub FillAppend: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG, ) -> HRESULT, >,
+    pub FillAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, ulOffset: ULARGE_INTEGER, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG, ) -> HRESULT, >,
+    pub SetFillSize: ::core::option::Option< unsafe extern "system" fn(This: *mut IFillLockBytes, ulSize: ULARGE_INTEGER) -> HRESULT, >,
+    pub Terminate: ::core::option::Option< unsafe extern "system" fn(This: *mut IFillLockBytes, bCanceled: BOOL) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFillLockBytes {
+    pub lpVtbl: *mut IFillLockBytesVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_RemoteFillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_RemoteFillAppend_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_RemoteFillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_RemoteFillAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_FillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_FillAppend_Stub(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_FillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IFillLockBytes_FillAt_Stub(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IProgressNotify: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IProgressNotifyVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IProgressNotify, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub OnProgress: ::core::option::Option< unsafe extern "system" fn( This: *mut IProgressNotify, dwProgressCurrent: DWORD, dwProgressMaximum: DWORD, fAccurate: BOOL, fOwner: BOOL, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProgressNotify {
+    pub lpVtbl: *mut IProgressNotifyVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagStorageLayout {
+    pub LayoutType: DWORD,
+    pub pwcsElementName: *mut OLECHAR,
+    pub cOffset: LARGE_INTEGER,
+    pub cBytes: LARGE_INTEGER,
+}
+pub type StorageLayout = tagStorageLayout;
+unsafe extern "C" {
+    pub static IID_ILayoutStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ILayoutStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub LayoutScript: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pStorageLayout: *mut StorageLayout, nEntries: DWORD, glfInterleavedFlag: DWORD, ) -> HRESULT, >,
+    pub BeginMonitor: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub EndMonitor: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub ReLayoutDocfile: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pwcsNewDfName: *mut OLECHAR, ) -> HRESULT, >,
+    pub ReLayoutDocfileOnILockBytes: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pILockBytes: *mut ILockBytes, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ILayoutStorage {
+    pub lpVtbl: *mut ILayoutStorageVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IBlockingLock: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IBlockingLockVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IBlockingLock, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Lock: ::core::option::Option< unsafe extern "system" fn(This: *mut IBlockingLock, dwTimeout: DWORD) -> HRESULT, >,
+    pub Unlock: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IBlockingLock {
+    pub lpVtbl: *mut IBlockingLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITimeAndNoticeControl: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ITimeAndNoticeControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITimeAndNoticeControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG, >,
+    pub SuppressChanges: ::core::option::Option< unsafe extern "system" fn( This: *mut ITimeAndNoticeControl, res1: DWORD, res2: DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITimeAndNoticeControl {
+    pub lpVtbl: *mut ITimeAndNoticeControlVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IOplockStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IOplockStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub CreateStorageEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, pwcsName: LPCWSTR, grfMode: DWORD, stgfmt: DWORD, grfAttrs: DWORD, riid: *const IID, ppstgOpen: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub OpenStorageEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, pwcsName: LPCWSTR, grfMode: DWORD, stgfmt: DWORD, grfAttrs: DWORD, riid: *const IID, ppstgOpen: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOplockStorage {
+    pub lpVtbl: *mut IOplockStorageVtbl,
+}
+pub type LPENUMFORMATETC = *mut IEnumFORMATETC;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagDVTARGETDEVICE {
@@ -26785,6 +29451,7 @@ pub struct tagDVTARGETDEVICE {
     pub tdData: [BYTE; 1usize],
 }
 pub type DVTARGETDEVICE = tagDVTARGETDEVICE;
+pub type LPCLIPFORMAT = *mut CLIPFORMAT;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagFORMATETC {
@@ -26795,6 +29462,10 @@ pub struct tagFORMATETC {
     pub tymed: DWORD,
 }
 pub type FORMATETC = tagFORMATETC;
+pub type LPFORMATETC = *mut tagFORMATETC;
+unsafe extern "C" {
+    pub static IID_IEnumFORMATETC: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumFORMATETCVtbl {
@@ -26811,6 +29482,48 @@ pub struct IEnumFORMATETCVtbl {
 pub struct IEnumFORMATETC {
     pub lpVtbl: *mut IEnumFORMATETCVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IEnumFORMATETC_RemoteNext_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumFORMATETC_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumFORMATETC_Next_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumFORMATETC_Next_Stub(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPENUMSTATDATA = *mut IEnumSTATDATA;
+pub const tagADVF_ADVF_NODATA: tagADVF = 1;
+pub const tagADVF_ADVF_PRIMEFIRST: tagADVF = 2;
+pub const tagADVF_ADVF_ONLYONCE: tagADVF = 4;
+pub const tagADVF_ADVF_DATAONSTOP: tagADVF = 64;
+pub const tagADVF_ADVFCACHE_NOHANDLER: tagADVF = 8;
+pub const tagADVF_ADVFCACHE_FORCEBUILTIN: tagADVF = 16;
+pub const tagADVF_ADVFCACHE_ONSAVE: tagADVF = 32;
+pub type tagADVF = ::core::ffi::c_uint;
+pub use self::tagADVF as ADVF;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSTATDATA {
@@ -26820,6 +29533,10 @@ pub struct tagSTATDATA {
     pub dwConnection: DWORD,
 }
 pub type STATDATA = tagSTATDATA;
+pub type LPSTATDATA = *mut tagSTATDATA;
+unsafe extern "C" {
+    pub static IID_IEnumSTATDATA: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumSTATDATAVtbl {
@@ -26836,6 +29553,60 @@ pub struct IEnumSTATDATAVtbl {
 pub struct IEnumSTATDATA {
     pub lpVtbl: *mut IEnumSTATDATAVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IEnumSTATDATA_RemoteNext_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATDATA_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATDATA_Next_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IEnumSTATDATA_Next_Stub(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPADVISESINK = *mut IAdviseSink;
+pub const tagTYMED_TYMED_HGLOBAL: tagTYMED = 1;
+pub const tagTYMED_TYMED_FILE: tagTYMED = 2;
+pub const tagTYMED_TYMED_ISTREAM: tagTYMED = 4;
+pub const tagTYMED_TYMED_ISTORAGE: tagTYMED = 8;
+pub const tagTYMED_TYMED_GDI: tagTYMED = 16;
+pub const tagTYMED_TYMED_MFPICT: tagTYMED = 32;
+pub const tagTYMED_TYMED_ENHMF: tagTYMED = 64;
+pub const tagTYMED_TYMED_NULL: tagTYMED = 0;
+pub type tagTYMED = ::core::ffi::c_uint;
+pub use self::tagTYMED as TYMED;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemSTGMEDIUM {
+    pub tymed: DWORD,
+    pub dwHandleType: DWORD,
+    pub pData: ULONG,
+    pub pUnkForRelease: ULONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemSTGMEDIUM = tagRemSTGMEDIUM;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSTGMEDIUM {
@@ -26855,7 +29626,69 @@ pub union tagSTGMEDIUM__bindgen_ty_1 {
     pub pstg: *mut IStorage,
 }
 pub type uSTGMEDIUM = tagSTGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _GDI_OBJECT {
+    pub ObjectType: DWORD,
+    pub u: _GDI_OBJECT___WIDL_objidl_generated_name_0000000A,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _GDI_OBJECT___WIDL_objidl_generated_name_0000000A {
+    pub hBitmap: wireHBITMAP,
+    pub hPalette: wireHPALETTE,
+    pub hGeneric: wireHGLOBAL,
+}
+pub type GDI_OBJECT = _GDI_OBJECT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userSTGMEDIUM {
+    pub __bindgen_anon_1: _userSTGMEDIUM__bindgen_ty_1,
+    pub pUnkForRelease: *mut IUnknown,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userSTGMEDIUM__bindgen_ty_1 {
+    pub tymed: DWORD,
+    pub u: _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B {
+    pub hMetaFilePict: wireHMETAFILEPICT,
+    pub hHEnhMetaFile: wireHENHMETAFILE,
+    pub hGdiHandle: *mut GDI_OBJECT,
+    pub hGlobal: wireHGLOBAL,
+    pub lpszFileName: LPOLESTR,
+    pub pstm: *mut BYTE_BLOB,
+    pub pstg: *mut BYTE_BLOB,
+}
+pub type userSTGMEDIUM = _userSTGMEDIUM;
+pub type wireSTGMEDIUM = *mut userSTGMEDIUM;
 pub type STGMEDIUM = uSTGMEDIUM;
+pub type wireASYNC_STGMEDIUM = *mut userSTGMEDIUM;
+pub type ASYNC_STGMEDIUM = STGMEDIUM;
+pub type LPSTGMEDIUM = *mut STGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userFLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: userSTGMEDIUM,
+}
+pub type userFLAG_STGMEDIUM = _userFLAG_STGMEDIUM;
+pub type wireFLAG_STGMEDIUM = *mut userFLAG_STGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: STGMEDIUM,
+}
+pub type FLAG_STGMEDIUM = _FLAG_STGMEDIUM;
+unsafe extern "C" {
+    pub static IID_IAdviseSink: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IAdviseSinkVtbl {
@@ -26872,6 +29705,164 @@ pub struct IAdviseSinkVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IAdviseSink {
     pub lpVtbl: *mut IAdviseSinkVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnDataChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnViewChange_Proxy(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnViewChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnRename_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnSave_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnSave_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnClose_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_RemoteOnClose_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut STGMEDIUM,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnDataChange_Stub(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnViewChange_Proxy(This: *mut IAdviseSink, dwAspect: DWORD, lindex: LONG);
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnViewChange_Stub(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker);
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnRename_Stub(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnSave_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnSave_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnClose_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink_OnClose_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+pub type LPADVISESINK2 = *mut IAdviseSink2;
+unsafe extern "C" {
+    pub static IID_IAdviseSink2: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAdviseSink2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAdviseSink2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub OnDataChange: ::core::option::Option< unsafe extern "system" fn( This: *mut IAdviseSink2, pFormatetc: *mut FORMATETC, pStgmed: *mut STGMEDIUM, ), >,
+    pub OnViewChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, dwAspect: DWORD, lindex: LONG), >,
+    pub OnRename: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker), >,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnLinkSrcChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker), >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAdviseSink2 {
+    pub lpVtbl: *mut IAdviseSink2Vtbl,
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Proxy(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Proxy(This: *mut IAdviseSink2, pmk: *mut IMoniker);
+}
+unsafe extern "stdcall" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Stub(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
+pub type LPDATAOBJECT = *mut IDataObject;
+pub const tagDATADIR_DATADIR_GET: tagDATADIR = 1;
+pub const tagDATADIR_DATADIR_SET: tagDATADIR = 2;
+pub type tagDATADIR = ::core::ffi::c_uint;
+pub use self::tagDATADIR as DATADIR;
+unsafe extern "C" {
+    pub static IID_IDataObject: GUID;
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -26894,7 +29885,100 @@ pub struct IDataObjectVtbl {
 pub struct IDataObject {
     pub lpVtbl: *mut IDataObjectVtbl,
 }
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteGetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteGetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteGetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteGetDataHere_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteSetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_RemoteSetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_GetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_GetData_Stub(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_GetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_GetDataHere_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_SetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "stdcall" {
+    pub fn IDataObject_SetData_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
 pub type LPDATAADVISEHOLDER = *mut IDataAdviseHolder;
+unsafe extern "C" {
+    pub static IID_IDataAdviseHolder: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IDataAdviseHolderVtbl {
@@ -26912,6 +29996,27 @@ pub struct IDataAdviseHolder {
     pub lpVtbl: *mut IDataAdviseHolderVtbl,
 }
 pub type LPMESSAGEFILTER = *mut IMessageFilter;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL: tagCALLTYPE = 1;
+pub const tagCALLTYPE_CALLTYPE_NESTED: tagCALLTYPE = 2;
+pub const tagCALLTYPE_CALLTYPE_ASYNC: tagCALLTYPE = 3;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL_CALLPENDING: tagCALLTYPE = 4;
+pub const tagCALLTYPE_CALLTYPE_ASYNC_CALLPENDING: tagCALLTYPE = 5;
+pub type tagCALLTYPE = ::core::ffi::c_uint;
+pub use self::tagCALLTYPE as CALLTYPE;
+pub const tagSERVERCALL_SERVERCALL_ISHANDLED: tagSERVERCALL = 0;
+pub const tagSERVERCALL_SERVERCALL_REJECTED: tagSERVERCALL = 1;
+pub const tagSERVERCALL_SERVERCALL_RETRYLATER: tagSERVERCALL = 2;
+pub type tagSERVERCALL = ::core::ffi::c_uint;
+pub use self::tagSERVERCALL as SERVERCALL;
+pub const tagPENDINGTYPE_PENDINGTYPE_TOPLEVEL: tagPENDINGTYPE = 1;
+pub const tagPENDINGTYPE_PENDINGTYPE_NESTED: tagPENDINGTYPE = 2;
+pub type tagPENDINGTYPE = ::core::ffi::c_uint;
+pub use self::tagPENDINGTYPE as PENDINGTYPE;
+pub const tagPENDINGMSG_PENDINGMSG_CANCELCALL: tagPENDINGMSG = 0;
+pub const tagPENDINGMSG_PENDINGMSG_WAITNOPROCESS: tagPENDINGMSG = 1;
+pub const tagPENDINGMSG_PENDINGMSG_WAITDEFPROCESS: tagPENDINGMSG = 2;
+pub type tagPENDINGMSG = ::core::ffi::c_uint;
+pub use self::tagPENDINGMSG as PENDINGMSG;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagINTERFACEINFO {
@@ -26919,7 +30024,11 @@ pub struct tagINTERFACEINFO {
     pub iid: IID,
     pub wMethod: WORD,
 }
+pub type INTERFACEINFO = tagINTERFACEINFO;
 pub type LPINTERFACEINFO = *mut tagINTERFACEINFO;
+unsafe extern "C" {
+    pub static IID_IMessageFilter: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMessageFilterVtbl {
@@ -26934,6 +30043,60 @@ pub struct IMessageFilterVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IMessageFilter {
     pub lpVtbl: *mut IMessageFilterVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDirectWriterLock: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IDirectWriterLockVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDirectWriterLock, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub WaitForWriteAccess: ::core::option::Option< unsafe extern "system" fn(This: *mut IDirectWriterLock, dwTimeout: DWORD) -> HRESULT, >,
+    pub ReleaseWriteAccess: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+    pub HaveWriteAccess: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDirectWriterLock {
+    pub lpVtbl: *mut IDirectWriterLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUrlMon: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IUrlMonVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUrlMon, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub AsyncGetClassBits: ::core::option::Option< unsafe extern "system" fn( This: *mut IUrlMon, rclsid: *const CLSID, pszTYPE: LPCWSTR, pszExt: LPCWSTR, dwFileVersionMS: DWORD, dwFileVersionLS: DWORD, pszCodeBase: LPCWSTR, pbc: *mut IBindCtx, dwClassContext: DWORD, riid: *const IID, flags: DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUrlMon {
+    pub lpVtbl: *mut IUrlMonVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IForegroundTransfer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IForegroundTransferVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IForegroundTransfer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub AllowForegroundTransfer: ::core::option::Option< unsafe extern "system" fn( This: *mut IForegroundTransfer, lpvReserved: *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IForegroundTransfer {
+    pub lpVtbl: *mut IForegroundTransferVtbl,
+}
+pub type LPINITIALIZESPY = *mut IInitializeSpy;
+unsafe extern "C" {
+    pub static IID_IInitializeSpy: GUID;
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -26950,6 +30113,223 @@ pub struct IInitializeSpyVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IInitializeSpy {
     pub lpVtbl: *mut IInitializeSpyVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IThumbnailExtractor: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IThumbnailExtractorVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IThumbnailExtractor, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub ExtractThumbnail: ::core::option::Option< unsafe extern "system" fn( This: *mut IThumbnailExtractor, pStg: *mut IStorage, ulLength: ULONG, ulHeight: ULONG, pulOutputLength: *mut ULONG, pulOutputHeight: *mut ULONG, phOutputBitmap: *mut HBITMAP, ) -> HRESULT, >,
+    pub OnFileUpdated: ::core::option::Option< unsafe extern "system" fn(This: *mut IThumbnailExtractor, pStg: *mut IStorage) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IThumbnailExtractor {
+    pub lpVtbl: *mut IThumbnailExtractorVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDummyHICONIncluder: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IDummyHICONIncluderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDummyHICONIncluder, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Dummy: ::core::option::Option< unsafe extern "system" fn( This: *mut IDummyHICONIncluder, hIcon: HICON, hdc: HDC, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDummyHICONIncluder {
+    pub lpVtbl: *mut IDummyHICONIncluderVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IApartmentShutdown: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IApartmentShutdownVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IApartmentShutdown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub OnUninitialize: ::core::option::Option< unsafe extern "system" fn(This: *mut IApartmentShutdown, identifier: UINT64), >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApartmentShutdown {
+    pub lpVtbl: *mut IApartmentShutdownVtbl,
+}
+unsafe extern "stdcall" {
+    pub fn SNB_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut SNB) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn SNB_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn SNB_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn SNB_UserFree(arg1: *mut ULONG, arg2: *mut SNB);
+}
+unsafe extern "stdcall" {
+    pub fn CLIPFORMAT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut CLIPFORMAT) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn CLIPFORMAT_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn CLIPFORMAT_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn CLIPFORMAT_UserFree(arg1: *mut ULONG, arg2: *mut CLIPFORMAT);
+}
+unsafe extern "stdcall" {
+    pub fn STGMEDIUM_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut STGMEDIUM) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut STGMEDIUM);
+}
+unsafe extern "stdcall" {
+    pub fn ASYNC_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn ASYNC_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn ASYNC_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn ASYNC_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut ASYNC_STGMEDIUM);
+}
+unsafe extern "stdcall" {
+    pub fn FLAG_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn FLAG_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn FLAG_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn FLAG_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut FLAG_STGMEDIUM);
+}
+unsafe extern "stdcall" {
+    pub fn HBITMAP_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HBITMAP) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn HBITMAP_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HBITMAP_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HBITMAP_UserFree(arg1: *mut ULONG, arg2: *mut HBITMAP);
+}
+unsafe extern "stdcall" {
+    pub fn HICON_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HICON) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn HICON_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HICON_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HICON_UserFree(arg1: *mut ULONG, arg2: *mut HICON);
+}
+unsafe extern "stdcall" {
+    pub fn HDC_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HDC) -> ULONG;
+}
+unsafe extern "stdcall" {
+    pub fn HDC_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HDC_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "stdcall" {
+    pub fn HDC_UserFree(arg1: *mut ULONG, arg2: *mut HDC);
 }
 unsafe extern "stdcall" {
     pub fn CoBuildVersion() -> DWORD;
@@ -31821,7 +35201,4631 @@ pub struct _DESK_EXT_INTERFACE {
 pub type DESK_EXT_INTERFACE = _DESK_EXT_INTERFACE;
 pub type PDESK_EXT_INTERFACE = *mut _DESK_EXT_INTERFACE;
 unsafe extern "stdcall" {
-    pub fn DisplaySaveSettings(pContext: PVOID, hwndPropSheet: HWND) -> LONG;
+    pub fn GdipAlloc(arg1: SIZE_T) -> *mut ::core::ffi::c_void;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFree(arg1: *mut ::core::ffi::c_void);
+}
+pub type GraphicsState = UINT;
+pub type GraphicsContainer = UINT;
+pub const Unit_UnitWorld: Unit = 0;
+pub const Unit_UnitDisplay: Unit = 1;
+pub const Unit_UnitPixel: Unit = 2;
+pub const Unit_UnitPoint: Unit = 3;
+pub const Unit_UnitInch: Unit = 4;
+pub const Unit_UnitDocument: Unit = 5;
+pub const Unit_UnitMillimeter: Unit = 6;
+pub type Unit = ::core::ffi::c_uint;
+pub const BrushType_BrushTypeSolidColor: BrushType = 0;
+pub const BrushType_BrushTypeHatchFill: BrushType = 1;
+pub const BrushType_BrushTypeTextureFill: BrushType = 2;
+pub const BrushType_BrushTypePathGradient: BrushType = 3;
+pub const BrushType_BrushTypeLinearGradient: BrushType = 4;
+pub type BrushType = ::core::ffi::c_uint;
+pub const DriverStringOptions_DriverStringOptionsCmapLookup: DriverStringOptions = 1;
+pub const DriverStringOptions_DriverStringOptionsVertical: DriverStringOptions = 2;
+pub const DriverStringOptions_DriverStringOptionsRealizedAdvance: DriverStringOptions = 4;
+pub const DriverStringOptions_DriverStringOptionsLimitSubpixel: DriverStringOptions = 8;
+pub type DriverStringOptions = ::core::ffi::c_uint;
+pub const FillMode_FillModeAlternate: FillMode = 0;
+pub const FillMode_FillModeWinding: FillMode = 1;
+pub type FillMode = ::core::ffi::c_uint;
+pub const LineCap_LineCapFlat: LineCap = 0;
+pub const LineCap_LineCapSquare: LineCap = 1;
+pub const LineCap_LineCapRound: LineCap = 2;
+pub const LineCap_LineCapTriangle: LineCap = 3;
+pub const LineCap_LineCapNoAnchor: LineCap = 16;
+pub const LineCap_LineCapSquareAnchor: LineCap = 17;
+pub const LineCap_LineCapRoundAnchor: LineCap = 18;
+pub const LineCap_LineCapDiamondAnchor: LineCap = 19;
+pub const LineCap_LineCapArrowAnchor: LineCap = 20;
+pub const LineCap_LineCapCustom: LineCap = 255;
+pub const LineCap_LineCapAnchorMask: LineCap = 240;
+pub type LineCap = ::core::ffi::c_uint;
+pub const CustomLineCapType_CustomLineCapTypeDefault: CustomLineCapType = 0;
+pub const CustomLineCapType_CustomLineCapTypeAdjustableArrow: CustomLineCapType = 1;
+pub type CustomLineCapType = ::core::ffi::c_uint;
+pub const PathPointType_PathPointTypeStart: PathPointType = 0;
+pub const PathPointType_PathPointTypeLine: PathPointType = 1;
+pub const PathPointType_PathPointTypeBezier: PathPointType = 3;
+pub const PathPointType_PathPointTypePathTypeMask: PathPointType = 7;
+pub const PathPointType_PathPointTypePathDashMode: PathPointType = 16;
+pub const PathPointType_PathPointTypePathMarker: PathPointType = 32;
+pub const PathPointType_PathPointTypeCloseSubpath: PathPointType = 128;
+pub const PathPointType_PathPointTypeBezier3: PathPointType = 3;
+pub type PathPointType = ::core::ffi::c_uint;
+pub const PenType_PenTypeSolidColor: PenType = 0;
+pub const PenType_PenTypeHatchFill: PenType = 1;
+pub const PenType_PenTypeTextureFill: PenType = 2;
+pub const PenType_PenTypePathGradient: PenType = 3;
+pub const PenType_PenTypeLinearGradient: PenType = 4;
+pub const PenType_PenTypeUnknown: PenType = -1;
+pub type PenType = ::core::ffi::c_int;
+pub const LineJoin_LineJoinMiter: LineJoin = 0;
+pub const LineJoin_LineJoinBevel: LineJoin = 1;
+pub const LineJoin_LineJoinRound: LineJoin = 2;
+pub const LineJoin_LineJoinMiterClipped: LineJoin = 3;
+pub type LineJoin = ::core::ffi::c_uint;
+pub const QualityMode_QualityModeInvalid: QualityMode = -1;
+pub const QualityMode_QualityModeDefault: QualityMode = 0;
+pub const QualityMode_QualityModeLow: QualityMode = 1;
+pub const QualityMode_QualityModeHigh: QualityMode = 2;
+pub type QualityMode = ::core::ffi::c_int;
+pub const SmoothingMode_SmoothingModeInvalid: SmoothingMode = -1;
+pub const SmoothingMode_SmoothingModeDefault: SmoothingMode = 0;
+pub const SmoothingMode_SmoothingModeHighSpeed: SmoothingMode = 1;
+pub const SmoothingMode_SmoothingModeHighQuality: SmoothingMode = 2;
+pub const SmoothingMode_SmoothingModeNone: SmoothingMode = 3;
+pub const SmoothingMode_SmoothingModeAntiAlias: SmoothingMode = 4;
+pub type SmoothingMode = ::core::ffi::c_int;
+pub const CompositingQuality_CompositingQualityInvalid: CompositingQuality = -1;
+pub const CompositingQuality_CompositingQualityDefault: CompositingQuality = 0;
+pub const CompositingQuality_CompositingQualityHighSpeed: CompositingQuality = 1;
+pub const CompositingQuality_CompositingQualityHighQuality: CompositingQuality = 2;
+pub const CompositingQuality_CompositingQualityGammaCorrected: CompositingQuality = 3;
+pub const CompositingQuality_CompositingQualityAssumeLinear: CompositingQuality = 4;
+pub type CompositingQuality = ::core::ffi::c_int;
+pub const InterpolationMode_InterpolationModeInvalid: InterpolationMode = -1;
+pub const InterpolationMode_InterpolationModeDefault: InterpolationMode = 0;
+pub const InterpolationMode_InterpolationModeLowQuality: InterpolationMode = 1;
+pub const InterpolationMode_InterpolationModeHighQuality: InterpolationMode = 2;
+pub const InterpolationMode_InterpolationModeBilinear: InterpolationMode = 3;
+pub const InterpolationMode_InterpolationModeBicubic: InterpolationMode = 4;
+pub const InterpolationMode_InterpolationModeNearestNeighbor: InterpolationMode = 5;
+pub const InterpolationMode_InterpolationModeHighQualityBilinear: InterpolationMode = 6;
+pub const InterpolationMode_InterpolationModeHighQualityBicubic: InterpolationMode = 7;
+pub type InterpolationMode = ::core::ffi::c_int;
+pub const PenAlignment_PenAlignmentCenter: PenAlignment = 0;
+pub const PenAlignment_PenAlignmentInset: PenAlignment = 1;
+pub type PenAlignment = ::core::ffi::c_uint;
+pub const PixelOffsetMode_PixelOffsetModeInvalid: PixelOffsetMode = -1;
+pub const PixelOffsetMode_PixelOffsetModeDefault: PixelOffsetMode = 0;
+pub const PixelOffsetMode_PixelOffsetModeHighSpeed: PixelOffsetMode = 1;
+pub const PixelOffsetMode_PixelOffsetModeHighQuality: PixelOffsetMode = 2;
+pub const PixelOffsetMode_PixelOffsetModeNone: PixelOffsetMode = 3;
+pub const PixelOffsetMode_PixelOffsetModeHalf: PixelOffsetMode = 4;
+pub type PixelOffsetMode = ::core::ffi::c_int;
+pub const DashCap_DashCapFlat: DashCap = 0;
+pub const DashCap_DashCapRound: DashCap = 2;
+pub const DashCap_DashCapTriangle: DashCap = 3;
+pub type DashCap = ::core::ffi::c_uint;
+pub const DashStyle_DashStyleSolid: DashStyle = 0;
+pub const DashStyle_DashStyleDash: DashStyle = 1;
+pub const DashStyle_DashStyleDot: DashStyle = 2;
+pub const DashStyle_DashStyleDashDot: DashStyle = 3;
+pub const DashStyle_DashStyleDashDotDot: DashStyle = 4;
+pub const DashStyle_DashStyleCustom: DashStyle = 5;
+pub type DashStyle = ::core::ffi::c_uint;
+pub const MatrixOrder_MatrixOrderPrepend: MatrixOrder = 0;
+pub const MatrixOrder_MatrixOrderAppend: MatrixOrder = 1;
+pub type MatrixOrder = ::core::ffi::c_uint;
+pub const ImageType_ImageTypeUnknown: ImageType = 0;
+pub const ImageType_ImageTypeBitmap: ImageType = 1;
+pub const ImageType_ImageTypeMetafile: ImageType = 2;
+pub type ImageType = ::core::ffi::c_uint;
+pub const WarpMode_WarpModePerspective: WarpMode = 0;
+pub const WarpMode_WarpModeBilinear: WarpMode = 1;
+pub type WarpMode = ::core::ffi::c_uint;
+pub const WrapMode_WrapModeTile: WrapMode = 0;
+pub const WrapMode_WrapModeTileFlipX: WrapMode = 1;
+pub const WrapMode_WrapModeTileFlipY: WrapMode = 2;
+pub const WrapMode_WrapModeTileFlipXY: WrapMode = 3;
+pub const WrapMode_WrapModeClamp: WrapMode = 4;
+pub type WrapMode = ::core::ffi::c_uint;
+pub const MetafileType_MetafileTypeInvalid: MetafileType = 0;
+pub const MetafileType_MetafileTypeWmf: MetafileType = 1;
+pub const MetafileType_MetafileTypeWmfPlaceable: MetafileType = 2;
+pub const MetafileType_MetafileTypeEmf: MetafileType = 3;
+pub const MetafileType_MetafileTypeEmfPlusOnly: MetafileType = 4;
+pub const MetafileType_MetafileTypeEmfPlusDual: MetafileType = 5;
+pub type MetafileType = ::core::ffi::c_uint;
+pub const LinearGradientMode_LinearGradientModeHorizontal: LinearGradientMode = 0;
+pub const LinearGradientMode_LinearGradientModeVertical: LinearGradientMode = 1;
+pub const LinearGradientMode_LinearGradientModeForwardDiagonal: LinearGradientMode = 2;
+pub const LinearGradientMode_LinearGradientModeBackwardDiagonal: LinearGradientMode = 3;
+pub type LinearGradientMode = ::core::ffi::c_uint;
+pub const EmfType_EmfTypeEmfOnly: EmfType = 3;
+pub const EmfType_EmfTypeEmfPlusOnly: EmfType = 4;
+pub const EmfType_EmfTypeEmfPlusDual: EmfType = 5;
+pub type EmfType = ::core::ffi::c_uint;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsDefault: EmfToWmfBitsFlags = 0;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsEmbedEmf: EmfToWmfBitsFlags = 1;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsIncludePlaceable: EmfToWmfBitsFlags = 2;
+pub const EmfToWmfBitsFlags_EmfToWmfBitsFlagsNoXORClip: EmfToWmfBitsFlags = 4;
+pub type EmfToWmfBitsFlags = ::core::ffi::c_uint;
+pub const CompositingMode_CompositingModeSourceOver: CompositingMode = 0;
+pub const CompositingMode_CompositingModeSourceCopy: CompositingMode = 1;
+pub type CompositingMode = ::core::ffi::c_uint;
+pub const TextRenderingHint_TextRenderingHintSystemDefault: TextRenderingHint = 0;
+pub const TextRenderingHint_TextRenderingHintSingleBitPerPixelGridFit: TextRenderingHint = 1;
+pub const TextRenderingHint_TextRenderingHintSingleBitPerPixel: TextRenderingHint = 2;
+pub const TextRenderingHint_TextRenderingHintAntiAliasGridFit: TextRenderingHint = 3;
+pub const TextRenderingHint_TextRenderingHintAntiAlias: TextRenderingHint = 4;
+pub const TextRenderingHint_TextRenderingHintClearTypeGridFit: TextRenderingHint = 5;
+pub type TextRenderingHint = ::core::ffi::c_uint;
+pub const StringAlignment_StringAlignmentNear: StringAlignment = 0;
+pub const StringAlignment_StringAlignmentCenter: StringAlignment = 1;
+pub const StringAlignment_StringAlignmentFar: StringAlignment = 2;
+pub type StringAlignment = ::core::ffi::c_uint;
+pub const StringDigitSubstitute_StringDigitSubstituteUser: StringDigitSubstitute = 0;
+pub const StringDigitSubstitute_StringDigitSubstituteNone: StringDigitSubstitute = 1;
+pub const StringDigitSubstitute_StringDigitSubstituteNational: StringDigitSubstitute = 2;
+pub const StringDigitSubstitute_StringDigitSubstituteTraditional: StringDigitSubstitute = 3;
+pub type StringDigitSubstitute = ::core::ffi::c_uint;
+pub const StringFormatFlags_StringFormatFlagsDirectionRightToLeft: StringFormatFlags = 1;
+pub const StringFormatFlags_StringFormatFlagsDirectionVertical: StringFormatFlags = 2;
+pub const StringFormatFlags_StringFormatFlagsNoFitBlackBox: StringFormatFlags = 4;
+pub const StringFormatFlags_StringFormatFlagsDisplayFormatControl: StringFormatFlags = 32;
+pub const StringFormatFlags_StringFormatFlagsNoFontFallback: StringFormatFlags = 1024;
+pub const StringFormatFlags_StringFormatFlagsMeasureTrailingSpaces: StringFormatFlags = 2048;
+pub const StringFormatFlags_StringFormatFlagsNoWrap: StringFormatFlags = 4096;
+pub const StringFormatFlags_StringFormatFlagsLineLimit: StringFormatFlags = 8192;
+pub const StringFormatFlags_StringFormatFlagsNoClip: StringFormatFlags = 16384;
+pub type StringFormatFlags = ::core::ffi::c_uint;
+pub const StringTrimming_StringTrimmingNone: StringTrimming = 0;
+pub const StringTrimming_StringTrimmingCharacter: StringTrimming = 1;
+pub const StringTrimming_StringTrimmingWord: StringTrimming = 2;
+pub const StringTrimming_StringTrimmingEllipsisCharacter: StringTrimming = 3;
+pub const StringTrimming_StringTrimmingEllipsisWord: StringTrimming = 4;
+pub const StringTrimming_StringTrimmingEllipsisPath: StringTrimming = 5;
+pub type StringTrimming = ::core::ffi::c_uint;
+pub const FontStyle_FontStyleRegular: FontStyle = 0;
+pub const FontStyle_FontStyleBold: FontStyle = 1;
+pub const FontStyle_FontStyleItalic: FontStyle = 2;
+pub const FontStyle_FontStyleBoldItalic: FontStyle = 3;
+pub const FontStyle_FontStyleUnderline: FontStyle = 4;
+pub const FontStyle_FontStyleStrikeout: FontStyle = 8;
+pub type FontStyle = ::core::ffi::c_uint;
+pub const HotkeyPrefix_HotkeyPrefixNone: HotkeyPrefix = 0;
+pub const HotkeyPrefix_HotkeyPrefixShow: HotkeyPrefix = 1;
+pub const HotkeyPrefix_HotkeyPrefixHide: HotkeyPrefix = 2;
+pub type HotkeyPrefix = ::core::ffi::c_uint;
+pub const ImageCodecFlags_ImageCodecFlagsEncoder: ImageCodecFlags = 1;
+pub const ImageCodecFlags_ImageCodecFlagsDecoder: ImageCodecFlags = 2;
+pub const ImageCodecFlags_ImageCodecFlagsSupportBitmap: ImageCodecFlags = 4;
+pub const ImageCodecFlags_ImageCodecFlagsSupportVector: ImageCodecFlags = 8;
+pub const ImageCodecFlags_ImageCodecFlagsSeekableEncode: ImageCodecFlags = 16;
+pub const ImageCodecFlags_ImageCodecFlagsBlockingDecode: ImageCodecFlags = 32;
+pub const ImageCodecFlags_ImageCodecFlagsBuiltin: ImageCodecFlags = 65536;
+pub const ImageCodecFlags_ImageCodecFlagsSystem: ImageCodecFlags = 131072;
+pub const ImageCodecFlags_ImageCodecFlagsUser: ImageCodecFlags = 262144;
+pub type ImageCodecFlags = ::core::ffi::c_uint;
+pub const ImageFlags_ImageFlagsNone: ImageFlags = 0;
+pub const ImageFlags_ImageFlagsScalable: ImageFlags = 1;
+pub const ImageFlags_ImageFlagsHasAlpha: ImageFlags = 2;
+pub const ImageFlags_ImageFlagsHasTranslucent: ImageFlags = 4;
+pub const ImageFlags_ImageFlagsPartiallyScalable: ImageFlags = 8;
+pub const ImageFlags_ImageFlagsColorSpaceRGB: ImageFlags = 16;
+pub const ImageFlags_ImageFlagsColorSpaceCMYK: ImageFlags = 32;
+pub const ImageFlags_ImageFlagsColorSpaceGRAY: ImageFlags = 64;
+pub const ImageFlags_ImageFlagsColorSpaceYCBCR: ImageFlags = 128;
+pub const ImageFlags_ImageFlagsColorSpaceYCCK: ImageFlags = 256;
+pub const ImageFlags_ImageFlagsHasRealDPI: ImageFlags = 4096;
+pub const ImageFlags_ImageFlagsHasRealPixelSize: ImageFlags = 8192;
+pub const ImageFlags_ImageFlagsReadOnly: ImageFlags = 65536;
+pub const ImageFlags_ImageFlagsCaching: ImageFlags = 131072;
+pub type ImageFlags = ::core::ffi::c_uint;
+pub const CombineMode_CombineModeReplace: CombineMode = 0;
+pub const CombineMode_CombineModeIntersect: CombineMode = 1;
+pub const CombineMode_CombineModeUnion: CombineMode = 2;
+pub const CombineMode_CombineModeXor: CombineMode = 3;
+pub const CombineMode_CombineModeExclude: CombineMode = 4;
+pub const CombineMode_CombineModeComplement: CombineMode = 5;
+pub type CombineMode = ::core::ffi::c_uint;
+pub const FlushIntention_FlushIntentionFlush: FlushIntention = 0;
+pub const FlushIntention_FlushIntentionSync: FlushIntention = 1;
+pub type FlushIntention = ::core::ffi::c_uint;
+pub const CoordinateSpace_CoordinateSpaceWorld: CoordinateSpace = 0;
+pub const CoordinateSpace_CoordinateSpacePage: CoordinateSpace = 1;
+pub const CoordinateSpace_CoordinateSpaceDevice: CoordinateSpace = 2;
+pub type CoordinateSpace = ::core::ffi::c_uint;
+pub const GpTestControlEnum_TestControlForceBilinear: GpTestControlEnum = 0;
+pub const GpTestControlEnum_TestControlNoICM: GpTestControlEnum = 1;
+pub const GpTestControlEnum_TestControlGetBuildNumber: GpTestControlEnum = 2;
+pub type GpTestControlEnum = ::core::ffi::c_uint;
+pub const MetafileFrameUnit_MetafileFrameUnitPixel: MetafileFrameUnit = 2;
+pub const MetafileFrameUnit_MetafileFrameUnitPoint: MetafileFrameUnit = 3;
+pub const MetafileFrameUnit_MetafileFrameUnitInch: MetafileFrameUnit = 4;
+pub const MetafileFrameUnit_MetafileFrameUnitDocument: MetafileFrameUnit = 5;
+pub const MetafileFrameUnit_MetafileFrameUnitMillimeter: MetafileFrameUnit = 6;
+pub const MetafileFrameUnit_MetafileFrameUnitGdi: MetafileFrameUnit = 7;
+pub type MetafileFrameUnit = ::core::ffi::c_uint;
+pub const HatchStyle_HatchStyleHorizontal: HatchStyle = 0;
+pub const HatchStyle_HatchStyleVertical: HatchStyle = 1;
+pub const HatchStyle_HatchStyleForwardDiagonal: HatchStyle = 2;
+pub const HatchStyle_HatchStyleBackwardDiagonal: HatchStyle = 3;
+pub const HatchStyle_HatchStyleCross: HatchStyle = 4;
+pub const HatchStyle_HatchStyleDiagonalCross: HatchStyle = 5;
+pub const HatchStyle_HatchStyle05Percent: HatchStyle = 6;
+pub const HatchStyle_HatchStyle10Percent: HatchStyle = 7;
+pub const HatchStyle_HatchStyle20Percent: HatchStyle = 8;
+pub const HatchStyle_HatchStyle25Percent: HatchStyle = 9;
+pub const HatchStyle_HatchStyle30Percent: HatchStyle = 10;
+pub const HatchStyle_HatchStyle40Percent: HatchStyle = 11;
+pub const HatchStyle_HatchStyle50Percent: HatchStyle = 12;
+pub const HatchStyle_HatchStyle60Percent: HatchStyle = 13;
+pub const HatchStyle_HatchStyle70Percent: HatchStyle = 14;
+pub const HatchStyle_HatchStyle75Percent: HatchStyle = 15;
+pub const HatchStyle_HatchStyle80Percent: HatchStyle = 16;
+pub const HatchStyle_HatchStyle90Percent: HatchStyle = 17;
+pub const HatchStyle_HatchStyleLightDownwardDiagonal: HatchStyle = 18;
+pub const HatchStyle_HatchStyleLightUpwardDiagonal: HatchStyle = 19;
+pub const HatchStyle_HatchStyleDarkDownwardDiagonal: HatchStyle = 20;
+pub const HatchStyle_HatchStyleDarkUpwardDiagonal: HatchStyle = 21;
+pub const HatchStyle_HatchStyleWideDownwardDiagonal: HatchStyle = 22;
+pub const HatchStyle_HatchStyleWideUpwardDiagonal: HatchStyle = 23;
+pub const HatchStyle_HatchStyleLightVertical: HatchStyle = 24;
+pub const HatchStyle_HatchStyleLightHorizontal: HatchStyle = 25;
+pub const HatchStyle_HatchStyleNarrowVertical: HatchStyle = 26;
+pub const HatchStyle_HatchStyleNarrowHorizontal: HatchStyle = 27;
+pub const HatchStyle_HatchStyleDarkVertical: HatchStyle = 28;
+pub const HatchStyle_HatchStyleDarkHorizontal: HatchStyle = 29;
+pub const HatchStyle_HatchStyleDashedDownwardDiagonal: HatchStyle = 30;
+pub const HatchStyle_HatchStyleDashedUpwardDiagonal: HatchStyle = 31;
+pub const HatchStyle_HatchStyleDashedHorizontal: HatchStyle = 32;
+pub const HatchStyle_HatchStyleDashedVertical: HatchStyle = 33;
+pub const HatchStyle_HatchStyleSmallConfetti: HatchStyle = 34;
+pub const HatchStyle_HatchStyleLargeConfetti: HatchStyle = 35;
+pub const HatchStyle_HatchStyleZigZag: HatchStyle = 36;
+pub const HatchStyle_HatchStyleWave: HatchStyle = 37;
+pub const HatchStyle_HatchStyleDiagonalBrick: HatchStyle = 38;
+pub const HatchStyle_HatchStyleHorizontalBrick: HatchStyle = 39;
+pub const HatchStyle_HatchStyleWeave: HatchStyle = 40;
+pub const HatchStyle_HatchStylePlaid: HatchStyle = 41;
+pub const HatchStyle_HatchStyleDivot: HatchStyle = 42;
+pub const HatchStyle_HatchStyleDottedGrid: HatchStyle = 43;
+pub const HatchStyle_HatchStyleDottedDiamond: HatchStyle = 44;
+pub const HatchStyle_HatchStyleShingle: HatchStyle = 45;
+pub const HatchStyle_HatchStyleTrellis: HatchStyle = 46;
+pub const HatchStyle_HatchStyleSphere: HatchStyle = 47;
+pub const HatchStyle_HatchStyleSmallGrid: HatchStyle = 48;
+pub const HatchStyle_HatchStyleSmallCheckerBoard: HatchStyle = 49;
+pub const HatchStyle_HatchStyleLargeCheckerBoard: HatchStyle = 50;
+pub const HatchStyle_HatchStyleOutlinedDiamond: HatchStyle = 51;
+pub const HatchStyle_HatchStyleSolidDiamond: HatchStyle = 52;
+pub const HatchStyle_HatchStyleTotal: HatchStyle = 53;
+pub const HatchStyle_HatchStyleLargeGrid: HatchStyle = 4;
+pub const HatchStyle_HatchStyleMin: HatchStyle = 0;
+pub const HatchStyle_HatchStyleMax: HatchStyle = 52;
+pub type HatchStyle = ::core::ffi::c_uint;
+pub const EmfPlusRecordType_WmfRecordTypeSetBkColor: EmfPlusRecordType = 66049;
+pub const EmfPlusRecordType_WmfRecordTypeSetBkMode: EmfPlusRecordType = 65794;
+pub const EmfPlusRecordType_WmfRecordTypeSetMapMode: EmfPlusRecordType = 65795;
+pub const EmfPlusRecordType_WmfRecordTypeSetROP2: EmfPlusRecordType = 65796;
+pub const EmfPlusRecordType_WmfRecordTypeSetRelAbs: EmfPlusRecordType = 65797;
+pub const EmfPlusRecordType_WmfRecordTypeSetPolyFillMode: EmfPlusRecordType = 65798;
+pub const EmfPlusRecordType_WmfRecordTypeSetStretchBltMode: EmfPlusRecordType = 65799;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextCharExtra: EmfPlusRecordType = 65800;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextColor: EmfPlusRecordType = 66057;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextJustification: EmfPlusRecordType = 66058;
+pub const EmfPlusRecordType_WmfRecordTypeSetWindowOrg: EmfPlusRecordType = 66059;
+pub const EmfPlusRecordType_WmfRecordTypeSetWindowExt: EmfPlusRecordType = 66060;
+pub const EmfPlusRecordType_WmfRecordTypeSetViewportOrg: EmfPlusRecordType = 66061;
+pub const EmfPlusRecordType_WmfRecordTypeSetViewportExt: EmfPlusRecordType = 66062;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetWindowOrg: EmfPlusRecordType = 66063;
+pub const EmfPlusRecordType_WmfRecordTypeScaleWindowExt: EmfPlusRecordType = 66576;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetViewportOrg: EmfPlusRecordType = 66065;
+pub const EmfPlusRecordType_WmfRecordTypeScaleViewportExt: EmfPlusRecordType = 66578;
+pub const EmfPlusRecordType_WmfRecordTypeLineTo: EmfPlusRecordType = 66067;
+pub const EmfPlusRecordType_WmfRecordTypeMoveTo: EmfPlusRecordType = 66068;
+pub const EmfPlusRecordType_WmfRecordTypeExcludeClipRect: EmfPlusRecordType = 66581;
+pub const EmfPlusRecordType_WmfRecordTypeIntersectClipRect: EmfPlusRecordType = 66582;
+pub const EmfPlusRecordType_WmfRecordTypeArc: EmfPlusRecordType = 67607;
+pub const EmfPlusRecordType_WmfRecordTypeEllipse: EmfPlusRecordType = 66584;
+pub const EmfPlusRecordType_WmfRecordTypeFloodFill: EmfPlusRecordType = 66585;
+pub const EmfPlusRecordType_WmfRecordTypePie: EmfPlusRecordType = 67610;
+pub const EmfPlusRecordType_WmfRecordTypeRectangle: EmfPlusRecordType = 66587;
+pub const EmfPlusRecordType_WmfRecordTypeRoundRect: EmfPlusRecordType = 67100;
+pub const EmfPlusRecordType_WmfRecordTypePatBlt: EmfPlusRecordType = 67101;
+pub const EmfPlusRecordType_WmfRecordTypeSaveDC: EmfPlusRecordType = 65566;
+pub const EmfPlusRecordType_WmfRecordTypeSetPixel: EmfPlusRecordType = 66591;
+pub const EmfPlusRecordType_WmfRecordTypeOffsetClipRgn: EmfPlusRecordType = 66080;
+pub const EmfPlusRecordType_WmfRecordTypeTextOut: EmfPlusRecordType = 66849;
+pub const EmfPlusRecordType_WmfRecordTypeBitBlt: EmfPlusRecordType = 67874;
+pub const EmfPlusRecordType_WmfRecordTypeStretchBlt: EmfPlusRecordType = 68387;
+pub const EmfPlusRecordType_WmfRecordTypePolygon: EmfPlusRecordType = 66340;
+pub const EmfPlusRecordType_WmfRecordTypePolyline: EmfPlusRecordType = 66341;
+pub const EmfPlusRecordType_WmfRecordTypeEscape: EmfPlusRecordType = 67110;
+pub const EmfPlusRecordType_WmfRecordTypeRestoreDC: EmfPlusRecordType = 65831;
+pub const EmfPlusRecordType_WmfRecordTypeFillRegion: EmfPlusRecordType = 66088;
+pub const EmfPlusRecordType_WmfRecordTypeFrameRegion: EmfPlusRecordType = 66601;
+pub const EmfPlusRecordType_WmfRecordTypeInvertRegion: EmfPlusRecordType = 65834;
+pub const EmfPlusRecordType_WmfRecordTypePaintRegion: EmfPlusRecordType = 65835;
+pub const EmfPlusRecordType_WmfRecordTypeSelectClipRegion: EmfPlusRecordType = 65836;
+pub const EmfPlusRecordType_WmfRecordTypeSelectObject: EmfPlusRecordType = 65837;
+pub const EmfPlusRecordType_WmfRecordTypeSetTextAlign: EmfPlusRecordType = 65838;
+pub const EmfPlusRecordType_WmfRecordTypeDrawText: EmfPlusRecordType = 67119;
+pub const EmfPlusRecordType_WmfRecordTypeChord: EmfPlusRecordType = 67632;
+pub const EmfPlusRecordType_WmfRecordTypeSetMapperFlags: EmfPlusRecordType = 66097;
+pub const EmfPlusRecordType_WmfRecordTypeExtTextOut: EmfPlusRecordType = 68146;
+pub const EmfPlusRecordType_WmfRecordTypeSetDIBToDev: EmfPlusRecordType = 68915;
+pub const EmfPlusRecordType_WmfRecordTypeSelectPalette: EmfPlusRecordType = 66100;
+pub const EmfPlusRecordType_WmfRecordTypeRealizePalette: EmfPlusRecordType = 65589;
+pub const EmfPlusRecordType_WmfRecordTypeAnimatePalette: EmfPlusRecordType = 66614;
+pub const EmfPlusRecordType_WmfRecordTypeSetPalEntries: EmfPlusRecordType = 65591;
+pub const EmfPlusRecordType_WmfRecordTypePolyPolygon: EmfPlusRecordType = 66872;
+pub const EmfPlusRecordType_WmfRecordTypeResizePalette: EmfPlusRecordType = 65849;
+pub const EmfPlusRecordType_WmfRecordTypeDIBBitBlt: EmfPlusRecordType = 67904;
+pub const EmfPlusRecordType_WmfRecordTypeDIBStretchBlt: EmfPlusRecordType = 68417;
+pub const EmfPlusRecordType_WmfRecordTypeDIBCreatePatternBrush: EmfPlusRecordType = 65858;
+pub const EmfPlusRecordType_WmfRecordTypeStretchDIB: EmfPlusRecordType = 69443;
+pub const EmfPlusRecordType_WmfRecordTypeExtFloodFill: EmfPlusRecordType = 66888;
+pub const EmfPlusRecordType_WmfRecordTypeSetLayout: EmfPlusRecordType = 65865;
+pub const EmfPlusRecordType_WmfRecordTypeResetDC: EmfPlusRecordType = 65868;
+pub const EmfPlusRecordType_WmfRecordTypeStartDoc: EmfPlusRecordType = 65869;
+pub const EmfPlusRecordType_WmfRecordTypeStartPage: EmfPlusRecordType = 65615;
+pub const EmfPlusRecordType_WmfRecordTypeEndPage: EmfPlusRecordType = 65616;
+pub const EmfPlusRecordType_WmfRecordTypeAbortDoc: EmfPlusRecordType = 65618;
+pub const EmfPlusRecordType_WmfRecordTypeEndDoc: EmfPlusRecordType = 65630;
+pub const EmfPlusRecordType_WmfRecordTypeDeleteObject: EmfPlusRecordType = 66032;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePalette: EmfPlusRecordType = 65783;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBrush: EmfPlusRecordType = 65784;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePatternBrush: EmfPlusRecordType = 66041;
+pub const EmfPlusRecordType_WmfRecordTypeCreatePenIndirect: EmfPlusRecordType = 66298;
+pub const EmfPlusRecordType_WmfRecordTypeCreateFontIndirect: EmfPlusRecordType = 66299;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBrushIndirect: EmfPlusRecordType = 66300;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBitmapIndirect: EmfPlusRecordType = 66301;
+pub const EmfPlusRecordType_WmfRecordTypeCreateBitmap: EmfPlusRecordType = 67326;
+pub const EmfPlusRecordType_WmfRecordTypeCreateRegion: EmfPlusRecordType = 67327;
+pub const EmfPlusRecordType_EmfRecordTypeHeader: EmfPlusRecordType = 1;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezier: EmfPlusRecordType = 2;
+pub const EmfPlusRecordType_EmfRecordTypePolygon: EmfPlusRecordType = 3;
+pub const EmfPlusRecordType_EmfRecordTypePolyline: EmfPlusRecordType = 4;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezierTo: EmfPlusRecordType = 5;
+pub const EmfPlusRecordType_EmfRecordTypePolyLineTo: EmfPlusRecordType = 6;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolyline: EmfPlusRecordType = 7;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolygon: EmfPlusRecordType = 8;
+pub const EmfPlusRecordType_EmfRecordTypeSetWindowExtEx: EmfPlusRecordType = 9;
+pub const EmfPlusRecordType_EmfRecordTypeSetWindowOrgEx: EmfPlusRecordType = 10;
+pub const EmfPlusRecordType_EmfRecordTypeSetViewportExtEx: EmfPlusRecordType = 11;
+pub const EmfPlusRecordType_EmfRecordTypeSetViewportOrgEx: EmfPlusRecordType = 12;
+pub const EmfPlusRecordType_EmfRecordTypeSetBrushOrgEx: EmfPlusRecordType = 13;
+pub const EmfPlusRecordType_EmfRecordTypeEOF: EmfPlusRecordType = 14;
+pub const EmfPlusRecordType_EmfRecordTypeSetPixelV: EmfPlusRecordType = 15;
+pub const EmfPlusRecordType_EmfRecordTypeSetMapperFlags: EmfPlusRecordType = 16;
+pub const EmfPlusRecordType_EmfRecordTypeSetMapMode: EmfPlusRecordType = 17;
+pub const EmfPlusRecordType_EmfRecordTypeSetBkMode: EmfPlusRecordType = 18;
+pub const EmfPlusRecordType_EmfRecordTypeSetPolyFillMode: EmfPlusRecordType = 19;
+pub const EmfPlusRecordType_EmfRecordTypeSetROP2: EmfPlusRecordType = 20;
+pub const EmfPlusRecordType_EmfRecordTypeSetStretchBltMode: EmfPlusRecordType = 21;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextAlign: EmfPlusRecordType = 22;
+pub const EmfPlusRecordType_EmfRecordTypeSetColorAdjustment: EmfPlusRecordType = 23;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextColor: EmfPlusRecordType = 24;
+pub const EmfPlusRecordType_EmfRecordTypeSetBkColor: EmfPlusRecordType = 25;
+pub const EmfPlusRecordType_EmfRecordTypeOffsetClipRgn: EmfPlusRecordType = 26;
+pub const EmfPlusRecordType_EmfRecordTypeMoveToEx: EmfPlusRecordType = 27;
+pub const EmfPlusRecordType_EmfRecordTypeSetMetaRgn: EmfPlusRecordType = 28;
+pub const EmfPlusRecordType_EmfRecordTypeExcludeClipRect: EmfPlusRecordType = 29;
+pub const EmfPlusRecordType_EmfRecordTypeIntersectClipRect: EmfPlusRecordType = 30;
+pub const EmfPlusRecordType_EmfRecordTypeScaleViewportExtEx: EmfPlusRecordType = 31;
+pub const EmfPlusRecordType_EmfRecordTypeScaleWindowExtEx: EmfPlusRecordType = 32;
+pub const EmfPlusRecordType_EmfRecordTypeSaveDC: EmfPlusRecordType = 33;
+pub const EmfPlusRecordType_EmfRecordTypeRestoreDC: EmfPlusRecordType = 34;
+pub const EmfPlusRecordType_EmfRecordTypeSetWorldTransform: EmfPlusRecordType = 35;
+pub const EmfPlusRecordType_EmfRecordTypeModifyWorldTransform: EmfPlusRecordType = 36;
+pub const EmfPlusRecordType_EmfRecordTypeSelectObject: EmfPlusRecordType = 37;
+pub const EmfPlusRecordType_EmfRecordTypeCreatePen: EmfPlusRecordType = 38;
+pub const EmfPlusRecordType_EmfRecordTypeCreateBrushIndirect: EmfPlusRecordType = 39;
+pub const EmfPlusRecordType_EmfRecordTypeDeleteObject: EmfPlusRecordType = 40;
+pub const EmfPlusRecordType_EmfRecordTypeAngleArc: EmfPlusRecordType = 41;
+pub const EmfPlusRecordType_EmfRecordTypeEllipse: EmfPlusRecordType = 42;
+pub const EmfPlusRecordType_EmfRecordTypeRectangle: EmfPlusRecordType = 43;
+pub const EmfPlusRecordType_EmfRecordTypeRoundRect: EmfPlusRecordType = 44;
+pub const EmfPlusRecordType_EmfRecordTypeArc: EmfPlusRecordType = 45;
+pub const EmfPlusRecordType_EmfRecordTypeChord: EmfPlusRecordType = 46;
+pub const EmfPlusRecordType_EmfRecordTypePie: EmfPlusRecordType = 47;
+pub const EmfPlusRecordType_EmfRecordTypeSelectPalette: EmfPlusRecordType = 48;
+pub const EmfPlusRecordType_EmfRecordTypeCreatePalette: EmfPlusRecordType = 49;
+pub const EmfPlusRecordType_EmfRecordTypeSetPaletteEntries: EmfPlusRecordType = 50;
+pub const EmfPlusRecordType_EmfRecordTypeResizePalette: EmfPlusRecordType = 51;
+pub const EmfPlusRecordType_EmfRecordTypeRealizePalette: EmfPlusRecordType = 52;
+pub const EmfPlusRecordType_EmfRecordTypeExtFloodFill: EmfPlusRecordType = 53;
+pub const EmfPlusRecordType_EmfRecordTypeLineTo: EmfPlusRecordType = 54;
+pub const EmfPlusRecordType_EmfRecordTypeArcTo: EmfPlusRecordType = 55;
+pub const EmfPlusRecordType_EmfRecordTypePolyDraw: EmfPlusRecordType = 56;
+pub const EmfPlusRecordType_EmfRecordTypeSetArcDirection: EmfPlusRecordType = 57;
+pub const EmfPlusRecordType_EmfRecordTypeSetMiterLimit: EmfPlusRecordType = 58;
+pub const EmfPlusRecordType_EmfRecordTypeBeginPath: EmfPlusRecordType = 59;
+pub const EmfPlusRecordType_EmfRecordTypeEndPath: EmfPlusRecordType = 60;
+pub const EmfPlusRecordType_EmfRecordTypeCloseFigure: EmfPlusRecordType = 61;
+pub const EmfPlusRecordType_EmfRecordTypeFillPath: EmfPlusRecordType = 62;
+pub const EmfPlusRecordType_EmfRecordTypeStrokeAndFillPath: EmfPlusRecordType = 63;
+pub const EmfPlusRecordType_EmfRecordTypeStrokePath: EmfPlusRecordType = 64;
+pub const EmfPlusRecordType_EmfRecordTypeFlattenPath: EmfPlusRecordType = 65;
+pub const EmfPlusRecordType_EmfRecordTypeWidenPath: EmfPlusRecordType = 66;
+pub const EmfPlusRecordType_EmfRecordTypeSelectClipPath: EmfPlusRecordType = 67;
+pub const EmfPlusRecordType_EmfRecordTypeAbortPath: EmfPlusRecordType = 68;
+pub const EmfPlusRecordType_EmfRecordTypeReserved_069: EmfPlusRecordType = 69;
+pub const EmfPlusRecordType_EmfRecordTypeGdiComment: EmfPlusRecordType = 70;
+pub const EmfPlusRecordType_EmfRecordTypeFillRgn: EmfPlusRecordType = 71;
+pub const EmfPlusRecordType_EmfRecordTypeFrameRgn: EmfPlusRecordType = 72;
+pub const EmfPlusRecordType_EmfRecordTypeInvertRgn: EmfPlusRecordType = 73;
+pub const EmfPlusRecordType_EmfRecordTypePaintRgn: EmfPlusRecordType = 74;
+pub const EmfPlusRecordType_EmfRecordTypeExtSelectClipRgn: EmfPlusRecordType = 75;
+pub const EmfPlusRecordType_EmfRecordTypeBitBlt: EmfPlusRecordType = 76;
+pub const EmfPlusRecordType_EmfRecordTypeStretchBlt: EmfPlusRecordType = 77;
+pub const EmfPlusRecordType_EmfRecordTypeMaskBlt: EmfPlusRecordType = 78;
+pub const EmfPlusRecordType_EmfRecordTypePlgBlt: EmfPlusRecordType = 79;
+pub const EmfPlusRecordType_EmfRecordTypeSetDIBitsToDevice: EmfPlusRecordType = 80;
+pub const EmfPlusRecordType_EmfRecordTypeStretchDIBits: EmfPlusRecordType = 81;
+pub const EmfPlusRecordType_EmfRecordTypeExtCreateFontIndirect: EmfPlusRecordType = 82;
+pub const EmfPlusRecordType_EmfRecordTypeExtTextOutA: EmfPlusRecordType = 83;
+pub const EmfPlusRecordType_EmfRecordTypeExtTextOutW: EmfPlusRecordType = 84;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezier16: EmfPlusRecordType = 85;
+pub const EmfPlusRecordType_EmfRecordTypePolygon16: EmfPlusRecordType = 86;
+pub const EmfPlusRecordType_EmfRecordTypePolyline16: EmfPlusRecordType = 87;
+pub const EmfPlusRecordType_EmfRecordTypePolyBezierTo16: EmfPlusRecordType = 88;
+pub const EmfPlusRecordType_EmfRecordTypePolylineTo16: EmfPlusRecordType = 89;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolyline16: EmfPlusRecordType = 90;
+pub const EmfPlusRecordType_EmfRecordTypePolyPolygon16: EmfPlusRecordType = 91;
+pub const EmfPlusRecordType_EmfRecordTypePolyDraw16: EmfPlusRecordType = 92;
+pub const EmfPlusRecordType_EmfRecordTypeCreateMonoBrush: EmfPlusRecordType = 93;
+pub const EmfPlusRecordType_EmfRecordTypeCreateDIBPatternBrushPt: EmfPlusRecordType = 94;
+pub const EmfPlusRecordType_EmfRecordTypeExtCreatePen: EmfPlusRecordType = 95;
+pub const EmfPlusRecordType_EmfRecordTypePolyTextOutA: EmfPlusRecordType = 96;
+pub const EmfPlusRecordType_EmfRecordTypePolyTextOutW: EmfPlusRecordType = 97;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMMode: EmfPlusRecordType = 98;
+pub const EmfPlusRecordType_EmfRecordTypeCreateColorSpace: EmfPlusRecordType = 99;
+pub const EmfPlusRecordType_EmfRecordTypeSetColorSpace: EmfPlusRecordType = 100;
+pub const EmfPlusRecordType_EmfRecordTypeDeleteColorSpace: EmfPlusRecordType = 101;
+pub const EmfPlusRecordType_EmfRecordTypeGLSRecord: EmfPlusRecordType = 102;
+pub const EmfPlusRecordType_EmfRecordTypeGLSBoundedRecord: EmfPlusRecordType = 103;
+pub const EmfPlusRecordType_EmfRecordTypePixelFormat: EmfPlusRecordType = 104;
+pub const EmfPlusRecordType_EmfRecordTypeDrawEscape: EmfPlusRecordType = 105;
+pub const EmfPlusRecordType_EmfRecordTypeExtEscape: EmfPlusRecordType = 106;
+pub const EmfPlusRecordType_EmfRecordTypeStartDoc: EmfPlusRecordType = 107;
+pub const EmfPlusRecordType_EmfRecordTypeSmallTextOut: EmfPlusRecordType = 108;
+pub const EmfPlusRecordType_EmfRecordTypeForceUFIMapping: EmfPlusRecordType = 109;
+pub const EmfPlusRecordType_EmfRecordTypeNamedEscape: EmfPlusRecordType = 110;
+pub const EmfPlusRecordType_EmfRecordTypeColorCorrectPalette: EmfPlusRecordType = 111;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMProfileA: EmfPlusRecordType = 112;
+pub const EmfPlusRecordType_EmfRecordTypeSetICMProfileW: EmfPlusRecordType = 113;
+pub const EmfPlusRecordType_EmfRecordTypeAlphaBlend: EmfPlusRecordType = 114;
+pub const EmfPlusRecordType_EmfRecordTypeSetLayout: EmfPlusRecordType = 115;
+pub const EmfPlusRecordType_EmfRecordTypeTransparentBlt: EmfPlusRecordType = 116;
+pub const EmfPlusRecordType_EmfRecordTypeReserved_117: EmfPlusRecordType = 117;
+pub const EmfPlusRecordType_EmfRecordTypeGradientFill: EmfPlusRecordType = 118;
+pub const EmfPlusRecordType_EmfRecordTypeSetLinkedUFIs: EmfPlusRecordType = 119;
+pub const EmfPlusRecordType_EmfRecordTypeSetTextJustification: EmfPlusRecordType = 120;
+pub const EmfPlusRecordType_EmfRecordTypeColorMatchToTargetW: EmfPlusRecordType = 121;
+pub const EmfPlusRecordType_EmfRecordTypeCreateColorSpaceW: EmfPlusRecordType = 122;
+pub const EmfPlusRecordType_EmfRecordTypeMax: EmfPlusRecordType = 122;
+pub const EmfPlusRecordType_EmfRecordTypeMin: EmfPlusRecordType = 1;
+pub const EmfPlusRecordType_EmfPlusRecordTypeInvalid: EmfPlusRecordType = 16384;
+pub const EmfPlusRecordType_EmfPlusRecordTypeHeader: EmfPlusRecordType = 16385;
+pub const EmfPlusRecordType_EmfPlusRecordTypeEndOfFile: EmfPlusRecordType = 16386;
+pub const EmfPlusRecordType_EmfPlusRecordTypeComment: EmfPlusRecordType = 16387;
+pub const EmfPlusRecordType_EmfPlusRecordTypeGetDC: EmfPlusRecordType = 16388;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatStart: EmfPlusRecordType = 16389;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatSection: EmfPlusRecordType = 16390;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiFormatEnd: EmfPlusRecordType = 16391;
+pub const EmfPlusRecordType_EmfPlusRecordTypeObject: EmfPlusRecordType = 16392;
+pub const EmfPlusRecordType_EmfPlusRecordTypeClear: EmfPlusRecordType = 16393;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillRects: EmfPlusRecordType = 16394;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawRects: EmfPlusRecordType = 16395;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPolygon: EmfPlusRecordType = 16396;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawLines: EmfPlusRecordType = 16397;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillEllipse: EmfPlusRecordType = 16398;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawEllipse: EmfPlusRecordType = 16399;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPie: EmfPlusRecordType = 16400;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawPie: EmfPlusRecordType = 16401;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawArc: EmfPlusRecordType = 16402;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillRegion: EmfPlusRecordType = 16403;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillPath: EmfPlusRecordType = 16404;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawPath: EmfPlusRecordType = 16405;
+pub const EmfPlusRecordType_EmfPlusRecordTypeFillClosedCurve: EmfPlusRecordType = 16406;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawClosedCurve: EmfPlusRecordType = 16407;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawCurve: EmfPlusRecordType = 16408;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawBeziers: EmfPlusRecordType = 16409;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawImage: EmfPlusRecordType = 16410;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawImagePoints: EmfPlusRecordType = 16411;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawString: EmfPlusRecordType = 16412;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetRenderingOrigin: EmfPlusRecordType = 16413;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetAntiAliasMode: EmfPlusRecordType = 16414;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTextRenderingHint: EmfPlusRecordType = 16415;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTextContrast: EmfPlusRecordType = 16416;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetInterpolationMode: EmfPlusRecordType = 16417;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetPixelOffsetMode: EmfPlusRecordType = 16418;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetCompositingMode: EmfPlusRecordType = 16419;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetCompositingQuality: EmfPlusRecordType = 16420;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSave: EmfPlusRecordType = 16421;
+pub const EmfPlusRecordType_EmfPlusRecordTypeRestore: EmfPlusRecordType = 16422;
+pub const EmfPlusRecordType_EmfPlusRecordTypeBeginContainer: EmfPlusRecordType = 16423;
+pub const EmfPlusRecordType_EmfPlusRecordTypeBeginContainerNoParams: EmfPlusRecordType = 16424;
+pub const EmfPlusRecordType_EmfPlusRecordTypeEndContainer: EmfPlusRecordType = 16425;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetWorldTransform: EmfPlusRecordType = 16426;
+pub const EmfPlusRecordType_EmfPlusRecordTypeResetWorldTransform: EmfPlusRecordType = 16427;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMultiplyWorldTransform: EmfPlusRecordType = 16428;
+pub const EmfPlusRecordType_EmfPlusRecordTypeTranslateWorldTransform: EmfPlusRecordType = 16429;
+pub const EmfPlusRecordType_EmfPlusRecordTypeScaleWorldTransform: EmfPlusRecordType = 16430;
+pub const EmfPlusRecordType_EmfPlusRecordTypeRotateWorldTransform: EmfPlusRecordType = 16431;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetPageTransform: EmfPlusRecordType = 16432;
+pub const EmfPlusRecordType_EmfPlusRecordTypeResetClip: EmfPlusRecordType = 16433;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipRect: EmfPlusRecordType = 16434;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipPath: EmfPlusRecordType = 16435;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetClipRegion: EmfPlusRecordType = 16436;
+pub const EmfPlusRecordType_EmfPlusRecordTypeOffsetClip: EmfPlusRecordType = 16437;
+pub const EmfPlusRecordType_EmfPlusRecordTypeDrawDriverString: EmfPlusRecordType = 16438;
+pub const EmfPlusRecordType_EmfPlusRecordTypeStrokeFillPath: EmfPlusRecordType = 16439;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSerializableObject: EmfPlusRecordType = 16440;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTSGraphics: EmfPlusRecordType = 16441;
+pub const EmfPlusRecordType_EmfPlusRecordTypeSetTSClip: EmfPlusRecordType = 16442;
+pub const EmfPlusRecordType_EmfPlusRecordTotal: EmfPlusRecordType = 16443;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMax: EmfPlusRecordType = 16442;
+pub const EmfPlusRecordType_EmfPlusRecordTypeMin: EmfPlusRecordType = 16385;
+pub type EmfPlusRecordType = ::core::ffi::c_uint;
+pub type REAL = f32;
+pub const Status_Ok: Status = 0;
+pub const Status_GenericError: Status = 1;
+pub const Status_InvalidParameter: Status = 2;
+pub const Status_OutOfMemory: Status = 3;
+pub const Status_ObjectBusy: Status = 4;
+pub const Status_InsufficientBuffer: Status = 5;
+pub const Status_NotImplemented: Status = 6;
+pub const Status_Win32Error: Status = 7;
+pub const Status_WrongState: Status = 8;
+pub const Status_Aborted: Status = 9;
+pub const Status_FileNotFound: Status = 10;
+pub const Status_ValueOverflow: Status = 11;
+pub const Status_AccessDenied: Status = 12;
+pub const Status_UnknownImageFormat: Status = 13;
+pub const Status_FontFamilyNotFound: Status = 14;
+pub const Status_FontStyleNotFound: Status = 15;
+pub const Status_NotTrueTypeFont: Status = 16;
+pub const Status_UnsupportedGdiplusVersion: Status = 17;
+pub const Status_GdiplusNotInitialized: Status = 18;
+pub const Status_PropertyNotFound: Status = 19;
+pub const Status_PropertyNotSupported: Status = 20;
+pub const Status_ProfileNotFound: Status = 21;
+pub type Status = ::core::ffi::c_uint;
+pub type ImageAbort =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> BOOL>;
+pub type DrawImageAbort = ImageAbort;
+pub type GetThumbnailImageAbort = ImageAbort;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GdiplusAbort {
+    _unused: [u8; 0],
+}
+pub type EnumerateMetafileProc = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: EmfPlusRecordType,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *const BYTE,
+        arg5: *mut ::core::ffi::c_void,
+    ) -> BOOL,
+>;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Point {
+    pub X: INT,
+    pub Y: INT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct PointF {
+    pub X: REAL,
+    pub Y: REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PathData {
+    pub Count: INT,
+    pub Points: *mut PointF,
+    pub Types: *mut BYTE,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct RectF {
+    pub X: REAL,
+    pub Y: REAL,
+    pub Width: REAL,
+    pub Height: REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Rect {
+    pub X: INT,
+    pub Y: INT,
+    pub Width: INT,
+    pub Height: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct CharacterRange {
+    pub First: INT,
+    pub Length: INT,
+}
+pub const DebugEventLevel_DebugEventLevelFatal: DebugEventLevel = 0;
+pub const DebugEventLevel_DebugEventLevelWarning: DebugEventLevel = 1;
+pub type DebugEventLevel = ::core::ffi::c_uint;
+pub type DebugEventProc =
+    ::core::option::Option<unsafe extern "system" fn(arg1: DebugEventLevel, arg2: *mut CHAR)>;
+pub type NotificationHookProc =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ULONG_PTR) -> Status>;
+pub type NotificationUnhookProc =
+    ::core::option::Option<unsafe extern "system" fn(arg1: ULONG_PTR)>;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct GdiplusStartupInput {
+    pub GdiplusVersion: UINT32,
+    pub DebugEventCallback: DebugEventProc,
+    pub SuppressBackgroundThread: BOOL,
+    pub SuppressExternalCodecs: BOOL,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct GdiplusStartupOutput {
+    pub NotificationHook: NotificationHookProc,
+    pub NotificationUnhook: NotificationUnhookProc,
+}
+unsafe extern "stdcall" {
+    pub fn GdiplusStartup(
+        arg1: *mut ULONG_PTR,
+        arg2: *const GdiplusStartupInput,
+        arg3: *mut GdiplusStartupOutput,
+    ) -> Status;
+}
+unsafe extern "stdcall" {
+    pub fn GdiplusShutdown(arg1: ULONG_PTR);
+}
+pub type ARGB = DWORD;
+pub type PixelFormat = INT;
+pub const PaletteFlags_PaletteFlagsHasAlpha: PaletteFlags = 1;
+pub const PaletteFlags_PaletteFlagsGrayScale: PaletteFlags = 2;
+pub const PaletteFlags_PaletteFlagsHalftone: PaletteFlags = 4;
+pub type PaletteFlags = i32;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ColorPalette {
+    pub Flags: UINT,
+    pub Count: UINT,
+    pub Entries: [ARGB; 1usize],
+}
+pub const DitherType_DitherTypeNone: DitherType = 0;
+pub const DitherType_DitherTypeSolid: DitherType = 1;
+pub const DitherType_DitherTypeOrdered4x4: DitherType = 2;
+pub const DitherType_DitherTypeOrdered8x8: DitherType = 3;
+pub const DitherType_DitherTypeOrdered16x16: DitherType = 4;
+pub const DitherType_DitherTypeSpiral4x4: DitherType = 5;
+pub const DitherType_DitherTypeSpiral8x8: DitherType = 6;
+pub const DitherType_DitherTypeDualSpiral4x4: DitherType = 7;
+pub const DitherType_DitherTypeDualSpiral8x8: DitherType = 8;
+pub const DitherType_DitherTypeErrorDiffusion: DitherType = 9;
+pub const DitherType_DitherTypeMax: DitherType = 10;
+pub type DitherType = ::core::ffi::c_uint;
+pub const PaletteType_PaletteTypeCustom: PaletteType = 0;
+pub const PaletteType_PaletteTypeOptimal: PaletteType = 1;
+pub const PaletteType_PaletteTypeFixedBW: PaletteType = 2;
+pub const PaletteType_PaletteTypeFixedHalftone8: PaletteType = 3;
+pub const PaletteType_PaletteTypeFixedHalftone27: PaletteType = 4;
+pub const PaletteType_PaletteTypeFixedHalftone64: PaletteType = 5;
+pub const PaletteType_PaletteTypeFixedHalftone125: PaletteType = 6;
+pub const PaletteType_PaletteTypeFixedHalftone216: PaletteType = 7;
+pub const PaletteType_PaletteTypeFixedHalftone252: PaletteType = 8;
+pub const PaletteType_PaletteTypeFixedHalftone256: PaletteType = 9;
+pub type PaletteType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ENHMETAHEADER3 {
+    pub iType: DWORD,
+    pub nSize: DWORD,
+    pub rclBounds: RECTL,
+    pub rclFrame: RECTL,
+    pub dSignature: DWORD,
+    pub nVersion: DWORD,
+    pub nBytes: DWORD,
+    pub nRecords: DWORD,
+    pub nHandles: WORD,
+    pub sReserved: WORD,
+    pub nDescription: DWORD,
+    pub offDescription: DWORD,
+    pub nPalEntries: DWORD,
+    pub szlDevice: SIZEL,
+    pub szlMillimeters: SIZEL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PWMFRect16 {
+    pub Left: INT16,
+    pub Top: INT16,
+    pub Right: INT16,
+    pub Bottom: INT16,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed(2))]
+pub struct WmfPlaceableFileHeader {
+    pub Key: UINT32,
+    pub Hmf: INT16,
+    pub BoundingBox: PWMFRect16,
+    pub Inch: INT16,
+    pub Reserved: UINT32,
+    pub Checksum: INT16,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct MetafileHeader {
+    pub Type: MetafileType,
+    pub Size: UINT,
+    pub Version: UINT,
+    pub EmfPlusFlags: UINT,
+    pub DpiX: REAL,
+    pub DpiY: REAL,
+    pub X: INT,
+    pub Y: INT,
+    pub Width: INT,
+    pub Height: INT,
+    pub __bindgen_anon_1: MetafileHeader__bindgen_ty_1,
+    pub EmfPlusHeaderSize: INT,
+    pub LogicalDpiX: INT,
+    pub LogicalDpiY: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union MetafileHeader__bindgen_ty_1 {
+    pub WmfHeader: METAHEADER,
+    pub EmfHeader: ENHMETAHEADER3,
+}
+unsafe extern "C" {
+    pub static ImageFormatUndefined: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatMemoryBMP: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatBMP: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatEMF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatWMF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatJPEG: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatPNG: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatGIF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatTIFF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatEXIF: GUID;
+}
+unsafe extern "C" {
+    pub static ImageFormatIcon: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionTime: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionPage: GUID;
+}
+unsafe extern "C" {
+    pub static FrameDimensionResolution: GUID;
+}
+pub const ImageLockMode_ImageLockModeRead: ImageLockMode = 1;
+pub const ImageLockMode_ImageLockModeWrite: ImageLockMode = 2;
+pub const ImageLockMode_ImageLockModeUserInputBuf: ImageLockMode = 4;
+pub type ImageLockMode = ::core::ffi::c_uint;
+pub const RotateFlipType_RotateNoneFlipNone: RotateFlipType = 0;
+pub const RotateFlipType_Rotate180FlipXY: RotateFlipType = 0;
+pub const RotateFlipType_Rotate90FlipNone: RotateFlipType = 1;
+pub const RotateFlipType_Rotate270FlipXY: RotateFlipType = 1;
+pub const RotateFlipType_Rotate180FlipNone: RotateFlipType = 2;
+pub const RotateFlipType_RotateNoneFlipXY: RotateFlipType = 2;
+pub const RotateFlipType_Rotate270FlipNone: RotateFlipType = 3;
+pub const RotateFlipType_Rotate90FlipXY: RotateFlipType = 3;
+pub const RotateFlipType_RotateNoneFlipX: RotateFlipType = 4;
+pub const RotateFlipType_Rotate180FlipY: RotateFlipType = 4;
+pub const RotateFlipType_Rotate90FlipX: RotateFlipType = 5;
+pub const RotateFlipType_Rotate270FlipY: RotateFlipType = 5;
+pub const RotateFlipType_Rotate180FlipX: RotateFlipType = 6;
+pub const RotateFlipType_RotateNoneFlipY: RotateFlipType = 6;
+pub const RotateFlipType_Rotate270FlipX: RotateFlipType = 7;
+pub const RotateFlipType_Rotate90FlipY: RotateFlipType = 7;
+pub type RotateFlipType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct EncoderParameter {
+    pub Guid: GUID,
+    pub NumberOfValues: ULONG,
+    pub Type: ULONG,
+    pub Value: *mut ::core::ffi::c_void,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct EncoderParameters {
+    pub Count: UINT,
+    pub Parameter: [EncoderParameter; 1usize],
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ImageCodecInfo {
+    pub Clsid: CLSID,
+    pub FormatID: GUID,
+    pub CodecName: *const WCHAR,
+    pub DllName: *const WCHAR,
+    pub FormatDescription: *const WCHAR,
+    pub FilenameExtension: *const WCHAR,
+    pub MimeType: *const WCHAR,
+    pub Flags: DWORD,
+    pub Version: DWORD,
+    pub SigCount: DWORD,
+    pub SigSize: DWORD,
+    pub SigPattern: *const BYTE,
+    pub SigMask: *const BYTE,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct BitmapData {
+    pub Width: UINT,
+    pub Height: UINT,
+    pub Stride: INT,
+    pub PixelFormat: PixelFormat,
+    pub Scan0: *mut ::core::ffi::c_void,
+    pub Reserved: UINT_PTR,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ImageItemData {
+    pub Size: UINT,
+    pub Position: UINT,
+    pub Desc: *mut ::core::ffi::c_void,
+    pub DescSize: UINT,
+    pub Data: *mut ::core::ffi::c_void,
+    pub DataSize: UINT,
+    pub Cookie: UINT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct PropertyItem {
+    pub id: PROPID,
+    pub length: ULONG,
+    pub type_: WORD,
+    pub value: *mut ::core::ffi::c_void,
+}
+pub const ColorChannelFlags_ColorChannelFlagsC: ColorChannelFlags = 0;
+pub const ColorChannelFlags_ColorChannelFlagsM: ColorChannelFlags = 1;
+pub const ColorChannelFlags_ColorChannelFlagsY: ColorChannelFlags = 2;
+pub const ColorChannelFlags_ColorChannelFlagsK: ColorChannelFlags = 3;
+pub const ColorChannelFlags_ColorChannelFlagsLast: ColorChannelFlags = 4;
+pub type ColorChannelFlags = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Color {
+    pub Argb: ARGB,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ColorMatrix {
+    pub m: [[REAL; 5usize]; 5usize],
+}
+pub const ColorMatrixFlags_ColorMatrixFlagsDefault: ColorMatrixFlags = 0;
+pub const ColorMatrixFlags_ColorMatrixFlagsSkipGrays: ColorMatrixFlags = 1;
+pub const ColorMatrixFlags_ColorMatrixFlagsAltGray: ColorMatrixFlags = 2;
+pub type ColorMatrixFlags = ::core::ffi::c_uint;
+pub const ColorAdjustType_ColorAdjustTypeDefault: ColorAdjustType = 0;
+pub const ColorAdjustType_ColorAdjustTypeBitmap: ColorAdjustType = 1;
+pub const ColorAdjustType_ColorAdjustTypeBrush: ColorAdjustType = 2;
+pub const ColorAdjustType_ColorAdjustTypePen: ColorAdjustType = 3;
+pub const ColorAdjustType_ColorAdjustTypeText: ColorAdjustType = 4;
+pub const ColorAdjustType_ColorAdjustTypeCount: ColorAdjustType = 5;
+pub const ColorAdjustType_ColorAdjustTypeAny: ColorAdjustType = 6;
+pub type ColorAdjustType = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ColorMap {
+    pub oldColor: Color,
+    pub newColor: Color,
+}
+pub const HistogramFormat_HistogramFormatARGB: HistogramFormat = 0;
+pub const HistogramFormat_HistogramFormatPARGB: HistogramFormat = 1;
+pub const HistogramFormat_HistogramFormatRGB: HistogramFormat = 2;
+pub const HistogramFormat_HistogramFormatGray: HistogramFormat = 3;
+pub const HistogramFormat_HistogramFormatB: HistogramFormat = 4;
+pub const HistogramFormat_HistogramFormatG: HistogramFormat = 5;
+pub const HistogramFormat_HistogramFormatR: HistogramFormat = 6;
+pub const HistogramFormat_HistogramFormatA: HistogramFormat = 7;
+pub type HistogramFormat = ::core::ffi::c_uint;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpGraphics {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPen {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpBrush {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpHatch {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpSolidFill {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPath {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpMatrix {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPathIterator {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpCustomLineCap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpAdjustableArrowCap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpImage {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpMetafile {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpImageAttributes {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpCachedBitmap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpBitmap {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpPathGradient {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpLineGradient {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpTexture {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFont {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFontCollection {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpFontFamily {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpStringFormat {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct GpRegion {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CGpEffect {
+    _unused: [u8; 0],
+}
+pub use self::BrushType as GpBrushType;
+pub use self::Status as GpStatus;
+pub use self::Unit as GpUnit;
+pub type GpPointF = PointF;
+pub use self::FillMode as GpFillMode;
+pub type GpPathData = PathData;
+pub use self::LineCap as GpLineCap;
+pub type GpRectF = RectF;
+pub type GpRect = Rect;
+pub use self::DashCap as GpDashCap;
+pub use self::DashStyle as GpDashStyle;
+pub use self::LineJoin as GpLineJoin;
+pub use self::MatrixOrder as GpMatrixOrder;
+pub type GpPoint = Point;
+pub use self::WrapMode as GpWrapMode;
+pub type GpColor = Color;
+pub use self::CoordinateSpace as GpCoordinateSpace;
+pub use self::FlushIntention as GpFlushIntention;
+pub use self::HatchStyle as GpHatchStyle;
+pub use self::PenAlignment as GpPenAlignment;
+pub use self::PenType as GpPenType;
+unsafe extern "stdcall" {
+    pub fn GdipCreateAdjustableArrowCap(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: BOOL,
+        arg4: *mut *mut GpAdjustableArrowCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetAdjustableArrowCapFillState(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetAdjustableArrowCapHeight(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetAdjustableArrowCapMiddleInset(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetAdjustableArrowCapWidth(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetAdjustableArrowCapFillState(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetAdjustableArrowCapHeight(arg1: *mut GpAdjustableArrowCap, arg2: REAL)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetAdjustableArrowCapMiddleInset(
+        arg1: *mut GpAdjustableArrowCap,
+        arg2: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetAdjustableArrowCapWidth(arg1: *mut GpAdjustableArrowCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapApplyEffect(
+        arg1: *mut GpBitmap,
+        arg2: *mut CGpEffect,
+        arg3: *mut RECT,
+        arg4: BOOL,
+        arg5: *mut *mut ::core::ffi::c_void,
+        arg6: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapCreateApplyEffect(
+        arg1: *mut *mut GpBitmap,
+        arg2: INT,
+        arg3: *mut CGpEffect,
+        arg4: *mut RECT,
+        arg5: *mut RECT,
+        arg6: *mut *mut GpBitmap,
+        arg7: BOOL,
+        arg8: *mut *mut ::core::ffi::c_void,
+        arg9: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapGetHistogram(
+        arg1: *mut GpBitmap,
+        arg2: HistogramFormat,
+        arg3: UINT,
+        arg4: *mut UINT,
+        arg5: *mut UINT,
+        arg6: *mut UINT,
+        arg7: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapGetHistogramSize(arg1: HistogramFormat, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapGetPixel(
+        arg1: *mut GpBitmap,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapLockBits(
+        arg1: *mut GpBitmap,
+        arg2: *const GpRect,
+        arg3: UINT,
+        arg4: PixelFormat,
+        arg5: *mut BitmapData,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapSetPixel(arg1: *mut GpBitmap, arg2: INT, arg3: INT, arg4: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapSetResolution(arg1: *mut GpBitmap, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBitmapUnlockBits(arg1: *mut GpBitmap, arg2: *mut BitmapData) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneBitmapArea(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: PixelFormat,
+        arg6: *mut GpBitmap,
+        arg7: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneBitmapAreaI(
+        arg1: INT,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: PixelFormat,
+        arg6: *mut GpBitmap,
+        arg7: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromFile(arg1: *const WCHAR, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromFileICM(arg1: *const WCHAR, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromGdiDib(
+        arg1: *const BITMAPINFO,
+        arg2: *mut ::core::ffi::c_void,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromGraphics(
+        arg1: INT,
+        arg2: INT,
+        arg3: *mut GpGraphics,
+        arg4: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromHBITMAP(
+        arg1: HBITMAP,
+        arg2: HPALETTE,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromHICON(arg1: HICON, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromResource(
+        arg1: HINSTANCE,
+        arg2: *const WCHAR,
+        arg3: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromScan0(
+        arg1: INT,
+        arg2: INT,
+        arg3: INT,
+        arg4: PixelFormat,
+        arg5: *mut BYTE,
+        arg6: *mut *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromStream(arg1: *mut IStream, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateBitmapFromStreamICM(arg1: *mut IStream, arg2: *mut *mut GpBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateHBITMAPFromBitmap(
+        arg1: *mut GpBitmap,
+        arg2: *mut HBITMAP,
+        arg3: ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateHICONFromBitmap(arg1: *mut GpBitmap, arg2: *mut HICON) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteEffect(arg1: *mut CGpEffect) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetEffectParameters(
+        arg1: *mut CGpEffect,
+        arg2: *const ::core::ffi::c_void,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneBrush(arg1: *mut GpBrush, arg2: *mut *mut GpBrush) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteBrush(arg1: *mut GpBrush) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetBrushType(arg1: *mut GpBrush, arg2: *mut GpBrushType) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateCachedBitmap(
+        arg1: *mut GpBitmap,
+        arg2: *mut GpGraphics,
+        arg3: *mut *mut GpCachedBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteCachedBitmap(arg1: *mut GpCachedBitmap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCachedBitmap(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpCachedBitmap,
+        arg3: INT,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneCustomLineCap(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut *mut GpCustomLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateCustomLineCap(
+        arg1: *mut GpPath,
+        arg2: *mut GpPath,
+        arg3: GpLineCap,
+        arg4: REAL,
+        arg5: *mut *mut GpCustomLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteCustomLineCap(arg1: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCustomLineCapBaseCap(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut GpLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCustomLineCapBaseCap(arg1: *mut GpCustomLineCap, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCustomLineCapBaseInset(arg1: *mut GpCustomLineCap, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCustomLineCapBaseInset(arg1: *mut GpCustomLineCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCustomLineCapStrokeCaps(
+        arg1: *mut GpCustomLineCap,
+        arg2: GpLineCap,
+        arg3: GpLineCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCustomLineCapStrokeJoin(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut GpLineJoin,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCustomLineCapStrokeJoin(arg1: *mut GpCustomLineCap, arg2: GpLineJoin)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCustomLineCapWidthScale(arg1: *mut GpCustomLineCap, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCustomLineCapWidthScale(arg1: *mut GpCustomLineCap, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCustomLineCapType(
+        arg1: *mut GpCustomLineCap,
+        arg2: *mut CustomLineCapType,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneFont(arg1: *mut GpFont, arg2: *mut *mut GpFont) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFont(
+        arg1: *const GpFontFamily,
+        arg2: REAL,
+        arg3: INT,
+        arg4: Unit,
+        arg5: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFontFromDC(arg1: HDC, arg2: *mut *mut GpFont) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFontFromLogfontA(
+        arg1: HDC,
+        arg2: *const LOGFONTA,
+        arg3: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFontFromLogfontW(
+        arg1: HDC,
+        arg2: *const LOGFONTW,
+        arg3: *mut *mut GpFont,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteFont(arg1: *mut GpFont) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLogFontA(
+        arg1: *mut GpFont,
+        arg2: *mut GpGraphics,
+        arg3: *mut LOGFONTA,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLogFontW(
+        arg1: *mut GpFont,
+        arg2: *mut GpGraphics,
+        arg3: *mut LOGFONTW,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFamily(arg1: *mut GpFont, arg2: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontUnit(arg1: *mut GpFont, arg2: *mut Unit) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontSize(arg1: *mut GpFont, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontStyle(arg1: *mut GpFont, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontHeight(
+        arg1: *const GpFont,
+        arg2: *const GpGraphics,
+        arg3: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontHeightGivenDPI(arg1: *const GpFont, arg2: REAL, arg3: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipNewInstalledFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipNewPrivateFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeletePrivateFontCollection(arg1: *mut *mut GpFontCollection) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPrivateAddFontFile(arg1: *mut GpFontCollection, arg2: *const WCHAR) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPrivateAddMemoryFont(
+        arg1: *mut GpFontCollection,
+        arg2: *const ::core::ffi::c_void,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontCollectionFamilyCount(
+        arg1: *mut GpFontCollection,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFontCollectionFamilyList(
+        arg1: *mut GpFontCollection,
+        arg2: INT,
+        arg3: *mut *mut GpFontFamily,
+        arg4: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneFontFamily(arg1: *mut GpFontFamily, arg2: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFontFamilyFromName(
+        arg1: *const WCHAR,
+        arg2: *mut GpFontCollection,
+        arg3: *mut *mut GpFontFamily,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteFontFamily(arg1: *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetFamilyName(arg1: *const GpFontFamily, arg2: *mut WCHAR, arg3: LANGID)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCellAscent(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCellDescent(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetEmHeight(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetGenericFontFamilySansSerif(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetGenericFontFamilySerif(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetGenericFontFamilyMonospace(arg1: *mut *mut GpFontFamily) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineSpacing(arg1: *const GpFontFamily, arg2: INT, arg3: *mut UINT16) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsStyleAvailable(arg1: *const GpFontFamily, arg2: INT, arg3: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFlush(arg1: *mut GpGraphics, arg2: GpFlushIntention) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBeginContainer(
+        arg1: *mut GpGraphics,
+        arg2: *const GpRectF,
+        arg3: *const GpRectF,
+        arg4: GpUnit,
+        arg5: *mut GraphicsContainer,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBeginContainer2(arg1: *mut GpGraphics, arg2: *mut GraphicsContainer) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipBeginContainerI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpRect,
+        arg3: *const GpRect,
+        arg4: GpUnit,
+        arg5: *mut GraphicsContainer,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEndContainer(arg1: *mut GpGraphics, arg2: GraphicsContainer) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipComment(arg1: *mut GpGraphics, arg2: UINT, arg3: *const BYTE) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFromHDC(arg1: HDC, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFromHDC2(arg1: HDC, arg2: HANDLE, arg3: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFromHWND(arg1: HWND, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateFromHWNDICM(arg1: HWND, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateHalftonePalette() -> HPALETTE;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteGraphics(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawArc(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawArcI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawBezier(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+        arg10: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawBezierI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+        arg10: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawBeziers(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawBeziersI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawClosedCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawClosedCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawClosedCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawClosedCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurve3(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawCurve3I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawDriverString(
+        arg1: *mut GpGraphics,
+        arg2: *const UINT16,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const GpBrush,
+        arg6: *const PointF,
+        arg7: INT,
+        arg8: *const GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawEllipse(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawEllipseI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImage(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImageI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePointRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePointRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePoints(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePointsI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePointsRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: GpUnit,
+        arg10: *const GpImageAttributes,
+        arg11: DrawImageAbort,
+        arg12: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImagePointsRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: GpUnit,
+        arg10: *const GpImageAttributes,
+        arg11: DrawImageAbort,
+        arg12: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImageRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImageRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImageRectRect(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+        arg10: REAL,
+        arg11: GpUnit,
+        arg12: *const GpImageAttributes,
+        arg13: DrawImageAbort,
+        arg14: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawImageRectRectI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpImage,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+        arg10: INT,
+        arg11: GpUnit,
+        arg12: *const GpImageAttributes,
+        arg13: DrawImageAbort,
+        arg14: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawLine(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawLineI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawLines(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawLinesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawPath(arg1: *mut GpGraphics, arg2: *mut GpPen, arg3: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawPie(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawPieI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawPolygon(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawPolygonI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawRectangle(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawRectangleI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawRectangles(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpRectF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawRectanglesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpPen,
+        arg3: *const GpRect,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDrawString(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: *const GpBrush,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEnumerateMetafileDestPoint(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPointF,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEnumerateMetafileDestPointI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPoint,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEnumerateMetafileDestRect(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpRectF,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEnumerateMetafileDestRectI(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpRect,
+        arg4: EnumerateMetafileProc,
+        arg5: *mut ::core::ffi::c_void,
+        arg6: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEnumerateMetafileSrcRectDestPoints(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMetafile,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: *const GpRectF,
+        arg6: Unit,
+        arg7: EnumerateMetafileProc,
+        arg8: *mut ::core::ffi::c_void,
+        arg9: *const GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillClosedCurve2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillClosedCurve2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: REAL,
+        arg6: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillClosedCurve(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillClosedCurveI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillEllipse(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillEllipseI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPath(arg1: *mut GpGraphics, arg2: *mut GpBrush, arg3: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPie(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPieI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: REAL,
+        arg8: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPolygon(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPolygonI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+        arg5: GpFillMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPolygon2(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPointF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillPolygon2I(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpPoint,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillRectangle(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillRectangleI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillRectangles(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpRectF,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillRectanglesI(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *const GpRect,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFillRegion(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpBrush,
+        arg3: *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetClip(arg1: *mut GpGraphics, arg2: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetClipBounds(arg1: *mut GpGraphics, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetClipBoundsI(arg1: *mut GpGraphics, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCompositingMode(arg1: *mut GpGraphics, arg2: *mut CompositingMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetCompositingQuality(
+        arg1: *mut GpGraphics,
+        arg2: *mut CompositingQuality,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetDC(arg1: *mut GpGraphics, arg2: *mut HDC) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetDpiX(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetDpiY(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetEncoderParameterListSize(
+        arg1: *mut GpImage,
+        arg2: *const CLSID,
+        arg3: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageDecoders(arg1: UINT, arg2: UINT, arg3: *mut ImageCodecInfo) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageDecodersSize(arg1: *mut UINT, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageGraphicsContext(arg1: *mut GpImage, arg2: *mut *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetInterpolationMode(
+        arg1: *mut GpGraphics,
+        arg2: *mut InterpolationMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetNearestColor(arg1: *mut GpGraphics, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPageScale(arg1: *mut GpGraphics, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPageUnit(arg1: *mut GpGraphics, arg2: *mut GpUnit) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPixelOffsetMode(arg1: *mut GpGraphics, arg2: *mut PixelOffsetMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRenderingOrigin(
+        arg1: *mut GpGraphics,
+        arg2: *mut INT,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetSmoothingMode(arg1: *mut GpGraphics, arg2: *mut SmoothingMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetTextContrast(arg1: *mut GpGraphics, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetTextRenderingHint(
+        arg1: *mut GpGraphics,
+        arg2: *mut TextRenderingHint,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetWorldTransform(arg1: *mut GpGraphics, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGraphicsClear(arg1: *mut GpGraphics, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGraphicsSetAbort(arg1: *mut GpGraphics, arg2: *mut GdiplusAbort) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetVisibleClipBounds(arg1: *mut GpGraphics, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetVisibleClipBoundsI(arg1: *mut GpGraphics, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipInitializePalette(
+        arg1: *mut ColorPalette,
+        arg2: PaletteType,
+        arg3: INT,
+        arg4: BOOL,
+        arg5: *mut GpBitmap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsClipEmpty(arg1: *mut GpGraphics, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleClipEmpty(arg1: *mut GpGraphics, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisiblePoint(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisiblePointI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRect(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRectI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMeasureCharacterRanges(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: INT,
+        arg8: *mut *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMeasureDriverString(
+        arg1: *mut GpGraphics,
+        arg2: *const UINT16,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const PointF,
+        arg6: INT,
+        arg7: *const GpMatrix,
+        arg8: *mut RectF,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMeasureString(
+        arg1: *mut GpGraphics,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFont,
+        arg5: *const RectF,
+        arg6: *const GpStringFormat,
+        arg7: *mut RectF,
+        arg8: *mut INT,
+        arg9: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRecordMetafileFileName(
+        arg1: *const WCHAR,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRectF,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRecordMetafileFileNameI(
+        arg1: *const WCHAR,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRect,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRecordMetafileI(
+        arg1: HDC,
+        arg2: EmfType,
+        arg3: *const GpRect,
+        arg4: MetafileFrameUnit,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipReleaseDC(arg1: *mut GpGraphics, arg2: HDC) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetClip(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetWorldTransform(arg1: *mut GpGraphics) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRestoreGraphics(arg1: *mut GpGraphics, arg2: GraphicsState) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotateWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSaveAdd(arg1: *mut GpImage, arg2: *const EncoderParameters) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSaveGraphics(arg1: *mut GpGraphics, arg2: *mut GraphicsState) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScaleWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipHrgn(arg1: *mut GpGraphics, arg2: HRGN, arg3: CombineMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipGraphics(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpGraphics,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipPath(arg1: *mut GpGraphics, arg2: *mut GpPath, arg3: CombineMode)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipRect(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipRectI(
+        arg1: *mut GpGraphics,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetClipRegion(
+        arg1: *mut GpGraphics,
+        arg2: *mut GpRegion,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCompositingMode(arg1: *mut GpGraphics, arg2: CompositingMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetCompositingQuality(arg1: *mut GpGraphics, arg2: CompositingQuality) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetInterpolationMode(arg1: *mut GpGraphics, arg2: InterpolationMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPageScale(arg1: *mut GpGraphics, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPageUnit(arg1: *mut GpGraphics, arg2: GpUnit) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPixelOffsetMode(arg1: *mut GpGraphics, arg2: PixelOffsetMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetRenderingOrigin(arg1: *mut GpGraphics, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetSmoothingMode(arg1: *mut GpGraphics, arg2: SmoothingMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetTextContrast(arg1: *mut GpGraphics, arg2: UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetTextRenderingHint(arg1: *mut GpGraphics, arg2: TextRenderingHint) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetWorldTransform(arg1: *mut GpGraphics, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformPoints(
+        arg1: *mut GpGraphics,
+        arg2: GpCoordinateSpace,
+        arg3: GpCoordinateSpace,
+        arg4: *mut GpPointF,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformPointsI(
+        arg1: *mut GpGraphics,
+        arg2: GpCoordinateSpace,
+        arg3: GpCoordinateSpace,
+        arg4: *mut GpPoint,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateClip(arg1: *mut GpGraphics, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateClipI(arg1: *mut GpGraphics, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateWorldTransform(
+        arg1: *mut GpGraphics,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathArc(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathArcI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathBezier(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathBezierI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: INT,
+        arg8: INT,
+        arg9: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathBeziers(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathBeziersI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathClosedCurve(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathClosedCurveI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathClosedCurve2(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathClosedCurve2I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurve(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurveI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurve2(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurve2I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurve3(
+        arg1: *mut GpPath,
+        arg2: *const GpPointF,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathCurve3I(
+        arg1: *mut GpPath,
+        arg2: *const GpPoint,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathEllipse(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathEllipseI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathLine(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathLineI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathLine2(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathLine2I(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathPath(arg1: *mut GpPath, arg2: *const GpPath, arg3: BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathPie(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathPieI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathPolygon(arg1: *mut GpPath, arg2: *const GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathPolygonI(arg1: *mut GpPath, arg2: *const GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathRectangle(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathRectangleI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathRectangles(arg1: *mut GpPath, arg2: *const GpRectF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathRectanglesI(arg1: *mut GpPath, arg2: *const GpRect, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathString(
+        arg1: *mut GpPath,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFontFamily,
+        arg5: INT,
+        arg6: REAL,
+        arg7: *const RectF,
+        arg8: *const GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipAddPathStringI(
+        arg1: *mut GpPath,
+        arg2: *const WCHAR,
+        arg3: INT,
+        arg4: *const GpFontFamily,
+        arg5: INT,
+        arg6: REAL,
+        arg7: *const Rect,
+        arg8: *const GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipClearPathMarkers(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipClonePath(arg1: *mut GpPath, arg2: *mut *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipClosePathFigure(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipClosePathFigures(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePath(arg1: GpFillMode, arg2: *mut *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePath2(
+        arg1: *const GpPointF,
+        arg2: *const BYTE,
+        arg3: INT,
+        arg4: GpFillMode,
+        arg5: *mut *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePath2I(
+        arg1: *const GpPoint,
+        arg2: *const BYTE,
+        arg3: INT,
+        arg4: GpFillMode,
+        arg5: *mut *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeletePath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFlattenPath(arg1: *mut GpPath, arg2: *mut GpMatrix, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsOutlineVisiblePathPoint(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpPen,
+        arg5: *mut GpGraphics,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsOutlineVisiblePathPointI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpPen,
+        arg5: *mut GpGraphics,
+        arg6: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisiblePathPoint(
+        arg1: *mut GpPath,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisiblePathPointI(
+        arg1: *mut GpPath,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathData(arg1: *mut GpPath, arg2: *mut GpPathData) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathFillMode(arg1: *mut GpPath, arg2: *mut GpFillMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathLastPoint(arg1: *mut GpPath, arg2: *mut GpPointF) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathPoints(arg1: *mut GpPath, arg2: *mut GpPointF, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathPointsI(arg1: *mut GpPath, arg2: *mut GpPoint, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathTypes(arg1: *mut GpPath, arg2: *mut BYTE, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathWorldBounds(
+        arg1: *mut GpPath,
+        arg2: *mut GpRectF,
+        arg3: *const GpMatrix,
+        arg4: *const GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathWorldBoundsI(
+        arg1: *mut GpPath,
+        arg2: *mut GpRect,
+        arg3: *const GpMatrix,
+        arg4: *const GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPointCount(arg1: *mut GpPath, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetPath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipReversePath(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathFillMode(arg1: *mut GpPath, arg2: GpFillMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathMarker(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipStartPathFigure(arg1: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformPath(arg1: *mut GpPath, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipWarpPath(
+        arg1: *mut GpPath,
+        arg2: *mut GpMatrix,
+        arg3: *const GpPointF,
+        arg4: INT,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+        arg8: REAL,
+        arg9: WarpMode,
+        arg10: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipWidenPath(
+        arg1: *mut GpPath,
+        arg2: *mut GpPen,
+        arg3: *mut GpMatrix,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipWindingModeOutline(arg1: *mut GpPath, arg2: *mut GpMatrix, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateHatchBrush(
+        arg1: GpHatchStyle,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: *mut *mut GpHatch,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetHatchBackgroundColor(arg1: *mut GpHatch, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetHatchForegroundColor(arg1: *mut GpHatch, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetHatchStyle(arg1: *mut GpHatch, arg2: *mut GpHatchStyle) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneImage(arg1: *mut GpImage, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneImageAttributes(
+        arg1: *const GpImageAttributes,
+        arg2: *mut *mut GpImageAttributes,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDisposeImage(arg1: *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipEmfToWmfBits(
+        arg1: HENHMETAFILE,
+        arg2: UINT,
+        arg3: LPBYTE,
+        arg4: INT,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFindFirstImageItem(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipFindNextImageItem(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetAllPropertyItems(
+        arg1: *mut GpImage,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *mut PropertyItem,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageBounds(
+        arg1: *mut GpImage,
+        arg2: *mut GpRectF,
+        arg3: *mut GpUnit,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageDimension(arg1: *mut GpImage, arg2: *mut REAL, arg3: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageFlags(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageHeight(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageHorizontalResolution(arg1: *mut GpImage, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageItemData(arg1: *mut GpImage, arg2: *mut ImageItemData) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImagePalette(arg1: *mut GpImage, arg2: *mut ColorPalette, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImagePaletteSize(arg1: *mut GpImage, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImagePixelFormat(arg1: *mut GpImage, arg2: *mut PixelFormat) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageRawFormat(arg1: *mut GpImage, arg2: *mut GUID) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageThumbnail(
+        arg1: *mut GpImage,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *mut *mut GpImage,
+        arg5: GetThumbnailImageAbort,
+        arg6: *mut ::core::ffi::c_void,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageType(arg1: *mut GpImage, arg2: *mut ImageType) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageVerticalResolution(arg1: *mut GpImage, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageWidth(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPropertyCount(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPropertyIdList(arg1: *mut GpImage, arg2: UINT, arg3: *mut PROPID) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPropertyItem(
+        arg1: *mut GpImage,
+        arg2: PROPID,
+        arg3: UINT,
+        arg4: *mut PropertyItem,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPropertyItemSize(arg1: *mut GpImage, arg2: PROPID, arg3: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPropertySize(arg1: *mut GpImage, arg2: *mut UINT, arg3: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageForceValidation(arg1: *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageGetFrameCount(
+        arg1: *mut GpImage,
+        arg2: *const GUID,
+        arg3: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageGetFrameDimensionsCount(arg1: *mut GpImage, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageGetFrameDimensionsList(
+        arg1: *mut GpImage,
+        arg2: *mut GUID,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageRotateFlip(arg1: *mut GpImage, arg2: RotateFlipType) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageSelectActiveFrame(
+        arg1: *mut GpImage,
+        arg2: *const GUID,
+        arg3: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipImageSetAbort(arg1: *mut GpImage, arg2: *mut GdiplusAbort) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipLoadImageFromFile(arg1: *const WCHAR, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipLoadImageFromFileICM(arg1: *const WCHAR, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipLoadImageFromStream(arg1: *mut IStream, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipLoadImageFromStreamICM(arg1: *mut IStream, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRemovePropertyItem(arg1: *mut GpImage, arg2: PROPID) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSaveImageToFile(
+        arg1: *mut GpImage,
+        arg2: *const WCHAR,
+        arg3: *const CLSID,
+        arg4: *const EncoderParameters,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSaveImageToStream(
+        arg1: *mut GpImage,
+        arg2: *mut IStream,
+        arg3: *const CLSID,
+        arg4: *const EncoderParameters,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImagePalette(arg1: *mut GpImage, arg2: *const ColorPalette) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPropertyItem(arg1: *mut GpImage, arg2: *const PropertyItem) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateImageAttributes(arg1: *mut *mut GpImageAttributes) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDisposeImageAttributes(arg1: *mut GpImageAttributes) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageAttributesAdjustedPalette(
+        arg1: *mut GpImageAttributes,
+        arg2: *mut ColorPalette,
+        arg3: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesCachedBackground(
+        arg1: *mut GpImageAttributes,
+        arg2: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesColorKeys(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: ARGB,
+        arg5: ARGB,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesColorMatrix(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: *const ColorMatrix,
+        arg5: *const ColorMatrix,
+        arg6: ColorMatrixFlags,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesGamma(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesNoOp(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesOutputChannel(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: ColorChannelFlags,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesOutputChannelColorProfile(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: *const WCHAR,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesRemapTable(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: UINT,
+        arg5: *const ColorMap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesThreshold(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+        arg3: BOOL,
+        arg4: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesToIdentity(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetImageAttributesWrapMode(
+        arg1: *mut GpImageAttributes,
+        arg2: WrapMode,
+        arg3: ARGB,
+        arg4: BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetImageAttributes(
+        arg1: *mut GpImageAttributes,
+        arg2: ColorAdjustType,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrush(
+        arg1: *const GpPointF,
+        arg2: *const GpPointF,
+        arg3: ARGB,
+        arg4: ARGB,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrushI(
+        arg1: *const GpPoint,
+        arg2: *const GpPoint,
+        arg3: ARGB,
+        arg4: ARGB,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrushFromRect(
+        arg1: *const GpRectF,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: LinearGradientMode,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrushFromRectI(
+        arg1: *const GpRect,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: LinearGradientMode,
+        arg5: GpWrapMode,
+        arg6: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrushFromRectWithAngle(
+        arg1: *const GpRectF,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: REAL,
+        arg5: BOOL,
+        arg6: GpWrapMode,
+        arg7: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateLineBrushFromRectWithAngleI(
+        arg1: *const GpRect,
+        arg2: ARGB,
+        arg3: ARGB,
+        arg4: REAL,
+        arg5: BOOL,
+        arg6: GpWrapMode,
+        arg7: *mut *mut GpLineGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineColors(arg1: *mut GpLineGradient, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineGammaCorrection(arg1: *mut GpLineGradient, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineRect(arg1: *mut GpLineGradient, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineRectI(arg1: *mut GpLineGradient, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineWrapMode(arg1: *mut GpLineGradient, arg2: *mut GpWrapMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *const REAL,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineBlendCount(arg1: *mut GpLineGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLinePresetBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *const ARGB,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLinePresetBlend(
+        arg1: *mut GpLineGradient,
+        arg2: *mut ARGB,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLinePresetBlendCount(arg1: *mut GpLineGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetLineTransform(arg1: *mut GpLineGradient, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetLineTransform(arg1: *mut GpLineGradient) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotateLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScaleLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineColors(arg1: *mut GpLineGradient, arg2: ARGB, arg3: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineGammaCorrection(arg1: *mut GpLineGradient, arg2: BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineSigmaBlend(arg1: *mut GpLineGradient, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineTransform(arg1: *mut GpLineGradient, arg2: *const GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineLinearBlend(arg1: *mut GpLineGradient, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetLineWrapMode(arg1: *mut GpLineGradient, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateLineTransform(
+        arg1: *mut GpLineGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneMatrix(arg1: *mut GpMatrix, arg2: *mut *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMatrix(arg1: *mut *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMatrix2(
+        arg1: REAL,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMatrix3(
+        arg1: *const GpRectF,
+        arg2: *const GpPointF,
+        arg3: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMatrix3I(
+        arg1: *const GpRect,
+        arg2: *const GpPoint,
+        arg3: *mut *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteMatrix(arg1: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMatrixElements(arg1: *const GpMatrix, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipInvertMatrix(arg1: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsMatrixEqual(
+        arg1: *const GpMatrix,
+        arg2: *const GpMatrix,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsMatrixIdentity(arg1: *const GpMatrix, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsMatrixInvertible(arg1: *const GpMatrix, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyMatrix(
+        arg1: *mut GpMatrix,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotateMatrix(arg1: *mut GpMatrix, arg2: REAL, arg3: GpMatrixOrder) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipShearMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScaleMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetMatrixElements(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformMatrixPoints(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPointF,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformMatrixPointsI(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPoint,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateMatrix(
+        arg1: *mut GpMatrix,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipVectorTransformMatrixPoints(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPointF,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipVectorTransformMatrixPointsI(
+        arg1: *mut GpMatrix,
+        arg2: *mut GpPoint,
+        arg3: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipConvertToEmfPlus(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: EmfType,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipConvertToEmfPlusToFile(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: *const WCHAR,
+        arg5: EmfType,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipConvertToEmfPlusToStream(
+        arg1: *const GpGraphics,
+        arg2: *mut GpMetafile,
+        arg3: *mut INT,
+        arg4: *mut IStream,
+        arg5: EmfType,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMetafileFromEmf(
+        arg1: HENHMETAFILE,
+        arg2: BOOL,
+        arg3: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMetafileFromWmf(
+        arg1: HMETAFILE,
+        arg2: BOOL,
+        arg3: *const WmfPlaceableFileHeader,
+        arg4: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMetafileFromWmfFile(
+        arg1: *const WCHAR,
+        arg2: *const WmfPlaceableFileHeader,
+        arg3: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMetafileFromFile(arg1: *const WCHAR, arg2: *mut *mut GpMetafile) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateMetafileFromStream(arg1: *mut IStream, arg2: *mut *mut GpMetafile)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetHemfFromMetafile(arg1: *mut GpMetafile, arg2: *mut HENHMETAFILE) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPlayMetafileRecord(
+        arg1: *const GpMetafile,
+        arg2: EmfPlusRecordType,
+        arg3: UINT,
+        arg4: UINT,
+        arg5: *const BYTE,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetMetafileDownLevelRasterizationLimit(
+        arg1: *mut GpMetafile,
+        arg2: UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRecordMetafile(
+        arg1: HDC,
+        arg2: EmfType,
+        arg3: *const GpRectF,
+        arg4: MetafileFrameUnit,
+        arg5: *const WCHAR,
+        arg6: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRecordMetafileStream(
+        arg1: *mut IStream,
+        arg2: HDC,
+        arg3: EmfType,
+        arg4: *const GpRectF,
+        arg5: MetafileFrameUnit,
+        arg6: *const WCHAR,
+        arg7: *mut *mut GpMetafile,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMetafileHeaderFromEmf(arg1: HENHMETAFILE, arg2: *mut MetafileHeader) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMetafileHeaderFromFile(arg1: *const WCHAR, arg2: *mut MetafileHeader)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMetafileHeaderFromMetafile(
+        arg1: *mut GpMetafile,
+        arg2: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMetafileHeaderFromStream(
+        arg1: *mut IStream,
+        arg2: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetMetafileHeaderFromWmf(
+        arg1: HMETAFILE,
+        arg2: *const WmfPlaceableFileHeader,
+        arg3: *mut MetafileHeader,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdiplusNotificationHook(arg1: *mut ULONG_PTR) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdiplusNotificationUnhook(arg1: ULONG_PTR);
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePathGradient(
+        arg1: *const GpPointF,
+        arg2: INT,
+        arg3: GpWrapMode,
+        arg4: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePathGradientI(
+        arg1: *const GpPoint,
+        arg2: INT,
+        arg3: GpWrapMode,
+        arg4: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePathGradientFromPath(
+        arg1: *const GpPath,
+        arg2: *mut *mut GpPathGradient,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientBlendCount(arg1: *mut GpPathGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientCenterColor(arg1: *mut GpPathGradient, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientCenterPoint(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPointF,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientCenterPointI(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPoint,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientFocusScales(
+        arg1: *mut GpPathGradient,
+        arg2: *mut REAL,
+        arg3: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientGammaCorrection(
+        arg1: *mut GpPathGradient,
+        arg2: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientPath(arg1: *mut GpPathGradient, arg2: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientPresetBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *mut ARGB,
+        arg3: *mut REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientPresetBlendCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientPointCount(arg1: *mut GpPathGradient, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientPresetBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *const ARGB,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientRect(arg1: *mut GpPathGradient, arg2: *mut GpRectF) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientRectI(arg1: *mut GpPathGradient, arg2: *mut GpRect) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientSurroundColorCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientSurroundColorsWithCount(
+        arg1: *mut GpPathGradient,
+        arg2: *mut ARGB,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientTransform(arg1: *mut GpPathGradient, arg2: *mut GpMatrix)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPathGradientWrapMode(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpWrapMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyPathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetPathGradientTransform(arg1: *mut GpPathGradient) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotatePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScalePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientLinearBlend(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientBlend(
+        arg1: *mut GpPathGradient,
+        arg2: *const REAL,
+        arg3: *const REAL,
+        arg4: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientCenterColor(arg1: *mut GpPathGradient, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientCenterPoint(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPointF,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientCenterPointI(
+        arg1: *mut GpPathGradient,
+        arg2: *mut GpPoint,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientFocusScales(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientGammaCorrection(arg1: *mut GpPathGradient, arg2: BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientPath(arg1: *mut GpPathGradient, arg2: *const GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientSigmaBlend(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientSurroundColorsWithCount(
+        arg1: *mut GpPathGradient,
+        arg2: *const ARGB,
+        arg3: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientTransform(arg1: *mut GpPathGradient, arg2: *mut GpMatrix)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPathGradientWrapMode(arg1: *mut GpPathGradient, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslatePathGradientTransform(
+        arg1: *mut GpPathGradient,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePathIter(arg1: *mut *mut GpPathIterator, arg2: *mut GpPath) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeletePathIter(arg1: *mut GpPathIterator) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterCopyData(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPointF,
+        arg4: *mut BYTE,
+        arg5: INT,
+        arg6: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterGetCount(arg1: *mut GpPathIterator, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterGetSubpathCount(arg1: *mut GpPathIterator, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterEnumerate(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPointF,
+        arg4: *mut BYTE,
+        arg5: INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterHasCurve(arg1: *mut GpPathIterator, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterIsValid(arg1: *mut GpPathIterator, arg2: *mut BOOL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterNextMarker(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut INT,
+        arg4: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterNextMarkerPath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPath,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterNextPathType(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut BYTE,
+        arg4: *mut INT,
+        arg5: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterNextSubpath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut INT,
+        arg4: *mut INT,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterNextSubpathPath(
+        arg1: *mut GpPathIterator,
+        arg2: *mut INT,
+        arg3: *mut GpPath,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipPathIterRewind(arg1: *mut GpPathIterator) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipClonePen(arg1: *mut GpPen, arg2: *mut *mut GpPen) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePen1(arg1: ARGB, arg2: REAL, arg3: GpUnit, arg4: *mut *mut GpPen) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreatePen2(
+        arg1: *mut GpBrush,
+        arg2: REAL,
+        arg3: GpUnit,
+        arg4: *mut *mut GpPen,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeletePen(arg1: *mut GpPen) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenBrushFill(arg1: *mut GpPen, arg2: *mut *mut GpBrush) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenColor(arg1: *mut GpPen, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenCompoundCount(arg1: *mut GpPen, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenCustomStartCap(arg1: *mut GpPen, arg2: *mut *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenCustomEndCap(arg1: *mut GpPen, arg2: *mut *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenDashArray(arg1: *mut GpPen, arg2: *mut REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenDashCount(arg1: *mut GpPen, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenDashOffset(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenDashStyle(arg1: *mut GpPen, arg2: *mut GpDashStyle) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenMode(arg1: *mut GpPen, arg2: *mut GpPenAlignment) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenTransform(arg1: *mut GpPen, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyPenTransform(
+        arg1: *mut GpPen,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetPenTransform(arg1: *mut GpPen) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotatePenTransform(arg1: *mut GpPen, arg2: REAL, arg3: GpMatrixOrder) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScalePenTransform(
+        arg1: *mut GpPen,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenBrushFill(arg1: *mut GpPen, arg2: *mut GpBrush) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenColor(arg1: *mut GpPen, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenCompoundArray(arg1: *mut GpPen, arg2: *const REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenCustomEndCap(arg1: *mut GpPen, arg2: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenCustomStartCap(arg1: *mut GpPen, arg2: *mut GpCustomLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenDashArray(arg1: *mut GpPen, arg2: *const REAL, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenDashCap197819(arg1: *mut GpPen, arg2: GpDashCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenDashOffset(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenDashStyle(arg1: *mut GpPen, arg2: GpDashStyle) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenEndCap(arg1: *mut GpPen, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenFillType(arg1: *mut GpPen, arg2: *mut GpPenType) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenLineCap197819(
+        arg1: *mut GpPen,
+        arg2: GpLineCap,
+        arg3: GpLineCap,
+        arg4: GpDashCap,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenLineJoin(arg1: *mut GpPen, arg2: GpLineJoin) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenMode(arg1: *mut GpPen, arg2: GpPenAlignment) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenMiterLimit(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenStartCap(arg1: *mut GpPen, arg2: GpLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenTransform(arg1: *mut GpPen, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetPenWidth(arg1: *mut GpPen, arg2: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenDashCap197819(arg1: *mut GpPen, arg2: *mut GpDashCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenEndCap(arg1: *mut GpPen, arg2: *mut GpLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenLineJoin(arg1: *mut GpPen, arg2: *mut GpLineJoin) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenMiterLimit(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenStartCap(arg1: *mut GpPen, arg2: *mut GpLineCap) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenUnit(arg1: *mut GpPen, arg2: *mut GpUnit) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetPenWidth(arg1: *mut GpPen, arg2: *mut REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslatePenTransform(
+        arg1: *mut GpPen,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneRegion(arg1: *mut GpRegion, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCombineRegionPath(
+        arg1: *mut GpRegion,
+        arg2: *mut GpPath,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCombineRegionRect(
+        arg1: *mut GpRegion,
+        arg2: *const GpRectF,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCombineRegionRectI(
+        arg1: *mut GpRegion,
+        arg2: *const GpRect,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCombineRegionRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRegion,
+        arg3: CombineMode,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegion(arg1: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegionPath(arg1: *mut GpPath, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegionRect(arg1: *const GpRectF, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegionRectI(arg1: *const GpRect, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegionRgnData(
+        arg1: *const BYTE,
+        arg2: INT,
+        arg3: *mut *mut GpRegion,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateRegionHrgn(arg1: HRGN, arg2: *mut *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteRegion(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionBounds(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut GpRectF,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionBoundsI(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut GpRect,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionData(
+        arg1: *mut GpRegion,
+        arg2: *mut BYTE,
+        arg3: UINT,
+        arg4: *mut UINT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionDataSize(arg1: *mut GpRegion, arg2: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionHRgn(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut HRGN,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionScans(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRectF,
+        arg3: *mut INT,
+        arg4: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionScansI(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRect,
+        arg3: *mut INT,
+        arg4: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetRegionScansCount(
+        arg1: *mut GpRegion,
+        arg2: *mut UINT,
+        arg3: *mut GpMatrix,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsEmptyRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsEqualRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpRegion,
+        arg3: *mut GpGraphics,
+        arg4: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsInfiniteRegion(
+        arg1: *mut GpRegion,
+        arg2: *mut GpGraphics,
+        arg3: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRegionPoint(
+        arg1: *mut GpRegion,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRegionPointI(
+        arg1: *mut GpRegion,
+        arg2: INT,
+        arg3: INT,
+        arg4: *mut GpGraphics,
+        arg5: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRegionRect(
+        arg1: *mut GpRegion,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: *mut GpGraphics,
+        arg7: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipIsVisibleRegionRectI(
+        arg1: *mut GpRegion,
+        arg2: INT,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: *mut GpGraphics,
+        arg7: *mut BOOL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetEmpty(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetInfinite(arg1: *mut GpRegion) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTransformRegion(arg1: *mut GpRegion, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateRegion(arg1: *mut GpRegion, arg2: REAL, arg3: REAL) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateRegionI(arg1: *mut GpRegion, arg2: INT, arg3: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateSolidFill(arg1: ARGB, arg2: *mut *mut GpSolidFill) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetSolidFillColor(arg1: *mut GpSolidFill, arg2: *mut ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetSolidFillColor(arg1: *mut GpSolidFill, arg2: ARGB) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCloneStringFormat(
+        arg1: *const GpStringFormat,
+        arg2: *mut *mut GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateStringFormat(
+        arg1: INT,
+        arg2: LANGID,
+        arg3: *mut *mut GpStringFormat,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipDeleteStringFormat(arg1: *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatAlign(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatDigitSubstitution(
+        arg1: *const GpStringFormat,
+        arg2: *mut LANGID,
+        arg3: *mut StringDigitSubstitute,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatFlags(arg1: *const GpStringFormat, arg2: *mut INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatHotkeyPrefix(arg1: *const GpStringFormat, arg2: *mut INT)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatLineAlign(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatMeasurableCharacterRangeCount(
+        arg1: *const GpStringFormat,
+        arg2: *mut INT,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatTabStopCount(arg1: *const GpStringFormat, arg2: *mut INT)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatTabStops(
+        arg1: *const GpStringFormat,
+        arg2: INT,
+        arg3: *mut REAL,
+        arg4: *mut REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetStringFormatTrimming(
+        arg1: *mut GpStringFormat,
+        arg2: *mut StringTrimming,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatAlign(arg1: *mut GpStringFormat, arg2: StringAlignment) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatDigitSubstitution(
+        arg1: *mut GpStringFormat,
+        arg2: LANGID,
+        arg3: StringDigitSubstitute,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatHotkeyPrefix(arg1: *mut GpStringFormat, arg2: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatLineAlign(
+        arg1: *mut GpStringFormat,
+        arg2: StringAlignment,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatMeasurableCharacterRanges(
+        arg1: *mut GpStringFormat,
+        arg2: INT,
+        arg3: *const CharacterRange,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatTabStops(
+        arg1: *mut GpStringFormat,
+        arg2: REAL,
+        arg3: INT,
+        arg4: *const REAL,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatTrimming(arg1: *mut GpStringFormat, arg2: StringTrimming)
+        -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetStringFormatFlags(arg1: *mut GpStringFormat, arg2: INT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipStringFormatGetGenericDefault(arg1: *mut *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipStringFormatGetGenericTypographic(arg1: *mut *mut GpStringFormat) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateTexture(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateTexture2(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateTexture2I(
+        arg1: *mut GpImage,
+        arg2: GpWrapMode,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateTextureIA(
+        arg1: *mut GpImage,
+        arg2: *const GpImageAttributes,
+        arg3: REAL,
+        arg4: REAL,
+        arg5: REAL,
+        arg6: REAL,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateTextureIAI(
+        arg1: *mut GpImage,
+        arg2: *const GpImageAttributes,
+        arg3: INT,
+        arg4: INT,
+        arg5: INT,
+        arg6: INT,
+        arg7: *mut *mut GpTexture,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetTextureImage(arg1: *mut GpTexture, arg2: *mut *mut GpImage) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetTextureTransform(arg1: *mut GpTexture, arg2: *mut GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetTextureWrapMode(arg1: *mut GpTexture, arg2: *mut GpWrapMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipMultiplyTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: *const GpMatrix,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipResetTextureTransform(arg1: *mut GpTexture) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipRotateTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipScaleTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetTextureTransform(arg1: *mut GpTexture, arg2: *const GpMatrix) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipSetTextureWrapMode(arg1: *mut GpTexture, arg2: GpWrapMode) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTranslateTextureTransform(
+        arg1: *mut GpTexture,
+        arg2: REAL,
+        arg3: REAL,
+        arg4: GpMatrixOrder,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipCreateStreamOnFile(
+        arg1: *const WCHAR,
+        arg2: UINT,
+        arg3: *mut *mut IStream,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageEncodersSize(numEncoders: *mut UINT, size: *mut UINT) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipGetImageEncoders(
+        numEncoders: UINT,
+        size: UINT,
+        encoders: *mut ImageCodecInfo,
+    ) -> GpStatus;
+}
+unsafe extern "stdcall" {
+    pub fn GdipTestControl(arg1: GpTestControlEnum, arg2: *mut ::core::ffi::c_void) -> GpStatus;
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -31907,148 +39911,6 @@ pub struct tagGLOBALS {
     pub crCustom: [COLORREF; 16usize],
 }
 pub type GLOBALS = tagGLOBALS;
-unsafe extern "C" {
-    pub fn SchemeSetMetric(
-        scheme: *mut COLOR_SCHEME,
-        id: ::core::ffi::c_int,
-        value: ::core::ffi::c_int,
-    );
-}
-unsafe extern "C" {
-    pub fn SchemeGetMetric(scheme: *mut COLOR_SCHEME, id: ::core::ffi::c_int)
-        -> ::core::ffi::c_int;
-}
-unsafe extern "C" {
-    pub fn SchemeGetFont(scheme: *mut COLOR_SCHEME, id: ::core::ffi::c_int) -> PLOGFONTW;
-}
-unsafe extern "C" {
-    pub fn LoadTheme(pszThemeFileName: LPCWSTR, pszThemeName: LPCWSTR) -> PTHEME;
-}
-unsafe extern "C" {
-    pub fn LoadThemes() -> PTHEME;
-}
-unsafe extern "C" {
-    pub fn FindOrAppendTheme(
-        pThemeList: PTHEME,
-        pwszThemeFileName: LPCWSTR,
-        pwszColorBuff: LPCWSTR,
-        pwszSizeBuff: LPCWSTR,
-        pSelectedTheme: PTHEME_SELECTION,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetActiveTheme(pThemeList: PTHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetActiveClassicTheme(pThemeList: PTHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadCurrentScheme(scheme: PCOLOR_SCHEME) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadSchemeFromReg(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn LoadSchemeFromTheme(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn ApplyScheme(scheme: PCOLOR_SCHEME, pSelectedTheme: PTHEME_SELECTION);
-}
-unsafe extern "C" {
-    pub fn ActivateTheme(pSelectedTheme: PTHEME_SELECTION) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn CleanupThemes(pThemeList: PTHEME);
-}
-unsafe extern "C" {
-    pub fn DrawThemePreview(
-        hdcMem: HDC,
-        scheme: PCOLOR_SCHEME,
-        pSelectedTheme: PTHEME_SELECTION,
-        prcWindow: PRECT,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn ActivateThemeFile(pwszFile: LPCWSTR) -> BOOL;
-}
-unsafe extern "stdcall" {
-    pub fn AppearancePageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "stdcall" {
-    pub fn AdvAppearanceDlgProc(
-        hwndDlg: HWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> INT_PTR;
-}
-unsafe extern "stdcall" {
-    pub fn EffAppearanceDlgProc(
-        hwndDlg: HWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn RegisterPreviewControl(hInstance: HINSTANCE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn UnregisterPreviewControl(hInstance: HINSTANCE);
-}
-unsafe extern "C" {
-    pub fn MyDrawFrameControl(
-        hDC: HDC,
-        rc: LPRECT,
-        uType: UINT,
-        uState: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawEdge(
-        hDC: HDC,
-        rc: LPRECT,
-        edge: UINT,
-        flags: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawCaptionButtons(
-        hdc: HDC,
-        lpRect: LPRECT,
-        bMinMax: BOOL,
-        x: ::core::ffi::c_int,
-        scheme: *mut COLOR_SCHEME,
-    );
-}
-unsafe extern "C" {
-    pub fn MyDrawScrollbar(hdc: HDC, rc: LPRECT, hbrScrollbar: HBRUSH, scheme: *mut COLOR_SCHEME);
-}
-unsafe extern "C" {
-    pub fn MyDrawCaptionTemp(
-        hwnd: HWND,
-        hdc: HDC,
-        rect: *const RECT,
-        hFont: HFONT,
-        hIcon: HICON,
-        str_: LPCWSTR,
-        uFlags: UINT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn MyDrawMenuBarTemp(
-        Wnd: HWND,
-        DC: HDC,
-        Rect: LPRECT,
-        Menu: HMENU,
-        Font: HFONT,
-        scheme: *mut COLOR_SCHEME,
-    ) -> DWORD;
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MONSL_MONINFO {
@@ -32085,12 +39947,6 @@ pub struct _MONSL_MONNMMONITORCHANGING {
 }
 pub type MONSL_MONNMMONITORCHANGING = _MONSL_MONNMMONITORCHANGING;
 pub type PMONSL_MONNMMONITORCHANGING = *mut _MONSL_MONNMMONITORCHANGING;
-unsafe extern "C" {
-    pub fn RegisterMonitorSelectionControl(hInstance: HINSTANCE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn UnregisterMonitorSelectionControl(hInstance: HINSTANCE);
-}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _APPLET {
@@ -32113,21 +39969,6 @@ pub type DIBITMAP = _DIBITMAP;
 pub type PDIBITMAP = *mut _DIBITMAP;
 unsafe extern "C" {
     pub static mut hApplet: HINSTANCE;
-}
-unsafe extern "C" {
-    pub fn LoadPopupMenu(hInstance: HINSTANCE, lpMenuName: LPCTSTR) -> HMENU;
-}
-unsafe extern "C" {
-    pub fn DibLoadImage(lpFilename: LPTSTR) -> PDIBITMAP;
-}
-unsafe extern "C" {
-    pub fn DibFreeImage(lpBitmap: PDIBITMAP);
-}
-unsafe extern "C" {
-    pub fn AllocAndLoadString(lpTarget: *mut LPTSTR, hInst: HINSTANCE, uID: UINT) -> INT;
-}
-unsafe extern "C" {
-    pub fn ClrBtn_CustomDraw(pCD: *mut NMCUSTOMDRAW, Color: COLORREF) -> UINT;
 }
 unsafe extern "C" {
     pub fn DbgPrint(Format: PCCH, ...) -> ULONG;
@@ -32225,48 +40066,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub static mut hCPLWindow: HWND;
-}
-unsafe extern "C" {
-    pub fn DisplayAdvancedSettings(hWndParent: HWND, DisplayDevice: PDISPLAY_DEVICE_ENTRY) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn CreateDevSettings(DisplayDeviceInfo: PDISPLAY_DEVICE_ENTRY) -> *mut IDataObject;
-}
-unsafe extern "stdcall" {
-    pub fn AdvGeneralPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM)
-        -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn SwitchDisplayMode(
-        hwndDlg: HWND,
-        DeviceName: PWSTR,
-        seInit: PSETTINGS_ENTRY,
-        seNew: PSETTINGS_ENTRY,
-        rc: PLONG,
-    ) -> BOOL;
-}
-unsafe extern "stdcall" {
-    pub fn DesktopPageProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-}
-unsafe extern "C" {
-    pub fn InitDesktopSettings(pData: PDESKTOP_DATA);
-}
-unsafe extern "C" {
-    pub fn SaveDesktopSettings(pData: PDESKTOP_DATA) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn SetDesktopSettings(pData: PDESKTOP_DATA);
-}
-unsafe extern "C" {
-    pub fn RegLoadMUIStringW(
-        hKey: HKEY,
-        pszValue: LPCWSTR,
-        pszOutBuf: LPWSTR,
-        cbOutBuf: DWORD,
-        pcbData: LPDWORD,
-        Flags: DWORD,
-        pszDirectory: LPCWSTR,
-    ) -> LONG;
 }
 #[derive(Copy, Clone)]
 #[repr(C, packed)]

@@ -7,11 +7,11 @@ unsafe extern "C" fn load_string(hModule: HINSTANCE, mut resId: u32, pwszBuffer:
     let mut pString: *mut u16;
     let mut idxString: i32;
 
-    if HIWORD(resId) == 0xffff {
+    if HIWORD!(resId) == 0xffff {
         resId = (-(resId as i32)) as u32;
     }
 
-    hResource = FindResourceW(hModule, MAKEINTRESOURCEW(LOWORD(resId >> 4) + 1), RT_STRING as LPWSTR);
+    hResource = FindResourceW(hModule, MAKEINTRESOURCEW!(LOWORD!(resId >> 4) + 1), RT_STRING as LPWSTR);
     if hResource.is_null() {
         return 0;
     }
@@ -57,11 +57,11 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
     let mut result: i32;
 
     if hKey.is_null() || pszOutBuf.is_null() {
-        return ERROR_INVALID_PARAMETER;
+        return (ERROR_INVALID_PARAMETER) as i32;
     }
 
     if !pszDirectory.is_null() && *pszDirectory != 0 {
-        return ERROR_INVALID_PARAMETER;
+        return (ERROR_INVALID_PARAMETER) as i32;
     }
 
     result = RegQueryValueExW(
@@ -72,20 +72,20 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
         core::ptr::null_mut(),
         &mut cbData,
     );
-    if result != ERROR_SUCCESS {
+    if result != (ERROR_SUCCESS) as i32 {
         HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
         HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
         return result;
     }
     if !(dwValueType == REG_SZ || dwValueType == REG_EXPAND_SZ) || cbData == 0 {
-        result = ERROR_FILE_NOT_FOUND;
+        result = (ERROR_FILE_NOT_FOUND) as i32;
         HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
         HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
         return result;
     }
-    pwszTempBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as usize) as LPWSTR;
+    pwszTempBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData) as SIZE_T) as LPWSTR;
     if pwszTempBuffer.is_null() {
-        result = ERROR_NOT_ENOUGH_MEMORY;
+        result = (ERROR_NOT_ENOUGH_MEMORY) as i32;
         HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
         HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
         return result;
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
         pwszTempBuffer as LPBYTE,
         &mut cbData,
     );
-    if result != ERROR_SUCCESS {
+    if result != (ERROR_SUCCESS) as i32 {
         HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
         HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
         return result;
@@ -111,36 +111,36 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
             HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
             return result;
         }
-        pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as usize) as LPWSTR;
+        pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData) as SIZE_T) as LPWSTR;
         if pwszExpandedBuffer.is_null() {
-            result = ERROR_NOT_ENOUGH_MEMORY;
+            result = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
             HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
             return result;
         }
         ExpandEnvironmentStringsW(pwszTempBuffer, pwszExpandedBuffer, cbData);
     } else {
-        pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, cbData as usize) as LPWSTR;
-        memcpy(pwszExpandedBuffer as *mut u8, pwszTempBuffer as *const u8, cbData as usize);
+        pwszExpandedBuffer = HeapAlloc(GetProcessHeap(), 0, (cbData) as SIZE_T) as LPWSTR;
+        memcpy(pwszExpandedBuffer as *mut core::ffi::c_void, pwszTempBuffer as *const core::ffi::c_void, cbData as usize);
     }
 
-    result = ERROR_SUCCESS;
-    if *pwszExpandedBuffer != L'@' as u16 {
+    result = (ERROR_SUCCESS) as i32;
+    if *pwszExpandedBuffer != '@' as u16 {
         lstrcpynW(pszOutBuf, pwszExpandedBuffer, (cbOutBuf / core::mem::size_of::<u16>() as u32) as i32);
     } else {
-        let pComma: *mut u16 = wcsrchr(pwszExpandedBuffer, L',' as u16);
+        let pComma: *mut u16 = wcsrchr(pwszExpandedBuffer, ',' as u16);
         let mut uiStringId: u32;
         let hModule: HMODULE;
 
-        if pComma.is_null() || *pComma.offset(1 as isize) != L'-' as u16 {
-            result = ERROR_BADKEY;
+        if pComma.is_null() || *pComma.offset(1 as isize) != '-' as u16 {
+            result = (ERROR_BADKEY) as i32;
             HeapFree(GetProcessHeap(), 0, pwszTempBuffer as HGLOBAL);
             HeapFree(GetProcessHeap(), 0, pwszExpandedBuffer as HGLOBAL);
             return result;
         }
 
         uiStringId = _wtoi(pComma.offset(2 as isize)) as u32;
-        *pComma = L'\0' as u16;
+        *pComma = '\0' as u16;
 
         hModule = LoadLibraryExW(
             pwszExpandedBuffer.offset(1 as isize),
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn RegLoadMUIStringW(
             LOAD_LIBRARY_AS_DATAFILE,
         );
         if hModule.is_null() || load_string(hModule, uiStringId, pszOutBuf, (cbOutBuf / core::mem::size_of::<u16>() as u32) as i32) == 0 {
-            result = ERROR_BADKEY;
+            result = (ERROR_BADKEY) as i32;
         }
         FreeLibrary(hModule);
     }

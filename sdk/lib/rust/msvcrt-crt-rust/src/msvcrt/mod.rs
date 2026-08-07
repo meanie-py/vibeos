@@ -235,3 +235,84 @@ pub mod process;
 pub mod cpp;
 #[cfg(feature = "cpp")]
 pub mod cpp_rtti;
+
+// except.c: the exception DISPATCHER — the C signal layer (`signal`/`raise` and the SEH
+// filter that turns a hardware fault into a C signal) plus the C++ frame handler that walks
+// a function's try blocks looking for a catch. 21 of the 21 symbols msvcrt.dll's copy of
+// this TU defines.
+//
+// Rides the `cpp` feature with cpp.c because it is not separable from it: the catch-matching
+// path calls `find_caught_type` and `copy_exception`, cppexcept.h inlines that live in
+// `cpp_rtti`, and both are equally unlinkable in an ELF host binary.
+//
+// The arch split is the thing to know before editing: everything from `ip_to_state` to
+// `__CxxFrameHandler` is `#[cfg(not(target_arch = "x86"))]` because it is inside
+// `#ifndef __i386__` in the C, where i386 gets a DIFFERENT implementation from except_i386.c.
+// Cohab resolves by first-match, so an ungated body there would replace except_i386.c's
+// 32-bit SEH walk with the RVA one and link without complaint. `dump_function_descr` and
+// `find_catch_handler` sit above that gate and are called BY those still-C arch files.
+#[cfg(feature = "cpp")]
+pub mod except;
+
+// except_i386.c: the OTHER side of that gate — 32-bit SEH, where an exception frame is a
+// linked list threaded through `fs:0` rather than a table the unwinder looks up by PC. The
+// `#ifdef __i386__` around the whole TU is why both modules are `#![cfg(target_arch = "x86")]`
+// from the inside as well as gated here: on amd64/arm64 this file compiles to nothing at all,
+// and `except.rs` supplies the same exported names from the other implementation.
+//
+// `seh_i386` is its hand-written companion, the same relationship `cpp_rtti` has to `cpp`: six
+// `__ASM_GLOBAL_FUNC` thunks that run on somebody else's frame, and wine/exception.h's two
+// `static inline` frame-list helpers. None of them has C text a translator could read.
+//
+// Seven bodies of the C are NOT here, on purpose: `_global_unwind2`, `_except_handler2/3`,
+// `_local_unwind2`, `longjmp` and the two `__regs__setjmp*` are all inside `#ifndef
+// __REACTOS__` and are in no object this tree builds.
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod except_i386;
+#[cfg(all(feature = "cpp", target_arch = "x86"))]
+pub mod seh_i386;
+
+// The other two arms of the same gate, and the reason `except.rs`'s `unsafe extern "C"` block
+// declaring `call_catch_handler`/`call_unwind_handler`/`get_exception_pc`/`handle_fpieee_flt`
+// is now satisfied by Rust on every arch rather than by a surviving C sibling. Each is tiny —
+// four bodies and one `__ASM_GLOBAL_FUNC` — because that is genuinely all the 64-bit
+// dispatcher cannot say portably. Both carry their asm inline instead of a `seh_*` companion;
+// one thunk does not earn a module.
+#[cfg(all(feature = "cpp", target_arch = "x86_64"))]
+pub mod except_x86_64;
+#[cfg(all(feature = "cpp", target_arch = "aarch64"))]
+pub mod except_arm64;
+
+// lock.c + thread.c — the mutual-exclusion table and the per-thread state block. Gated
+// together behind `threading` because the host harness supplies its own `_lock`,
+// `_unlock` and `msvcrt_get_thread_data`; see the feature's note in Cargo.toml.
+#[cfg(feature = "threading")]
+pub mod lock;
+#[cfg(feature = "threading")]
+pub mod thread;
+
+// main.c — `DllMain`, msvcrt.dll's ENTRY POINT, and the `msvcrt_tls_index` slot every
+// `msvcrt_get_thread_data` reaches through. Its own feature because a Linux host harness has
+// no DLL_PROCESS_ATTACH to be called on, and because the feature has to pull in every
+// subsystem DllMain initialises — see Cargo.toml.
+#[cfg(feature = "dllmain")]
+pub mod main;
+
+// reactos/misc.c and reactos/system.cpp — the two files in this DLL that Wine never had, and
+// the last C bodies in msvcrt's own directory. Both hand-written: 189 lines between them,
+// against a substrate every earlier wave already built, so a paid translation would have been
+// spending money on the easiest code in the module.
+//
+// Their module names carry the DIRECTORY because both basenames are taken — `misc.rs` is
+// msvcrt's own Wine-derived misc.c, and process.rs holds Wine's `system`/`_wsystem` (gated
+// off; process.c wraps them in `#ifndef __REACTOS__`). Same names, different files, and
+// verify_cohab_coverage's `objects` map is what pairs each module with the right C object.
+//
+// `reactos_misc` needs `data` for `MSVCRT__winver`; `reactos_system` needs `stdio` for the
+// `_spawn*`/`_access_s` family and `dir-environ` for `getenv`/`_wgetenv`. Neither reaches the
+// host harness, which is the same limitation process.c and file.c already carry: the
+// substrate here is CreateProcess, not an algorithm.
+#[cfg(feature = "data")]
+pub mod reactos_misc;
+#[cfg(all(feature = "stdio", feature = "dir-environ"))]
+pub mod reactos_system;

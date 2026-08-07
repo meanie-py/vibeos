@@ -181,6 +181,20 @@ const PUBLIC_SYMBOLS: &[&str] = &[
 /// "ffffffffffffffff".
 const LP32_LONG_SYMBOLS: &[(&str, &str)] = &[
     ("atol", "int ref_atol(const char*);"),
+    // `atoi` joins them for an adjacent reason, and it took undname.c becoming a reference
+    // TU to surface it. glibc's <stdlib.h> defines `atoi` as an EXTERN INLINE that calls
+    // `strtol` — and `strtol` is hidden from glibc two lines down, so after stage 1 the
+    // inline body reads `msvcrt_ref_glibc_strtol`, a name nothing ever defines. Every TU
+    // that calls `atoi` therefore fails to link, which no reference TU did until undname.c.
+    // Hiding `atoi` too means glibc never emits the inline at all and string.c's own
+    // `ref_atoi` is what gets called — which is the body we want graded anyway.
+    ("atoi", "int ref_atoi(const char*);"),
+    // `labs` is math.c's, and it is the same LP64-vs-LP32 collision as `atol` above: glibc
+    // declares `long labs(long)`, so after stage 1 that is a declaration of
+    // `long ref_labs(long)` — and math.c then defines `__msvcrt_long ref_labs(__msvcrt_long)`,
+    // i.e. `int(int)`. A hard conflicting-types error, and the reason msvcrt has its own is
+    // exactly that Windows `long` is 32-bit.
+    ("labs", "int ref_labs(int);"),
     ("strtol", "int ref_strtol(const char*, char**, int);"),
     ("strtoul", "unsigned int ref_strtoul(const char*, char**, int);"),
     // ── the WIDE half (wcs.c) ─────────────────────────────────────────
@@ -609,6 +623,78 @@ fn defined_symbols(src: &str) -> Vec<String> {
     out
 }
 
+/// File-scope DATA definitions, sorted — the other half of `defined_symbols`.
+///
+/// `defined_symbols` requires a `(` on the line, so it finds functions and nothing else.
+/// A file-scope array or scalar is just as much a definition, collides at the link just
+/// as hard, and — worse — if one side's copy wins, the two implementations silently SHARE
+/// one piece of state. That is the same lesson the `nm`-based scrape below already
+/// records for file.c's `MSVCRT___pioinfo` / `MSVCRT__iob` / `MSVCRT___badioinfo`; mbcs.c's
+/// `MSVCRT_mbctype` is the same shape and was missed because its scrape is source-based.
+///
+/// House style is the whole grammar: a definition starts at column 0, is not `static`,
+/// `typedef` or `extern`, and reaches its `[` or `=` without passing a `(`.
+/// Every `.spec` in the repo, for the demangler corpus.
+///
+/// Skips `build-*` and `.git`: a build directory holds COPIES of the same specs, so walking
+/// it would double the scrape time and add nothing, and on a fleet machine those copies may
+/// belong to a different commit.
+fn collect_specs(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if p.is_dir() {
+            if name.starts_with("build-") || name == ".git" || name == "target" {
+                continue;
+            }
+            collect_specs(&p, out);
+        } else if name.ends_with(".spec") {
+            out.push(p);
+        }
+    }
+}
+
+fn defined_data_symbols(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        if line.starts_with([' ', '\t', '#', '/', '*', '}']) || line.trim().is_empty() {
+            continue;
+        }
+        if line.starts_with("static") || line.starts_with("typedef") || line.starts_with("extern")
+        {
+            continue;
+        }
+        let Some(end) = line.find(['[', '=']) else { continue };
+        let head = &line[..end];
+        if head.contains('(') {
+            continue; // a function, or a function-pointer declarator we should not guess at
+        }
+        let name: String = head
+            .chars()
+            .rev()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        // A bare `TYPE name;` is a tentative definition and still emits a symbol, but the
+        // head must have held at least a type before the name for this to be a definition
+        // at all rather than an assignment at file scope (which C does not allow anyway).
+        if name.is_empty()
+            || name.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || head[..head.len() - name.len()].trim().is_empty()
+        {
+            continue;
+        }
+        out.push(name);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The externally-visible symbols of a BUILT object whose nm type letter is in
 /// `kinds`, sorted.  `"T"` is code; `"D"`/`"B"` are initialised/zero data.
 ///
@@ -737,7 +823,13 @@ fn main() {
     let locale_c = msvcrt_dir.join("locale.c");
     let mbcs_c = msvcrt_dir.join("mbcs.c");
     let scanf_c = msvcrt_dir.join("scanf.c");
-    for src in [&string_c, &wcs_c, &ctype_c, &locale_c, &mbcs_c, &scanf_c] {
+    let undname_c = msvcrt_dir.join("undname.c");
+    let misc_c = msvcrt_dir.join("misc.c");
+    let math_c = msvcrt_dir.join("math.c");
+    for src in [
+        &string_c, &wcs_c, &ctype_c, &locale_c, &mbcs_c, &scanf_c, &undname_c, &misc_c,
+        &math_c,
+    ] {
         assert!(
             src.is_file(),
             "msvcrt reference source not found: {}",
@@ -761,8 +853,25 @@ fn main() {
     let mbcs_src = fs::read_to_string(&mbcs_c).unwrap();
     let mbcs_symbols: Vec<String> = defined_symbols(&mbcs_src)
         .into_iter()
+        .chain(defined_data_symbols(&mbcs_src))
         .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
         .collect();
+    // `MSVCRT_mbctype` is the reason the data half exists: msvcrt.spec exports it by name,
+    // so the subject crate must define it `#[no_mangle]`, and an un-renamed reference copy
+    // then collides. Assert it rather than trust the scrape — a silent miss here is a
+    // duplicate symbol at best and one shared MBCS table between the two sides at worst.
+    //
+    // It is renamed, unlike ctype.c's `MSVCRT__ctype`/`MSVCRT__wctype` which are shared on
+    // purpose, and the line between them is WHO WRITES IT. ctype's tables are locale
+    // ENVIRONMENT the two sides must agree on. This one is written by `_setmbcp` — code
+    // under test — so sharing it would let each side read what the other wrote, which is
+    // the failure errno.c's stage 5 comment already spells out for `MSVCRT__sys_errlist`:
+    // the row would compare a table against itself.
+    assert!(
+        mbcs_symbols.iter().any(|s| s == "MSVCRT_mbctype"),
+        "mbcs.c's data scrape did not find MSVCRT_mbctype — the reference copy would keep \
+         its plain name and collide with the subject's exported one"
+    );
     assert!(
         mbcs_symbols.len() > 150,
         "mbcs.c scrape found only {} definitions — the scan is broken, and a short list \
@@ -790,12 +899,92 @@ fn main() {
         );
     }
 
+    // undname.c — reference TU #8, and the smallest surface of any of them: TWO globals,
+    // `__unDName` and `__unDNameEx`, with every other function in the file `static`.
+    // Derived like mbcs.c's rather than listed, for the same reason, and then pinned to
+    // exactly those two names — a demangler that suddenly exports a third has either grown
+    // an entry point or lost a `static`, and either way the rename wall needs to know.
+    let undname_src = fs::read_to_string(&undname_c).unwrap();
+    let undname_symbols: Vec<String> = defined_symbols(&undname_src)
+        .into_iter()
+        .chain(defined_data_symbols(&undname_src))
+        .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
+        .collect();
+    assert_eq!(
+        undname_symbols,
+        vec!["__unDName".to_string(), "__unDNameEx".to_string()],
+        "undname.c's global surface changed; it was exactly the two entry points"
+    );
+
+    // misc.c — reference TU #9. Unlike undname.c's clean pair, its source carries a lot of
+    // definitions this build never compiles: `_chkesp` and its `__ASM_GLOBAL_FUNC` are
+    // `#ifdef __i386__`, and `_byteswap_*`, `_encode_pointer`, `_crt_debugger_hook` and the
+    // rest sit behind `_MSVCR_VER` guards this DLL does not open. `defines_symbol` filters
+    // the macro INVOCATIONS (no `{` body) but cannot see a preprocessor guard, so the list
+    // is a superset of what the object exports.
+    //
+    // That is fine and is worth stating rather than working around: a rename of a name the
+    // TU never defines is an inert `#define`, and if a guard ever opens it is already
+    // namespaced instead of colliding with the subject. What would NOT be fine is missing
+    // one that IS defined — so the assertion below pins the set that the object actually
+    // exports today.
+    let misc_src = fs::read_to_string(&misc_c).unwrap();
+    let misc_symbols: Vec<String> = defined_symbols(&misc_src)
+        .into_iter()
+        .chain(defined_data_symbols(&misc_src))
+        .filter(|n| defines_symbol(&misc_src, n))
+        .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
+        .collect();
+    for want in [
+        "qsort", "qsort_s", "bsearch", "bsearch_s", "_lfind", "_lfind_s", "_lsearch",
+        "rand", "srand", "rand_s", "_beep", "_sleep", "_resetstkoflw",
+        "_get_output_format", "_set_output_format",
+    ] {
+        assert!(
+            misc_symbols.iter().any(|s| s == want),
+            "misc.c's scrape missed `{want}`, which the object exports — it would keep its \
+             plain name and collide with the subject's"
+        );
+    }
+
+    // math.c — reference TU #10. Same `#if`-guarded superset caveat as misc.c, plus one
+    // thing no other TU has: `math_error` is RENAMED BY THE BUILD. msvcrt's CMakeLists
+    // carries `-Dmath_error=_invoke_matherr`, so the source never spells the symbol the
+    // object exports — the same trap verify_cohab_coverage's docstring records for the
+    // cohab side, arriving here on the harness side. It is excluded from the scraped
+    // rename list and handled by a `-D` on the TU instead (see MATH_DEFINES below);
+    // renaming it here as well would collide with that.
+    let math_src = fs::read_to_string(&math_c).unwrap();
+    let math_symbols: Vec<String> = defined_symbols(&math_src)
+        .into_iter()
+        .chain(defined_data_symbols(&math_src))
+        .filter(|n| defines_symbol(&math_src, n))
+        .filter(|n| n != "math_error")
+        .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
+        .collect();
+    for want in [
+        "_isnan", "_finite", "_chgsign", "_ecvt", "_fcvt", "_gcvt", "_control87", "_controlfp",
+        "_matherr", "MSVCRT_exp", "MSVCRT_asin", "_abs64", "abs", "labs", "_cabs", "_scalb",
+    ] {
+        assert!(
+            math_symbols.iter().any(|s| s == want),
+            "math.c's scrape missed `{want}`, which the object exports"
+        );
+    }
+    assert!(
+        !math_symbols.iter().any(|s| s == "math_error"),
+        "`math_error` must stay out of the rename wall — the -D owns it"
+    );
+
     let all_symbols: Vec<&str> = PUBLIC_SYMBOLS
         .iter()
         .chain(WCS_PUBLIC_SYMBOLS.iter())
         .chain(CTYPE_PUBLIC_SYMBOLS.iter())
         .copied()
         .chain(mbcs_symbols.iter().map(String::as_str))
+        .chain(undname_symbols.iter().map(String::as_str))
+        .chain(misc_symbols.iter().map(String::as_str))
+        .chain(math_symbols.iter().map(String::as_str))
         .collect();
     {
         let mut seen = std::collections::HashSet::new();
@@ -1138,6 +1327,102 @@ fn main() {
          #ifndef MSVCRT_DIFFTEST_WINDEF_H\n#define MSVCRT_DIFFTEST_WINDEF_H\n#endif\n",
     )
     .unwrap();
+    // undname.c's two PSDK includes. `winver.h` contributes nothing it uses; `imagehlp.h`
+    // contributes the `UNDNAME_*` flag family and nothing else — which the demangler
+    // branches on throughout, so these are the most load-bearing constants in the file.
+    //
+    // LIFTED FROM THE HEADER, never retyped. A hand-copied flag here would be un-sealed
+    // data in exactly the shape the field manual records for rtl-difftest's transposed
+    // `STATUS_UNMAPPABLE_CHARACTER`: reference and subject would both branch on our value,
+    // agree, and grade a demangler nobody asked for. `sdk/include/psdk/imagehlp.h` is the
+    // header the real build compiles against, so it is the one scraped.
+    {
+        let imagehlp_src = repo.join("sdk/include/psdk/imagehlp.h");
+        let text = fs::read_to_string(&imagehlp_src)
+            .unwrap_or_else(|e| panic!("{}: {e}", imagehlp_src.display()));
+        let mut body = String::from(
+            "/* GENERATED by build.rs — the UNDNAME_* family, lifted verbatim from\n\
+             * sdk/include/psdk/imagehlp.h. Do not edit; do not retype. */\n\
+             #ifndef MSVCRT_DIFFTEST_IMAGEHLP_H\n#define MSVCRT_DIFFTEST_IMAGEHLP_H\n",
+        );
+        let mut lifted = 0usize;
+        for line in text.lines() {
+            let t = line.trim_start();
+            if t.starts_with("#define UNDNAME_") {
+                body.push_str(t);
+                body.push('\n');
+                lifted += 1;
+            }
+        }
+        body.push_str("#endif\n");
+        // Every flag undname.c actually reads must be among them; a rename in the PSDK
+        // would otherwise leave the TU compiling against an implicit 0.
+        for want in [
+            "UNDNAME_NAME_ONLY",
+            "UNDNAME_NO_ACCESS_SPECIFIERS",
+            "UNDNAME_NO_ALLOCATION_LANGUAGE",
+            "UNDNAME_NO_ARGUMENTS",
+            "UNDNAME_NO_FUNCTION_RETURNS",
+            "UNDNAME_NO_LEADING_UNDERSCORES",
+            "UNDNAME_NO_MEMBER_TYPE",
+            "UNDNAME_NO_MS_KEYWORDS",
+            "UNDNAME_NO_THISTYPE",
+        ] {
+            assert!(
+                body.contains(&format!("#define {want}\t")) || body.contains(&format!("#define {want} ")),
+                "imagehlp.h no longer defines {want}, which undname.c branches on"
+            );
+        }
+        assert!(lifted >= 15, "only {lifted} UNDNAME_ flags lifted — the scrape has a hole");
+        fs::write(out.join("imagehlp.h"), body).unwrap();
+        // misc.c's `#include "ntsecapi.h"`, for `rand_s`'s entropy source. DETERMINISTIC
+        // and SHARED (refimpl.c), because it is the environment: a real RNG would make the
+        // two sides disagree on every draw for a reason that says nothing about the code,
+        // and a per-side one would make them disagree for a worse reason. What `rand_s` is
+        // graded on is the CONTRACT around the call — the NULL check, the EINVAL, and
+        // whether the failure return matches — not the bits.
+        fs::write(
+            out.join("ntsecapi.h"),
+            "/* GENERATED by build.rs — misc.c's `#include \"ntsecapi.h\"`. Only rand_s\n\
+             * uses it, and only for this one entry point. */\n\
+             #ifndef MSVCRT_DIFFTEST_NTSECAPI_H\n#define MSVCRT_DIFFTEST_NTSECAPI_H\n\
+             BOOLEAN WINAPI SystemFunction036(void *buf, ULONG len);\n\
+             /* ntsecapi.h's own spelling: advapi32 EXPORTS SystemFunction036 and\n\
+              * the friendly name is a macro over it. misc.c calls RtlGenRandom; the\n\
+              * Rust binds SystemFunction036. One definition, both names. */\n\
+             #define RtlGenRandom SystemFunction036\n#endif\n",
+        )
+        .unwrap();
+        // misc.c's `#include "windows.h"`. The Windows type model and the three kernel32
+        // entry points it wants (`Beep`, `Sleep`, `VirtualProtect`) are declared in
+        // refstub/msvcrt.h and implemented once in refimpl.c, so this only has to exist.
+        fs::write(
+            out.join("windows.h"),
+            "/* GENERATED by build.rs — misc.c's `#include \"windows.h\"`. Everything it\n\
+             * wants is already in refstub/msvcrt.h, force-included ahead of this. */\n\
+             #ifndef MSVCRT_DIFFTEST_WINDOWS_H\n#define MSVCRT_DIFFTEST_WINDOWS_H\n#endif\n",
+        )
+        .unwrap();
+        // math.c's `#include <fpieee.h>`. It uses NOTHING from it — one occurrence in the
+        // file, the include itself — so an empty guard is the whole faithful answer, exactly
+        // as for undname.c's winver.h. (`_FPIEEE_RECORD` and the filter that consumes it
+        // live in except.c, which is not this TU.)
+        fs::write(
+            out.join("fpieee.h"),
+            "/* GENERATED by build.rs — math.c's `#include <fpieee.h>`, which it uses\n\
+             * nothing from. */\n\
+             #ifndef MSVCRT_DIFFTEST_FPIEEE_H\n#define MSVCRT_DIFFTEST_FPIEEE_H\n#endif\n",
+        )
+        .unwrap();
+        fs::write(
+            out.join("winver.h"),
+            "/* GENERATED by build.rs — undname.c's `#include \"winver.h\"`. It uses\n\
+             * nothing from it; the include is there for the ReactOS build's benefit. */\n\
+             #ifndef MSVCRT_DIFFTEST_WINVER_H\n#define MSVCRT_DIFFTEST_WINVER_H\n#endif\n",
+        )
+        .unwrap();
+    }
+
     fs::write(
         out.join("winbase.h"),
         "/* GENERATED by build.rs — scanf.c's `#include \"winbase.h\"`. HeapAlloc &c. are\n\
@@ -2467,6 +2752,68 @@ fn main() {
         );
     }
 
+    // ── the demangler's corpus, SCRAPED FROM THE TREE ──
+    //
+    // Every `?`-prefixed export in every `.spec` in the repo is a genuine MSVC-mangled name
+    // that some real DLL publishes: constructors, destructors, operators, vtables,
+    // templates, and all four calling conventions across three arches. Roughly 870 of them,
+    // and they cost nothing to collect.
+    //
+    // The alternative — a hand-written list of interesting names — is the §9.73 trap in its
+    // most ordinary form: a corpus of the cases we thought of, grading the code we wrote,
+    // growing only when someone remembers to grow it. This one moves whenever a `.spec`
+    // does, which is the only way a demangler corpus stays honest against a tree that keeps
+    // adding C++ DLLs.
+    {
+        let mut names: Vec<String> = Vec::new();
+        let mut specs: Vec<PathBuf> = Vec::new();
+        collect_specs(&repo, &mut specs);
+        specs.sort();
+        for spec in &specs {
+            let Ok(text) = fs::read_to_string(spec) else { continue };
+            for raw in text.lines() {
+                let line = raw.split('#').next().unwrap_or("");
+                let mut words = line.split_whitespace();
+                // `@ cdecl -arch=x ??0foo@@QAE@XZ(ptr) impl` — ordinal, directive, flags,
+                // then the export name. The name is the first word that is not a flag.
+                let Some(ordinal) = words.next() else { continue };
+                if ordinal != "@" && ordinal.parse::<u32>().is_err() {
+                    continue;
+                }
+                let Some(_directive) = words.next() else { continue }; // cdecl / extern / stub
+                let Some(export) = words.find(|w| !w.starts_with('-')) else { continue };
+                let export = export.split('(').next().unwrap_or(export);
+                if export.starts_with('?') {
+                    names.push(export.to_string());
+                }
+            }
+        }
+        names.sort();
+        names.dedup();
+        assert!(
+            names.len() > 500,
+            "only {} mangled names scraped from {} .spec files — the corpus has a hole, and \
+             a demangler graded on a thin corpus reports green for the shapes it never saw",
+            names.len(),
+            specs.len()
+        );
+        let mut corpus = String::from(
+            "// GENERATED by msvcrt-difftest/build.rs — every `?`-prefixed export in every\n\
+             // .spec in the repo. Do not edit; add a DLL and it grows.\n\
+             pub static CORPUS: &[&str] = &[\n",
+        );
+        for n in &names {
+            // Rust string literals: a mangled name can contain `\` (rarely) and `\"` never,
+            // but escape both rather than assume the current corpus is the permanent one.
+            corpus.push_str(&format!("    {:?},\n", n));
+        }
+        corpus.push_str("];\n");
+        fs::write(out.join("undname_corpus.rs"), corpus).unwrap();
+        for spec in &specs {
+            println!("cargo:rerun-if-changed={}", spec.display());
+        }
+    }
+
     // One archive, `libmsvcrt_ref.a` in OUT_DIR, holding all the objects.
     let mut objects: Vec<PathBuf> = Vec::new();
     refimpl_build.cargo_metadata(false);
@@ -2474,6 +2821,30 @@ fn main() {
     objects.extend(ref_tu(&wcs_c).compile_intermediates());
     objects.extend(ref_tu(&ctype_c).compile_intermediates());
     objects.extend(ref_tu(&mbcs_c).compile_intermediates());
+    objects.extend(ref_tu(&undname_c).compile_intermediates());
+    objects.extend(ref_tu(&misc_c).compile_intermediates());
+    // math.c carries the module's OWN preprocessor definitions
+    // (dll/win32/msvcrt/CMakeLists.txt:24-33). Without them the reference compiles
+    // DIFFERENT CODE from the DLL and grades it confidently — `math_error` would be a
+    // symbol the object does not have, `asm_sqrt` would not route to the libm one, and
+    // ARRAY_SIZE/I64_MIN would not exist at all.
+    //
+    // `math_error` maps straight to `ref__invoke_matherr`, folding the CMake rename and the
+    // ref_ wall into one step. It has to be one step: a `-D` is consumed before the
+    // `-include` prelude is read, so `-Dmath_error=_invoke_matherr` would eat the token and
+    // the prelude's `#define math_error ref_math_error` would never fire — leaving the
+    // reference defining a plain `_invoke_matherr` that collides with the subject's.
+    let mut math_tu = ref_tu(&math_c);
+    math_tu
+        .define("ARRAY_SIZE", "_countof")
+        .define("I64_MIN", "_I64_MIN")
+        .define("I64_MAX", "_I64_MAX")
+        .define("UI64_MAX", "_UI64_MAX")
+        .define("x87_asin", "asin")
+        .define("math_error", "ref__invoke_matherr")
+        .define("asm_sqrt", "sqrt")
+        .define("asm_sqrtf", "sqrtf");
+    objects.extend(math_tu.compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());
     objects.extend(nls_build.compile_intermediates());

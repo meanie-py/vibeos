@@ -412,6 +412,15 @@ size_t mbcs_mbctype_len(void)
     return sizeof(((rl_threadmbcinfo *)0)->mbctype);
 }
 
+/* The table's ADDRESS inside a threadmbcinfo, for the same reason as the length above: the
+ * offset of that field is this harness's C-side model of the struct, and tests/mbcs_setmbcp
+ * needs to compare the exported `_mbctype` against the table of the mbcinfo that was just
+ * installed — which is precisely what `_setmbcp`'s closing memcpy claims to do. */
+const unsigned char *mbcinfo_mbctype(const rl_threadmbcinfo *mbcinfo)
+{
+    return mbcinfo->mbctype;
+}
+
 /* Field-by-field diff of two freshly-built mbcinfos, for tests/mbcs_state.c's grading of
  * `create_mbcinfo` — the one function in mbcs.c whose output every OTHER case is graded
  * against, and which for that reason was itself graded nowhere: mbcs_fixture_install
@@ -490,12 +499,50 @@ int mbcs_fixture_check(void)
  * storage, never malloc'd, so nothing this frees was ever allocated by us.
  * create_mbcinfo's OWN return value IS malloc'd, and mbcs_fixture_install copies out of
  * it and lets it go — one small leak per codepage, once, deliberately: freeing it would
- * mean modelling msvcrt's refcount discipline for no gain in a process that exits. */
-void free_mbcinfo(rl_threadmbcinfo *mbcinfo) { (void)mbcinfo; }
+ * mean modelling msvcrt's refcount discipline for no gain in a process that exits.
+ *
+ * It also RECORDS its argument, because `_setmbcp` has an arm whose only observable
+ * effect is this call: under `LOCALE_FREE` it releases the mbcinfo it is replacing, and a
+ * translation that dropped that would leak silently and pass every other check. ONE
+ * definition serving both sides, like fileimpl.c's `_lock` recorder and for the same
+ * reason — read it immediately after each side's call, never once at the end. */
+static rl_threadmbcinfo *last_freed;
+static int free_calls;
 
-/* locale.c's global. mbcs.c reads it in _setmbcp (which is refused as a state mutator,
- * but must still link). NULL is what msvcrt has before setlocale(). */
+void free_mbcinfo(rl_threadmbcinfo *mbcinfo)
+{
+    last_freed = mbcinfo;
+    free_calls++;
+}
+
+rl_threadmbcinfo *mbcs_last_freed(void) { return last_freed; }
+int mbcs_free_calls(void) { return free_calls; }
+void mbcs_reset_freed(void) { last_freed = 0; free_calls = 0; }
+
+/* locale.c's global, ONE PER SIDE — `MSVCRT_locale` is the subject's and
+ * `msvcrt_ref_locale` the reference's (refstub/msvcrt.h puts the reference's copy in the
+ * import namespace, like `get_mbcinfo` and for the same reason).
+ *
+ * They were a single shared NULL until `_setmbcp` became gradeable, and both halves of
+ * that mattered. NULL is what msvcrt has before `setlocale()`, and it is why the function
+ * was refused for so long: its non-thread arm dereferences this. SHARED is the subtler
+ * half — that arm ends in `memcpy(MSVCRT_mbctype, MSVCRT_locale->mbcinfo->mbctype, …)`,
+ * so one `MSVCRT_locale` would have both sides installing into the same slot and reading
+ * back what the other just wrote. The row would compare a table against itself and pass
+ * no matter what either side did, which is the §9.73 trap and exactly the reasoning
+ * behind renaming `MSVCRT_mbctype` for the reference in the first place.
+ *
+ * Both stay NULL by default so nothing else in the harness sees a locale it did not
+ * before; `tests/mbcs_setmbcp.rs` points them at storage in its own process. */
 void *MSVCRT_locale = 0;
+void *msvcrt_ref_locale = 0;
+
+/* Per-side storage for the test above, handed out rather than declared there, because
+ * `_locale_tstruct`'s layout is this harness's model of it (refstub/locale_layout.h) and
+ * only C sees that header. Two distinct objects — that is the whole point. */
+static rl_locale_t setmbcp_locale[2];
+
+void *mbcs_locale_slot(int side) { return &setmbcp_locale[side ? 1 : 0]; }
 
 /* mbcs.c's create_mbcinfo bumps a refcount with this. Single-threaded harness, so the
  * atomicity is not load-bearing — the RETURN VALUE is: it must be the INCREMENTED

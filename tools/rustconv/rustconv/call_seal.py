@@ -542,6 +542,45 @@ def _defaulted_param_count(masked: str, callee: str) -> int | None:
     return None
 
 
+def _mask_turbofish_commas(text: str) -> str:
+    """Blank the commas inside `::<...>` spans, leaving every other byte and the LENGTH alone.
+
+    `_argument_count` tracks `()[]{}` depth but not `<>`, so `transmute::<A, B>(x)` reads as
+    two arguments where the C had one. The old defence was to skip any site whose argument
+    text mentioned `::<` at all -- which also skipped every site containing a harmless
+    `size_of::<T>()`, and that is not a corner: it is how nearly every `memcpy` lowering
+    spells its length. thread.c's `_beginthread_trampoline` shipped through that hole with
+    `msvcrt_get_thread_data` -- a ZERO-argument function -- wearing the memcpy's three
+    arguments, and no finding was raised.
+
+    A callee-side turbofish needs no handling here: `_argument_count` already returns None
+    when anything sits between the name and the `(`.
+
+    Length is preserved so callers can keep indexing the unmasked string.
+    """
+    out = list(text)
+    i = 0
+    while (start := text.find("::<", i)) >= 0:
+        depth, pos = 0, start + 2
+        while pos < len(text):
+            ch = text[pos]
+            if ch == "<":
+                depth += 1
+            # `->` inside a `fn(A) -> B` type argument is not a closing angle bracket.
+            elif ch == ">" and text[pos - 1] != "-":
+                depth -= 1
+                if depth == 0:
+                    break
+            pos += 1
+        else:
+            break
+        for p in range(start, pos):
+            if out[p] == ",":
+                out[p] = " "
+        i = pos + 1
+    return "".join(out)
+
+
 def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     """Tokens whose Rust call site takes a different number of arguments than the C one.
 
@@ -551,11 +590,14 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
     site and it now wraps two arguments where the C had three.
 
     Skipped rather than judged wherever the count is not a fair comparison: a C site
-    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`), an
-    unbalanced Rust site, and a turbofish, whose `::<A, B>` commas sit at the same depth
-    as real arguments. A token that appears more than once — the `goto` replication
-    region — needs only ONE occurrence to agree, since the copies are the same call.
+    whose arguments mention a function-like macro (`argc is None`, see `seal_calls`) and
+    an unbalanced Rust site. A turbofish used to skip the site too; it now only has its
+    own commas blanked, because discarding the whole site is what let a three-argument
+    call to a zero-argument callee ship — see `_mask_turbofish_commas`. A token that
+    appears more than once — the `goto` replication region — needs only ONE occurrence to
+    agree, since the copies are the same call.
     """
+    exec_mask = _mask_turbofish_commas(exec_mask)
     findings = []
     for call in sealed.calls:
         if call.argc is None:
@@ -564,7 +606,6 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
             counted
             for match in re.finditer(rf"\b{re.escape(call.placeholder)}\b", exec_mask)
             if (counted := _argument_count(exec_mask, match.end())) is not None
-            and "::<" not in counted[1]
         ]
         hi = call.argc_max if call.argc_max is not None else call.argc
         if not counts or any(call.argc <= count <= hi for count, _ in counts):

@@ -144,3 +144,102 @@ def test_dewiden_leaves_a_narrow_literal_alone():
     assert _dewiden(r"h\0e\0l\0l\0o\0\0") == "hello"
     # Not an interleave — must not be mangled.
     assert _dewiden(r"a\0b") == r"a\0b"
+
+
+# ── the four ways this tree spells a wide literal as an ARRAY ──────────────────────────
+# Keying on the DECLARATION meant a new blind spot per spelling, and each one presented as
+# a wall of confident MISSING findings against code that was present and correct. Detection
+# is by shape now, so all four have to read the same.
+def test_every_wide_array_spelling_is_seen(tmp_path):
+    c = 'void f(void) { g(L"State"); }'
+    for rs in (
+        "static NAME: [u16; 6] = [b'S' as u16, b't' as u16, b'a' as u16,"
+        " b't' as u16, b'e' as u16, 0];\nunsafe fn f() { g(NAME.as_ptr()); }",
+        "const NAME: &[u16] = &[0x53, 0x74, 0x61, 0x74, 0x65, 0x0000];\n"
+        "unsafe fn f() { g(NAME.as_ptr()); }",
+        "unsafe fn f() { let n: [u16; 6] = [0x53, 0x74, 0x61, 0x74, 0x65, 0]; g(n.as_ptr()); }",
+        "unsafe fn f() { let n = &[0x53u16, 0x74, 0x61, 0x74, 0x65, 0]; g(n.as_ptr()); }",
+        "unsafe fn f() { g(['S' as u16, 't' as u16, 'a' as u16,"
+        " 't' as u16, 'e' as u16, 0].as_ptr()); }",
+    ):
+        assert _pair(tmp_path, c, rs) == [], rs
+
+
+def test_a_zero_padded_array_is_not_read_as_truncated(tmp_path):
+    """`[u16; 8]` holding 5 characters and three NULs is the whole string, not the first one."""
+    rs = "static NAME: [u16; 8] = [0x53, 0x74, 0x61, 0x74, 0x65, 0, 0, 0];\nunsafe fn f() {}"
+    assert _pair(tmp_path, 'void f(void) { g(L"State"); }', rs) == []
+
+
+def test_a_single_character_wide_array_is_seen(tmp_path):
+    """`[c, 0]` is a one-character string; userenv spells the path separator that way."""
+    rs = "static SEP: [u16; 2] = [b'\\\\' as u16, 0];\nunsafe fn f() {}"
+    assert _pair(tmp_path, 'void f(void) { g(L"\\\\"); }', rs) == []
+
+
+def test_a_numeric_table_is_not_mistaken_for_a_string(tmp_path):
+    """No NUL terminator and not text — an ordinary table must contribute no literals."""
+    rs = "static T: [u16; 4] = [1000, 2000, 3000, 4000];\nunsafe fn f() {}"
+    assert _pair(tmp_path, "void f(void) {}", rs) == []
+
+
+def test_the_double_interleaved_shape_is_refused(tmp_path):
+    """wkssvc's real defect: `&[0x43,0x00,0x68,0x00,...]` as u16 elements reads as just 'C'.
+
+    The array must NOT be credited with the string it looks like in hex, or the checker
+    would certify the exact bug it exists to find — every registry value name in
+    SaveWorkstationInfo truncated to its first character.
+    """
+    rs = (
+        "unsafe fn f() { let n: &[u16] = &[0x43,0x00,0x68,0x00,0x61,0x00,"
+        "0x72,0x00,0x00,0x00]; g(n.as_ptr()); }"
+    )
+    out = _pair(tmp_path, 'void f(void) { g(L"Char"); }', rs)
+    assert any("MISSING" in f and "Char" in f for f in out), out
+
+
+# ── the spellings a faithful translation legitimately differs on ───────────────────────
+def test_adjacent_c_literals_are_concatenated(tmp_path):
+    """C joins adjacent literals; the `L` prefix of the next one sits in the gap."""
+    c = 'void f(void) { g(L"abc " \n L"def" \n L"\\n"); }'
+    assert _pair(tmp_path, c, 'unsafe fn f() { g(b"abc def\\n\\0".as_ptr()); }') == []
+
+
+def test_an_escaped_backslash_before_zero_is_not_a_terminator(tmp_path):
+    r"""`...CentralProcessor\\0` ends in backslash + the DIGIT zero, not a NUL escape."""
+    c = 'void f(void) { g(L"HARDWARE\\\\CentralProcessor\\\\0"); }'
+    rs = 'unsafe fn f() { g(w!("HARDWARE\\\\CentralProcessor\\\\0")); }'
+    assert _pair(tmp_path, c, rs) == []
+
+
+def test_a_raw_control_character_matches_its_escape(tmp_path):
+    """sysdm embedded a literal TAB where the C spells `\\t`; identical at runtime."""
+    assert _pair(tmp_path, 'void f(void) { g(L"a\\tb"); }', 'unsafe fn f() { g("a\tb"); }') == []
+
+
+def test_an_embedded_nul_is_stripped_on_both_sides(tmp_path):
+    """netcfgx's `L"0.0.0.0\\0"` against a Rust `w!("0.0.0.0\\0")` meaning the same thing."""
+    c = 'void f(void) { g(L"0.0.0.0\\0"); }'
+    assert _pair(tmp_path, c, 'unsafe fn f() { g(w!("0.0.0.0\\0")); }') == []
+
+
+def test_an_if_zero_arm_is_not_a_finding(tmp_path):
+    """`#if 0` is how C parks a block; umpnpmgr parks an RPC endpoint that way."""
+    c = 'void f(void) {\n#if 0\n  g(L"parked");\n#endif\n  g(L"live");\n}'
+    assert _pair(tmp_path, c, 'unsafe fn f() { g(w!("live")); }') == []
+
+
+def test_a_hoisted_constant_is_compared_by_presence_not_count(tmp_path):
+    """The Rust names a literal once however many times the C spells it."""
+    c = 'void f(void) { g(L"Path"); h(L"Path"); i(L"Path"); }'
+    rs = (
+        "static P: [u16; 5] = [b'P' as u16, b'a' as u16, b't' as u16, b'h' as u16, 0];\n"
+        "unsafe fn f() { g(P.as_ptr()); h(P.as_ptr()); i(P.as_ptr()); }"
+    )
+    assert _pair(tmp_path, c, rs) == []
+
+
+def test_reactos_dprint_formats_are_not_findings(tmp_path):
+    """DPRINT is ReactOS's channel; scan_dropped_prints owns the dropped-diagnostic class."""
+    c = 'void f(void) { DPRINT1("failed %lu\\n", e); g(L"real"); }'
+    assert _pair(tmp_path, c, 'unsafe fn f() { g(w!("real")); }') == []

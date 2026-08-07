@@ -5,24 +5,24 @@ unsafe extern "C" fn AppearancePage_UpdateThemePreview(hwndDlg: HWND, g: *mut GL
     if (*g).ActiveTheme.ThemeActive != 0 {
         let mut rcWindow: RECT = core::mem::zeroed();
 
-        GetClientRect(GetDlgItem(hwndDlg, IDC_APPEARANCE_PREVIEW), &mut rcWindow);
+        GetClientRect(GetDlgItem(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32), &mut rcWindow);
         if DrawThemePreview((*g).hdcThemePreview, &mut (*g).Scheme, &mut (*g).ActiveTheme, &mut rcWindow) != 0 {
-            SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SET_HDC_PREVIEW, 0, (*g).hdcThemePreview as LPARAM);
+            SendDlgItemMessage(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32, PVM_SET_HDC_PREVIEW, 0, (*g).hdcThemePreview as LPARAM);
             return;
         }
     }
 
-    SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_UPDATETHEME, 0, &mut (*g).Scheme as *mut _ as LPARAM);
-    SendDlgItemMessage(hwndDlg, IDC_APPEARANCE_PREVIEW, PVM_SET_HDC_PREVIEW, 0, 0);
+    SendDlgItemMessage(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32, PVM_UPDATETHEME, 0, &mut (*g).Scheme as *mut _ as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32, PVM_SET_HDC_PREVIEW, 0, 0);
 }
 unsafe extern "C" fn AppearancePage_LoadSelectedScheme(hwndDlg: HWND, g: *mut GLOBALS) {
-    if (*g).ActiveTheme.ThemeActive == FALSE {
+    if (*g).ActiveTheme.ThemeActive == (FALSE) as i32 {
         LoadSchemeFromReg(core::ptr::addr_of_mut!((*g).Scheme), core::ptr::addr_of_mut!((*g).ActiveTheme));
     } else {
         LoadSchemeFromTheme(core::ptr::addr_of_mut!((*g).Scheme), core::ptr::addr_of_mut!((*g).ActiveTheme));
     }
 
-    g_GlobalData.desktop_color = (*g).Scheme.crColor[COLOR_DESKTOP];
+    g_GlobalData.desktop_color = (*g).Scheme.crColor[(COLOR_DESKTOP) as usize];
 }
 unsafe extern "C" fn AppearancePage_ShowStyles(
     hwndDlg: HWND,
@@ -38,7 +38,7 @@ unsafe extern "C" fn AppearancePage_ShowStyles(
 
     pCurrentStyle = pStyles;
     while !pCurrentStyle.is_null() {
-        iListIndex = SendMessage(hwndList, CB_ADDSTRING, 0, (*pCurrentStyle).DisplayName as LPARAM);
+        iListIndex = (SendMessage(hwndList, CB_ADDSTRING, 0, (*pCurrentStyle).DisplayName as LPARAM)) as i32;
         SendMessage(hwndList, CB_SETITEMDATA, iListIndex as WPARAM, pCurrentStyle as LPARAM);
         if pCurrentStyle == pActiveStyle {
             SendMessage(hwndList, CB_SETCURSEL, iListIndex as WPARAM, 0);
@@ -49,7 +49,7 @@ unsafe extern "C" fn AppearancePage_ShowStyles(
 unsafe extern "C" fn AppearancePage_ShowColorSchemes(hwndDlg: HWND, g: *mut GLOBALS) {
     AppearancePage_ShowStyles(
         hwndDlg,
-        IDC_APPEARANCE_COLORSCHEME,
+        (IDC_APPEARANCE_COLORSCHEME) as i32,
         (*(*g).ActiveTheme.Theme).ColoursList,
         (*g).ActiveTheme.Color,
     );
@@ -64,7 +64,7 @@ unsafe extern "C" fn AppearancePage_ShowSizes(hwndDlg: HWND, g: *mut GLOBALS) {
     }
 
     AppearancePage_ShowStyles(hwndDlg,
-                          IDC_APPEARANCE_SIZE,
+                          (IDC_APPEARANCE_SIZE) as i32,
                           pSizes,
                           (*g).ActiveTheme.Size);
 }
@@ -76,43 +76,43 @@ unsafe extern "C" fn AppearancePage_OnInit(hwndDlg: HWND) -> INT_PTR {
     let mut hdcScreen: HDC;
     let mut pTheme: *mut THEME;
 
-    g = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<GLOBALS>()) as *mut GLOBALS;
+    g = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<GLOBALS>()) as SIZE_T) as *mut GLOBALS;
     if g.is_null() {
-        return FALSE;
+        return (FALSE) as LPARAM;
     }
 
-    SetWindowLongPtr(hwndDlg, DWLP_USER, g as isize);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, ((g as isize) as i32) as LPARAM);
 
-    (*g).bInitializing = TRUE;
+    (*g).bInitializing = (TRUE) as i32;
 
     if LoadCurrentScheme(core::ptr::addr_of_mut!((*g).Scheme)) == 0 {
-        return FALSE;
+        return (FALSE as INT_PTR) as LPARAM;
     }
 
     (*g).pThemes = LoadThemes();
     if !(*g).pThemes.is_null() {
-        let mut bLoadedTheme: u32 = FALSE;
+        let mut bLoadedTheme: u32 = (FALSE) as u32;
 
         if !g_GlobalData.pwszAction.is_null() &&
            !g_GlobalData.pwszFile.is_null() &&
            wcscmp(g_GlobalData.pwszAction, w!("OpenMSTheme") as *const u16) == 0 {
-            bLoadedTheme = FindOrAppendTheme((*g).pThemes,
+            bLoadedTheme = (FindOrAppendTheme((*g).pThemes,
                                                   g_GlobalData.pwszFile,
                                                   core::ptr::null_mut(),
                                                   core::ptr::null_mut(),
-                                                  core::ptr::addr_of_mut!((*g).ActiveTheme));
+                                                  core::ptr::addr_of_mut!((*g).ActiveTheme))) as u32;
         }
 
         if bLoadedTheme != 0 {
-            (*g).bThemeChanged = TRUE;
-            (*g).bSchemeChanged = TRUE;
+            (*g).bThemeChanged = (TRUE) as i32;
+            (*g).bSchemeChanged = (TRUE) as i32;
 
             PostMessageW(GetParent(hwndDlg), PSM_CHANGED, hwndDlg as WPARAM, 0);
 
             AppearancePage_LoadSelectedScheme(hwndDlg, g);
         } else {
             if GetActiveTheme((*g).pThemes, core::ptr::addr_of_mut!((*g).ActiveTheme)) == 0 {
-                (*g).ActiveTheme.ThemeActive = FALSE;
+                (*g).ActiveTheme.ThemeActive = (FALSE) as i32;
             }
         }
 
@@ -122,23 +122,23 @@ unsafe extern "C" fn AppearancePage_OnInit(hwndDlg: HWND) -> INT_PTR {
             (*g).ClassicTheme.Size = (*(*g).ClassicTheme.Color).ChildStyle;
         }
 
-        if (*g).ActiveTheme.ThemeActive == FALSE {
+        if (*g).ActiveTheme.ThemeActive == (FALSE) as i32 {
             (*g).ActiveTheme = (*g).ClassicTheme;
         }
 
-        GetClientRect(GetDlgItem(hwndDlg, IDC_APPEARANCE_PREVIEW), core::ptr::addr_of_mut!(rcPreview));
+        GetClientRect(GetDlgItem(hwndDlg, (IDC_APPEARANCE_PREVIEW) as i32), core::ptr::addr_of_mut!(rcPreview));
 
         hdcScreen = GetDC(core::ptr::null_mut());
         (*g).hbmpThemePreview = CreateCompatibleBitmap(hdcScreen, rcPreview.right, rcPreview.bottom);
         (*g).hdcThemePreview = CreateCompatibleDC(hdcScreen);
-        SelectObject((*g).hdcThemePreview, (*g).hbmpThemePreview);
+        SelectObject((*g).hdcThemePreview, ((*g).hbmpThemePreview).cast());
         ReleaseDC(core::ptr::null_mut(), hdcScreen);
 
-        hwndTheme = GetDlgItem(hwndDlg, IDC_APPEARANCE_VISUAL_STYLE);
+        hwndTheme = GetDlgItem(hwndDlg, (IDC_APPEARANCE_VISUAL_STYLE) as i32);
 
         pTheme = (*g).pThemes;
         while !pTheme.is_null() {
-            iListIndex = SendMessage(hwndTheme, CB_ADDSTRING, 0, (*pTheme).DisplayName as LPARAM);
+            iListIndex = (SendMessage(hwndTheme, CB_ADDSTRING, 0, (*pTheme).DisplayName as LPARAM)) as i32;
             SendMessage(hwndTheme, CB_SETITEMDATA, iListIndex as WPARAM, pTheme as LPARAM);
             if pTheme == (*g).ActiveTheme.Theme {
                 SendMessage(hwndTheme, CB_SETCURSEL, iListIndex as WPARAM, 0);
@@ -152,9 +152,9 @@ unsafe extern "C" fn AppearancePage_OnInit(hwndDlg: HWND) -> INT_PTR {
             AppearancePage_UpdateThemePreview(hwndDlg, g);
         }
     }
-    (*g).bInitializing = FALSE;
+    (*g).bInitializing = (FALSE) as i32;
 
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 unsafe extern "C" fn AppearancePage_OnDestroy(hwndDlg: HWND, g: *mut GLOBALS) {
     HeapFree(GetProcessHeap(), 0, g as *mut _);
@@ -193,57 +193,57 @@ pub unsafe extern "system" fn AppearancePageProc(
 
         WM_COMMAND => {
             if g.is_null() || (*g).bInitializing != 0 {
-                return FALSE;
+                return (FALSE) as LPARAM;
             }
 
-            match LOWORD(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_APPEARANCE_EFFECTS => {
                     if DialogBoxParam(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_EFFAPPEARANCE),
+                        MAKEINTRESOURCE!(IDD_EFFAPPEARANCE),
                         hwndDlg,
-                        EffAppearanceDlgProc,
+                        Some(EffAppearanceDlgProc),
                         g as LPARAM,
-                    ) == IDOK
+                    ) == ((IDOK) as i32) as LPARAM
                     {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
                         (*g).Scheme = (*g).SchemeAdv;
-                        (*g).bSchemeChanged = TRUE;
+                        (*g).bSchemeChanged = (TRUE) as i32;
                     }
                 }
 
                 IDC_APPEARANCE_ADVANCED => {
                     if DialogBoxParam(
                         hApplet,
-                        MAKEINTRESOURCE(IDD_ADVAPPEARANCE),
+                        MAKEINTRESOURCE!(IDD_ADVAPPEARANCE),
                         hwndDlg,
-                        AdvAppearanceDlgProc,
+                        Some(AdvAppearanceDlgProc),
                         g as LPARAM,
-                    ) == IDOK
+                    ) == ((IDOK) as i32) as LPARAM
                     {
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
-                        (*g).bSchemeChanged = TRUE;
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
+                        (*g).bSchemeChanged = (TRUE) as i32;
                         (*g).Scheme = (*g).SchemeAdv;
-                        g_GlobalData.desktop_color = (*g).Scheme.crColor[COLOR_DESKTOP];
+                        g_GlobalData.desktop_color = (*g).Scheme.crColor[(COLOR_DESKTOP) as usize];
 
                         AppearancePage_UpdateThemePreview(hwndDlg, g);
                     }
                 }
 
                 IDC_APPEARANCE_COLORSCHEME => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         (*g).ActiveTheme.Color =
-                            GetSelectedData(hwndDlg, IDC_APPEARANCE_COLORSCHEME) as PTHEME_STYLE;
+                            GetSelectedData(hwndDlg, (IDC_APPEARANCE_COLORSCHEME) as i32) as PTHEME_STYLE;
                         if !(*(*g).ActiveTheme.Color).ChildStyle.is_null() {
                             (*g).ActiveTheme.Size = (*(*g).ActiveTheme.Color).ChildStyle;
                         }
 
-                        (*g).bSchemeChanged = TRUE;
+                        (*g).bSchemeChanged = (TRUE) as i32;
                         if (*g).ActiveTheme.ThemeActive != 0 {
-                            (*g).bThemeChanged = TRUE;
+                            (*g).bThemeChanged = (TRUE) as i32;
                         }
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_LoadSelectedScheme(hwndDlg, g);
                         AppearancePage_ShowSizes(hwndDlg, g);
@@ -252,9 +252,9 @@ pub unsafe extern "system" fn AppearancePageProc(
                 }
 
                 IDC_APPEARANCE_VISUAL_STYLE => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         let pTheme: PTHEME =
-                            GetSelectedData(hwndDlg, IDC_APPEARANCE_VISUAL_STYLE) as PTHEME;
+                            GetSelectedData(hwndDlg, (IDC_APPEARANCE_VISUAL_STYLE) as i32) as PTHEME;
 
                         if (*g).ClassicTheme.Theme == pTheme {
                             (*g).ActiveTheme = (*g).ClassicTheme;
@@ -262,13 +262,13 @@ pub unsafe extern "system" fn AppearancePageProc(
                             (*g).ActiveTheme.Theme = pTheme;
                             (*g).ActiveTheme.Size = (*pTheme).SizesList;
                             (*g).ActiveTheme.Color = (*pTheme).ColoursList;
-                            (*g).ActiveTheme.ThemeActive = TRUE;
+                            (*g).ActiveTheme.ThemeActive = (TRUE) as i32;
                         }
 
-                        (*g).bThemeChanged = TRUE;
-                        (*g).bSchemeChanged = TRUE;
+                        (*g).bThemeChanged = (TRUE) as i32;
+                        (*g).bSchemeChanged = (TRUE) as i32;
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_ShowColorSchemes(hwndDlg, g);
                         AppearancePage_ShowSizes(hwndDlg, g);
@@ -278,15 +278,15 @@ pub unsafe extern "system" fn AppearancePageProc(
                 }
 
                 IDC_APPEARANCE_SIZE => {
-                    if HIWORD(wParam) == CBN_SELCHANGE {
+                    if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 {
                         (*g).ActiveTheme.Size =
-                            GetSelectedData(hwndDlg, IDC_APPEARANCE_SIZE) as PTHEME_STYLE;
-                        (*g).bSchemeChanged = TRUE;
+                            GetSelectedData(hwndDlg, (IDC_APPEARANCE_SIZE) as i32) as PTHEME_STYLE;
+                        (*g).bSchemeChanged = (TRUE) as i32;
                         if (*g).ActiveTheme.ThemeActive != 0 {
-                            (*g).bThemeChanged = TRUE;
+                            (*g).bThemeChanged = (TRUE) as i32;
                         }
 
-                        PropSheet_Changed(GetParent(hwndDlg), hwndDlg);
+                        PropSheet_Changed!(GetParent(hwndDlg), hwndDlg);
 
                         AppearancePage_LoadSelectedScheme(hwndDlg, g);
                         AppearancePage_UpdateThemePreview(hwndDlg, g);
@@ -310,26 +310,26 @@ pub unsafe extern "system" fn AppearancePageProc(
                             core::ptr::addr_of_mut!((*g).Scheme),
                             core::ptr::addr_of_mut!((*g).ActiveTheme),
                         );
-                        if (*g).ActiveTheme.ThemeActive == FALSE {
+                        if (*g).ActiveTheme.ThemeActive == (FALSE) as i32 {
                             (*g).ClassicTheme = (*g).ActiveTheme;
                         }
                     }
 
                     AppearancePage_UpdateThemePreview(hwndDlg, g);
-                    (*g).bThemeChanged = FALSE;
-                    (*g).bSchemeChanged = FALSE;
+                    (*g).bThemeChanged = (FALSE) as i32;
+                    (*g).bSchemeChanged = (FALSE) as i32;
                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, PSNRET_NOERROR as LONG_PTR);
-                    return TRUE;
+                    return (TRUE as INT_PTR) as LPARAM;
                 }
 
                 PSN_KILLACTIVE => {
                     SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, FALSE as LONG_PTR);
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
 
                 PSN_SETACTIVE => {
-                    if (*g).Scheme.crColor[COLOR_DESKTOP] != g_GlobalData.desktop_color {
-                        (*g).Scheme.crColor[COLOR_DESKTOP] = g_GlobalData.desktop_color;
+                    if (*g).Scheme.crColor[(COLOR_DESKTOP) as usize] != g_GlobalData.desktop_color {
+                        (*g).Scheme.crColor[(COLOR_DESKTOP) as usize] = g_GlobalData.desktop_color;
                         AppearancePage_UpdateThemePreview(hwndDlg, g);
                     }
                 }
@@ -341,7 +341,7 @@ pub unsafe extern "system" fn AppearancePageProc(
         _ => {}
     }
 
-    return FALSE;
+    return FALSE as INT_PTR;
 }
 
 

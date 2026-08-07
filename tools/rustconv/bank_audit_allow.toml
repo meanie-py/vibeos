@@ -1,0 +1,17 @@
+# Reviewed exceptions for `rustconv bank-audit`.
+#
+# An entry here says: this banked function is NOT in the tree under any spelling the
+# audit's alias rules can derive, AND that is correct. The reason is the whole point —
+# an allowlist without one is just a way to make a real gap quiet.
+#
+# Adding an entry is a claim you checked the C. If you cannot write the reason, the
+# function is missing and the fix is to integrate it.
+
+[allow]
+interface_variant_size = """
+oleaut32/usrmarshal.c declares this name under `#else` only; the `#ifdef __REACTOS__`
+arm declares `interface_user_size(pFlags, Start, riid, punk)`, which is what we build and
+what oleaut32-rust/src/usrmarshal.rs ships. The two differ in signature as well as name
+(the ReactOS arm takes Start and returns `Start + size`), so this is a genuine twin, not
+a rename. No function by the banked name has ever existed in a ReactOS build.
+"""

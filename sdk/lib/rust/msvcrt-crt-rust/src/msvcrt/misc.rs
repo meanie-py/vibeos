@@ -35,7 +35,13 @@ pub unsafe extern "C" fn srand(seed: core::ffi::c_uint) {
 pub unsafe extern "C" fn rand() -> core::ffi::c_int {
     let data: *mut thread_data_t = msvcrt_get_thread_data();
 
-    (*data).random_seed = (*data).random_seed * 214013 + 2531011;
+    // `wrapping_*`, not `*`/`+`. The C is `data->random_seed * 214013 + 2531011` on an
+    // `unsigned int`, and wrapping IS the algorithm — this is MSVC's LCG, and truncating to
+    // 32 bits at every step is what makes the sequence the one msvcrt produces. A plain `*`
+    // is right in release (where Rust wraps too) and panics in debug, which is not a
+    // cosmetic difference: it makes the function ungradeable, because the difftest harness
+    // builds debug. Same class as mbcs.rs's underflow.
+    (*data).random_seed = (*data).random_seed.wrapping_mul(214013).wrapping_add(2531011);
     (((*data).random_seed >> 16) & RAND_MAX) as core::ffi::c_int
 }
 

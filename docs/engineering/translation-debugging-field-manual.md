@@ -403,6 +403,66 @@ that would otherwise be free. Where a prelude must declare it anyway (a shared b
 import), the declaration has to be checked against the definition by hand, because rustc treats
 them as unrelated items.
 
+**Sibling case, and it is a SEQUENCING rule rather than a typing one: a global's definition
+may only cross the cohab boundary in the same commit as its WRITER.** msvcrt's
+`msvcrt_tls_index` is written once by `DllMain` at DLL_PROCESS_ATTACH and read by every
+`msvcrt_get_thread_data`. While `DllMain` was C, prelude.rs's `extern` was the only correct
+arrangement, and its comment said why: defining it on the Rust side would have given the
+reader *a second, always-zero index* — the C writer fills in the C's copy, the Rust reader
+sees Rust's, and nothing fails to compile or link. Flipping `DllMain` retires that hazard,
+but only if the definition moves with it. Split across two commits, one of them ships a
+tree where every TLS lookup reads slot 0. The general form: **when you flip the function that
+INITIALISES a global, the global comes with it, and when you flip a reader first, it must keep
+importing.** For an entry point specifically, `nm` the decorated name out of a one-file
+`rustc --emit=obj` before building anything — `extern "system"` + `#[no_mangle]` on i686 gives
+`_DllMain@12`, which must match the C object and the `set_module_type(... ENTRYPOINT DllMain
+12)` byte count. A mismatch is a linker error at best and a silently-unused entry point at
+worst, and the probe costs one command.
+
+**Same hazard, arriving through the `.spec` instead of through a Rust reader — and this one
+SHIPPED. If the DLL exports a global, its Rust definition needs `#[no_mangle]`, or the export
+silently keeps the C copy.** `msvcrt.spec:715` says `@ extern _mbctype MSVCRT_mbctype`: the
+export name and the backing symbol differ, and only the backing symbol is what a definition
+must be spelled. mbcs.rs defined `pub static mut MSVCRT_mbctype` without `#[no_mangle]`, so the
+Rust array got a mangled private name, the export resolved to mbcs.c's copy, and the shipping
+amd64 DLL carried **two 257-byte arrays at different RVAs** — `_setmbcp` (Rust) writing one
+and the exported `_mbctype` naming the other, permanently zero. (`__p__mbctype` is *not* part
+of the bug: it returns the per-thread `mbcinfo->mbctype`, a different table.) Nothing failed
+to build, link, or boot, because the table IS all-zero in every single-byte locale; it only
+bites under a DBCS codepage, where every byte then classifies as a non-lead byte. Find it with
+`llvm-nm --defined-only <dll> | grep <symbol>` — **two definitions, one mangled, is the
+signature**; `llvm-objdump -p` gives the export's RVA so you can say which one it points at.
+Note that a symbol being in the `.spec` is *not* the check: `_mbctype` was there all along.
+`tools/verify_cohab_coverage.py` now reads the second field of an `extern` line, which is the
+one directive whose export name and backing symbol differ — before that fix, the tool built to
+catch wrong-name flips was blind to the only shape where the name is written down twice.
+
+**Sibling failure in the gate itself: a coverage checker that DERIVES the C object from the
+module name fails open when the derivation misses.** `verify_cohab_coverage` resolved
+`<mod>.c.obj` and treated "not a file" as a bare `continue`, so any module whose Rust name is
+not its C basename was compared against nothing and reported clean — indistinguishable from
+passing. It surfaced when `reactos/misc.c` had to become `reactos_misc.rs` (`misc.rs` is
+msvcrt's *own* Wine-derived misc.c) and `reactos/system.cpp` is not a `.c` at all. **The rule
+for any binary-oracle gate: "I could not find the thing to compare against" is a finding, not
+a skip.** The distinction it does have to keep is arch-conditional compilation — `except_i386.c`
+genuinely has no object on arm64 — so the discriminator is whether the C SOURCE exists in the
+tree, with a short declared list for modules that have no C original at all (`cpp_rtti`,
+`seh_i386`), each carrying its reason. Note the shape is the same as the `extern` bug directly
+above it: both are the gate silently answering a question it never actually asked.
+
+**A C++ TU is not automatically a C++ substrate problem — check what crosses the boundary
+before pricing the lane.** `reactos/system.cpp` sat unported for months labelled "the C++
+lane", and the label was the only thing blocking it: no RTTI, no vtable, no exception object,
+no mangled name on any exported symbol — `system`/`_wsystem` are `extern "C"`, and `throw()`
+is an empty exception specification rather than a use of exceptions. All the C++-ness was a
+`template <typename Character>` instantiated at exactly two types and resolved at compile
+time, which is a Rust generic over a trait. **The cheap check is `llvm-nm` on the object**: if
+the only `_Z`/`?`-mangled globals are ones nothing outside the TU references, the C++ never
+reaches the linker and the port is a plain-C port. The real hazard turned out to be naming, not
+language — process.rs already held Wine's rival `system`/`_wsystem` (correctly `#[cfg(any())]`,
+since process.c wraps them in `#ifndef __REACTOS__`), and two live definitions in one archive
+are settled by member order.
+
 **Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
 `cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
 never tests it — so the first thing that fails is the DLL link, an hour later. scanf's console
@@ -562,6 +622,49 @@ for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
 unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
 folds existing pairs, refusing any whose bodies differ by more than cast decoration.
 
+**And a convention twin is NOT an arch gate — it just looks like one.** msvcrt's except.c came
+back with `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not)] extern "C"` pairs on its
+callbacks, which is correct and says nothing about the fact that the file's ENTIRE 64-bit frame
+handler lives inside `#ifndef __i386__`. Seeing cfg attributes on the page reads as "arch
+handled" and the reviewer moves on. Left ungated, the Rust `__CxxFrameHandler` wins cohab
+first-match over except_i386.c's completely different 32-bit SEH implementation — and it
+**links clean**, because the symbol is the same and only the frame layout it walks is not.
+Two rules fall out: the translator gates on CONVENTION, you must gate on the `#if`s yourself;
+and the object file is the oracle for which arch defines what (`nm` shows `__CxxFrameHandler`
+in except.c.obj on amd64/arm64 and absent on i386). Same reasoning applies to a TU compiled
+TWICE under different `-D` — except.c is built into both msvcrt_static and msvcrt_shared, and
+its `#if _MSVCR_VER>=140 || defined(__UCRTSUPPORT__)` block is live in exactly one of them. No
+source-level analysis can settle a disjunction with an unknown term, and none should try; the
+per-target object already knows. The mirror-image case is worth naming too: when the whole TU is
+inside `#ifdef __i386__`, the `not(x86)` twin of every emitted pair is unreachable by
+construction. Delete it — left in place it reads like an arch gate that is doing work, and it is
+the same page-shape as the bug above.
+
+**Transcribing `__ASM_GLOBAL_FUNC` (or any .s) into `global_asm!`: keep AT&T and then PROVE it.**
+Symptom: an asm thunk translated to Intel syntax by hand, with no way to tell whether the
+conversion was faithful. Cause: converting syntax is a re-derivation, and a re-derivation of
+machine code is exactly what you cannot eyeball. Fix: pass `options(att_syntax)` and paste the
+C's operand strings unchanged, so "transcribed" means byte-for-byte; then `llvm-objdump -d` the
+rlib's asm object against the C `.obj` and diff. msvcrt's six except_i386.c thunks came out
+instruction-for-instruction identical at every offset including the relocation record, which is
+a total check for one objdump. Note what the macro expands to on PE — `.text`, `.align 4`,
+`.globl`, and `.def NAME; .scl 2; .type 32; .endef` — and that `__ASM_CFI(...)` expands to
+NOTHING there (no `__GCC_HAVE_DWARF2_CFI_ASM`), so omitting the CFI lines is the same object and
+not a dropped directive. These thunks exist because each runs on a frame belonging to someone
+else (`call_handler` sets `%ebp` to the throwing function's before calling its `__finally`
+block); no Rust `fn` with a normal prologue can replace one.
+On the 64-bit arches the SAME thunks carry `.seh_*` unwind directives, and there `-d` agreement
+is necessary but NOT sufficient: a dropped `.seh_save_regp` leaves every instruction identical
+and the unwind info wrong, which only shows up as a hang while an exception is already in
+flight. Diff `.xdata` **and** `.pdata` as well. Two things make that readable: the C `.obj`
+holds records for the whole TU, so match your thunk's record by looking its `.text` offset up
+in the symbol table rather than diffing the section whole; and an *absent* `.pdata` entry is
+itself a signal to compare — arm64 packs simple frames into `.pdata` and gives complex ones an
+`.xdata` record, so `_setjmp` and `get_exception_pc` having no entry on **either** side is the
+agreement that says that decision came out the same way. `__ASM_SEH(...)` is live on
+x86_64/aarch64 mingw (clang defines `__SEH__`) even though `__ASM_CFI(...)` is not; check the
+target's `-dM -E` output rather than assuming, since the two macros differ per target.
+
 ### A file-local fn-pointer TYPEDEF given a convention the C never had
 The transmute entry above is about erasing a convention; this is about *inventing* one, and it
 is easier to miss because there is no bindgen slot to disagree with — the typedef and both its
@@ -631,6 +734,13 @@ hand flips the error to the other two.
   "Seco" */, SIZE_MAX)`. Latent under TCG (unmapped reads return 0, scan ends instantly) and a
   multi-hour "hang" under WHPX/KVM, where every probe is a VM exit. amd64 accidentally works
   (Win64 passes >8-byte aggregates by reference). **`.as_ptr()` every array into a variadic.**
+  Second instance, and it shows the shape a *macro* wrapper hides: msgina rendered
+  `StringCchPrintfW(szBuffer2, _countof(szBuffer2), szBuffer, pgContext->UserName)` as a
+  `macro_rules!` that spliced `$arg` straight into `wsprintfW`, so `UserName` — a
+  `[WCHAR; 256]` — went by value and `%ws` read two characters of the user's name as an
+  address. rustc says nothing: an array IS `Sized`, so it is a legal variadic argument. A macro
+  wrapper is the worst place for this class because there is no declared parameter type
+  ANYWHERE for a reviewer to compare against.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -920,6 +1030,18 @@ The A/W *function* aliases are usually derived into the crate prelude and the *t
 forgotten; spell both, as explicit `pub use` re-exports that shadow the glob:
 `LPWSTR as LPTSTR, LPCWSTR as LPCTSTR, PWSTR as PTSTR, PCWSTR as PCTSTR, WCHAR as TCHAR`.
 
+**And the prelude is not enough — the ISLAND has the same problem, one level lower.** The
+re-exports above fix the module's own code; they do nothing for a struct the ISLAND declares.
+desk.h says `TCHAR szPath[MAX_PATH]`, so with the glob's `TCHAR = c_char` bindgen emitted
+`_ICON_PATH { szPath: [TCHAR; 260] }` — 260 bytes where the real struct is 520, on a module
+compiled `-DUNICODE`. That compiles perfectly, and the translation had already papered over the
+symptom by sprinkling `.cast()` on the call sites to make the narrow pointers fit. **Fix it in
+the PROFILE, not the prelude**: `UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR
+LPTCH PTCH"` makes the module's own island emit them from its own `-DUNICODE` compile. The
+check is one grep: `grep '^pub type TCHAR = ' src/types_i386.rs` must say `WCHAR`.
+`scan_type_alias_contradictions` then reports the disagreement with ntdll-sys, which is real and
+deliberate — baseline it, exactly as BCHAR already is for aclui/shell32/syssetup/winsrv.
+
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
 cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
@@ -984,6 +1106,16 @@ which is skipped rather than guessed at. Those three took the tree from 102 find
   `size_of_val()` on that narrow const returning N instead of N*2 → an undersized
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
   in **both** the append and the size math.
+- **`--allowlist-file` matches where an item is DEFINED, not where it is REACHED.** An umbrella
+  header that is a pure `#include` manifold contributes nothing by being allowlisted, and the
+  failure is asymmetric in the worst way: bindgen still emits a STRUCT the allowlist reaches as
+  a dependency of some allowlisted signature, while every CONSTANT and function that header
+  owns stays absent. desk's island carried `IDataObject` (dragged in by an allowlisted
+  prototype) and none of the `DVASPECT_*`/`TYMED_*`/`DATADIR_*` its own call sites pass, because
+  objbase.h only `#include`s the widl-GENERATED objidl.h/wtypes.h — and gdiplus.h's C branch is
+  likewise nothing but `#include`s, so allowlisting it emitted **zero** of the 608 `Gdip*`
+  declarations. Allowlist the FAMILY (`gdiplus[a-z]*\.h`) or the generated header by name, and
+  verify with a grep for one member rather than assuming the umbrella carried it.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
 - **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
   on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
@@ -1068,6 +1200,25 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is latent.**
+  `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
+  defect is ALIGNMENT 1, so it misbehaves when the linker happens to place it on an odd
+  address (that is task #39's mswsock incident). `b"LogEvent\0" as *const u16` is the severe
+  one — a NARROW string read as wide, where `"Lo"` is one code unit U+6F4C, so
+  `RegQueryValueExW` looks up a value nobody has ever created and the call silently does
+  nothing. sysdm shipped ~30 of the second kind. `postprocess.fix_wide_byte_string_literals`
+  rewrites both to `w!()` and declines anything that does not decode to clean NUL-terminated
+  ASCII, because a wrong rewrite here is silent data corruption rather than a compile error.
+  **Do not key a detector on the CAST** — it misses `.as_ptr() as _` (syssetup) and a typed
+  local binding `let k: &[u8] = b"K\0e\0y…"` (intl, deepseek). The bytes alone decide it: even
+  length, odd bytes NUL, ASCII in the even ones, trailing NUL unit. That test finds 434 sites
+  across 79 crates where the cast-keyed one finds 26.
+- **A doubled backslash in a path literal survives every gate.** desk-rust wrote the
+  appearance scheme to `Control Panel\\Appearance` for four `SHSetValueW` calls; theme.c says
+  one backslash. Nothing fails loudly — the value is simply never read back. Legitimate
+  doubles exist (UNC and device prefixes `\\.\`, `\\?\`, a bare `\\` computer-name prefix, and
+  smbios's `http:\\www.abit.com.tw`, which the C really does spell that way because it matches
+  a BIOS vendor's malformed URL), so this needs a diff against the C, not a grep.
 - **A `L"..."` inside a MACRO argument loses the width with nothing to catch it.** rasadhlp's
   `RTL_CONSTANT_STRING(L"\\Device\\RasAcd")` came back as
   `RTL_CONSTANT_STRING(b"\\Device\\RasAcd\0")` — a UNICODE_STRING whose Buffer is ANSI bytes.
@@ -1196,6 +1347,34 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   had come back as `\Device`, losing the trailing separator that `wcscat` appends the adapter
   UUID after. It is ~20 lines, it needs no annotation in the Rust, and unlike a count it cannot
   report a green over zero comparisons.
+- **A FOURTH mis-encoding: UTF-16 *bytes* used as u16 ELEMENTS.** `let n: &[u16] =
+  &[0x43,0x00,0x68,0x00,0x61,0x00,…]` looks like the three above and is worse: the type is
+  `u16`, so element 1 IS a code unit and IS zero. Every such string terminates after its first
+  character. wkssvc shipped 39 of them — `SaveWorkstationInfo` opened key `"S"` instead of
+  `System\CurrentControlSet\Services\LanmanWorkstation\Parameters` and wrote every value under
+  a one-character name. It never looked broken because the bad key made `RegOpenKeyExW` fail
+  and the function returned early, so the whole routine was a silent no-op. Decidable with no
+  oracle at all: **in a `[u16]`, every second element being 0 is always this bug**, because
+  real UTF-16 puts the zero in the high byte of ONE unit, not in a unit of its own.
+- **An array sized to the character count drops the NUL, and `scan_wide_literals` cannot see
+  it if the element type is spelled `TCHAR`/`WCHAR`.** desk shipped
+  `szMonitorSelWndClass: [TCHAR; 18] = ['M',…,'S']` for `TEXT("MONITORSELWNDCLASS")`, which
+  the C compiler sizes at 19. RegisterClass/CreateWindow/UnregisterClass then read past the
+  array into whatever `.rdata` follows, and it survives only for as long as all three read the
+  same garbage. `scan_wide_literals`'s `_DECL` matches a literal `u16` element type only, so
+  the alias spellings are invisible to it — that is the gap to mechanise, not the alignment
+  question. Note the alignment bullet above is about the KERNEL `ProbeForRead` path, which
+  genuinely enforces WCHAR alignment; for a user-mode DLL that just hands the pointer to a
+  Win32 callee, alignment-1 is a readability problem, not a fault.
+- **The multiset oracle only works if you detect by SHAPE, not by declaration syntax.**
+  `verify_translation_literals.py` covers 29 modules now, not just msvcrt. Getting it there
+  meant abandoning per-spelling regexes: this tree writes the same wide literal as
+  `static N: [u16; K]`, `const N: &[u16]`, `let n: [u16; K]`, an untyped `&[0x6Eu16, …]`, and
+  a bare `['S' as u16, …].as_ptr()` with no binding at all. Each spelling the matcher had not
+  met produced a WALL of confident MISSING findings against present, correct code — which is
+  the failure mode to fear, because the real two are in there and nobody digs to them. Match
+  instead on "bracketed list of integer-ish elements, NUL-terminated, otherwise text": one
+  rule, all five spellings, and ordinary numeric tables stay out.
 
 ### Bitfields and unions
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
@@ -1599,6 +1778,26 @@ just a label.
   gates (`pstypes.h`, `THREAD_ALL_ACCESS`).
 - **Two self-incriminating comment shapes to grep for:** a comment naming the right symbol next
   to a numeric literal, and a "value assumed / approximate" note.
+- **A STRING LITERAL is a fact class the seal does not cover, and the failure is total.**
+  smbios.c's `IsGenericSystemName` is a 71-row table of `{ L"vendor name", TRUE, TRUE }`.
+  Every single `L"…"` came back as `TRUE` or `FALSE`, two rows were dropped, and the control
+  flow was inverted on top — `i` started at `TRUE` instead of 0, a match returned `FALSE`, the
+  fall-through returned `TRUE`. The predicate answered the exact opposite of its question and
+  compiled clean. **`--seal-facts` reported success**: its invariant is over the CONSTANT set,
+  a string literal is not in that set, so the model had the sealed `TRUE`/`FALSE` and nothing
+  to anchor 71 pointer slots to, and filled them from what it did have. Same recall-permutation
+  shape as msvcrt's `_tzset`, on a class the envelope cannot see at all.
+- **Two audits catch it, both cheap, both worth running on every module** (they found six
+  distinct defects in sysdm that three green gates did not): diff the MULTISET of string
+  literals in each `.c` against its `.rs`, and diff each function's `return TRUE` / `return
+  FALSE` COUNTS between the two. The second is what names an inverted predicate. Expect
+  benign deltas — a dropped `DPRINT` format, an `#ifdef` arm the tree does not carry, a
+  literal spelled as a `['P' as u16, …]` array — so read the output rather than asserting on
+  it. Regenerate a wrong table by PARSING the C; transcribing 71 rows by hand is the same
+  failure mode with a slower clock.
+- **Model choice does not move this.** deepseek-v4-pro and claude-sonnet-4-5 produce the
+  byte-string wide-literal form identically on the same file. The audits are the gate, not the
+  model.
 - **After fixing a class of bad data, re-audit everything derived FROM it.**
 - **The invented value is usually a NEIGHBOUR from the same family, which is why review misses
   it.** `CmpHiveRootSecurityDescriptor` lowered `SECURITY_RESTRICTED_CODE_RID` (12) to a literal
@@ -2265,6 +2464,26 @@ of them were **ours**, not the model's:
   DeepSeek reject class. Retrying it with a stronger model measured **0/3 accepted for
   $0.13** — treat it as decomposition work or hand-write the body, not a model upgrade.
 
+  **`--seal-calls` has the same permutation weakness, and its arity oracle was switched off by
+  a turbofish.** msvcrt's `_beginthread_trampoline` shipped
+  `msvcrt_get_thread_data(&local, arg, sizeof)` where the C has `memcpy(...)`, `memcpy(arg)`
+  where it has `free(arg)`, and `free(local.arglist)` in place of the
+  `local.start_address(local.arglist)` call that is the whole point of the function — a thread
+  that leaks its argument block and never runs the user's entry point. Every sealed callee
+  appeared exactly once and executable, so the closed-SET invariant was satisfied by a slide.
+  `_arity_disagreements` exists precisely to catch a slid envelope and HAD the evidence —
+  `msvcrt_get_thread_data` takes zero arguments and was called with three — but it skipped any
+  site whose argument text mentioned `::<`, and the third argument was
+  `core::mem::size_of::<T>()`. That is not a corner: it is how nearly every `memcpy` lowering
+  spells its length, so one over-broad guard disabled arity checking across a whole call family.
+  **Fix (landed): `_mask_turbofish_commas` blanks only the commas inside a `::<…>` span** —
+  length-preserving, `->`-aware, nesting-aware — instead of discarding the site; a callee-side
+  turbofish needs no handling because `_argument_count` already returns None when anything sits
+  between the name and the `(`. Tell for a reviewer: the shipped body was byte-for-byte
+  reproducible by replaying the seal, and a near-identical sibling 40 lines away
+  (`_beginthreadex_trampoline`) came back correct — **nearby-body contrast is the cheapest
+  signal that the fault is placement rather than comprehension.**
+
   **An ABSENT constant is not sealed — it is INVENTED, and no audit fires.** Sealing can only
   seal a name the `-sys` island CARRIES; a constant the island lacks never becomes a token, so
   the model writes it from memory and the envelope has nothing to check. This is the mirror of
@@ -2732,6 +2951,38 @@ already been met the note is describing a bug, not a plan.
   macro from the merely-uppercase function. Also: a name provided by a still-compiled C TU is
   covered whichever language provides it — that is the varargs trampoline every flip leaves
   behind (`acpi_printf_shim.c` defines `AcpiOsPrintf`, whose home osl.c was flipped out).
+- **The BACKWARD audit — did the tree ship everything we PAID for?** `fn_coverage` and
+  `export_audit` both run C/spec → Rust, so neither can see paid output that never reached a
+  crate: nothing references it, nothing links against it, and the money rule protecting
+  `.responses/` needs an oracle it did not have. `rustconv bank-audit` runs the other way,
+  `.responses` → tree, over both on-disk layouts (`manifest.json`, and the legacy
+  `NN_Name.rs`). First run over 444 dirs / 7,953 banked functions: **zero unintegrated** — but
+  a naive name compare flagged 8 dirs and every one was a false positive, because *the manifest
+  key is a LABEL, not a symbol*. Four ways it legitimately differs from what ships, all now
+  resolution rules that name themselves in the report: the key is a **macro** whose expansion
+  holds the real functions (oleaut32's `RETTYP` banks 72 `VarI1From*` conversions under one
+  key); the function is a **C-variadic**, which stable Rust cannot define, so it ships as a
+  fixed-arity twin behind a trampoline; a **TCHAR macro** (`_tmain` IS `wmain` — same rename
+  class as (5) above); or an **`#ifdef __REACTOS__` twin** where the banked name is the `#else`
+  arm and never existed in our build (oleaut32's `interface_variant_size` vs the
+  `interface_user_size` we compile — a reviewed allowlist entry with a written reason, since no
+  mechanical rule can derive it).
+  Three ways the audit itself was optimistic, each fixed and pinned by a test — the direction
+  that matters, because an audit that calls abandoned work "shipped" retires the question:
+  **(a)** an `extern` declaration counted as a definition, so a prelude *promising* `Foo` would
+  have proved `Foo` shipped; **(b)** a containment test for variadic twins matched dhcp's
+  `debug`/`error` to `debug_block_stamp` and `WDML_Initialize_error` in unrelated crates — a
+  twin must be the name plus a KNOWN decoration (`_v`, `_body`, `_impl`), optionally under a
+  module prefix; **(c)** a multi-function body counted as integrated when only ONE of its
+  functions was in the tree. Note **our own twin convention is not uniform** — most modules emit
+  `FatalError_v`, netid emits `netid_FormatMessageBox_body`.
+  **`.partial` files are paid work too** — a call billed and then cut off mid-stream. They have
+  no complete body, so an audit that only looks for finished ones is blind to the entire shape;
+  they are scanned separately and reported as RE-TRANSLATE rather than INTEGRATE, because there
+  is nothing to wire up. Adding that rule immediately found a live one (sysdm's
+  `HardwareProfileProperties`, truncated — which is exactly why it was `--skip-fn`'d and owes a
+  hand-write). Every other `.partial` in the bank belongs to a call that was retried
+  successfully, which is the case that makes the rule look unnecessary right up until it isn't.
 
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
@@ -2755,6 +3006,39 @@ in, buy, and restore from a byte-exact backup verified with `git diff --quiet`.
 **Detection.** A column-0 sweep for `^name(` that is absent from the extracted set finds it with
 zero false positives on this file. Repo-wide it is noisy (`WINE_DEFAULT_DEBUG_CHANNEL` and other
 macro invocations sit at column 0 too), so it needs a macro-name filter before it can be a gate.
+
+### A `.c` in the source list can compile to an object with ZERO defined symbols
+
+**Symptom.** A file sits in the CMake source list, is 775 or 3,839 lines long, has real
+function bodies and real logic, and appears in every "still to translate" census — and the
+compiler throws all of it away. msvcrt's `handler4.c` and `concurrency.c` are both this: each
+produces a **396-byte object with no defined symbols** on all three arches. Together they are
+4,614 lines of apparent remaining work that is not work.
+
+**Cause.** One outermost `#if` over the whole TU, decided by a value the module pins on the
+compile line: `#if defined(__x86_64__) && _MSVCR_VER>=140` and `#if _MSVCR_VER >= 100`, against
+`target_compile_definitions(msvcrt_static PRIVATE _MSVCR_VER=0)`. `DEAD_SOURCE` cannot see it
+(the file IS in the list) and a reader cannot see it either, because the gate is 3,800 lines
+away from the body you are looking at. Same shape as wldap32's `HAVE_LDAP`, but sourced from
+the module's own `-D` rather than wine's `config.h`.
+
+**Fix.** `python -m rustconv.profile_derive <module> --emit report` already reports it, at
+ERROR, as `DEAD_TU` (≥90% of the TU's lines inside a decidably-FALSE `#if`), and
+`never_compiled_lines` drops such bodies off the worklist so `translate` does not bill for
+them. Confirm with the linker rather than the parser — `llvm-nm --defined-only` on the `.obj`
+is the whole check.
+
+Two traps around it:
+
+- **Grep the report for `✗`, not for `ERROR`.** A `DEAD_TU` finding is invisible in a
+  `grep -E 'ERROR|WARN'` of a module whose constants are named `ERROR_ACCESS_DENIED`,
+  `ERROR_PATH_NOT_FOUND`, and forty more. Both findings here were correctly emitted and read
+  straight past.
+- **A pinned macro decides code, so derive it conservatively.** A name counts only where every
+  target compiling the TU, on every arch, pins it to the same value — an msvcrt `.c` belongs to
+  three targets, and `-D` inside `if(ARCH STREQUAL "i386")` is not a fact about amd64. Wrong in
+  the permissive direction costs one paid call; wrong the other way silently deletes a live
+  body from the translation.
 
 ### A sealed constant comes back as the enclosing `case` label
 
@@ -3079,6 +3363,35 @@ since the name is coming from user-mode"). Do not close such a finding by adding
 that clears the lint row and leaves the defect. It is the same relationship as `[§9.53]`: what
 looks like a missing diagnostic is a missing handler.
 
+### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
+
+**Symptom.** Either a hard parse error (`attributes on expressions are experimental`, because
+the `#if` sat between two ARGUMENTS of a call) or, worse, a clean build in which one
+architecture takes a branch the C never compiles anywhere.
+
+**Cause.** `#if _WIN32_WINNT >= 0x502` and `#if (WINVER >= 0x0600)` are assertions about the
+TARGET WINDOWS VERSION, which is a `-D` flag identical on all three of our arches. To a
+translator they look like the per-arch `#if defined(_M_AMD64)` it sees constantly, and
+`target_arch`/`target_pointer_width` is the nearest Rust spelling of "a compile-time branch".
+desk.cpl had two, independently, in different files — so this is a class:
+
+  * `classinst.c`'s `#if _WIN32_WINNT >= 0x502 KEY_READ|KEY_WRITE #else KEY_ALL_ACCESS` became
+    `#[cfg(target_pointer_width = "64")]` / `#[cfg(...= "32")]` on the two argument
+    EXPRESSIONS. Had it parsed, i386 would have demanded ALL_ACCESS on a key it only reads.
+  * `theme.c`'s `#if (WINVER >= 0x0600)` block became
+    `#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]`, and its body reads
+    `NONCLIENTMETRICSW::iPaddedBorderWidth` — a field that does not exist at the version the
+    module actually compiles at, which is precisely why the C does not compile that block.
+
+**Fix.** Resolve the version test at the module's real `-D` setting and keep only the live arm,
+with a comment naming the directive and the value, so the dead arm's absence is a decision on
+the page rather than a hole. Check the module's `VER_DEFS` in `gen_driver_types.sh` (or its
+CMake `set_module_type`) for what that value is — do not assume the newest.
+
+**Detection.** Grep the translated output for `cfg(target_arch` / `cfg(target_pointer_width)`
+and check each against the C: a per-arch cfg is *legitimate* only where the C branched on
+`_M_IX86`/`_M_AMD64`/`_M_ARM64` or on a pointer-width-derived macro. Anything else is this bug.
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
@@ -3216,6 +3529,46 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **A SIDE EFFECT inside a call argument, hoisted out of the condition it lived in.** Rust has
+  no `++`, so `f(*p++)` has to become two statements — and WHERE the second one lands is the
+  whole meaning. msvcrt's demangler reads
+  `if (!get_calling_convention(*sym->current++, …) || !demangle_datatype(sym, …))`: the `++`
+  runs before `demangle_datatype` sees the same `sym`. The translation put the increment after
+  the entire `if`, so every function signature parsed its RETURN TYPE from the
+  calling-convention letter — `A` reads as a reference, and `void * (__cdecl*)(long)` demangled
+  as ` & (__cdecl*)(void,long)`, with the real return type shifted into the argument list.
+  **Both forms advance the cursor exactly once**, so nothing leaks, nothing faults, and no
+  bounds or lifetime check can fire; only the ORDER differs. It survived a build, a boot and
+  every scanner we own, and was found by the first differential row that reached it. When a
+  translated function takes a cursor or an index, diff the SEQUENCE POINTS, not just the
+  arithmetic: for every `x++` / `++x` the C evaluates inside an argument, a condition, or a
+  comma expression, ask which later operand in that same expression observes the new value.
+- **A BOUNDED API substituted by an UNBOUNDED one — the buffer's size argument is dropped, and
+  the substitute has its own, larger, internal bound.** msgina rendered strsafe.h's
+  `StringCchPrintfW`/`StringCbPrintfW` as `macro_rules!` wrappers that discarded the count and
+  forwarded to user32's `wsprintfW` — with a comment saying so, on the reasoning that
+  `wsprintfW` bounds to 1024 wchars internally "matching the small fixed buffers these are
+  called with". The buffers are `WCHAR[256]`, so the substitution turned a truncating API into
+  one that writes 1.5 KB past a stack array whenever the interpolated value (a user name, from
+  the logon dialog) is long. Nothing detects this: it compiles, it links, the common case fits,
+  and the C's `STRSAFE_E_INSUFFICIENT_BUFFER` return was already being ignored. **A substitute
+  whose bound is not the CALLER'S bound is not a substitute** — if the real body cannot be
+  written, hard-fail rather than approximate, because a bound is the entire contract of the
+  function that carries one. Symptom to grep for: a wrapper that takes a size parameter and
+  never mentions it again (`let _ = $cch;`). **Swept the tree after fixing it and found no
+  second instance** — shell32-rust has eleven copies of a per-file `%s`/`%c` mini-printf, and
+  every one of them honours its `capacity` and returns `STRSAFE_E_INSUFFICIENT_BUFFER`. Writing
+  a narrow formatter is fine; dropping the bound is not, and they are independent decisions.
+- **A hand-approximated port of a header the tree already ports elsewhere.** Same module, same
+  root cause: `static __inline` helpers have no object file anywhere, so each flipped module
+  ports them again, and the Nth copy is written from what the module happens to call rather than
+  from the header. msgina's `StringCbCopyNExW` dropped the fill paths, the `IGNORE_NULLS`
+  handling, and computed `pcbRemaining` differently from the worker; syssetup's copy was a
+  strict subset; desk's was faithful. Four copies, no two alike. The fix for the CLASS is one
+  crate (`sdk/lib/rust/strsafe-rust`) on core primitives so it needs no island — `WCHAR`/
+  `HRESULT`/`DWORD` are transparent aliases for `u16`/`i32`/`u32` in every island in the tree
+  and Rust unifies aliases structurally. **Two copies of a ported header is the detection
+  event**, not four.
 - **The model FIXES a real bug in the C, and that is still a defect.** `CDefaultContextMenu::
   DoCreateNewFolder` frees `pidl` exactly once, on the success path, and leaks it when
   `SelectItem` fails. Every sample added a second `SHFree` on the failure path — correct as
@@ -3517,6 +3870,13 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A pointer difference with an adjustment folded into `offset_from`, and then applied
+  AGAIN.** `sym->current - 1 - ptr` parses as `(current - 1) - ptr`; the translation correctly
+  turned `current - ptr` into `offset_from(ptr)` and then kept the `- 1` as well, so msvcrt's
+  demangler subtracted it twice and every identifier came out one byte short —
+  `CBaseUnknown` as `CBaseUnknow`, in the shipping DLL, on every C++ symbol. The shape to
+  distrust is any `a - K - b` where `a` and `b` are pointers: the `K` belongs to ONE of the two
+  operands, and once `a - b` becomes a method call the reader can no longer see which.
 - **Cast-before-offset**: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun.
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
@@ -4313,6 +4673,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **Un-stubbing a global the harness defined as NULL is only HALF the fix; the other half is
+  one per side.** msvcrt-difftest defined `MSVCRT_locale = 0` so mbcs.c would link, and that
+  NULL is why `_setmbcp` was refused for months — its non-thread arm dereferences it. But that
+  arm ends in `memcpy(MSVCRT_mbctype, MSVCRT_locale->mbcinfo->mbctype, …)`, so simply giving
+  the shared global some storage would have had both sides installing into the same slot and
+  each reading back what the other wrote: a row comparing a table against itself, green
+  whatever either side did — and *more* dangerous than the refusal, because it would have
+  looked like coverage. The discriminator is the one this file already states for
+  `MSVCRT_mbctype` and `MSVCRT__sys_errlist`: **shared is right for state both sides must
+  AGREE on (locale environment, kernel32 models), and wrong for anything the code under test
+  WRITES.** Ask who writes it, not what it is.
 - **A branch reached by NO row is a case that cannot fail, and rows are cheap enough that you
   will believe you covered it.** msvcrt's `_s` printf shells take their truncation branch only
   when `ret < 0 || ret == len`, and their ERANGE arm inside it only when `count > sizeOfBuffer`.
@@ -4334,6 +4705,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   invented kernel stop codes `[§9.113]`, except no shipped-code scanner looks in a test's
   private header. **Audit the whole block against the SDK, not just the one that got caught**
   (16 constants, exactly 1 wrong); prefer including the real header over re-typing values.
+- **…and the sibling that "prefer including the real header" CREATES: a HOST constant leaking
+  into the oracle by inclusion.** msvcrt-difftest's refstub pulls glibc's `<stdlib.h>` for the
+  narrow string family, and glibc defines `RAND_MAX` as `0x7FFFFFFF`. msvcrt's is `0x7FFF`.
+  `rand()` ends in `(seed >> 16) & RAND_MAX`, so the REFERENCE returned 16-bit numbers where
+  msvcrt returns 15-bit ones — and the divergence reads as a Rust bug until you check which
+  side is wrong. Harder to find than the hand-typed kind precisely because nobody typed it:
+  grepping the refstub for the constant finds nothing. **Any macro the host header and the
+  Windows header both define, and define differently, is an oracle bug waiting for its first
+  row** — the refstub already `#undef`s `LONG_MAX`/`ULONG_MAX` for exactly this reason, and
+  that list is a starting point, not a complete one. When a new reference TU touches a
+  `<limits.h>`- or `<stdlib.h>`-shaped constant, diff the two headers before trusting a row.
 - **A shim that DISCARDS an input argument makes that argument ungradeable, and every row
   over it is vacuous.** msvcrt-difftest's `CreateFileW` had `(void)share;` and ignored
   `dwFlagsAndAttributes`. Both are inputs Win32 acts on and POSIX has no equivalent for, so
@@ -4881,6 +5263,25 @@ present is a silently-wrong island.
   tolerance is not a warning, and the two are easy to confuse. The salvage is to gate the
   translated bodies behind the same `#[cfg(feature = ...)]` the C uses, which keeps the paid
   artifact and makes the Rust strictly better than the C.
+- **There are TWO decidable gate classes, and knowing only wine's was worth 4,614 dead lines.**
+  `config.h`'s `/* #undef HAVE_LDAP */` settles `#ifdef HAVE_LDAP`; a module's own
+  `-DNAME=<int>` settles `#if NAME >= 100` just as completely, and nothing was reading the
+  *value*. msvcrt compiles at `-D_MSVCR_VER=0`: `concurrency.c` puts all 3,839 of its lines
+  inside `#if _MSVCR_VER >= 100` and `handler4.c` 775 inside
+  `defined(__x86_64__) && _MSVCR_VER>=140`. **Both build to a 396-byte object with ZERO
+  defined symbols**, and both read as prime targets — concurrency.c is the largest untranslated
+  file in the module. `_eval_int_guard` now settles these; short-circuit is what makes it work
+  on handler4.c, where one decidably-false conjunct kills the block while `defined(__x86_64__)`
+  stays forever unknown. It refuses mixed `&&`/`||` precedence rather than risk the inverse
+  error, which is the one that hurts: reporting LIVE code dead sends someone to delete a body
+  the compiler really is building.
+- **The finding has to be PER-TU. A module-wide percentage hides exactly the file you were
+  about to pay for.** Those two msvcrt files are 10.6% of the module's compiled lines — *under*
+  the 15% `MOSTLY_DEAD_BODIES` threshold — so the module-wide warning stayed silent on 4,614
+  lines of guaranteed-dead code. You choose a FILE to translate, not a module, so `DEAD_TU`
+  fires at **ERROR** for any single compiled TU that is ≥90% dead. `DEAD_SOURCE` cannot cover
+  this: these files ARE in the CMake source list and do get compiled — they just preprocess to
+  nothing. Confirm any hit the same way it was found, with `nm` on the `.obj`.
 - **`add_pch()`'s SKIP list is load-bearing.** Its third argument names the TUs that must not
   get the PCH, and they are skipped *precisely because they do not compile with it*. wldap32's
   `ber.c` includes `<winldap.h>` while `precomp.h` pulls `"winldap_private.h"`; the two declare

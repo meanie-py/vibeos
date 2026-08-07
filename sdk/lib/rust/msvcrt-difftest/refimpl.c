@@ -312,6 +312,16 @@ thread_data_t * CDECL msvcrt_get_thread_data(void)
     return &ref_thread_data;
 }
 
+/* The two thread-data fields `_setmbcp` steers on, reached through accessors rather than
+ * from the test directly.  The subject's copy of this struct (subjectimpl.c) is the one
+ * that has to match msvcrt-sys byte for byte, and ref_integrity asserts that; the
+ * reference's carries only the fields its TUs touch and is in a different order. One
+ * `extern` struct declaration in the test would therefore have to be right about TWO
+ * incompatible layouts, so each side hands out its own fields instead. */
+void ref_set_locale_flags(int flags)         { ref_thread_data.locale_flags = flags; }
+void ref_set_thread_mbcinfo(void *mbcinfo)   { ref_thread_data.mbcinfo = mbcinfo; }
+void *ref_get_thread_mbcinfo(void)           { return ref_thread_data.mbcinfo; }
+
 /* ------------------------------------------------------------------ *
  * _l ctype — GONE as of wave 10, and that is the upgrade.
  *
@@ -563,12 +573,12 @@ void CDECL free_locale_noalloc(_locale_t locale)
     (void)locale;
 }
 
-/* printf's %e exponent width.  msvcrt's default is the 3-digit form; the
- * 2-digit form is opt-in via _set_output_format.  Return the default. */
-unsigned int __cdecl _get_output_format(void)
-{
-    return 0;
-}
+/* `_get_output_format` USED to live here, as a constant 0 — printf's %e exponent width,
+ * with a comment explaining that the 3-digit form is msvcrt's default.  That made OUR
+ * choice the oracle for every `%e` row.  misc.c DEFINES it, so as of reference TU #9 it is
+ * a reference EXPORT reading the genuine `output_format` static, and the prelude renames it
+ * to `ref__get_output_format` like every other one. Same move `_mbtowc_l` made for mbcs.c
+ * and `_isspace_l` for ctype.c. */
 
 /* `_mbtowc_l` USED to live here — a C-locale ASCII stub, because wcs.c called it and
  * nothing defined it.  mbcs.c DEFINES it, so as of the mbcs TU it is a reference

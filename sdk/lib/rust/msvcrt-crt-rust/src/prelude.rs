@@ -44,6 +44,13 @@ pub type intptr_t = isize;
 // Each is a macro, so it has no symbol for bindgen to snapshot; the value is the header's.
 /// `minwindef.h`: `#define FALSE 0`. Typed `u8` because the two uses are `BOOL`-shaped
 /// locals that the C assigns from `_ismbblead*`, which the translation carries as `u8`.
+///
+/// bindgen now ALSO emits a `FALSE` (as `u32`, from minwindef.h), so a module that globs
+/// both this prelude and `msvcrt_sys` — which is all of them — sees the bare name as
+/// E0659-ambiguous. An explicit `use msvcrt_sys::FALSE;` shadows both globs and is the
+/// fix; `lock.rs` does exactly that. Collapsing the two into one definition means
+/// re-typing 28 sites across four already-graded modules, so it is tracked separately
+/// rather than smuggled into an unrelated wave.
 pub const FALSE: u8 = 0;
 /// `mbstring.h`: `#define _NLSCMPERROR ((unsigned int)0x7fffffff)`. Every use in `mbcs.c`
 /// is a `return` from an `int` function, where the C conversion is value-preserving.
@@ -428,6 +435,19 @@ extern "C" {
     // in either case: one is an `int`, the other a pointer.
     pub static mut MSVCRT_app_type: c_int;
     pub static mut MSVCRT__wpgmptr: *mut WCHAR;
+
+    // msvcrt.h:170 — `extern DWORD msvcrt_tls_index;`. Same arrangement and the same reason
+    // as the two above: `msvcrt/main.rs` DEFINES it `#[no_mangle]` under the `dllmain`
+    // feature, thread.rs READS it under `threading`, and an import would couple two gates.
+    //
+    // This one used to carry a warning that duplicating the definition on the Rust side
+    // would give the reader "a second, always-zero index". That was true while the C's
+    // DllMain was the only WRITER — a Rust definition would then have been a second slot
+    // that nobody ever filled in. It stopped being true the moment DllMain itself became
+    // Rust, which is why the definition moved in the same commit as the writer and not
+    // before it. Writer and reader now resolve to one storage location whichever
+    // definition lld's first-match happens to keep, since the C's DllMain no longer runs.
+    pub static mut msvcrt_tls_index: DWORD;
 
     // <stdlib.h>/<signal.h>/<stdio.h> siblings that are still C. `raise` and `mbstowcs`
     // have no Rust definition to check against; `_snwprintf` and `fwprintf` are variadic,
