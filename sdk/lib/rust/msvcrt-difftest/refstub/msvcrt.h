@@ -133,6 +133,38 @@ typedef unsigned int        __msvcrt_ulong;
 #undef  RAND_MAX
 #define RAND_MAX 0x7FFF
 
+/* The floating-point CLASS codes, and this is the RAND_MAX trap at its worst: msvcrt and
+ * glibc disagree on four of the five, and one of the two they share is the disagreement's
+ * best camouflage.
+ *
+ *                 msvcrt (sdk/include/crt/math.h:76-85)   glibc <math.h>
+ *   FP_NAN                2 (_NANCODE)                          0
+ *   FP_INFINITE           1 (_INFCODE)                          1   <-- the only match
+ *   FP_ZERO               0                                     2
+ *   FP_SUBNORMAL         -2 (_DENORM)                           3
+ *   FP_NORMAL            -1 (_FINITE)                           4
+ *
+ * math.c branches on these in six places and `_dclass`/`_fdclass` RETURN them, so under the
+ * host's values the reference would take a different arm from msvcrt for every input that is
+ * not an infinity — and report it as a Rust bug. Pre-empted rather than discovered, because
+ * `rand()`'s RAND_MAX taught this exact lesson one file earlier: any macro the host header
+ * and the Windows header both define, and define differently, is an oracle bug waiting for
+ * its first row. */
+#undef  FP_NAN
+#undef  FP_INFINITE
+#undef  FP_ZERO
+#undef  FP_SUBNORMAL
+#undef  FP_NORMAL
+#define _DENORM      (-2)
+#define _FINITE      (-1)
+#define _INFCODE     1
+#define _NANCODE     2
+#define FP_INFINITE  _INFCODE
+#define FP_NAN       _NANCODE
+#define FP_NORMAL    _FINITE
+#define FP_SUBNORMAL _DENORM
+#define FP_ZERO      0
+
 /* ------------------------------------------------------------------ *
  * glibc's WIDE headers — pulled here, and *deliberately* UNDER the 16-bit
  * wchar_t remap.  This is the exact opposite of the rule for the narrow
