@@ -339,6 +339,11 @@ members = [
     "cabinet-rust",
     "cabinet-cargo",
     "mlang-cargo",
+    # shell32's private recycle-bin static library (dll/win32/shell32/shellrecyclebin) — its own
+    # CMake target, so its own crate and island rather than 44K more lines in shell32's. The four
+    # interfaces are DECLARE_INTERFACE_, and the island is generated in C mode so they arrive as
+    # implementable `lpVtbl` vtables instead of bindgen's opaque C++ ones.
+    "recyclebin-rust",
 ]
 resolver = "2"
 

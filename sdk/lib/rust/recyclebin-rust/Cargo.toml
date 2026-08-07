@@ -1,0 +1,19 @@
+# recyclebin-rust — see src/lib.rs for the module map.
+[package]
+name = "recyclebin-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "recyclebin_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
+# The island blocklists com-sys's types and re-exports them, so IUnknown/IID/HRESULT keep a
+# SINGLE identity with the rest of the tree rather than this crate minting a second set that
+# is structurally identical and type-incompatible. See SYS_CRATES in gen_driver_types.sh.
+com-sys = { path = "../com-sys" }
