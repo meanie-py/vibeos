@@ -3,6 +3,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+// `#[no_mangle]`: precomp.h declares `extern HINSTANCE hApplet`, so the island carries it as an
+// extern and every sibling module resolves THAT, not this definition. Without the attribute the
+// symbol is mangled, nothing defines `_hApplet`, and the link fails — which `cargo check` cannot
+// see, because nothing links there.
+#[no_mangle]
 pub static mut hApplet: HINSTANCE = 0 as HINSTANCE;
 
 pub static mut Applets: [APPLET; (NUM_APPLETS) as usize] = [
