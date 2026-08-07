@@ -226,6 +226,20 @@ out of were a hand copy in `refstub/msvcrt_file_prelude.h` claiming to be "VERBA
 nothing checking it — build.rs now diffs it against the genuine header. Both are in the field
 manual under §9.73.
 
+**The substrate closed behind it.** process.rs was written by a lane that owned neither
+msvcrt-sys nor prelude.rs, so it carried six names as local `extern` blocks and `const`s under
+`// TODO(hoist)`. All six are derived now and the locals are gone —
+`GetEnvironmentVariableW`, `CREATE_UNICODE_ENVIRONMENT` and the bare
+`STARTUPINFOW`/`PROCESS_INFORMATION` aliases from the bindgen island, `realloc`/`_exit`/
+`intptr_t` from prelude.rs (the last three had already been hoisted by another lane; the TODOs
+outlived their premise). `CREATE_UNICODE_ENVIRONMENT` is the one that mattered: it was absent
+from the island because the allowlist said `CREATE_[A-Z]+`, which matches `CREATE_NEW` and
+silently drops every multi-word member of the family — the LOCALE_SMONTHNAME1 bug again, in a
+constant `msvcrt_spawn` ORs into the creation flags of **every** spawn. The hand-written value
+was right; nothing was checking that. `get_aw_cp`, `convert_acp_utf8_to_wcs` and `HIWORD` stay
+local on purpose: each mirrors the C's own `static inline` or macro, so a per-TU copy is the
+faithful shape.
+
 `STARTUPINFOW` and `PROCESS_INFORMATION` joined `msvcrt_crt_layout.h`'s guarded set. The second
 is not bookkeeping: msvcrt_spawn's `_P_WAIT` arm calls
 `GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)` — it writes the exit code into the PID field
