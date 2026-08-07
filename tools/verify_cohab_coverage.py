@@ -203,9 +203,7 @@ def _referenced(build: Path, fam: dict, nm: Path) -> set[str]:
         # which is precisely the wrong-name failure this file exists to catch, in the one
         # shape it could not see. That shipped: `_mbctype` was a second, permanently-zero
         # array while `_setmbcp` wrote the Rust one.
-        for m in re.finditer(
-            r"^\s*(?:@|\d+)\s+extern(?:\s+-\S+)*\s+\w+\s+(\w+)", text, re.M
-        ):
+        for m in re.finditer(r"^\s*(?:@|\d+)\s+extern(?:\s+-\S+)*\s+\w+\s+(\w+)", text, re.M):
             out |= _spellings(m.group(1))
     return out
 
