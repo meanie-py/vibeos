@@ -540,6 +540,73 @@ fn extract_u8_table(src: &str, name: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Lift the `= { … };` INITIALIZER of a named global out of a C source, verbatim,
+/// preprocessor arms and all.
+///
+/// Used for locale.c's `cloc_time_data` — the C locale's calendar vocabulary, which
+/// `strftime` reads for every `%a %A %b %B %p %c %x %X`. Same reasoning as
+/// `extract_u8_table` above, one step further: the text comes across UNEVALUATED, so the
+/// `#if _MSVCR_VER` arms inside it resolve in the harness exactly as they resolve in the
+/// DLL (both compile at `_MSVCR_VER=0`). Hand-copying 43 strings would be the §9.73 trap
+/// with 43 chances to fire — both sides read one table, so a mistyped month would make
+/// them agree on the wrong answer.
+///
+/// Brace-balanced rather than "find the next `};`": the initializer is nested three deep
+/// and the innermost line ends in `}},`.
+fn extract_initializer(src: &str, name: &str) -> Option<String> {
+    // The DEFINITION, not a mention: `<type> NAME =`, with only spaces between.
+    let at = src.match_indices(name).find(|(i, _)| {
+        let after = src[i + name.len()..].trim_start();
+        after.starts_with('=')
+            && !after.starts_with("==")
+            // Not `foo.cloc_time_data` / `&cloc_time_data` — a member or address-of.
+            && !src[..*i].ends_with(['.', '&', '>'])
+    })?;
+    let open = src[at.0..].find('{')? + at.0;
+    let mut depth = 0usize;
+    for (i, c) in src[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(src[open..open + i + 1].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Lift whole `#define` lines (continuations included) out of a header, by name.
+///
+/// The same move `imagehlp.h`'s `UNDNAME_*` family gets below, generalised: the value
+/// comes from the header the real build compiles against, so it cannot drift from what
+/// the DLL means. Used for `MAKELCID`/`LANG_ENGLISH`/`SORT_DEFAULT`, which locale.c's
+/// `cloc_time_data` initializer spells and which no refstub header carries.
+fn lift_defines(src: &str, names: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut lines = src.lines().peekable();
+    while let Some(line) = lines.next() {
+        let t = line.trim_start();
+        let Some(rest) = t.strip_prefix("#define ") else { continue };
+        let ident: String =
+            rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        if !names.contains(&ident.as_str()) {
+            continue;
+        }
+        let mut body = t.to_string();
+        while body.trim_end().ends_with('\\') {
+            let Some(next) = lines.next() else { break };
+            body.push('\n');
+            body.push_str(next);
+        }
+        out.push(body);
+    }
+    out
+}
+
 /// Every `NAME` in a Wine export banner: ` *  NAME (MSVCRT.@)`.
 fn exported_symbols(src: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -1102,6 +1169,86 @@ fn main() {
         ));
     }
     fs::write(out.join("cloc_tables.h"), &tables).unwrap();
+
+    // ── the C locale's CALENDAR VOCABULARY, lifted the same way ──────────────
+    //
+    // `strftime`/`wcsftime`/`_Strftime` render `%a %A %b %B %p %c %x %X` out of
+    // `get_locinfo()->lc_time_curr`, and that slot was NULL in both sides' locinfo until
+    // now — nothing had ever driven those conversions, so a null deref was waiting for the
+    // first row that did. locale.c owns the table (`cloc_time_data`), and locale.c is
+    // neither a reference TU nor in the subject's feature set, so the harness must supply
+    // it. Lifted, not typed: 43 strings both sides read is 43 chances to be
+    // invisibly-wrong-together.
+    //
+    // ONE copy, shared. That is the same line `MSVCRT__ctype` sits on and for the same
+    // reason: this is what the LOCALE IS — environment both sides must agree about before
+    // a comparison means anything — and neither side's code writes it at this
+    // configuration. What IS graded is time.c's indexing into it, which is where the bugs
+    // live (`%A` reading `short_wday`, an off-by-one month, `%p` inverted).
+    //
+    // It gets its own TU rather than a slot in refimpl.c because of `-fshort-wchar`: the
+    // initializer carries the wide arm (`L"Sun"`, …) and refimpl.c is compiled without the
+    // flag, so those literals would be 4-byte elements behind 2-byte pointers. Nothing
+    // reads the wide arm at `_MSVCR_VER=0` — `STRFTIME_CHAR` is `char` below 90 — but a
+    // silently mis-sized table waiting for a version bump is not worth saving a file over.
+    {
+        let init = extract_initializer(&locale_src, "cloc_time_data").unwrap_or_else(|| {
+            panic!(
+                "could not find `__lc_time_data cloc_time_data = {{…}}` in locale.c — the C \
+                 locale's calendar strings moved. strftime cannot be graded without them."
+            )
+        });
+        // Pin the shape rather than trust the brace walk: these are the first and last
+        // strings of the narrow arm and the refcount sentinel, so a truncated or
+        // mis-anchored lift cannot pass.
+        for want in ["\"Sun\"", "\"December\"", "\"HH:mm:ss\"", "1, -1"] {
+            assert!(
+                init.contains(want),
+                "cloc_time_data's lifted initializer is missing {want:?} — the extraction \
+                 anchored on the wrong text or stopped early"
+            );
+        }
+        // winnt.h's `MAKELCID(LANG_ENGLISH, SORT_DEFAULT)` is the one token in that
+        // initializer no refstub header carries. Lifted from the header the real build
+        // compiles against, exactly like imagehlp.h's UNDNAME_* family below — and from
+        // THIS worktree's build dir, never a sibling's (fleet isolation applies to reads).
+        let winnt_h = repo.join("build-amd64/sdk/include/psdk/winnt.h");
+        let winnt_src = fs::read_to_string(&winnt_h).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}\nfix: ./vibeos-cli build --arch amd64 (this worktree's build dir \
+                 only — a sibling's is another commit's headers)",
+                winnt_h.display()
+            )
+        });
+        let lifted = lift_defines(&winnt_src, &["MAKELCID", "LANG_ENGLISH", "SORT_DEFAULT"]);
+        assert_eq!(
+            lifted.len(),
+            3,
+            "winnt.h no longer defines all of MAKELCID / LANG_ENGLISH / SORT_DEFAULT \
+             (found {}) — cloc_time_data's lcid cannot be derived",
+            lifted.len()
+        );
+        let mut td = String::from(
+            "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+             * `cloc_time_data`, lifted verbatim from dll/win32/msvcrt/locale.c, plus the\n\
+             * three winnt.h defines its initializer spells. See build.rs. */\n\
+             /* winnt.h's MAKELCID casts through these two; the refstub's Windows type\n\
+              * model is not in scope in this TU, and two scalar typedefs are cheaper than\n\
+              * pulling it in for a data-only file. */\n\
+             typedef unsigned int   DWORD;\n\
+             typedef unsigned short USHORT;\n\
+             #include \"locale_layout.h\"\n\n\
+             /* ── lifted from build-amd64/sdk/include/psdk/winnt.h ── */\n",
+        );
+        for d in &lifted {
+            td.push_str(d);
+            td.push('\n');
+        }
+        td.push_str("\n/* ── lifted from dll/win32/msvcrt/locale.c ── */\n__lc_time_data cloc_time_data =\n");
+        td.push_str(&init);
+        td.push_str(";\n");
+        fs::write(out.join("cloc_time_data.c"), &td).unwrap();
+    }
 
     // ── <mbctype.h> / <mbstring.h>: forward to the GENUINE headers ──────────
     //
@@ -2205,6 +2352,286 @@ fn main() {
     let errno_prelude_h = out.join("ref_errno_prelude.h");
     fs::write(&errno_prelude_h, &ep).unwrap();
 
+    // ══ reference TU #11 — dll/win32/msvcrt/time.c ══════════════════════════════════
+    //
+    // The substrate landed a wave early: timeimpl.c (the frozen clock and the four zone
+    // presets) has been in the link since time.rs was flipped, because the SUBJECT needed
+    // it. What was missing was the other half of the pair — msvcrt's own calendar,
+    // compiled for the host, so the two can be driven against each other.
+    //
+    // It is worth being explicit about what that buys, because time.c is the file where a
+    // plausible-looking harness grades nothing. Everything interesting here is ARITHMETIC
+    // over a Win32 answer — leap years, the DST window, the 1601 vs 1970 epoch shift, the
+    // half-hour bias, `_MAX__TIME64_T` — and every one of those is reachable only because
+    // the instant and the zone are KNOBS. Against the host's real clock the two sides would
+    // be called a microsecond apart and agree by luck; against a frozen instant they agree
+    // or they do not.
+    //
+    // Also, this is the wave that DELETES fileimpl.c's `ref__time64` stub. file.c's
+    // `_wutime`/`_futime` path calls `_time64`, and the harness has answered it with a
+    // three-line host-clock stub since wave 18 — which meant every file row that stamped a
+    // modification time was graded against the harness's idea of "now" rather than
+    // msvcrt's. time.c defines the real one, so the stub's socket (`ref__time64`, which
+    // ref_file_prelude.h's stage 4.5 already maps `_time64` to) is now filled by the
+    // genuine body. Same shape as errno.c's arrival deleting `msvcrt_set_errno`.
+    let time_c = msvcrt_dir.join("time.c");
+    assert!(time_c.is_file(), "msvcrt reference source not found: {}", time_c.display());
+
+    // From the OBJECT, like file.c and errno.c: `_MSVCR_VER` opens and closes whole
+    // families here (`_ctime32_s`, the `_MAX__TIME64_T` clamps, `MAX_SECONDS`), so what got
+    // EMITTED is the authority and the source text is not.
+    let time_obj =
+        repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/time.c.obj");
+    let time_code: Vec<String> = object_symbols(&repo, &time_obj, &["T"]);
+    let time_data: Vec<String> = object_symbols(&repo, &time_obj, &["D", "B"]);
+    assert!(
+        time_code.len() > 45 && time_data.len() == 4,
+        "time.c object scrape found {} functions / {} data — expected ~52 and exactly the \
+         four exported globals (__daylight/__timezone/_dstbias/_tzname). A short list would \
+         leave symbols under their PLAIN names, colliding with the subject",
+        time_code.len(),
+        time_data.len()
+    );
+    // The four exported globals, pinned. They are the reason the data half of the scrape
+    // exists at all: msvcrt.spec publishes each of them, so time.rs defines them
+    // `#[no_mangle]`, and an un-renamed reference copy is a duplicate symbol. They are also
+    // WRITTEN by `_tzset` — code under test — so unlike ctype.c's tables they must be two
+    // objects, or each side would read back what the other stored (errno.c's stage 5 spells
+    // the same failure out for `MSVCRT__sys_errlist`).
+    for want in ["MSVCRT___daylight", "MSVCRT___timezone", "MSVCRT__dstbias", "MSVCRT__tzname"]
+    {
+        assert!(
+            time_data.iter().any(|s| s == want),
+            "time.c's data scrape missed `{want}` — the reference copy would keep its plain \
+             name and share one slot with the subject's"
+        );
+    }
+
+    // Disjointness against every other reference TU, asserted rather than assumed.
+    {
+        let taken: std::collections::HashSet<&str> = all_symbols
+            .iter()
+            .copied()
+            .chain(scanf_symbols.iter().map(String::as_str))
+            .chain(file_symbols.iter().map(String::as_str))
+            .chain(file_data.iter().map(String::as_str))
+            .chain(errno_code.iter().map(String::as_str))
+            .chain(errno_data.iter().map(String::as_str))
+            .collect();
+        let clash: Vec<&str> = time_code
+            .iter()
+            .chain(time_data.iter())
+            .map(String::as_str)
+            .filter(|s| taken.contains(s))
+            .collect();
+        assert!(
+            clash.is_empty(),
+            "time.c and another reference TU both define {clash:?} — one of them must stop \
+             being renamed into ref_*"
+        );
+    }
+
+    // The seven names the `#define` wall must NOT touch, generated alongside the
+    // prototypes. All seven are the SILENT class rather than the loud one: time.c opens
+    // with `#undef _ctime32` … `#undef _wctime32`, because in the real build those names
+    // are time_t-width macros from msvcrt's own <time.h>. Each `#undef` deletes our
+    // rename, and the function is then emitted under its true name — which is exactly what
+    // happened on the first build here: seven duplicate symbols against time.rs's
+    // `#[no_mangle]` copies, and had the subject not defined them the failure would have
+    // been the quieter one (a `ref__time32` nothing defines, unnoticed until a row reached
+    // it). They get an asm label in msvcrt_time_protos.h instead, which renames at the
+    // object level where no `#undef` can reach.
+    let time_no_rename_txt = refstub.join("msvcrt_time_no_rename.txt");
+    let time_no_rename: std::collections::HashSet<String> =
+        fs::read_to_string(&time_no_rename_txt)
+            .unwrap_or_else(|e| panic!("{}: {e}", time_no_rename_txt.display()))
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+    for n in &time_no_rename {
+        assert!(
+            time_code.contains(n),
+            "msvcrt_time_no_rename.txt lists `{n}`, which time.c does not export — \
+             regenerate: python3 tools/gen_msvcrt_ref_protos.py time.c"
+        );
+    }
+    let time_wall: Vec<&String> =
+        time_code.iter().filter(|s| !time_no_rename.contains(*s)).collect();
+
+    // `mtdll.h` is msvcrt's lock-index header. time.c includes it for `_TIME_LOCK` (which
+    // `_tzset` takes around the zone globals) and nothing else, and the harness cannot
+    // reach the real one: dll/win32/msvcrt is not on the include path, precisely so its
+    // private ctype.h/stdlib.h/stdio.h do not capture the host's. Forward to the genuine
+    // header by absolute path rather than transcribe the index — a lock number that drifted
+    // would be invisible, since fileimpl.c's `_lock` is a no-op counter and both sides
+    // would pass the same wrong value to it.
+    fs::write(
+        out.join("mtdll.h"),
+        format!(
+            "/* GENERATED by build.rs — time.c's `#include \"mtdll.h\"`, forwarded to the\n\
+             * GENUINE header. Not transcribed: `_TIME_LOCK` is an index into msvcrt's lock\n\
+             * table and a drifted one is invisible to a differential test. */\n\
+             #ifndef MSVCRT_DIFFTEST_MTDLL_H\n#define MSVCRT_DIFFTEST_MTDLL_H\n\
+             #include \"{}\"\n#endif\n",
+            msvcrt_dir.join("mtdll.h").display()
+        ),
+    )
+    .unwrap();
+
+    let mut tp = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included at the top of the time.c reference TU ONLY. */\n\
+         #ifndef MSVCRT_REF_TIME_PRELUDE_H\n#define MSVCRT_REF_TIME_PRELUDE_H\n\n\
+         /* ═══ stage 1: hide time.c's own shells from glibc. ═══════════════════════\n\
+          * Sharper here than in any earlier TU. time.c includes <time.h>, and glibc\n\
+          * declares `clock`, `asctime`, `strftime` and `wcsftime` in it — with\n\
+          * __THROW/__nonnull attributes and, for several, a __REDIRECT. Any of those\n\
+          * would attach itself to the name time.c is about to DEFINE, and the definition\n\
+          * would then collide with its own declaration. Hidden for the duration of the\n\
+          * host headers; renamed for real in stage 3. */\n",
+    );
+    for sym in &time_wall {
+        tp.push_str(&format!("#define {sym} msvcrt_ref_glibc_{sym}\n"));
+    }
+    tp.push_str(
+        "\n/* ═══ stage 2: the union prelude — sibling renames + the refstub. ════════\n\
+         * strcpy/strlen/memcpy are string.c's; `_snprintf`, `_mbstowcs_l` and\n\
+         * `_wcstombs_l` are wcs.c's; `_isleadbyte_l` is mbcs.c's. This is what binds\n\
+         * them to ref_* instead of letting the reference's own output run through the\n\
+         * host libc — or through cnt-rust's #[no_mangle] copies, which are the code\n\
+         * under test.\n\
+         *\n\
+         * `_snprintf` is the load-bearing one and it is safe for a reason worth stating:\n\
+         * `strftime_int` renders every numeric conversion with it and checks for -1, so\n\
+         * it needs msvcrt's TRUNCATION CONTRACT, not C99's. `ref__snprintf` is wcs.c's\n\
+         * own body forwarding to plain `vsnprintf`, which the shared prelude's stage 4\n\
+         * points at `msvcrt_ref_vsnprintf` — the host formatter under msvcrt's contract.\n\
+         * The subject reaches the same body through subjectimpl.c's stand-in, so both\n\
+         * sides format identically and what is graded is the calendar. */\n\
+         #include \"ref_prelude.h\"\n\n\
+         /* ═══ stage 2b: the host <time.h>, pulled WHILE the names are still hidden. ═\n\
+          * time.c includes it at line 27, i.e. after this prelude, and two things have to\n\
+          * happen to it before then.\n\
+          *\n\
+          * (a) It must be read while stage 1's hiding is in force, so glibc's `clock`,\n\
+          *     `asctime`, `strftime` and `wcsftime` declarations attach to the\n\
+          *     msvcrt_ref_glibc_* spellings and not to the names time.c defines.\n\
+          *\n\
+          * (b) Its `typedef __clock_t clock_t` must land BEFORE the pin below. A macro\n\
+          *     named `clock_t` in scope when glibc's typedef is parsed rewrites the\n\
+          *     typedef itself, which is a conflicting definition rather than a rename.\n\
+          *\n\
+          * Included explicitly rather than relied on: whether the refstub happens to drag\n\
+          * <time.h> in today is not something this TU should depend on. */\n\
+         #include <time.h>\n\n\
+         /* ═══ stage 3: un-hide time.c's own shells and rename them for real. ═════ */\n",
+    );
+    for sym in &time_wall {
+        tp.push_str(&format!("#undef {sym}\n#define {sym} ref_{sym}\n"));
+    }
+    tp.push_str(
+        "\n/* ═══ stage 4: the four exported globals. ════════════════════════════════\n\
+         * `_tzset` WRITES all four, so they must be per-side storage; see build.rs. */\n",
+    );
+    for sym in &time_data {
+        tp.push_str(&format!("#define {sym} ref_{sym}\n"));
+    }
+    tp.push_str(
+        "\n/* ═══ stage 5: the Win32 time vocabulary and the derived constants. ══════\n\
+         * SYSTEMTIME/FILETIME/TIME_ZONE_INFORMATION and the two `__timeb` structs, plus\n\
+         * the ERROR_, CP_ACP and TIME_ZONE_ID_ families. These come AFTER the refstub\n\
+         * (stage 2) because they are written in its Windows type model — WORD, LONG,\n\
+         * WCHAR.\n\
+         *\n\
+         * The host's <sys/timeb.h> is a real header that glibc ships, and time.c includes\n\
+         * it: it declares `struct timeb` and `ftime`, neither of which msvcrt has, and it\n\
+         * does NOT declare `struct __timeb32`/`__timeb64`. So the two coexist rather than\n\
+         * conflict, and `_ftime32`/`_ftime64` fill msvcrt's structs. */\n\
+         #include <msvcrt_file_types.h>\n\
+         #include <msvcrt_crt_consts.h>\n\
+         #include <msvcrt_time_types.h>\n\n\
+         /* `_MAX__TIME64_T` — the last instant msvcrt's 64-bit time_t admits, 3000-12-31\n\
+          * 23:59:59Z. time.c clamps against it in six places (`_gmtime64_s`'s range test,\n\
+          * `_ctime64_s`, `_mktime64`'s overflow arm) and it is the single most interesting\n\
+          * boundary in the file, so it is a CONSTANT the reference must have rather than a\n\
+          * branch it silently loses. Spelled the same way ref_file_prelude.h spells it —\n\
+          * one value, two preludes, and the disagreement would be silent. */\n\
+         #ifndef _MAX__TIME64_T\n\
+         #define _MAX__TIME64_T    (((__time64_t)0x00000007 << 32) | 0x93406FFF)\n\
+         #endif\n\n\
+         /* `clock_t` is msvcrt's `__msvcrt_long` — 32 bits — and the host's is 64.\n\
+          * `clock()` is four lines and looks impossible to get wrong:\n\
+          *\n\
+          *     return (systime.QuadPart - init_time) / (TICKSPERSEC / CLOCKS_PER_SEC);\n\
+          *\n\
+          * but BOTH of the things it depends on differ between the two type models, and\n\
+          * neither difference is a compile error. The WIDTH decides whether the division\n\
+          * result is truncated to 32 bits — msvcrt's clock() wraps after ~24.9 days and\n\
+          * the host's does not — and CLOCKS_PER_SEC decides the UNIT: msvcrt's is 1000,\n\
+          * glibc's is 1000000, so an unpinned reference answers in microseconds and every\n\
+          * row is off by exactly 1000x. The constant is DERIVED (msvcrt_crt_consts.h,\n\
+          * which #undefs glibc's first); the type is pinned here, after <time.h> so it\n\
+          * renames time.c's use rather than glibc's typedef. */\n\
+         #undef clock_t\n\
+         #define clock_t __msvcrt_long\n\n\
+         /* ═══ stage 6: a prototype for every function time.c CALLS. ══════════════\n\
+          * The Win32 clock/zone layer (timeimpl.c) and the two NLS converters\n\
+          * (refimpl.c). Spelled out here rather than pulled from\n\
+          * refstub/msvcrt_shim_decls.h for errno.c's reason: that header declares the\n\
+          * whole file.c Win32 surface and would demand SECURITY_ATTRIBUTES,\n\
+          * CRITICAL_SECTION and six more structs this TU has no reason to know about.\n\
+          *\n\
+          * Without them C's implicit-declaration rule types each as `int()`, and\n\
+          * -Werror=implicit-function-declaration is what turns that from a silently\n\
+          * truncated return into a build failure. */\n\
+         void    WINAPI GetSystemTimeAsFileTime(FILETIME *ft);\n\
+         NTSTATUS WINAPI NtQuerySystemTime(LARGE_INTEGER *t);\n\
+         void    WINAPI GetLocalTime(SYSTEMTIME *st);\n\
+         BOOL    WINAPI SystemTimeToFileTime(const SYSTEMTIME *st, FILETIME *ft);\n\
+         BOOL    WINAPI FileTimeToSystemTime(const FILETIME *ft, SYSTEMTIME *st);\n\
+         BOOL    WINAPI SystemTimeToTzSpecificLocalTime(const TIME_ZONE_INFORMATION *tzi,\n\
+         \x20                                           const SYSTEMTIME *utc,\n\
+         \x20                                           SYSTEMTIME *local);\n\
+         DWORD   WINAPI GetTimeZoneInformation(TIME_ZONE_INFORMATION *tzi);\n\
+         int     WINAPI GetDateFormatW(LCID lcid, DWORD flags, const SYSTEMTIME *st,\n\
+         \x20                          const WCHAR *fmt, WCHAR *out, int cch);\n\
+         int     WINAPI GetTimeFormatW(LCID lcid, DWORD flags, const SYSTEMTIME *st,\n\
+         \x20                          const WCHAR *fmt, WCHAR *out, int cch);\n\
+         LPSTR   WINAPI lstrcpynA(LPSTR dst, LPCSTR src, int n);\n\
+         int     WINAPI MultiByteToWideChar(UINT cp, DWORD flags, LPCSTR src, int srclen,\n\
+         \x20                               LPWSTR dst, int dstlen);\n\
+         int     WINAPI WideCharToMultiByte(UINT cp, DWORD flags, LPCWSTR src, int srclen,\n\
+         \x20                               LPSTR dst, int dstlen, LPCSTR defchar,\n\
+         \x20                               BOOL *used);\n\
+         void    CDECL  _lock(int locknum);\n\
+         void    CDECL  _unlock(int locknum);\n\n\
+         /* …and the two sibling-TU converters `_wasctime`/`_wstrdate`/`_Strftime` reach\n\
+          * for. wcs.c owns `_wcstombs_l` and mbcs.c owns `_mbstowcs_l`, so both are\n\
+          * already renamed by stage 2 — these declare the ref_ spelling with the RIGHT\n\
+          * prototype. Both return `size_t`, and that is the point: without a declaration\n\
+          * C types them `int()`, and `(size_t)-1` — the conversion-failed sentinel every\n\
+          * caller here tests for — comes back as 0x00000000FFFFFFFF, which compares\n\
+          * unequal to it. The failure arm would simply never be taken. */\n\
+         size_t  CDECL  _wcstombs_l(char *mbstr, const wchar_t *wcstr, size_t count,\n\
+         \x20                       _locale_t locale);\n\
+         size_t  CDECL  _mbstowcs_l(wchar_t *wcstr, const char *mbstr, size_t count,\n\
+         \x20                       _locale_t locale);\n\n\
+         /* ═══ stage 7: a prototype for every function time.c DEFINES. ═══════════\n\
+          * Two jobs in one header. (a) The 45 renamed ones are declared here, AFTER the\n\
+          * wall, so each is renamed alongside its definition — without them the calls\n\
+          * time.c places above a definition (`_gmtime64_s` from `_ctime64_s`,\n\
+          * `_mktime64` from `_mkgmtime64`) fall to C's implicit-declaration rule and\n\
+          * every `__time64_t` return is truncated to 32 bits, in code that links.\n\
+          * (b) The seven `#undef`ed ones carry their rename as an `__asm__` label, which\n\
+          * is the only form a later `#undef` cannot delete. */\n\
+         #include <msvcrt_time_protos.h>\n\n\
+         #endif /* MSVCRT_REF_TIME_PRELUDE_H */\n",
+    );
+    let time_prelude_h = out.join("ref_time_prelude.h");
+    fs::write(&time_prelude_h, &tp).unwrap();
+
     // ── the reference TUs: the GENUINE string.c + wcs.c, renamed ────
     //
     // Both get the IDENTICAL flag set — the two -Werror= tripwires below are
@@ -2678,6 +3105,32 @@ fn main() {
         .flag(errno_prelude_h.to_str().unwrap())
         .file(&errno_c);
 
+    // The time.c reference TU. Same genuineness flags and tripwires; its own out_dir for
+    // the same cc-intermediate-collision reason as file.c's.
+    let mut time_build = cc::Build::new();
+    time_build
+        .out_dir(out.join("time"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. time.c carries five —
+        // `_wstrdate`/`_wstrtime`'s format pictures (`L"MM'/'dd'/'yy"`, `L"HH':'mm':'ss"`)
+        // and `_wasctime`'s `L"%s %s %02d %02d:%02d:%02d %d\n"`. Without the flag the host
+        // emits 4-byte elements and timeimpl.c's picture parser reads them as 2-byte: the
+        // very first `_wstrdate` row would see `M` followed by a NUL and format nothing.
+        .flag("-fshort-wchar")
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .flag("-fno-tree-loop-distribute-patterns")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .flag("-include")
+        .flag(time_prelude_h.to_str().unwrap())
+        .file(&time_c);
+
     // The POSIX-backed Win32 layer underneath it.  Its OWN TU, without the rename
     // prelude — like refimpl.c, and for the same reason: these must land under the
     // plain names file.c calls.
@@ -2719,6 +3172,23 @@ fn main() {
         .opt_level(2)
         .cargo_metadata(false)
         .file(manifest.join("timeimpl.c"));
+
+    // The C locale's calendar vocabulary, in a TU of its own. `-fshort-wchar` is the whole
+    // reason it is not a slot in refimpl.c — see the generator above.
+    let mut cloc_time_build = cc::Build::new();
+    cloc_time_build
+        .out_dir(out.join("cloc_time"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        .flag("-fshort-wchar")
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(out.join("cloc_time_data.c"));
 
     // ── the SUBJECT's C-variadic entry points ───────────────────────────────────
     //
@@ -2999,8 +3469,10 @@ fn main() {
     objects.extend(file_build.compile_intermediates());
     objects.extend(fileflat_build.compile_intermediates());
     objects.extend(errno_build.compile_intermediates());
+    objects.extend(time_build.compile_intermediates());
     objects.extend(fileimpl_build.compile_intermediates());
     objects.extend(timeimpl_build.compile_intermediates());
+    objects.extend(cloc_time_build.compile_intermediates());
     if subject_stdio {
         objects.extend(shim_build.compile_intermediates());
     }
@@ -3045,6 +3517,8 @@ fn main() {
     println!("cargo:rerun-if-changed={}", file_c.display());
     println!("cargo:rerun-if-changed={}", manifest.join("fileimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("timeimpl.c").display());
+    println!("cargo:rerun-if-changed={}", time_c.display());
+    println!("cargo:rerun-if-changed={}", msvcrt_dir.join("mtdll.h").display());
     // scanf.h is the TEMPLATE scanf.c instantiates 16 times — real logic, not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("scanf.h").display());
     println!("cargo:rerun-if-changed={}", refstub.display());

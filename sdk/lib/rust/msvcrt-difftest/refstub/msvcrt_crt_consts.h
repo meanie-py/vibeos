@@ -74,6 +74,10 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+/* time (msvcrt's own time.h) */
+#undef  CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC 0x000003E8
+
 /* Win32 file API (psdk) */
 #define CREATE_ALWAYS                              2
 #define CREATE_NEW                                 1

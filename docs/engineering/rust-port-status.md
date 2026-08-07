@@ -287,11 +287,40 @@ so have no Rust counterpart: `_get_dstbias`/`_get_timezone`/`_get_daylight` (`#i
 OBJECT is the authority on that, not the source's apparent shape — the same rule wave 18
 used for file.c.
 
-**PORTED, NOT YET GRADED**, and that is the honest status: `msvcrt-difftest` has no time.c
-rows, so what has been proved is three-arch `cargo check`, a green `difftest` (nothing
-regressed), and boot. Same standing file.c had after wave 17. What the grading needs is
-already in the tree — see the substrate below — so the rows are the next step, not a new
-foundation.
+**GRADED 2026-08-07 — reference TU #11, 375,839 rows, and one REAL PORT BUG.** All 52
+exports, over five zone settings x 18 boundary instants, plus the `TZ`-string branch that no
+preset can reach and a three-hourly sweep of 2024 in every zone (which finds a transition
+disagreement without depending on knowing where the transitions are).
+
+`strftime("%c")` HUNG. msvcrt's picture formatter counts the run of the current field with
+`while(format[0] == format[count]) count++;`; the translation emitted `format[count] ==
+format[count]` — an element compared to itself, so `count` ran away until the read left the
+mapping. It reaches every `%c`, `%x` and `%X`, i.e. every locale-formatted date and time in
+the DLL. It survived the flip because those three conversions read
+`locinfo->lc_time_curr`, and that slot was NULL in both sides' harness locinfo until this
+lane filled it — so the first row that ever executed the line is the one that found it.
+Three more were debug-profile checked-arithmetic aborts where the C relies on hardware
+wraparound (`_difftime32/64`'s subtraction, `_localtime64_s`'s deliberate
+signed-to-unsigned multiply); `vibeos-cli difftest` builds `--release`, so that class is
+invisible to the gate and only a plain `cargo test` shows it. Detail in the field manual
+under "Faithful C unsigned underflow" and "Semantic rewrites that flip meaning".
+
+Everything else matched, including the two things this file exists to get wrong: the
+half-hour bias (India) and the year-wrapping southern-hemisphere DST window (Sydney).
+
+Two pieces of substrate arrived with the rows. `cloc_time_data` — the C locale's 43 calendar
+strings — is lifted out of locale.c by build.rs into a TU of its own and shared by both
+sides, on the same terms as `MSVCRT__ctype`: it is what the locale IS, neither side's code
+writes it, and what the rows grade is time.c's INDEXING into it. And `__lc_time_data` stopped
+being a bare forward declaration in `locale_layout.h`; `ref_integrity` now checks all six of
+its offsets and its size against msvcrt-sys, because the wide union arm nothing reads at
+`_MSVCR_VER=0` is 344 bytes that everything after it depends on.
+
+Two host-type-model traps were pinned in the reference TU's prelude, both in `clock()`:
+`clock_t` is 32 bits on Windows and 64 here (so msvcrt's `clock()` wraps after 24.86 days and
+an unpinned reference does not), and `CLOCKS_PER_SEC` is 1000 in msvcrt's `time.h` against
+glibc's 1000000 (so an unpinned reference answers in microseconds — every row off by exactly
+1000x). The constant is derived by `gen_msvcrt_difftest_consts.py`, not transcribed.
 
 **`timeimpl.c` — the Win32 clock and zone layer, built because the SUBJECT needed it.**
 Wiring time.rs into the harness revealed that nothing there answered `GetTimeZoneInformation`,
@@ -317,7 +346,11 @@ defines it that is a duplicate-symbol failure. The stub keeps its job and change
 `ref__time64` (file prelude stage 4.5). This is the standing tax on wiring a new module into
 the harness, and it is also the seam where time.c becomes reference TU #8: that stage points
 at time.c's own body and the stub is deleted, exactly as errno.c's arrival deleted the
-hand-written `msvcrt_set_errno`.
+hand-written `msvcrt_set_errno`. **That seam is closed as of 2026-08-07** (it turned out to
+be reference TU #11, not #8 — undname.c, misc.c and math.c landed first). The stub is gone
+and `ref__time64` is time.c's genuine body, which is a real upgrade for file.c's rows too:
+`_wutime`/`_futime` used to stamp modification times from the HARNESS's idea of "now" and now
+read the frozen instant the test set.
 
 **Two limits stated rather than papered over.** `asctime`'s `_snprintf` is answered by the
 harness over the host's `vsnprintf` (subjectimpl.c) — the shipping name is a `va_start`

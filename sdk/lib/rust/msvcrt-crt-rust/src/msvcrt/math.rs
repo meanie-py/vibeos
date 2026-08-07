@@ -542,40 +542,58 @@ pub unsafe extern "C" fn _fpclass(num: f64) -> i32 {
     }
 }
 
+// The six rotates, and the `& W` on the COUNTERPART shift is not a tidy-up — it is what
+// makes `shift == 0` work at all.
+//
+// The C is `shift &= W-1; return (num << shift) | (num >> (W-shift));`, so at shift == 0
+// the second operand is a shift by the full width. C calls that undefined; x86's `shr` and
+// arm64's `lsr` both MASK the count to log2(W) bits, so the hardware performs `>> 0` and
+// the expression returns `num` — which is the right answer and what msvcrt.dll does.
+//
+// Rust does not have that undefined behaviour to exploit: `>>` is a CHECKED shift that
+// panics in a debug profile and is defined to mask in release, so the literal translation
+// is a live abort inside msvcrt.dll for one input per function. Writing the hardware's
+// mask out makes the answer identical on every profile and every arch we build, and puts
+// the assumption where a reader can see it. (Not `rotate_left`/`rotate_right`, which is the
+// same instruction but hides which of these two facts is being relied on.)
+//
+// Found by the first `_rotl(x, 0)` row, in a plain `cargo test` — `vibeos-cli difftest`
+// builds --release, where the check is compiled out and both sides agree. See _abs64 below
+// for the negation half of the same class.
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__rotl(num: u32, shift: i32) -> u32 {
     let shift = shift & 31;
-    (num << shift) | (num >> (32 - shift))
+    (num << shift) | (num >> ((32 - shift) & 31))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__lrotl(num: __msvcrt_ulong, shift: i32) -> __msvcrt_ulong {
     let shift = shift & 0x1f;
-    (num << shift) | (num >> (32 - shift))
+    (num << shift) | (num >> ((32 - shift) & 0x1f))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__lrotr(num: __msvcrt_ulong, shift: i32) -> __msvcrt_ulong {
     let shift = shift & 0x1f;
-    (num >> shift) | (num << (32 - shift))
+    (num >> shift) | (num << ((32 - shift) & 0x1f))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__rotr(num: u32, shift: i32) -> u32 {
     let shift = shift & 0x1f;
-    (num >> shift) | (num << (32 - shift))
+    (num >> shift) | (num << ((32 - shift) & 0x1f))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__rotl64(num: u64, shift: i32) -> u64 {
     let shift = shift & 63;
-    (num << shift) | (num >> (64 - shift))
+    (num << shift) | (num >> ((64 - shift) & 63))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn MSVCRT__rotr64(num: u64, shift: i32) -> u64 {
     let shift = shift & 63;
-    (num >> shift) | (num << (64 - shift))
+    (num >> shift) | (num << ((64 - shift) & 63))
 }
 
 // NOT FLIPPED, and not because it is broken: `cnt-rust`'s `cabi/math.rs` already
@@ -589,7 +607,9 @@ pub unsafe extern "C" fn abs(n: i32) -> i32 {
     if n >= 0 {
         n
     } else {
-        -n
+        // `wrapping_neg` for the reason `_abs64` below spells out: at the type's minimum
+        // the C's `-n` wraps and Rust's `-` panics in a debug profile.
+        n.wrapping_neg()
     }
 }
 
@@ -604,16 +624,31 @@ pub unsafe extern "C" fn labs(n: __msvcrt_long) -> __msvcrt_long {
     if n >= 0 {
         n
     } else {
-        -n
+        // `wrapping_neg` for the reason `_abs64` below spells out: at the type's minimum
+        // the C's `-n` wraps and Rust's `-` panics in a debug profile.
+        n.wrapping_neg()
     }
 }
 
+// `wrapping_neg`, not `-`, and the three of these are one class. The C is
+// `n >= 0 ? n : -n`, and at `n == INT64_MIN` that negation has no representable answer:
+// C calls it undefined, every compiler emits a `neg` instruction, and the value that
+// comes back is INT64_MIN itself. Rust's `-` is not UB — it is a CHECKED negation that
+// PANICS in a debug profile — so the faithful translation is the wrapping one, and the
+// literal one is a live abort inside msvcrt.dll for a single input.
+//
+// It got as far as a graded row precisely because `vibeos-cli difftest` builds
+// `--release`, where the overflow check is compiled out and the two sides agree. A plain
+// `cargo test` in the crate is the debug profile, and that is where it fired. Worth
+// remembering when a difftest is green: release-only coverage cannot see this class at
+// all, which is the same reason mbcs.rs's `_mbsdec` underflow had to be fixed rather than
+// tolerated.
 #[no_mangle]
 pub unsafe extern "C" fn _abs64(n: i64) -> i64 {
     if n >= 0 {
         n
     } else {
-        -n
+        n.wrapping_neg()
     }
 }
 // MXCSR only exists on x86 — the C wraps both of these in

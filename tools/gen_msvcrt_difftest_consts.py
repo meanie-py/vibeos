@@ -61,6 +61,7 @@ PROBE_INCLUDES = [
     "sys/locking.h",
     "sys/utime.h",
     "io.h",
+    "time.h",
     '"windef.h"',
     '"winbase.h"',
     '"winnls.h"',
@@ -147,6 +148,15 @@ CONSTANTS: dict[str, list[str]] = {
         "STDIN_FILENO",
         "STDOUT_FILENO",
         "STDERR_FILENO",
+    ],
+    # `clock()` is literally `(now - init_time) / (TICKSPERSEC / CLOCKS_PER_SEC)`, so this
+    # constant IS the unit of its return value.  msvcrt's is 1000 (milliseconds); glibc's
+    # is 1000000.  A reference TU that took glibc's divides by 10 instead of 10000 and
+    # answers in MICROseconds — every clock() row off by exactly 1000x, in a function whose
+    # body is four lines and looks impossible to get wrong.  Same shape as BUFSIZ and
+    # _IONBF above, and displaced for the same reason.
+    "time (msvcrt's own time.h)": [
+        "CLOCKS_PER_SEC",
     ],
     "Win32 file API (psdk)": [
         "CREATE_ALWAYS",
@@ -292,6 +302,8 @@ CONSTANTS: dict[str, list[str]] = {
 DISPLACE = {
     # glibc 8192 vs msvcrt 512 — see the stdio/io.h group above.
     "BUFSIZ",
+    # glibc 1000000 vs msvcrt 1000 — see the time group above.
+    "CLOCKS_PER_SEC",
     # glibc numbers these 0/1/2 and msvcrt 0x0000/0x0040/0x0004. The clash that
     # matters is _IONBF: msvcrt.h aliases MSVCRT__NOBUF to it below _MSVCR_VER 140,
     # and glibc's 2 collides bit-for-bit with _IOWRT.

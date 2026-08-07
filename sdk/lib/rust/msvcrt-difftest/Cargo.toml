@@ -186,3 +186,14 @@ harness = false
 name = "wave16"
 path = "tests/wave16.rs"
 harness = false
+
+# time.c — reference TU #11. Its own binary because the whole file is driven from GLOBAL
+# state that a row must set and then re-derive on both sides: timeimpl.c's frozen instant,
+# its zone preset, and the `TZ` environment variable. `_tzset` caches the zone in a file
+# static per side, so a row that changed the knob without re-running `_tzset` on BOTH would
+# grade the previous preset — identically on both sides, and green. Sequencing that needs a
+# `fn main()`, not a set of independently-ordered `#[test]`s.
+[[test]]
+name = "time"
+path = "tests/time.rs"
+harness = false

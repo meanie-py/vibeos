@@ -1164,16 +1164,16 @@ int CDECL _get_fmode(int *mode)
  * which is what msvcrt reports for a file on C:. */
 int CDECL _getdrive(void) { return 3; }
 
-/* `ref__time64`, not `_time64`: msvcrt exports `_time64` and time.rs defines it, so the
- * plain name in this file would be a duplicate symbol the moment the module was wired in.
- * One copy, both sides — the wall-clock is environment, not per-side state. */
-__time64_t CDECL ref__time64(__time64_t *t)
-{
-    __time64_t now = (__time64_t)time(NULL);
-
-    if (t) *t = now;
-    return now;
-}
+/* `ref__time64` USED to be here — three lines over the host's `time(NULL)`, standing in
+ * for the one call file.c's `_wutime`/`_futime` path makes. It is gone as of wave 35:
+ * time.c is reference TU #11 and DEFINES `_time64`, which the rename wall spells
+ * `ref__time64` — exactly the socket this stub occupied, so the genuine body drops
+ * straight in. (Same move errno.c's arrival made on `msvcrt_set_errno`.)
+ *
+ * It is a real upgrade rather than tidying. The stub read the host clock, so every file
+ * row that stamped a modification time was graded against the HARNESS's idea of "now"
+ * instead of msvcrt's; the genuine `_time64` reads timeimpl.c's FROZEN instant, which the
+ * test sets. `_wutime`'s "pass NULL and take the current time" arm is now reproducible. */
 
 /* The real _wgetenv returns a pointer into msvcrt's wide environ block, which
  * this harness has no reason to maintain; a thread-local buffer has the same
