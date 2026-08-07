@@ -203,6 +203,14 @@ fn locale_layout_agrees_with_msvcrt_sys() {
         fn subj_off_mbcinfo_mbcasemap() -> usize;
         fn subj_sizeof_mbcinfo() -> usize;
         fn subj_off_locale_mbcinfo() -> usize;
+        fn subj_off_locinfo_lctimecurr() -> usize;
+        fn subj_off_lctd_str() -> usize;
+        fn subj_off_lctd_lcid() -> usize;
+        fn subj_off_lctd_unk() -> usize;
+        fn subj_off_lctd_refcount() -> usize;
+        fn subj_off_lctd_wstr() -> usize;
+        fn subj_off_lctd_data() -> usize;
+        fn subj_size_lctd() -> usize;
     }
 
     let checks: &[(&str, usize, usize)] = unsafe {
@@ -235,6 +243,31 @@ fn locale_layout_agrees_with_msvcrt_sys() {
             // nobody would guess. So: verified, not assumed.
             ("lconv.decimal_point",
              subj_off_lconv_decimalpoint(), offset_of!(sys::lconv, decimal_point)),
+            // ── time (wave 35) ────────────────────────────────────────────────
+            // `lc_time_curr` was a bare forward declaration in locale_layout.h until
+            // time.c became reference TU #11 — nothing dereferenced it, so a name was
+            // enough. strftime dereferences it for every %a %A %b %B %p %c %x %X, and it
+            // reads through bindgen's real layout. The union arms are where a
+            // transcription slips: `wstr` is 43 pointers that nothing reads at
+            // _MSVCR_VER=0, so omitting it would look harmless and move `data` by 344
+            // bytes. Sizes as well as offsets, for that reason.
+            ("threadlocinfo.lc_time_curr",
+             subj_off_locinfo_lctimecurr(),
+             offset_of!(sys::threadlocaleinfostruct, lc_time_curr)),
+            ("__lc_time_data.str",
+             subj_off_lctd_str(), offset_of!(sys::__lc_time_data, str_)),
+            ("__lc_time_data.lcid",
+             subj_off_lctd_lcid(), offset_of!(sys::__lc_time_data, lcid)),
+            ("__lc_time_data.unk",
+             subj_off_lctd_unk(), offset_of!(sys::__lc_time_data, unk)),
+            ("__lc_time_data.refcount",
+             subj_off_lctd_refcount(), offset_of!(sys::__lc_time_data, refcount)),
+            ("__lc_time_data.wstr",
+             subj_off_lctd_wstr(), offset_of!(sys::__lc_time_data, wstr)),
+            ("__lc_time_data.data",
+             subj_off_lctd_data(), offset_of!(sys::__lc_time_data, data)),
+            ("sizeof(__lc_time_data)",
+             subj_size_lctd(), core::mem::size_of::<sys::__lc_time_data>()),
             // ── mbcs (wave 15) ────────────────────────────────────────────────
             // refstub carried a 3-field `threadmbcinfo` (refcount/mbcodepage/
             // ismbcodepage) — everything string.c and wcs.c touch — and it was

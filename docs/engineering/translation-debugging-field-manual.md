@@ -1181,8 +1181,30 @@ upstream contract; `_mbstowcs_s_l` (mbcs.c:3408-3413) indexes `wcstr[conv-1]` wi
 because its guard is `conv == size` and size may be zero. Reproducing an upstream
 out-of-bounds read is the job — a translation that "fixes" it silently diverges.
 
-Two tells that this is the class you are in, rather than a real translation bug: the C uses an
-**unsigned** counter (`size_t`/`ULONG`), and the panic is *only* under debug. Confirm by
+**It is not only unsigned counters, and the wider rule is what to remember: anywhere the C
+relies on behaviour that is UNDEFINED in the standard but DEFINED by the hardware, Rust's
+checked operator is a live abort.** Four more shapes, all from time.c and math.c and all found
+by the first `cargo test` (not `--release`) that reached them:
+
+* **Negation at the type's minimum.** `_abs64` is `n >= 0 ? n : -n`; `-INT64_MIN` has no
+  representable answer, every compiler emits `neg`, and the value that comes back is
+  `INT64_MIN`. Use `wrapping_neg`.
+* **Subtraction that overflows before a promotion.** `_difftime32` is
+  `(double)(time1 - time2)` and the subtraction happens in the 32-bit `time_t`, so
+  `(INT32_MAX, INT32_MIN)` overflows. `wrapping_sub`, then cast.
+* **A shift by the full width.** The rotate family is `shift &= W-1; return (num << shift) |
+  (num >> (W-shift));`, so `shift == 0` shifts by `W`. x86's `shr` and arm64's `lsr` both MASK
+  the count to `log2(W)` bits, which makes it `>> 0` and the answer `num`. Write the mask out —
+  `num >> ((W - shift) & (W-1))` — rather than reaching for `rotate_left`, which is the same
+  instruction but hides which fact is being relied on.
+* **A signed value converted to unsigned SO THAT the multiply wraps.** `_localtime64_s` does
+  `time -= MSVCRT__dstbias * TICKSPERSEC` with `__dstbias` negative; `(ULONGLONG)(-3600)` is
+  near 2^64, the multiply wraps mod 2^64, and subtracting the wrapped product is how the C
+  ADDS the hour. `wrapping_mul` + `wrapping_sub`, with a comment, because this one reads like
+  a bug until you follow it through.
+
+Two tells that this is the class you are in, rather than a real translation bug: the panic is
+*only* under debug, and the C's operand types make the operation reachable. Confirm by
 reading the C before touching anything — the same panic over a **signed** C counter, or one
 the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
@@ -3552,6 +3574,18 @@ array-vs-pointer class again. **Budget for a stack when un-shelving a path, and 
 N+1 as evidence that the fix for bug N was wrong.**
 
 ### Semantic rewrites that flip meaning
+- **A comparison whose two sides were DIFFERENT index expressions, collapsed to the same one.**
+  msvcrt's picture formatter counts the run of the current field with `while(format[0] ==
+  format[count]) count++;` — `MM` is one field of width 2, `dddd` is the long weekday. The
+  translation emitted `while *format_ptr.offset(count) == *format_ptr.offset(count)`, i.e. an
+  element compared to ITSELF: unconditionally true, so `count` ran away until the read left the
+  mapping. It reads as a plausible line and `cargo check` has nothing to say about it. The tell
+  is that the two operands of a C comparison are rarely the same expression — **grep a fresh
+  translation for `X == X`, `X != X` and `X < X` over any subscript or field path** (an
+  `x != x` NaN test is the one real exception, and it is on a float). Reached only through
+  `%c`/`%x`/`%X`, whose data lives in `locinfo->lc_time_curr` — a slot the harness left NULL
+  until time.c became a reference TU, so the first row that ever ran the line is the one that
+  found it.
 - **A SIDE EFFECT inside a call argument, hoisted out of the condition it lived in.** Rust has
   no `++`, so `f(*p++)` has to become two statements — and WHERE the second one lands is the
   whole meaning. msvcrt's demangler reads
@@ -4769,6 +4803,37 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   own diagnostics vanish into it silently. Generalises past stdio: any singleton the
   environment supplies (a lock table, a TLS slot, a process-wide mode) is one definition
   serving both sides until you make it two.
+- **A POSIX-backed shim that rejects a WINDOWS path separator deletes a whole search arm,
+  on both sides, green.** msvcrt-difftest's `GetFileAttributesW` backs onto `stat`, and its
+  wide→narrow converter passed `\` through untouched. That was invisible for four waves
+  because nothing in file.c BUILDS a path — it forwards whatever its caller handed it. The
+  first module that builds one exposed it instantly: `msvcrt_search_executable` joins a
+  `PATH` entry to a program name with a literal `'\\'`, so every candidate it produced
+  failed to `stat` and the entire `use_path` half of the function found nothing — the same
+  nothing on both sides, so every row over it reported MATCH. **A shim must accept every
+  input form the real API accepts, not just the ones the current caller happens to use**;
+  a real `GetFileAttributesW` takes both separators. Same family as the discarded-argument
+  entry above, arriving from the input side rather than the output side.
+- **Compare an environment-allocated identifier by its ROLE, never by its value.** The
+  process.c rows compare the `STARTUPINFOW` msvcrt hands CreateProcessW, and the three std
+  handles came back `(4, 14, 8)` on the subject and `(5, 14, 9)` on the reference for
+  behaviour that was identical and correct. Each side has its own CRT fd table caching OS
+  handles the host allocated at whatever moment that side first opened something, and the
+  subject runs first in every row, so its descriptors are always one lower. The contract
+  under test is not the number — it is WHICH END OF THE PIPE the child gets, which is the
+  only thing `_popen(cmd,"r")` and `_popen(cmd,"w")` disagree about. Resolve each recorded
+  handle against *its own side's* `_get_osfhandle(0/1/2)` and compare the resulting labels;
+  the raw comparison is a permanently red row that says nothing, and "fixing" it by dropping
+  the field silently deletes the mode-string branch from the suite.
+- **A code path that CALLS `exit` is a silent-green hazard, and the fix is in the
+  substrate.** msvcrt's `_P_OVERLAY` spawn ends in `_exit(0)`: on the success path the
+  harness process terminates, `cargo test` sees exit status 0, and the run is reported as a
+  pass having compared nothing after that line. Every `_exec*` row therefore presets the
+  spawn to FAIL — but "safe because nobody makes a mistake" is not safe when the failure
+  mode is a green tick. `_exit` belongs to exit.c, i.e. the layer BELOW the code under test,
+  so redirect it like any other environment entry point: to a terminator that prints what
+  happened and leaves with a non-zero code. Leaving it plain has a second cost — it binds to
+  the SUBJECT's `#[no_mangle]` copy, so the reference would be calling the code under test.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -4935,6 +5000,27 @@ family (inputs that overflow the C's own 80-byte scratch, after which both sides
 their own stack garbage). **Skip such a case by PREDICATE, computed from the same formatter the
 function uses, and print the count** — a hard-coded input list silently stops matching the C,
 and a silent cap reads as "the family is graded" when the wide cases were the ones dropped.
+
+**The host's TYPE MODEL is part of the miscompile, and it hides behind functions too small to
+suspect.** `clock()` is four lines — `return (systime.QuadPart - init_time) / (TICKSPERSEC /
+CLOCKS_PER_SEC);` — and BOTH of the things it names differ between msvcrt's headers and glibc's,
+neither difference being a compile error. `clock_t` is `__msvcrt_long` (32 bits) on Windows and
+64 on an LP64 host, which decides whether the division truncates — msvcrt's `clock()` wraps
+after 24.86 days and an unpinned reference does not. `CLOCKS_PER_SEC` is 1000 in msvcrt's
+`time.h` and 1000000 in glibc's, so an unpinned reference divides by 10 instead of 10000 and
+answers in MICROseconds: every row off by exactly 1000x. Derive the constant (the
+`gen_msvcrt_difftest_consts.py` probe, which `#undef`s glibc's first) and pin the type in the
+TU's prelude — but note the ORDERING trap: a `#define clock_t __msvcrt_long` that is in scope
+when glibc's `typedef __clock_t clock_t;` is parsed rewrites the TYPEDEF, which is a conflicting
+definition rather than a rename. Pull `<time.h>` in the prelude yourself, while the TU's own
+names are still hidden from it, and put the pin after.
+
+**The same width trap on the TEST side, where nothing checks you at all.** A row that reads an
+exported global through `__p__timezone()` must declare it `i32`, not `core::ffi::c_long` — that
+is 64 bits here, so the read pulls in the next global as its high half. It does not crash and
+it does not warn; it reports garbage, and the garbage differs between the two sides because
+their globals are laid out independently, so it looks exactly like a port bug. `__msvcrt_long`
+is 32 bits on every arch we build: spell it, and never reach for `c_long` in a harness.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a

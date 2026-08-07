@@ -131,6 +131,31 @@ typedef struct _STARTUPINFOA {
   HANDLE hStdInput, hStdOutput, hStdError;
 } STARTUPINFOA, *LPSTARTUPINFOA;
 
+/* The wide twin, for process.c.  Transcribed from
+ * sdk/include/psdk/processthreadsapi.h and checked field-for-field by
+ * msvcrt_crt_layout.h, like every other struct here.
+ *
+ * `cbReserved2`/`lpReserved2` are the pair that matters: msvcrt_spawn fills them
+ * from `msvcrt_create_io_inherit_block` (file.c) and CreateProcessW is what carries
+ * the CRT's fd table into the child.  Get their offsets wrong and processimpl.c's
+ * recorder reads padding, both sides record the same padding, and the whole
+ * inherit-block half of the spawn contract grades green having compared nothing. */
+typedef struct _STARTUPINFOW {
+  DWORD cb; wchar_t *lpReserved, *lpDesktop, *lpTitle;
+  DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars,
+        dwFillAttribute, dwFlags;
+  WORD wShowWindow, cbReserved2; BYTE *lpReserved2;
+  HANDLE hStdInput, hStdOutput, hStdError;
+} STARTUPINFOW, *LPSTARTUPINFOW;
+
+/* msvcrt_spawn's `_P_WAIT` arm calls `GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)`
+ * — the exit code is written into the PID field and THAT is what `_spawnv(_P_WAIT, …)`
+ * returns.  So the order of these four is program logic. */
+typedef struct _PROCESS_INFORMATION {
+  HANDLE hProcess, hThread;
+  DWORD dwProcessId, dwThreadId;
+} PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+
 /* Verbatim from sdk/include/ndk/rtltypes.h.  Note `Spare` is ULONG_PTR[1], not
  * DWORD[2] — file.c's MSVCRT_file_cs_debug stores a string ADDRESS in Spare[0],
  * so a 32-bit element makes that initializer a truncating conversion the host

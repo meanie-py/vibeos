@@ -199,4 +199,23 @@ _Static_assert(__builtin_offsetof(SECURITY_ATTRIBUTES, lpSecurityDescriptor) == 
 _Static_assert(__builtin_offsetof(SECURITY_ATTRIBUTES, bInheritHandle) == 16, "SECURITY_ATTRIBUTES.bInheritHandle moved");
 _Static_assert(sizeof(SECURITY_ATTRIBUTES) == 24, "SECURITY_ATTRIBUTES size drifted");
 
+/* STARTUPINFOW */
+_Static_assert(__builtin_offsetof(STARTUPINFOW, cb) == 0, "STARTUPINFOW.cb moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, lpReserved) == 8, "STARTUPINFOW.lpReserved moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, dwFlags) == 60, "STARTUPINFOW.dwFlags moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, wShowWindow) == 64, "STARTUPINFOW.wShowWindow moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, cbReserved2) == 66, "STARTUPINFOW.cbReserved2 moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, lpReserved2) == 72, "STARTUPINFOW.lpReserved2 moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdInput) == 80, "STARTUPINFOW.hStdInput moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdOutput) == 88, "STARTUPINFOW.hStdOutput moved");
+_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdError) == 96, "STARTUPINFOW.hStdError moved");
+_Static_assert(sizeof(STARTUPINFOW) == 104, "STARTUPINFOW size drifted");
+
+/* PROCESS_INFORMATION */
+_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, hProcess) == 0, "PROCESS_INFORMATION.hProcess moved");
+_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, hThread) == 8, "PROCESS_INFORMATION.hThread moved");
+_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, dwProcessId) == 16, "PROCESS_INFORMATION.dwProcessId moved");
+_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, dwThreadId) == 20, "PROCESS_INFORMATION.dwThreadId moved");
+_Static_assert(sizeof(PROCESS_INFORMATION) == 24, "PROCESS_INFORMATION size drifted");
+
 #endif /* MSVCRT_DIFFTEST_CRT_LAYOUT_H */

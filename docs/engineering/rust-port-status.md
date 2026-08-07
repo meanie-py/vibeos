@@ -189,6 +189,49 @@ the final code unit's high half out of bounds and PATH search silently matched n
 every `use_path=1` spawn; and `_wsystem`'s `L" /c "` was plain ASCII cast to `*const wchar_t`.
 Both are now caught by `scan_wide_literals.py` — see the field manual.
 
+**GRADED 2026-08-07 — reference TU #12, 9,101 rows, and process.rs came back CLEAN.**
+`tests/process.rs` over `processimpl.c`, a RECORDING `CreateProcessW`. That shape is the whole
+design: process.c never creates a process, it MARSHALS — argv array or `...` list into one
+command line, envp array into a double-NUL block, a bare name into a full path via `PATH` and
+four extensions, a `_P_*` mode into creation flags plus a wait-or-return decision — and then
+calls Win32. A harness that compared only return values would grade two `-1`s and report green
+over the entire module, so every row compares the RECORDED CALL: application name, command
+line, the environment block including its embedded NULs, creation flags, `bInheritHandles`, and
+the `STARTUPINFOW` fields msvcrt fills (including the fd-inherit block file.c builds).
+
+Three things had to be solved before a row could exist.
+
+* **The two `va_list` models never meet.** Sixteen exports are WINAPIV and the subject cannot
+  supply them — they are C trampolines over `_v`-prefixed Rust twins that walk a flat `*mut u8`,
+  and this host's `va_list` is a SysV register-save-area struct. The scanf TU solved its version
+  by compiling the reference against refstub_printf's flat `<stdarg.h>`; that FAILS here,
+  because these bodies genuinely start their own lists and the flat header's
+  `va_start(ap, last)` is `ap = NULL`. So the reference is called with real host varargs, the
+  subject's twin is handed the same logical arguments hand-packed into 8-byte slots, and what
+  is compared is the recorded spawn.
+* **`_exec*` cannot be graded on success, and that is a finding rather than a gap.** They all
+  pass `_P_OVERLAY`, whose arm is `_exit(0)` — the harness would terminate mid-row and exit
+  ZERO. Exec rows preset the spawn to FAIL, which still grades everything through the errno
+  mapping; and `_exit` is redirected to a terminator that exits 70 with a message, so the
+  silent-green can never happen by accident.
+* **The three std handles are compared as ROLES, not numbers.** `_popen`'s only real decision
+  is which end of the pipe the child gets, and the two sides' fd tables cache different OS
+  handles for the same CRT descriptor — `(4, 14, 8)` vs `(5, 14, 9)` for identical behaviour.
+
+Nothing in process.rs diverged. Two findings landed in the harness instead, both of the class
+where both sides fail identically and the row still says MATCH: fileimpl.c's path converter
+passed `\` through to `stat`, so **every** `use_path` search found nothing on both sides; and
+the four `msvcrt.h` codepage inlines that `msvcrt_argvtos_aw`/`msvcrt_valisttos_aw` are built
+out of were a hand copy in `refstub/msvcrt_file_prelude.h` claiming to be "VERBATIM" with
+nothing checking it — build.rs now diffs it against the genuine header. Both are in the field
+manual under §9.73.
+
+`STARTUPINFOW` and `PROCESS_INFORMATION` joined `msvcrt_crt_layout.h`'s guarded set. The second
+is not bookkeeping: msvcrt_spawn's `_P_WAIT` arm calls
+`GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)` — it writes the exit code into the PID field
+and returns THAT — so the field order is program logic, and a pin asserts the returned value is
+the exit code and not the pid.
+
 **GRADED 2026-08-07 — reference TU #10, 2,247 rows, and every finding was in the ORACLE.**
 `tests/math.rs` drives the 37 exports whose reference twin exists on the host (the rest —
 `_isnan`, `_finite`, `abs`, `div`, `ldexp`, … — are `#[cfg(any())]` here because cnt-rust's
@@ -287,11 +330,40 @@ so have no Rust counterpart: `_get_dstbias`/`_get_timezone`/`_get_daylight` (`#i
 OBJECT is the authority on that, not the source's apparent shape — the same rule wave 18
 used for file.c.
 
-**PORTED, NOT YET GRADED**, and that is the honest status: `msvcrt-difftest` has no time.c
-rows, so what has been proved is three-arch `cargo check`, a green `difftest` (nothing
-regressed), and boot. Same standing file.c had after wave 17. What the grading needs is
-already in the tree — see the substrate below — so the rows are the next step, not a new
-foundation.
+**GRADED 2026-08-07 — reference TU #11, 375,839 rows, and one REAL PORT BUG.** All 52
+exports, over five zone settings x 18 boundary instants, plus the `TZ`-string branch that no
+preset can reach and a three-hourly sweep of 2024 in every zone (which finds a transition
+disagreement without depending on knowing where the transitions are).
+
+`strftime("%c")` HUNG. msvcrt's picture formatter counts the run of the current field with
+`while(format[0] == format[count]) count++;`; the translation emitted `format[count] ==
+format[count]` — an element compared to itself, so `count` ran away until the read left the
+mapping. It reaches every `%c`, `%x` and `%X`, i.e. every locale-formatted date and time in
+the DLL. It survived the flip because those three conversions read
+`locinfo->lc_time_curr`, and that slot was NULL in both sides' harness locinfo until this
+lane filled it — so the first row that ever executed the line is the one that found it.
+Three more were debug-profile checked-arithmetic aborts where the C relies on hardware
+wraparound (`_difftime32/64`'s subtraction, `_localtime64_s`'s deliberate
+signed-to-unsigned multiply); `vibeos-cli difftest` builds `--release`, so that class is
+invisible to the gate and only a plain `cargo test` shows it. Detail in the field manual
+under "Faithful C unsigned underflow" and "Semantic rewrites that flip meaning".
+
+Everything else matched, including the two things this file exists to get wrong: the
+half-hour bias (India) and the year-wrapping southern-hemisphere DST window (Sydney).
+
+Two pieces of substrate arrived with the rows. `cloc_time_data` — the C locale's 43 calendar
+strings — is lifted out of locale.c by build.rs into a TU of its own and shared by both
+sides, on the same terms as `MSVCRT__ctype`: it is what the locale IS, neither side's code
+writes it, and what the rows grade is time.c's INDEXING into it. And `__lc_time_data` stopped
+being a bare forward declaration in `locale_layout.h`; `ref_integrity` now checks all six of
+its offsets and its size against msvcrt-sys, because the wide union arm nothing reads at
+`_MSVCR_VER=0` is 344 bytes that everything after it depends on.
+
+Two host-type-model traps were pinned in the reference TU's prelude, both in `clock()`:
+`clock_t` is 32 bits on Windows and 64 here (so msvcrt's `clock()` wraps after 24.86 days and
+an unpinned reference does not), and `CLOCKS_PER_SEC` is 1000 in msvcrt's `time.h` against
+glibc's 1000000 (so an unpinned reference answers in microseconds — every row off by exactly
+1000x). The constant is derived by `gen_msvcrt_difftest_consts.py`, not transcribed.
 
 **`timeimpl.c` — the Win32 clock and zone layer, built because the SUBJECT needed it.**
 Wiring time.rs into the harness revealed that nothing there answered `GetTimeZoneInformation`,
@@ -317,7 +389,11 @@ defines it that is a duplicate-symbol failure. The stub keeps its job and change
 `ref__time64` (file prelude stage 4.5). This is the standing tax on wiring a new module into
 the harness, and it is also the seam where time.c becomes reference TU #8: that stage points
 at time.c's own body and the stub is deleted, exactly as errno.c's arrival deleted the
-hand-written `msvcrt_set_errno`.
+hand-written `msvcrt_set_errno`. **That seam is closed as of 2026-08-07** (it turned out to
+be reference TU #11, not #8 — undname.c, misc.c and math.c landed first). The stub is gone
+and `ref__time64` is time.c's genuine body, which is a real upgrade for file.c's rows too:
+`_wutime`/`_futime` used to stamp modification times from the HARNESS's idea of "now" and now
+read the frozen instant the test set.
 
 **Two limits stated rather than papered over.** `asctime`'s `_snprintf` is answered by the
 harness over the host's `vsnprintf` (subjectimpl.c) — the shipping name is a `va_start`

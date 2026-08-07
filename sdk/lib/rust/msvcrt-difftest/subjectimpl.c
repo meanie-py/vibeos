@@ -119,6 +119,8 @@ void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
  *                                              msvcrt's genuine tables, both sides.
  *   cloc_clmap / cloc_cumap                    lifted from locale.c by build.rs ->
  *                                              identical bytes on both sides.
+ *   cloc_time_data                             lifted from locale.c by build.rs -> ONE
+ *                                              object, both `lc_time_curr`s point at it.
  *
  * That split is the point.  Data we supply to BOTH sides can never be caught by a
  * differential test — a mistyped byte makes both sides wrong the same way and
@@ -127,6 +129,10 @@ void subj_invalid_pmt_reset(void) { subj_invalid_pmt_calls = 0; }
  * ------------------------------------------------------------------ */
 #include "locale_layout.h"
 #include "cloc_tables.h"   /* generated: cloc_clmap[256], cloc_cumap[256] */
+
+/* Defined in the generated cloc_time_data TU (build.rs), not here — one object for both
+ * sides, exactly like MSVCRT__ctype above. */
+extern __lc_time_data cloc_time_data;
 
 extern unsigned short MSVCRT__ctype[257];    /* ctype.c — shared, un-namespaced */
 extern unsigned short MSVCRT__wctype[257];   /* ctype.c — shared, un-namespaced */
@@ -216,6 +222,10 @@ struct threadlocaleinfostruct *get_locinfo(void)
         subj_locinfo.pctype      = MSVCRT__ctype + 1;
         subj_locinfo.pclmap      = cloc_clmap;
         subj_locinfo.pcumap      = cloc_cumap;
+        /* The C locale's calendar strings, and the SAME object the reference points at —
+         * third entry in the shared-DATA list above, on the same terms as the ctype and
+         * case tables. What strftime rows grade is time.c's INDEXING into it. */
+        subj_locinfo.lc_time_curr = &cloc_time_data;
     }
     return (struct threadlocaleinfostruct *)&subj_locinfo;
 }
@@ -381,6 +391,24 @@ size_t subj_off_mbcinfo_mbctype(void)      { return offsetof(rl_threadmbcinfo, m
 size_t subj_off_mbcinfo_mbcasemap(void)    { return offsetof(rl_threadmbcinfo, mbcasemap); }
 size_t subj_sizeof_mbcinfo(void)           { return sizeof(rl_threadmbcinfo); }
 size_t subj_off_locale_mbcinfo(void)       { return offsetof(rl_locale_t, mbcinfo); }
+
+/* ── time (wave 35) ────────────────────────────────────────────────────────
+ *
+ * `strftime`/`wcsftime`/`_Strftime` reach every month name, weekday name and picture
+ * string through `locinfo->lc_time_curr`, and the shipping Rust reads that struct through
+ * msvcrt-sys's bindgen of the REAL layout while the reference reads locale_layout.h's
+ * transcription. The two halves of the union are the risk: `str` and `wstr` are 43
+ * pointers each, so dropping the wide arm — which nothing reads at _MSVCR_VER=0 — would
+ * move `data` by 344 bytes and cost nothing until something touched it. Verified rather
+ * than assumed, exactly like threadmbcinfo above. */
+size_t subj_off_locinfo_lctimecurr(void) { return offsetof(rl_threadlocinfo, lc_time_curr); }
+size_t subj_off_lctd_str(void)      { return offsetof(__lc_time_data, str); }
+size_t subj_off_lctd_lcid(void)     { return offsetof(__lc_time_data, lcid); }
+size_t subj_off_lctd_unk(void)      { return offsetof(__lc_time_data, unk); }
+size_t subj_off_lctd_refcount(void) { return offsetof(__lc_time_data, refcount); }
+size_t subj_off_lctd_wstr(void)     { return offsetof(__lc_time_data, wstr); }
+size_t subj_off_lctd_data(void)     { return offsetof(__lc_time_data, data); }
+size_t subj_size_lctd(void)         { return sizeof(__lc_time_data); }
 
 /* ── wave 14b: the Rust printf ENGINE's environment ─────────────────────────
  *
