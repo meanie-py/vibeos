@@ -159,8 +159,9 @@ pub use crate::types::{
     GetObjectW as GetObject, GetOpenFileNameW as GetOpenFileName,
     GetSystemDirectoryW as GetSystemDirectory, GetTextMetricsW as GetTextMetrics,
     GetWindowsDirectoryW as GetWindowsDirectory, IsDialogMessageW as IsDialogMessage,
-    LoadCursorW as LoadCursor, LoadLibraryExW as LoadLibraryEx, LoadMenuW as LoadMenu,
-    LoadStringW as LoadString, MessageBoxW as MessageBox, PathCombineW as PathCombine,
+    FindResourceW as FindResource, LoadCursorW as LoadCursor, LoadImageW as LoadImage,
+    LoadLibraryExW as LoadLibraryEx, LoadMenuW as LoadMenu,
+    LoadStringW as LoadString, MessageBoxW as MessageBox, lstrcpynW as lstrcpyn, PathCombineW as PathCombine,
     PathParseIconLocationW as PathParseIconLocation,
     PathRemoveExtensionW as PathRemoveExtension,
     PathUnExpandEnvStringsW as PathUnExpandEnvStrings, PeekMessageW as PeekMessage,
@@ -308,6 +309,9 @@ pub const PSN_APPLY: UINT = crate::types::PSN_APPLY as UINT;
 pub const PSN_KILLACTIVE: UINT = crate::types::PSN_KILLACTIVE as UINT;
 pub const PSN_SETACTIVE: UINT = crate::types::PSN_SETACTIVE as UINT;
 pub const LVN_ITEMCHANGED: UINT = crate::types::LVN_ITEMCHANGED as UINT;
+pub const LVN_DELETEITEM: UINT = crate::types::LVN_DELETEITEM as UINT;
+pub const TVN_KEYDOWN: UINT = crate::types::TVN_KEYDOWN as UINT;
+pub const LVN_KEYDOWN: UINT = crate::types::LVN_KEYDOWN as UINT;
 // ChangeDisplaySettingsEx returns a LONG and winuser.h:190-196 spells this family as plain
 // signed integers, but bindgen splits it: the two non-negative members come out `u32` and the
 // five negative ones `i32`, so a `match` over them cannot type-check at all. One family, one
@@ -447,6 +451,57 @@ pub use crate::types::{
 // casting a fixed VA, so no island carries it. Same spelling kernel32-rust uses.
 pub const SharedUserData: *mut KUSER_SHARED_DATA = 0x7FFE_0000 as *mut KUSER_SHARED_DATA;
 
+// commctrl.h:130-131 `#define NM_CLICK (NM_FIRST-2)` / `NM_DBLCLK (NM_FIRST-3)`. bindgen emits
+// NM_FIRST but not the names derived from it, and the subtraction wraps in u32 exactly as the
+// preprocessor's does -- same UINT family as NM_CUSTOMDRAW above.
+pub const NM_CLICK: UINT = NM_FIRST.wrapping_sub(2);
+pub const NM_DBLCLK: UINT = NM_FIRST.wrapping_sub(3);
+
+/// strsafe.h `StringCchCopyA` — the NARROW half. `STRSAFEAPI` is `static __inline`, so no
+/// object file in the tree defines it, and strsafe-rust ports only the wide entry points.
+/// smbios.c:768 is the single caller. Truncates and NUL-terminates exactly as strsafe does,
+/// and returns STRSAFE_E_INSUFFICIENT_BUFFER when it had to.
+#[inline]
+pub unsafe fn StringCchCopyA(pszDest: *mut c_char, cchDest: usize, pszSrc: *const c_char) -> HRESULT {
+    if cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let mut i = 0usize;
+    while i + 1 < cchDest && *pszSrc.add(i) != 0 {
+        *pszDest.add(i) = *pszSrc.add(i);
+        i += 1;
+    }
+    *pszDest.add(i) = 0;
+    if *pszSrc.add(i) != 0 {
+        return STRSAFE_E_INSUFFICIENT_BUFFER;
+    }
+    0
+}
+
+// general.c:580 `PCWSTR pwszVersion = L" " TEXT(KERNEL_VERSION_RC);` -- a C string-literal
+// CONCATENATION whose second half is buildno.h's per-arch build string, so it is not a literal
+// in the Rust source and `w!` cannot see it. Widen the island's bytes at compile time instead.
+// buildno.h already ends the macro with a `\0`, so the extra element here is C's own implicit
+// terminator, and wcslen sees the same length the C does.
+#[macro_export]
+macro_rules! VERSION_WITH_LEADING_SPACE {
+    () => {{
+        const SRC: &[u8] = $crate::prelude::KERNEL_VERSION_RC;
+        static OUT: [u16; SRC.len() + 1] = {
+            let mut out = [0u16; SRC.len() + 1];
+            out[0] = b' ' as u16;
+            let mut i = 0;
+            while i < SRC.len() {
+                out[i + 1] = SRC[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        OUT.as_ptr()
+    }};
+}
+pub use crate::VERSION_WITH_LEADING_SPACE;
+
 // ================= sibling-module functions ===================================================
 // precomp.h declares these; each is DEFINED in another of the 12 translated modules, and the C
 // reaches them by plain name because a TU-crossing call needs no more than the prototype. In
@@ -454,7 +509,7 @@ pub const SharedUserData: *mut KUSER_SHARED_DATA = 0x7FFE_0000 as *mut KUSER_SHA
 // as desk-rust does it.
 pub use crate::sysdm::advanced::AdvancedPageProc;
 pub use crate::sysdm::environment::EnvironmentDlgProc;
-pub use crate::sysdm::general::GeneralPageProc;
+pub use crate::sysdm::general::{GeneralPageProc, ShowLastWin32Error};
 pub use crate::sysdm::hardprof::HardProfDlgProc;
 pub use crate::sysdm::hardware::HardwarePageProc;
 pub use crate::sysdm::licence::LicenceDlgProc;
@@ -626,9 +681,20 @@ pub unsafe fn IRegTreeOptions_Release<T>(p: *mut T) -> ULONG {
 // broadcast helper.
 extern "system" {
     pub fn CoTaskMemFree(pv: LPVOID);
+    pub fn CoInitialize(pvReserved: LPVOID) -> HRESULT;
+    pub fn CoCreateInstance(
+        rclsid: *const IID,
+        pUnkOuter: *mut c_void,
+        dwClsContext: DWORD,
+        riid: *const IID,
+        ppv: *mut *mut c_void,
+    ) -> HRESULT;
     pub fn CoUninitialize();
     pub fn SHSendMessageBroadcastW(uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 }
+// wtypesbase.h CLSCTX_INPROC_SERVER — an enum MEMBER, and bindgen does not emit the bare name
+// for one, so the island has the type but not this. Value is fixed by the COM ABI.
+pub const CLSCTX_INPROC_SERVER: DWORD = 0x1;
 
 // winuser.h `#define DialogBox(i,t,p,f) DialogBoxParam(i,t,p,f,0)` and prsht.h
 // `#define PropSheet_HwndToIndex(hDlg,hwnd) SNDMSG(hDlg,PSM_HWNDTOINDEX,(WPARAM)hwnd,0)`.

@@ -516,7 +516,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     let mut bTrimProduct: u8;
     let mut bTrimFamily: u8;
     let mut bGenericName: u8;
-    let mut bRemove: u8;
+    let mut bRemove: u8 = 0;
     let mut i: u32;
     let mut j: PWSTR;
 
@@ -638,7 +638,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     }
 
     for i in 0..25 {
-        if wcsstr(dev.as_ptr(), LongNames[i as usize].pwLongName) == dev.as_ptr() {
+        if wcsstr(dev.as_mut_ptr(), LongNames[i as usize].pwLongName) == dev.as_mut_ptr() {
             StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
             StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, dev.as_ptr());
             StringCchCopyW(dev.as_mut_ptr(), (_countof!(dev)) as usize, pBuf);
@@ -667,16 +667,16 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
                  strcmp(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad\0".as_ptr() as PCSTR) == 0)
             {
                 DmiStrings[(SYS_FAMILY) as usize] = DmiStrings[(SYS_VERSION) as usize];
-                DmiStrings[(SYS_VERSION) as usize] = core::ptr::null();
+                DmiStrings[(SYS_VERSION) as usize] = core::ptr::null_mut();
             } else {
-                StringCchCopyA(tmpstr.as_mut_ptr(), _countof!(tmpstr), DmiStrings[(SYS_VERSION) as usize]);
+                StringCchCopyA(tmpstr.as_mut_ptr(), (_countof!(tmpstr)) as usize, DmiStrings[(SYS_VERSION) as usize]);
                 _strupr(tmpstr.as_mut_ptr());
             }
         }
 
         if !DmiStrings[(SYS_VERSION) as usize].is_null() &&
-            !strcmp(tmpstr.as_mut_ptr(), b" \0".as_ptr() as PCSTR).is_null() &&
-            !strcmp(tmpstr.as_mut_ptr(), b"LENOVO\0".as_ptr() as PCSTR).is_null() &&
+            (strcmp(tmpstr.as_ptr(), b" \0".as_ptr() as PCSTR) == 0) &&
+            (strcmp(tmpstr.as_ptr(), b"LENOVO\0".as_ptr() as PCSTR) == 0) &&
             strstr(tmpstr.as_mut_ptr(), b"LENOVO   \0".as_ptr() as PCSTR).is_null() &&
             strstr(tmpstr.as_mut_ptr(), b"LENOVO PRODUCT\0".as_ptr() as PCSTR).is_null() &&
             strstr(tmpstr.as_mut_ptr(), b"LENOVOPRODUCT\0".as_ptr() as PCSTR).is_null() &&
@@ -692,7 +692,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
             GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
 
-        if wcsstr(dev.as_ptr(), w!("Lenovo-") as PCWSTR) == dev.as_ptr() {
+        if wcsstr(dev.as_mut_ptr(), w!("Lenovo-")) == dev.as_mut_ptr() {
             *dev.as_mut_ptr().offset(6 as isize) = b' ' as u16;
         }
 
@@ -734,7 +734,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
     }
     if wcslen(ven.as_ptr()) == 0 &&
-        wcsstr(dev.as_ptr(), w!("MS-") as PCWSTR) == dev.as_ptr()
+        wcsstr(dev.as_mut_ptr(), w!("MS-")) == dev.as_mut_ptr()
     {
         StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, w!("MSI") as PCWSTR);
     }
@@ -742,7 +742,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     TrimPunctuation(ven.as_mut_ptr());
     TrimPunctuation(dev.as_mut_ptr());
 
-    if wcsistr(dev.as_ptr(), ven.as_ptr()) == dev.as_ptr() ||
+    if wcsistr(dev.as_mut_ptr(), ven.as_mut_ptr()) == dev.as_mut_ptr() ||
         (wcscmp(ven.as_ptr(), w!("ASUS") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!("ASUS") as PCWSTR).is_null()) ||
         (wcscmp(ven.as_ptr(), w!("HP") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!(" by HP") as PCWSTR).is_null()) ||
         (wcscmp(ven.as_ptr(), w!("INTEL") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!(" INTEL") as PCWSTR).is_null())
@@ -760,7 +760,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
             }
         }
         StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
-        AppendSystemFamily(pBuf, cchBuf, DmiStrings.as_mut_ptr(), dev.as_mut_ptr());
+        AppendSystemFamily(pBuf, cchBuf, DmiStrings.as_mut_ptr() as *mut PCSTR, dev.as_mut_ptr());
         if wcslen(pBuf) > 0 && wcslen(dev.as_ptr()) > 0 {
             StringCchCatW(pBuf, cchBuf, w!(" ") as PCWSTR);
         }

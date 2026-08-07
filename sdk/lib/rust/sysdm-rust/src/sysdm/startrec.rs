@@ -140,13 +140,13 @@ unsafe extern "C" fn ReadFreeldrSection(hInf: HINF, szSectionName: *mut WCHAR) -
 
         if _wcsnicmp(
             szName.as_ptr(),
-            b"B\0o\0o\0t\0T\0y\0p\0e\0\0\0".as_ptr() as *const WCHAR,
+            w!("BootType") as *const WCHAR,
             8,
         ) == 0
         {
             if _wcsnicmp(
                 szValue.as_ptr(),
-                b"R\0e\0a\0c\0t\0O\0S\0\0\0".as_ptr() as *const WCHAR,
+                w!("ReactOS") as *const WCHAR,
                 7,
             ) == 0
             {
@@ -156,14 +156,14 @@ unsafe extern "C" fn ReadFreeldrSection(hInf: HINF, szSectionName: *mut WCHAR) -
             }
         } else if _wcsnicmp(
             szName.as_ptr(),
-            b"S\0y\0s\0t\0e\0m\0P\0a\0t\0h\0\0\0".as_ptr() as *const WCHAR,
+            w!("SystemPath") as *const WCHAR,
             10,
         ) == 0
         {
             wcscpy((*pRecord).szBootPath.as_mut_ptr(), szValue.as_ptr());
         } else if _wcsnicmp(
             szName.as_ptr(),
-            b"O\0p\0t\0i\0o\0n\0s\0\0\0".as_ptr() as *const WCHAR,
+            w!("Options") as *const WCHAR,
             7,
         ) == 0
         {
@@ -189,8 +189,8 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
 
     if SetupFindFirstLineW(
         hInf,
-        b"F\0R\0E\0E\0L\0O\0A\0D\0E\0R\0\0\0".as_ptr() as *const WCHAR,
-        b"D\0e\0f\0a\0u\0l\0t\0O\0S\0\0\0".as_ptr() as *const WCHAR,
+        w!("FREELOADER") as *const WCHAR,
+        w!("DefaultOS") as *const WCHAR,
         &mut InfContext,
     ) == 0
     {
@@ -210,8 +210,8 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
 
     if SetupFindFirstLineW(
         hInf,
-        b"F\0R\0E\0E\0L\0O\0A\0D\0E\0R\0\0\0".as_ptr() as *const WCHAR,
-        b"T\0i\0m\0e\0O\0u\0t\0\0\0".as_ptr() as *const WCHAR,
+        w!("FREELOADER") as *const WCHAR,
+        w!("TimeOut") as *const WCHAR,
         &mut InfContext,
     ) == 0
     {
@@ -229,7 +229,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
 
     if SetupFindFirstLineW(
         hInf,
-        b"O\0p\0e\0r\0a\0t\0i\0n\0g\0 \0S\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as *const WCHAR,
+        w!("Operating Systems") as *const WCHAR,
         core::ptr::null(),
         &mut InfContext,
     ) == 0
@@ -269,7 +269,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
                 0 as WPARAM,
                 szValue.as_ptr() as LPARAM,
             );
-            if lResult != CB_ERR {
+            if lResult != (CB_ERR) as LRESULT {
                 SendDlgItemMessageW(
                     hwndDlg,
                     (IDC_STRECOSCOMBO) as i32,
@@ -301,7 +301,7 @@ unsafe extern "C" fn LoadFreeldrSettings(hInf: HINF, hwndDlg: HWND) -> INT {
         (-(1 as isize)) as WPARAM,
         szDefaultOs.as_ptr() as LPARAM,
     );
-    if lResult != CB_ERR {
+    if lResult != (CB_ERR) as LRESULT {
         SendDlgItemMessageW(
             hwndDlg,
             (IDC_STRECOSCOMBO) as i32,
@@ -415,7 +415,7 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
             }
 
             lResult = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_ADDSTRING, 0 as WPARAM, szValue.as_ptr() as LPARAM);
-            if lResult != CB_ERR {
+            if lResult != (CB_ERR) as LRESULT {
                 SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_SETITEMDATA, lResult as WPARAM, pRecord as LPARAM);
             } else {
                 HeapFree(GetProcessHeap(), 0, pRecord as *mut core::ffi::c_void);
@@ -428,7 +428,7 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     }
 
     lResult = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_FINDSTRING, 0 as WPARAM, szDefaultOS.as_ptr() as LPARAM);
-    if lResult != CB_ERR {
+    if lResult != (CB_ERR) as LRESULT {
         SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_SETCURSEL, lResult as WPARAM, 0 as LPARAM);
     }
 
@@ -446,14 +446,14 @@ unsafe extern "C" fn DeleteBootRecords(hwndDlg: HWND) {
     let mut pRecord: PBOOTRECORD;
 
     lIndex = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_GETCOUNT, 0 as WPARAM, 0 as LPARAM);
-    if lIndex == CB_ERR {
+    if lIndex == (CB_ERR) as LPARAM {
         return;
     }
 
     index = 0;
     while index < lIndex as i32 {
         pRecord = SendDlgItemMessageW(hwndDlg, (IDC_STRECOSCOMBO) as i32, CB_GETITEMDATA, index as WPARAM, 0 as LPARAM) as PBOOTRECORD;
-        if pRecord as INT_PTR != CB_ERR {
+        if pRecord as INT_PTR != (CB_ERR) as LRESULT {
             HeapFree(GetProcessHeap(), 0, pRecord as *mut core::ffi::c_void);
         }
         index += 1;
@@ -468,11 +468,11 @@ unsafe extern "C" fn LoadOSList(hwndDlg: HWND, pStartInfo: PSTARTINFO) -> LRESUL
 
     dwBufSize = GetSystemDrive(&mut szSystemDrive);
     if dwBufSize == 0 {
-        return FALSE;
+        return (FALSE) as LRESULT;
     }
 
     wcscpy((*pStartInfo).szFreeldrIni.as_mut_ptr(), szSystemDrive);
-    wcscat((*pStartInfo).szFreeldrIni.as_mut_ptr(), w!("\\freeldr.ini").as_ptr());
+    wcscat((*pStartInfo).szFreeldrIni.as_mut_ptr(), w!("\\freeldr.ini"));
 
     if PathFileExistsW((*pStartInfo).szFreeldrIni.as_ptr()) != 0 {
         HeapFree(GetProcessHeap(), 0, szSystemDrive as *mut core::ffi::c_void);
@@ -487,13 +487,13 @@ unsafe extern "C" fn LoadOSList(hwndDlg: HWND, pStartInfo: PSTARTINFO) -> LRESUL
             LoadFreeldrSettings(hInf, hwndDlg);
             SetupCloseInfFile(hInf);
             (*pStartInfo).iFreeLdrIni = 1;
-            return TRUE;
+            return (TRUE) as LRESULT;
         }
-        return FALSE;
+        return (FALSE) as LRESULT;
     }
 
     wcscpy((*pStartInfo).szFreeldrIni.as_mut_ptr(), szSystemDrive);
-    wcscat((*pStartInfo).szFreeldrIni.as_mut_ptr(), w!("\\boot.ini").as_ptr());
+    wcscat((*pStartInfo).szFreeldrIni.as_mut_ptr(), w!("\\boot.ini"));
 
     HeapFree(GetProcessHeap(), 0, szSystemDrive as *mut core::ffi::c_void);
 
@@ -509,13 +509,13 @@ unsafe extern "C" fn LoadOSList(hwndDlg: HWND, pStartInfo: PSTARTINFO) -> LRESUL
             LoadBootSettings(hInf, hwndDlg);
             SetupCloseInfFile(hInf);
             (*pStartInfo).iFreeLdrIni = 2;
-            return TRUE;
+            return (TRUE) as LRESULT;
         }
 
-        return FALSE;
+        return (FALSE) as LRESULT;
     }
 
-    return FALSE;
+    return (FALSE) as LRESULT;
 }
 unsafe extern "C" fn SetCrashDlgItems(hwnd: HWND, pStartInfo: *mut STARTINFO) {
     if (*pStartInfo).dwCrashDumpEnabled == 0 {
@@ -783,7 +783,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                 HEAP_ZERO_MEMORY,
                 (core::mem::size_of::<STARTINFO>()) as SIZE_T,
             ) as PSTARTINFO;
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pStartInfo as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, pStartInfo as LONG_PTR);
 
             LoadRecoveryOptions(hwndDlg, pStartInfo);
             SetRecoveryTimeout(hwndDlg, 0);
@@ -799,7 +799,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDC_STRRECEDIT => {
                     ShellExecuteW(
-                        0,
+                        core::ptr::null_mut(),
                         w!("open") as *const u16,
                         w!("notepad") as *const u16,
                         (*pStartInfo).szFreeldrIni.as_ptr(),
@@ -815,7 +815,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
-                    ) == BST_CHECKED
+                    ) == (BST_CHECKED) as LPARAM
                     {
                         iTimeout = SendDlgItemMessage(
                             hwndDlg,
@@ -836,9 +836,9 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         0 as WPARAM,
                         0 as LPARAM,
                     );
-                    if lResult == CB_ERR {
+                    if lResult == (CB_ERR) as LRESULT {
                         DeleteBootRecords(hwndDlg);
-                        return TRUE;
+                        return (TRUE) as INT_PTR;
                     }
 
                     pRecord = SendDlgItemMessage(
@@ -849,7 +849,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         0 as LPARAM,
                     ) as PBOOTRECORD;
 
-                    if pRecord as INT_PTR != CB_ERR {
+                    if pRecord as INT_PTR != (CB_ERR) as LRESULT {
                         if (*pStartInfo).iFreeLdrIni == 1 {
                             WritePrivateProfileStringW(
                                 w!("FREELOADER") as *const u16,
@@ -884,12 +884,12 @@ pub unsafe extern "system" fn StartRecDlgProc(
                     }
 
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_STRECLIST => {
@@ -899,7 +899,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
-                    ) == BST_CHECKED
+                    ) == (BST_CHECKED) as LPARAM
                     {
                         SetTimeout(hwndDlg, 30);
                     } else {
@@ -914,7 +914,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                         BM_GETCHECK,
                         0 as WPARAM,
                         0 as LPARAM,
-                    ) == BST_CHECKED
+                    ) == (BST_CHECKED) as LPARAM
                     {
                         SetRecoveryTimeout(hwndDlg, 30);
                     } else {
@@ -933,7 +933,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                             0 as WPARAM,
                             0 as LPARAM,
                         );
-                        if lResult != CB_ERR && lResult != (*pStartInfo).dwCrashDumpEnabled as LRESULT {
+                        if lResult != (CB_ERR) as LRESULT && lResult != (*pStartInfo).dwCrashDumpEnabled as LRESULT {
                             if (*pStartInfo).dwCrashDumpEnabled == 1
                                 || (*pStartInfo).dwCrashDumpEnabled == 2
                             {
@@ -967,7 +967,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 
 

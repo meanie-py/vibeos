@@ -3,29 +3,9 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static mut BugLink: [TCHAR; 27] = [
-    b'h' as TCHAR, b't' as TCHAR, b't' as TCHAR, b'p' as TCHAR, b':' as TCHAR,
-    b'/' as TCHAR, b'/' as TCHAR, b'j' as TCHAR, b'i' as TCHAR, b'r' as TCHAR,
-    b'a' as TCHAR, b'.' as TCHAR, b'r' as TCHAR, b'e' as TCHAR, b'a' as TCHAR,
-    b'c' as TCHAR, b't' as TCHAR, b'o' as TCHAR, b's' as TCHAR, b'.' as TCHAR,
-    b'o' as TCHAR, b'r' as TCHAR, b'g' as TCHAR, b'/' as TCHAR, b'\0' as TCHAR,
-    0, 0
-];
-
-pub static mut ReportAsWorkstationKey: [TCHAR; 62] = [
-    b'S' as TCHAR, b'Y' as TCHAR, b'S' as TCHAR, b'T' as TCHAR, b'E' as TCHAR,
-    b'M' as TCHAR, b'\\' as TCHAR, b'C' as TCHAR, b'u' as TCHAR, b'r' as TCHAR,
-    b'r' as TCHAR, b'e' as TCHAR, b'n' as TCHAR, b't' as TCHAR, b'C' as TCHAR,
-    b'o' as TCHAR, b'n' as TCHAR, b't' as TCHAR, b'r' as TCHAR, b'o' as TCHAR,
-    b'l' as TCHAR, b'S' as TCHAR, b'e' as TCHAR, b't' as TCHAR, b'\\' as TCHAR,
-    b'C' as TCHAR, b'o' as TCHAR, b'n' as TCHAR, b't' as TCHAR, b'r' as TCHAR,
-    b'o' as TCHAR, b'l' as TCHAR, b'\\' as TCHAR, b'R' as TCHAR, b'e' as TCHAR,
-    b'a' as TCHAR, b'c' as TCHAR, b't' as TCHAR, b'O' as TCHAR, b'S' as TCHAR,
-    b'\\' as TCHAR, b'S' as TCHAR, b'e' as TCHAR, b't' as TCHAR, b't' as TCHAR,
-    b'i' as TCHAR, b'n' as TCHAR, b'g' as TCHAR, b's' as TCHAR, b'\\' as TCHAR,
-    b'V' as TCHAR, b'e' as TCHAR, b'r' as TCHAR, b's' as TCHAR, b'i' as TCHAR,
-    b'o' as TCHAR, b'n' as TCHAR, b'\0' as TCHAR, 0, 0, 0, 0, 0
-];
+pub static mut BugLink: [TCHAR; 25] = wide!("http://jira.reactos.org/");
+pub static mut ReportAsWorkstationKey: [TCHAR; 58] =
+    wide!("SYSTEM\\CurrentControlSet\\Control\\ReactOS\\Settings\\Version");
 unsafe extern "C" fn OnOK(hwndDlg: HWND) {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut ReportAsWorkstation: u32;
@@ -34,7 +14,7 @@ unsafe extern "C" fn OnOK(hwndDlg: HWND) {
                                                (IDC_REPORTASWORKSTATION) as i32,
                                                BM_GETCHECK,
                                                0,
-                                               0) == BST_CHECKED { 1 } else { 0 };
+                                               0) == (BST_CHECKED) as LPARAM { 1 } else { 0 };
 
     if RegCreateKeyEx(HKEY_LOCAL_MACHINE,
                        ReportAsWorkstationKey.as_ptr(),
@@ -71,8 +51,8 @@ unsafe extern "C" fn OnInitSysSettingsDialog(hwndDlg: HWND) {
     {
         let mut cbData_local = cbData;
         if RegQueryValueEx(hKey,
-                            _T((b"ReportAsWorkstation\0".as_ptr() as *const i8).cast()),
-                            0,
+                            _T(w!("ReportAsWorkstation")),
+                            core::ptr::null_mut(),
                             &mut dwType,
                             &mut dwVal as *mut u32 as LPBYTE,
                             &mut cbData_local) == (ERROR_SUCCESS) as i32
@@ -85,7 +65,7 @@ unsafe extern "C" fn OnInitSysSettingsDialog(hwndDlg: HWND) {
         RegCloseKey(hKey);
     }
     SendDlgItemMessageW(hwndDlg, (IDC_REPORTASWORKSTATION) as i32, BM_SETCHECK,
-                        if ReportAsWorkstation != 0 { BST_CHECKED } else { BST_UNCHECKED }, 0);
+                        if ReportAsWorkstation != 0 { (BST_CHECKED) as WPARAM } else { (BST_UNCHECKED) as WPARAM }, 0);
 }
 
 #[no_mangle]
@@ -107,12 +87,12 @@ pub unsafe extern "system" fn SysSettingsDlgProc(
                 IDOK => {
                     OnOK(hwndDlg);
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -122,7 +102,7 @@ pub unsafe extern "system" fn SysSettingsDlgProc(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 
 #[no_mangle]
@@ -197,7 +177,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 
 

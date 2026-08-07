@@ -31,83 +31,7 @@ unsafe extern "C" fn RegTreeOpt_OnTreeViewKeyDown(pRTO: *mut IRegTreeOptions, hW
     }
     return FALSE;
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn VisualEffectsDlgProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let pRTO = GetWindowLongPtrW(hDlg, DWLP_USER) as *mut IRegTreeOptions;
-    let hWndTree = GetDlgItem(hDlg, IDC_TREE);
-
-    match uMsg {
-        WM_INITDIALOG => {
-            let mut pRTO: *mut IRegTreeOptions = core::ptr::null_mut();
-            if CoCreateInstance(
-                &CLSID_CRegTreeOptions,
-                core::ptr::null_mut(),
-                CLSCTX_INPROC_SERVER,
-                &IID_IRegTreeOptions,
-                &mut pRTO as *mut *mut IRegTreeOptions as *mut *mut core::ffi::c_void,
-            ) >= 0
-            {
-                let pszPath: LPCSTR = b"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects\0".as_ptr() as LPCSTR;
-                SetWindowLongPtrW(hDlg, DWLP_USER, pRTO as LPARAM);
-                IRegTreeOptions_InitTree(pRTO, hWndTree, HKEY_LOCAL_MACHINE, pszPath, core::ptr::null_mut());
-            } else {
-                let hWndPS = GetParent(hDlg);
-                let iPage = PropSheet_HwndToIndex!(hWndPS, hDlg);
-                PostMessage(
-                    hWndPS,
-                    PSM_REMOVEPAGE,
-                    0,
-                    SendMessageW(hWndPS, PSM_INDEXTOPAGE, (iPage) as WPARAM, 0),
-                );
-            }
-            return TRUE;
-        }
-
-        WM_DESTROY => {
-            RegTreeOpt_OnDestroy(pRTO);
-            SetWindowLongPtrW(hDlg, DWLP_USER, core::ptr::null_mut() as LPARAM);
-        }
-
-        WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
-                NM_CLICK => {
-                    if RegTreeOpt_OnTreeViewClick(pRTO, hWndTree) != 0 {
-                        PropSheet_Changed!(GetParent(hDlg), hDlg);
-                    }
-                }
-
-                TVN_KEYDOWN => {
-                    if RegTreeOpt_OnTreeViewKeyDown(pRTO, hWndTree, lParam as *mut TV_KEYDOWN) != 0 {
-                        PropSheet_Changed!(GetParent(hDlg), hDlg);
-                    }
-                }
-
-                PSN_APPLY => {
-                    if !pRTO.is_null() {
-                        IRegTreeOptions_WalkTree(pRTO, WALK_TREE_SAVE);
-                    }
-
-                    SHSendMessageBroadcastW(WM_SETTINGCHANGE, 0, 0);
-                    return TRUE;
-                }
-
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn VisualEffectsDlgProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -140,16 +64,16 @@ unsafe extern "C" fn VisualEffectsDlgProc(
                     SendMessageW(hWndPS, PSM_INDEXTOPAGE, (iPage) as WPARAM, 0),
                 );
             }
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_DESTROY => {
             RegTreeOpt_OnDestroy(pRTO);
-            SetWindowLongPtrW(hDlg, DWLP_USER, core::ptr::null_mut() as LPARAM);
+            SetWindowLongPtrW(hDlg, DWLP_USER, 0 as LPARAM);
         }
 
         WM_NOTIFY => {
-            match (*(lParam as LPNMHDR)).code {
+            match ((*(lParam as LPNMHDR)).code) as UINT {
                 NM_CLICK => {
                     if RegTreeOpt_OnTreeViewClick(pRTO, hWndTree) != 0 {
                         PropSheet_Changed!(GetParent(hDlg), hDlg);
@@ -168,7 +92,7 @@ unsafe extern "C" fn VisualEffectsDlgProc(
                     }
 
                     SHSendMessageBroadcastW(WM_SETTINGCHANGE, 0, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -178,9 +102,8 @@ unsafe extern "C" fn VisualEffectsDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn AdvancedDlgProc(
     hDlg: HWND,
     uMsg: u32,
@@ -189,9 +112,9 @@ unsafe extern "system" fn AdvancedDlgProc(
 ) -> INT_PTR {
     match uMsg {
         WM_INITDIALOG => {
-            EnableWindow(GetDlgItem(hDlg, IDC_CPUCLIENT), FALSE);
-            EnableWindow(GetDlgItem(hDlg, IDC_CPUSERVER), FALSE);
-            return TRUE;
+            EnableWindow(GetDlgItem(hDlg, (IDC_CPUCLIENT) as i32), FALSE);
+            EnableWindow(GetDlgItem(hDlg, (IDC_CPUSERVER) as i32), FALSE);
+            return (TRUE) as INT_PTR;
         }
         WM_COMMAND => {
             match (LOWORD!(wParam)) as u32 {
@@ -203,51 +126,18 @@ unsafe extern "system" fn AdvancedDlgProc(
         }
         _ => {}
     }
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AdvancedDlgProc(
-    hDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            EnableWindow(GetDlgItem(hDlg, (IDC_CPUCLIENT) as i32), FALSE);
-            EnableWindow(GetDlgItem(hDlg, (IDC_CPUSERVER) as i32), FALSE);
-            return TRUE;
-        }
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDC_CHANGESWAP => {
-                    DialogBoxW!(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
-                }
-                _ => {}
-            }
-        }
-        _ => {}
-    }
-    FALSE
+    (FALSE) as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn ShowPerformanceOptions(hDlg: HWND) {
     let hrInit = CoInitialize(core::ptr::null_mut());
-    let mut psh = PROPSHEETHEADERW {
-        dwSize: core::mem::size_of::<PROPSHEETHEADERW>() as u32,
-        dwFlags: PSH_PROPSHEETPAGE | PSH_NOCONTEXTHELP,
-        hwndParent: core::ptr::null_mut(),
-        hInstance: core::ptr::null_mut(),
-        Anonymous1: Default::default(),
-        pszCaption: core::ptr::null(),
-        nPages: 0,
-        Anonymous2: Default::default(),
-        ppsp: core::ptr::null(),
-        pfnCallback: None,
-        Anonymous3: Default::default(),
-        hplWatermark: core::ptr::null_mut(),
-    };
+    // `PROPSHEETHEADERW psh = { sizeof(psh), PSH_… }` -- a C aggregate initializer, so every
+    // remaining member is zero. Written as zeroed + two assignments because the anonymous
+    // unions have no struct-literal spelling here; the literal the model wrote named them
+    // Anonymous1/2/3 and `ppsp`, which are windows-rs's names, not this island's.
+    let mut psh: PROPSHEETHEADERW = core::mem::zeroed();
+    psh.dwSize = core::mem::size_of::<PROPSHEETHEADERW>() as u32;
+    psh.dwFlags = PSH_PROPSHEETPAGE | PSH_NOCONTEXTHELP;
     let mut pages: [PROPSHEETPAGEW; 2] = core::mem::zeroed();
 
     pages[0].dwSize = core::mem::size_of::<PROPSHEETPAGEW>() as u32;

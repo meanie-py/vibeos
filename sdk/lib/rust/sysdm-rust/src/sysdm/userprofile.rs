@@ -68,7 +68,6 @@ unsafe extern "C" fn OnProfileTypeInit(
 
     TRUE
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn UserProfileTypeDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
@@ -78,7 +77,7 @@ unsafe extern "system" fn UserProfileTypeDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             OnProfileTypeInit(hwndDlg, lParam as *mut PROFILEDATA);
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_DESTROY => {}
@@ -87,7 +86,7 @@ unsafe extern "system" fn UserProfileTypeDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
                 _ => {}
             }
@@ -96,38 +95,7 @@ unsafe extern "system" fn UserProfileTypeDlgProc(
         _ => {}
     }
 
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn UserProfileTypeDlgProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            OnProfileTypeInit(hwndDlg, lParam as *mut PROFILEDATA);
-            return TRUE;
-        }
-
-        WM_DESTROY => {}
-
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
-                }
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    FALSE
+    (FALSE) as INT_PTR
 }
 unsafe extern "C" fn ChangeUserProfileType(
     hwndDlg: HWND) -> BOOL {
@@ -162,7 +130,7 @@ unsafe extern "C" fn ChangeUserProfileType(
                        MAKEINTRESOURCE!(IDD_USERPROFILE_TYPE),
                        hwndDlg,
                        Some(UserProfileTypeDlgProc),
-                       Item.lParam as LPARAM) == IDOK
+                       Item.lParam as LPARAM) == (IDOK) as LPARAM
     {
         return TRUE;
     }
@@ -218,7 +186,6 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
 
     return FALSE;
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn CopyUserProfileDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
@@ -227,7 +194,7 @@ unsafe extern "system" fn CopyUserProfileDlgProc(
 ) -> INT_PTR {
     match uMsg {
         WM_INITDIALOG => {
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_DESTROY => {}
@@ -236,7 +203,7 @@ unsafe extern "system" fn CopyUserProfileDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
                 _ => {}
             }
@@ -245,37 +212,7 @@ unsafe extern "system" fn CopyUserProfileDlgProc(
         _ => {}
     }
 
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CopyUserProfileDlgProc(
-    hwndDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            return TRUE;
-        }
-
-        WM_DESTROY => {}
-
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDOK | IDCANCEL => {
-                    EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
-                }
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    FALSE
+    (FALSE) as INT_PTR
 }
 unsafe extern "C" fn CopyUserProfile(
     hwndDlg: HWND
@@ -316,7 +253,7 @@ unsafe extern "C" fn CopyUserProfile(
         hwndDlg,
         Some(CopyUserProfileDlgProc),
         Item.lParam as LPARAM
-    ) == IDOK {
+    ) == (IDOK) as LPARAM {
         return TRUE;
     }
 
@@ -329,7 +266,7 @@ unsafe extern "C" fn SetListViewColumns(hwndListView: HWND) {
 
     GetClientRect(hwndListView, &mut rect);
 
-    SendMessage(hwndListView, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT);
+    SendMessage(hwndListView, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, (LVS_EX_FULLROWSELECT) as LPARAM);
 
     memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, core::mem::size_of::<LV_COLUMN>());
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
@@ -475,7 +412,7 @@ unsafe extern "C" fn GetProfileName(
         if szAccountName[0] == UNICODE_NULL {
             LoadStringW(hApplet, IDS_USERPROFILE_ACCOUNT_DELETED, pszNameBuffer, (dwNameBufferSize) as i32);
         } else {
-            wsprintf(pszNameBuffer, (b"L\"%s\\%s\"\0".as_ptr()).cast(), szDomainName.as_ptr(), szAccountName.as_ptr());
+            wsprintf(pszNameBuffer, w!("%s\\%s"), szDomainName.as_ptr(), szAccountName.as_ptr());
         }
         *pbUnknownProfile = FALSE;
     }
@@ -493,7 +430,7 @@ unsafe extern "C" fn AddUserProfile(
     let mut pProfileData: *mut PROFILEDATA = core::ptr::null_mut();
     let mut dwProfileData: u32;
     let mut dwSize: u32;
-    let mut dwType: u32;
+    let mut dwType: u32 = 0;
     let mut dwState: u32 = 0;
     let mut dwRefCount: u32 = 0;
     let mut dwProfilePathLength: u32;
@@ -505,7 +442,7 @@ unsafe extern "C" fn AddUserProfile(
     let mut hFile: *mut core::ffi::c_void;
     let mut SystemTime: SYSTEMTIME = core::mem::zeroed();
     let mut ullProfileSize: u64;
-    let mut bUnknownProfile: u8;
+    let mut bUnknownProfile: u8 = 0;
     let mut dwError: u32;
 
     dwSize = MAX_PATH * core::mem::size_of::<u16>() as u32;
@@ -719,8 +656,8 @@ unsafe extern "C" fn AddUserProfiles(
     let mut dwSize: u32 = 0;
     let mut hToken: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut pTokenUser: PTOKEN_USER = core::ptr::null_mut();
-    let mut pProfileSid: PSID;
-    let mut pszProfileSid: PWSTR;
+    let mut pProfileSid: PSID = core::ptr::null_mut();
+    let mut pszProfileSid: PWSTR = core::ptr::null_mut();
 
     if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut hToken) == 0 {
         return;
@@ -848,10 +785,10 @@ unsafe extern "C" fn OnNotify(
     nmhdr: *mut NMHDR) {
     let mut pNMLV: LPNMLISTVIEW;
 
-    if (*nmhdr).idFrom == IDC_USERACCOUNT_LINK && (*nmhdr).code == NM_CLICK {
+    if (*nmhdr).idFrom == (IDC_USERACCOUNT_LINK) as UINT_PTR && (*nmhdr).code == NM_CLICK {
         ShellExecuteW(hwndDlg, core::ptr::null_mut(), w!("usrmgr.cpl") as PWSTR, core::ptr::null_mut(), core::ptr::null_mut(), 0);
-    } else if (*nmhdr).idFrom == IDC_USERPROFILE_LIST {
-        match ((*nmhdr).code) as i32 {
+    } else if (*nmhdr).idFrom == (IDC_USERPROFILE_LIST) as UINT_PTR {
+        match ((*nmhdr).code) as UINT {
             LVN_ITEMCHANGED => {
                 UpdateButtonState(hwndDlg, (*nmhdr).hwndFrom);
             }
@@ -879,14 +816,14 @@ pub unsafe extern "system" fn UserProfileDlgProc(
     match uMsg {
         WM_INITDIALOG => {
             OnInitUserProfileDialog(hwndDlg);
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_COMMAND => {
             match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_USERPROFILE_CHANGE => {
@@ -912,7 +849,7 @@ pub unsafe extern "system" fn UserProfileDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 
 

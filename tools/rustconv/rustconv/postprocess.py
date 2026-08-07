@@ -2276,7 +2276,9 @@ def fix_utf16_vec_literals(code: str) -> str:
 
 
 # The WIDE pointer spellings. A `b"..."` behind any of these is the defect below; behind a
-# NARROW one (PCSTR/LPCSTR/*const c_char) it is correct and must not be touched.
+# NARROW one (PCSTR/LPCSTR/*const c_char) it is correct and must not be touched. WCHAR is in
+# the list and TCHAR deliberately is NOT: WCHAR is u16 on every target, whereas TCHAR is
+# c_char in a module built without -DUNICODE, and the post-processor cannot see which.
 _WIDE_PTR_TYPES = (
     "PCWSTR",
     "PWSTR",
@@ -2294,7 +2296,7 @@ _WIDE_PTR_TYPES = (
 )
 _WIDE_BYTE_STRING_RE = re.compile(
     r'b"((?:[^"\\]|\\.)*)"\s*\.as_ptr\(\)\s*as\s+'
-    r"(\*\s*(?:const|mut)\s*u16\b|(?:" + "|".join(_WIDE_PTR_TYPES) + r")\b)"
+    r"(\*\s*(?:const|mut)\s*(?:u16|WCHAR)\b|(?:" + "|".join(_WIDE_PTR_TYPES) + r")\b)"
 )
 _BYTE_ESCAPES = {"0": 0, "n": 0x0A, "r": 0x0D, "t": 0x09, "\\": 0x5C, '"': 0x22, "'": 0x27}
 

@@ -90,7 +90,7 @@ unsafe extern "C" fn GatherDataFromEditBox(
             return 0;
         }
     }
-    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_NAME) as i32, WM_GETTEXT, dwNameLength + 1, (*VarData).lpName as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_NAME) as i32, WM_GETTEXT, (dwNameLength) as WPARAM + 1, (*VarData).lpName as LPARAM);
 
     if (*VarData).lpRawValue.is_null() || (_tcslen((*VarData).lpRawValue) < (dwValueLength) as usize) {
         if !(*VarData).lpRawValue.is_null() {
@@ -102,7 +102,7 @@ unsafe extern "C" fn GatherDataFromEditBox(
             return 0;
         }
     }
-    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_VALUE) as i32, WM_GETTEXT, dwValueLength + 1, (*VarData).lpRawValue as LPARAM);
+    SendDlgItemMessage(hwndDlg, (IDC_VARIABLE_VALUE) as i32, WM_GETTEXT, (dwValueLength) as WPARAM + 1, (*VarData).lpRawValue as LPARAM);
 
     return dwValueLength;
 }
@@ -115,7 +115,7 @@ unsafe extern "C" fn GatherDataFromListView(
     let mut i: DWORD;
     let mut szData: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
-    NumberOfItems = ListView_GetItemCount!(hwndListView);
+    NumberOfItems = ListView_GetItemCount!(hwndListView) as DWORD;
     if NumberOfItems == 0 {
         return 0;
     }
@@ -156,7 +156,7 @@ unsafe extern "C" fn GatherDataFromListView(
             StringCchCat(
                 (*VarData).lpRawValue,
                 (dwValueLength + 1) as usize,
-                _T((b";\0".as_ptr() as *const i8).cast()),
+                _T(w!(";")),
             );
         }
         ListView_GetItemText!(
@@ -203,7 +203,6 @@ unsafe extern "C" fn GetSelectedListViewItem(hwndListView: HWND) -> i32 {
 
     return -1;
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn ListViewSubclassProc(
     hListBox: HWND,
     uMsg: u32,
@@ -215,28 +214,6 @@ unsafe extern "system" fn ListViewSubclassProc(
     match uMsg {
         WM_DESTROY => {
             RemoveWindowSubclass(hListBox, Some(ListViewSubclassProc), uIdSubclass);
-        }
-        WM_SIZE => {
-            ShowScrollBar(hListBox, SB_HORZ, FALSE);
-        }
-        _ => {}
-    }
-
-    DefSubclassProc(hListBox, uMsg, wParam, lParam)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ListViewSubclassProc(
-    hListBox: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-    uIdSubclass: UINT_PTR,
-    dwRefData: DWORD_PTR,
-) -> LRESULT {
-    match uMsg {
-        WM_DESTROY => {
-            RemoveWindowSubclass(hListBox, ListViewSubclassProc, uIdSubclass);
         }
         WM_SIZE => {
             ShowScrollBar(hListBox, (SB_HORZ) as i32, FALSE);
@@ -785,7 +762,7 @@ unsafe extern "C" fn OnBeginLabelEdit(pnmv: *mut NMLVDISPINFO) -> BOOL {
         return TRUE;
     }
 
-    SendMessage(hwndEdit, EM_SETLIMITTEXT, MAX_PATH - 1, 0);
+    SendMessage(hwndEdit, EM_SETLIMITTEXT, (MAX_PATH) as WPARAM - 1, 0);
 
     return FALSE;
 }
@@ -814,7 +791,7 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
     SendMessage(
         hwndEdit,
         WM_GETTEXT,
-        _countof!(szNewDir),
+        (_countof!(szNewDir)) as WPARAM,
         szNewDir.as_mut_ptr() as LPARAM,
     );
 
@@ -845,9 +822,9 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
 unsafe extern "C" fn OnNotifyEditVariableDlg(hwndDlg: HWND, DlgData: PEDIT_DIALOG_DATA, phdr: *mut NMHDR) -> i32 {
     let lpnmlv = phdr as *mut NMLISTVIEW;
 
-    match (*phdr).idFrom {
+    match ((*phdr).idFrom) as UINT {
         IDC_LIST_VARIABLE_VALUE => {
-            match (*phdr).code {
+            match ((*phdr).code) as UINT {
                 NM_CLICK => {
                     (*DlgData).bIsItemSelected = ((*lpnmlv).iItem != -1) as i32;
                     if (*lpnmlv).iItem != -1 {
@@ -879,238 +856,9 @@ unsafe extern "C" fn OnNotifyEditVariableDlg(hwndDlg: HWND, DlgData: PEDIT_DIALO
 
     FALSE
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn EditVariableDlgProc(
     hwndDlg: HWND,
-    uMsg: UINT_PTR,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let mut DlgData: PEDIT_DIALOG_DATA;
-    let hwndListView: HWND;
-
-    DlgData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PEDIT_DIALOG_DATA;
-    hwndListView = GetDlgItem(hwndDlg, IDC_LIST_VARIABLE_VALUE);
-
-    match uMsg {
-        WM_INITDIALOG => {
-            let mut rect: RECT = core::mem::zeroed();
-
-            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as LONG_PTR);
-            DlgData = lParam as PEDIT_DIALOG_DATA;
-
-            GetClientRect(hwndDlg, &mut rect);
-            (*DlgData).cxOld = (rect.right - rect.left) as DWORD;
-            (*DlgData).cyOld = (rect.bottom - rect.top) as DWORD;
-
-            GetWindowRect(hwndDlg, &mut rect);
-            (*DlgData).cxMin = (rect.right - rect.left) as DWORD;
-            (*DlgData).cyMin = (rect.bottom - rect.top) as DWORD;
-
-            if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
-                SetWindowSubclass(hwndListView, Some(ListViewSubclassProc), 1, 0);
-
-                if (*(*DlgData).VarData).lpRawValue != core::ptr::null_mut() {
-                    AddValuesToList(hwndDlg, DlgData);
-                }
-            } else {
-                if (*(*DlgData).VarData).lpName != core::ptr::null_mut() {
-                    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_NAME, WM_SETTEXT, 0, (*(*DlgData).VarData).lpName as LPARAM);
-                }
-
-                if (*(*DlgData).VarData).lpRawValue != core::ptr::null_mut() {
-                    SendDlgItemMessage(hwndDlg, IDC_VARIABLE_VALUE, WM_SETTEXT, 0, (*(*DlgData).VarData).lpRawValue as LPARAM);
-                }
-            }
-        }
-
-        WM_SIZE => {
-            OnEnvironmentEditDlgResize(hwndDlg, DlgData, (LOWORD!(lParam)) as DWORD, (HIWORD!(lParam)) as DWORD);
-            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
-            return TRUE;
-        }
-
-        WM_SIZING => {
-            let pRect = lParam as PRECT;
-
-            if (wParam == WMSZ_LEFT) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_BOTTOMLEFT) {
-                if (*pRect).right - (*pRect).left < (*DlgData).cxMin as i32 {
-                    (*pRect).left = (*pRect).right - (*DlgData).cxMin as i32;
-                }
-            } else if (wParam == WMSZ_RIGHT) || (wParam == WMSZ_TOPRIGHT) || (wParam == WMSZ_BOTTOMRIGHT) {
-                if (*pRect).right - (*pRect).left < (*DlgData).cxMin as i32 {
-                    (*pRect).right = (*pRect).left + (*DlgData).cxMin as i32;
-                }
-            }
-
-            if (wParam == WMSZ_TOP) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_TOPRIGHT) {
-                if (*pRect).bottom - (*pRect).top < (*DlgData).cyMin as i32 {
-                    (*pRect).top = (*pRect).bottom - (*DlgData).cyMin as i32;
-                }
-            } else if (wParam == WMSZ_BOTTOM) || (wParam == WMSZ_BOTTOMLEFT) || (wParam == WMSZ_BOTTOMRIGHT) {
-                if (*pRect).bottom - (*pRect).top < (*DlgData).cyMin as i32 {
-                    (*pRect).bottom = (*pRect).top + (*DlgData).cyMin as i32;
-                }
-            }
-
-            if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE {
-                if (wParam == WMSZ_TOP) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_TOPRIGHT) {
-                    if (*pRect).bottom - (*pRect).top > (*DlgData).cyMin as i32 {
-                        (*pRect).top = (*pRect).bottom - (*DlgData).cyMin as i32;
-                    }
-                } else if (wParam == WMSZ_BOTTOM) || (wParam == WMSZ_BOTTOMLEFT) || (wParam == WMSZ_BOTTOMRIGHT) {
-                    if (*pRect).bottom - (*pRect).top > (*DlgData).cyMin as i32 {
-                        (*pRect).bottom = (*pRect).top + (*DlgData).cyMin as i32;
-                    }
-                }
-            }
-
-            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, TRUE);
-            return TRUE;
-        }
-
-        WM_NOTIFY => {
-            return OnNotifyEditVariableDlg(hwndDlg, DlgData, lParam as *mut NMHDR);
-        }
-
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDOK => {
-                    let mut p: LPTSTR;
-                    let dwValueLength: DWORD;
-
-                    if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
-                        dwValueLength = GatherDataFromListView(hwndListView, (*DlgData).VarData);
-                    } else {
-                        dwValueLength = GatherDataFromEditBox(hwndDlg, (*DlgData).VarData);
-                    }
-
-                    if dwValueLength == 0 {
-                        return FALSE;
-                    }
-
-                    if (*(*DlgData).VarData).lpCookedValue != core::ptr::null_mut() {
-                        GlobalFree(((*(*DlgData).VarData).lpCookedValue).cast());
-                        (*(*DlgData).VarData).lpCookedValue = core::ptr::null_mut();
-                    }
-
-                    p = _tcschr((*(*DlgData).VarData).lpRawValue, _T('%' as TCHAR));
-                    if !p.is_null() {
-                        p = p.offset(1);
-                        if !_tcschr(p, _T('%' as TCHAR)).is_null() {
-                            (*(*DlgData).VarData).dwType = REG_EXPAND_SZ;
-
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, 2 * MAX_PATH * core::mem::size_of::<TCHAR>()) as LPTSTR;
-                            if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                                return FALSE;
-                            }
-
-                            ExpandEnvironmentStrings(
-                                (*(*DlgData).VarData).lpRawValue,
-                                (*(*DlgData).VarData).lpCookedValue,
-                                2 * MAX_PATH,
-                            );
-                        } else {
-                            (*(*DlgData).VarData).dwType = REG_SZ;
-
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (dwValueLength + 1) * core::mem::size_of::<TCHAR>()) as LPTSTR;
-                            if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                                return FALSE;
-                            }
-
-                            _tcscpy((*(*DlgData).VarData).lpCookedValue, (*(*DlgData).VarData).lpRawValue);
-                        }
-                    } else {
-                        (*(*DlgData).VarData).dwType = REG_SZ;
-
-                        (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (dwValueLength + 1) * core::mem::size_of::<TCHAR>()) as LPTSTR;
-                        if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                            return FALSE;
-                        }
-
-                        _tcscpy((*(*DlgData).VarData).lpCookedValue, (*(*DlgData).VarData).lpRawValue);
-                    }
-
-                    EndDialog(hwndDlg, 1);
-                    return TRUE;
-                }
-
-                IDCANCEL => {
-                    EndDialog(hwndDlg, 0);
-                    return TRUE;
-                }
-
-                IDC_BUTTON_BROWSE_FILE => {
-                    BrowseRequiredFile(hwndDlg);
-                }
-
-                IDC_BUTTON_BROWSE_FOLDER => {
-                    BrowseRequiredFolder(hwndDlg, DlgData);
-                }
-
-                IDC_BUTTON_DELETE => {
-                    let dwLastIndex: DWORD;
-
-                    dwLastIndex = (ListView_GetItemCount!(hwndListView) - 1) as DWORD;
-                    ListView_DeleteItem!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
-
-                    if dwLastIndex == (*DlgData).dwSelectedValueIndex {
-                        (*DlgData).dwSelectedValueIndex = (*DlgData).dwSelectedValueIndex.wrapping_sub(1);
-                    }
-
-                    ListView_SetItemState!(
-                        hwndListView,
-                        (*DlgData).dwSelectedValueIndex as i32,
-                        LVIS_FOCUSED | LVIS_SELECTED,
-                        LVIS_FOCUSED | LVIS_SELECTED,
-                    );
-                }
-
-                IDC_BUTTON_MOVE_UP => {
-                    MoveListItem(hwndDlg, DlgData, TRUE);
-                }
-
-                IDC_BUTTON_MOVE_DOWN => {
-                    MoveListItem(hwndDlg, DlgData, FALSE);
-                }
-
-                IDC_BUTTON_EDIT_TEXT => {
-                    if ResourceMessageBox(
-                        hApplet,
-                        hwndDlg,
-                        MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON1,
-                        IDS_ENVIRONMENT_WARNING_TITLE,
-                        IDS_ENVIRONMENT_WARNING,
-                    ) == IDOK
-                    {
-                        EndDialog(hwndDlg, -1);
-                    }
-                }
-
-                IDC_BUTTON_NEW => {
-                    (*DlgData).dwSelectedValueIndex = ListView_GetItemCount!(hwndListView) as DWORD;
-                    AddEmptyItem(hwndListView, (*DlgData).dwSelectedValueIndex);
-                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
-                }
-
-                IDC_BUTTON_EDIT => {
-                    ListView_EditLabel!(hwndListView, (*DlgData).dwSelectedValueIndex as i32);
-                }
-
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn EditVariableDlgProc(
-    hwndDlg: HWND,
-    uMsg: UINT_PTR,
+    uMsg: UINT,
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
@@ -1136,7 +884,7 @@ unsafe extern "C" fn EditVariableDlgProc(
             (*DlgData).cyMin = (rect.bottom - rect.top) as DWORD;
 
             if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
-                SetWindowSubclass(hwndListView, ListViewSubclassProc, 1, 0);
+                SetWindowSubclass(hwndListView, Some(ListViewSubclassProc), 1, 0);
 
                 if (*(*DlgData).VarData).lpRawValue != core::ptr::null_mut() {
                     AddValuesToList(hwndDlg, DlgData);
@@ -1155,50 +903,50 @@ unsafe extern "C" fn EditVariableDlgProc(
         WM_SIZE => {
             OnEnvironmentEditDlgResize(hwndDlg, DlgData, (LOWORD!(lParam)) as DWORD, (HIWORD!(lParam)) as DWORD);
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_SIZING => {
             let pRect = lParam as PRECT;
 
-            if (wParam == WMSZ_LEFT) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_BOTTOMLEFT) {
+            if (wParam == (WMSZ_LEFT) as WPARAM) || (wParam == (WMSZ_TOPLEFT) as WPARAM) || (wParam == (WMSZ_BOTTOMLEFT) as WPARAM) {
                 if (*pRect).right - (*pRect).left < (*DlgData).cxMin as i32 {
                     (*pRect).left = (*pRect).right - (*DlgData).cxMin as i32;
                 }
-            } else if (wParam == WMSZ_RIGHT) || (wParam == WMSZ_TOPRIGHT) || (wParam == WMSZ_BOTTOMRIGHT) {
+            } else if (wParam == (WMSZ_RIGHT) as WPARAM) || (wParam == (WMSZ_TOPRIGHT) as WPARAM) || (wParam == (WMSZ_BOTTOMRIGHT) as WPARAM) {
                 if (*pRect).right - (*pRect).left < (*DlgData).cxMin as i32 {
                     (*pRect).right = (*pRect).left + (*DlgData).cxMin as i32;
                 }
             }
 
-            if (wParam == WMSZ_TOP) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_TOPRIGHT) {
+            if (wParam == (WMSZ_TOP) as WPARAM) || (wParam == (WMSZ_TOPLEFT) as WPARAM) || (wParam == (WMSZ_TOPRIGHT) as WPARAM) {
                 if (*pRect).bottom - (*pRect).top < (*DlgData).cyMin as i32 {
                     (*pRect).top = (*pRect).bottom - (*DlgData).cyMin as i32;
                 }
-            } else if (wParam == WMSZ_BOTTOM) || (wParam == WMSZ_BOTTOMLEFT) || (wParam == WMSZ_BOTTOMRIGHT) {
+            } else if (wParam == (WMSZ_BOTTOM) as WPARAM) || (wParam == (WMSZ_BOTTOMLEFT) as WPARAM) || (wParam == (WMSZ_BOTTOMRIGHT) as WPARAM) {
                 if (*pRect).bottom - (*pRect).top < (*DlgData).cyMin as i32 {
                     (*pRect).bottom = (*pRect).top + (*DlgData).cyMin as i32;
                 }
             }
 
             if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE {
-                if (wParam == WMSZ_TOP) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_TOPRIGHT) {
+                if (wParam == (WMSZ_TOP) as WPARAM) || (wParam == (WMSZ_TOPLEFT) as WPARAM) || (wParam == (WMSZ_TOPRIGHT) as WPARAM) {
                     if (*pRect).bottom - (*pRect).top > (*DlgData).cyMin as i32 {
                         (*pRect).top = (*pRect).bottom - (*DlgData).cyMin as i32;
                     }
-                } else if (wParam == WMSZ_BOTTOM) || (wParam == WMSZ_BOTTOMLEFT) || (wParam == WMSZ_BOTTOMRIGHT) {
+                } else if (wParam == (WMSZ_BOTTOM) as WPARAM) || (wParam == (WMSZ_BOTTOMLEFT) as WPARAM) || (wParam == (WMSZ_BOTTOMRIGHT) as WPARAM) {
                     if (*pRect).bottom - (*pRect).top > (*DlgData).cyMin as i32 {
                         (*pRect).bottom = (*pRect).top + (*DlgData).cyMin as i32;
                     }
                 }
             }
 
-            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, (TRUE) as LONG_PTR);
-            return TRUE;
+            SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, (TRUE) as LPARAM);
+            return (TRUE) as INT_PTR;
         }
 
         WM_NOTIFY => {
-            return OnNotifyEditVariableDlg(hwndDlg, DlgData, lParam as *mut NMHDR);
+            return OnNotifyEditVariableDlg(hwndDlg, DlgData, lParam as *mut NMHDR) as INT_PTR;
         }
 
         WM_COMMAND => {
@@ -1214,7 +962,7 @@ unsafe extern "C" fn EditVariableDlgProc(
                     }
 
                     if dwValueLength == 0 {
-                        return FALSE;
+                        return (FALSE) as INT_PTR;
                     }
 
                     if (*(*DlgData).VarData).lpCookedValue != core::ptr::null_mut() {
@@ -1228,9 +976,9 @@ unsafe extern "C" fn EditVariableDlgProc(
                         if !_tcschr(p, _T('%' as TCHAR)).is_null() {
                             (*(*DlgData).VarData).dwType = REG_EXPAND_SZ;
 
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (2 * MAX_PATH * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
+                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (2 * MAX_PATH as usize * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
                             if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                                return FALSE;
+                                return (FALSE) as INT_PTR;
                             }
 
                             ExpandEnvironmentStrings(
@@ -1241,9 +989,9 @@ unsafe extern "C" fn EditVariableDlgProc(
                         } else {
                             (*(*DlgData).VarData).dwType = REG_SZ;
 
-                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
+                            (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) as usize * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
                             if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                                return FALSE;
+                                return (FALSE) as INT_PTR;
                             }
 
                             _tcscpy((*(*DlgData).VarData).lpCookedValue, (*(*DlgData).VarData).lpRawValue);
@@ -1251,21 +999,21 @@ unsafe extern "C" fn EditVariableDlgProc(
                     } else {
                         (*(*DlgData).VarData).dwType = REG_SZ;
 
-                        (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
+                        (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, ((dwValueLength + 1) as usize * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
                         if (*(*DlgData).VarData).lpCookedValue.is_null() {
-                            return FALSE;
+                            return (FALSE) as INT_PTR;
                         }
 
                         _tcscpy((*(*DlgData).VarData).lpCookedValue, (*(*DlgData).VarData).lpRawValue);
                     }
 
                     EndDialog(hwndDlg, 1);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_BUTTON_BROWSE_FILE => {
@@ -1332,7 +1080,7 @@ unsafe extern "C" fn EditVariableDlgProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 unsafe extern "C" fn GetEnvironmentVariables(
     hwndListView: HWND,
@@ -1502,7 +1250,7 @@ unsafe extern "C" fn SetEnvironmentDialogListViewColumns(hwndListView: HWND) {
 
     GetClientRect(hwndListView, &mut rect);
 
-    memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, sizeof(column));
+    memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, core::mem::size_of_val(&column));
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.32) as INT;
@@ -1529,7 +1277,7 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     GetEnvironmentVariables(
         hwndListView,
         HKEY_CURRENT_USER,
-        _T(w!("Environment")),
+        _T(w!("Environment") as LPTSTR),
     );
 
     ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
@@ -1552,7 +1300,7 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     GetEnvironmentVariables(
         hwndListView,
         HKEY_LOCAL_MACHINE,
-        _T(w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")),
+        _T(w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment") as LPTSTR),
     );
 
     ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
@@ -1572,7 +1320,7 @@ unsafe extern "C" fn OnNewVariable(
 ) {
     let mut hwndListView: HWND;
     let mut DlgData: *mut EDIT_DIALOG_DATA;
-    let mut lvi: LV_ITEM;
+    let mut lvi: LV_ITEM = core::mem::zeroed();
     let mut iItem: i32;
 
     DlgData = GlobalAlloc(GPTR, (core::mem::size_of::<EDIT_DIALOG_DATA>()) as SIZE_T) as *mut EDIT_DIALOG_DATA;
@@ -1698,7 +1446,7 @@ unsafe extern "C" fn OnEditVariable(
 unsafe extern "C" fn OnDeleteVariable(hwndDlg: HWND, iDlgItem: i32) {
     let mut hwndListView: HWND;
     let mut VarData: *mut VARIABLE_DATA;
-    let mut lvi: LV_ITEM;
+    let mut lvi: LV_ITEM = core::mem::zeroed();
     let mut iItem: i32;
 
     hwndListView = GetDlgItem(hwndDlg, iDlgItem);
@@ -1993,7 +1741,7 @@ unsafe extern "C" fn OnEnvironmentDlgResize(
 unsafe extern "C" fn ReleaseListViewItems(hwndDlg: HWND, iDlgItem: i32) {
     let hwndListView: HWND;
     let mut VarData: *mut VARIABLE_DATA;
-    let mut lvi: LV_ITEM;
+    let mut lvi: LV_ITEM = core::mem::zeroed();
     let nItemCount: i32;
     let mut i: i32;
 
@@ -2065,9 +1813,9 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
             HKEY_CURRENT_USER
         },
         if iDlgItem == (IDC_SYSTEM_VARIABLE_LIST) as i32 {
-            _T((b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0".as_ptr() as *const i8).cast())
+            _T(w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"))
         } else {
-            _T((b"Environment\0".as_ptr() as *const i8).cast())
+            _T(w!("Environment"))
         },
         0,
         core::ptr::null_mut(),
@@ -2172,10 +1920,10 @@ unsafe extern "C" fn SetAllVars(hwndDlg: HWND, iDlgItem: i32) {
     RegCloseKey(hKey);
 }
 unsafe extern "C" fn OnNotify(hwndDlg: HWND, phdr: *mut NMHDR) -> i32 {
-    match ((*phdr).code) as i32 {
+    match ((*phdr).code) as UINT {
         NM_DBLCLK => {
-            if (*phdr).idFrom == IDC_USER_VARIABLE_LIST ||
-                (*phdr).idFrom == IDC_SYSTEM_VARIABLE_LIST
+            if (*phdr).idFrom == (IDC_USER_VARIABLE_LIST) as UINT_PTR ||
+                (*phdr).idFrom == (IDC_SYSTEM_VARIABLE_LIST) as UINT_PTR
             {
                 OnEditVariable(hwndDlg, (*phdr).idFrom as i32);
                 return TRUE;
@@ -2183,9 +1931,9 @@ unsafe extern "C" fn OnNotify(hwndDlg: HWND, phdr: *mut NMHDR) -> i32 {
         }
 
         LVN_KEYDOWN => {
-            if (*(phdr as *mut LPNMLVKEYDOWN)).wVKey == VK_DELETE &&
-                ((*phdr).idFrom == IDC_USER_VARIABLE_LIST ||
-                 (*phdr).idFrom == IDC_SYSTEM_VARIABLE_LIST)
+            if (*(phdr as LPNMLVKEYDOWN)).wVKey == (VK_DELETE) as u16 &&
+                ((*phdr).idFrom == (IDC_USER_VARIABLE_LIST) as UINT_PTR ||
+                 (*phdr).idFrom == (IDC_SYSTEM_VARIABLE_LIST) as UINT_PTR)
             {
                 OnDeleteVariable(hwndDlg, (*phdr).idFrom as i32);
                 return TRUE;
@@ -2216,7 +1964,7 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
                 EndDialog(hwndDlg, 0);
                 return TRUE as INT_PTR;
             }
-            SetWindowLongPtr(hwndDlg, DWLP_USER, DlgData as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, DlgData as LONG_PTR);
 
             GetClientRect(hwndDlg, &mut rect);
             (*DlgData).cxOld = (rect.right - rect.left) as u32;
@@ -2232,66 +1980,66 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         WM_SIZE => {
             OnEnvironmentDlgResize(hwndDlg, DlgData, (LOWORD!(lParam as u32)) as DWORD, (HIWORD!(lParam as u32)) as DWORD);
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, 0);
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_SIZING => {
             let pRect: PRECT = lParam as PRECT;
 
-            if (wParam == WMSZ_LEFT) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_BOTTOMLEFT) {
+            if (wParam == (WMSZ_LEFT) as WPARAM) || (wParam == (WMSZ_TOPLEFT) as WPARAM) || (wParam == (WMSZ_BOTTOMLEFT) as WPARAM) {
                 if ((*pRect).right - (*pRect).left) < (*DlgData).cxMin as i32 {
                     (*pRect).left = (*pRect).right - (*DlgData).cxMin as i32;
                 }
-            } else if (wParam == WMSZ_RIGHT) || (wParam == WMSZ_TOPRIGHT) || (wParam == WMSZ_BOTTOMRIGHT) {
+            } else if (wParam == (WMSZ_RIGHT) as WPARAM) || (wParam == (WMSZ_TOPRIGHT) as WPARAM) || (wParam == (WMSZ_BOTTOMRIGHT) as WPARAM) {
                 if ((*pRect).right - (*pRect).left) < (*DlgData).cxMin as i32 {
                     (*pRect).right = (*pRect).left + (*DlgData).cxMin as i32;
                 }
             }
 
-            if (wParam == WMSZ_TOP) || (wParam == WMSZ_TOPLEFT) || (wParam == WMSZ_TOPRIGHT) {
+            if (wParam == (WMSZ_TOP) as WPARAM) || (wParam == (WMSZ_TOPLEFT) as WPARAM) || (wParam == (WMSZ_TOPRIGHT) as WPARAM) {
                 if ((*pRect).bottom - (*pRect).top) < (*DlgData).cyMin as i32 {
                     (*pRect).top = (*pRect).bottom - (*DlgData).cyMin as i32;
                 }
-            } else if (wParam == WMSZ_BOTTOM) || (wParam == WMSZ_BOTTOMLEFT) || (wParam == WMSZ_BOTTOMRIGHT) {
+            } else if (wParam == (WMSZ_BOTTOM) as WPARAM) || (wParam == (WMSZ_BOTTOMLEFT) as WPARAM) || (wParam == (WMSZ_BOTTOMRIGHT) as WPARAM) {
                 if ((*pRect).bottom - (*pRect).top) < (*DlgData).cyMin as i32 {
                     (*pRect).bottom = (*pRect).top + (*DlgData).cyMin as i32;
                 }
             }
 
             SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, (TRUE) as LONG_PTR);
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_COMMAND => {
             match (LOWORD!(wParam as u32)) as u32 {
                 IDC_USER_VARIABLE_NEW => {
                     OnNewVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_USER_VARIABLE_EDIT => {
                     OnEditVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_USER_VARIABLE_DELETE => {
                     OnDeleteVariable(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_SYSTEM_VARIABLE_NEW => {
                     OnNewVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_SYSTEM_VARIABLE_EDIT => {
                     OnEditVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_SYSTEM_VARIABLE_DELETE => {
                     OnDeleteVariable(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDOK => {
@@ -2300,12 +2048,12 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
                     SendMessage(HWND_BROADCAST, WM_WININICHANGE,
                                 0, w!("Environment") as LPARAM);
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -2319,13 +2067,13 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
         }
 
         WM_NOTIFY => {
-            return OnNotify(hwndDlg, lParam as *mut NMHDR);
+            return OnNotify(hwndDlg, lParam as *mut NMHDR) as INT_PTR;
         }
 
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 
 

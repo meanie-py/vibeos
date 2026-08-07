@@ -110,7 +110,7 @@ unsafe extern "C" fn InitLogo(hwndDlg: HWND) {
         bmpi.bmiHeader.biCompression = BI_RGB;
         bmpi.bmiHeader.biSizeImage = 4 * logoBitmap.bmWidth as u32 * logoBitmap.bmHeight as u32;
 
-        hAlphaLogo = CreateDIBSection(hDC, &bmpi, DIB_RGB_COLORS, &mut pBits as *mut *mut COLORREF as *mut *mut core::ffi::c_void, 0, 0);
+        hAlphaLogo = CreateDIBSection(hDC, &bmpi, DIB_RGB_COLORS, &mut pBits as *mut *mut COLORREF as *mut *mut core::ffi::c_void, core::ptr::null_mut(), 0);
         if hAlphaLogo.is_null() {
             break 'Cleanup;
         }
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
     match uMsg {
         WM_LBUTTONDBLCLK => {
-            if wParam & (MK_CONTROL | MK_SHIFT) != 0 {
+            if wParam & (MK_CONTROL | MK_SHIFT) as WPARAM != 0 {
                 if timerid == 0 {
                     let mut hDC: HDC;
                     let mut hCreditsDC: HDC = core::ptr::null_mut();
@@ -266,7 +266,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                                     AlphaBlend(hCreditsDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, hLogoDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, BlendFunc);
                                     AlphaBlend(hCreditsDC, 0, offset as i32, (*pImgInfo).cxSource, (*pImgInfo).cySource, hLogoDC, 0, 0, (*pImgInfo).cxSource, (*pImgInfo).cySource, BlendFunc);
 
-                                    timerid = (SetTimer(hwnd, 1, (ANIM_TIME) as UINT, core::ptr::null_mut())) as u32;
+                                    timerid = (SetTimer(hwnd, 1, (ANIM_TIME) as UINT, None)) as u32;
 
                                     if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                     if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
@@ -353,7 +353,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
         }
         _ => {}
     }
-    TRUE
+    (TRUE) as INT_PTR
 }
 unsafe extern "C" fn SetRegTextData(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u32) {
     let mut lpBuf: LPTSTR = core::ptr::null_mut();
@@ -396,7 +396,7 @@ unsafe extern "C" fn SetProcNameString(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uI
                 szBuf[30] = 0;
                 szLastSpace = _tcsrchr(szBuf.as_mut_ptr(), (' ' as i32) as u16);
 
-                if szLastSpace == 0 {
+                if szLastSpace.is_null() {
                     LastSpace = 30;
                 } else {
                     LastSpace = szLastSpace.offset_from(szBuf.as_ptr()) as i32;
@@ -427,7 +427,7 @@ unsafe extern "C" fn MakeFloatValueString(dFloatValue: *mut f64, szOutput: LPTST
         let uIntegral: u32 = *dFloatValue as u32;
         let uDecimals: u8 = ((*dFloatValue * 100 as f64) as u32 - uIntegral * 100) as u8;
 
-        wsprintf(szOutput, _T((b"%u%s%02u %s\0".as_ptr() as *const i8).cast()), uIntegral, szDecimalSeparator.as_ptr(), uDecimals, szAppend);
+        wsprintf(szOutput, _T(w!("%u%s%02u %s") as LPTSTR), uIntegral, szDecimalSeparator.as_ptr(), uDecimals as c_uint, szAppend);
     }
 }
 unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u32) -> i32 {
@@ -505,8 +505,8 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     let mut SMBiosName: [u16; 96] = [0; 96];
     let mut CurMachineLine: i32 = (IDC_MACHINELINE1) as i32;
 
-    let sys_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System"));
-    let proc_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"));
+    let sys_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System") as LPTSTR);
+    let proc_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0") as LPTSTR);
 
     core::ptr::copy_nonoverlapping(sys_key_str, (SysKey.as_mut_ptr()).cast(), 64);
     core::ptr::copy_nonoverlapping(proc_key_str, (ProcKey.as_mut_ptr()).cast(), 64);
@@ -516,7 +516,7 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
         CurMachineLine += 1;
     } else {
         if RegOpenKeyEx(HKEY_LOCAL_MACHINE, SysKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
-            SetRegTextData(hwnd, hKey, _T(w!("Identifier")), (CurMachineLine) as u32);
+            SetRegTextData(hwnd, hKey, _T(w!("Identifier") as LPTSTR), (CurMachineLine) as u32);
             CurMachineLine += 1;
             RegCloseKey(hKey);
         }
@@ -525,17 +525,17 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     if RegOpenKeyEx(HKEY_LOCAL_MACHINE, ProcKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
         let mut PrevMachineLine: i32;
 
-        SetRegTextData(hwnd, hKey, _T(w!("VendorIdentifier")), (CurMachineLine) as u32);
+        SetRegTextData(hwnd, hKey, _T(w!("VendorIdentifier") as LPTSTR), (CurMachineLine) as u32);
         CurMachineLine += 1;
 
         PrevMachineLine = CurMachineLine;
-        CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("ProcessorNameString")), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
+        CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("ProcessorNameString") as LPTSTR), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
 
         if CurMachineLine == PrevMachineLine {
-            CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("Identifier")), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
+            CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("Identifier") as LPTSTR), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
         }
 
-        if SetProcSpeed(hwnd, hKey, _T(w!("~MHz")), (CurMachineLine) as u32) != 0 {
+        if SetProcSpeed(hwnd, hKey, _T(w!("~MHz") as LPTSTR), (CurMachineLine) as u32) != 0 {
             CurMachineLine += 1;
         }
         RegCloseKey(hKey);
@@ -573,7 +573,7 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
             MakeFloatValueString(&mut dTotalPhys, Buf.as_mut_ptr(), szStr.as_mut_ptr());
         } else {
             LoadString(hApplet, IDS_MEGABYTE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of::<TCHAR>()) as i32);
-            wsprintf(Buf.as_mut_ptr(), _T((b"%u %s\0".as_ptr() as *const i8).cast()), (MemStat.ullTotalPhys / 1024 / 1024) as u32, szStr.as_ptr());
+            wsprintf(Buf.as_mut_ptr(), _T(w!("%u %s") as LPTSTR), (MemStat.ullTotalPhys / 1024 / 1024) as u32, szStr.as_ptr());
         }
 
         SetDlgItemText(hwnd, CurMachineLine, Buf.as_mut_ptr());
@@ -583,7 +583,7 @@ unsafe extern "C" fn GetSystemVersion(hwnd: HWND) {
     let mut hRosVersion: HWND;
     let mut lenStr: usize;
     let mut lenVersion: usize;
-    let pwszVersion: PCWSTR = TEXT!(" ", KERNEL_VERSION_RC);
+    let pwszVersion: PCWSTR = VERSION_WITH_LEADING_SPACE!();
     let mut pwszStr: PWSTR;
 
     lenVersion = wcslen(pwszVersion);
@@ -619,7 +619,7 @@ unsafe extern "C" fn GetTickCountQPC() -> u64 {
     QueryPerformanceCounter(&mut Counter);
     QueryPerformanceFrequency(&mut Frequency);
 
-    ((*Counter.QuadPart) * 1000) / (*Frequency.QuadPart)
+    ((Counter.QuadPart * 1000) / Frequency.QuadPart) as u64
 }
 unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
     let mut hUptimeLabel: HWND;
@@ -632,8 +632,8 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
         return;
     }
 
-    if !pGetTickCount64.is_null() {
-        cMilliseconds = pGetTickCount64();
+    if pGetTickCount64.is_some() {
+        cMilliseconds = (pGetTickCount64.unwrap_unchecked())();
     } else {
         cMilliseconds = GetTickCountQPC();
     }
@@ -647,7 +647,7 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
 
     SetWindowTextW(hUptimeLabel, szBuf.as_ptr());
 
-    SetTimer(hwndDlg, (ID_SYSUPTIME_UPDATE_TIMER) as UINT_PTR, (1000 - (cMilliseconds % 1000)) as UINT, core::ptr::null_mut());
+    SetTimer(hwndDlg, (ID_SYSUPTIME_UPDATE_TIMER) as UINT_PTR, (1000 - (cMilliseconds % 1000)) as UINT, None);
 }
 unsafe extern "C" fn InitSystemUptime(hwndDlg: HWND) {
     let mut hKernel32: HMODULE;
@@ -679,11 +679,11 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
             pImgInfo = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<IMGINFO>()) as SIZE_T) as *mut IMGINFO;
             if pImgInfo.is_null() {
                 EndDialog(hwndDlg, 0);
-                return FALSE;
+                return (FALSE) as INT_PTR;
             }
 
             InitLogo(hwndDlg);
-            SetWindowLongPtr(GetDlgItem(hwndDlg, (IDC_ROSIMG) as i32), GWLP_WNDPROC, RosImageProc as isize);
+            SetWindowLongPtr(GetDlgItem(hwndDlg, (IDC_ROSIMG) as i32), GWLP_WNDPROC, RosImageProc as LONG_PTR);
             GetSystemInformation(hwndDlg);
             GetSystemVersion(hwndDlg);
             InitSystemUptime(hwndDlg);
@@ -700,7 +700,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
         }
 
         WM_TIMER => {
-            if wParam == ID_SYSUPTIME_UPDATE_TIMER {
+            if wParam == (ID_SYSUPTIME_UPDATE_TIMER) as WPARAM {
                 GetSystemUptime(hwndDlg);
             }
         }
@@ -709,7 +709,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
             if LOWORD!(wParam) == (IDC_LICENCE) as u16 {
                 DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_LICENCE), hwndDlg, Some(LicenceDlgProc));
 
-                return TRUE;
+                return (TRUE) as INT_PTR;
             }
         }
 
@@ -739,23 +739,23 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
                     DeleteDC(hdcMem);
                 }
             }
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
 
         WM_NOTIFY => {
             let nmhdr = lParam as *mut NMHDR;
 
-            if (*nmhdr).idFrom == IDC_ROSHOMEPAGE_LINK && (*nmhdr).code == NM_CLICK {
+            if (*nmhdr).idFrom == (IDC_ROSHOMEPAGE_LINK) as UINT_PTR && (*nmhdr).code == NM_CLICK {
                 let nml = nmhdr as *mut PNMLINK;
 
-                ShellExecuteW(hwndDlg, w!("open"), (*(*nml)).item.szUrl, core::ptr::null(), core::ptr::null(), (SW_SHOWNORMAL) as INT);
+                ShellExecuteW(hwndDlg, w!("open"), (*(*nml)).item.szUrl.as_ptr(), core::ptr::null(), core::ptr::null(), (SW_SHOWNORMAL) as INT);
             }
         }
 
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 
 

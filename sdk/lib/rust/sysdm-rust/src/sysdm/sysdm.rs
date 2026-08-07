@@ -17,16 +17,22 @@ pub static mut Applets: [APPLET; (NUM_APPLETS) as usize] = [
 pub const MAX_SYSTEM_PAGES: u32 = 32;
 
 pub type PCreateNetIDPropertyPage = Option<unsafe extern "system" fn() -> HPROPSHEETPAGE>;
+/// sysdm.c:27 `INT __cdecl ResourceMessageBox(…, ...)`, minus the `...`.
+///
+/// The variadic entry point of that name is the trampoline in
+/// `dll/cpl/sysdm/rust_varargs_shim.c`: stable Rust cannot DEFINE a C-variadic, so the shim
+/// does the `va_start` and hands us `app`, a POINTER to the `va_list`. strsafe-rust's
+/// `StringCchPrintfW_v` takes that same by-pointer form, so the C's
+/// `StringCchVPrintfW(…, args)` lands as a `_v` call here rather than a by-value one.
 #[no_mangle]
-pub unsafe extern "C" fn ResourceMessageBox(
+pub unsafe extern "C" fn ResourceMessageBox_v(
     hInstance: HINSTANCE,
     hwnd: HWND,
     uType: u32,
     uCaption: u32,
     uText: u32,
-    mut args: ...
+    app: *mut core::ffi::c_void,
 ) -> i32 {
-    let mut args: va_list;
     let mut szCaption: [u16; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
     let mut szText: [u16; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
     let mut szCookedText: [u16; (2 * MAX_STR_LENGTH) as usize] = [0; (2 * MAX_STR_LENGTH) as usize];
@@ -34,35 +40,26 @@ pub unsafe extern "C" fn ResourceMessageBox(
     LoadStringW(hInstance, uCaption, szCaption.as_mut_ptr(), (_countof!(szCaption)) as i32);
     LoadStringW(hInstance, uText, szText.as_mut_ptr(), (_countof!(szText)) as i32);
 
-    va_start(args, uText);
-    StringCchVPrintfW(szCookedText.as_mut_ptr(), (_countof!(szCookedText)) as usize,
-                      szText.as_ptr(), (args).cast());
-    va_end(args);
+    strsafe_rust::StringCchPrintfW_v(
+        szCookedText.as_mut_ptr(),
+        (_countof!(szCookedText)) as usize,
+        szText.as_ptr(),
+        app,
+    );
 
     return MessageBoxW(hwnd,
                        szCookedText.as_ptr(),
                        szCaption.as_ptr(),
                        uType);
 }
-#[cfg(target_arch = "x86")]
+// ONE definition, not a `#[cfg]` ABI twin pair: sysdm.c says `CALLBACK`, and `extern "system"`
+// IS that -- stdcall on i386, the C convention everywhere else. `phpage` is a POINTER in the
+// header's union, so the C's `ppsh->phpage[ppsh->nPages++]` is pointer arithmetic, not indexing.
 unsafe extern "system" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_SYSTEM_PAGES {
         let index = (*ppsh).nPages as usize;
-        (*ppsh).__bindgen_anon_3.phpage[index] = hpage;
-        (*ppsh).nPages += 1;
-        return TRUE;
-    }
-
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
-    let ppsh = lParam as *mut PROPSHEETHEADER;
-    if !ppsh.is_null() && (*ppsh).nPages < MAX_SYSTEM_PAGES {
-        let index = (*ppsh).nPages as usize;
-        (*ppsh).__bindgen_anon_3.phpage[index] = hpage;
+        *(*ppsh).__bindgen_anon_3.phpage.add(index) = hpage;
         (*ppsh).nPages += 1;
         return TRUE;
     }
@@ -71,7 +68,7 @@ unsafe extern "C" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> 
 }
 unsafe extern "C" fn InitPropSheetPage(ppsh: *mut PROPSHEETHEADER, idDlg: WORD, DlgProc: DLGPROC) -> BOOL {
     let mut hPage: HPROPSHEETPAGE;
-    let mut psp: PROPSHEETPAGE;
+    let mut psp: PROPSHEETPAGE = core::mem::zeroed();
 
     if (*ppsh).nPages < MAX_SYSTEM_PAGES {
         ZeroMemory!(core::ptr::addr_of_mut!(psp) as LPVOID, core::mem::size_of::<PROPSHEETPAGE>());
@@ -94,11 +91,12 @@ unsafe extern "C" fn AddNetIdPage(ppsh: *mut PROPSHEETHEADER) -> HMODULE {
     let mut hMod: HMODULE;
     let mut pCreateNetIdPage: PCreateNetIDPropertyPage;
 
-    hMod = LoadLibrary(TEXT((b"netid.dll\0".as_ptr()).cast()));
+    hMod = LoadLibrary(w!("netid.dll"));
     if hMod != core::ptr::null_mut() {
-        pCreateNetIdPage = GetProcAddress(hMod, b"CreateNetIDPropertyPage\0".as_ptr() as *const i8) as PCreateNetIDPropertyPage;
-        if pCreateNetIdPage != core::ptr::null_mut() {
-            hPage = pCreateNetIdPage();
+        pCreateNetIdPage = core::mem::transmute::<_, PCreateNetIDPropertyPage>(
+            GetProcAddress(hMod, b"CreateNetIDPropertyPage\0".as_ptr() as *const i8));
+        if pCreateNetIdPage.is_some() {
+            hPage = (pCreateNetIdPage.unwrap_unchecked())();
             if hPage == core::ptr::null_mut() {
                 FreeLibrary(hMod);
                 hMod = core::ptr::null_mut();
@@ -117,33 +115,7 @@ unsafe extern "C" fn AddNetIdPage(ppsh: *mut PROPSHEETHEADER) -> HMODULE {
 
     hMod
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn PropSheetProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    lParam: LPARAM,
-) -> i32 {
-    let hIcon: HICON;
-    match uMsg {
-        PSCB_INITIALIZED => {
-            hIcon = LoadIconW(
-                hApplet,
-                MAKEINTRESOURCEW!(IDI_CPLSYSTEM),
-            );
-            SendMessageW(
-                hwndDlg,
-                WM_SETICON,
-                ICON_BIG,
-                hIcon as LPARAM,
-            );
-        }
-        _ => {}
-    }
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetProc(
     hwndDlg: HWND,
     uMsg: u32,
     lParam: LPARAM,
@@ -209,7 +181,7 @@ pub unsafe extern "system" fn SystemApplet(hwnd: HWND, uMsg: u32, wParam: LPARAM
     InitPropSheetPage(core::ptr::addr_of_mut!(psh), (IDD_PROPPAGEHARDWARE) as WORD, Some(HardwarePageProc));
     InitPropSheetPage(core::ptr::addr_of_mut!(psh), (IDD_PROPPAGEADVANCED) as WORD, Some(AdvancedPageProc));
 
-    hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, [REGSTR_PATH_CONTROLSFOLDER, TEXT("\\System")].concat().as_ptr(), MAX_SYSTEM_PAGES - psh.nPages);
+    hpsxa = SHCreatePropSheetExtArray(HKEY_LOCAL_MACHINE, REGSTR_PATH_CONTROLSFOLDER!("\\System"), MAX_SYSTEM_PAGES - psh.nPages);
     if hpsxa != core::ptr::null_mut() {
         SHAddFromPropSheetExtArray(hpsxa, Some(PropSheetAddPage), core::ptr::addr_of_mut!(psh) as LPARAM);
     }
@@ -266,7 +238,7 @@ pub unsafe extern "system" fn CPlApplet(
 
         CPL_DBLCLK => {
             if i < NUM_APPLETS {
-                (Applets[i as usize].AppletProc)(hwndCPl, uMsg, lParam1, lParam2);
+                (Applets[i as usize].AppletProc.unwrap_unchecked())(hwndCPl, uMsg, lParam1, lParam2);
             } else {
                 return TRUE;
             }
@@ -274,7 +246,7 @@ pub unsafe extern "system" fn CPlApplet(
 
         CPL_STARTWPARMSW => {
             if i < NUM_APPLETS {
-                return (Applets[i as usize].AppletProc)(hwndCPl, uMsg, lParam1, lParam2);
+                return (Applets[i as usize].AppletProc.unwrap_unchecked())(hwndCPl, uMsg, lParam1, lParam2);
             }
         }
 

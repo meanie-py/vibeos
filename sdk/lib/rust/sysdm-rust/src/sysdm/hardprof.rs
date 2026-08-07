@@ -79,64 +79,7 @@ unsafe extern "C" fn IsProfileNameInUse(
 
     return FALSE;
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn CopyProfileDlgProc(
-    hwndDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let pProfileNames: *mut PROFILENAMES;
-
-    pProfileNames = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut PROFILENAMES;
-
-    match uMsg {
-        WM_INITDIALOG => {
-            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam);
-            let pProfileNames = lParam as *mut PROFILENAMES;
-
-            SetDlgItemText(hwndDlg, IDC_COPYPROFILEFROM, (*pProfileNames).szSourceName.as_ptr());
-
-            SendDlgItemMessageW(hwndDlg, IDC_COPYPROFILETO, EM_SETLIMITTEXT, PROFILE_NAME_LENGTH - 1, 0);
-            SetDlgItemText(hwndDlg, IDC_COPYPROFILETO, (*pProfileNames).szDestinationName.as_ptr());
-        }
-
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDOK => {
-                    GetDlgItemText(hwndDlg,
-                                   IDC_COPYPROFILETO,
-                                   (*pProfileNames).szDestinationName.as_mut_ptr(),
-                                   PROFILE_NAME_LENGTH);
-                    if IsProfileNameInUse(pProfileNames, FALSE) != 0 {
-                        ResourceMessageBox(hApplet,
-                                           hwndDlg,
-                                           MB_OK | MB_ICONERROR,
-                                           IDS_HWPROFILE_WARNING,
-                                           IDS_HWPROFILE_ALREADY_IN_USE);
-                    } else {
-                        EndDialog(hwndDlg, (IDOK) as INT_PTR);
-                    }
-                    return TRUE;
-                }
-
-                IDCANCEL => {
-                    EndDialog(hwndDlg, (IDCANCEL) as INT_PTR);
-                    return TRUE;
-                }
-
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    return FALSE;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CopyProfileDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -153,7 +96,8 @@ unsafe extern "C" fn CopyProfileDlgProc(
 
             SetDlgItemText(hwndDlg, (IDC_COPYPROFILEFROM) as i32, (*pProfileNames).szSourceName.as_ptr());
 
-            SendDlgItemMessageW(hwndDlg, (IDC_COPYPROFILETO) as i32, EM_SETLIMITTEXT, (PROFILE_NAME_LENGTH - 1) as WPARAM, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_COPYPROFILETO) as c_int, EM_SETLIMITTEXT,
+                                (PROFILE_NAME_LENGTH - 1) as WPARAM, 0);
             SetDlgItemText(hwndDlg, (IDC_COPYPROFILETO) as i32, (*pProfileNames).szDestinationName.as_ptr());
         }
 
@@ -161,9 +105,9 @@ unsafe extern "C" fn CopyProfileDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
-                                   (IDC_COPYPROFILETO) as i32,
+                                   (IDC_COPYPROFILETO) as c_int,
                                    (*pProfileNames).szDestinationName.as_mut_ptr(),
-                                   (PROFILE_NAME_LENGTH) as i32);
+                                   (PROFILE_NAME_LENGTH) as c_int);
                     if IsProfileNameInUse(pProfileNames, FALSE) != 0 {
                         ResourceMessageBox(hApplet,
                                            hwndDlg,
@@ -173,12 +117,12 @@ unsafe extern "C" fn CopyProfileDlgProc(
                     } else {
                         EndDialog(hwndDlg, (IDOK) as INT_PTR);
                     }
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, (IDCANCEL) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -188,7 +132,7 @@ unsafe extern "C" fn CopyProfileDlgProc(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 unsafe extern "C" fn CopyHardwareProfile(
     hwndDlg: HWND,
@@ -200,7 +144,7 @@ unsafe extern "C" fn CopyHardwareProfile(
     let mut pNewProfile: *mut PROFILE;
     let mut szBuffer: [u16; 80] = core::mem::zeroed();
 
-    pProfile = &mut (*pProfileData).pProfiles.offset((*pProfileData).dwSelectedProfileIndex as isize);
+    pProfile = (*pProfileData).pProfiles.offset((*pProfileData).dwSelectedProfileIndex as isize);
 
     LoadStringW(hApplet, IDS_HWPROFILE_PROFILE, szBuffer.as_mut_ptr(), ((core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as u32) as i32);
 
@@ -213,7 +157,7 @@ unsafe extern "C" fn CopyHardwareProfile(
                        MAKEINTRESOURCE!(IDD_COPYPROFILE),
                        hwndDlg,
                        Some(CopyProfileDlgProc),
-                       &ProfileNames as *const _ as LPARAM) != IDOK {
+                       &ProfileNames as *const _ as LPARAM) != (IDOK) as LPARAM {
         return;
     }
 
@@ -233,7 +177,7 @@ unsafe extern "C" fn CopyHardwareProfile(
     (*pProfileData).dwProfileCount += 1;
     (*pProfileData).pProfiles = pNewProfiles;
 
-    pNewProfile = &mut (*pProfileData).pProfiles.offset(((*pProfileData).dwProfileCount - 1) as isize);
+    pNewProfile = (*pProfileData).pProfiles.offset(((*pProfileData).dwProfileCount - 1) as isize);
 
     CopyMemory!(pNewProfile as *mut _ as *mut _, pProfile as *const _ as *const _, core::mem::size_of::<PROFILE>());
 
@@ -249,64 +193,7 @@ unsafe extern "C" fn CopyHardwareProfile(
 
     UpdateButtons(hwndDlg, pProfileData);
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn RenameProfileDlgProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    let mut pProfileNames: *mut PROFILENAMES;
-
-    pProfileNames = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut PROFILENAMES;
-
-    match uMsg {
-        WM_INITDIALOG => {
-            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam);
-            pProfileNames = lParam as *mut PROFILENAMES;
-
-            SetDlgItemText(hwndDlg, IDC_RENPROFEDITFROM, (*pProfileNames).szSourceName.as_ptr());
-
-            SendDlgItemMessageW(hwndDlg, IDC_RENPROFEDITTO, EM_SETLIMITTEXT, PROFILE_NAME_LENGTH - 1, 0);
-            SetDlgItemText(hwndDlg, IDC_RENPROFEDITTO, (*pProfileNames).szDestinationName.as_ptr());
-        }
-
-        WM_COMMAND => {
-            match (LOWORD!(wParam)) as u32 {
-                IDOK => {
-                    GetDlgItemText(hwndDlg,
-                                   IDC_RENPROFEDITTO,
-                                   (*pProfileNames).szDestinationName.as_mut_ptr(),
-                                   PROFILE_NAME_LENGTH);
-                    if IsProfileNameInUse(pProfileNames, TRUE) != 0 {
-                        ResourceMessageBox(hApplet,
-                                           hwndDlg,
-                                           MB_OK | MB_ICONERROR,
-                                           IDS_HWPROFILE_WARNING,
-                                           IDS_HWPROFILE_ALREADY_IN_USE);
-                    } else {
-                        EndDialog(hwndDlg, (IDOK) as INT_PTR);
-                    }
-                    return TRUE;
-                }
-
-                IDCANCEL => {
-                    EndDialog(hwndDlg, (IDCANCEL) as INT_PTR);
-                    return TRUE;
-                }
-
-                _ => {}
-            }
-        }
-
-        _ => {}
-    }
-
-    return FALSE;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn RenameProfileDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -323,7 +210,8 @@ unsafe extern "C" fn RenameProfileDlgProc(
 
             SetDlgItemText(hwndDlg, (IDC_RENPROFEDITFROM) as i32, (*pProfileNames).szSourceName.as_ptr());
 
-            SendDlgItemMessageW(hwndDlg, (IDC_RENPROFEDITTO) as i32, EM_SETLIMITTEXT, (PROFILE_NAME_LENGTH - 1) as WPARAM, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_RENPROFEDITTO) as c_int, EM_SETLIMITTEXT,
+                                (PROFILE_NAME_LENGTH - 1) as WPARAM, 0);
             SetDlgItemText(hwndDlg, (IDC_RENPROFEDITTO) as i32, (*pProfileNames).szDestinationName.as_ptr());
         }
 
@@ -331,9 +219,9 @@ unsafe extern "C" fn RenameProfileDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
-                                   (IDC_RENPROFEDITTO) as i32,
+                                   (IDC_RENPROFEDITTO) as c_int,
                                    (*pProfileNames).szDestinationName.as_mut_ptr(),
-                                   (PROFILE_NAME_LENGTH) as i32);
+                                   (PROFILE_NAME_LENGTH) as c_int);
                     if IsProfileNameInUse(pProfileNames, TRUE) != 0 {
                         ResourceMessageBox(hApplet,
                                            hwndDlg,
@@ -343,12 +231,12 @@ unsafe extern "C" fn RenameProfileDlgProc(
                     } else {
                         EndDialog(hwndDlg, (IDOK) as INT_PTR);
                     }
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, (IDCANCEL) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -358,7 +246,7 @@ unsafe extern "C" fn RenameProfileDlgProc(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 unsafe extern "C" fn RenameHardwareProfile(
     hwndDlg: HWND,
@@ -380,7 +268,7 @@ unsafe extern "C" fn RenameHardwareProfile(
                        MAKEINTRESOURCE!(IDD_RENAMEPROFILE),
                        hwndDlg,
                        Some(RenameProfileDlgProc),
-                       core::ptr::addr_of_mut!(ProfileNames) as LPARAM) != IDOK
+                       core::ptr::addr_of_mut!(ProfileNames) as LPARAM) != (IDOK) as LPARAM
     {
         return;
     }
@@ -401,7 +289,7 @@ unsafe extern "C" fn DeleteHardwareProfile(
     let pProfiles: *mut PROFILE;
     let pProfile: *mut PROFILE;
 
-    pProfile = &mut (*pProfileData).pProfiles.offset((*pProfileData).dwSelectedProfileIndex as isize);
+    pProfile = (*pProfileData).pProfiles.offset((*pProfileData).dwSelectedProfileIndex as isize);
 
     if ResourceMessageBox(hApplet,
                            hwndDlg,
@@ -463,8 +351,8 @@ unsafe extern "C" fn MoveHardwareProfile(
         dwSrcIndex + 1
     };
 
-    pSrcProfile = &mut (*pProfileData).pProfiles.offset(dwSrcIndex as isize);
-    pDstProfile = &mut (*pProfileData).pProfiles.offset(dwDstIndex as isize);
+    pSrcProfile = (*pProfileData).pProfiles.offset(dwSrcIndex as isize);
+    pDstProfile = (*pProfileData).pProfiles.offset(dwDstIndex as isize);
 
     CopyMemory!(
         &mut TempProfile as *mut _ as *mut u8,
@@ -508,7 +396,8 @@ unsafe extern "C" fn MoveHardwareProfile(
 
     UpdateButtons(hwndDlg, pProfileData);
 }
-#[cfg(target_arch = "x86")]
+// Two `#[cfg]` ABI twin pairs collapsed to one definition each: hardprof.c spells both
+// CALLBACK, and `extern "system"` IS that -- stdcall on i386, the C convention elsewhere.
 unsafe extern "system" fn HardwareProfilePropertiesDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
@@ -521,50 +410,15 @@ unsafe extern "system" fn HardwareProfilePropertiesDlgProc(
 
     match uMsg {
         WM_INITDIALOG => {
-            return TRUE;
+            return (TRUE) as INT_PTR;
         }
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn HardwareProfilePropertiesDlgProc(
-    hwndDlg: HWND,
-    uMsg: u32,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    UNREFERENCED_PARAMETER!(hwndDlg);
-    UNREFERENCED_PARAMETER!(lParam);
-    UNREFERENCED_PARAMETER!(wParam);
-
-    match uMsg {
-        WM_INITDIALOG => {
-            return TRUE;
-        }
-        _ => {}
-    }
-
-    return FALSE;
-}
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
-    let mut hIcon: HICON;
-    match uMsg {
-        PSCB_INITIALIZED => {
-            hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDI_HARDPROF));
-            SendMessageW(hwndDlg, WM_SETICON, ICON_BIG, hIcon as LPARAM);
-        }
-        _ => {}
-    }
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
-    let mut hIcon: HICON;
+    let hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
             hIcon = LoadIconW(hApplet, MAKEINTRESOURCEW!(IDI_HARDPROF));
@@ -573,6 +427,49 @@ unsafe extern "C" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> 
         _ => {}
     }
     0
+}
+
+/// hardprof.c:1043 `static VOID HardwareProfileProperties(HWND, PPROFILEDATA)`.
+///
+/// Hand-written: this is the body the translate run dropped with `--skip-fn`, recorded in
+/// that run's AUDIT.md. A direct transcription of the C.
+///
+/// `psh.phpage = &hpsp` really does point at a single stack HPROPSHEETPAGE -- the C takes the
+/// address of the local, and PropertySheet only reads it during the call.
+unsafe extern "C" fn HardwareProfileProperties(hwndDlg: HWND, pProfileData: PPROFILEDATA) {
+    let mut hpsp: HPROPSHEETPAGE;
+    let mut psh: PROPSHEETHEADER = core::mem::zeroed();
+    let mut psp: PROPSHEETPAGE = core::mem::zeroed();
+
+    ZeroMemory!(core::ptr::addr_of_mut!(psp) as LPVOID, core::mem::size_of::<PROPSHEETPAGE>());
+    psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as u32;
+    psp.dwFlags = PSP_DEFAULT;
+    psp.hInstance = hApplet;
+    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_HARDWAREPROFILE);
+    psp.pfnDlgProc = Some(HardwareProfilePropertiesDlgProc);
+
+    hpsp = CreatePropertySheetPage(core::ptr::addr_of_mut!(psp));
+    if hpsp.is_null() {
+        return;
+    }
+
+    ZeroMemory!(core::ptr::addr_of_mut!(psh) as LPVOID, core::mem::size_of::<PROPSHEETHEADER>());
+    psh.dwSize = core::mem::size_of::<PROPSHEETHEADER>() as u32;
+    psh.dwFlags = PSH_PROPTITLE | PSH_USEICONID | PSH_USECALLBACK;
+    psh.hwndParent = hwndDlg;
+    psh.hInstance = hApplet;
+    psh.__bindgen_anon_1.pszIcon = MAKEINTRESOURCEW!(IDI_HARDPROF);
+    psh.pszCaption = (*(*pProfileData)
+        .pProfiles
+        .offset((*pProfileData).dwSelectedProfileIndex as isize))
+    .szFriendlyName
+    .as_ptr();
+    psh.nPages = 1;
+    psh.__bindgen_anon_2.nStartPage = 0;
+    psh.__bindgen_anon_3.phpage = core::ptr::addr_of_mut!(hpsp);
+    psh.pfnCallback = Some(PropSheetProc);
+
+    PropertySheet(core::ptr::addr_of_mut!(psh));
 }
 unsafe extern "C" fn GetUserWaitInterval() -> DWORD {
     let mut dwWaitInterval: DWORD = 30;
@@ -687,7 +584,7 @@ unsafe extern "C" fn GetProfile(
 
     dwSize = (PROFILE_NAME_LENGTH * core::mem::size_of::<WCHAR>()) as DWORD;
     lError = RegQueryValueExW(hProfileKey,
-                              w!("FriendlyName").as_ptr(),
+                              w!("FriendlyName"),
                               core::ptr::null_mut(),
                               core::ptr::null_mut(),
                               (*pProfile).szFriendlyName.as_mut_ptr() as LPBYTE,
@@ -698,7 +595,7 @@ unsafe extern "C" fn GetProfile(
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
     lError = RegQueryValueExW(hProfileKey,
-                              w!("PreferenceOrder").as_ptr(),
+                              w!("PreferenceOrder"),
                               core::ptr::null_mut(),
                               core::ptr::null_mut(),
                               core::ptr::addr_of_mut!((*pProfile).dwPreferenceOrder) as LPBYTE,
@@ -742,7 +639,7 @@ unsafe extern "C" fn GetProfiles(hwndDlg: HWND) -> i32 {
         return FALSE;
     }
 
-    SetWindowLongPtr(hwndDlg, DWLP_USER, pProfileData as isize);
+    SetWindowLongPtr(hwndDlg, DWLP_USER, pProfileData as LONG_PTR);
 
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE,
                       w!("System\\CurrentControlSet\\Control\\IDConfigDB\\Hardware Profiles") as LPWSTR,
@@ -806,7 +703,7 @@ unsafe extern "C" fn OnInitHardProfDialog(hwndDlg: HWND) -> i32 {
     SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_SETRANGE, 0 as WPARAM, MAKELONG!(500 as i16, 0) as LPARAM);
 
     dwWaitInterval = GetUserWaitInterval();
-    if dwWaitInterval == 1.wrapping_neg() as DWORD {
+    if dwWaitInterval == (-1i32) as DWORD {
         CheckDlgButton(hwndDlg, (IDC_HRDPROFWAIT) as i32, BST_CHECKED);
         SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_SETPOS, 0, 30);
         EnableWindow(GetDlgItem(hwndDlg, (IDC_HRDPROFEDIT) as i32), FALSE);
@@ -823,7 +720,7 @@ unsafe extern "C" fn OnOk(hwndDlg: HWND) {
     if IsDlgButtonChecked(hwndDlg, (IDC_HRDPROFWAIT) as i32) == BST_CHECKED {
         dwWaitInterval = (-1i32) as DWORD;
     } else {
-        dwWaitInterval = LOWORD!(SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_GETPOS, 0, 0));
+        dwWaitInterval = LOWORD!(SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_GETPOS, 0, 0)) as DWORD;
     }
 
     SetUserWaitInterval(dwWaitInterval);
@@ -885,12 +782,12 @@ pub unsafe extern "system" fn HardProfDlgProc(
 
                 IDC_HRDPROFWAIT => {
                     EnableWindow(GetDlgItem(hwndDlg, (IDC_HRDPROFEDIT) as i32), FALSE);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_HRDPROFSELECT => {
                     EnableWindow(GetDlgItem(hwndDlg, (IDC_HRDPROFEDIT) as i32), TRUE);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_HRDPROFLSTBOX => {
@@ -898,18 +795,18 @@ pub unsafe extern "system" fn HardProfDlgProc(
                         (*pProfileData).dwSelectedProfileIndex = SendDlgItemMessage(hwndDlg, (IDC_HRDPROFLSTBOX) as i32, LB_GETCURSEL, 0, 0) as u32;
                         UpdateButtons(hwndDlg, pProfileData);
                     }
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDOK => {
                     OnOk(hwndDlg);
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -919,7 +816,7 @@ pub unsafe extern "system" fn HardProfDlgProc(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 
 

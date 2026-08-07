@@ -11,6 +11,75 @@ pub struct _LIC_CONTEXT {
 
 pub type LIC_CONTEXT = _LIC_CONTEXT;
 pub type PLIC_CONTEXT = *mut _LIC_CONTEXT;
+
+/// licence.c:20 `static BOOL OnInitDialog(HWND, PLIC_CONTEXT)`.
+///
+/// Hand-written: the translate run could not get this body past the envelope and it was
+/// dropped with `--skip-fn`, which the run's AUDIT.md records rather than passing over in
+/// silence. Everything below is a direct transcription of the C.
+///
+/// `RC_LICENSE`/`RTDATA` are resource ids, so both reach FindResource through
+/// MAKEINTRESOURCE. `SetDlgItemTextA` and `PCSTR` are the A spellings in the C too: the
+/// licence blob is a raw ANSI resource, not a wide string, and stays narrow under -DUNICODE.
+unsafe extern "C" fn OnInitDialog(hDlg: HWND, pLicInfo: PLIC_CONTEXT) -> BOOL {
+    let hResInfo: HRSRC;
+    let hResMem: HGLOBAL;
+    let LicenseText: PCSTR;
+
+    (*pLicInfo).hIcon = LoadImage(
+        hApplet,
+        MAKEINTRESOURCE!(IDI_LICENSE),
+        IMAGE_ICON,
+        GetSystemMetrics((SM_CXICON) as c_int),
+        GetSystemMetrics((SM_CYICON) as c_int),
+        LR_DEFAULTCOLOR,
+    ) as HICON;
+    (*pLicInfo).hIconSm = LoadImage(
+        hApplet,
+        MAKEINTRESOURCE!(IDI_LICENSE),
+        IMAGE_ICON,
+        GetSystemMetrics((SM_CXSMICON) as c_int),
+        GetSystemMetrics((SM_CYSMICON) as c_int),
+        LR_DEFAULTCOLOR,
+    ) as HICON;
+
+    SendMessage(hDlg, WM_SETICON, (ICON_BIG) as WPARAM, (*pLicInfo).hIcon as LPARAM);
+    SendMessage(hDlg, WM_SETICON, (ICON_SMALL) as WPARAM, (*pLicInfo).hIconSm as LPARAM);
+
+    /* Load license from resource */
+    hResInfo = FindResource(hApplet, MAKEINTRESOURCE!(RC_LICENSE), MAKEINTRESOURCE!(RTDATA));
+    if hResInfo.is_null() {
+        ShowLastWin32Error(hDlg);
+        return FALSE;
+    }
+    hResMem = LoadResource(hApplet, hResInfo);
+    if hResMem.is_null() {
+        ShowLastWin32Error(hDlg);
+        return FALSE;
+    }
+    LicenseText = LockResource(hResMem) as PCSTR;
+    if LicenseText.is_null() {
+        ShowLastWin32Error(hDlg);
+        return FALSE;
+    }
+
+    /* Insert the license into the edit control */
+    SetDlgItemTextA(hDlg, (IDC_LICENCEEDIT) as c_int, LicenseText);
+
+    PostMessage(
+        GetDlgItem(hDlg, (IDC_LICENCEEDIT) as c_int),
+        EM_SETSEL,
+        (-1i32) as WPARAM,
+        0,
+    );
+    PostMessage(
+        GetDlgItem(hDlg, (IDC_LICENCEEDIT) as c_int),
+        WM_VSCROLL,
+        (SB_TOP) as WPARAM,
+        0,
+    );
+    TRUE
+}
 #[no_mangle]
 pub unsafe extern "system" fn LicenceDlgProc(
     hDlg: HWND,
@@ -33,10 +102,10 @@ pub unsafe extern "system" fn LicenceDlgProc(
             ) as *mut LIC_CONTEXT;
             if pLicInfo.is_null() {
                 EndDialog(hDlg, 0);
-                return FALSE;
+                return (FALSE) as INT_PTR;
             }
-            SetWindowLongPtr(hDlg, DWLP_USER, pLicInfo as isize);
-            return OnInitDialog(hDlg, pLicInfo);
+            SetWindowLongPtr(hDlg, DWLP_USER, pLicInfo as LONG_PTR);
+            return OnInitDialog(hDlg, pLicInfo) as INT_PTR;
         }
 
         WM_DESTROY => {
@@ -56,14 +125,14 @@ pub unsafe extern "system" fn LicenceDlgProc(
         WM_COMMAND => {
             if (LOWORD!(wParam) == (IDOK) as u16) || (LOWORD!(wParam) == (IDCANCEL) as u16) {
                 EndDialog(hDlg, (LOWORD!(wParam)) as INT_PTR);
-                return TRUE;
+                return (TRUE) as INT_PTR;
             }
         }
 
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 
 

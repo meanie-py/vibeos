@@ -4,32 +4,22 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub type PDEVMGREXEC = Option<unsafe extern "system" fn(hWndParent: HWND, hInst: HMODULE, Unknown: PVOID, nCmdShow: i32) -> i32>;
-unsafe extern "C" fn LaunchDeviceManager(hWndParent: HWND) -> BOOL {
-    #[cfg(__REACTOS__)]
-    {
-        return ((ShellExecuteW(core::ptr::null_mut(), SW_SHOWNORMAL.as_ptr(), 32.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), FALSE) as INT_PTR) > FALSE) as BOOL;
-    }
-    #[cfg(not(__REACTOS__))]
-    {
-        let hDll: HMODULE;
-        let DevMgrExec: PDEVMGREXEC;
-        let Ret: BOOL;
-
-        hDll = LoadLibrary(_TEXT(SW_SHOW.as_ptr()));
-        if hDll.is_null() {
-            return FALSE;
-        }
-
-        DevMgrExec = GetProcAddress(hDll, b"DeviceManager_ExecuteW\0".as_ptr() as *const i8) as PDEVMGREXEC;
-        if DevMgrExec.is_none() {
-            FreeLibrary(hDll);
-            return FALSE;
-        }
-
-        Ret = DevMgrExec(hWndParent, hApplet, core::ptr::null_mut(), SW_SHOWNORMAL);
-        FreeLibrary(hDll);
-        return Ret;
-    }
+// hardware.c:19 is `#ifdef __REACTOS__`, a BUILD-CONFIGURATION conditional, and we ARE
+// ReactOS -- so only this arm exists and the `#else` (LoadLibrary devmgr.dll, which does not
+// ship here) is not carried. The paid body emitted BOTH arms under `#[cfg(__REACTOS__)]` and
+// `#[cfg(not(__REACTOS__))]`, a cfg nothing ever sets, so both compiled OUT and the function
+// returned nothing at all; on top of that the surviving arm had L"open" as SW_SHOWNORMAL,
+// L"devmgmt.exe" as 32, SW_SHOWNORMAL as FALSE, and the `> 32` as `> FALSE`.
+unsafe extern "C" fn LaunchDeviceManager(_hWndParent: HWND) -> BOOL {
+    ((ShellExecuteW(
+        core::ptr::null_mut(),
+        w!("open"),
+        w!("devmgmt.exe"),
+        core::ptr::null(),
+        core::ptr::null(),
+        (SW_SHOWNORMAL) as INT,
+    ) as INT_PTR)
+        > 32) as BOOL
 }
 unsafe extern "C" fn LaunchHardwareWizard(hWndParent: HWND) {
     let mut shInputDll: SHELLEXECUTEINFO = core::mem::zeroed();
@@ -42,14 +32,14 @@ unsafe extern "C" fn LaunchHardwareWizard(hWndParent: HWND) {
 
     shInputDll.cbSize = core::mem::size_of::<SHELLEXECUTEINFO>() as u32;
     shInputDll.hwnd = hWndParent;
-    shInputDll.lpVerb = _T((b"open\0".as_ptr() as *const i8).cast());
-    shInputDll.lpFile = _T((b"rundll32.exe\0".as_ptr() as *const i8).cast());
-    shInputDll.lpParameters = _T((b"shell32.dll,Control_RunDLL hdwwiz.cpl\0".as_ptr() as *const i8).cast());
+    shInputDll.lpVerb = _T(w!("open"));
+    shInputDll.lpFile = _T(w!("rundll32.exe"));
+    shInputDll.lpParameters = _T(w!("shell32.dll,Control_RunDLL hdwwiz.cpl"));
 
     if ShellExecuteEx(core::ptr::addr_of_mut!(shInputDll)) == 0 {
         MessageBox(
             core::ptr::null_mut(),
-            _T((b"Can't start hdwwiz.cpl\0".as_ptr() as *const i8).cast()),
+            _T(w!("Can't start hdwwiz.cpl")),
             core::ptr::null_mut(),
             MB_OK | MB_ICONERROR,
         );
@@ -73,12 +63,12 @@ pub unsafe extern "system" fn HardwarePageProc(
                     if LaunchDeviceManager(hwndDlg) == 0 {
                         /* FIXME */
                     }
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_HARDWARE_WIZARD => {
                     LaunchHardwareWizard(hwndDlg);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_HARDWARE_PROFILE => {
@@ -88,7 +78,7 @@ pub unsafe extern "system" fn HardwarePageProc(
                         hwndDlg,
                         Some(HardProfDlgProc),
                     );
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 _ => {}
@@ -98,7 +88,7 @@ pub unsafe extern "system" fn HardwarePageProc(
         _ => {}
     }
 
-    FALSE
+    (FALSE) as INT_PTR
 }
 
 

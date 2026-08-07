@@ -52,11 +52,17 @@ pub struct _VIRTMEM {
 pub type VIRTMEM = _VIRTMEM;
 pub type PVIRTMEM = *mut _VIRTMEM;
 
-static lpKey: LPCTSTR = w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management") as LPCTSTR;
+// virtmem.c:102 `static LPCTSTR lpKey = _T("…")`. A raw pointer is not `Sync`, so this
+// cannot be a `static`; `w!` already yields a pointer into an aligned static array.
+macro_rules! lpKey {
+    () => {
+        w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management") as LPCTSTR
+    };
+}
 unsafe extern "C" fn GetMaxPageFileSize(PageFile: *mut PAGEFILE) -> UINT {
     #[cfg(target_arch = "x86")]
     {
-        if (*core::ptr::addr_of!((*crate::mm::SharedUserData).ProcessorFeatures))[PF_PAE_ENABLED] != 0
+        if (*core::ptr::addr_of!((*SharedUserData).ProcessorFeatures))[(PF_PAE_ENABLED) as usize] != 0
             && (*PageFile).bIsNotFAT != 0
         {
             return min!((*PageFile).FreeSize, MAXIMUM_PAGEFILE_SIZE_PAE);
@@ -72,7 +78,7 @@ unsafe extern "C" fn ReadPageFileSettings(pVirtMem: PVIRTMEM) -> i32 {
 
     if RegCreateKeyEx(
         HKEY_LOCAL_MACHINE,
-        lpKey,
+        lpKey!(),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -84,7 +90,7 @@ unsafe extern "C" fn ReadPageFileSettings(pVirtMem: PVIRTMEM) -> i32 {
     {
         if RegQueryValueEx(
             hkey,
-            _T((b"PagingFiles\0".as_ptr() as *const i8).cast()),
+            _T(w!("PagingFiles")),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(dwType),
             core::ptr::null_mut(),
@@ -99,7 +105,7 @@ unsafe extern "C" fn ReadPageFileSettings(pVirtMem: PVIRTMEM) -> i32 {
             if !(*pVirtMem).szPagingFiles.is_null() {
                 if RegQueryValueEx(
                     hkey,
-                    _T((b"PagingFiles\0".as_ptr() as *const i8).cast()),
+                    _T(w!("PagingFiles")),
                     core::ptr::null_mut(),
                     core::ptr::addr_of_mut!(dwType),
                     (*pVirtMem).szPagingFiles as PBYTE,
@@ -177,7 +183,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
 
         DrivePtr = _tcsupr(DrivePtr);
 
-        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, _countof!(szDrive));
+        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, (_countof!(szDrive)) as c_int);
 
         if GetDriveType(DrivePtr) == DRIVE_FIXED {
             MinSize = -1;
@@ -231,7 +237,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
         {
             _stprintf(
                 szText.as_mut_ptr(),
-                _T(w!("%s\\\\pagefile.sys %i %i") as LPCTSTR),
+                _T(w!("%s\\pagefile.sys %i %i") as LPCTSTR),
                 (*PageFile).szDrive.as_ptr(),
                 (*PageFile).NewMinSize,
                 (*PageFile).NewMaxSize
@@ -249,7 +255,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
 
     if RegCreateKeyEx(
         HKEY_LOCAL_MACHINE,
-        lpKey,
+        lpKey!(),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -282,7 +288,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
             {
                 _stprintf(
                     szText.as_mut_ptr(),
-                    _T(w!("%s\\\\pagefile.sys") as LPCTSTR),
+                    _T(w!("%s\\pagefile.sys") as LPCTSTR),
                     (*pVirtMem).PageFile[i as usize].szDrive.as_ptr()
                 );
 
@@ -404,7 +410,7 @@ unsafe extern "C" fn UpdatePagefileEntry(
     {
         _stprintf(
             szSize.as_mut_ptr(),
-            _T((b"%d - %d\0".as_ptr()).cast()),
+            _T(w!("%d - %d")),
             (*PageFile).NewMinSize,
             (*PageFile).NewMaxSize,
         );
@@ -412,7 +418,7 @@ unsafe extern "C" fn UpdatePagefileEntry(
 
     _stprintf(
         szDisplayString.as_mut_ptr(),
-        _T((b"%s  [%s]\t%s\0".as_ptr()).cast()),
+        _T(w!("%s  [%s]	%s")),
         (*PageFile).szDrive.as_ptr(),
         if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T(w!("")) },
         szSize.as_ptr(),
@@ -426,7 +432,7 @@ unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
     let mut Index: INT;
     let mut MinSize: UINT = (-1i32) as UINT;
     let mut MaxSize: UINT = (-1i32) as UINT;
-    let mut bTranslated: BOOL;
+    let mut bTranslated: BOOL = 0;
     let mut DriveIndex: UINT;
     let mut PageFile: PPAGEFILE;
 
@@ -553,7 +559,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
     let mut szBuffer: [TCHAR; 64] = core::mem::zeroed();
     let mut szText: [TCHAR; (MAX_PATH) as usize] = core::mem::zeroed();
     let mut fdata: WIN32_FIND_DATA = core::mem::zeroed();
-    let hFind: HANDLE;
+    let mut hFind: HANDLE;
     let mut pfSize: ULARGE_INTEGER = core::mem::zeroed();
 
     Index = SendDlgItemMessage(
@@ -595,7 +601,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             core::ptr::addr_of_mut!(FreeDiskSpace)
         ) != 0
         {
-            (*PageFile).FreeSize = (FreeDiskSpace.QuadPart / MEGABYTE) as UINT;
+            (*PageFile).FreeSize = (FreeDiskSpace.QuadPart / (MEGABYTE) as u64) as UINT;
             _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), (*PageFile).FreeSize);
             SetDlgItemText((*pVirtMem).hSelf, (IDC_SPACEAVAIL) as i32, szBuffer.as_ptr());
         }
@@ -662,7 +668,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             _stprintf(
                 szText.as_mut_ptr(),
                 w!("%c:\\pagefile.sys"),
-                (*pVirtMem).PageFile[i as usize].szDrive[0 as usize]
+                (*pVirtMem).PageFile[i as usize].szDrive[0 as usize] as UINT
             );
 
             hFind = FindFirstFile(szText.as_ptr(), core::ptr::addr_of_mut!(fdata));
@@ -671,7 +677,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             } else {
                 pfSize.u.LowPart = fdata.nFileSizeLow;
                 pfSize.u.HighPart = fdata.nFileSizeHigh;
-                PageFileSizeMb += (pfSize.QuadPart / MEGABYTE) as UINT;
+                PageFileSizeMb += (pfSize.QuadPart / (MEGABYTE) as u64) as UINT;
                 FindClose(hFind);
             }
             i += 1;
@@ -707,7 +713,7 @@ unsafe extern "C" fn OnInitVirtMemDialog(hwnd: HWND, pVirtMem: PVIRTMEM) {
     SetListBoxColumns((*pVirtMem).hListBox);
 
     i = 0;
-    while i < _countof!(core::ptr::addr_of_mut!((*pVirtMem).PageFile)) {
+    while i < _countof!((*pVirtMem).PageFile) {
         PageFile = &mut (*pVirtMem).PageFile[i as usize];
         (*PageFile).bUsed = FALSE;
         (*PageFile).OldMinSize = -1;
@@ -764,10 +770,10 @@ pub unsafe extern "system" fn VirtMemDlgProc(
             ) as PVIRTMEM;
             if pVirtMem.is_null() {
                 EndDialog(hwndDlg, 0);
-                return FALSE;
+                return (FALSE) as INT_PTR;
             }
 
-            SetWindowLongPtr(hwndDlg, DWLP_USER, pVirtMem as isize);
+            SetWindowLongPtr(hwndDlg, DWLP_USER, pVirtMem as LONG_PTR);
 
             OnInitVirtMemDialog(hwndDlg, pVirtMem);
         }
@@ -780,40 +786,40 @@ pub unsafe extern "system" fn VirtMemDlgProc(
             match (LOWORD!(wParam)) as u32 {
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDOK => {
                     OnVirtMemDialogOk(pVirtMem);
                     EndDialog(hwndDlg, ((*pVirtMem).bModified) as INT_PTR);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_NOPAGEFILE => {
                     OnNoPagingFile(pVirtMem);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_SYSMANSIZE => {
                     OnSysManSize(pVirtMem);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_CUSTOM => {
                     OnCustom(pVirtMem);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_SET => {
                     OnSet(pVirtMem);
-                    return TRUE;
+                    return (TRUE) as INT_PTR;
                 }
 
                 IDC_PAGEFILELIST => {
                     match (HIWORD!(wParam)) as u32 {
                         LBN_SELCHANGE => {
                             OnSelChange(pVirtMem);
-                            return TRUE;
+                            return (TRUE) as INT_PTR;
                         }
                         _ => {}
                     }
@@ -826,7 +832,7 @@ pub unsafe extern "system" fn VirtMemDlgProc(
         _ => {}
     }
 
-    return FALSE;
+    return (FALSE) as INT_PTR;
 }
 
 
