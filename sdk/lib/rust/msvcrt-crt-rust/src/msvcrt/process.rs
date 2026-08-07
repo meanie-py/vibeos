@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use msvcrt_sys::*;
 use core::ffi::c_void;
 use crate::{wcscat, wcscpy, wcslen};
 use crate::msvcrt::file::{
@@ -7,47 +6,26 @@ use crate::msvcrt::file::{
     STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO,
 };
 
-// ---- names missing from the substrate (msvcrt-sys / prelude.rs) ----
+// ---- the substrate this file stands on ----
 //
-// process.rs owns only this file, `rust_process_varargs_shim.c`, and the one CMakeLists.txt
-// line that adds it to the msvcrt module target — not msvcrt-sys or prelude.rs (another lane
-// is editing those right now). Every item below is declared locally so this file compiles
-// without touching either; each is flagged `// TODO(hoist)` for whoever next touches the
-// substrate.
-
-// TODO(hoist): belongs in msvcrt-sys's bindgen island (winbase.h) — a plain Win32 export
-// that just is not in the generated island yet.
-extern "system" {
-    fn GetEnvironmentVariableW(lpName: LPCWSTR, lpBuffer: LPWSTR, nSize: DWORD) -> DWORD;
-}
-
-// TODO(hoist): belongs in prelude.rs beside `malloc`/`free` (prelude.rs:165-166) — msvcrt
-// exports `realloc` too.
-extern "C" {
-    fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
-}
-
-// `_exit` now comes from prelude.rs (which declares it `-> !` from stdlib.h:229), so the
-// local `extern` block that used to sit here is gone — closing this file's TODO(hoist) for
-// it. exit.c is no longer "still C" either: `msvcrt/exit.rs` defines it, diverging, and the
-// two agree.
-
-// TODO(hoist): prelude.rs defines `uintptr_t` (prelude.rs:37) but not `intptr_t`, its
-// signed twin, which every export in this file returns.
-#[allow(non_camel_case_types)]
-type intptr_t = isize;
-
-// TODO(hoist): sdk/include/psdk/winbase.h:190. Not in msvcrt-sys's bindgen island.
-#[allow(dead_code)]
-const CREATE_UNICODE_ENVIRONMENT: DWORD = 0x0000_0400;
-
-// TODO(hoist): msvcrt-sys's bindgen_*.rs (all 3 arches) defines `_STARTUPINFOW` and
-// `_PROCESS_INFORMATION` and their `LP*`-pointer typedefs, but not the bare struct-name
-// aliases process.c itself uses.
-#[allow(non_camel_case_types)]
-type STARTUPINFOW = msvcrt_sys::_STARTUPINFOW;
-#[allow(non_camel_case_types)]
-type PROCESS_INFORMATION = msvcrt_sys::_PROCESS_INFORMATION;
+// Everything below used to be a local `extern` block or a local `const`, each flagged
+// `// TODO(hoist)`, because the lane that wrote this file owned neither msvcrt-sys nor
+// prelude.rs. They are all derived now and the locals are gone:
+//
+//   msvcrt-sys (bindgen, all 3 arches):  GetEnvironmentVariableW,
+//                                        CREATE_UNICODE_ENVIRONMENT,
+//                                        STARTUPINFOW / PROCESS_INFORMATION
+//   prelude.rs:                          realloc, _exit, intptr_t
+//
+// `CREATE_UNICODE_ENVIRONMENT` is the one worth naming: it was absent from the island not
+// because nobody asked for it but because the allowlist said `CREATE_[A-Z]+`, which matches
+// CREATE_NEW and drops every multi-word member of the family. `msvcrt_spawn` ORs it into
+// the creation flags of EVERY spawn, so a hand-written value that had been wrong would have
+// been wrong for all of them, silently. Same shape as LOCALE_SMONTHNAME1 (§9.113).
+//
+// NOT hoisted, deliberately: `get_aw_cp`, `convert_acp_utf8_to_wcs` and `HIWORD` below.
+// Each mirrors the C's own `static inline` or macro, so a private per-TU copy is the
+// FAITHFUL shape rather than a shortcut.
 
 /// `dll/win32/msvcrt/msvcrt.h:422` — `static inline UINT get_aw_cp(void)`. Duplicated from
 /// `crate::prelude::get_aw_cp` (private there, and prelude.rs is off-limits to this lane
