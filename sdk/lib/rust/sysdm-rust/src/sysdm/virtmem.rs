@@ -132,8 +132,8 @@ unsafe extern "C" fn GetPageFileSizes(
     *lpInitialSize = -1;
     *lpMaximumSize = -1;
 
-    while *lpPageFiles != _T('\0' as i32) as u16 {
-        if *lpPageFiles == _T(' ' as i32) as u16 {
+    while *lpPageFiles != _T('\0' as TCHAR) {
+        if *lpPageFiles == _T(' ' as TCHAR) {
             lpPageFiles = lpPageFiles.offset(1);
 
             match i {
@@ -202,7 +202,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
                     _tcscpy((*PageFile).pszVolume, szVolume.as_mut_ptr());
                 }
 
-                (*PageFile).bIsNotFAT = (_tcsnicmp(szFSName.as_mut_ptr(), _T("FAT"), 3) != 0) as BOOL;
+                (*PageFile).bIsNotFAT = (_tcsnicmp(szFSName.as_mut_ptr(), w!("FAT"), 3) != 0) as BOOL;
             }
 
             PgCnt += 1;
@@ -349,15 +349,15 @@ unsafe extern "C" fn InitPagefileList(pVirtMem: PVIRTMEM) {
                            szSize.as_mut_ptr(),
                            (_countof!(szSize)) as i32);
             } else {
-                _stprintf(szSize.as_mut_ptr(), _T("%d - %d"),
+                _stprintf(szSize.as_mut_ptr(), w!("%d - %d"),
                           (*PageFile).NewMinSize,
                           (*PageFile).NewMaxSize);
             }
 
             _stprintf(szDisplayString.as_mut_ptr(),
-                      _T("%s  [%s]\t%s"),
+                      w!("%s  [%s]\t%s"),
                       (*PageFile).szDrive.as_ptr(),
-                      if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T("") },
+                      if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { w!("") },
                       szSize.as_ptr());
 
             Index = (SendMessage((*pVirtMem).hListBox, LB_ADDSTRING, 0 as WPARAM, szDisplayString.as_ptr() as LPARAM)) as i32;
@@ -414,7 +414,7 @@ unsafe extern "C" fn UpdatePagefileEntry(
         szDisplayString.as_mut_ptr(),
         _T((b"%s  [%s]\t%s\0".as_ptr()).cast()),
         (*PageFile).szDrive.as_ptr(),
-        if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T(b"\0".as_ptr()) },
+        if !(*PageFile).pszVolume.is_null() { (*PageFile).pszVolume } else { _T(w!("")) },
         szSize.as_ptr(),
     );
 
@@ -595,7 +595,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             core::ptr::addr_of_mut!(FreeDiskSpace)
         ) != 0
         {
-            (*PageFile).FreeSize = ((*FreeDiskSpace.u).QuadPart / MEGABYTE) as UINT;
+            (*PageFile).FreeSize = (FreeDiskSpace.QuadPart / MEGABYTE) as UINT;
             _stprintf(szBuffer.as_mut_ptr(), szMegabytes.as_ptr(), (*PageFile).FreeSize);
             SetDlgItemText((*pVirtMem).hSelf, (IDC_SPACEAVAIL) as i32, szBuffer.as_ptr());
         }
@@ -661,7 +661,7 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
         while i < (*pVirtMem).Count {
             _stprintf(
                 szText.as_mut_ptr(),
-                _T("%c:\\pagefile.sys"),
+                w!("%c:\\pagefile.sys"),
                 (*pVirtMem).PageFile[i as usize].szDrive[0 as usize]
             );
 
@@ -669,9 +669,9 @@ unsafe extern "C" fn OnSelChange(pVirtMem: PVIRTMEM) -> BOOL {
             if hFind == INVALID_HANDLE_VALUE {
                 // DPRINT removed
             } else {
-                pfSize.u_mut().__bindgen_anon_1.LowPart = fdata.nFileSizeLow;
-                pfSize.u_mut().__bindgen_anon_1.HighPart = fdata.nFileSizeHigh;
-                PageFileSizeMb += ((*pfSize.u).QuadPart / MEGABYTE) as UINT;
+                pfSize.u.LowPart = fdata.nFileSizeLow;
+                pfSize.u.HighPart = fdata.nFileSizeHigh;
+                PageFileSizeMb += (pfSize.QuadPart / MEGABYTE) as UINT;
                 FindClose(hFind);
             }
             i += 1;

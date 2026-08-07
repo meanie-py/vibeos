@@ -53,14 +53,14 @@ unsafe extern "C" fn DetermineDialogBoxType(lpRawValue: LPTSTR) -> BOOL {
 
     StringCchCopy(lpTemp, (dwValueLength) as usize, lpRawValue);
 
-    lpToken = _tcstok(lpTemp, _T(b";\0".as_ptr() as *const TCHAR));
+    lpToken = _tcstok(lpTemp, _T(w!(";")));
     while !lpToken.is_null() {
         ExpandEnvironmentStrings(lpToken, lpToken, dwValueLength);
 
         if PathIsDirectoryW(lpToken) == 0 {
             return FALSE;
         }
-        lpToken = _tcstok(core::ptr::null_mut(), _T(b";\0".as_ptr() as *const TCHAR));
+        lpToken = _tcstok(core::ptr::null_mut(), _T(w!(";")));
     }
     GlobalFree((lpTemp).cast());
 
@@ -149,7 +149,7 @@ unsafe extern "C" fn GatherDataFromListView(
         }
     }
 
-    *(*VarData).lpRawValue.add(0) = _T(('\0') as T);
+    *(*VarData).lpRawValue.add(0) = _T('\0' as TCHAR);
     i = 0;
     while i < NumberOfItems {
         if i > 0 {
@@ -255,14 +255,15 @@ unsafe extern "C" fn AddEmptyItem(
     ZeroMemory!(&mut lvi as *mut _ as *mut _, core::mem::size_of::<LV_ITEM>());
     lvi.mask = LVIF_TEXT | LVIF_STATE;
     lvi.cchTextMax = (MAX_PATH) as i32;
-    lvi.pszText = _T(b"\0".as_ptr() as *const i8) as *mut _;
+    lvi.pszText = _T(w!("")) as *mut _;
     lvi.iItem = dwSelectedValueIndex as i32;
     lvi.iSubItem = 0;
     ListView_InsertItem!(hwndListView, &mut lvi as *mut _);
 }
 unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DATA) {
-    let mut column: TCHAR = core::mem::zeroed();
-    let mut lvi: TCHAR = core::mem::zeroed();
+    // environment.c: `LV_COLUMN column; LV_ITEM lvi;` -- both came back as TCHAR.
+    let mut column: LV_COLUMN = core::mem::zeroed();
+    let mut lvi: LV_ITEM = core::mem::zeroed();
     let mut rItem: RECT = core::mem::zeroed();
     let dwValueLength: DWORD;
     let mut i: DWORD;
@@ -289,10 +290,10 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
     ShowScrollBar(hwndListView, (SB_HORZ) as i32, FALSE);
 
     (*core::ptr::addr_of_mut!(lvi)).mask = LVIF_TEXT | LVIF_STATE;
-    (*core::ptr::addr_of_mut!(lvi)).cchTextMax = MAX_PATH;
+    (*core::ptr::addr_of_mut!(lvi)).cchTextMax = (MAX_PATH) as i32;
     (*core::ptr::addr_of_mut!(lvi)).iSubItem = 0;
 
-    dwValueLength = (_tcslen((*DlgData).VarData.lpRawValue) + 1) as u32;
+    dwValueLength = (_tcslen((*(*DlgData).VarData).lpRawValue) + 1) as u32;
     lpTemp = GlobalAlloc(
         GPTR,
         (dwValueLength * core::mem::size_of::<TCHAR>() as DWORD) as SIZE_T,
@@ -301,9 +302,9 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
         return;
     }
 
-    StringCchCopy(lpTemp, (dwValueLength) as usize, (*DlgData).VarData.lpRawValue);
+    StringCchCopy(lpTemp, (dwValueLength) as usize, (*(*DlgData).VarData).lpRawValue);
 
-    lpToken = _tcstok(lpTemp, _T(b";\0".as_ptr() as *const TCHAR));
+    lpToken = _tcstok(lpTemp, _T(w!(";")));
     i = 0;
     while !lpToken.is_null() {
         (*core::ptr::addr_of_mut!(lvi)).iItem = i as i32;
@@ -315,7 +316,7 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
         };
         ListView_InsertItem!(hwndListView, core::ptr::addr_of_mut!(lvi));
 
-        lpToken = _tcstok(core::ptr::null_mut(), _T(b";\0".as_ptr() as *const TCHAR));
+        lpToken = _tcstok(core::ptr::null_mut(), _T(w!(";")));
         i += 1;
     }
 
@@ -336,10 +337,7 @@ unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
     let mut szFilter: [TCHAR; (MAX_STR_LENGTH) as usize] = [0; (MAX_STR_LENGTH) as usize];
     let mut szFile: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
-    _T(b"\0".as_ptr());
-    _T(b"\0".as_ptr());
-
-    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof!(szFilter));
+    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), (_countof!(szFilter)) as i32);
 
     ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
@@ -996,10 +994,10 @@ unsafe extern "system" fn EditVariableDlgProc(
                         (*(*DlgData).VarData).lpCookedValue = core::ptr::null_mut();
                     }
 
-                    p = _tcschr((*(*DlgData).VarData).lpRawValue, _T('%'));
+                    p = _tcschr((*(*DlgData).VarData).lpRawValue, _T('%' as TCHAR));
                     if !p.is_null() {
                         p = p.offset(1);
-                        if !_tcschr(p, _T('%')).is_null() {
+                        if !_tcschr(p, _T('%' as TCHAR)).is_null() {
                             (*(*DlgData).VarData).dwType = REG_EXPAND_SZ;
 
                             (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, 2 * MAX_PATH * core::mem::size_of::<TCHAR>()) as LPTSTR;
@@ -1224,10 +1222,10 @@ unsafe extern "C" fn EditVariableDlgProc(
                         (*(*DlgData).VarData).lpCookedValue = core::ptr::null_mut();
                     }
 
-                    p = _tcschr((*(*DlgData).VarData).lpRawValue, _T('%'));
+                    p = _tcschr((*(*DlgData).VarData).lpRawValue, _T('%' as TCHAR));
                     if !p.is_null() {
                         p = p.offset(1);
-                        if !_tcschr(p, _T('%')).is_null() {
+                        if !_tcschr(p, _T('%' as TCHAR)).is_null() {
                             (*(*DlgData).VarData).dwType = REG_EXPAND_SZ;
 
                             (*(*DlgData).VarData).lpCookedValue = GlobalAlloc(GPTR, (2 * MAX_PATH * (core::mem::size_of::<TCHAR>()) as u32) as SIZE_T) as LPTSTR;
@@ -1531,7 +1529,7 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     GetEnvironmentVariables(
         hwndListView,
         HKEY_CURRENT_USER,
-        _T(b"Environment\0".as_ptr() as *const i8),
+        _T(w!("Environment")),
     );
 
     ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
@@ -1554,7 +1552,7 @@ unsafe extern "C" fn OnInitEnvironmentDialog(hwndDlg: HWND) {
     GetEnvironmentVariables(
         hwndListView,
         HKEY_LOCAL_MACHINE,
-        _T(b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\0".as_ptr() as *const i8),
+        _T(w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")),
     );
 
     ListView_SetColumnWidth!(hwndListView, 2, LVSCW_AUTOSIZE_USEHEADER);
@@ -2300,7 +2298,7 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
                     SetAllVars(hwndDlg, (IDC_USER_VARIABLE_LIST) as i32);
                     SetAllVars(hwndDlg, (IDC_SYSTEM_VARIABLE_LIST) as i32);
                     SendMessage(HWND_BROADCAST, WM_WININICHANGE,
-                                0, _T("Environment") as LPARAM);
+                                0, w!("Environment") as LPARAM);
                     EndDialog(hwndDlg, 0);
                     return TRUE;
                 }
@@ -3244,8 +3242,8 @@ pub unsafe extern "system" fn EnvironmentDlgProc(
 //                         DlgData->VarData->lpCookedValue = NULL;
 //                     }
 //
-//                     p = _tcschr(DlgData->VarData->lpRawValue, _T('%'));
-//                     if (p && _tcschr(++p, _T('%')))
+//                     p = _tcschr(DlgData->VarData->lpRawValue, _T('%' as TCHAR));
+//                     if (p && _tcschr(++p, _T('%' as TCHAR)))
 //                     {
 //                         DlgData->VarData->dwType = REG_EXPAND_SZ;
 //

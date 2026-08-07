@@ -505,18 +505,18 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     let mut SMBiosName: [u16; 96] = [0; 96];
     let mut CurMachineLine: i32 = (IDC_MACHINELINE1) as i32;
 
-    let sys_key_str = _T(b"HARDWARE\\DESCRIPTION\\System\0".as_ptr() as *const i8);
-    let proc_key_str = _T(b"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0\0".as_ptr() as *const i8);
+    let sys_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System"));
+    let proc_key_str = _T(w!("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"));
 
     core::ptr::copy_nonoverlapping(sys_key_str, (SysKey.as_mut_ptr()).cast(), 64);
     core::ptr::copy_nonoverlapping(proc_key_str, (ProcKey.as_mut_ptr()).cast(), 64);
 
-    if GetSystemName(SMBiosName.as_mut_ptr(), _countof!(SMBiosName)) != 0 {
+    if GetSystemName(SMBiosName.as_mut_ptr(), (_countof!(SMBiosName)) as usize) != 0 {
         SetDlgItemText(hwnd, CurMachineLine, SMBiosName.as_mut_ptr());
         CurMachineLine += 1;
     } else {
         if RegOpenKeyEx(HKEY_LOCAL_MACHINE, SysKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
-            SetRegTextData(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), (CurMachineLine) as u32);
+            SetRegTextData(hwnd, hKey, _T(w!("Identifier")), (CurMachineLine) as u32);
             CurMachineLine += 1;
             RegCloseKey(hKey);
         }
@@ -525,17 +525,17 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     if RegOpenKeyEx(HKEY_LOCAL_MACHINE, ProcKey.as_ptr(), 0, KEY_READ, &mut hKey) == (ERROR_SUCCESS) as i32 {
         let mut PrevMachineLine: i32;
 
-        SetRegTextData(hwnd, hKey, _T(b"VendorIdentifier\0".as_ptr() as *const i8), (CurMachineLine) as u32);
+        SetRegTextData(hwnd, hKey, _T(w!("VendorIdentifier")), (CurMachineLine) as u32);
         CurMachineLine += 1;
 
         PrevMachineLine = CurMachineLine;
-        CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"ProcessorNameString\0".as_ptr() as *const i8), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
+        CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("ProcessorNameString")), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
 
         if CurMachineLine == PrevMachineLine {
-            CurMachineLine += SetProcNameString(hwnd, hKey, _T(b"Identifier\0".as_ptr() as *const i8), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
+            CurMachineLine += SetProcNameString(hwnd, hKey, _T(w!("Identifier")), (CurMachineLine) as u32, (CurMachineLine + 1) as u32);
         }
 
-        if SetProcSpeed(hwnd, hKey, _T(b"~MHz\0".as_ptr() as *const i8), (CurMachineLine) as u32) != 0 {
+        if SetProcSpeed(hwnd, hKey, _T(w!("~MHz")), (CurMachineLine) as u32) != 0 {
             CurMachineLine += 1;
         }
         RegCloseKey(hKey);

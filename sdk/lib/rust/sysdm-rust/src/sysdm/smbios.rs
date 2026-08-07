@@ -640,8 +640,8 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     for i in 0..25 {
         if wcsstr(dev.as_ptr(), LongNames[i as usize].pwLongName) == dev.as_ptr() {
             StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
-            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), dev.as_ptr());
-            StringCchCopyW(dev.as_mut_ptr(), _countof!(dev), pBuf);
+            StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, dev.as_ptr());
+            StringCchCopyW(dev.as_mut_ptr(), (_countof!(dev)) as usize, pBuf);
         }
         wcsrep(ven.as_mut_ptr(), LongNames[i as usize].pwLongName, LongNames[i as usize].pwShortName, TRUE);
     }
@@ -656,7 +656,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     }
 
     if _wcsicmp(ven.as_ptr(), w!("LENOVO") as PCWSTR) == 0 {
-        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("Lenovo") as PCWSTR);
+        StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, w!("Lenovo") as PCWSTR);
 
         if !DmiStrings[(SYS_VERSION) as usize].is_null() {
             if strncmp(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad   \0".as_ptr() as PCSTR, 11) == 0 {
@@ -721,7 +721,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
 
     if wcscmp(ven.as_ptr(), w!("Razer") as PCWSTR) == 0 && wcscmp(dev.as_ptr(), w!("Blade") as PCWSTR) == 0 {
         if !DmiStrings[(SYS_VERSION) as usize].is_null() {
-            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("Razer Blade") as PCWSTR);
+            StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, w!("Razer Blade") as PCWSTR);
             GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
     }
@@ -736,7 +736,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     if wcslen(ven.as_ptr()) == 0 &&
         wcsstr(dev.as_ptr(), w!("MS-") as PCWSTR) == dev.as_ptr()
     {
-        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("MSI") as PCWSTR);
+        StringCchCopyW(ven.as_mut_ptr(), (_countof!(ven)) as usize, w!("MSI") as PCWSTR);
     }
 
     TrimPunctuation(ven.as_mut_ptr());

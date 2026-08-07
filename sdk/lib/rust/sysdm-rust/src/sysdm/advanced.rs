@@ -47,7 +47,7 @@ unsafe extern "C" fn OnOK(hwndDlg: HWND) {
                        core::ptr::null_mut()) == (ERROR_SUCCESS) as i32
     {
         RegSetValueEx(hKey,
-                      _T("ReportAsWorkstation"),
+                      w!("ReportAsWorkstation"),
                       0,
                       REG_DWORD,
                       (&ReportAsWorkstation as *const u32) as LPBYTE,
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                 IDC_ERRORREPORT => {
                     ShellExecute(
                         core::ptr::null_mut(),
-                        _T("open"),
+                        w!("open"),
                         BugLink.as_ptr(),
                         core::ptr::null_mut(),
                         core::ptr::null_mut(),

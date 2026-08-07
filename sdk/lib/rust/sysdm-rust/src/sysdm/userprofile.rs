@@ -336,35 +336,35 @@ unsafe extern "C" fn SetListViewColumns(hwndListView: HWND) {
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.40) as INT;
     column.iSubItem = 0;
-    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
+    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), (ARRAYSIZE!(szStr)) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 0, &mut column);
 
     column.fmt = (LVCFMT_RIGHT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 1;
-    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
+    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), (ARRAYSIZE!(szStr)) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 1, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 2;
-    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
+    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), (ARRAYSIZE!(szStr)) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 2, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 3;
-    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
+    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), (ARRAYSIZE!(szStr)) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 3, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
     column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT - GetSystemMetrics((SM_CYHSCROLL) as i32);
     column.iSubItem = 4;
-    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
+    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), (ARRAYSIZE!(szStr)) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 4, &mut column);
 }
@@ -628,7 +628,7 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), (ARRAYSIZE!(szNameBuffer)) as i32);
 
     ListView_SetItemText!(hwndListView, iItem, 2, szNameBuffer.as_mut_ptr());
 
@@ -640,7 +640,7 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), (ARRAYSIZE!(szNameBuffer)) as i32);
 
     ListView_SetItemText!(hwndListView, iItem, 3, szNameBuffer.as_mut_ptr());
 
@@ -655,7 +655,7 @@ unsafe extern "C" fn AddUserProfile(
         core::ptr::addr_of_mut!(SystemTime),
         core::ptr::null_mut(),
         szNameBuffer.as_mut_ptr(),
-        ARRAYSIZE!(szNameBuffer),
+        (ARRAYSIZE!(szNameBuffer)) as i32,
     );
 
     ListView_SetItemText!(hwndListView, iItem, 4, szNameBuffer.as_mut_ptr());
