@@ -94,14 +94,14 @@ pub static nego_name_W: [WCHAR; 10] = [
 
 pub static nego_name_A: [u8; 10] = *b"Negotiate\0";
 
-pub static negotiate_comment_W: [WCHAR; 28] = [
+pub static negotiate_comment_W: [WCHAR; 29] = [
     'M' as WCHAR, 'i' as WCHAR, 'c' as WCHAR, 'r' as WCHAR, 'o' as WCHAR,
     's' as WCHAR, 'o' as WCHAR, 'f' as WCHAR, 't' as WCHAR, ' ' as WCHAR,
     'P' as WCHAR, 'a' as WCHAR, 'c' as WCHAR, 'k' as WCHAR, 'a' as WCHAR,
     'g' as WCHAR, 'e' as WCHAR, ' ' as WCHAR, 'N' as WCHAR, 'e' as WCHAR,
     'g' as WCHAR, 'o' as WCHAR, 't' as WCHAR, 'i' as WCHAR, 'a' as WCHAR,
     't' as WCHAR, 'o' as WCHAR, 'r' as WCHAR,
-];
+ 0,];
 
 pub static negotiate_comment_A: [CHAR; 29] = {
     let mut a: [CHAR; 29] = [0; 29];
