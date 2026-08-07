@@ -444,6 +444,36 @@ void  __cdecl _invalid_parameter(const wchar_t *expr, const wchar_t *func,
 int __cdecl _isspace_l(int c, _locale_t locale);
 int __cdecl _tolower_l(int c, _locale_t locale);
 int __cdecl _toupper_l(int c, _locale_t locale);
+/* undname.c's one ctype call. Declared HERE, i.e. after the prelude's stage-1 rename, so
+ * this line becomes the prototype for `ref_isdigit` — ctype.c's own body. glibc's
+ * declaration cannot serve: stage -1 pulls <ctype.h> and strips its macros BEFORE the
+ * rename (it has to, or ctype.c's definitions would be macro-mangled), so glibc only ever
+ * declares the PLAIN name. Without this the call degrades to an implicit `int ref_isdigit()`
+ * — which -Werror=implicit-function-declaration is on to catch, and did. */
+/* Parenthesised so glibc's FUNCTION-LIKE `#define isdigit(c) ...` cannot expand here:
+ * refimpl.c includes this header WITHOUT the prelude, so that macro is live in it. The
+ * prelude's own `#define isdigit ref_isdigit` is object-like and still applies. */
+int __cdecl (isdigit)(int c);
+
+/* ── what the undname.c reference TU needs ─────────────────────────────
+ *
+ * `lstrcpynA` is kernel32 — the ENVIRONMENT, never code under test — so it is SHARED, one
+ * definition in timeimpl.c, like CompareStringA and for the same reason. It is also not
+ * `strncpy`: it copies at most n-1 bytes and ALWAYS terminates, which is the whole of
+ * `__unDNameEx`'s truncation behaviour when the caller supplies a buffer.
+ *
+ * Declared here rather than left implicit: `-Werror=implicit-function-declaration` is on
+ * for exactly this, and an implicit `int lstrcpynA()` would truncate the returned pointer
+ * to 32 bits.
+ *
+ * The demangler's ALLOCATOR, passed in by the caller. Copied from
+ * dll/win32/msvcrt/msvcrt.h:263-264 verbatim -- these two are the reason undname.c is the
+ * cheapest file in msvcrt to grade: the harness supplies memget/memfree per side at the
+ * call, so there is no heap model to build and no allocation the test cannot see. */
+typedef void* (__cdecl *malloc_func_t)(size_t);
+typedef void  (__cdecl *free_func_t)(void*);
+/* Spelled `char *` rather than LPSTR: those typedefs land further down this header. */
+char * WINAPI lstrcpynA(char *dst, const char *src, int n);
 
 /* ── what the mbcs.c reference TU imports ──────────────────────────────
  *
