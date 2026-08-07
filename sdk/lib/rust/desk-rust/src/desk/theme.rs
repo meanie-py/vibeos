@@ -428,13 +428,13 @@ pub unsafe extern "C" fn ApplyScheme(scheme: *mut COLOR_SCHEME, pSelectedTheme: 
     }
 
     if (*pSelectedTheme).ThemeActive != 0 {
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("Current"), REG_SZ, core::ptr::null_mut(), 0);
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("NewCurrent"), REG_SZ, core::ptr::null_mut(), 0);
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\Appearance"), w!("Current"), REG_SZ, core::ptr::null_mut(), 0);
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\Appearance"), w!("NewCurrent"), REG_SZ, core::ptr::null_mut(), 0);
     } else if !(*pSelectedTheme).Color.is_null() {
         let ClassicSchemeName: PCWSTR = (*(*pSelectedTheme).Color).DisplayName;
         let cb: u32 = ((lstrlenW(ClassicSchemeName) + 1) * (core::mem::size_of::<u16>() as u32) as i32) as u32;
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("Current"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
-        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\\\Appearance"), w!("NewCurrent"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\Appearance"), w!("Current"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
+        SHSetValueW(HKEY_CURRENT_USER, w!("Control Panel\\Appearance"), w!("NewCurrent"), REG_SZ, (ClassicSchemeName as *const u8).cast(), cb);
     }
 }
 unsafe extern "C" fn CreateTheme(pszName: LPCWSTR, pszDisplayName: LPCWSTR) -> *mut THEME {

@@ -2283,6 +2283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysdm-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+]
+
+[[package]]
 name = "syssetup-rust"
 version = "0.1.0"
 dependencies = [

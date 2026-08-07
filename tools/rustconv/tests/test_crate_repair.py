@@ -24,11 +24,13 @@ from rustconv.crate_repair import (
     RULE_ANON_UNION,
     RULE_FLEX_ARRAY,
     RULE_INDEX_USIZE,
+    RULE_MACRO_CALL,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
     RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
+    RULE_SIZEOF_TYPE,
     CargoCheckRun,
     Edit,
     RepairError,
@@ -1287,3 +1289,99 @@ def test_index_already_cast_is_not_cast_again():
         rules=[RULE_INDEX_USIZE],
     )
     assert not plan.edits
+
+
+# --- rule: a header macro called as a function -------------------------------------------------
+
+_MACRO_SRC = b"pub unsafe fn f(a: &[u8]) -> u32 {\n    _countof(a)\n}\n"
+
+
+def _found_macro_diag(name: bytes, src: bytes, line: int = 2) -> dict:
+    at = src.index(name)
+    return _diag(
+        f"expected function, found macro `{name.decode()}`",
+        code="E0423",
+        spans=[_span("src/a.rs", at, at + len(name), is_primary=True, line=line)],
+    )
+
+
+def test_a_macro_called_as_a_function_gets_its_bang():
+    plan = propose_edits(
+        [_found_macro_diag(b"_countof", _MACRO_SRC)],
+        _reader({"src/a.rs": _MACRO_SRC}),
+        target="i386",
+        rules=[RULE_MACRO_CALL],
+    )
+    assert [e.replacement for e in plan.edits] == ["_countof!"]
+    assert not plan.edits[0].requires_target_agreement
+
+
+def test_the_long_rustc_wording_is_matched_too():
+    """rustc says "expected function, tuple struct or tuple variant, found macro" at most sites.
+
+    Regression: matching only the short wording caught 1 of 61 sites on sysdm.cpl, and a rule
+    that fires once looks like a rule with little to do rather than a broken pattern.
+    """
+    at = _MACRO_SRC.index(b"_countof")
+    diagnostic = _diag(
+        "expected function, tuple struct or tuple variant, found macro `_countof`",
+        code="E0423",
+        spans=[_span("src/a.rs", at, at + 8, is_primary=True, line=2)],
+    )
+    plan = propose_edits(
+        [diagnostic], _reader({"src/a.rs": _MACRO_SRC}), target="i386", rules=[RULE_MACRO_CALL]
+    )
+    assert [e.replacement for e in plan.edits] == ["_countof!"]
+
+
+def test_a_macro_not_in_call_position_is_declined():
+    """Appending `!` where no `(` follows does not even parse."""
+    src = b"pub fn f() -> u32 {\n    let x = _countof;\n    0\n}\n"
+    plan = propose_edits(
+        [_found_macro_diag(b"_countof", src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_MACRO_CALL],
+    )
+    assert not plan.edits
+    assert [item.reason for item in plan.skipped] == ["not_a_call"]
+
+
+# --- rule: C `sizeof(TYPE)` that lost its operator ---------------------------------------------
+
+
+def _found_type_diag(name: bytes, src: bytes, line: int = 2) -> dict:
+    at = src.index(name)
+    return _diag(
+        f"expected value, found type alias `{name.decode()}`",
+        code="E0423",
+        spans=[_span("src/a.rs", at, at + len(name), is_primary=True, line=line)],
+    )
+
+
+def test_bare_type_name_in_value_position_becomes_size_of():
+    src = b"pub unsafe fn f(b: &mut B) {\n    b.biSize = BITMAPINFO;\n}\n"
+    plan = propose_edits(
+        [_found_type_diag(b"BITMAPINFO", src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_SIZEOF_TYPE],
+    )
+    assert [e.replacement for e in plan.edits] == ["core::mem::size_of::<BITMAPINFO>()"]
+
+
+def test_size_of_val_wrapper_is_swallowed_whole():
+    """Rewriting only the operand leaves `size_of_val(&size_of::<T>())` — the size of a usize.
+
+    That compiles, and is wrong on every arch, which is the worst of both worlds.
+    """
+    src = b"pub unsafe fn f(n: &mut N) {\n    n.cbSize = core::mem::size_of_val(&NONCLIENTMETRICS) as u32;\n}\n"
+    plan = propose_edits(
+        [_found_type_diag(b"NONCLIENTMETRICS", src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_SIZEOF_TYPE],
+    )
+    assert [e.replacement for e in plan.edits] == ["core::mem::size_of::<NONCLIENTMETRICS>()"]
+    edit = plan.edits[0]
+    assert src[edit.byte_start : edit.byte_end] == b"core::mem::size_of_val(&NONCLIENTMETRICS)"

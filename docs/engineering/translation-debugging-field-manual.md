@@ -2845,6 +2845,38 @@ already been met the note is describing a bug, not a plan.
   macro from the merely-uppercase function. Also: a name provided by a still-compiled C TU is
   covered whichever language provides it — that is the varargs trampoline every flip leaves
   behind (`acpi_printf_shim.c` defines `AcpiOsPrintf`, whose home osl.c was flipped out).
+- **The BACKWARD audit — did the tree ship everything we PAID for?** `fn_coverage` and
+  `export_audit` both run C/spec → Rust, so neither can see paid output that never reached a
+  crate: nothing references it, nothing links against it, and the money rule protecting
+  `.responses/` needs an oracle it did not have. `rustconv bank-audit` runs the other way,
+  `.responses` → tree, over both on-disk layouts (`manifest.json`, and the legacy
+  `NN_Name.rs`). First run over 444 dirs / 7,953 banked functions: **zero unintegrated** — but
+  a naive name compare flagged 8 dirs and every one was a false positive, because *the manifest
+  key is a LABEL, not a symbol*. Four ways it legitimately differs from what ships, all now
+  resolution rules that name themselves in the report: the key is a **macro** whose expansion
+  holds the real functions (oleaut32's `RETTYP` banks 72 `VarI1From*` conversions under one
+  key); the function is a **C-variadic**, which stable Rust cannot define, so it ships as a
+  fixed-arity twin behind a trampoline; a **TCHAR macro** (`_tmain` IS `wmain` — same rename
+  class as (5) above); or an **`#ifdef __REACTOS__` twin** where the banked name is the `#else`
+  arm and never existed in our build (oleaut32's `interface_variant_size` vs the
+  `interface_user_size` we compile — a reviewed allowlist entry with a written reason, since no
+  mechanical rule can derive it).
+  Three ways the audit itself was optimistic, each fixed and pinned by a test — the direction
+  that matters, because an audit that calls abandoned work "shipped" retires the question:
+  **(a)** an `extern` declaration counted as a definition, so a prelude *promising* `Foo` would
+  have proved `Foo` shipped; **(b)** a containment test for variadic twins matched dhcp's
+  `debug`/`error` to `debug_block_stamp` and `WDML_Initialize_error` in unrelated crates — a
+  twin must be the name plus a KNOWN decoration (`_v`, `_body`, `_impl`), optionally under a
+  module prefix; **(c)** a multi-function body counted as integrated when only ONE of its
+  functions was in the tree. Note **our own twin convention is not uniform** — most modules emit
+  `FatalError_v`, netid emits `netid_FormatMessageBox_body`.
+  **`.partial` files are paid work too** — a call billed and then cut off mid-stream. They have
+  no complete body, so an audit that only looks for finished ones is blind to the entire shape;
+  they are scanned separately and reported as RE-TRANSLATE rather than INTEGRATE, because there
+  is nothing to wire up. Adding that rule immediately found a live one (sysdm's
+  `HardwareProfileProperties`, truncated — which is exactly why it was `--skip-fn`'d and owes a
+  hand-write). Every other `.partial` in the bank belongs to a call that was retried
+  successfully, which is the case that makes the rule look unnecessary right up until it isn't.
 
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
