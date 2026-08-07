@@ -35,9 +35,6 @@ EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/undname.rs: '\\" %s' appears 1x h
 MISSING: sdk/lib/rust/desk-rust/src/desk/monslctl.rs: 'MONITORSELWNDCLASS' appears 1x in monslctl.c and 0x here
 MISSING: sdk/lib/rust/desk-rust/src/desk/preview.rs: 'PreviewWndClass' appears 1x in preview.c and 0x here
 MISSING: sdk/lib/rust/desk-rust/src/desk/screensaver.rs: 'SSDemoParent' appears 1x in screensaver.c and 0x here
-MISSING: sdk/lib/rust/intl-rust/src/intl/kblayouts.rs: 'Keyboard Layout\\\\Substitutes' appears 2x in kblayouts.c and 1x here
-MISSING: sdk/lib/rust/intl-rust/src/intl/kblayouts.rs: 'd%03d%s' appears 2x in kblayouts.c and 0x here
-EXTRA: sdk/lib/rust/intl-rust/src/intl/kblayouts.rs: '00000%s' appears 1x here and 0x in kblayouts.c
 MISSING: sdk/lib/rust/mswsock-rust/src/mswsock/nsplookup.rs: 'mswsock.dll-original' appears 1x in nsplookup.c and 0x here
 EXTRA: sdk/lib/rust/ntmarta-rust/src/ntmarta/ntmarta.rs: 'CURRENT_USER' appears 3x here and 2x in ntmarta.c
 MISSING: sdk/lib/rust/snmpapi-rust/src/snmpapi/main.rs: '<null oid>' appears 2x in main.c and 1x here
