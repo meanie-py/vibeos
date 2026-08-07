@@ -1,11 +1,15 @@
 use crate::prelude::*;
+use crate::shell32::sdk_consts::*;
 use crate::open_with_list::{
     COpenWithList, COpenWithList_delete, COpenWithList_Execute_body,
     COpenWithList_GetCount_body, COpenWithList_GetIcon_body, COpenWithList_GetList_body,
     COpenWithList_GetName_body, COpenWithList_GetRecommendedCount_body,
     COpenWithList_Load_body, COpenWithList_LoadRecommended_body, COpenWithList_new,
 };
-use crate::open_with_menu_support::SApp;
+use crate::open_with_menu_support::{
+    CmicFlagsToSeeFlags, HResultFromWin32, PathFindFileNameW, SApp, SHELL_ErrorBox,
+    StringCbCopyW, HRESULT_FROM_WIN32, DialogBoxParamW,
+};
 use crate::open_with_dialog::{
     COpenWithDialog, COpenWithDialog_ctor_body, COpenWithDialog_DialogProc_body,
     COpenWithDialog_dtor_body, COpenWithDialog_IsNoOpen_body,
@@ -142,7 +146,7 @@ pub struct CMVERBMAP {
     pub idCmd: u32,
 }
 
-pub static g_VerbMap: [CMVERBMAP; 2] = [
+pub static mut g_VerbMap: [CMVERBMAP; 2] = [
     CMVERBMAP {
         pszVerb: b"o\0p\0e\0n\0a\0s\0\0\0".as_ptr() as PCWSTR,
         idCmd: 0,
@@ -177,9 +181,9 @@ unsafe extern "C" fn PathGetAppFromCommandLine(pszIn: PCWSTR, pszOut: PWSTR, cch
 }
 #[no_mangle]
 pub unsafe extern "C" fn SHELL32_GetDllFromRundll32CommandLine(pszCmd: PCWSTR, pszOut: PWSTR, cchMax: usize) -> i32 {
-    let mut szDll: [u16; MAX_PATH + 100] = [0; MAX_PATH + 100];
-    if PathGetAppFromCommandLine(pszCmd, szDll.as_mut_ptr(), _countof!(szDll)) == 0 {
-        return HRESULT_FROM_WIN32!(ERROR_BUFFER_OVERFLOW);
+    let mut szDll: [u16; MAX_PATH as usize + 100] = [0; MAX_PATH as usize + 100];
+    if PathGetAppFromCommandLine(pszCmd, szDll.as_mut_ptr(), _countof!(szDll) as usize) == 0 {
+        return HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW as LONG);
     }
 
     let pszName: PWSTR = PathFindFileNameW(szDll.as_mut_ptr());
@@ -195,7 +199,7 @@ pub unsafe extern "C" fn SHELL32_GetDllFromRundll32CommandLine(pszCmd: PCWSTR, p
     while *pszDllStart <= ' ' as u16 && *pszDllStart != 0 {
         pszDllStart = pszDllStart.offset(1);
     }
-    if PathGetAppFromCommandLine(pszDllStart, szDll.as_mut_ptr(), _countof!(szDll)) != 0 {
+    if PathGetAppFromCommandLine(pszDllStart, szDll.as_mut_ptr(), _countof!(szDll) as usize) != 0 {
         let quoted: u8 = if *pszDllStart == '\"' as u16 { 1 } else { 0 };
         let mut pszComma: PWSTR = szDll.as_mut_ptr().offset(lstrlenW(szDll.as_mut_ptr()) as isize);
         while quoted == 0 && pszComma > szDll.as_mut_ptr() && *pszComma != ',' as u16 && *pszComma != '\\' as u16 && *pszComma != '/' as u16 {
@@ -204,11 +208,11 @@ pub unsafe extern "C" fn SHELL32_GetDllFromRundll32CommandLine(pszCmd: PCWSTR, p
         let cch: usize = pszComma.offset_from(szDll.as_ptr()) as usize;
         if cch <= cchMax && (quoted != 0 || *pszComma == ',' as u16) {
             *pszComma = UNICODE_NULL;
-            lstrcpynW(pszOut, szDll.as_ptr(), cchMax);
+            lstrcpynW(pszOut, szDll.as_ptr(), cchMax as INT);
             return S_OK;
         }
     }
-    HRESULT_FROM_WIN32!(ERROR_BUFFER_OVERFLOW)
+    HRESULT_FROM_WIN32(ERROR_BUFFER_OVERFLOW as LONG)
 }
 unsafe extern "C" fn SH32_EvaluateValidExecApp(pszCmd: PWSTR, cchMax: usize) -> HRESULT {
     if PathGetAppFromCommandLine(pszCmd, pszCmd, cchMax) == 0 {
@@ -218,13 +222,13 @@ unsafe extern "C" fn SH32_EvaluateValidExecApp(pszCmd: PWSTR, cchMax: usize) -> 
     let fPRF: u32 = PRF_VERIFYEXISTS | PRF_TRYPROGRAMEXTENSIONS | PRF_DONTFINDLNK;
     let mut szCurrDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let pszDirsArr: [PCWSTR; 2] = [szCurrDir.as_ptr(), core::ptr::null()];
-    let ppszDirs: *const PCWSTR = if GetCurrentDirectoryW(_countof(szCurrDir), szCurrDir.as_mut_ptr()) != 0 {
+    let ppszDirs: *const PCWSTR = if GetCurrentDirectoryW(_countof!(szCurrDir), szCurrDir.as_mut_ptr()) != 0 {
         pszDirsArr.as_ptr()
     } else {
         core::ptr::null()
     };
 
-    if PathResolveW(pszCmd, ppszDirs, fPRF | (if !ppszDirs.is_null() { PRF_FIRSTDIRDEF } else { 0 })) != 0 {
+    if PathResolveW(pszCmd, ppszDirs as *mut PCWSTR, fPRF | (if !ppszDirs.is_null() { PRF_FIRSTDIRDEF } else { 0 })) != 0 {
         return S_OK;
     }
     E_FAIL
@@ -254,7 +258,7 @@ pub unsafe extern "C" fn SH32_InvokeOpenWith(
         lpClass: core::ptr::null(),
         hkeyClass: core::ptr::null_mut(),
         dwHotKey: 0,
-        Anonymous: Default::default(),
+        __bindgen_anon_1: core::mem::zeroed(),
         hProcess: core::ptr::null_mut(),
     };
     sei.fMask |= SEE_MASK_CLASSKEY | SEE_MASK_NOZONECHECKS;
@@ -273,8 +277,8 @@ pub unsafe extern "C" fn SH32_InvokeOpenWith(
         core::ptr::addr_of_mut!(sei.hkeyClass),
     ) == 0
     {
-        let mut szCmd: [WCHAR; MAX_PATH * 2] =
-            [0; MAX_PATH * 2];
+        let mut szCmd: [WCHAR; MAX_PATH as usize * 2] =
+            [0; MAX_PATH as usize * 2];
         let mut cch: DWORD = _countof!(szCmd);
         hr = AssocQueryStringByKeyW(
             ASSOCF_NOTRUNCATE
@@ -288,14 +292,14 @@ pub unsafe extern "C" fn SH32_InvokeOpenWith(
             core::ptr::addr_of_mut!(cch),
         );
         if hr >= 0
-            && SH32_EvaluateValidExecApp(szCmd.as_mut_ptr(), _countof!(szCmd)) < 0
+            && SH32_EvaluateValidExecApp(szCmd.as_mut_ptr(), _countof!(szCmd) as usize) < 0
         {
             let mut info = OPENASINFO {
                 pcszFile: pszPath,
                 pcszClass: core::ptr::null(),
-                oaifInFlags: OAIF_EXEC
+                oaifInFlags: (OAIF_EXEC
                     | OAIF_REGISTER_EXT
-                    | OAIF_ALLOW_REGISTRATION,
+                    | OAIF_ALLOW_REGISTRATION) as INT,
             };
             hr = SHOpenWithDialog(sei.hwnd, core::ptr::addr_of_mut!(info));
         } else {
@@ -307,7 +311,7 @@ pub unsafe extern "C" fn SH32_InvokeOpenWith(
         }
         RegCloseKey(sei.hkeyClass);
     } else if ((*pici).fMask & CMIC_MASK_FLAG_NO_UI) == 0 {
-        SHELL_ErrorBox(sei.hwnd, hr);
+        SHELL_ErrorBox(sei.hwnd.cast(), hr as UINT);
     }
 
     if !phProcess.is_null() {
@@ -345,7 +349,7 @@ pub unsafe extern "system" fn COpenWithList_Load_RustBridge(pList: *mut COpenWit
 pub unsafe extern "system" fn COpenWithList_LoadRecommended_RustBridge(
     pList: *mut COpenWithList,
     pszPath: PCWSTR,
-) -> u8 {
+) -> BOOL {
     COpenWithList_LoadRecommended_body(pList, pszPath)
 }
 

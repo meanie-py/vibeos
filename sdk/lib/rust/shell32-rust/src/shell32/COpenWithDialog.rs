@@ -1,13 +1,17 @@
 use crate::prelude::*;
+use crate::shell32::sdk_consts::*;
 // `SApp` is a POD nested inside class COpenWithList; the generator only emits nested
 // types reached by VALUE, and this one is reached through `SApp *m_pApp`.
 use crate::open_with_menu_support::{
-    SApp, ERROR_SUCCESS,
+    NM_DBLCLK, NM_RETURN, TVN_SELCHANGED,
+    CmicFlagsToSeeFlags, HResultFromWin32, PathFindFileNameW, SApp, SHELL_ErrorBox,
+    StringCbCopyW, ERROR_SUCCESS, HRESULT_FROM_WIN32, REST_NOFILEASSOCIATE, DialogBoxParamW,
 };
 // COpenWithList is a SEPARATE module that owns the type. Each generated class file
 // re-emits its member types, and two identical `#[repr(C)]` structs in two modules are
 // still two unrelated Rust types — `m_pAppList` would not accept `COpenWithList_new()`.
-use crate::open_with_list::{COpenWithList, COpenWithList_delete, COpenWithList_new};
+use crate::open_with_list::*;
+use crate::open_with_list::COpenWithList;
 
 // Deterministic COM scaffold for COpenWithDialog; method bodies are generated separately.
 extern "system" {
@@ -47,14 +51,17 @@ pub struct COpenWithDialog {
 }
 
 /// `new COpenWithDialog` — operator new plus the constructor body.
-pub unsafe fn COpenWithDialog_new() -> *mut COpenWithDialog {
+pub unsafe fn COpenWithDialog_new(
+    pInfo: *const OPENASINFO,
+    pAppList: *mut COpenWithList,
+) -> *mut COpenWithDialog {
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
         core::mem::size_of::<COpenWithDialog>(),
     ) as *mut COpenWithDialog;
     if this.is_null() { return core::ptr::null_mut(); }
-    COpenWithDialog_ctor_body(this);
+    COpenWithDialog_ctor_body(this, pInfo, pAppList);
     this
 }
 
@@ -243,7 +250,7 @@ extern "system" {
     fn GetSystemMetrics(index: UINT) -> INT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn RegCloseKey(key: HKEY) -> LONG;
-    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
+    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyExW(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
     fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
     fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
@@ -481,7 +488,7 @@ pub unsafe fn COpenWithDialog_ctor_body(this: *mut COpenWithDialog, pInfo: *cons
 
 pub unsafe fn COpenWithDialog_dtor_body(this: *mut COpenWithDialog) -> () {
     if (*this).m_bListAllocated != 0 && !(*this).m_pAppList.is_null() {
-        drop(Box::from_raw((*this).m_pAppList));
+        COpenWithList_delete((*this).m_pAppList);
     }
     if !(*this).m_hImgList.is_null() {
         ImageList_Destroy((*this).m_hImgList);
@@ -490,37 +497,53 @@ pub unsafe fn COpenWithDialog_dtor_body(this: *mut COpenWithDialog) -> () {
 
 pub unsafe fn COpenWithDialog_NoOpenDlgProc_body(this: *mut COpenWithDialog, hwnd: HWND, Message: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     match Message {
-        WM_INITDIALOG => return TRUE,
+        WM_INITDIALOG => return TRUE as INT_PTR,
         WM_CLOSE => {
-            EndDialog(hwnd, IDNO);
+            EndDialog(hwnd, IDNO as INT_PTR);
         }
         WM_COMMAND => {
             match LOWORD!(wParam) {
                 IDYES => {
-                    EndDialog(hwnd, IDYES);
+                    EndDialog(hwnd, IDYES as INT_PTR);
                 }
                 IDNO => {
-                    EndDialog(hwnd, IDNO);
+                    EndDialog(hwnd, IDNO as INT_PTR);
                 }
                 _ => {}
             }
         }
-        _ => return FALSE,
+        _ => return FALSE as INT_PTR,
     }
-    TRUE
+    TRUE as INT_PTR
+}
+
+/// DLGPROC entry for `COpenWithDialog::NoOpenDlgProc`, a C++ STATIC member.
+///
+/// The scaffold gives every method a `this`, static or not, so the body carries one it never
+/// reads — this dialog keeps no state and stashes nothing in DWLP_USER. Passing null makes
+/// that explicit; the day the body starts dereferencing `this` it faults here rather than
+/// reading whatever the parameter slot happened to hold.
+unsafe extern "system" fn COpenWithDialog_NoOpenDlgProc_thunk(
+    hwndDlg: HWND,
+    uMsg: UINT,
+    wParam: WPARAM,
+    lParam: LPARAM,
+) -> INT_PTR {
+    COpenWithDialog_NoOpenDlgProc_body(core::ptr::null_mut(), hwndDlg, uMsg, wParam, lParam)
 }
 
 pub unsafe fn COpenWithDialog_IsNoOpen_body(this: *mut COpenWithDialog, hwnd: HWND) -> BOOL {
-    if (*this).m_bNoOpen {
-        let dReturnValue = DialogBox(
+    if (*this).m_bNoOpen != FALSE {
+        let dReturnValue = DialogBoxParamW(
             shell32_hInstance,
             MAKEINTRESOURCE(IDD_NOOPEN),
             hwnd,
-            NoOpenDlgProc,
+            Some(COpenWithDialog_NoOpenDlgProc_thunk),
+            0,
         );
-        if dReturnValue == IDNO {
+        if dReturnValue == IDNO as INT_PTR {
             return TRUE;
-        } else if dReturnValue == -( 1 ) {
+        } else if dReturnValue == -1 as INT_PTR {
             return TRUE;
         }
     }
@@ -534,7 +557,7 @@ pub unsafe fn COpenWithDialog_AddApp_body(this: *mut COpenWithDialog, pApp: *mut
     }
     let hIcon = COpenWithList_GetIcon_body((*this).m_pAppList, pApp);
 
-    let mut tvins: TVINSERTSTRUCT = core::mem::zeroed();
+    let mut tvins: TVINSERTSTRUCTW = core::mem::zeroed();
     if (*pApp).bRecommended != 0 {
         tvins.hParent = (*this).m_hRecommend;
         tvins.hInsertAfter = (*this).m_hRecommend;
@@ -542,15 +565,20 @@ pub unsafe fn COpenWithDialog_AddApp_body(this: *mut COpenWithDialog, pApp: *mut
         tvins.hParent = (*this).m_hOther;
         tvins.hInsertAfter = (*this).m_hOther;
     }
-    tvins.item.mask = TVIF_TEXT | TVIF_PARAM;
-    tvins.item.pszText = pwszName as PWSTR;
-    tvins.item.lParam = pApp as LPARAM;
+    // The C writes `tvins.item.X`; bindgen renders that tail as an anonymous UNION of
+    // itemex/item, so the member is reached through `__bindgen_anon_1` and a union accessor.
+    // Binding it once keeps the run of writes reading like the C. The mutable borrow ends at
+    // its last use, so `&tvins` below is free to take a shared one.
+    let item = tvins.__bindgen_anon_1.item.as_mut();
+    item.mask = TVIF_TEXT | TVIF_PARAM;
+    item.pszText = pwszName as PWSTR;
+    item.lParam = pApp as LPARAM;
 
     if !hIcon.is_null() {
-        tvins.item.mask |= TVIF_IMAGE | TVIF_SELECTEDIMAGE;
-        let iIcon = ImageList_AddIcon((*this).m_hImgList, hIcon);
-        tvins.item.iImage = iIcon;
-        tvins.item.iSelectedImage = iIcon;
+        item.mask |= TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+        let iIcon = ImageList_AddIcon!((*this).m_hImgList, hIcon);
+        item.iImage = iIcon;
+        item.iSelectedImage = iIcon;
     }
 
     let hItem = TreeView_InsertItem((*this).m_hTreeView, &tvins);
@@ -568,7 +596,7 @@ pub unsafe fn COpenWithDialog_Browse_body(this: *mut COpenWithDialog) -> () {
 
     // ZeroMemory the structure (original: ZeroMemory(&ofn, sizeof(COMMENT_TOKEN_ECHO____)))
     ZeroMemory(
-        core::ptr::addr_of_mut!(ofn).cast(),
+        core::ptr::addr_of_mut!(ofn).cast::<core::ffi::c_void>(),
         core::mem::size_of::<OPENFILENAMEW>(),
     );
 
@@ -594,7 +622,7 @@ pub unsafe fn COpenWithDialog_Browse_body(this: *mut COpenWithDialog) -> () {
     }
 
     // ZeroMemory the path buffer
-    ZeroMemory(wszPath.as_mut_ptr().cast(), core::mem::size_of_val(&wszPath));
+    ZeroMemory(wszPath.as_mut_ptr().cast::<core::ffi::c_void>(), core::mem::size_of_val(&wszPath));
 
     // Open the file dialog
     if GetOpenFileNameW(core::ptr::addr_of_mut!(ofn) as *mut OPENFILENAMEW) == 0 {
@@ -607,7 +635,7 @@ pub unsafe fn COpenWithDialog_Browse_body(this: *mut COpenWithDialog) -> () {
 }
 
 pub unsafe fn COpenWithDialog_GetCurrentApp_body(this: *mut COpenWithDialog) -> *mut SApp {
-    let mut tvi: TVITEM = core::mem::zeroed();
+    let mut tvi: TVITEMW = core::mem::zeroed();
     tvi.hItem = TreeView_GetSelection((*this).m_hTreeView);
     if tvi.hItem.is_null() {
         return core::ptr::null_mut();
@@ -621,62 +649,64 @@ pub unsafe fn COpenWithDialog_GetCurrentApp_body(this: *mut COpenWithDialog) -> 
 
 pub unsafe fn COpenWithDialog_Init_body(this: *mut COpenWithDialog, hwnd: HWND) -> () {
     (*this).m_hDialog = hwnd;
-    SetWindowLongPtr(hwnd, DWLP_USER, this as LONG_PTR);
+    SetWindowLongPtrW(hwnd, DWLP_USER, this as LONG_PTR);
 
     let mut fDisallow: UINT = 0;
     let pszExt: PCWSTR = PathFindExtensionW((*(*this).m_pInfo).pcszFile);
-    if pszExt.is_null() || *pszExt.add(0 as usize) == 0 || *pszExt.add(1 as usize) == 0 || PathIsExeW((*(*this).m_pInfo).pcszFile) {
+    if pszExt.is_null() || *pszExt.add(0 as usize) == 0 || *pszExt.add(1 as usize) == 0 || PathIsExeW((*(*this).m_pInfo).pcszFile) != FALSE {
         fDisallow |= OAIF_ALLOW_REGISTRATION | OAIF_FORCE_REGISTRATION;
     }
-    if SHRestricted(REST_NOFILEASSOCIATE) {
+    if SHRestricted(REST_NOFILEASSOCIATE) != 0 {
         fDisallow |= OAIF_ALLOW_REGISTRATION | OAIF_FORCE_REGISTRATION | OAIF_REGISTER_EXT;
     }
 
-    (*this).m_InFlags = (*(*this).m_pInfo).oaifInFlags & !fDisallow;
+    (*this).m_InFlags = ((*(*this).m_pInfo).oaifInFlags as UINT) & !fDisallow;
     let hRegisterCheckbox: HWND = GetDlgItem(hwnd, 14003);
     if ((*this).m_InFlags & OAIF_ALLOW_REGISTRATION) == 0 {
         EnableWindow(hRegisterCheckbox, FALSE);
     }
     if ((*this).m_InFlags & OAIF_FORCE_REGISTRATION) != 0 {
-        SendMessage(hRegisterCheckbox, BM_SETCHECK, BST_CHECKED, 0);
+        SendMessage(hRegisterCheckbox, BM_SETCHECK, BST_CHECKED as WPARAM, 0);
     }
     if ((*this).m_InFlags & OAIF_HIDE_REGISTRATION) != 0 {
-        ShowWindow(hRegisterCheckbox, SW_HIDE);
+        ShowWindow(hRegisterCheckbox, SW_HIDE as INT);
     }
 
     let m_pInfo = (*this).m_pInfo;
     let m_pAppList = (*this).m_pAppList;
     if !(*m_pInfo).pcszFile.is_null() {
         let mut wszBuf: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-        let cchBuf: UINT = GetDlgItemTextW(hwnd, 14001, wszBuf.as_mut_ptr(), wszBuf.len());
-        StringCchCopyW(wszBuf.as_mut_ptr().add(cchBuf as usize), wszBuf.len() - cchBuf, PathFindFileNameW((*m_pInfo).pcszFile));
+        let cchBuf: UINT = GetDlgItemTextW(hwnd, 14001, wszBuf.as_mut_ptr(), wszBuf.len() as INT) as UINT;
+        StringCchCopyW(wszBuf.as_mut_ptr().add(cchBuf as usize), wszBuf.len() - cchBuf as usize, PathFindFileNameW((*m_pInfo).pcszFile));
         SetDlgItemTextW(hwnd, 14001, wszBuf.as_mut_ptr());
 
-        COpenWithList_Load(m_pAppList);
-        COpenWithList_LoadRecommended(m_pAppList, (*m_pInfo).pcszFile);
+        COpenWithList_Load_body(m_pAppList);
+        COpenWithList_LoadRecommended_body(m_pAppList, (*m_pInfo).pcszFile);
 
-        if COpenWithList_IsNoOpen(m_pAppList) != FALSE {
+        if COpenWithList_IsNoOpen_body(m_pAppList) != FALSE {
             (*this).m_bNoOpen = TRUE;
         }
 
         (*this).m_hTreeView = GetDlgItem(hwnd, 14002);
-        let cApps = COpenWithList_GetCount(m_pAppList);
-        (*this).m_hImgList = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, cApps + 1, cApps + 1);
-        TreeView_SetImageList((*this).m_hTreeView, (*this).m_hImgList, TVSIL_NORMAL);
+        let cApps = COpenWithList_GetCount_body(m_pAppList);
+        (*this).m_hImgList = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, (cApps + 1) as INT, (cApps + 1) as INT);
+        TreeView_SetImageList((*this).m_hTreeView, (*this).m_hImgList, TVSIL_NORMAL as INT);
 
-        let cRecommended: UINT = COpenWithList_GetRecommendedCount(m_pAppList);
+        let cRecommended: UINT = COpenWithList_GetRecommendedCount_body(m_pAppList);
         if cRecommended > 0 {
-            let mut tvins: TVINSERTSTRUCT = core::mem::zeroed();
+            let mut tvins: TVINSERTSTRUCTW = core::mem::zeroed();
             tvins.hParent = TVI_ROOT;
             tvins.hInsertAfter = TVI_ROOT;
-            tvins.item.mask = TVIF_TEXT | TVIF_STATE | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
-            tvins.item.pszText = wszBuf.as_mut_ptr() as LPWSTR;
-            tvins.item.state = TVIS_EXPANDED;
-            tvins.item.stateMask = TVIS_EXPANDED;
             let hFolderIcon: HICON = LoadImage(shell32_hInstance, MAKEINTRESOURCE(IDI_SHELL_PROGRAMS_FOLDER), IMAGE_ICON, 0, 0, 0) as HICON;
-            let iImage = ImageList_AddIcon((*this).m_hImgList, hFolderIcon);
-            tvins.item.iImage = iImage;
-            tvins.item.iSelectedImage = iImage;
+            let iImage = ImageList_AddIcon!((*this).m_hImgList, hFolderIcon);
+            // anonymous itemex/item union — see the note in COpenWithDialog_AddApp_body
+            let item = tvins.__bindgen_anon_1.item.as_mut();
+            item.mask = TVIF_TEXT | TVIF_STATE | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+            item.pszText = wszBuf.as_mut_ptr() as LPWSTR;
+            item.state = TVIS_EXPANDED;
+            item.stateMask = TVIS_EXPANDED;
+            item.iImage = iImage;
+            item.iSelectedImage = iImage;
 
             LoadStringW(shell32_hInstance, IDS_OPEN_WITH_RECOMMENDED, wszBuf.as_mut_ptr(), wszBuf.len() as INT);
             (*this).m_hRecommend = TreeView_InsertItem((*this).m_hTreeView, &tvins);
@@ -689,11 +719,11 @@ pub unsafe fn COpenWithDialog_Init_body(this: *mut COpenWithDialog, hwnd: HWND) 
         }
 
         let mut bNoAppSelected: BOOL = TRUE;
-        let pAppList: *mut SApp = COpenWithList_GetList(m_pAppList);
-        let totalApps = COpenWithList_GetCount(m_pAppList);
+        let pAppList: *mut SApp = COpenWithList_GetList_body(m_pAppList);
+        let totalApps = COpenWithList_GetCount_body(m_pAppList);
         let mut i: UINT = 0;
         while i < totalApps {
-            if IsHidden(pAppList.add(i as usize)) == 0 {
+            if COpenWithList_IsHidden_body(m_pAppList, pAppList.add(i as usize)) == 0 {
                 if bNoAppSelected != 0 && ((*pAppList.add(i as usize)).bRecommended != 0 || cRecommended == 0) {
                     COpenWithDialog_AddApp_body(this, pAppList.add(i as usize), TRUE);
                     bNoAppSelected = FALSE;
@@ -710,37 +740,37 @@ pub unsafe fn COpenWithDialog_Accept_body(this: *mut COpenWithDialog) -> () {
     let pApp = COpenWithDialog_GetCurrentApp_body(this);
     if !pApp.is_null() {
         if IsDlgButtonChecked((*this).m_hDialog, 14003) == BST_CHECKED && ((*this).m_InFlags & OAIF_REGISTER_EXT) != 0 {
-            (*(*this).m_pAppList).SetDefaultHandler(pApp, (*(*this).m_pInfo).pcszFile);
+            COpenWithList_SetDefaultHandler_body((*this).m_pAppList, pApp, (*(*this).m_pInfo).pcszFile);
         }
         if ((*this).m_InFlags & OAIF_EXEC) != 0 {
-            (*(*this).m_pAppList).Execute(pApp, (*(*this).m_pInfo).pcszFile);
+            COpenWithList_Execute_body((*this).m_pAppList, pApp, (*(*this).m_pInfo).pcszFile);
         }
         EndDialog((*this).m_hDialog, 1);
     }
 }
 
 pub unsafe fn COpenWithDialog_DialogProc_body(this: *mut COpenWithDialog, hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
-    let pThis = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut COpenWithDialog;
+    let pThis = GetWindowLongPtrW(hwndDlg, DWLP_USER) as *mut COpenWithDialog;
 
     match uMsg {
         WM_INITDIALOG => {
             let pThis = lParam as *mut COpenWithDialog;
             COpenWithDialog_Init_body(pThis, hwndDlg);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         WM_COMMAND => {
             match LOWORD!(wParam) {
                 14004 => {
                     COpenWithDialog_Browse_body(pThis);
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
                 IDOK => {
                     COpenWithDialog_Accept_body(pThis);
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
                 IDCANCEL => {
                     EndDialog(hwndDlg, 0);
-                    return TRUE;
+                    return TRUE as INT_PTR;
                 }
                 _ => {}
             }
@@ -755,7 +785,7 @@ pub unsafe fn COpenWithDialog_DialogProc_body(this: *mut COpenWithDialog, hwndDl
                         FALSE
                     };
                     EnableWindow(
-                        GetDlgItem(hwndDlg, IDOK),
+                        GetDlgItem(hwndDlg, IDOK as INT),
                         enable,
                     );
                 }
@@ -767,10 +797,10 @@ pub unsafe fn COpenWithDialog_DialogProc_body(this: *mut COpenWithDialog, hwndDl
         }
         WM_CLOSE => {
             EndDialog(hwndDlg, 0);
-            return TRUE;
+            return TRUE as INT_PTR;
         }
         _ => {}
     }
 
-    return FALSE;
+    return FALSE as INT_PTR;
 }

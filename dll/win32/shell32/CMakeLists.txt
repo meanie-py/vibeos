@@ -212,9 +212,16 @@ list(APPEND SOURCE
     # entry points had C++ linkage and the Rust CFSDropTarget could not name them, and Rust now
     # publishes the bridges itself under the same names.
     #   CDefaultContextMenu.cpp
-    # Hybrid cohab: COpenWithMenu activation/methods are Rust-owned; this file
-    # retains COpenWithList, COpenWithDialog, exported helpers, and opaque bridges.
-    COpenWithMenu.cpp
+    # COpenWithMenu.cpp — replaced by Rust; cohab via libshell32_rust.a.
+    #   Both remaining classes moved: COpenWithList (shell32/COpenWithList.rs) and
+    # COpenWithDialog (shell32/COpenWithDialog.rs), with the free functions and the 13
+    # opaque *_RustBridge wrappers in shell32/COpenWithMenu_tu.rs. The bridges existed so
+    # the Rust open_with_menu.rs could reach a C++ class it could not name; they keep the
+    # same names and now forward Rust-to-Rust, so open_with_menu.rs is untouched.
+    #   The two exported entry points, SHOpenWithDialog and SH32_InvokeOpenWith, are
+    # `#[no_mangle]` on the Rust side. Their other C++ callers (shlexec.cpp,
+    # dialogs/filedefext.cpp) are already flipped, so the only surviving declarations of
+    # either are the extern ones in Rust.
     # CNewMenu.cpp — replaced by Rust (shell32-rust/src/new_menu.rs); cohab via libshell32_rust.a
     # CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
     # CCopyMoveToMenu.cpp — shared base, four file-local helpers/callbacks, and

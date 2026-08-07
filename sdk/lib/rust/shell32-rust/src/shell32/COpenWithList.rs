@@ -1,8 +1,14 @@
 use crate::prelude::*;
+use crate::open_with_menu_support::RegSetString;
+// SHELL32_GetDllFromRundll32CommandLine is a FREE function of the same .cpp, so it lands in
+// the TU half rather than either class half; HCR_GetDefaultVerbW is pre-existing shell32 Rust.
+use crate::open_with_menu_tu::SHELL32_GetDllFromRundll32CommandLine;
+use crate::wine::classes::HCR_GetDefaultVerbW;
 // `SApp` is a POD nested inside class COpenWithList; the generator only emits nested
 // types reached by VALUE, and this one is reached through `SApp *m_pApp`.
 use crate::open_with_menu_support::{
-    SApp, ERROR_SUCCESS,
+    CmicFlagsToSeeFlags, HResultFromWin32, PathFindFileNameW, SApp, SHELL_ErrorBox,
+    StringCbCopyW, ERROR_SUCCESS, HRESULT_FROM_WIN32,
 };
 // Deterministic COM scaffold for COpenWithList; method bodies are generated separately.
 extern "system" {
@@ -232,7 +238,7 @@ extern "system" {
     fn GetSystemMetrics(index: UINT) -> INT;
     #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn RegCloseKey(key: HKEY) -> LONG;
-    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
+    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyExW(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
     fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
     fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
     fn RegQueryValueExW(key: HKEY, value: LPCWSTR, reserved: LPDWORD, kind: LPDWORD, data: PBYTE, bytes: LPDWORD) -> LONG;
@@ -535,7 +541,7 @@ pub unsafe fn COpenWithList_dtor_body(this: *mut COpenWithList) -> () {
     let mut i = 0;
     while i < (*this).m_cApp {
         let p = (*this).m_pApp.add(i as usize);
-        if (*p).!hIcon.is_null() {
+        if !(*p).hIcon.is_null() {
             DestroyIcon((*p).hIcon);
         }
         i += 1;
@@ -557,7 +563,7 @@ pub unsafe fn COpenWithList_Load_body(this: *mut COpenWithList) -> BOOL {
     let mut dwSize: DWORD;
     let mut pApp: *mut SApp;
 
-    if RegOpenKeyEx(
+    if RegOpenKeyExW(
         HKEY_CLASSES_ROOT,
         CPP_COM_WSTR_E55CA3B34C86.as_ptr(),
         0,
@@ -570,7 +576,7 @@ pub unsafe fn COpenWithList_Load_body(this: *mut COpenWithList) -> BOOL {
 
     loop {
         cchName = wszName.len() as DWORD;
-        let enum_result = RegEnumKeyEx(
+        let enum_result = RegEnumKeyExW(
             hKey,
             i,
             wszName.as_mut_ptr(),
@@ -620,7 +626,7 @@ pub unsafe fn COpenWithList_Load_body(this: *mut COpenWithList) -> BOOL {
                         CPP_COM_WSTR_96A296D224F2.as_ptr(),
                         RRF_RT_REG_SZ,
                         core::ptr::null_mut(),
-                        (*pApp).wszCmd.as_mut_ptr(),
+                        (*pApp).wszCmd.as_mut_ptr().cast(),
                         &mut dwSize as *mut DWORD,
                     ) != ERROR_SUCCESS
                     {
@@ -658,7 +664,7 @@ pub unsafe fn COpenWithList_Add_body(this: *mut COpenWithList, pwszPath: LPCWSTR
 
 pub unsafe fn COpenWithList_SaveApp_body(this: *mut COpenWithList, pApp: *mut SApp) -> BOOL {
     let mut wszBuf: [u16; 256 as usize] = [0u16; 256 as usize];
-    let mut hKey: isize = 0;
+    let mut hKey: HKEY = core::ptr::null_mut();
 
     StringCbPrintfW!(
         wszBuf.as_mut_ptr(),
@@ -667,28 +673,28 @@ pub unsafe fn COpenWithList_SaveApp_body(this: *mut COpenWithList, pApp: *mut SA
         ((*pApp).wszFilename).as_ptr(),
     );
 
-    if RegCreateKeyEx(
-        HKEY_CLASSES_ROOT as isize,
+    if RegCreateKeyExW(
+        HKEY_CLASSES_ROOT,
         wszBuf.as_ptr(),
         0 as u32,
-        core::ptr::null(),
+        core::ptr::null_mut(),
         0 as u32,
         KEY_WRITE as u32,
-        core::ptr::null(),
-        &mut hKey as *mut isize,
-        core::ptr::null(),
+        core::ptr::null_mut(),
+        &mut hKey as *mut HKEY,
+        core::ptr::null_mut(),
     ) != ERROR_SUCCESS as i32
     {
         return FALSE;
     }
 
-    if RegSetValueEx(
+    if RegSetValueExW(
         hKey,
         CPP_COM_WSTR_96A296D224F2.as_ptr(),
         0 as u32,
         REG_SZ as u32,
         ((*pApp).wszCmd).as_ptr() as *const u8,
-        (wcslen(((*pApp).wszCmd).as_ptr()) + 1) * 2,
+        ((wcslen(((*pApp).wszCmd).as_ptr()) + 1) * 2) as DWORD,
     ) != ERROR_SUCCESS as i32
     {
         // ERR!("Cannot add app to registry\n"); - no-op
@@ -724,7 +730,7 @@ pub unsafe fn COpenWithList_GetName_body(this: *mut COpenWithList, pApp: *mut SA
             );
 
             let mut wszPath: [u16; MAX_PATH as usize] = core::mem::zeroed();
-            if COpenWithList_GetPathFromCmd_body(this, core::ptr::null_mut(),
+            if COpenWithList_GetPathFromCmd_body(this,
                 wszPath.as_mut_ptr(),
                 (*pApp).wszCmd.as_ptr(),
             ) == 0
@@ -769,7 +775,7 @@ pub unsafe fn COpenWithList_Execute_body(this: *mut COpenWithList, pApp: *mut SA
 
     /* Add app to registry if it wasnt there before */
     COpenWithList_SaveApp_body(this, pApp);
-    if !(*pApp).bMRUList {
+    if (*pApp).bMRUList == FALSE {
         COpenWithList_AddAppToMRUList_body(this, pApp, pwszFilePath);
     }
 
@@ -780,7 +786,7 @@ pub unsafe fn COpenWithList_Execute_body(this: *mut COpenWithList, pApp: *mut SA
         CPP_COM_WSTR_E2341F1029CA.as_ptr(),
         (*pApp).wszFilename.as_ptr(),
     );
-    if RegCreateKeyEx(
+    if RegCreateKeyExW(
         HKEY_CLASSES_ROOT,
         wsz_buf.as_mut_ptr(),
         0,
@@ -797,7 +803,7 @@ pub unsafe fn COpenWithList_Execute_body(this: *mut COpenWithList, pApp: *mut SA
 
     /* Let ShellExecuteExW do the work */
     let mut sei: SHELLEXECUTEINFOW = core::mem::zeroed();
-    sei.cbSize = SHELLEXECUTEINFOW;
+    sei.cbSize = core::mem::size_of::<SHELLEXECUTEINFOW>() as DWORD;
     sei.fMask = SEE_MASK_CLASSKEY;
     sei.nShow = SW_SHOWNORMAL;
     sei.hkeyClass = hKey;
@@ -817,7 +823,7 @@ pub unsafe fn COpenWithList_IsHidden_body(this: *mut COpenWithList, pApp: *mut S
     }
 
     if StringCbPrintfW!(
-        &mut wszBuf,
+        wszBuf.as_mut_ptr(),
         core::mem::size_of_val(&wszBuf),
         CPP_COM_WSTR_E2341F1029CA.as_ptr(),
         (*pApp).wszFilename.as_ptr(),
@@ -831,8 +837,8 @@ pub unsafe fn COpenWithList_IsHidden_body(this: *mut COpenWithList, pApp: *mut S
         wszBuf.as_ptr(),
         CPP_COM_WSTR_33DF432E51A7.as_ptr(),
         RRF_RT_REG_SZ,
-        core::ptr::null(),
-        core::ptr::null(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
         &mut dwSize,
     ) != ERROR_SUCCESS
     {
@@ -862,7 +868,7 @@ pub unsafe fn COpenWithList_AddInternal_body(this: *mut COpenWithList, pwszFilen
     } else {
         let heap = GetProcessHeap();
         let size = ((*this).m_cApp + 1) as usize * core::mem::size_of::<SApp>();
-        let new_ptr = HeapReAlloc(heap, HEAP_ZERO_MEMORY, (*this).m_pApp as *mut _, size);
+        let new_ptr = HeapReAlloc(heap, HEAP_ZERO_MEMORY, (*this).m_pApp as *mut _, size as SIZE_T);
         (*this).m_pApp = new_ptr as *mut SApp;
     }
 
@@ -874,7 +880,7 @@ pub unsafe fn COpenWithList_AddInternal_body(this: *mut COpenWithList, pwszFilen
     // Take the next slot and bump the count
     let idx = (*this).m_cApp;
     (*this).m_cApp += 1;
-    let pApp = (*this).m_pApp.add(idx);
+    let pApp = (*this).m_pApp.add(idx as usize);
 
     // Copy the filename into the new entry
     wcscpy((*pApp).wszFilename.as_mut_ptr(), pwszFilename);
@@ -897,7 +903,7 @@ pub unsafe fn COpenWithList_LoadInfo_body(this: *mut COpenWithList, pApp: *mut S
     COpenWithList_GetPathFromCmd_body(this, wszPath.as_mut_ptr(), (*pApp).wszCmd.as_ptr());
 
     // query version info size
-    cbSize = GetFileVersionInfoSizeW(wszPath.as_ptr(), core::ptr::null());
+    cbSize = GetFileVersionInfoSizeW(wszPath.as_ptr(), core::ptr::null_mut());
     if cbSize == 0 {
         return FALSE;
     }
@@ -923,7 +929,7 @@ pub unsafe fn COpenWithList_LoadInfo_body(this: *mut COpenWithList, pApp: *mut S
     if VerQueryValueW(
         pBuf,
         CPP_COM_WSTR_F6E50E78ECC1.as_ptr(),
-        &mut lpLangCode as *mut *const u16 as *mut core::ffi::c_void,
+        &mut lpLangCode as *mut *const u16 as *mut *mut core::ffi::c_void,
         &mut cbSize,
     ) != 0
     {
@@ -932,26 +938,25 @@ pub unsafe fn COpenWithList_LoadInfo_body(this: *mut COpenWithList, pApp: *mut S
     }
 
     // Query name
-    swprintf(wszBuf.as_mut_ptr(), CPP_COM_WSTR_43CC49772B80.as_ptr(), wLang, wCode);
+    swprintf(wszBuf.as_mut_ptr(), CPP_COM_WSTR_43CC49772B80.as_ptr(), wLang as INT, wCode as INT);
     success = if VerQueryValueW(
         pBuf,
         wszBuf.as_mut_ptr(),
-        &mut pResult as *mut *mut u16 as *mut core::ffi::c_void,
+        &mut pResult as *mut *mut u16 as *mut *mut core::ffi::c_void,
         &mut cchLen,
     ) != 0
         && (cchLen > 1)
     {
         StringCchCopyNW(
             (*pApp).wszName.as_mut_ptr(),
-            (*pApp).wszName.len() as u32,
+            (*pApp).wszName.len(),
             pResult,
-            cchLen,
+            cchLen as usize,
         );
-        FALSE? // placeholder, actual assignment done after the if block
-        core::mem::transmute::<BOOL, BOOL>(1) // true
+        TRUE
     } else {
         ERR!("Cannot get app name\n");
-        0 // false
+        FALSE
     };
 
     // clean up
@@ -968,11 +973,11 @@ pub unsafe fn COpenWithList_GetPathFromCmd_body(this: *mut COpenWithList, pwszAp
     }
 
     /* Replace rundll32.exe with the dll path */
-    SHELL32_GetDllFromRundll32CommandLine(pwszCmd, wszBuf.as_mut_ptr(), wszBuf.len() as SIZE_T);
+    SHELL32_GetDllFromRundll32CommandLine(pwszCmd, wszBuf.as_mut_ptr(), wszBuf.len());
 
     /* Expand env. vars and optionally search for path */
-    ExpandEnvironmentStrings(wszBuf.as_ptr(), pwszAppPath, MAX_PATH);
-    if PathFileExists(pwszAppPath) == 0 {
+    ExpandEnvironmentStringsW(wszBuf.as_ptr(), pwszAppPath, MAX_PATH);
+    if PathFileExistsW(pwszAppPath) == 0 {
         let cch = SearchPathW(
             core::ptr::null(),
             pwszAppPath as *const u16,
@@ -1016,7 +1021,7 @@ pub unsafe fn COpenWithList_LoadProgIdList_body(this: *mut COpenWithList, hKey: 
         cchProgId = 256 as u32;
         let index = i;
         i += 1;
-        if RegEnumValue(hSubkey, index, wszProgId.as_mut_ptr(), &mut cchProgId, ::core::ptr::null_mut(), ::core::ptr::null_mut(), ::core::ptr::null_mut(), ::core::ptr::null_mut()) != ERROR_SUCCESS {
+        if RegEnumValueW(hSubkey, index, wszProgId.as_mut_ptr(), &mut cchProgId, ::core::ptr::null_mut(), ::core::ptr::null_mut(), ::core::ptr::null_mut(), ::core::ptr::null_mut()) != ERROR_SUCCESS {
             break;
         }
 
@@ -1057,7 +1062,7 @@ pub unsafe fn COpenWithList_LoadMRUList_body(this: *mut COpenWithList, hKey: HKE
     let mut wszAppFilename = [0u16; MAX_PATH as usize];
 
     for nItem in 0..nCount {
-        let nResult = EnumMRUListW(hList, nItem, wszAppFilename.as_mut_ptr(), MAX_PATH);
+        let nResult = EnumMRUListW(hList, nItem, wszAppFilename.as_mut_ptr() as *mut core::ffi::c_void, MAX_PATH);
         if nResult <= 0 {
             continue;
         }
@@ -1080,7 +1085,7 @@ pub unsafe fn COpenWithList_LoadAppList_body(this: *mut COpenWithList, hKey: HKE
 
     let result = RegOpenKeyExW(
         hKey,
-        CPP_COM_WSTR_CE8F52A82EBC,
+        CPP_COM_WSTR_CE8F52A82EBC.as_ptr(),
         0,
         KEY_READ,
         &mut hSubkey,
@@ -1129,8 +1134,8 @@ pub unsafe fn COpenWithList_LoadFromProgIdKey_body(this: *mut COpenWithList, hKe
         core::ptr::null(),
         CPP_COM_WSTR_28002EF3350C.as_ptr(),
         RRF_RT_REG_SZ,
-        core::ptr::null(),
-        core::ptr::null(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
         &mut dwSize,
     ) == ERROR_SUCCESS
     {
@@ -1144,7 +1149,7 @@ pub unsafe fn COpenWithList_LoadFromProgIdKey_body(this: *mut COpenWithList, hKe
         CPP_COM_WSTR_A6B6F89A1F7F.as_ptr(),
         core::ptr::null(),
         RRF_RT_REG_SZ,
-        core::ptr::null(),
+        core::ptr::null_mut(),
         wszCmd.as_mut_ptr() as *mut _,
         &mut dwSize,
     ) == ERROR_SUCCESS
@@ -1159,7 +1164,7 @@ pub unsafe fn COpenWithList_LoadFromProgIdKey_body(this: *mut COpenWithList, hKe
         if !pApp.is_null() {
             StringCbCopyW(
                 (*pApp).wszCmd.as_mut_ptr(),
-                core::mem::size_of_val(&(*pApp).wszCmd) as DWORD,
+                core::mem::size_of_val(&(*pApp).wszCmd),
                 wszCmd.as_ptr(),
             );
             COpenWithList_SetRecommended_body(this, pApp);
@@ -1184,7 +1189,7 @@ pub unsafe fn COpenWithList_LoadRecommendedFromHKCR_body(this: *mut COpenWithLis
     {
         StringCbPrintfW!(
             wszBuf.as_mut_ptr(),
-            (MAX_PATH * 2) as u32,
+            (MAX_PATH as usize) * 2,
             CPP_COM_WSTR_F38FD69158A5.as_ptr(),
             pwszExt,
         );
@@ -1208,7 +1213,7 @@ pub unsafe fn COpenWithList_LoadRecommendedFromHKCR_body(this: *mut COpenWithLis
         CPP_COM_WSTR_96A296D224F2.as_ptr(),
         RRF_RT_REG_SZ,
         core::ptr::null_mut(),
-        wszBuf.as_mut_ptr(),
+        wszBuf.as_mut_ptr().cast(),
         &mut dwSize as *mut u32,
     ) == ERROR_SUCCESS
         && RegOpenKeyExW(
@@ -1249,13 +1254,13 @@ pub unsafe fn COpenWithList_LoadRecommendedFromHKCR_body(this: *mut COpenWithLis
         CPP_COM_WSTR_714C3CA85096.as_ptr(),
         RRF_RT_REG_SZ,
         core::ptr::null_mut(),
-        wszBuf.as_mut_ptr(),
+        wszBuf.as_mut_ptr().cast(),
         &mut dwSize as *mut u32,
     ) == ERROR_SUCCESS
     {
         StringCbPrintfW!(
             wszBuf2.as_mut_ptr(),
-            (MAX_PATH * 2) as u32,
+            (MAX_PATH as usize) * 2,
             CPP_COM_WSTR_F38FD69158A5.as_ptr(),
             wszBuf.as_ptr(),
         );
@@ -1492,7 +1497,7 @@ pub unsafe fn COpenWithList_SetDefaultHandler_body(this: *mut COpenWithList, pAp
         );
         RegCloseKey(hDefIconKey);
         SHChangeNotify(
-            SHCNE_ASSOCCHANGED,
+            SHCNE_ASSOCCHANGED as LONG,
             SHCNF_FLUSHNOWAIT,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -1512,18 +1517,18 @@ pub unsafe fn COpenWithList_SetDefaultHandler_body(this: *mut COpenWithList, pAp
         CPP_COM_WSTR_E2341F1029CA.as_ptr(),
         (*pApp).wszFilename.as_ptr(),
     );
-    if Result == ERROR_SUCCESS
-        && !RegOpenKeyExW(
+    if Result == ERROR_SUCCESS as DWORD
+        && RegOpenKeyExW(
             HKEY_CLASSES_ROOT,
             wszBuf.as_ptr(),
             0,
             KEY_READ,
             &mut hAppKey,
-        )
+        ) == ERROR_SUCCESS
     {
         let cnt = wszBuf.len() as u32; // _countof macro replacement
         if HCR_GetDefaultVerbW(
-            hAppKey,
+            hAppKey.cast(),
             core::ptr::null_mut(),
             wszBuf.as_mut_ptr(),
             cnt,
@@ -1543,7 +1548,7 @@ pub unsafe fn COpenWithList_SetDefaultHandler_body(this: *mut COpenWithList, pAp
     RegCloseKey(hSrcKey);
     RegCloseKey(hKey);
 
-    if Result != ERROR_SUCCESS {
+    if Result != ERROR_SUCCESS as DWORD {
         return FALSE;
     }
 
