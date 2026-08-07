@@ -5,7 +5,7 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 pub const CCH_LAYOUT_ID: usize = 8;
 pub const CCH_ULONG_DEC: usize = 10;
-unsafe extern "C" fn IsLayoutExists(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOLEAN {
+unsafe extern "C" fn IsLayoutExists(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOL {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut hSubKey: HKEY = core::ptr::null_mut();
     const SIZE_PRELOAD: usize = (CCH_LAYOUT_ID + 1) as usize;
@@ -17,67 +17,67 @@ unsafe extern "C" fn IsLayoutExists(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOLE
     let mut szTmp: [u16; SIZE_TMP] = [0u16; SIZE_TMP];
     let mut szOldLangID: [u16; SIZE_OLDLANGID] = [0u16; SIZE_OLDLANGID];
     let mut dwIndex: u32 = 0;
-    let mut dwType: u32;
+    let mut dwType: u32 = 0;
     let mut dwSize: u32;
-    let mut IsLangExists: BOOLEAN = FALSE;
+    let mut IsLangExists: BOOLEAN = (FALSE) as BOOLEAN;
     let mut langid: LANGID;
 
-    let layout_key_path: &[u8] = b"K\0e\0y\0b\0o\0a\0r\0d\0 \0L\0a\0y\0o\0u\0t\0\\\0P\0r\0e\0l\0o\0a\0d\0\0\0";
-    let format_str: &[u8] = b"0\00\00\00\00\0%\0s\0\0\0";
-    let substitutes_key_path: &[u8] = b"K\0e\0y\0b\0o\0a\0r\0d\0 \0L\0a\0y\0o\0u\0t\0\\\0S\0u\0b\0s\0t\0i\0t\0u\0t\0e\0s\0\0\0";
+    // These three arrived as interleaved byte strings. `format_str` was
+    // b"0\00\00\00\00\0%\0s\0\0\0" — FIVE '0' code units where the C says L"0000%s", which
+    // both overruns szOldLangID[9] by one WCHAR and can never compare equal to a szLangID
+    // built as "0000" + a 4-digit language id. Hand-counted UTF-16 is what w!() exists for.
+    let layout_key_path = w!("Keyboard Layout\\Preload");
+    let format_str = w!("0000%s");
+    let substitutes_key_path = w!("Keyboard Layout\\Substitutes");
 
-    if RegOpenKeyExW(HKEY_CURRENT_USER, layout_key_path.as_ptr() as PWSTR,
-        0, KEY_QUERY_VALUE, &mut hKey as *mut HKEY) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_CURRENT_USER, layout_key_path as PWSTR,
+        0, KEY_QUERY_VALUE, &mut hKey as *mut HKEY) == (ERROR_SUCCESS) as i32 {
         dwSize = (szLayoutNum.len() * core::mem::size_of::<u16>()) as u32;
         while RegEnumValueW(hKey, dwIndex, szLayoutNum.as_mut_ptr(), &mut dwSize as *mut u32,
-            core::ptr::null_mut(), &mut dwType as *mut u32, core::ptr::null_mut(), core::ptr::null_mut()) == ERROR_SUCCESS {
+            core::ptr::null_mut(), &mut dwType as *mut u32, core::ptr::null_mut(), core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
             dwSize = (szPreload.len() * core::mem::size_of::<u16>()) as u32;
             if RegQueryValueExW(hKey, szLayoutNum.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(),
-                szPreload.as_mut_ptr() as LPBYTE, &mut dwSize as *mut u32) != ERROR_SUCCESS {
+                szPreload.as_mut_ptr() as LPBYTE, &mut dwSize as *mut u32) != (ERROR_SUCCESS) as i32 {
                 RegCloseKey(hKey);
-                return FALSE;
+                return FALSE as BOOL;
             }
             langid = wcstoul(szPreload.as_ptr(), core::ptr::null_mut(), 16) as LANGID;
-            GetLocaleInfoW(langid, LOCALE_ILANGUAGE, szTmp.as_mut_ptr(), (szTmp.len()) as i32);
-            wsprintf(szOldLangID.as_mut_ptr(), format_str.as_ptr() as PWSTR, szTmp.as_ptr());
+            GetLocaleInfoW((langid) as LCID, LOCALE_ILANGUAGE, szTmp.as_mut_ptr(), (szTmp.len()) as i32);
+            wsprintf(szOldLangID.as_mut_ptr(), format_str as PWSTR, szTmp.as_ptr());
             if wcscmp(szOldLangID.as_ptr(), szLangID) == 0 {
-                IsLangExists = TRUE;
+                IsLangExists = (TRUE) as BOOLEAN;
             } else {
-                IsLangExists = FALSE;
+                IsLangExists = (FALSE) as BOOLEAN;
             }
             if szPreload[0] == 0x64u16 {
-                if RegOpenKeyExW(HKEY_CURRENT_USER, substitutes_key_path.as_ptr() as PWSTR,
-                    0, KEY_QUERY_VALUE, &mut hSubKey as *mut HKEY) == ERROR_SUCCESS {
+                if RegOpenKeyExW(HKEY_CURRENT_USER, substitutes_key_path as PWSTR,
+                    0, KEY_QUERY_VALUE, &mut hSubKey as *mut HKEY) == (ERROR_SUCCESS) as i32 {
                     dwSize = (szTmp.len() * core::mem::size_of::<u16>()) as u32;
                     RegQueryValueExW(hSubKey, szPreload.as_ptr(), core::ptr::null_mut(), core::ptr::null_mut(),
                         szTmp.as_mut_ptr() as LPBYTE, &mut dwSize as *mut u32);
                     if (wcscmp(szTmp.as_ptr(), szLayoutID) == 0) && (IsLangExists != 0) {
                         RegCloseKey(hSubKey);
                         RegCloseKey(hKey);
-                        return TRUE;
+                        return TRUE as BOOL;
                     }
                 }
             } else {
                 if (wcscmp(szPreload.as_ptr(), szLayoutID) == 0) && (IsLangExists != 0) {
                     RegCloseKey(hKey);
-                    return TRUE;
+                    return TRUE as BOOL;
                 }
             }
-            IsLangExists = FALSE;
+            IsLangExists = (FALSE) as BOOLEAN;
             dwSize = (szLayoutNum.len() * core::mem::size_of::<u16>()) as u32;
             dwIndex += 1;
         }
         RegCloseKey(hKey);
     }
-    return FALSE;
+    return FALSE as BOOL;
 }
 unsafe extern "C" fn GetLayoutCount(szLang: PWSTR) -> i32 {
     let mut hKey: HKEY = core::ptr::null_mut();
-    const KEYBOARD_PATH: &[u16] = &[
-        0x004b, 0x0065, 0x0079, 0x0062, 0x006f, 0x0061, 0x0072, 0x0064, 0x0020,
-        0x004c, 0x0061, 0x0079, 0x006f, 0x0075, 0x0074, 0x005c, 0x0050, 0x0072,
-        0x0065, 0x006c, 0x006f, 0x0061, 0x0064, 0x0000,
-    ];
+    let KEYBOARD_PATH = w!("Keyboard Layout\\Preload");
     let mut szLayoutID: [u16; (3 + 1) as usize] =
         [0; (3 + 1) as usize];
     let mut szPreload: [u16; (CCH_LAYOUT_ID + 1) as usize] =
@@ -93,11 +93,11 @@ unsafe extern "C" fn GetLayoutCount(szLang: PWSTR) -> i32 {
 
     if RegOpenKeyExW(
         HKEY_CURRENT_USER,
-        KEYBOARD_PATH.as_ptr() as PWSTR,
+        KEYBOARD_PATH as PWSTR,
         0,
         KEY_QUERY_VALUE,
         core::ptr::addr_of_mut!(hKey),
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS) as i32
     {
         dwSize = core::mem::size_of::<[u16; (3 + 1) as usize]>() as u32;
         while RegEnumValue(
@@ -109,7 +109,7 @@ unsafe extern "C" fn GetLayoutCount(szLang: PWSTR) -> i32 {
             &mut dwType,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-        ) == ERROR_SUCCESS
+        ) == (ERROR_SUCCESS) as i32
         {
             dwSize = core::mem::size_of::<[u16; (CCH_LAYOUT_ID + 1) as usize]>() as u32;
             RegQueryValueExW(
@@ -142,7 +142,7 @@ unsafe extern "C" fn GetLayoutCount(szLang: PWSTR) -> i32 {
 
     Count as i32
 }
-unsafe extern "C" fn AddNewLayout(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOLEAN {
+unsafe extern "C" fn AddNewLayout(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOL {
     let mut NewLayout: [u16; (CCH_ULONG_DEC as usize) + (1 as usize)] = [0u16; (CCH_ULONG_DEC as usize) + (1 as usize)];
     let mut Lang: [u16; MAX_PATH as usize] = [0u16; MAX_PATH as usize];
     let mut LangID: [u16; (CCH_LAYOUT_ID as usize) + (1 as usize)] = [0u16; (CCH_LAYOUT_ID as usize) + (1 as usize)];
@@ -152,37 +152,37 @@ unsafe extern "C" fn AddNewLayout(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOLEAN
     let mut cValues: u32 = 0;
     let mut lcid: LCID = 0;
 
-    if RegOpenKeyExW(HKEY_CURRENT_USER, L"Keyboard Layout\\Preload", 0, KEY_ALL_ACCESS, &mut hKey) == ERROR_SUCCESS {
-        if RegQueryInfoKey(hKey, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut cValues, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()) == ERROR_SUCCESS {
+    if RegOpenKeyExW(HKEY_CURRENT_USER, w!("Keyboard Layout\\Preload") as PWSTR, 0, KEY_ALL_ACCESS, &mut hKey) == (ERROR_SUCCESS) as i32 {
+        if RegQueryInfoKey(hKey, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), &mut cValues, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
             _ultow(cValues.wrapping_add(1), NewLayout.as_mut_ptr(), 10);
 
             lcid = wcstoul(szLangID, core::ptr::null_mut(), 16);
 
-            GetLocaleInfoW(MAKELCID(lcid, SORT_DEFAULT), LOCALE_ILANGUAGE, Lang.as_mut_ptr(), (core::mem::size_of_val(&Lang) / core::mem::size_of::<u16>()) as i32);
-            wsprintf(LangID.as_mut_ptr(), L"0000%s", Lang.as_ptr());
+            GetLocaleInfoW(MAKELCID!(lcid, SORT_DEFAULT), LOCALE_ILANGUAGE, Lang.as_mut_ptr(), (core::mem::size_of_val(&Lang) / core::mem::size_of::<u16>()) as i32);
+            wsprintf(LangID.as_mut_ptr(), w!("0000%s") as PWSTR, Lang.as_ptr());
 
-            if IsLayoutExists(szLayoutID, LangID.as_ptr()) != 0u8 {
+            if IsLayoutExists(szLayoutID, LangID.as_mut_ptr()) != 0 {
                 RegCloseKey(hKey);
-                return FALSE;
+                return FALSE as BOOL;
             }
 
-            if GetLayoutCount(Lang.as_ptr()) >= 1 {
-                wsprintf(SubPath.as_mut_ptr(), L"d%03d%s", GetLayoutCount(Lang.as_ptr()), Lang.as_ptr());
-            } else if (wcscmp(LangID.as_ptr(), szLayoutID) != 0) && (GetLayoutCount(Lang.as_ptr()) == 0) {
-                wsprintf(SubPath.as_mut_ptr(), L"d%03d%s", 0, Lang.as_ptr());
+            if GetLayoutCount(Lang.as_mut_ptr()) >= 1 {
+                wsprintf(SubPath.as_mut_ptr(), w!("d%03d%s") as PWSTR, GetLayoutCount(Lang.as_mut_ptr()), Lang.as_ptr());
+            } else if (wcscmp(LangID.as_ptr(), szLayoutID) != 0) && (GetLayoutCount(Lang.as_mut_ptr()) == 0) {
+                wsprintf(SubPath.as_mut_ptr(), w!("d%03d%s") as PWSTR, 0, Lang.as_ptr());
             } else {
                 SubPath[0 as usize] = 0u16;
             }
 
             if wcslen(SubPath.as_ptr()) != 0 {
-                if RegCreateKeyExW(HKEY_CURRENT_USER, L"Keyboard Layout\\Substitutes", 0, core::ptr::null_mut(),
+                if RegCreateKeyExW(HKEY_CURRENT_USER, w!("Keyboard Layout\\Substitutes") as PWSTR, 0, core::ptr::null_mut(),
                                     REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS,
-                                    core::ptr::null_mut(), &mut hSubKey, core::ptr::null_mut()) == ERROR_SUCCESS {
+                                    core::ptr::null_mut(), &mut hSubKey, core::ptr::null_mut()) == (ERROR_SUCCESS) as i32 {
                     if RegSetValueExW(hSubKey, SubPath.as_ptr(), 0, REG_SZ, szLayoutID as LPBYTE,
-                                       (((CCH_LAYOUT_ID as usize) + (1 as usize)) * core::mem::size_of::<u16>()) as u32) != ERROR_SUCCESS {
+                                       (((CCH_LAYOUT_ID as usize) + (1 as usize)) * core::mem::size_of::<u16>()) as u32) != (ERROR_SUCCESS) as i32 {
                         RegCloseKey(hSubKey);
                         RegCloseKey(hKey);
-                        return FALSE;
+                        return FALSE as BOOL;
                     }
                     RegCloseKey(hSubKey);
                 }
@@ -199,14 +199,10 @@ unsafe extern "C" fn AddNewLayout(szLayoutID: PWSTR, szLangID: PWSTR) -> BOOLEAN
         RegCloseKey(hKey);
     }
 
-    TRUE
+    TRUE as BOOL
 }
 #[no_mangle]
 pub unsafe extern "C" fn AddNewKbLayoutsByLcid(Lcid: LCID) {
-    let wide_0000s: &[u16] = &[0x30u16, 0x30u16, 0x30u16, 0x30u16, 0x25u16, 0x73u16, 0x00u16];
-    let wide_intl_inf: &[u16] = &[0x69u16, 0x6eu16, 0x74u16, 0x6cu16, 0x2eu16, 0x69u16, 0x6eu16, 0x66u16, 0x00u16];
-    let wide_locales: &[u16] = &[0x4cu16, 0x6fu16, 0x63u16, 0x61u16, 0x6cu16, 0x65u16, 0x73u16, 0x00u16];
-
     let mut hIntlInf: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut szLang: [u16; (CCH_LAYOUT_ID + 1) as usize] = [0u16; (CCH_LAYOUT_ID + 1) as usize];
     let mut szLangID: [u16; (CCH_LAYOUT_ID + 1) as usize] = [0u16; (CCH_LAYOUT_ID + 1) as usize];
@@ -218,30 +214,30 @@ pub unsafe extern "C" fn AddNewKbLayoutsByLcid(Lcid: LCID) {
     let mut FieldCount: u32;
 
     GetLocaleInfoW(
-        MAKELCID(Lcid, SORT_DEFAULT),
+        MAKELCID!(Lcid, SORT_DEFAULT),
         LOCALE_ILANGUAGE,
         szLang.as_mut_ptr(),
-        szLang.len() as u32,
+        (szLang.len() as u32) as i32,
     );
-    wsprintf(szLangID.as_mut_ptr(), wide_0000s.as_ptr(), szLang.as_ptr());
+    wsprintf(szLangID.as_mut_ptr(), w!("0000%s") as PWSTR, szLang.as_ptr());
 
-    hIntlInf = SetupOpenInfFileW(wide_intl_inf.as_ptr(), core::ptr::null_mut(), INF_STYLE_WIN4, core::ptr::null_mut());
-    if hIntlInf as isize == INVALID_HANDLE_VALUE {
+    hIntlInf = SetupOpenInfFileW(w!("intl.inf"), core::ptr::null_mut(), INF_STYLE_WIN4, core::ptr::null_mut());
+    if hIntlInf == INVALID_HANDLE_VALUE {
         return;
     }
 
-    if !SetupOpenAppendInfFile(core::ptr::null_mut(), hIntlInf, core::ptr::null_mut()) != 0 {
+    if SetupOpenAppendInfFile(core::ptr::null_mut(), hIntlInf, core::ptr::null_mut()) == 0 {
         SetupCloseInfFile(hIntlInf);
         hIntlInf = core::ptr::null_mut();
         return;
     }
 
-    Count = SetupGetLineCount(hIntlInf, wide_locales.as_ptr());
+    Count = SetupGetLineCount(hIntlInf, w!("Locales"));
     if Count <= 0 {
         return;
     }
 
-    if SetupFindFirstLine(hIntlInf, wide_locales.as_ptr(), szLangID.as_mut_ptr(), &mut InfContext) != 0 {
+    if SetupFindFirstLine(hIntlInf, w!("Locales"), szLangID.as_mut_ptr(), &mut InfContext) != 0 {
         FieldCount = SetupGetFieldCount(&mut InfContext);
         if FieldCount != 0 {
             let mut Index = 5;
@@ -252,7 +248,7 @@ pub unsafe extern "C" fn AddNewKbLayoutsByLcid(Lcid: LCID) {
                         continue;
                     }
 
-                    wsprintf(szLangStr.as_mut_ptr(), wide_0000s.as_ptr(), szStr.as_ptr());
+                    wsprintf(szLangStr.as_mut_ptr(), w!("0000%s") as PWSTR, szStr.as_ptr());
                     szLangStr[8 as usize] = 0u16;
 
                     let len = wcslen(szStr.as_ptr()) as usize;
@@ -408,7 +404,7 @@ pub unsafe extern "C" fn AddNewKbLayoutsByLcid(Lcid: LCID) {
 //     DWORD cValues;
 //     LCID lcid;
 //
-//     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Keyboard Layout\\Preload", 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)
+//     if (RegOpenKeyExW(HKEY_CURRENT_USER, w!("Keyboard Layout\\Preload") as PWSTR, 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)
 //     {
 //         if (RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &cValues, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
 //         {
