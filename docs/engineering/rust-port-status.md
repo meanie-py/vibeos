@@ -813,7 +813,34 @@ symbols as the codepage-aware NLS oracle mbcs.c's 160 graded functions stand on 
 **misc.c deliberately does not ride a gate** — its sort/search family is among the most
 gradeable code in msvcrt, so the harness instead grew the four Win32 stubs it actually
 needed (`Beep`, `DebugBreak`, `RtlGenRandom`, `VirtualProtect`) and dropped its now-redundant
-`_get_output_format` stub in favour of the real body. Rows for misc.c are owed, not blocked.
+`_get_output_format` stub in favour of the real body.
+
+**GRADED 2026-08-07 as reference TU #9** — `tests/misc.rs`, 1,430 rows. Four of its exports
+take a CALLBACK and the callback is the harness's, so a row can watch the algorithm rather
+than only check its answer — and for `qsort` that IS the contract. misc.c says so above
+`qsort_s`: *"trying to sort data doing identical comparisons as native does."* The
+comparison LOG is compared per side across sorted, reverse, all-equal, heavy-duplicate and
+scattered datasets at sizes 0–64, and it matches exactly. Interior pointers are never
+compared across sides (two different buffers) — each becomes `(ret - base) / elem_size`; and
+`_lsearch` APPENDS on a miss, so its array and `*array_size` are part of the answer.
+
+Three findings, none in the sorting, and two of them in the HARNESS:
+
+* **glibc's `RAND_MAX` had leaked into the reference by inclusion.** msvcrt's is `0x7FFF`,
+  the host's `0x7FFFFFFF`, and refstub/msvcrt.h pulls `<stdlib.h>`. `rand()` ends in
+  `(seed >> 16) & RAND_MAX`, so the *reference* returned 16-bit numbers where msvcrt returns
+  15-bit ones. Same class as a hand-typed refstub constant and harder to see, because nobody
+  typed it.
+* **`rand_s`'s entropy stub was named `RtlGenRandom`**; the Rust binds `SystemFunction036`,
+  which is what advapi32 exports. It never mattered because no test binary referenced
+  `rand_s`, so the undefined symbol never reached a link — a class `cargo check` cannot see.
+* The subject's `rand()` **panicked under debug overflow checks**: the LCG's wrap IS the
+  algorithm, so `wrapping_mul`/`wrapping_add`, not `*`/`+`. Right in release, unusable in the
+  debug build the difftest uses — i.e. ungradeable. Same class as mbcs.rs's underflow.
+
+`Beep` and `Sleep` also stopped being inert. That was right while misc.c was only the
+SUBJECT's; once graded, `_beep` is a passthrough and `_sleep` is `Sleep(timeout ? timeout : 1)`
+— functions whose entire body is the call, which an inert stub makes unobservable.
 
 **Wave 24 (2026-08-04) — data.c FLIPPED (58 exports, $0.18).** The CRT's process-global
 state: `__argc`/`__argv`/`__wargv`/`_environ`/`_wenviron`/`_pgmptr`/`_wpgmptr`/`_acmdln`, the

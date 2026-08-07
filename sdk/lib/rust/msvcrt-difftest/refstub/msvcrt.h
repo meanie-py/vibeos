@@ -124,6 +124,15 @@ typedef unsigned int        __msvcrt_ulong;
 #undef  ULONG_MAX
 #define ULONG_MAX 0xFFFFFFFFLL
 
+/* msvcrt's is 0x7FFF (dll/win32/msvcrt/include/stdlib.h:34, sdk/include/crt/stdlib.h:87);
+ * glibc's is 0x7FFFFFFF, and <stdlib.h> above already defined it. `rand()` ends in
+ * `(seed >> 16) & RAND_MAX`, so under the host's value the reference returns 16-bit numbers
+ * where msvcrt returns 15-bit ones — and the first `rand` row caught exactly that, with the
+ * REFERENCE wrong. A host constant leaking into the oracle is the same class as a hand-typed
+ * one, and harder to see: nothing here typed it. */
+#undef  RAND_MAX
+#define RAND_MAX 0x7FFF
+
 /* ------------------------------------------------------------------ *
  * glibc's WIDE headers — pulled here, and *deliberately* UNDER the 16-bit
  * wchar_t remap.  This is the exact opposite of the rule for the narrow
