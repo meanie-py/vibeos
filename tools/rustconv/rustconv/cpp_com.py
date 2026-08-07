@@ -5895,7 +5895,7 @@ def render_class_scaffold(
                 "    this",
                 "}",
                 "",
-                f"/// `delete` — the destructor body, then the matching free. Pairs with",
+                "/// `delete` — the destructor body, then the matching free. Pairs with",
                 f"/// `{cls.name}_new`; freeing through any other allocator is a heap bug.",
                 f"pub unsafe fn {cls.name}_delete(this: *mut {cls.name}) {{",
                 "    if this.is_null() { return; }",
