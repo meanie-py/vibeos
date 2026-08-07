@@ -842,6 +842,14 @@ name = "interlck"
 version = "0.1.0"
 
 [[package]]
+name = "intl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "iomgr-rust"
 version = "0.1.0"
 dependencies = [

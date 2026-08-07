@@ -1189,6 +1189,29 @@ helpers too, not just the shipping crate: one of the four was a double→`long d
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
 
 ### Wide/narrow literal sizing
+- **The whole class above had ONE cause: the plain-C prompt never mentioned wide strings.**
+  Every entry in this section is a symptom of the same missing rule, which is why fixing them
+  module by module never made the next module better. `translate` in idiomatic mode loads
+  `templates/function_prompt.md` — 29 lines, and its single string rule was the NARROW
+  `String literals: b"text\0".as_ptr() as PCHAR`. The detailed (and self-contradictory —
+  one passage said "use a static byte array and transmute", another "prefer" explicit arrays
+  for a form that has shipped three distinct bugs) wide-string guidance lived only in
+  `system_prompt.md`, which that path never loads. So for every tier-3 user-mode module the
+  model was told to spell string literals as byte strings, and told nothing about `L"..."`;
+  what it did with them — byte string, hand-encoded UTF-16, or raw `L"..."` left verbatim —
+  was sampling noise. Note the contrast that proves it: shell32's C++ path has had *zero*
+  literals of this class, because `cpp_com` lowers `L"..."` deterministically before the model
+  sees the body. Fix: `_format_wide_literal_contract()` in `function_prompt.py` states the
+  rule against the substrate the OUTPUT CRATE actually has — it greps the crate for `w!`/
+  `wide!` and names them if present, falls back to the explicit-array form if not, and never
+  names a macro the crate lacks (an unresolvable macro call is worse than no advice, because
+  the repair pass has nothing to resolve it to). It rides in the per-file cached block, so it
+  is not re-billed per function, and prompt prose is out of the resume-cache key, so adding it
+  re-bills nothing already banked. **The durable version of this fix is a seal, not prose** —
+  `--seal-facts` is explicitly lexical and skips string literals, so a wide-literal seal that
+  tokenises `L"..."` out of the body and restores `w!("...")` at assembly would make the class
+  unexpressible rather than merely discouraged. Until then the multiset oracle
+  (`verify_translation_literals.py`) is the backstop, and it must be run on fresh output.
 - **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
   string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
   `L"%s.%s"` came back once UTF-16-encoded *including the L* (`b"L\0%\0s\0…"` — every full

@@ -17,7 +17,7 @@ You are translating ONE C function from ReactOS ntoskrnl to Rust. Output ONLY th
 
 **DUMMY_PSEH**: `_SEH2_EXCEPT` handlers are dead code. Execute TRY body directly, omit handler.
 
-**Type mappings**: `NULL` → `core::ptr::null_mut()`. `TRUE`/`FALSE` → `1u8`/`0u8` for BOOLEAN. String literals: `b"text\0".as_ptr() as PCHAR`.
+**Type mappings**: `NULL` → `core::ptr::null_mut()`. `TRUE`/`FALSE` → `1u8`/`0u8` for BOOLEAN. NARROW string literals (`"text"`, for a `PCHAR`/`LPSTR` callee): `b"text\0".as_ptr() as PCHAR`. WIDE literals (`L"text"`, for `PWSTR`/`LPCWSTR`) are a different rule — see "Wide string literals" in the file context; the byte-string form above is ASCII and is WRONG for every wide callee.
 
 **Pointer patterns**: Use `(*ptr).field`, not references. Use `core::ptr::addr_of_mut!((*ptr).field)` only when C code takes address (`&ptr->field`). `RtlCopyMemory` → `core::ptr::copy_nonoverlapping`. `RtlZeroMemory` → `core::ptr::write_bytes(..., 0, ...)`.
 

@@ -322,14 +322,10 @@ let mut object_attributes = OBJECT_ATTRIBUTES {
 // Use the extern function directly:
 RtlInitUnicodeString(&mut string, wide_string_ptr);
 ```
-For wide string literals, define them as static arrays:
+For wide string literals, define them as static arrays — see "Wide String Encoding"
+below for the one permitted form. Never build one from a byte string or a transmute.
 ```rust
 static KEY_PATH: [u16; N] = [...]; // pre-computed UTF-16, null-terminated
-```
-
-Or use a helper:
-```rust
-// For compile-time wide strings, use a static byte array and transmute
 ```
 
 ### PAGED_CODE() / DPRINT / DPRINT1
@@ -690,7 +686,7 @@ static REG_PATH: [u16; 19] = [
 ];
 ```
 
-The `b"S\0e\0r\0v\0i\0c\0e\0\0\0"` byte-string hack (ASCII char + `\0` pairs reinterpreted as LE u16) works on little-endian but is fragile. Prefer explicit `[u16; N]` arrays for all wide strings.
+The `b"S\0e\0r\0v\0i\0c\0e\0\0\0"` byte-string hack (ASCII char + `\0` pairs reinterpreted as LE u16) is FORBIDDEN, not merely discouraged. It is wrong three ways, and all three have shipped: it has ALIGNMENT 1 where a `u16` read wants 2; one miscounted `\0` truncates the string with no diagnostic anywhere (`L"0000%s"` came back as five zeros, and a whole module's registry names came back one character long); and the reader checks it by eye against a hex dump, which is exactly the check that passes when it is wrong. Use an explicit `[u16; N]` array, or the crate's `w!`/`wide!` macro where one exists — the macro counts the elements and appends the NUL so neither can be got wrong.
 
 ### Enum/Constant Value Ordering
 

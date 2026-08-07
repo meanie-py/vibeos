@@ -110,6 +110,9 @@ members = [
     # environment/user-profile/hardware-profile/virtual-memory/startup-recovery dialogs, and the
     # SMBIOS/DMI reader that names the machine.
     "sysdm-rust",
+    # The International control panel: the number/currency/time/date/sort/language property
+    # sheets, the locale+keyboard-layout installer, and the .inf-driven locale setup path.
+    "intl-rust",
     "access",
     "avltable",
     "bitmap",
