@@ -127,6 +127,17 @@ name = "mbcs_state"
 path = "tests/mbcs_state.rs"
 harness = false
 
+# `_setmbcp`, the other function the 173 generated cases structurally cannot grade, and for
+# the opposite reason to create_mbcinfo's: it INSTALLS an mbcinfo rather than building one,
+# so a generated case would move the fixture every other case is pinned against. Its own
+# binary, hence its own process, so what it installs can never reach that fixture — and so
+# that it can point each side's `MSVCRT_locale` at its own storage, which is what makes the
+# non-thread arm (the one that writes the exported `_mbctype`) gradeable at all.
+[[test]]
+name = "mbcs_setmbcp"
+path = "tests/mbcs_setmbcp.rs"
+harness = false
+
 # Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
 # drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
 # sides' tables have to start empty and stay in lockstep for the fd numbers to be

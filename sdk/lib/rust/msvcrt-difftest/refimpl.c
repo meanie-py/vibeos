@@ -312,6 +312,16 @@ thread_data_t * CDECL msvcrt_get_thread_data(void)
     return &ref_thread_data;
 }
 
+/* The two thread-data fields `_setmbcp` steers on, reached through accessors rather than
+ * from the test directly.  The subject's copy of this struct (subjectimpl.c) is the one
+ * that has to match msvcrt-sys byte for byte, and ref_integrity asserts that; the
+ * reference's carries only the fields its TUs touch and is in a different order. One
+ * `extern` struct declaration in the test would therefore have to be right about TWO
+ * incompatible layouts, so each side hands out its own fields instead. */
+void ref_set_locale_flags(int flags)         { ref_thread_data.locale_flags = flags; }
+void ref_set_thread_mbcinfo(void *mbcinfo)   { ref_thread_data.mbcinfo = mbcinfo; }
+void *ref_get_thread_mbcinfo(void)           { return ref_thread_data.mbcinfo; }
+
 /* ------------------------------------------------------------------ *
  * _l ctype — GONE as of wave 10, and that is the upgrade.
  *

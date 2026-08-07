@@ -714,9 +714,28 @@ flip meaning". Coverage then went 160 -> 167 -> **173 of 175** as the generator 
 `_s` out-scalars, the restartable `mbstate_t` sweep, the `char **` cursors (`_mbstok_s`,
 `mbsrtowcs`) and the `__p_*` state accessors. `create_mbcinfo` is graded separately by
 `mbcs_state` — and diverged on its first run, which is what a fixture built from one side
-cannot show you. **`_setmbcp` is the last ungraded function**: it installs through
-`MSVCRT_locale->mbcinfo`, which the harness defines as NULL, so grading it means modelling
-`MSVCRT_locale` and the thread-data `locale_flags` on both sides rather than writing a case.
+cannot show you. `_setmbcp`, the other function no generated case can reach, is now graded by
+`mbcs_setmbcp`: **mbcs.c is 175 of 175.**
+
+`_setmbcp` needed the harness to grow rather than another case, and what it needed is the
+lesson. It INSTALLS an mbcinfo instead of building one, so a generated case would move the very
+fixture the other 173 are pinned against — hence its own binary, hence its own process. And its
+non-thread arm dereferences `MSVCRT_locale`, which the harness defined as a single shared NULL.
+Both halves of that mattered: NULL is why it was refused, and SHARED is why fixing NULL alone
+would have been worse than useless. That arm ends in
+`memcpy(MSVCRT_mbctype, MSVCRT_locale->mbcinfo->mbctype, …)`, so one `MSVCRT_locale` would have
+had both sides installing into the same slot and reading back each other's writes — a row
+comparing a table against itself, green whatever either side did. So `nlsimpl.c` keeps one
+`_locale_tstruct` per side, the reference's reached through the `msvcrt_ref_*` import namespace
+like `get_mbcinfo`.
+
+Three arms and a refusal, swept over all 7 codepages: the thread arm (which must NOT publish
+its table globally), the `LOCALE_FREE` arm (whose only observable effect is the release call, so
+`free_mbcinfo` records its argument and each side is read immediately after its own call), and
+the global arm — where the exported `_mbctype` is compared both against the other side's and
+against the table that side just installed. Both controls were checked by sabotage: pointing the
+memcpy at a second array reproduces the shipped bug and the row fails on cp932; dropping the
+`LOCALE_FREE` release fails the arm that exists for it.
 
 All host harnesses now run under **`vibeos-cli difftest`**, which `gate` invokes and which gates
 the push stamp — see `tests/qemu/cli/README.md`. They were previously reachable only by typing
@@ -926,6 +945,36 @@ Each compiles to a **396-byte object with zero defined symbols** on all three ar
 pre-payment; it was read straight past, because in a module whose constants are named
 `ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
 
+**Wave 34 — reactos/misc.c + reactos/system.cpp, $0. No C bodies remain in msvcrt's own
+directory.** The two files ReactOS added that Wine never had, 189 lines between them, and both
+hand-written: every callee they need had been Rust since earlier waves, so a paid translation
+would have been buying the easiest code in the module.
+
+`reactos/misc.c` (7 exports) is two arrays and three accessors, and its only trap is the one
+`_mbctype` had just demonstrated — `_mbcasemap` and `_fileinfo` are bare `@ extern` lines in
+the spec, so their Rust twins need `#[no_mangle]` or the export keeps naming the C copy while
+`__p__mbcasemap` hands out Rust's. `_mbcasemap` is written as a const-eval loop with boundary
+assertions rather than 257 transcribed bytes: all it is is an ASCII case swap, and an
+assertion that fails the build beats a literal nobody rechecks.
+
+`reactos/system.cpp` had been carried for months as "the C++ substrate lane" and **it is not
+one** — worth stating plainly, because that label alone kept it unported. There is no RTTI, no
+vtable, no exception object and no C++ ABI on the boundary; both exports are `extern "C"` and
+`throw()` is an empty exception specification, not a use of exceptions. The C++-ness is a
+`template <typename Character>` instantiated at exactly `char` and `wchar_t` and resolved at
+compile time, which is a Rust generic over a trait with four methods. Its one real hazard is a
+naming collision, not a language one: process.rs already holds *Wine's* rival `system`/
+`_wsystem`, correctly `#[cfg(any())]` because process.c wraps them in `#ifndef __REACTOS__`.
+Two live definitions in one archive would be settled by member order.
+
+Both modules had to be named for their DIRECTORY (`reactos_misc`, `reactos_system`) because
+both basenames are taken, and that is what surfaced a hole in `verify_cohab_coverage.py`: it
+derived the C object as `<mod>.c.obj` and treated a miss as a bare `continue`. A renamed or
+mistyped module was therefore compared against nothing and reported clean — the same
+fail-open shape as the `extern` parser bug, in the adjacent place. It now takes an explicit
+`objects` map, and a missing object is a finding unless the C source exists (arch-conditional,
+like `except_i386.c` on arm64) or the module is declared in `no_c_twin` with a reason.
+
 **Wave 33 — main.c's `DllMain`, $0. The WINE-derived half of msvcrt.dll is Rust.** The last C
 function in that half, and the one every prior wave routed around: `set_module_type(msvcrt
 win32dll ENTRYPOINT DllMain 12)` means this is the *entry point*, and it is what decides the
@@ -972,14 +1021,58 @@ Three categories that *look* like remaining work and are not, each checked again
 rather than assumed: **111** symbols across scanf/wcs/file/process/console are the deliberate
 `...` trampolines in `rust_*_shim.c`, because stable Rust cannot DEFINE a C-variadic; **7** are
 non-exported internals (`asm_sqrt`, `fpnum_parse`, `sse2_supported`) whose Rust twins are
-private on purpose; and **44** exports (`memmove`, `atexit`, `setjmp`, `_rotl`, the `_CI*`
-family) are resolved from other archives entirely, with no `msvcrt_static` object defining them
-at all.
+private on purpose; and a further set of exports is resolved from other archives entirely, with
+no `msvcrt_static` object defining them at all.
+
+**That measurement is now `tools/export_census.py`, and building it corrected the hand-rolled
+answer four times.** Doing it by hand a second time was the detection event: the same question,
+the same reconstruction, a different wrong answer each time, and no way for a reader to see the
+error without redoing the work. The tool reads the `.spec` for what is exported, `llvm-nm` for
+who defines it, and **the linker's own command line out of `build.ninja`** for the order it
+would pick — nothing about the link is restated where it could drift. Run on amd64 after
+wave 34:
+
+| backing | exports |
+|---|---:|
+| Rust | 1,060 |
+| module objects — the `...` trampolines, in `rust_*_shim.c` | 109 |
+| `stub` — spec2def generates a failing body; no implementation in any language | 24 |
+| `libcrtmath.a` | 18 |
+| `libdbgrpt.a` | 6 |
+| `libvcruntime.a` — the `setjmp`/`longjmp` asm | 4 |
+| forwarders to kernel32/ntdll | 4 |
+| `libntdll.a` — `memmove`, an import thunk | 1 |
+| **msvcrt's own C** | **0** |
+| | 1,226 |
+
+Four parser traps account for the earlier miscounts, and every one of them *inflates or
+deflates a category silently* rather than failing: the backing symbol comes AFTER the argument
+list (`@ cdecl time(ptr) MSVCRT_time` — a first-word regex files 22 live Rust exports as
+unresolved); `-arch=` restricts a line to some builds (ignoring it charges i386's x87 and
+port-IO surface to amd64); `-arch=!i386` is a NEGATION, and reading it as positive inverts a
+whole family of C++ ABI thunks; and `@ cdecl _endthread ()` has a space before its parenthesis,
+which lets `()` fall into the trailing-symbol slot. `tools/test_export_census.py` pins all four
+plus the `extern` two-name case `_mbctype` shipped through.
+
+That `memmove` row is worth reading twice. It is not C and never was ours: it resolves through
+the ntdll IMPORT library, so msvcrt.dll's exported `memmove` is a six-byte
+`jmp *__imp_memmove` — into ntdll, where the implementation is already Rust. (This corrects an
+earlier reading of the same row as compiler-rt's; the member name in the archive is
+`ntdll.dll`.)
+
+The zero row is what wave 34 bought, and the rest is the honest shape of what is left: 109
+trampolines and 4 setjmp bodies stable Rust cannot express, 24 stubs and 4 forwarders with
+nothing to port, one import thunk — and **24 exports, crtmath's 18 and dbgrpt's 6, that live in
+`sdk/lib/crt` and are shared by five DLLs**. That group is a different lane, not the tail of
+this one: msvcrt, msvcrt20, msvcrt40, crtdll and ucrtbase all link `libcrtmath.a` and only
+msvcrt has a cohab. Doing it means a lib-level `crtmath-rust` archive linked ahead of it in all
+five consumers — which is also the rail the ucrtbase lane needs. Note `sinf`/`cosf`/`powf` are
+in that 18, so the `sincosf` implib question is a crtmath question too.
 
 The regression is the one worth carrying forward: `_mbctype` was **two arrays**. `msvcrt.spec`
 exports it as `@ extern _mbctype MSVCRT_mbctype`, mbcs.rs defined `MSVCRT_mbctype` without
 `#[no_mangle]`, and the mangled Rust static therefore did not satisfy the export — mbcs.c's
-copy did. `_setmbcp_l` wrote one; the exported `_mbctype` named the other, permanently zero —
+copy did. `_setmbcp` wrote one; the exported `_mbctype` named the other, permanently zero —
 `__p__mbctype` is not involved, it returns the per-thread `mbcinfo->mbctype`. Green everywhere,
 because that table IS zero in every single-byte locale.
 `verify_cohab_coverage.py`, the tool that exists to catch exactly this, took only the first

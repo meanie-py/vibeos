@@ -277,3 +277,69 @@ def test_check_over_zero_pairs_is_not_green(tmp_path, monkeypatch):
     # ...and without --check it stays advisory, so an interactive run still reports
     monkeypatch.setattr(sys, "argv", ["verify_cohab_coverage.py", "--arch", ARCH])
     assert mod.main() == 0
+
+
+# --- the object LOOKUP itself, which used to fail open ------------------------------------
+
+
+def _reflip(root: Path, mods: str) -> None:
+    """Rewrite which modules are flipped, then re-stamp the archive as the newest thing in the
+    tree. Without the second half every case below lands in the staleness refusal instead of
+    the code under test — editing mod.rs is itself a source edit."""
+    (root / "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/mod.rs").write_text(mods)
+    newest = max(rs.stat().st_mtime for rs in (root / "sdk/lib/rust").rglob("*.rs"))
+    os.utime(root / ARCHIVE, (newest + 10, newest + 10))
+
+
+def test_a_module_named_differently_from_its_c_file_is_still_checked(tmp_path, monkeypatch):
+    """`reactos/misc.c` cannot become `misc.rs` — that name is msvcrt's own Wine-derived
+    misc.c — so the module is `reactos_misc` and the family's `objects` map is the only thing
+    that pairs the two. Without the map the lookup misses and the module is checked against
+    nothing at all."""
+    root = _tree(tmp_path, monkeypatch)
+    (root / OBJ_DIR / "reactos").mkdir()
+    _reflip(root, "pub mod reactos_misc;\n")
+    (root / OBJ_DIR / "reactos/misc.c.obj").write_text("")
+    _stub_symbols(
+        monkeypatch,
+        {
+            "misc.c.obj": {"defined": [("D", "__mbcasemap")], "undefined": []},
+            "shim.c.obj": {"defined": [], "undefined": [("U", "__mbcasemap")]},
+        },
+    )
+    findings = _run(root)
+    assert len(findings) == 1, findings
+    assert "reactos_misc.rs" in findings[0] and "reactos/misc.c.obj" in findings[0]
+
+
+def test_a_module_whose_c_file_this_arch_does_not_compile_is_not_a_finding(tmp_path, monkeypatch):
+    """`except_i386.c` exists in the tree but only i386 compiles it. On arm64 there is no
+    object and nothing to check, which is a fact about the arch, not about the module."""
+    root = _tree(tmp_path, monkeypatch)
+    (root / "dll/win32/msvcrt/except_i386.c").write_text("/* the C source exists */\n")
+    _reflip(root, "pub mod except_i386;\n")
+    _stub_symbols(monkeypatch, {})
+    assert _run(root) == []
+
+
+def test_a_module_matching_no_c_file_anywhere_is_a_finding(tmp_path, monkeypatch):
+    """The hole this closes. A missing object used to be a bare `continue`, so a renamed or
+    mistyped module was compared against nothing and reported CLEAN — the same shape of
+    silent pass as the `extern` parser bug this file exists to catch."""
+    root = _tree(tmp_path, monkeypatch)
+    _reflip(root, "pub mod raectos_misc;\n")
+    _stub_symbols(monkeypatch, {})
+    findings = _run(root)
+    assert len(findings) == 1, findings
+    assert "checked against nothing" in findings[0]
+
+
+def test_a_declared_rust_only_module_is_not_a_finding(tmp_path, monkeypatch):
+    """`cpp_rtti` is the RTTI half of cpp.c and `seh_i386` has no C original at all. "No
+    object" is the truth about them rather than a lookup that failed, and saying so costs one
+    line with a reason attached — which is what makes the case above safe to fail loudly."""
+    root = _tree(tmp_path, monkeypatch)
+    _reflip(root, "pub mod cpp_rtti;\n")
+    _stub_symbols(monkeypatch, {})
+    assert _run(root) == []
+    assert mod.FAMILIES[0]["no_c_twin"]["cpp_rtti"], "an exemption without a reason is an allowlist"

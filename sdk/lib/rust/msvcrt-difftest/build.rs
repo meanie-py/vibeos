@@ -821,7 +821,7 @@ fn main() {
     //
     // It is renamed, unlike ctype.c's `MSVCRT__ctype`/`MSVCRT__wctype` which are shared on
     // purpose, and the line between them is WHO WRITES IT. ctype's tables are locale
-    // ENVIRONMENT the two sides must agree on. This one is written by `_setmbcp_l` — code
+    // ENVIRONMENT the two sides must agree on. This one is written by `_setmbcp` — code
     // under test — so sharing it would let each side read what the other wrote, which is
     // the failure errno.c's stage 5 comment already spells out for `MSVCRT__sys_errlist`:
     // the row would compare a table against itself.

@@ -148,7 +148,7 @@ by shape for triage. Three properties worth knowing:
   — and rustc reports a mistyped arm exactly like any other integer mismatch, so the rule aimed
   straight at `match`-on-status-code, which is where narrow-vs-wide mismatches actually surface.
   Two lanes hit it in one week: wlanapi's `WlanRpcStatusToWinError` lost all 5 arms, msvcrt's
-  `_setmbcp_l` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
+  `create_mbcinfo` lost its dispatch (bindgen split a four-macro `#define` family into `u32`/`i32` on
   sign). The correct repair is to **widen the scrutinee** (`match Status as u32`) or fix the type
   where the constant is DECLARED — never at the arm — which also keeps the arms auditable as
   names under the catch-all-binding rule (field manual §9.112). Detection is not line-local: a

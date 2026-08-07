@@ -460,7 +460,7 @@ def _in_match_pattern(masked: bytes, end: int) -> bool:
     compiling match into `error: expected a pattern, found an expression` -- and it fires on
     exactly the constants that most want repairing, because a `match` on a C status code is
     where narrow-vs-wide integer mismatches surface. Two lanes hit this independently:
-    wlanapi's `WlanRpcStatusToWinError` lost all 5 of its arms, and msvcrt's `_setmbcp_l`
+    wlanapi's `WlanRpcStatusToWinError` lost all 5 of its arms, and msvcrt's `create_mbcinfo`
     lost its dispatch when bindgen typed one member of a four-macro `#define` block `u32`
     (its value is 0) and the other three `i32` (theirs are negative), splitting a family
     that is all `int` in C.
