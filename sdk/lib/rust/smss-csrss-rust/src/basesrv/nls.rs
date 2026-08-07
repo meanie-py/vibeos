@@ -324,7 +324,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         }
     }
 
-    static NLS_UNICODE: [u16; 22] = [
+    static NLS_UNICODE: [u16; 23] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -347,7 +347,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'o' as u16,
         b'd' as u16,
         b'e' as u16,
-    ];
+     0,];
     static UNICODE_NLS: [u16; 12] = [
         b'u' as u16,
         b'n' as u16,
@@ -362,7 +362,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_LOCALE: [u16; 21] = [
+    static NLS_LOCALE: [u16; 22] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'a' as u16,
         b'l' as u16,
         b'e' as u16,
-    ];
+     0,];
     static LOCALE_NLS: [u16; 11] = [
         b'l' as u16,
         b'o' as u16,
@@ -398,7 +398,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_CTYPE: [u16; 20] = [
+    static NLS_CTYPE: [u16; 21] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -419,7 +419,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'y' as u16,
         b'p' as u16,
         b'e' as u16,
-    ];
+     0,];
     static CTYPE_NLS: [u16; 10] = [
         b'c' as u16,
         b't' as u16,
@@ -432,7 +432,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_SORTKEY: [u16; 22] = [
+    static NLS_SORTKEY: [u16; 23] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -455,7 +455,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'k' as u16,
         b'e' as u16,
         b'y' as u16,
-    ];
+     0,];
     static SORTKEY_NLS: [u16; 12] = [
         b's' as u16,
         b'o' as u16,
@@ -470,7 +470,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_SORTTBLS: [u16; 23] = [
+    static NLS_SORTTBLS: [u16; 24] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -494,7 +494,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'b' as u16,
         b'l' as u16,
         b's' as u16,
-    ];
+     0,];
     static SORTTBLS_NLS: [u16; 13] = [
         b's' as u16,
         b'o' as u16,
@@ -510,7 +510,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_CP437: [u16; 20] = [
+    static NLS_CP437: [u16; 21] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -531,7 +531,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'4' as u16,
         b'3' as u16,
         b'7' as u16,
-    ];
+     0,];
     static C_437_NLS: [u16; 10] = [
         b'c' as u16,
         b'_' as u16,
@@ -544,7 +544,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b's' as u16,
         0,
     ];
-    static NLS_CP1252: [u16; 21] = [
+    static NLS_CP1252: [u16; 22] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -566,7 +566,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'2' as u16,
         b'5' as u16,
         b'2' as u16,
-    ];
+     0,];
     static C_1252_NLS: [u16; 11] = [
         b'c' as u16,
         b'_' as u16,
@@ -609,7 +609,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'T' as u16,
         0,
     ];
-    static L_EXCEPT_NLS: [u16; 12] = [
+    static L_EXCEPT_NLS: [u16; 13] = [
         b'l' as u16,
         b'_' as u16,
         b'e' as u16,
@@ -622,7 +622,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'n' as u16,
         b'l' as u16,
         b's' as u16,
-    ];
+     0,];
     static NLS_CP_PREFIX: [u16; 20] = [
         b'\\' as u16,
         b'N' as u16,
@@ -645,7 +645,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         0,
         0,
     ];
-    static NLS_GEO: [u16; 18] = [
+    static NLS_GEO: [u16; 19] = [
         b'\\' as u16,
         b'N' as u16,
         b'L' as u16,
@@ -664,7 +664,7 @@ pub unsafe extern "system" fn BaseSrvNlsCreateSection(
         b'G' as u16,
         b'e' as u16,
         b'o' as u16,
-    ];
+     0,];
     static GEO_NLS: [u16; 8] = [
         b'g' as u16,
         b'e' as u16,

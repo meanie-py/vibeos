@@ -371,6 +371,124 @@ def _strip_line_comments(text: str) -> str:
     return "".join(out)
 
 
+#: Callees taking an explicit element/byte COUNT. They never scan for a terminator, so an array
+#: read only by these legitimately has none. This list is the whole reason the rule below can fire
+#: at all: without it, every bounded `wcsncmp(p, x.as_ptr(), 5)` looks identical to an unbounded
+#: `RtlInitUnicodeString(&u, x.as_ptr())`, and the rule drowns.
+_BOUNDED_CALLEE = (
+    "(?:"
+    + "|".join(
+        (
+            "wcsncmp",
+            "_wcsnicmp",
+            "wcsnicmp",
+            "strncmp",
+            "_strnicmp",
+            "memcmp",
+            "RtlCompareMemory",
+            "RtlEqualMemory",
+            "memcpy",
+            "memmove",
+            "RtlCopyMemory",
+            "RtlMoveMemory",
+            "copy_nonoverlapping",
+            "copy_from_slice",
+            "RtlCopyUnicodeString",
+            "wcsncpy",
+            "wcsncat",
+        )
+    )
+    + ")"
+)
+
+
+def _enclosing_callee(text: str, pos: int) -> str | None:
+    """Name of the call whose argument list contains ``pos``, or None.
+
+    Depth-aware, because a plain "is a bounded callee within N characters behind me" test cannot
+    see past a nested argument: npfs writes
+    ``RtlCopyMemory(addr_of_mut!((*InfoBuffer).FileSystemName) as PVOID, NPFS_FS_NAME.as_ptr(), n)``
+    and a paren-free gap never reaches back to `RtlCopyMemory`, so the array reads as unbounded and
+    a correct, deliberately-unterminated literal gets reported. Walk out to the nearest UNCLOSED
+    `(` instead and read the identifier in front of it.
+    """
+    depth, i = 0, pos - 1
+    while i >= 0:
+        ch = text[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth == 0:
+                if ch != "(":
+                    return None
+                head = re.search(r"(\w+)\s*!?\s*$", text[:i])
+                return head.group(1) if head else None
+            depth -= 1
+        elif ch == ";" and depth == 0:
+            return None
+        i -= 1
+    return None
+
+
+def scan_unterminated_uses(text: str, rel, decls: list[re.Match]) -> list[str]:
+    """An unterminated wide array handed to something that reads until it finds a NUL.
+
+    The comment-oracle rule above only fires when the author PROMISED a terminator, which misses
+    every array that has no intent comment at all. This one needs no prose: it asks what the code
+    DOES with the array.
+
+    Three independent gates, and all three are load-bearing — dropping any one floods:
+      * TEXT, not a table. Most unterminated arrays in this tree are numeric lookup tables
+        (cabinet's Huffman tables, the ctype table, the mbcp map) that were never strings.
+      * NOT a UNICODE_STRING Buffer. `Buffer: X.as_ptr()` beside an explicit `Length` is correct
+        by construction — the length travels with the string. wmi declares four such.
+      * NOT read by a count-taking callee (`_BOUNDED_CALLEE`).
+
+    Attribution is per FILE, and a name declared twice in one file is skipped rather than guessed:
+    `fmtW` is declared four times across this tree and twice inside rtl-actctx/src/actctx.rs alone,
+    so a corpus-wide match credits one array's uses to another and the verdict is meaningless.
+
+    An array with any `size_of_val()`/`.len()` use is skipped too, and that exclusion is a
+    CORRECTNESS requirement rather than noise control: appending a terminator there changes the
+    length the code computes. rtl-actctx's `wine_trailerW` is compared using both.
+    """
+    findings = []
+    names = [m.group(1) for m in decls]
+    for m in decls:
+        name = m.group(1)
+        if names.count(name) > 1:
+            continue
+        body = _array_body(text, m.end() - 1)
+        if body is None:
+            continue
+        vals = [_decode_elem(e) for e in _ELEM.finditer(body[0])]
+        if not vals or any(v is None for v in vals) or len(vals) != int(m.group(3)):
+            continue
+        if vals[-1] == 0 or len(vals) < 3:
+            continue
+        if not all(0x20 <= v < 0x7F for v in vals):
+            continue  # a table, not a string
+        if re.search(
+            rf"size_of_val\(&(?:mut\s+)?{re.escape(name)}\b|\b{re.escape(name)}\.len\(\)", text
+        ):
+            continue
+        for use in re.finditer(rf"\b{re.escape(name)}\s*\.\s*as_(?:mut_)?ptr\s*\(", text):
+            before = text[max(0, use.start() - 200) : use.start()]
+            if re.search(r"Buffer\s*[:=]\s*$", before):
+                continue
+            callee = _enclosing_callee(text, use.start())
+            if callee is not None and re.fullmatch(_BOUNDED_CALLEE, callee):
+                continue
+            decoded = "".join(chr(v) for v in vals)
+            findings.append(
+                f"{rel}:{text[: m.start()].count(chr(10)) + 1}: {name} "
+                f'[{m.group("elem")}; {m.group(3)}] decodes to "{decoded}" with NO NUL '
+                f"terminator and is passed by pointer to something that reads until one"
+            )
+            break
+    return findings
+
+
 def scan_file(path: Path) -> tuple[list[str], int, int]:
     """(findings, literals_seen, literals_compared)"""
     text = path.read_text(errors="replace")
@@ -379,6 +497,7 @@ def scan_file(path: Path) -> tuple[list[str], int, int]:
     except ValueError:
         rel_path = path
     findings = scan_byte_casts(text, rel_path) + scan_source_text_leak(text, rel_path)
+    findings += scan_unterminated_uses(text, rel_path, list(_DECL.finditer(text)))
     seen = compared = 0
     for m in _DECL.finditer(text):
         # `elem` is a NAMED group and therefore also occupies a positional slot — read the count

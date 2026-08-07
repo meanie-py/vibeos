@@ -518,7 +518,7 @@ pub unsafe extern "system" fn CmpInitializeMachineDependentConfiguration(
         );
         RtlFreeUnicodeString(core::ptr::addr_of_mut!(UnicodeString));
 
-        static VENDOR_VAL: [u16; 16] = [86, 101, 110, 100, 111, 114, 73, 100, 101, 110, 116, 105, 102, 105, 101, 114];
+        static VENDOR_VAL: [u16; 17] = [86, 101, 110, 100, 111, 114, 73, 100, 101, 110, 116, 105, 102, 105, 101, 114, 0];
         RtlInitUnicodeString(core::ptr::addr_of_mut!(ValueName), VENDOR_VAL.as_ptr());
         static ARM_STR: [u16; 4] = [65, 82, 77, 0];
         NtSetValueKey(
