@@ -300,19 +300,41 @@ class CppComClass:
             for item in self.state_fields
         ]
 
-    def require_supported(self, *, allow_internal: bool = False) -> None:
+    def require_supported(self, *, allow_internal: bool = False, allow_plain: bool = False) -> None:
+        """Refuse a class whose ABI surface is not fully proven.
+
+        ``allow_plain`` is for a file-local C++ helper class that is not COM at all — no
+        vtable, no QI, no activation, reached only by direct call from its own TU. All three
+        COM requirements below are then vacuous, and demanding them refused a class that is
+        strictly SIMPLER than the supported case. The state layout, RAII, and STGMEDIUM
+        checks still apply: those are about owning memory correctly, which a plain class does
+        just as much as a COM one.
+
+        A plain class is asserted, never inferred: if the caller says ``allow_plain`` and the
+        class turns out to HAVE a com_map, that is a mis-invocation, not a licence to skip the
+        vtable — refuse rather than silently emit a COM class with no interfaces.
+        """
         problems = list(self.unsupported)
-        if not self.com_map:
-            problems.append("no BEGIN_COM_MAP entries found")
-        internal_ok = allow_internal and self.internal_shell_object_creator
-        if not self.not_aggregatable and not internal_ok:
-            problems.append(
-                "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
-            )
-        if not self.object_map_clsid and not internal_ok:
-            problems.append(
-                "no OBJECT_ENTRY activation found; internal COM-object construction is not mapped"
-            )
+        if allow_plain:
+            if self.com_map:
+                problems.append(
+                    f"--plain was passed but {self.name} has BEGIN_COM_MAP entries "
+                    f"({', '.join(entry.interface for entry in self.com_map)}); it is a COM "
+                    "class — drop --plain so its vtable and activation are generated"
+                )
+        else:
+            if not self.com_map:
+                problems.append("no BEGIN_COM_MAP entries found")
+            internal_ok = allow_internal and self.internal_shell_object_creator
+            if not self.not_aggregatable and not internal_ok:
+                problems.append(
+                    "aggregation policy is unsupported: DECLARE_NOT_AGGREGATABLE is required"
+                )
+            if not self.object_map_clsid and not internal_ok:
+                problems.append(
+                    "no OBJECT_ENTRY activation found; internal COM-object construction is "
+                    "not mapped"
+                )
         for declaration in self.state_fields:
             match = re.fullmatch(r"\s*STGMEDIUM\s+([A-Za-z_]\w*)\s*", declaration)
             if match and match.group(1) not in self.stgmedium_lifecycle_fields:
@@ -2244,6 +2266,11 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
     return rust
 
 
+# Optional receiver chain (`(*p).`, `fi.`, `(*this).m_pApp.`) in front of a bare `hIcon`.
+# Group 1 is the chain including its trailing dot, or None when the name stands alone.
+_HICON_TRUTHY = re.compile(r"((?:\(\*\w+\)|\w+)(?:\.\w+)*\.)?\bhIcon\s*!=\s*0\b")
+
+
 def normalize_worker_semantics(source: str, rust: str) -> str:
     """Lower compiler-known C/ATL conveniences after a cached/model worker returns.
 
@@ -2321,7 +2348,14 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
         r"!(*this).\1.is_null()",
         rust,
     )
-    rust = re.sub(r"\bhIcon\s*!=\s*0\b", "!hIcon.is_null()", rust)
+    # `hIcon != 0` is a pointer truthiness test, but the `!` belongs in front of the WHOLE
+    # place expression, not in front of the field. Rewriting only the bare name turned the
+    # model's perfectly good `(*p).hIcon != 0` into `(*p).!hIcon.is_null()` — a parse error,
+    # so it failed loud, but it is the pass corrupting correct input rather than the model
+    # slipping. Capture the receiver chain and re-emit it INSIDE the negation. `\b` still
+    # guards the `m_hIcon` case, whose own rule runs just above (no boundary between `_`
+    # and `h`, so a bare-name pattern cannot match inside it).
+    rust = _HICON_TRUTHY.sub(lambda m: f"!{m.group(1) or ''}hIcon.is_null()", rust)
     if "CUserNotification" in source:
         rust = rust.replace("Some(WorkerWndProc)", "Some(CUserNotification_WorkerWndProc)")
     rust = re.sub(

@@ -971,7 +971,7 @@ def cmd_cpp_com(args):
         method_names=[f.name for f in class_methods],
         island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
     )
-    cls.require_supported(allow_internal=args.internal)
+    cls.require_supported(allow_internal=args.internal, allow_plain=getattr(args, "plain", False))
 
     if args.sdk_header:
         sdk_header = Path(args.sdk_header).resolve()
@@ -1870,7 +1870,10 @@ def cmd_translate(args):
         cpp_com_cls.method_names.extend(
             f.name for f in scan.functions if f.cpp_class == args.class_name
         )
-        cpp_com_cls.require_supported(allow_internal=getattr(args, "internal", False))
+        cpp_com_cls.require_supported(
+            allow_internal=getattr(args, "internal", False),
+            allow_plain=getattr(args, "plain", False),
+        )
         if getattr(args, "sdk_header", None):
             sdk_header = Path(args.sdk_header).resolve()
             cpp_com_interfaces = [
@@ -3977,6 +3980,13 @@ def main():
         help="Allow exact internal ShellObjectCreator<T> activation; never emits an adapter",
     )
     p.add_argument("--json", action="store_true", help="Print the proven class/interface IR")
+    p.add_argument(
+        "--plain",
+        action="store_true",
+        help="The class is a file-local C++ helper, NOT COM: no vtable, no QI, no activation. "
+        "Skips the three COM preflight requirements (which are vacuous for it) and keeps every "
+        "state-layout/RAII check. Refuses if the class actually has a BEGIN_COM_MAP.",
+    )
 
     p = sub.add_parser(
         "cpp-tu",
@@ -4329,6 +4339,13 @@ def main():
         "--internal",
         action="store_true",
         help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
+    )
+    p.add_argument(
+        "--plain",
+        action="store_true",
+        help="shell32 cpp-com: the class is a file-local C++ HELPER, not COM — no vtable, no "
+        "QI, no activation. Use with --cpp-com --class for a class --free-functions skips but "
+        "the COM preflight refuses. Refuses if the class actually has a BEGIN_COM_MAP.",
     )
     p.add_argument(
         "--seal-facts",

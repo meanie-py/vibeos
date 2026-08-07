@@ -2714,3 +2714,58 @@ def test_two_candidate_interfaces_leave_the_riid_slot_alone():
     guessed IID is a QueryInterface for the wrong thing — so leave it uncompilable."""
     source = "a(IID_PPV_ARG(IDropTarget, &x)); b(IID_PPV_ARG(IShellFolder, &y));"
     assert normalize_cpp_idioms(source, "&IID_PPV_ARG as REFIID") == "&IID_PPV_ARG as REFIID"
+
+
+def test_plain_helper_class_passes_preflight_without_com_surface():
+    """A file-local C++ helper is SIMPLER than the supported case, not less proven.
+
+    `--free-functions` skips every class method and names `--cpp-com --class` as the route,
+    but the COM preflight then refuses a class with no BEGIN_COM_MAP / aggregation policy /
+    OBJECT_ENTRY — so COpenWithList and COpenWithDialog had no path through the pipeline at
+    all, and COpenWithMenu.cpp could not be flipped. The three requirements are vacuous for a
+    class with no vtable, no QI and no activation.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithList", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.com_map == []
+    assert cls.object_map_clsid is None
+    assert cls.interface_names() == []
+    cls.require_supported(allow_plain=True)
+    with pytest.raises(CppComError, match="no BEGIN_COM_MAP"):
+        cls.require_supported()
+
+
+def test_plain_refuses_a_class_that_is_actually_com():
+    """Plainness is asserted by the caller, so a wrong assertion must be loud.
+
+    Silently honouring --plain on a COM class would emit it with no vtable and no activation
+    — an object that compiles, links, and fails the moment anything QIs it.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithMenu", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.com_map
+    with pytest.raises(CppComError, match="it is a COM class"):
+        cls.require_supported(allow_plain=True)
+
+
+def test_hicon_truthiness_negation_wraps_the_whole_place_expression():
+    """The `!` goes in front of the receiver chain, not the field.
+
+    `hIcon != 0` is pointer truthiness, but the rewrite matched the bare NAME, so a correct
+    `(*p).hIcon != 0` from the model came back as `(*p).!hIcon.is_null()` — a parse error.
+    It failed loud rather than shipping, but it is a deterministic pass corrupting good
+    input: any model that lowers the test this way hits it.
+    """
+    from rustconv.cpp_com import normalize_worker_semantics
+
+    for rust, expected in (
+        ("if hIcon != 0 { }", "if !hIcon.is_null() { }"),
+        ("if (*p).hIcon != 0 { }", "if !(*p).hIcon.is_null() { }"),
+        ("if fi.hIcon != 0 { }", "if !fi.hIcon.is_null() { }"),
+        ("if (*this).m_pApp.hIcon != 0 { }", "if !(*this).m_pApp.hIcon.is_null() { }"),
+    ):
+        assert normalize_worker_semantics("", rust) == expected
+
+    # `m_hIcon` has no word boundary before `hIcon`, so the bare-name rule must not reach
+    # inside it — its own receiver-qualified rule runs first.
+    assert "m_!hIcon" not in normalize_worker_semantics("", "if (*this).m_hIcon != 0 { }")
