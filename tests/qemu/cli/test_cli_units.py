@@ -5246,6 +5246,60 @@ def test_difftest_discovers_a_newly_added_harness(tmp_path: Path):
     assert difftest_mod.discover(tmp_path) == ["shell32-difftest"]
 
 
+def test_difftest_discovers_every_generated_refstub_artifact(tmp_path: Path):
+    """The set has grown from three artifacts to seven in two months, once per
+    reference TU. `refstub/msvcrt_<stem>_protos.h` IS the registration, so a new
+    reference TU is covered the moment its header lands — a hardcoded list is how
+    the eighth arrives uncovered."""
+    from . import difftest as difftest_mod
+
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    for name in ("msvcrt_file_protos.h", "msvcrt_time_protos.h", "msvcrt_shim_decls.h"):
+        (refstub / name).write_text("")
+
+    labels = [label for label, _ in difftest_mod.generated_checks(tmp_path)]
+    assert labels == ["consts", "protos:file", "protos:time"], labels
+
+    # …and the newcomer, without touching this module.
+    (refstub / "msvcrt_process_protos.h").write_text("")
+    labels = [label for label, _ in difftest_mod.generated_checks(tmp_path)]
+    assert "protos:process" in labels
+    # The argv must name the SOURCE the header was derived from, not the header.
+    argv = dict(difftest_mod.generated_checks(tmp_path))["protos:process"]
+    assert argv[-2:] == ["process.c", "--check"], argv
+
+
+def test_difftest_a_stale_generated_header_fails_the_run(tmp_path, monkeypatch):
+    """A stale refstub header does not make one row wrong — it makes every row over
+    that TU suspect, and the row that finally reaches it reports a DIVERGENCE in the
+    Rust rather than "your oracle is stale". So the drift check is its own stage and
+    its own classification."""
+    from types import SimpleNamespace
+
+    from . import artifacts
+    from . import difftest as difftest_mod
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    (refstub / "msvcrt_time_protos.h").write_text("")
+
+    run = artifacts.Run("difftest", "host")
+    monkeypatch.setattr(
+        run,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=1,
+            stdout="DRIFT: refstub/msvcrt_time_protos.h is stale or missing\n",
+            stderr="",
+        ),
+    )
+    assert difftest_mod.check_generated(tmp_path, run) is False
+    assert all(s.status == "fail" for s in run.stages)
+    assert any("DRIFT" in line for s in run.stages for line in s.salient)
+
+
 def test_difftest_counts_cases_across_harness_dialects():
     """Each crate reports its count differently; the gate needs one number."""
     from . import difftest as difftest_mod

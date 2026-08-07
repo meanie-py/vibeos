@@ -111,6 +111,85 @@ def graded(out: str) -> int:
     return sum(int(m.group(1)) for p in pats for m in re.finditer(p, out))
 
 
+#: Where msvcrt-difftest keeps the headers its build.rs force-includes.
+_REFSTUB = ("sdk", "lib", "rust", "msvcrt-difftest", "refstub")
+
+
+def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
+    """`(label, argv)` for every generated msvcrt-difftest artifact's `--check`.
+
+    DISCOVERED, not listed, for the same reason the crates are: the set has grown
+    from three artifacts to seven in two months, once per reference TU, and a
+    hardcoded list is how the eighth arrives uncovered. `refstub/msvcrt_<stem>_protos.h`
+    IS the registration — the file's existence names the source it was derived from.
+    """
+    py = "python3"
+    checks: list[tuple[str, list[str]]] = [
+        # The constants and the layout guardian, in one invocation: one generator
+        # writes both, so one `--check` re-derives both.
+        (
+            "consts",
+            [py, str(repo / "tools" / "gen_msvcrt_difftest_consts.py"), "--check"],
+        )
+    ]
+    for h in sorted(repo.joinpath(*_REFSTUB).glob("msvcrt_*_protos.h")):
+        stem = h.name[len("msvcrt_") : -len("_protos.h")]
+        checks.append(
+            (
+                f"protos:{stem}",
+                [py, str(repo / "tools" / "gen_msvcrt_ref_protos.py"), f"{stem}.c", "--check"],
+            )
+        )
+    return checks
+
+
+def check_generated(repo: Path, run: Run) -> bool:
+    """Re-derive every generated refstub artifact and refuse a stale one.
+
+    ── why this belongs HERE and not in `vibeos-cli check` ──────────────────
+
+    These artifacts have had a `--check` mode since the day they were written and
+    nothing ran it, so a PSDK header that moved a constant, or a reference `.c`
+    that changed a signature, stayed silent until some row happened to reach it —
+    and a row that reaches a stale constant does not report "stale", it reports a
+    DIVERGENCE in the Rust. Wrong file, hours later.
+
+    `check` is the wrong home because re-derivation needs the pinned
+    cross-compiler AND `build-amd64` (the prototypes come from the built object,
+    not the source text: `_MSVCR_VER` opens and closes whole families, so what got
+    EMITTED is the authority). `check` runs on a fresh worktree that has no build
+    dir. `difftest` already hard-requires one — msvcrt-difftest's build.rs reads
+    `build-amd64/.../*.obj` — so here the dependency costs nothing new.
+
+    And it runs BEFORE the harnesses, deliberately. A stale header does not make
+    one row wrong, it makes every row over that TU suspect, so the useful failure
+    is "your oracle is stale", not forty divergences.
+
+    FLEET ISOLATION: the generators resolve `build-amd64` under THIS repo root and
+    hard-fail if it is absent. That refusal is the correct behaviour and must not
+    be softened into a skip — a check that quietly does nothing when the build dir
+    is missing is exactly the shape of the four waves this closes.
+    """
+    all_ok = True
+    for label, argv in generated_checks(repo):
+        cp = run.run(argv, cwd=repo, env=dict(os.environ), stage=f"drift:{label}")
+        out = (cp.stdout or "") + (cp.stderr or "")
+        ok = cp.returncode == 0
+        all_ok &= ok
+        run.add(
+            Stage(
+                name=f"drift:{label}",
+                exit=cp.returncode,
+                status="ok" if ok else "fail",
+                detail="in sync" if ok else "STALE — regenerate",
+                salient=[]
+                if ok
+                else [ln.strip()[:200] for ln in out.splitlines() if ln.strip()][:6],
+            )
+        )
+    return all_ok
+
+
 def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool:
     """Run each harness in its own cargo invocation. Returns True iff all green."""
     ws = repo.joinpath(*RUST_WS)
@@ -170,7 +249,13 @@ def difftest(args, repo: Path) -> int:
             return 2
 
     run = Run("difftest", "host")
+    # The oracle's own inputs first — see check_generated. A stale generated header
+    # makes every row over its TU suspect, and the harnesses still run afterwards so
+    # one command reports both facts rather than hiding the second behind the first.
+    fresh = check_generated(repo, run)
     ok = run_difftests(repo, run, only)
-    if not ok:
+    if not fresh:
+        run.classification = "DIFFTEST_STALE_ORACLE"
+    elif not ok:
         run.classification = "DIFFTEST_DIVERGENCE"
     return run.finalize(repo)

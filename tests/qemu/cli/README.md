@@ -510,6 +510,25 @@ Crates are discovered from the `[workspace] members` list, never hardcoded — a
 `foo-difftest` to the workspace and it is covered. `--only` restricts the set and
 **refuses an unknown name** rather than silently grading a subset.
 
+**The `drift:*` stages run first, and they check the ORACLE'S OWN INPUTS.**
+msvcrt-difftest force-includes seven generated headers — the derived CRT/Win32
+constants, the two-compiler layout guardian, and a prototype set per reference TU
+— and each has had a `--check` mode since the day it was written that nothing
+ran. So a PSDK header that moved a constant, or a reference `.c` whose signature
+changed, stayed silent until some row happened to reach it; and a row that
+reaches a stale constant does not report "stale", it reports a **divergence in
+the Rust**. Wrong file, hours later. These stages re-derive each artifact and
+refuse a stale one with `DIFFTEST_STALE_ORACLE`, before the harnesses run, so the
+failure names the header and the command that fixes it.
+
+They live here rather than in `check` because re-derivation needs the pinned
+cross-compiler *and* `build-amd64` — the prototypes come from the built object,
+not the source text, since `_MSVCR_VER` opens and closes whole families. `check`
+runs on a fresh worktree with no build dir; `difftest` already hard-requires one.
+The artifact set is discovered from `refstub/msvcrt_*_protos.h`: **the header's
+existence is the registration**, so a new reference TU is covered the moment it
+lands. That set went three → five → seven in two months, once per TU.
+
 ---
 
 ## The artifact contract (how to read results without flooding context)
