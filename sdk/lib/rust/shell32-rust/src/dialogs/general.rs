@@ -29,6 +29,9 @@ static s_pszExplorerKey: &[WCHAR; 51] = REGSTR_PATH_EXPLORER;
 /// general.cpp:104 `REGSTR_PATH_EXPLORER L"\\IconUnderline"` — C adjacent-string-literal
 /// CONCATENATION, which is one string, not two expressions. The translation emitted the two
 /// operands juxtaposed with no operator at all.
+/// The array below is the CONCATENATED result, so state it in full — quoting only the second
+/// operand leaves the array with no complete specification to be checked against:
+/// L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\IconUnderline"
 static s_pszIconUnderlineKey: [WCHAR; 65] = [
     0x0053, 0x006F, 0x0066, 0x0074, 0x0077, 0x0061, 0x0072, 0x0065, 0x005C, 0x004D, 0x0069, 0x0063,
     0x0072, 0x006F, 0x0073, 0x006F, 0x0066, 0x0074, 0x005C, 0x0057, 0x0069, 0x006E, 0x0064, 0x006F,

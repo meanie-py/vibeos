@@ -45,19 +45,42 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# The element type of a hand-encoded wide array. `u16` is only the spelling the FIRST
+# translations happened to use: the tree also carries WCHAR (by far the most common), TCHAR,
+# wchar_t and OLECHAR, and for a long time this rule looked at none of them — it reported clean
+# over ~2x more declarations than it actually examined.
+#
+# Including TCHAR is safe even though TCHAR is NOT always 16-bit (it is `c_char` in ntdll-sys and
+# `WCHAR` in the -DUNICODE modules' preludes). Both checks below are width-AGNOSTIC: one compares
+# decoded ordinals against the intent comment, the other compares the ELEMENT COUNT against the
+# declared bound. Neither reads a byte width, so an 8-bit TCHAR array is checked just as correctly.
+_WIDE_ELEM = r"(?:u16|WCHAR|TCHAR|OLECHAR|wchar_t|MSVCRT_wchar_t)"
+
 # `static NAME: [u16; N] = [ ... ];`  (also `pub static`, `static mut`, `const`)
 _DECL = re.compile(
     r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:static|const)[ \t]+(?:mut[ \t]+)?"
-    r"([A-Za-z_]\w*)[ \t]*:[ \t]*\[[ \t]*u16[ \t]*;[ \t]*(\d+)[ \t]*\][ \t]*=[ \t]*\[",
+    rf"([A-Za-z_]\w*)[ \t]*:[ \t]*\[[ \t]*(?P<elem>{_WIDE_ELEM})[ \t]*;[ \t]*(\d+)[ \t]*\]"
+    r"[ \t]*=[ \t]*\[",
     re.M,
 )
 
 # One array element. Accepts the four spellings that actually occur in the tree:
 #   b'X' as u16 | 'X' as u16 | b'\\' as u16 | 0 | 0x5C
+# The cast target is the same alternation as the declaration: an array declared `[WCHAR; N]`
+# spells its elements `b'X' as WCHAR`, and a `u16`-only element pattern silently decodes ZERO
+# elements from it — which reads as "empty array" and passes every check.
+# A Rust integer literal may carry its type as a SUFFIX (`0x0069u16`, `0u16`), and it must be
+# consumed with the literal. Without this the hex alternative matches `0x0069`, the scan resumes
+# at `u16`, and the bare-decimal alternative matches the `16` — inventing an extra element with
+# the value 16 out of thin air. dnsrslvr's IP6_ARPA decoded as 'i\x10p6.arpa.\x10' for that
+# reason: every suffixed element silently became two, so the count this lint compares against the
+# declared bound was wrong, in a lint whose entire job is comparing counts. Same class as the
+# `[SOCKET_ADDRESS; 1usize]` lesson already recorded in crate_repair.py's _ARRAY_FIELD.
+_INT_SUFFIX = r"(?:[ui](?:8|16|32|64|128|size))"
 _ELEM = re.compile(
-    r"""b?'(\\.|[^'])'[ \t]*as[ \t]*u16     # b'X' as u16 / 'X' as u16
-      | 0[xX]([0-9a-fA-F]+)                 # 0x5C
-      | (\d+)                               # 0, 65
+    rf"""b?'(\\.|[^'])'[ \t]*as[ \t]*{_WIDE_ELEM}   # b'X' as u16 / 'X' as WCHAR
+      | 0[xX]([0-9a-fA-F]+){_INT_SUFFIX}?           # 0x5C, 0x0069u16
+      | (\d+){_INT_SUFFIX}?                         # 0, 65, 0u16
     """,
     re.X,
 )
@@ -358,7 +381,9 @@ def scan_file(path: Path) -> tuple[list[str], int, int]:
     findings = scan_byte_casts(text, rel_path) + scan_source_text_leak(text, rel_path)
     seen = compared = 0
     for m in _DECL.finditer(text):
-        name, declared = m.group(1), int(m.group(2))
+        # `elem` is a NAMED group and therefore also occupies a positional slot — read the count
+        # by name too, or it silently becomes the element type.
+        name, elem, declared = m.group(1), m.group("elem"), int(m.group(3))
         body = _array_body(text, m.end() - 1)
         if body is None:
             continue
@@ -401,18 +426,18 @@ def scan_file(path: Path) -> tuple[list[str], int, int]:
         if best.startswith(actual) and len(actual) < len(best):
             dropped = best[len(actual) :]
             findings.append(
-                f"{rel}:{line}: {name} [u16; {declared}] is TRUNCATED — decodes to "
+                f"{rel}:{line}: {name} [{elem}; {declared}] is TRUNCATED — decodes to "
                 f'"{actual}" but the comment says "{best}" (dropped {dropped!r}; '
                 f"need {len(best) + 1} elements)"
             )
         elif not nul_terminated:
             findings.append(
-                f'{rel}:{line}: {name} [u16; {declared}] decodes to "{actual}" with NO NUL '
+                f'{rel}:{line}: {name} [{elem}; {declared}] decodes to "{actual}" with NO NUL '
                 f'terminator (comment: "{best}")'
             )
         else:
             findings.append(
-                f'{rel}:{line}: {name} [u16; {declared}] decodes to "{actual}" but the '
+                f'{rel}:{line}: {name} [{elem}; {declared}] decodes to "{actual}" but the '
                 f'comment says "{best}"'
             )
     return findings, seen, compared

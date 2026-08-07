@@ -283,3 +283,66 @@ def test_correct_wide_literal_has_no_interior_nul(tmp_path: Path):
     """Anchor: the CORRECT spelling of the same string must stay silent, so the finding above
     is about the doubling and not about the rule firing on everything."""
     assert _scan(tmp_path, 'f(b"I\\0n\\0f\\0\\0\\0".as_ptr() as LPCWSTR);\n') == []
+
+
+# --- element-type spellings and suffixed literals ---------------------------------------------
+
+
+def test_wchar_element_type_is_examined(tmp_path: Path):
+    """`[WCHAR; N]` is by far the commonest spelling in the tree and was invisible for a long time.
+
+    The rule matched `[u16; N]` only, so it reported clean over ~2x more declarations than it
+    actually looked at (946 examined against 1975 present).
+    """
+    src = (
+        '// L"System"\n'
+        "static K: [WCHAR; 7] = [b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR, b't' as WCHAR,\n"
+        "    b'e' as WCHAR, b'm' as WCHAR, 0];\n"
+    )
+    assert _scan(tmp_path, src) == []
+    _seen, compared = _coverage(tmp_path, src)
+    assert compared == 1, "a WCHAR array must be compared against its intent, not skipped"
+
+
+def test_wchar_truncation_is_caught(tmp_path: Path):
+    """The must-FIRE direction for the alias spelling: same bug, same verdict."""
+    src = (
+        '// L"System"\n'
+        "static K: [WCHAR; 6] = [b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR, b't' as WCHAR,\n"
+        "    b'e' as WCHAR, 0];\n"
+    )
+    findings = _scan(tmp_path, src)
+    assert len(findings) == 1, findings
+    # The message must name the REAL element type; it hardcoded `u16` for every array.
+    assert "[WCHAR; 6]" in findings[0] and "TRUNCATED" in findings[0], findings[0]
+
+
+def test_tchar_element_type_is_examined(tmp_path: Path):
+    """TCHAR is included even though it is NOT always 16-bit (c_char in ntdll-sys).
+
+    Both checks are width-agnostic — decoded ordinals vs the comment, element count vs the
+    declared bound — so an 8-bit TCHAR array is checked just as correctly.
+    """
+    src = "// L\"ab\"\nstatic K: [TCHAR; 3] = [b'a' as TCHAR, b'b' as TCHAR, 0];\n"
+    assert _scan(tmp_path, src) == []
+    _seen, compared = _coverage(tmp_path, src)
+    assert compared == 1
+
+
+def test_suffixed_literals_do_not_invent_elements(tmp_path: Path):
+    """`0x0069u16` is ONE element, not `0x0069` followed by `16`.
+
+    Without consuming the suffix the hex alternative stops at `0x0069`, the scan resumes at
+    `u16`, and the bare-decimal alternative matches the `16` — inventing an element with value
+    16 and inflating the count this lint exists to check. dnsrslvr's IP6_ARPA decoded as
+    'i\\x10p6.arpa.\\x10' for exactly this reason.
+    """
+    src = '// L"ip"\nstatic K: [u16; 3] = [0x0069u16, 0x0070, 0u16];\n'
+    assert _scan(tmp_path, src) == []
+
+
+def test_suffixed_literals_still_catch_a_real_truncation(tmp_path: Path):
+    """Consuming the suffix must not blunt the rule — the same array one short still fires."""
+    src = '// L"ip6"\nstatic K: [u16; 3] = [0x0069u16, 0x0070, 0u16];\n'
+    findings = _scan(tmp_path, src)
+    assert len(findings) == 1 and '"ip"' in findings[0]
