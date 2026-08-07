@@ -4653,6 +4653,42 @@ prelude only — applied to both, it SIGSEGVs somewhere unrelated to printf, bec
 dies in the fixture. glibc's `vsnprintf` stays the `ref_` TU's formatter deliberately, and
 `".%d"` is a format both agree on exactly.
 
+**"Both agree on that format" is only half the contract — the BUFFER contract can differ on a
+format they spell identically.** Deciding glibc is close enough for the `ref_` TU covers the
+CONVERSIONS and says nothing about what happens when the result does not fit, and msvcrt and
+C99 disagree there completely: for a buffer of `len`, msvcrt writes `len` bytes with **no
+terminator** and returns **-1**, while glibc writes `len-1` and a terminator and returns the
+length it wanted. That is invisible until a caller PRINTS INTO A BUFFER AND THEN READS IT BACK,
+which is exactly what `_ecvt`/`_fcvt` do — one byte of terminator becomes one missing digit, so
+`_fcvt(0.0, 80)` answered 77 zeros against the subject's 78 and the row blamed the port. Take
+the host's formatter if you must, but put msvcrt's buffer arithmetic on top of it, and write
+that shim ONCE for both sides: this harness had two copies, and they had drifted in *opposite*
+directions — the subject's asked glibc for `count + 1` so the NUL would have somewhere to go,
+which lands it at `str[count]`, one byte past the caller's buffer, on every full-width
+conversion into `_ecvt`'s 80-byte stack scratch. Two hand-written copies of one contract is the
+hazard; the §9.73 objection to sharing does not apply to something NEITHER side owns.
+
+**Same class, found by the same sweep, in the other direction: a rename wall can claim a symbol
+the TU never defines.** The scrape that builds the wall is textual, so it cannot see a
+preprocessor guard, and ReactOS forks Wine files by wrapping the replaced functions in
+`#ifndef __REACTOS__`. Renaming a name that is defined-but-guarded-out is inert until something
+CALLS it: math.c's `_scalb` is `return ldexp(num, power)`, `ldexp` sits in such a block, so the
+wall rewrote the call to `ref_ldexp` and nothing defined it. The TU had already landed green —
+the error only appears once a row references `_scalb`. Derive the guarded set from the source
+and subtract it from the wall (it generalises: `string.c` and `process.c` carry these blocks
+too), and pin the resulting name list so that adding or removing a block is a build-time
+failure here rather than a link error in whichever test happens to reach it first.
+
+**One more shape: a redirect that must be per-TU because a sibling reference TU DEFINES the
+name.** `_gcvt_s` asks `_scprintf` how long a conversion would be, and in the `ref_` namespace
+that is wcs.c's body, which walks straight into the `va_arg(*valist, …)` incoherence above and
+segfaults — reproducibly, on the first row that ever drove `_gcvt_s`. It cannot be fixed in the
+shared prelude, because wcs.c is a reference TU too and *defines* `_scprintf`, so a blanket
+`#define` renames its definition on top of the harness's. It cannot be fixed with `-D` either:
+the command line is consumed before the `-include` prelude, so the prelude's own rename
+redefines it. A **second `-include`, after the prelude and on that one TU**, is the only place
+such a redirect both fires and stays local.
+
 **The flat instantiation is a RECIPE, not a wcs.c special case — reach for it whenever the
 `&valist` idiom appears.** `file.c` needed the identical treatment for its sixteen
 `v*printf` shells, and the second one cost far less than the first because the shape was
@@ -4712,6 +4748,32 @@ it is invisible in the C. Disassemble each `ref_*` you bench before you believe 
 say in the harness which rows compare against the C-as-written and which against the
 C-as-the-compiler-rewrote-it. `#pragma function(...)` in the ReactOS source does NOT protect you
 — it is MSVC-only and cc ignores it.
+
+**And it rewrites the reference's VALUES, wherever C leaves a constant unspecified.** Not a
+throughput caveat this time — a wrong row. math.c returns its domain-error NaN from
+`ret_nan(TRUE)`, whose body is `double x = 1.0; return (x - x) / (x - x);` — a compile-time
+`0.0/0.0`, whose NaN sign C does not pin down. The host gcc that builds the reference folds it
+to the x86 default NaN, `0xfff8000000000000`; the pinned llvm-mingw clang that actually builds
+msvcrt.dll folds it to `0x7ff8000000000000`, and so does rustc. So `sqrt(-1.0)` "diverged" with
+the SUBJECT matching the shipping binary and the REFERENCE the odd one out — and the obvious
+fix, changing the Rust to match the reference, would have corrupted correct code to match a
+host artifact. **Before treating a divergence as a port bug, ask whether the reference's
+compiler is the shipping compiler**; where it is not, compile the disputed body with the tree's
+own toolchain at the module's own flags and read the emitted constant (`… -S` and look for the
+`.quad`). Then pin the SUBJECT to that measured value absolutely and let the reference differ
+in that one bit only — which is stricter than comparing the two sides, not weaker, because it
+now fails if the Rust ever stops agreeing with the compiler that ships it.
+
+**A faithful port reproduces the C's infinite loops too — bound the rows, do not "fix" the
+Rust.** msvcrt's `_fcvt_s` copy loop is `if ((ptr1 - buf) < stop) { if (size > 1) { *ptr2++ =
+*ptr1++; size--; } } else ptr1++;` — the inner `if` has no `else`, so once `size` reaches 1
+with digits still to copy neither pointer moves and the `while` spins forever. Any destination
+smaller than the conversion hangs, in the C and in the Rust identically. That is correct
+behaviour for a port and useless as a row, so it joins the other ungradeable domain in the same
+family (inputs that overflow the C's own 80-byte scratch, after which both sides read back
+their own stack garbage). **Skip such a case by PREDICATE, computed from the same formatter the
+function uses, and print the count** — a hard-coded input list silently stops matching the C,
+and a silent cap reads as "the family is graded" when the wide cases were the ones dropped.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a

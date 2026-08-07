@@ -781,6 +781,60 @@ fn defines_symbol(src: &str, name: &str) -> bool {
     false
 }
 
+/// The symbols a TU defines inside `#ifndef __REACTOS__` — that is, the ones ReactOS took out
+/// of the Wine original and supplies from elsewhere. `defines_symbol` is textual and cannot
+/// see a preprocessor guard, so it reports every one of them as defined, and the rename wall
+/// then claims a symbol that will not exist in the object.
+///
+/// That is harmless for a name nothing references and a LINK ERROR for a name the TU CALLS.
+/// math.c is where it bites: `ldexp` lives in such a block, `_scalb`'s entire body is
+/// `return ldexp(num, power)`, so the wall rewrites the call to `ref_ldexp` and nothing
+/// defines it. The error only appears once a test actually references `_scalb`, which is why
+/// the TU landed green and the first row set did not link.
+///
+/// Left off the wall, such a call resolves to whatever the SUBJECT side resolves it to — the
+/// host libm here, cnt-rust's `cabi` in the DLL — which is the correct outcome: the symbol
+/// belongs to another translation unit and another difftest crate grades it.
+///
+/// string.c and process.c carry these blocks too, so this is written generally rather than as
+/// a list of names.
+fn reactos_guarded_symbols(src: &str) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let mut depth = 0usize;
+    // The `#if` nesting depths at which an enclosing `#ifndef __REACTOS__` opened.
+    let mut guards: Vec<usize> = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        if t.starts_with("#ifndef __REACTOS__") {
+            guards.push(depth);
+        }
+        if t.starts_with("#if") {
+            depth += 1;
+        } else if t.starts_with("#endif") {
+            depth = depth.saturating_sub(1);
+            if guards.last() == Some(&depth) {
+                guards.pop();
+            }
+        }
+        if guards.is_empty() {
+            continue;
+        }
+        // `<type...> CDECL <name>(` at the head of a line — the shape every export in these
+        // files is written in.
+        if let Some(rest) = line.split_once(" CDECL ") {
+            let name: String = rest
+                .1
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && rest.1[name.len()..].trim_start().starts_with('(') {
+                out.insert(name);
+            }
+        }
+    }
+    out
+}
+
 fn main() {
     let this_crate = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // sdk/lib/rust/<crate> → repo root is 4 up.
@@ -955,13 +1009,26 @@ fn main() {
     // rename list and handled by a `-D` on the TU instead (see MATH_DEFINES below);
     // renaming it here as well would collide with that.
     let math_src = fs::read_to_string(&math_c).unwrap();
+    let math_reactos_guarded = reactos_guarded_symbols(&math_src);
     let math_symbols: Vec<String> = defined_symbols(&math_src)
         .into_iter()
         .chain(defined_data_symbols(&math_src))
         .filter(|n| defines_symbol(&math_src, n))
         .filter(|n| n != "math_error")
+        .filter(|n| !math_reactos_guarded.contains(n.as_str()))
         .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
         .collect();
+    // Pinned so that adding or removing one of these blocks in math.c is visible here rather
+    // than as a link error in whichever test first references the affected function.
+    {
+        let mut got: Vec<&str> = math_reactos_guarded.iter().map(String::as_str).collect();
+        got.sort_unstable();
+        assert_eq!(
+            got,
+            ["_fpclass", "div", "ldexp", "ldiv"],
+            "math.c's `#ifndef __REACTOS__` set changed — the rename wall follows it"
+        );
+    }
     for want in [
         "_isnan", "_finite", "_chgsign", "_ecvt", "_fcvt", "_gcvt", "_control87", "_controlfp",
         "_matherr", "MSVCRT_exp", "MSVCRT_asin", "_abs64", "abs", "labs", "_cabs", "_scalb",
@@ -1202,6 +1269,49 @@ fn main() {
         ));
         renamed += 1;
     }
+    // ── stage 4: the TRUNCATION CONTRACT the host libc does not share ────────────────────
+    //
+    // `sdk/include/crt/stdio.h:720` carries `#define vsnprintf _vsnprintf`, so in the DLL
+    // every `vsnprintf` call in wcs.c reaches msvcrt's OWN engine. The reference TU compiles
+    // against the host's <stdio.h>, which has no such line, so those calls bind to glibc —
+    // and the two disagree about what happens when the result does not fit:
+    //
+    //     _snprintf(buf, 80, "%.*f", 80, 0.0)
+    //       msvcrt -> returns -1, fills all 80 bytes, writes NO terminator
+    //       glibc  -> returns 82, writes 79 bytes and a terminator
+    //
+    // That is not an abstract difference: `_ecvt`/`_fcvt` PRINT INTO an 80-byte buffer and
+    // then read the result back to build their answer, so the extra terminator becomes one
+    // missing digit. `_fcvt(0.0, 80)` came back 77 zeros against the subject's 78, and the
+    // subject was right. Same family as the RAND_MAX and FP_* leaks: a host CONSTANT arriving
+    // by inclusion and a host FUNCTION arriving by omission are one accident, and both make
+    // the oracle quietly disagree with the code it claims to define.
+    //
+    // The pfflat instantiation fixes its copy by pointing `vsnprintf` at msvcrt's
+    // `_vsnprintf` (see pfflat stage 4 below) — and explains at length why the ref_
+    // instantiation must NOT do that: `_vsnprintf` passes `&valist` as a `va_list*`, which
+    // is coherent only under the flat va_list pfflat is compiled with, and faults under the
+    // host's SysV one. Both things are true at once, so ref_ takes neither host semantics nor
+    // msvcrt's body: a shim that formats with glibc and then applies msvcrt's truncation
+    // contract on top. `msvcrt_ref_vsnprintf` lives in refimpl.c, which is compiled WITHOUT
+    // this prelude and so still reaches the real glibc symbol.
+    //
+    // What that leaves un-graded, stated plainly: the DIGITS still come from glibc, so a
+    // format msvcrt and glibc spell differently (%I64, %p, exponent width) is still the host's
+    // answer here. pfflat is the instantiation that grades formatting; this one only needs
+    // its buffer arithmetic to be msvcrt's.
+    //
+    // The sweep that found it generalises — for any new reference TU, take the symbols its
+    // object leaves undefined, drop the ref_/harness ones, and intersect with what msvcrt's
+    // own objects define. What remains is a host body standing in for msvcrt's.
+    // `vsnprintf` was the only one whose semantics differ; malloc/free/calloc and the
+    // harness's locale stubs are reached by BOTH sides and cancel out.
+    prelude.push_str(
+        "\n/* stage 4: msvcrt's truncation contract over the host's formatter. */\n\
+         int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap);\n\
+         #undef vsnprintf\n#define vsnprintf msvcrt_ref_vsnprintf\n",
+    );
+
     prelude.push_str("\n#endif /* MSVCRT_REF_PRELUDE_H */\n");
     assert_eq!(
         renamed,
@@ -2403,8 +2513,9 @@ fn main() {
     );
     prelude2 = format!("{}{stage4}{endif}", &prelude2[..prelude2.len() - endif.len()]);
     assert!(
-        !prelude.contains("#define vsnprintf"),
-        "stage 4 leaked into the ref_ prelude — that faults ref_create_mbcinfo"
+        !prelude.contains("#define vsnprintf _vsnprintf"),
+        "pfflat's stage 4 leaked into the ref_ prelude — that faults ref_create_mbcinfo. \
+         ref_ takes `#define vsnprintf msvcrt_ref_vsnprintf` instead; see ref_ stage 4."
     );
     let prelude2_h = out.join("pfflat_prelude.h");
     fs::write(&prelude2_h, &prelude2).unwrap();
@@ -2844,6 +2955,38 @@ fn main() {
         .define("math_error", "ref__invoke_matherr")
         .define("asm_sqrt", "sqrt")
         .define("asm_sqrtf", "sqrtf");
+
+    // `_scprintf`, for math.c's TU ALONE — and it has to be per-TU rather than another
+    // stage-4 line in the shared prelude, which is the whole reason this file exists.
+    //
+    // `_gcvt_s` (math.c:2044) asks "how long would this be" with `_scprintf`. In the ref_
+    // namespace that is wcs.c's own body, and it walks the chain
+    // `_scprintf` -> `_vscprintf` -> `_vsnprintf_l` -> `pf_printf_a` -> `arg_clbk_valist`,
+    // whose `va_arg(*valist, int)` is the flat-va_list idiom the pfflat comment above
+    // describes. Under the host's SysV va_list that dereference SEGFAULTS — reproducibly,
+    // on the very first `_gcvt_s` row, which is how it was found. Nothing had ever driven
+    // `_gcvt_s` before, so the refstub's declaration of `_scprintf` had stood unexercised.
+    //
+    // Redirecting it in the SHARED prelude is not available: wcs.c is a reference TU too and
+    // DEFINES `_scprintf`, so a blanket `#define` would rename its definition on top of the
+    // harness's and the link would see two. A `-D` cannot do it either — the command line is
+    // consumed before the prelude, so the prelude's own `#define _scprintf ref__scprintf`
+    // would redefine it (see the `math_error` note above for the same ordering). A second
+    // `-include`, read AFTER the prelude and only by this TU, is the one place the redirect
+    // both fires and stays local.
+    let math_extra_h = out.join("ref_math_extra.h");
+    fs::write(
+        &math_extra_h,
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included AFTER ref_prelude.h, for the math.c reference TU ONLY.\n\
+         * See build.rs for why this cannot live in the shared prelude. */\n\
+         #undef _scprintf\n\
+         #define _scprintf msvcrt_ref_scprintf\n\
+         int msvcrt_ref_scprintf(const char *format, ...);\n",
+    )
+    .unwrap();
+    math_tu.flag("-include").flag(math_extra_h.to_str().unwrap());
+
     objects.extend(math_tu.compile_intermediates());
     objects.extend(refimpl_build.compile_intermediates());
     objects.extend(subject_build.compile_intermediates());

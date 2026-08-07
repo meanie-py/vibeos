@@ -1010,3 +1010,100 @@ BOOL msvcrt_ref_RtlAreBitsClear(PRTL_BITMAP bm, ULONG start, ULONG length)
         if (bm->Buffer[(start + i) >> 5] & (1u << ((start + i) & 31))) return FALSE;
     return TRUE;
 }
+
+/* ------------------------------------------------------------------ *
+ * `vsnprintf` — the host's FORMATTER under msvcrt's BUFFER CONTRACT.
+ * ------------------------------------------------------------------ *
+ *
+ * Neither side of this binary can reach msvcrt's own printf engine through a
+ * `va_list`: the Rust `_vsnprintf` walks a `*mut u8` over 8-byte slots (the
+ * Windows va_list) and the host's `va_start` builds a SysV register-save-area
+ * struct, so the two cannot be handed to one another.  That is why the shipping
+ * DLL's `va_start` trampolines (rust_varargs_shim.c) stay out of the harness and
+ * why the pfflat instantiation exists.  Both sides therefore format through the
+ * host libc here — and that is fine, because printf_port.rs grades the engine
+ * itself against `ref_pf_printf_a`, the genuine C.
+ *
+ * What is NOT fine is taking the host's BUFFER contract with its formatter.  The
+ * two disagree exactly where `_ecvt`/`_fcvt` live:
+ *
+ *     wcs.c:881-891 + printf.h:36-54, for a buffer of `len`:
+ *       text shorter than len -> write it, write a NUL, return the count
+ *       text exactly len      -> write it, write NO NUL (out->len is 0, so the
+ *                                trailing puts_clbk_str copies zero bytes),
+ *                                return the count
+ *       text longer than len  -> write len bytes, no NUL, return -1
+ *       str == NULL           -> count only, write nothing
+ *     glibc: always NUL-terminates within len, always returns the would-be length.
+ *
+ * `_ecvt`/`_fcvt` print into `char buf[80]` and then READ THE RESULT BACK to
+ * assemble their answer, so one byte of terminator becomes one missing digit:
+ * `_fcvt(0.0, 80)` came back 77 zeros where msvcrt gives 78.  A harness that gets
+ * this wrong reports a digit-perfect port as broken.
+ *
+ * SHARED WITH THE SUBJECT SIDE ON PURPOSE.  subjectimpl.c's `_snprintf` calls
+ * this too.  Normally that would be the §9.73 trap — one side's stand-in
+ * satisfying the other's expectations — but this is ENVIRONMENT, not code under
+ * test: it stands in for an engine NEITHER side owns in this binary, exactly as
+ * `_errno`, `malloc` and the thread data already do.  Two separately-written
+ * copies of this contract is the real hazard; they drifted once already, one
+ * side writing a NUL at str[len] (a one-byte overflow of the caller's buffer)
+ * while the other truncated a digit early, and the resulting row blamed the Rust
+ * for both.
+ */
+#define REF_VSNPRINTF_SCRATCH 8192
+
+/* Declared rather than `#include <unistd.h>`d: the refstub deliberately controls which
+ * host headers reach this TU, and one prototype is cheaper than opening another. */
+long write(int fd, const void *buf, unsigned long count);
+
+int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap)
+{
+    char scratch[REF_VSNPRINTF_SCRATCH];
+    va_list copy;
+    int need;
+    size_t i;
+
+    va_copy(copy, ap);
+    need = vsnprintf(scratch, sizeof(scratch), format, copy);
+    va_end(copy);
+
+    if (need < 0) return -1;
+    if ((size_t)need >= sizeof(scratch)) {
+        /* Fail loud rather than silently truncate: a quietly short reference is
+         * the one failure mode this whole function exists to prevent. `write` and
+         * `abort` are glibc's — no msvcrt export shadows either, so this cannot
+         * re-enter the code under test on its way out. */
+        static const char msg[] =
+            "msvcrt_ref_vsnprintf: REF_VSNPRINTF_SCRATCH too small for this format\n";
+        write(2, msg, sizeof(msg) - 1);
+        abort();
+    }
+
+    if (!str) return need;                        /* printf.h:40 — count-only */
+
+    if ((size_t)need > len) {                     /* did not fit */
+        for (i = 0; i < len; i++) str[i] = scratch[i];
+        return -1;
+    }
+    for (i = 0; i < (size_t)need; i++) str[i] = scratch[i];
+    if ((size_t)need < len) str[need] = '\0';     /* NUL only if there is room */
+    return need;
+}
+
+/* `_scprintf` — "how long would this printf be". Same sharing rationale as
+ * `msvcrt_ref_vsnprintf` above, and the same one body for both sides: subjectimpl.c's
+ * `_scprintf` calls this, and math.c's reference TU is redirected onto it by
+ * ref_math_extra.h. The reference's own `ref__scprintf` (wcs.c's) cannot be used — it
+ * reaches `arg_clbk_valist`, whose `va_arg(*valist, int)` is the flat-va_list idiom, and
+ * segfaults under the host's SysV va_list. */
+int msvcrt_ref_scprintf(const char *format, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, format);
+    n = msvcrt_ref_vsnprintf((char *)0, 0, format, ap);
+    va_end(ap);
+    return n;
+}
