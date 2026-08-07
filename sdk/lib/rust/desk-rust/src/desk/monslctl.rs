@@ -3,8 +3,13 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static szMonitorSelWndClass: [TCHAR; 18] = [
-    'M' as TCHAR, 'O' as TCHAR, 'N' as TCHAR, 'I' as TCHAR, 'T' as TCHAR, 'O' as TCHAR, 'R' as TCHAR, 'S' as TCHAR, 'E' as TCHAR, 'L' as TCHAR, 'W' as TCHAR, 'N' as TCHAR, 'D' as TCHAR, 'C' as TCHAR, 'L' as TCHAR, 'A' as TCHAR, 'S' as TCHAR, 'S' as TCHAR,
+// 19, not 18: the C is `static const TCHAR szMonitorSelWndClass[] = TEXT("MONITORSELWNDCLASS")`
+// (monslctl.c:3), which the compiler sizes at 19 to hold the NUL. Hand-counting the characters
+// dropped the terminator, so RegisterClassEx/CreateWindow/UnregisterClass all read past the
+// array into whatever .rdata follows. rustc cannot see it -- the array is well-formed at any
+// length -- and it survives by luck for as long as the three calls read the same garbage.
+pub static szMonitorSelWndClass: [TCHAR; 19] = [
+    'M' as TCHAR, 'O' as TCHAR, 'N' as TCHAR, 'I' as TCHAR, 'T' as TCHAR, 'O' as TCHAR, 'R' as TCHAR, 'S' as TCHAR, 'E' as TCHAR, 'L' as TCHAR, 'W' as TCHAR, 'N' as TCHAR, 'D' as TCHAR, 'C' as TCHAR, 'L' as TCHAR, 'A' as TCHAR, 'S' as TCHAR, 'S' as TCHAR, 0,
 ];
 
 #[repr(C)]

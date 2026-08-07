@@ -21,8 +21,12 @@ pub unsafe extern "system" fn RpcThreadRoutine(
         0x0070, // p
         0x0000,
     ];
+    // `\pipe\browser`, ONE leading backslash. The C is `L"\\pipe\\browser"` (rpcserver.c:25),
+    // where `\\` is an escaped backslash -- so the string has one. This shipped with the C's
+    // SOURCE spelling transcribed literally, giving `\\pipe\browser`, an endpoint name no
+    // client binds to. Nothing catches it: it compiles, and RpcServerUseProtseqEpW happily
+    // registers a name of its own choosing.
     const ENDPOINT: &[u16] = &[
-        0x005C, // '\'
         0x005C, // '\'
         0x0070, // p
         0x0069, // i

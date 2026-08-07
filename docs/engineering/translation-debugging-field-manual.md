@@ -1200,6 +1200,25 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
+- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is latent.**
+  `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
+  defect is ALIGNMENT 1, so it misbehaves when the linker happens to place it on an odd
+  address (that is task #39's mswsock incident). `b"LogEvent\0" as *const u16` is the severe
+  one — a NARROW string read as wide, where `"Lo"` is one code unit U+6F4C, so
+  `RegQueryValueExW` looks up a value nobody has ever created and the call silently does
+  nothing. sysdm shipped ~30 of the second kind. `postprocess.fix_wide_byte_string_literals`
+  rewrites both to `w!()` and declines anything that does not decode to clean NUL-terminated
+  ASCII, because a wrong rewrite here is silent data corruption rather than a compile error.
+  **Do not key a detector on the CAST** — it misses `.as_ptr() as _` (syssetup) and a typed
+  local binding `let k: &[u8] = b"K\0e\0y…"` (intl, deepseek). The bytes alone decide it: even
+  length, odd bytes NUL, ASCII in the even ones, trailing NUL unit. That test finds 434 sites
+  across 79 crates where the cast-keyed one finds 26.
+- **A doubled backslash in a path literal survives every gate.** desk-rust wrote the
+  appearance scheme to `Control Panel\\Appearance` for four `SHSetValueW` calls; theme.c says
+  one backslash. Nothing fails loudly — the value is simply never read back. Legitimate
+  doubles exist (UNC and device prefixes `\\.\`, `\\?\`, a bare `\\` computer-name prefix, and
+  smbios's `http:\\www.abit.com.tw`, which the C really does spell that way because it matches
+  a BIOS vendor's malformed URL), so this needs a diff against the C, not a grep.
 - **A `L"..."` inside a MACRO argument loses the width with nothing to catch it.** rasadhlp's
   `RTL_CONSTANT_STRING(L"\\Device\\RasAcd")` came back as
   `RTL_CONSTANT_STRING(b"\\Device\\RasAcd\0")` — a UNICODE_STRING whose Buffer is ANSI bytes.
@@ -1328,6 +1347,34 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   had come back as `\Device`, losing the trailing separator that `wcscat` appends the adapter
   UUID after. It is ~20 lines, it needs no annotation in the Rust, and unlike a count it cannot
   report a green over zero comparisons.
+- **A FOURTH mis-encoding: UTF-16 *bytes* used as u16 ELEMENTS.** `let n: &[u16] =
+  &[0x43,0x00,0x68,0x00,0x61,0x00,…]` looks like the three above and is worse: the type is
+  `u16`, so element 1 IS a code unit and IS zero. Every such string terminates after its first
+  character. wkssvc shipped 39 of them — `SaveWorkstationInfo` opened key `"S"` instead of
+  `System\CurrentControlSet\Services\LanmanWorkstation\Parameters` and wrote every value under
+  a one-character name. It never looked broken because the bad key made `RegOpenKeyExW` fail
+  and the function returned early, so the whole routine was a silent no-op. Decidable with no
+  oracle at all: **in a `[u16]`, every second element being 0 is always this bug**, because
+  real UTF-16 puts the zero in the high byte of ONE unit, not in a unit of its own.
+- **An array sized to the character count drops the NUL, and `scan_wide_literals` cannot see
+  it if the element type is spelled `TCHAR`/`WCHAR`.** desk shipped
+  `szMonitorSelWndClass: [TCHAR; 18] = ['M',…,'S']` for `TEXT("MONITORSELWNDCLASS")`, which
+  the C compiler sizes at 19. RegisterClass/CreateWindow/UnregisterClass then read past the
+  array into whatever `.rdata` follows, and it survives only for as long as all three read the
+  same garbage. `scan_wide_literals`'s `_DECL` matches a literal `u16` element type only, so
+  the alias spellings are invisible to it — that is the gap to mechanise, not the alignment
+  question. Note the alignment bullet above is about the KERNEL `ProbeForRead` path, which
+  genuinely enforces WCHAR alignment; for a user-mode DLL that just hands the pointer to a
+  Win32 callee, alignment-1 is a readability problem, not a fault.
+- **The multiset oracle only works if you detect by SHAPE, not by declaration syntax.**
+  `verify_translation_literals.py` covers 29 modules now, not just msvcrt. Getting it there
+  meant abandoning per-spelling regexes: this tree writes the same wide literal as
+  `static N: [u16; K]`, `const N: &[u16]`, `let n: [u16; K]`, an untyped `&[0x6Eu16, …]`, and
+  a bare `['S' as u16, …].as_ptr()` with no binding at all. Each spelling the matcher had not
+  met produced a WALL of confident MISSING findings against present, correct code — which is
+  the failure mode to fear, because the real two are in there and nobody digs to them. Match
+  instead on "bracketed list of integer-ish elements, NUL-terminated, otherwise text": one
+  rule, all five spellings, and ordinary numeric tables stay out.
 
 ### Bitfields and unions
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
@@ -1731,6 +1778,26 @@ just a label.
   gates (`pstypes.h`, `THREAD_ALL_ACCESS`).
 - **Two self-incriminating comment shapes to grep for:** a comment naming the right symbol next
   to a numeric literal, and a "value assumed / approximate" note.
+- **A STRING LITERAL is a fact class the seal does not cover, and the failure is total.**
+  smbios.c's `IsGenericSystemName` is a 71-row table of `{ L"vendor name", TRUE, TRUE }`.
+  Every single `L"…"` came back as `TRUE` or `FALSE`, two rows were dropped, and the control
+  flow was inverted on top — `i` started at `TRUE` instead of 0, a match returned `FALSE`, the
+  fall-through returned `TRUE`. The predicate answered the exact opposite of its question and
+  compiled clean. **`--seal-facts` reported success**: its invariant is over the CONSTANT set,
+  a string literal is not in that set, so the model had the sealed `TRUE`/`FALSE` and nothing
+  to anchor 71 pointer slots to, and filled them from what it did have. Same recall-permutation
+  shape as msvcrt's `_tzset`, on a class the envelope cannot see at all.
+- **Two audits catch it, both cheap, both worth running on every module** (they found six
+  distinct defects in sysdm that three green gates did not): diff the MULTISET of string
+  literals in each `.c` against its `.rs`, and diff each function's `return TRUE` / `return
+  FALSE` COUNTS between the two. The second is what names an inverted predicate. Expect
+  benign deltas — a dropped `DPRINT` format, an `#ifdef` arm the tree does not carry, a
+  literal spelled as a `['P' as u16, …]` array — so read the output rather than asserting on
+  it. Regenerate a wrong table by PARSING the C; transcribing 71 rows by hand is the same
+  failure mode with a slower clock.
+- **Model choice does not move this.** deepseek-v4-pro and claude-sonnet-4-5 produce the
+  byte-string wide-literal form identically on the same file. The audits are the gate, not the
+  model.
 - **After fixing a class of bad data, re-audit everything derived FROM it.**
 - **The invented value is usually a NEIGHBOUR from the same family, which is why review misses
   it.** `CmpHiveRootSecurityDescriptor` lowered `SECURITY_RESTRICTED_CODE_RID` (12) to a literal
