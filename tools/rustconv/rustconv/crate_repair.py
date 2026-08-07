@@ -57,6 +57,7 @@ RULE_PACKED_FIELD_PTR = "packed_field_ptr"
 RULE_INDEX_USIZE = "index_usize"
 RULE_MACRO_CALL = "macro_call_bang"
 RULE_SIZEOF_TYPE = "sizeof_type_name"
+RULE_ARRAY_DECAY = "array_decay"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -66,6 +67,10 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_NUMERIC_CAST,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
+    # Before RULE_POINTER_CAST: both answer an E0308 whose EXPECTED side is a raw pointer, and
+    # decay is the more specific shape (found side is an array, not a pointer). They cannot both
+    # claim a span, but keeping the specific rule first makes that structural rather than lucky.
+    RULE_ARRAY_DECAY,
     RULE_POINTER_CAST,
     RULE_ANON_UNION,
     RULE_PACKED_FIELD_PTR,
@@ -662,6 +667,17 @@ _CONVERT_HINT = re.compile(
     r"^you can convert (?:an?) `(?P<found>\w+)` to (?:an?) `(?P<expected>\w+)`"
 )
 _RAW_POINTER = re.compile(r"^\*(?P<mutability>mut|const)\s+(?P<pointee>.+)$")
+#: An array type as rustc spells it in a mismatch label: `[u16; 80]`, `[WCHAR; MAX_PATH]`.
+#: The length is captured but deliberately unused — decay is length-independent, and matching
+#: on it would only invent a reason to decline.
+_ARRAY_TYPE = re.compile(r"^\[\s*(?P<elem>.+?)\s*;\s*(?P<count>[^\[\]]+?)\s*\]$")
+#: E0605. The same array-decay bug in CAST position — C's ``(LPARAM)szBuffer`` — which rustc
+#: reports with a different code and no ``expected/found`` label, so ``_mismatch_sites`` is blind
+#: to it. On intl this shape was 39 sites per target against the argument shape's 52: skipping it
+#: would have mechanised barely half the class.
+_NON_PRIMITIVE_CAST = re.compile(
+    r"^non-primitive cast: `(?P<found>\[[^`]+\])` as `(?P<target>[^`]+)`$"
+)
 _STD_UNRESOLVED = "use of unresolved module or unlinked crate `std`"
 
 
@@ -801,11 +817,40 @@ def _mismatch_sites(diagnostic: Mapping[str, Any]) -> list[tuple[dict[str, Any],
     against rustc 1.92).  Using labels finds both shapes and never invents a site.
     """
     sites = []
+    seen: set[tuple[str, int, int]] = set()
+
+    def record(span: Mapping[str, Any], expected: str, found: str) -> None:
+        key = (
+            str(span.get("file_name") or ""),
+            int(span.get("byte_start") or 0),
+            int(span.get("byte_end") or 0),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        sites.append((dict(span), expected, found))
+
     for span in diagnostic.get("spans") or []:
         match = _LABEL_MISMATCH.match(str(span.get("label") or ""))
         if match is None:
             continue
-        sites.append((dict(span), match.group("expected"), match.group("found")))
+        record(span, match.group("expected"), match.group("found"))
+    # THE MULTI-ARGUMENT RENDERING. When a call has 2+ bad arguments rustc switches shape: the
+    # message becomes "arguments to this function are incorrect", every top-level span loses its
+    # label, and each mismatch moves into a CHILD note whose MESSAGE carries the types and whose
+    # single span is the argument. Reading only top-level labels made every rule in this module
+    # silently blind to those calls -- intl had 7 per target sitting in RED for that reason
+    # alone, all of them ordinary two-argument `wcscpy(dst, src)`.
+    for child in diagnostic.get("children") or []:
+        match = _LABEL_MISMATCH.match(str(child.get("message") or ""))
+        if match is None:
+            continue
+        spans = child.get("spans") or []
+        if len(spans) != 1:
+            # Zero spans is the companion "expected raw pointer ...\n found array ..." note,
+            # which carries no location; several would be ambiguous. Neither is attributable.
+            continue
+        record(spans[0], match.group("expected"), match.group("found"))
     return sites
 
 
@@ -1173,6 +1218,257 @@ def _pointer_cast_rule(
             )
         )
     return edits, skipped, claimed
+
+
+def _split_cast(masked: bytes, start: int, end: int) -> int | None:
+    """Offset of the top-level ``as`` operator in the cast expression spanning ``[start, end)``.
+
+    The LAST one at depth zero: ``a as usize as *mut T`` is two casts and the span rustc gives us
+    ends at the outer one.  Depth-tracking on ``()[]{}`` keeps an ``as`` inside a nested call or
+    index from being mistaken for the operator — ``f(x as u32) as LPARAM`` has two, and picking
+    the inner one would splice the decay into the wrong expression.
+    """
+    found = None
+    for match in re.finditer(rb"\bas\b", masked[start:end]):
+        pos = start + match.start()
+        depth = 0
+        for index in range(start, pos):
+            byte = masked[index : index + 1]
+            if byte in b"([{":
+                depth += 1
+            elif byte in b")]}":
+                depth -= 1
+        if depth == 0:
+            found = pos
+    return found
+
+
+def _array_decay_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """``[T; N]`` where a ``*T`` is wanted -> ``.as_ptr()`` / ``.as_mut_ptr()``.
+
+    C's most basic idiom: ``WCHAR szBuf[80]`` passed to an ``LPWSTR`` parameter decays to a
+    pointer at the call.  Rust has no implicit decay, so every such argument arrives as
+    ``expected `*mut u16`, found `[u16; 80]``` and every module has paid for it by hand.
+
+    THE GUARD IS ELEMENT-TYPE IDENTITY, and it is the whole safety argument.  ``[u16; N]`` ->
+    ``*mut u8`` is NOT a decay, it is a REINTERPRET — the same shape as the wide-literal bug
+    class that shipped truncated registry names in wkssvc and an unbindable pipe name in
+    browser.  A rule that "helpfully" decayed across element types would silently bless exactly
+    that.  Mismatched elements stay RED, including ``c_void``: the void-pointer conversion C
+    performs for free is a second, separate step, and if it is genuinely wanted the next pass's
+    ``RULE_POINTER_CAST`` adds the ``.cast()`` on evidence rather than this rule guessing it.
+
+    NOTE the deliberate exception to this module's central discipline: the edit is emitted with
+    ``requires_target_agreement=False``.  Every other cast rule bakes a width and therefore needs
+    cross-target corroboration, but decay is width-INDEPENDENT — ``as_ptr`` names no type and
+    resolves identically at 32 and 64 bits — so demanding agreement here would withhold correct
+    edits at any site that happens to compile on one arch for an unrelated reason.
+    """
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    claimed = False
+    for span, expected, found in _mismatch_sites(diagnostic):
+        want = _RAW_POINTER.match(expected)
+        have = _ARRAY_TYPE.match(found)
+        if want is None or have is None:
+            continue
+        claimed = True
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_ARRAY_DECAY, reason, name, line, detail))
+
+        pointee = want.group("pointee").strip()
+        element = have.group("elem").strip()
+        if pointee != element:
+            decline(
+                "element_type_mismatch",
+                f"expected {expected}, found {found}: decay yields *{element}, not *{pointee}. "
+                "This is a REINTERPRET, not an array decay — fix the declared type, or cast "
+                "explicitly if the reinterpret is genuinely intended.",
+            )
+            continue
+        if end <= start:
+            decline("zero_length_span", expected)
+            continue
+        data = load(file_name)
+        if data is None:
+            decline("unreadable_file")
+            continue
+        masked = _mask_lexical(data)
+        if _next_code_byte(masked, end) == b"(":
+            decline("callee_span", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_macro_definition(masked, start):
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
+        if _in_match_pattern(masked, end):
+            decline("match_pattern", data[start:end].decode("utf-8", "replace"))
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            decline("unbalanced_span", text)
+            continue
+        if _is_assignment_target(masked, end):
+            # `buf = ...` wants the ARRAY, not a pointer to it; decaying the assignment target
+            # would compile to a discarded temporary in some shapes and is never the repair.
+            decline("assignment_target", text)
+            continue
+        stripped = text.rstrip()
+        if stripped.endswith(".as_ptr()") or stripped.endswith(".as_mut_ptr()"):
+            decline("already_decayed", text)
+            continue
+        method = "as_mut_ptr" if want.group("mutability") == "mut" else "as_ptr"
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}).{method}()",
+                rule=RULE_ARRAY_DECAY,
+                authority=(
+                    f"rustc label 'expected `{expected}`, found `{found}`': the element type "
+                    f"`{element}` is IDENTICAL to the pointee, so this is C array-to-pointer "
+                    f"decay and `{method}()` is its exact Rust spelling. No type name is named "
+                    "and no width is baked, so the edit is target-independent"
+                ),
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    cast_edits, cast_skipped, cast_claimed = _array_decay_cast(diagnostic, load, ctx)
+    return edits + cast_edits, skipped + cast_skipped, claimed or cast_claimed
+
+
+def _array_decay_cast(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0605 ``[T; N] as X`` — the same decay wearing C's explicit cast, e.g. ``(LPARAM)szBuf``.
+
+    Two accepted targets, and the difference in how they are proven matters:
+
+    * ``X`` is a raw pointer, of ANY pointee. Note the deliberate asymmetry with the argument
+      shape above, which demands element identity: here a cast is WRITTEN IN THE SOURCE, so
+      ``(BYTE *)szBuffer`` is the author stating the reinterpret, and reproducing it is
+      faithfulness rather than guesswork. An implicit argument conversion carries no such
+      statement, and there a pointee mismatch is evidence the DECLARATION is wrong — which is
+      why it stays red there and is honoured here. Either way ``as`` cannot mean anything but
+      the address: an array is not pointer-sized, so no value interpretation exists.
+    * ``X`` is an integer that is POINTER-WIDE on the analysing target. This is C's
+      pointer-to-integer cast (``LPARAM``/``WPARAM``/``LRESULT``), and here the edit is emitted
+      with ``requires_target_agreement=True`` even though ``as_ptr`` bakes no width — because the
+      CLAIM being made is "this integer is a pointer-width alias", and that claim is exactly what
+      independent agreement across a 32- and a 64-bit target proves. A genuine byte-reinterpret
+      like ``[u8; 4] as u32`` resolves to 4 bytes everywhere, so it is pointer-wide on i386 ONLY,
+      fails to earn agreement, and is withheld instead of silently becoming an address.
+
+    The replacement keeps the target type EXACTLY as the source spells it. rustc's message
+    reports the resolved width (``i32``), and writing that back would bake i386's width into a
+    site whose source correctly says ``LPARAM`` — the mistake this module exists to prevent.
+    """
+    match = _NON_PRIMITIVE_CAST.match(str(diagnostic.get("message") or ""))
+    if match is None:
+        return [], [], False
+    array = _ARRAY_TYPE.match(match.group("found"))
+    if array is None:
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    element = array.group("elem").strip()
+    resolved = match.group("target").strip()
+    for span in diagnostic.get("spans") or []:
+        if not span.get("is_primary"):
+            continue
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+
+        def decline(reason: str, detail: str = "", line: int = line, name: str = file_name) -> None:
+            skipped.append(Skipped(RULE_ARRAY_DECAY, reason, name, line, detail))
+
+        if end <= start:
+            decline("zero_length_span", resolved)
+            continue
+        data = load(file_name)
+        if data is None:
+            decline("unreadable_file")
+            continue
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, start):
+            decline("macro_definition", data[start:end].decode("utf-8", "replace"))
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if not _balanced(masked[start:end]):
+            decline("unbalanced_span", text)
+            continue
+        operator = _split_cast(masked, start, end)
+        if operator is None:
+            decline("no_cast_operator", text)
+            continue
+        expression = data[start:operator].decode("utf-8", "replace").rstrip()
+        written = data[operator + 2 : end].decode("utf-8", "replace").strip()
+        if not expression or not written:
+            decline("unsplittable_cast", text)
+            continue
+        pointer = _RAW_POINTER.match(resolved)
+        if pointer is not None:
+            method = "as_mut_ptr" if pointer.group("mutability") == "mut" else "as_ptr"
+            sensitive = False
+            same = pointer.group("pointee").strip() == element
+            authority = (
+                f"rustc E0605 on `{match.group('found')} as {resolved}`: an array cast to a raw "
+                "pointer can only mean its ADDRESS, so this is C array decay followed by the "
+                "cast the source already writes"
+                + (
+                    ""
+                    if same
+                    else f"; the pointee `{pointer.group('pointee').strip()}` differs from the "
+                    f"element `{element}`, which is the reinterpret the SOURCE CAST states "
+                    "explicitly (C's `(T *)arr`) — not an inference of ours"
+                )
+            )
+        elif resolved in INT_PRIMITIVES and (
+            resolved in POINTER_SIZED or INT_WIDTH.get(resolved) == ctx.width
+        ):
+            method = "as_ptr"
+            sensitive = resolved not in POINTER_SIZED
+            authority = (
+                f"rustc E0605 on `{match.group('found')} as {resolved}`: `{resolved}` is "
+                f"pointer-wide on {ctx.target}, so `{written}` is a pointer-to-integer cast of a "
+                "decayed array. The source spelling of the target type is preserved verbatim"
+            )
+        else:
+            decline(
+                "cast_target_not_pointer_wide",
+                f"`{text}`: `{resolved}` is neither a matching pointer nor pointer-wide on "
+                f"{ctx.target}. Decaying here would silently cast an ADDRESS where the code may "
+                "have meant the contents — fix it by hand.",
+            )
+            continue
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({expression}).{method}() as {written}",
+                rule=RULE_ARRAY_DECAY,
+                authority=authority,
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                requires_target_agreement=sensitive,
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, True
 
 
 def _no_std_path_rule(
@@ -1758,6 +2054,7 @@ _RULE_TABLE: dict[
     RULE_NUMERIC_CAST: _numeric_cast_rule,
     RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
     RULE_NO_STD_PATH: _no_std_path_rule,
+    RULE_ARRAY_DECAY: _array_decay_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
     RULE_ANON_UNION: _anon_union_rule,
     RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,

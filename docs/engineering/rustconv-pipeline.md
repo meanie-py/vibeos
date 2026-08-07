@@ -129,17 +129,23 @@ becomes a deliberate decision, not a silent behaviour change.
 
 **Stage 1.5 — `rustconv crate-repair <crate>-rust` (`crate_repair.py`).** Bounded deterministic
 repair over the whole-crate `cargo check --message-format=json`, run before paying anyone to
-fix compile errors. Ten rules, each with a closed authority — diagnostic-driven
+fix compile errors. Eleven rules, each with a closed authority — diagnostic-driven
 (`width_alias_cast`, `truncating_numeric_cast`, `match_scrutinee_cast`, `anon_union_field`,
-`packed_field_ptr`, `index_usize`, `no_std_path`, `raw_pointer_cast`) and source-driven
-(`flex_array_index`, `panicking_cast`); everything else stays RED and bucketed by shape for
-triage. Three properties worth knowing:
+`packed_field_ptr`, `index_usize`, `no_std_path`, `raw_pointer_cast`, `array_decay`) and
+source-driven (`flex_array_index`, `panicking_cast`); everything else stays RED and bucketed by
+shape for triage. Three properties worth knowing:
 - It **refuses rustc's own `.try_into().unwrap()` suggestion** — that converts C's silent
   truncation into a panic in a live service and trips `tools/scan_silent_failures.py`.
 - Span repairs are driven off the `expected X, found Y` **labels**, not the primary span: in
   the "arguments to this function are incorrect" shape the primary span is the *callee* and
   the fixable value spans are secondary, so a primary-span implementation silently misses
-  every multi-bad-argument call.
+  every multi-bad-argument call. **But labels alone are not enough either** (found 2026-08-07):
+  once a call has TWO or more bad arguments rustc changes shape again — the top-level spans lose
+  their labels entirely and each mismatch moves into a CHILD note whose *message* carries the
+  types and whose single span is the argument. `_mismatch_sites` therefore reads both, deduped
+  by span. Until it did, every rule in the module was blind to those calls: on intl it was an
+  ordinary two-argument `wcscpy(dst, src)`, 7 sites per target sitting in RED for no other
+  reason. If a whole class of call looks stubbornly unrepairable, check the rendering first.
 - **Pass all three arches.** A cast whose target width equals the analysing target's pointer
   width is applied only on cross-target agreement; otherwise it is withheld with both
   proposals, because an `as u32` inferred from i386 is wrong on amd64/arm64 wherever the real
@@ -177,6 +183,28 @@ triage. Three properties worth knowing:
   `Index<u32>` impl, NOT as a type mismatch, so there is no `expected X, found Y` label and
   `truncating_numeric_cast` never sees the site. `usize` is the width-varying alias itself, so
   the cast is portable and needs no cross-target agreement.
+- **`array_decay`** answers C's most basic idiom: `WCHAR szBuf[80]` passed where an `LPWSTR` is
+  wanted. C decays an array to a pointer for free and Rust does not, so this arrives as
+  `expected *mut u16, found [u16; 80]` in **argument** position (E0308) and as
+  `non-primitive cast: [u16; 80] as i32` in **cast** position (E0605) — C's `(LPARAM)szBuf`.
+  Measured on intl by removing all 106 decays from the shipped crate and re-running: **105 came
+  back deterministically**, the one miss being an artifact of the removal itself. Both shapes
+  matter — 52 argument sites against 39 cast sites there, so handling only the first mechanises
+  barely half the class.
+  - The **guard is element-type identity**, and only in argument position: `[u16; N]` behind a
+    `*mut u8` is a reinterpret, not a decay, and stays RED because nothing in the source claims
+    it — the mismatch is evidence a *declaration* is wrong.
+  - In **cast** position that guard is deliberately dropped. `(BYTE *)szBuf` is the author
+    stating the reinterpret, and reproducing it is faithfulness; an array cast to a raw pointer
+    can only ever mean its address, since an array is not pointer-sized.
+  - Decay to an **integer** (`as LPARAM`) is accepted only where that integer is pointer-wide on
+    the analysing target, and is cross-target agreed. That agreement is doing real work: a
+    genuine byte-reinterpret like `[u8; 4] as u32` is pointer-wide on i386 *only*, so it fails to
+    earn agreement instead of silently becoming an address. The replacement keeps the target type
+    **exactly as the source spells it** — rustc reports the resolved `i32`, and writing that back
+    would bake i386's width into a site whose source correctly says `LPARAM`.
+  - The pointer-shaped edits need no agreement at all: `as_ptr` names no type and bakes no width.
+    This is the one deliberate exception to the module's cross-target discipline.
 - **It cannot repair a `#[cfg]`-dual'd body — KNOWN GAP.** `abi_enforce` renders an internal
   `system` fn as an x86 `stdcall` copy plus a non-x86 `C` copy (rustc will not unify
   `extern "system"` with `extern "stdcall"` at the *type* level on i686, so a `system` fn
