@@ -2141,6 +2141,19 @@ flagged name. When one is missing, define it in the prelude **from the header's 
 (`NM_FIRST.wrapping_sub(12)`, matching C's unsigned wrap) rather than pasting `0xFFFFFFF4` —
 a pasted number stops tracking the header the moment it moves.
 
+**A third way the name goes missing is an A/W macro ALIAS**, and it hides among the other two
+because the island looks like it has the constant. shell32's COpenWithDialog matched on
+`TVN_SELCHANGED`, `NM_DBLCLK` and `NM_RETURN` in ONE `match`: bindgen kept `TVN_SELCHANGEDW`
+and `NM_FIRST`, so the island greps positive for both stems while answering to neither name the
+C uses. All three arms bound. rustc objected only to `NM_DBLCLK | NM_RETURN` — an or-pattern
+cannot bind — so the error pointed at the two arms that were still REACHABLE and said nothing
+about the `TVN_SELCHANGED` arm above them, which was already swallowing every `WM_NOTIFY`.
+**Fixing the reported arm is what makes this dangerous**: had the or-pattern been two separate
+arms, the file would have compiled silently. When E0408 names a notification or message
+constant, check every OTHER arm of the same `match` before touching the one rustc pointed at.
+Derive the alias from the island (`TVN_SELCHANGEDW as UINT`, `NM_FIRST.wrapping_sub(3)`), never
+from the numeric value.
+
 **The same shape reaches PARAMETER position, where it does not even look like a pattern.** A
 function parameter is a pattern too, so an identifier that resolves to a constant is a CONSTANT
 PATTERN there as well. syssetup's `SetupChangeLocaleEx(.., char Unknown, ..)` translated to
@@ -2424,6 +2437,32 @@ of them were **ours**, not the model's:
   `math_error` call sites took under a minute that way, and the eleventh was the bug. The real
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
+
+  **CALL tokens permute too, and there the envelope DOES catch it — because arity is a
+  second, independent witness.** Same disease as the constant permutation above, seen on
+  DeepSeek v4-pro translating `COpenWithList::LoadInfo` (2026-08-06). The C is
+  `HeapFree(GetProcessHeap(), 0, pBuf); return FALSE;`; the model emitted the `HeapFree` token
+  as a **bare zero-argument call** and put the real 3-argument call on a different token:
+
+  ```rust
+  __RUSTCONV_CALL_0005__();                                     // = HeapFree, 0 args
+  __RUSTCONV_CALL_0011__(__RUSTCONV_CALL_0006__(), __RUSTCONV_FACT_0010__, pBuf);
+  ```
+
+  `--seal-calls` rejected it loudly and precisely: *"wrong call site (argument count):
+  `__RUSTCONV_CALL_0005__`=HeapFree wants 3, got 0; not exactly once:
+  `__RUSTCONV_CALL_0011__`"*. Note WHY this is caught while the constant permutation is not:
+  a call token carries an **arity and an occurrence count** that must both hold, so a swap
+  breaks an invariant the closed-set check cannot express for a bare constant. That is the
+  shape the tracked `(callee, argument index)` fact anchoring above is trying to buy for
+  constants — calls already have it. Unsealed, this body would have compiled as a plausible
+  `HeapFree(GetProcessHeap(), 0, pBuf)` somewhere adjacent, in a function whose whole job is
+  freeing a version-info buffer down three exit paths.
+
+  Shared-cleanup CFGs are the recurring habitat: this TU's one reject in 29 is the same
+  function shape (multi-exit, one buffer, repeated free) the pipeline already measured as the
+  DeepSeek reject class. Retrying it with a stronger model measured **0/3 accepted for
+  $0.13** — treat it as decomposition work or hand-write the body, not a model upgrade.
 
   **`--seal-calls` has the same permutation weakness, and its arity oracle was switched off by
   a turbofish.** msvcrt's `_beginthread_trampoline` shipped

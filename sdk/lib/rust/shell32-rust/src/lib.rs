@@ -192,6 +192,19 @@ pub mod def_view_bckgrnd_menu;
 // constants and externs outside the bindgen island's closure. It lives in its own file
 // because a re-run overwrites each generated half wholesale, so hand-written code parked
 // inside either of them is lost the next time the TU is re-assembled.
+// COpenWithMenu.cpp. The COM class itself is `open_with_menu` (landed earlier); these are
+// the retained C++ closure that kept the .cpp compiled — two PLAIN helper classes (no vtable,
+// no QI, no activation: `--cpp-com --class X --plain`) and the free/bridge TU. `SApp` is
+// hand-written because it is a POD nested inside COpenWithList and reached only by pointer.
+#[path = "shell32/copenwithmenu_support.rs"]
+pub mod open_with_menu_support;
+#[path = "shell32/COpenWithList.rs"]
+pub mod open_with_list;
+#[path = "shell32/COpenWithDialog.rs"]
+pub mod open_with_dialog;
+#[path = "shell32/COpenWithMenu_tu.rs"]
+pub mod open_with_menu_tu;
+
 #[path = "shell32/cdefaultcontextmenu_support.rs"]
 pub mod default_context_menu_support;
 #[path = "shell32/CDefaultContextMenu.rs"]
