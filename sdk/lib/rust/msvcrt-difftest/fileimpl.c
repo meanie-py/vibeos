@@ -266,7 +266,7 @@ void ref_set_startup_handles(BYTE *blob, WORD len)
  * ------------------------------------------------------------------ */
 static char *path_from_wide(const wchar_t *w)
 {
-    int n;
+    int n, i;
     char *s;
 
     if (!w) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
@@ -274,6 +274,21 @@ static char *path_from_wide(const wchar_t *w)
     if (n <= 0) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
     if (!(s = malloc(n))) { SET_ERR(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
     WideCharToMultiByte(CP_ACP, 0, w, -1, s, n, NULL, NULL);
+    /* `\` IS a path separator on the API being modelled, and POSIX does not agree.
+     *
+     * This is the shim rule at the top of the file in its sharpest form. Nothing in
+     * file.c BUILDS a path — it passes through what its caller handed it, so the
+     * untranslated version worked for four waves. process.c does build one:
+     * `msvcrt_search_executable` joins a PATH entry to a program name with a literal
+     * `'\\'`, and every candidate it produced then failed to stat. The failure is the
+     * dangerous kind — the search simply finds nothing, on BOTH sides, and every row
+     * over the whole use_path half of the function reports MATCH while proving that two
+     * implementations can equally fail to open a file whose name has a backslash in it.
+     *
+     * Translating here rather than in process.c's TU because it is the OS layer's job:
+     * a real GetFileAttributesW accepts both separators. */
+    for (i = 0; s[i]; i++)
+        if (s[i] == '\\') s[i] = '/';
     return s;
 }
 

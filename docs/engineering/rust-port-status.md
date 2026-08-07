@@ -189,6 +189,49 @@ the final code unit's high half out of bounds and PATH search silently matched n
 every `use_path=1` spawn; and `_wsystem`'s `L" /c "` was plain ASCII cast to `*const wchar_t`.
 Both are now caught by `scan_wide_literals.py` — see the field manual.
 
+**GRADED 2026-08-07 — reference TU #12, 9,101 rows, and process.rs came back CLEAN.**
+`tests/process.rs` over `processimpl.c`, a RECORDING `CreateProcessW`. That shape is the whole
+design: process.c never creates a process, it MARSHALS — argv array or `...` list into one
+command line, envp array into a double-NUL block, a bare name into a full path via `PATH` and
+four extensions, a `_P_*` mode into creation flags plus a wait-or-return decision — and then
+calls Win32. A harness that compared only return values would grade two `-1`s and report green
+over the entire module, so every row compares the RECORDED CALL: application name, command
+line, the environment block including its embedded NULs, creation flags, `bInheritHandles`, and
+the `STARTUPINFOW` fields msvcrt fills (including the fd-inherit block file.c builds).
+
+Three things had to be solved before a row could exist.
+
+* **The two `va_list` models never meet.** Sixteen exports are WINAPIV and the subject cannot
+  supply them — they are C trampolines over `_v`-prefixed Rust twins that walk a flat `*mut u8`,
+  and this host's `va_list` is a SysV register-save-area struct. The scanf TU solved its version
+  by compiling the reference against refstub_printf's flat `<stdarg.h>`; that FAILS here,
+  because these bodies genuinely start their own lists and the flat header's
+  `va_start(ap, last)` is `ap = NULL`. So the reference is called with real host varargs, the
+  subject's twin is handed the same logical arguments hand-packed into 8-byte slots, and what
+  is compared is the recorded spawn.
+* **`_exec*` cannot be graded on success, and that is a finding rather than a gap.** They all
+  pass `_P_OVERLAY`, whose arm is `_exit(0)` — the harness would terminate mid-row and exit
+  ZERO. Exec rows preset the spawn to FAIL, which still grades everything through the errno
+  mapping; and `_exit` is redirected to a terminator that exits 70 with a message, so the
+  silent-green can never happen by accident.
+* **The three std handles are compared as ROLES, not numbers.** `_popen`'s only real decision
+  is which end of the pipe the child gets, and the two sides' fd tables cache different OS
+  handles for the same CRT descriptor — `(4, 14, 8)` vs `(5, 14, 9)` for identical behaviour.
+
+Nothing in process.rs diverged. Two findings landed in the harness instead, both of the class
+where both sides fail identically and the row still says MATCH: fileimpl.c's path converter
+passed `\` through to `stat`, so **every** `use_path` search found nothing on both sides; and
+the four `msvcrt.h` codepage inlines that `msvcrt_argvtos_aw`/`msvcrt_valisttos_aw` are built
+out of were a hand copy in `refstub/msvcrt_file_prelude.h` claiming to be "VERBATIM" with
+nothing checking it — build.rs now diffs it against the genuine header. Both are in the field
+manual under §9.73.
+
+`STARTUPINFOW` and `PROCESS_INFORMATION` joined `msvcrt_crt_layout.h`'s guarded set. The second
+is not bookkeeping: msvcrt_spawn's `_P_WAIT` arm calls
+`GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)` — it writes the exit code into the PID field
+and returns THAT — so the field order is program logic, and a pin asserts the returned value is
+the exit code and not the pid.
+
 **GRADED 2026-08-07 — reference TU #10, 2,247 rows, and every finding was in the ORACLE.**
 `tests/math.rs` drives the 37 exports whose reference twin exists on the host (the rest —
 `_isnan`, `_finite`, `abs`, `div`, `ldexp`, … — are `#[cfg(any())]` here because cnt-rust's

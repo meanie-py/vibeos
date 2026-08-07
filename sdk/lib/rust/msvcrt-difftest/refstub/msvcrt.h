@@ -732,6 +732,15 @@ int __cdecl isleadbyte(int);
 #define HIBYTE(w) ((BYTE)(((uintptr_t)(w) >> 8) & 0xFF))
 #endif
 
+/* minwindef.h's word accessors, as process.c spells them.  `_getdllprocaddr`'s whole
+ * body is `if (HIWORD(ordinal)) return NULL;` followed by a cast of the low word to a
+ * name pointer — so this macro IS the function's logic, not a convenience.  Same
+ * uintptr_t stand-in for DWORD_PTR as the byte pair above. */
+#ifndef HIWORD
+#define LOWORD(l) ((WORD)((uintptr_t)(l) & 0xFFFF))
+#define HIWORD(l) ((WORD)(((uintptr_t)(l) >> 16) & 0xFFFF))
+#endif
+
 /* msvcrt.h's own; the host has no such macro. */
 #ifndef min
 #define min(a,b) (((a) < (b)) ? (a) : (b))

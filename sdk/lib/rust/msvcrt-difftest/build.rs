@@ -2632,6 +2632,289 @@ fn main() {
     let time_prelude_h = out.join("ref_time_prelude.h");
     fs::write(&time_prelude_h, &tp).unwrap();
 
+    // ══ reference TU #12 — dll/win32/msvcrt/process.c ═══════════════════════════════
+    //
+    // process.c does not create processes.  It MARSHALS — argv array or `...` list into
+    // one command line, envp array into a double-NUL block, a bare program name into a
+    // full path by walking PATH and trying four extensions, a `_P_*` mode into creation
+    // flags and a wait-or-return decision — and then calls CreateProcessW.  Everything
+    // the file is FOR happens before that call, which is why processimpl.c's
+    // CreateProcessW is a RECORDER: the row compares what the two sides marshalled, not
+    // what some child process did.
+    //
+    // Two things make this TU unlike its predecessors.
+    //
+    // 1. THE `...` ENTRY POINTS ARE GRADED THROUGH REAL VARIADICS.  Sixteen of the 41
+    //    exports are WINAPIV, and the SUBJECT cannot supply them: `va_start` is not on
+    //    pinned stable, so the shipping msvcrt has them as C trampolines in
+    //    rust_process_varargs_shim.c over `_v`-prefixed Rust twins, and those twins walk
+    //    a flat `*mut u8` — the Windows-x64 va_list, not the host's SysV struct.  The
+    //    scanf TU solved that shape by compiling against refstub_printf's flat
+    //    <stdarg.h>; here the flat header would BREAK the reference instead, because
+    //    its `va_start(ap, last)` expands to `ap = NULL` and these bodies genuinely
+    //    start their own lists.  So the reference keeps the host's stdarg and is called
+    //    with real varargs, the subject's `_v*` twin is handed the same logical
+    //    arguments hand-packed into slots, and what is compared is the RECORDED SPAWN.
+    //    The two va_list models never have to meet.
+    //
+    // 2. THE SUCCESS PATH OF `_exec*` CANNOT BE A ROW.  `_exec*` passes `_P_OVERLAY`,
+    //    and msvcrt_spawn's `_P_OVERLAY` arm is `_exit(0)` — on success the harness
+    //    process terminates.  With CreateProcessW preset to FAIL the marshalling has
+    //    already happened and been recorded, and what comes back is the errno mapping,
+    //    so the sixteen exec entry points are graded on everything except the two
+    //    instructions after the call.  tests/process.rs says so where the rows are.
+    let process_c = msvcrt_dir.join("process.c");
+    assert!(process_c.is_file(), "msvcrt reference source not found: {}", process_c.display());
+
+    // From the OBJECT, like every TU since file.c.  `_wsystem`/`system` sit inside
+    // `#ifndef __REACTOS__` and are NOT built, and three of the file-statics are inlined
+    // away entirely — the source text would claim symbols that do not exist.
+    let process_obj =
+        repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/process.c.obj");
+    let process_code: Vec<String> = object_symbols(&repo, &process_obj, &["T"]);
+    let process_data: Vec<String> = object_symbols(&repo, &process_obj, &["D", "B"]);
+    assert!(
+        process_code.len() > 35 && process_data.is_empty(),
+        "process.c object scrape found {} functions / {} data — expected ~41 and NO \
+         exported data (popen_handles and popen_handles_size are file-static). A short \
+         list would leave exports under their PLAIN names, colliding with the subject",
+        process_code.len(),
+        process_data.len()
+    );
+    // The four families, pinned by one representative each. They are what the wall is
+    // for: process.rs defines all of them `#[no_mangle]`, so an un-renamed reference
+    // copy is a duplicate symbol — and the quieter failure, if the subject had not
+    // defined one, would be a `ref__spawnv` nothing defines that no row notices until
+    // it reaches for it.
+    for want in ["_spawnv", "_wexecl", "_wpopen", "_getdllprocaddr"] {
+        assert!(
+            process_code.iter().any(|s| s == want),
+            "process.c's scrape missed `{want}` — that family would keep its plain name"
+        );
+    }
+
+    let process_no_rename_txt = refstub.join("msvcrt_process_no_rename.txt");
+    let process_no_rename: std::collections::HashSet<String> =
+        fs::read_to_string(&process_no_rename_txt)
+            .unwrap_or_else(|e| panic!("{}: {e}", process_no_rename_txt.display()))
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+    for n in &process_no_rename {
+        assert!(
+            process_code.contains(n),
+            "msvcrt_process_no_rename.txt lists `{n}`, which process.c does not export — \
+             regenerate: python3 tools/gen_msvcrt_ref_protos.py process.c"
+        );
+    }
+    let process_wall: Vec<&String> =
+        process_code.iter().filter(|s| !process_no_rename.contains(*s)).collect();
+
+    // Disjointness against every other reference TU, asserted rather than assumed.
+    {
+        let taken: std::collections::HashSet<&str> = all_symbols
+            .iter()
+            .copied()
+            .chain(scanf_symbols.iter().map(String::as_str))
+            .chain(file_symbols.iter().map(String::as_str))
+            .chain(file_data.iter().map(String::as_str))
+            .chain(errno_code.iter().map(String::as_str))
+            .chain(errno_data.iter().map(String::as_str))
+            .chain(time_code.iter().map(String::as_str))
+            .chain(time_data.iter().map(String::as_str))
+            .collect();
+        let clash: Vec<&str> = process_code
+            .iter()
+            .map(String::as_str)
+            .filter(|s| taken.contains(s))
+            .collect();
+        assert!(
+            clash.is_empty(),
+            "process.c and another reference TU both define {clash:?} — one of them must \
+             stop being renamed into ref_*"
+        );
+    }
+
+    // process.c's `#include <process.h>`. Everything it wants from it — the five `_P_*`
+    // modes and the exec/spawn prototypes — arrives from msvcrt_crt_consts.h (derived)
+    // and msvcrt_process_protos.h (generated from the definitions themselves), so this
+    // only has to exist. Emitted rather than left out because glibc has no <process.h>
+    // at all and the include would simply fail.
+    fs::write(
+        out.join("process.h"),
+        "/* GENERATED by build.rs — process.c's `#include <process.h>`. The _P_* modes\n\
+         * come from msvcrt_crt_consts.h and the prototypes from\n\
+         * msvcrt_process_protos.h, both derived; this is the empty socket. */\n\
+         #ifndef MSVCRT_DIFFTEST_PROCESS_H\n#define MSVCRT_DIFFTEST_PROCESS_H\n#endif\n",
+    )
+    .unwrap();
+
+    // ── the codepage inlines are TRANSCRIBED; check the transcription ──────────────
+    //
+    // `get_aw_cp`, `convert_acp_utf8_to_wcs`, `convert_wcs_to_acp_utf8`,
+    // `wstrdupa_utf8` and `astrdupw_utf8` are `static inline` in
+    // dll/win32/msvcrt/msvcrt.h, and refstub/msvcrt_file_prelude.h carries a hand copy
+    // because suppressing that header dropped them.  Its comment says "VERBATIM from
+    // that header" — a claim nothing was checking.
+    //
+    // process.c makes that claim load-bearing in a new way.  These are not plumbing
+    // here: `msvcrt_argvtos_aw` picks its codepage with `env ? CP_ACP : get_aw_cp()`,
+    // `msvcrt_valisttos_aw` sizes every argument with `convert_acp_utf8_to_wcs`, and
+    // process.rs carries its OWN hand-written copies of both.  A transcription that
+    // drifted would be §9.66 with both sides on the same wrong side of it — an oracle
+    // rewritten by the harness, agreeing with a subject that copied the same
+    // misunderstanding, on the two functions whose entire job is the conversion.
+    //
+    // So: compare the two texts, whitespace-normalised, at build time.  `get_aw_cp` is
+    // excluded from the comparison by design — the real one has an `#if
+    // _MSVCR_VER>=140` arm that this build does not compile, and the collapse to
+    // `return CP_ACP;` is the deliberate part the refstub's own comment explains.  The
+    // OTHER four have no conditional arm, so any difference at all is drift.
+    {
+        let msvcrt_h_src = fs::read_to_string(msvcrt_dir.join("msvcrt.h"))
+            .unwrap_or_else(|e| panic!("dll/win32/msvcrt/msvcrt.h: {e}"));
+        let prelude_src = fs::read_to_string(refstub.join("msvcrt_file_prelude.h"))
+            .unwrap_or_else(|e| panic!("refstub/msvcrt_file_prelude.h: {e}"));
+        // Whitespace-normalised so indentation and line breaks do not count as drift;
+        // every token, and their order, still does.
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let body = |src: &str, sig: &str| -> String {
+            let start = src.find(sig).unwrap_or_else(|| {
+                panic!(
+                    "`{sig}` is gone — the transcription check is blind, and a blind check \
+                     over a hand copy of code under test is worse than none"
+                )
+            });
+            let open = src[start..].find('{').expect("no body") + start;
+            let mut depth = 0usize;
+            let mut end = open;
+            for (i, c) in src[open..].char_indices() {
+                if c == '{' { depth += 1 }
+                if c == '}' {
+                    depth -= 1;
+                    if depth == 0 { end = open + i + 1; break }
+                }
+            }
+            squash(&src[start..end])
+        };
+        for sig in [
+            "static inline int convert_acp_utf8_to_wcs(",
+            "static inline int convert_wcs_to_acp_utf8(",
+            "static inline wchar_t* wstrdupa_utf8(",
+            "static inline char* astrdupw_utf8(",
+        ] {
+            let genuine = body(&msvcrt_h_src, sig);
+            let copy = body(&prelude_src, sig);
+            assert_eq!(
+                copy, genuine,
+                "refstub/msvcrt_file_prelude.h's copy of `{sig}…` has drifted from \
+                 dll/win32/msvcrt/msvcrt.h. It says VERBATIM and it is not. Both the \
+                 file.c and process.c reference TUs inline this body, so the drift is a \
+                 rewritten oracle, not a cosmetic difference.\nfix: re-copy the body."
+            );
+        }
+        assert!(
+            squash(&body(&prelude_src, "static inline UINT get_aw_cp(")).contains("return CP_ACP;"),
+            "refstub's collapsed get_aw_cp no longer returns CP_ACP — at _MSVCR_VER=0 that \
+             IS the whole function, and the `_aw` marshallers branch on it"
+        );
+    }
+
+    let mut pp = String::from(
+        "/* GENERATED by msvcrt-difftest/build.rs — do not edit.\n\
+         * Force-included at the top of the process.c reference TU ONLY. */\n\
+         #ifndef MSVCRT_REF_PROCESS_PRELUDE_H\n#define MSVCRT_REF_PROCESS_PRELUDE_H\n\n\
+         /* ═══ stage 0: msvcrt's FILE, before ANY host header. ════════════════════\n\
+          * `_popen` returns one and `_pclose` reads `popen_handles[i].f == file`, so the\n\
+          * reference and the subject must agree on what a FILE pointer IS before either\n\
+          * can be compared. Same first-header rule as the file.c TU. */\n\
+         #include <msvcrt_file_pre.h>\n\n\
+         /* ═══ stage 1: hide process.c's own exports from glibc. ══════════════════\n\
+          * Cheaper than deciding which of the 41 glibc happens to declare today.\n\
+          * `system` would be the obvious one and it is not even built here (it sits\n\
+          * inside `#ifndef __REACTOS__`), which is exactly why the wall is applied by\n\
+          * rule rather than by inspection. */\n",
+    );
+    for sym in &process_wall {
+        pp.push_str(&format!("#define {sym} msvcrt_ref_glibc_{sym}\n"));
+    }
+    pp.push_str(
+        "\n/* ═══ stage 2: the union prelude — sibling renames + the refstub. ════════\n\
+         * `wcslen`/`wcscpy`/`wcscat`/`memcpy`/`strlen` are string.c's and wcs.c's.\n\
+         * `msvcrt_search_executable` builds every candidate path with three of them and\n\
+         * `msvcrt_argvtos` measures every argument with a fourth, so without this the\n\
+         * reference's path arithmetic would run through cnt-rust's #[no_mangle] copies —\n\
+         * the code under test — and the harness would be grading Rust against Rust. */\n\
+         #include \"ref_prelude.h\"\n\n\
+         /* ═══ stage 3: the types, the layout guardian, the constants. ════════════\n\
+          * STARTUPINFOW and PROCESS_INFORMATION arrive here, and both are load-bearing\n\
+          * rather than decorative: msvcrt_spawn fills `cbReserved2`/`lpReserved2` from\n\
+          * file.c's inherit block, and its `_P_WAIT` arm writes the EXIT CODE into\n\
+          * `pi.dwProcessId` and returns that. msvcrt_crt_layout.h asserts every offset\n\
+          * against the pinned cross-compiler reading the real PSDK. */\n\
+         #include <msvcrt_file_prelude.h>\n\n\
+         /* ═══ stage 4: file.c's wall, for the eight symbols process.c borrows. ═══\n\
+          * `_pipe`, `_dup`, `_close`, `_wfdopen`, `fclose`, `_get_osfhandle` and\n\
+          * `msvcrt_create_io_inherit_block` are file.c's (reference TU #6). Without\n\
+          * this, `_wpopen` would build its pipe with the SUBJECT's fd table and then\n\
+          * compare the fd numbers against a reference that used the same table — two\n\
+          * sides sharing one piece of code under test, which is not a difference.\n\
+          * The whole wall is applied rather than the eight, exactly as errno.c's\n\
+          * prelude does: the sets are asserted disjoint above, so it costs nothing and\n\
+          * stays right if process.c reaches for a ninth. */\n",
+    );
+    for sym in &file_wall {
+        pp.push_str(&format!("#define {sym} ref_{sym}\n"));
+    }
+    pp.push_str(
+        "\n/* ═══ stage 5: un-hide process.c's own exports and rename them for real. ═ */\n",
+    );
+    for sym in &process_wall {
+        pp.push_str(&format!("#undef {sym}\n#define {sym} ref_{sym}\n"));
+    }
+    pp.push_str(&format!(
+        "\n/* ═══ stage 6: a prototype for every function process.c DEFINES. ════════\n\
+         * After the wall, so each is renamed alongside its definition. `_wexecve` calls\n\
+         * `_wspawnve` 300 lines above it and `_popen` calls `_wpopen` from below —\n\
+         * without these, both fall to C's implicit-declaration rule and every returned\n\
+         * `intptr_t` and `FILE*` is truncated to 32 bits, in code that links. */\n\
+         #include <msvcrt_process_protos.h>\n\n\
+         /* ═══ stage 6b: …and for every function file.c defines. ═════════════════\n\
+          * The other half of stage 4. Renaming `_pipe` to `ref__pipe` without a\n\
+          * declaration in scope just moves WHICH undeclared function gets invented:\n\
+          * `ref__wfdopen` would come back as `int` and its FILE* be truncated to 32\n\
+          * bits — the exact failure msvcrt_shim_decls.h was written for, one TU over.\n\
+          * Included after stage 4 so every prototype is renamed with its definition. */\n\
+         #include <msvcrt_file_protos.h>\n\n\
+         /* ═══ stage 7: a prototype for every function process.c CALLS. ══════════\n\
+          * The Win32 process layer (processimpl.c), the file.c stream layer, and the\n\
+          * msvcrt internals from TUs we do not compile. Same header the file.c TU uses,\n\
+          * and the seven CreateProcessW-family entries were added to it for this TU. */\n\
+         #include <msvcrt_shim_decls.h>\n\n\
+         /* ═══ stage 8: `_exit`, onto a terminator that is LOUD. ══════════════════\n\
+          * msvcrt_spawn's `_P_OVERLAY` arm is `_exit(0)`, so a spawn that SUCCEEDS with\n\
+          * that mode ends the harness process. Every `_exec*` row therefore presets\n\
+          * CreateProcessW to fail, which is safe — but \"safe by nobody making a\n\
+          * mistake\" is not safe: the failure mode is that the test binary exits ZERO\n\
+          * having compared nothing, and `cargo test` reports a pass.\n\
+          *\n\
+          * Silent-green is the one outcome a differential harness must never have, so\n\
+          * the environment's terminator is replaced with one that says what happened\n\
+          * and exits non-zero. `_exit` belongs to exit.c, not to process.c — it is the\n\
+          * layer BELOW the code under test, exactly like fileimpl.c's Win32 surface —\n\
+          * so redirecting it changes the environment, not the reference. Leaving it\n\
+          * plain would also bind it to exit.rs's `#[no_mangle]` copy, i.e. the\n\
+          * reference calling the code under test. */\n\
+         #undef _exit\n\
+         #define _exit ref_process_exit_overlay\n\
+         void ref_process_exit_overlay(int code);\n\n\
+         #endif /* MSVCRT_REF_PROCESS_PRELUDE_H */\n"
+    ));
+    let process_prelude_h = out.join("ref_process_prelude.h");
+    fs::write(&process_prelude_h, &pp).unwrap();
+
     // ── the reference TUs: the GENUINE string.c + wcs.c, renamed ────
     //
     // Both get the IDENTICAL flag set — the two -Werror= tripwires below are
@@ -3131,6 +3414,54 @@ fn main() {
         .flag(time_prelude_h.to_str().unwrap())
         .file(&time_c);
 
+    // The process.c reference TU. Same genuineness flags and tripwires; its own out_dir
+    // for the same cc-intermediate-collision reason as file.c's.
+    //
+    // NOT compiled against refstub_printf's flat <stdarg.h>, unlike the scanf TU: these
+    // bodies START their own variadic lists, and the flat header's `va_start(ap, last)`
+    // is `ap = NULL`. See the reference-TU block above for how the two va_list models
+    // are kept apart instead.
+    let mut process_build = cc::Build::new();
+    process_build
+        .out_dir(out.join("process"))
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        // -fshort-wchar: `L"..."` in a reference TU must be 16-bit. process.c carries
+        // seven — the four `msvcrt_search_executable` suffixes (`L".com"`, `L".exe"`,
+        // `L".bat"`, `L".cmd"`), `L"PATH"`, `L"COMSPEC"` and `L" /c "`. Without the flag
+        // the host emits 4-byte elements and the very first executable search compares
+        // `.` against a NUL and finds nothing, on every row, identically.
+        .flag("-fshort-wchar")
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .flag("-fno-builtin")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .flag("-include")
+        .flag(process_prelude_h.to_str().unwrap())
+        .file(&process_c);
+
+    // The recording process layer, on the same terms as fileimpl.c and timeimpl.c: its
+    // own TU, no rename prelude, plain Win32 names.
+    let mut processimpl_build = cc::Build::new();
+    processimpl_build
+        .include(&refstub)
+        .include(&out)
+        .define("__REACTOS__", None)
+        .define("_MSVCR_VER", "0")
+        // -fshort-wchar: the ledger stores wide strings and compares COMSPEC by name.
+        // Without it every recorded command line would be read back at the wrong width.
+        .flag("-fshort-wchar")
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        .flag("-U_FORTIFY_SOURCE")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(manifest.join("processimpl.c"));
+
     // The POSIX-backed Win32 layer underneath it.  Its OWN TU, without the rename
     // prelude — like refimpl.c, and for the same reason: these must land under the
     // plain names file.c calls.
@@ -3470,6 +3801,13 @@ fn main() {
     objects.extend(fileflat_build.compile_intermediates());
     objects.extend(errno_build.compile_intermediates());
     objects.extend(time_build.compile_intermediates());
+    // process.c and its recording Win32 layer. Only for a crate that links file.rs: the
+    // TU calls `_pipe`/`_wfdopen`/`fclose` and stands on file.c's fd table, exactly as
+    // the subject's process.rs stands on file.rs's — see `subject_stdio`.
+    if subject_stdio {
+        objects.extend(process_build.compile_intermediates());
+        objects.extend(processimpl_build.compile_intermediates());
+    }
     objects.extend(fileimpl_build.compile_intermediates());
     objects.extend(timeimpl_build.compile_intermediates());
     objects.extend(cloc_time_build.compile_intermediates());
@@ -3518,6 +3856,10 @@ fn main() {
     println!("cargo:rerun-if-changed={}", manifest.join("fileimpl.c").display());
     println!("cargo:rerun-if-changed={}", manifest.join("timeimpl.c").display());
     println!("cargo:rerun-if-changed={}", time_c.display());
+    println!("cargo:rerun-if-changed={}", process_c.display());
+    println!("cargo:rerun-if-changed={}", manifest.join("processimpl.c").display());
+    // Not compiled — PARSED, for the four codepage inlines the process TU lifts.
+    println!("cargo:rerun-if-changed={}", msvcrt_dir.join("msvcrt.h").display());
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("mtdll.h").display());
     // scanf.h is the TEMPLATE scanf.c instantiates 16 times — real logic, not a stub.
     println!("cargo:rerun-if-changed={}", msvcrt_dir.join("scanf.h").display());

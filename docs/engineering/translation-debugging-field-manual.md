@@ -4741,6 +4741,37 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   own diagnostics vanish into it silently. Generalises past stdio: any singleton the
   environment supplies (a lock table, a TLS slot, a process-wide mode) is one definition
   serving both sides until you make it two.
+- **A POSIX-backed shim that rejects a WINDOWS path separator deletes a whole search arm,
+  on both sides, green.** msvcrt-difftest's `GetFileAttributesW` backs onto `stat`, and its
+  wide→narrow converter passed `\` through untouched. That was invisible for four waves
+  because nothing in file.c BUILDS a path — it forwards whatever its caller handed it. The
+  first module that builds one exposed it instantly: `msvcrt_search_executable` joins a
+  `PATH` entry to a program name with a literal `'\\'`, so every candidate it produced
+  failed to `stat` and the entire `use_path` half of the function found nothing — the same
+  nothing on both sides, so every row over it reported MATCH. **A shim must accept every
+  input form the real API accepts, not just the ones the current caller happens to use**;
+  a real `GetFileAttributesW` takes both separators. Same family as the discarded-argument
+  entry above, arriving from the input side rather than the output side.
+- **Compare an environment-allocated identifier by its ROLE, never by its value.** The
+  process.c rows compare the `STARTUPINFOW` msvcrt hands CreateProcessW, and the three std
+  handles came back `(4, 14, 8)` on the subject and `(5, 14, 9)` on the reference for
+  behaviour that was identical and correct. Each side has its own CRT fd table caching OS
+  handles the host allocated at whatever moment that side first opened something, and the
+  subject runs first in every row, so its descriptors are always one lower. The contract
+  under test is not the number — it is WHICH END OF THE PIPE the child gets, which is the
+  only thing `_popen(cmd,"r")` and `_popen(cmd,"w")` disagree about. Resolve each recorded
+  handle against *its own side's* `_get_osfhandle(0/1/2)` and compare the resulting labels;
+  the raw comparison is a permanently red row that says nothing, and "fixing" it by dropping
+  the field silently deletes the mode-string branch from the suite.
+- **A code path that CALLS `exit` is a silent-green hazard, and the fix is in the
+  substrate.** msvcrt's `_P_OVERLAY` spawn ends in `_exit(0)`: on the success path the
+  harness process terminates, `cargo test` sees exit status 0, and the run is reported as a
+  pass having compared nothing after that line. Every `_exec*` row therefore presets the
+  spawn to FAIL — but "safe because nobody makes a mistake" is not safe when the failure
+  mode is a green tick. `_exit` belongs to exit.c, i.e. the layer BELOW the code under test,
+  so redirect it like any other environment entry point: to a terminator that prints what
+  happened and leaves with a non-zero code. Leaving it plain has a second cost — it binds to
+  the SUBJECT's `#[no_mangle]` copy, so the reference would be calling the code under test.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,

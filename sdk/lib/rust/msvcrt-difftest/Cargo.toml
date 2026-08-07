@@ -197,3 +197,16 @@ harness = false
 name = "time"
 path = "tests/time.rs"
 harness = false
+
+# process.c — reference TU #12. Its own binary for two reasons that are both about state.
+# `_wpopen` drives BOTH sides' fd tables and FILE rings, which only stay comparable if they
+# start empty and every row moves them in lockstep — the same property tests/file.rs needs,
+# and it does not survive sharing a process with a suite that opens files for other reasons.
+# And processimpl.c's spawn ledger is ONE recorder read back between the two calls of a row,
+# so a second suite calling CreateProcessW concurrently would be reading someone else's
+# marshalling. `harness = false` gives it one thread, which is what makes both hold; the
+# same getenv reason as the rest applies too.
+[[test]]
+name = "process"
+path = "tests/process.rs"
+harness = false

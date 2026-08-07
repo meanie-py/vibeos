@@ -53,6 +53,33 @@ HANDLE   WINAPI CreateFileW(const wchar_t *name, DWORD access, DWORD share,
                             DWORD flags, HANDLE template_file);
 BOOL     WINAPI CreatePipe(HANDLE *read_h, HANDLE *write_h,
                            SECURITY_ATTRIBUTES *sa, DWORD size);
+/* ── the process layer (processimpl.c) ───────────────────────────────────
+ *
+ * `CreateProcessW` is a RECORDER, not a spawner: it copies its arguments into a
+ * ledger the test reads back and returns a preset outcome.  That is the only
+ * shape a difftest can use here — process.c's whole job is to MARSHAL these
+ * arguments, and a shim that actually forked would grade the child's behaviour
+ * instead of the marshalling, non-deterministically, twice per row.
+ *
+ * `WaitForSingleObject` / `GetExitCodeProcess` are presets for the same reason
+ * fileimpl.c's console knob is one: msvcrt_spawn's `_P_WAIT` arm and `_cwait`'s
+ * ECHILD arm are only reachable if BOTH answers can be produced on demand. */
+BOOL     WINAPI CreateProcessW(const wchar_t *app, wchar_t *cmdline,
+                               SECURITY_ATTRIBUTES *proc_attr,
+                               SECURITY_ATTRIBUTES *thread_attr, BOOL inherit,
+                               DWORD flags, void *env, const wchar_t *cwd,
+                               STARTUPINFOW *si, PROCESS_INFORMATION *pi);
+BOOL     WINAPI FreeLibrary(HMODULE mod);
+DWORD    WINAPI GetEnvironmentVariableW(const wchar_t *name, wchar_t *buf,
+                                        DWORD size);
+BOOL     WINAPI GetExitCodeProcess(HANDLE proc, DWORD *code);
+/* Declared `void *`-returning, which is how `_getdllprocaddr` uses it — the PSDK's
+ * FARPROC would make that `return GetProcAddress(...)` a function-to-object
+ * pointer conversion the host compiler complains about, for no gain here. */
+void *   WINAPI GetProcAddress(HMODULE mod, const char *name);
+HMODULE  WINAPI LoadLibraryW(const wchar_t *name);
+DWORD    WINAPI WaitForSingleObject(HANDLE h, DWORD ms);
+
 void     WINAPI DeleteCriticalSection(CRITICAL_SECTION *cs);
 BOOL     WINAPI DeleteFileW(const wchar_t *name);
 BOOL     WINAPI DuplicateHandle(HANDLE src_proc, HANDLE src, HANDLE dst_proc,
