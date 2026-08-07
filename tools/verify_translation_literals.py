@@ -42,6 +42,17 @@ WHAT IS FILTERED, AND WHY EACH IS SAFE
 
 Anything else that differs is reported. Known-and-accepted differences belong in the lint
 baseline, where they are visible, rather than in a filter here, where they would not be.
+
+WHAT THIS CANNOT SEE, stated plainly because the gap is in the middle of its own purpose.
+A literal the Rust HOISTS into a named static is compared by presence, not count (see
+`check_pair`) -- the count is uninformative there. So a permutation AMONG HOISTED CONSTANTS
+is invisible: swap `pszShellFoldersKey` and `pszUserShellFoldersKey` in a table of
+`NAME.as_ptr()` and every literal is still present exactly once. That is not hypothetical.
+userenv's setup.rs shipped a second copy of StandardProfiles whose two `hRootKey` fields
+were HKEY_LOCAL_MACHINE and HKEY_CLASSES_ROOT where the C says HKEY_USERS and
+HKEY_LOCAL_MACHINE -- a permutation in a table of hoisted values, found by reading the two
+tables side by side, not by this checker. For tables built out of named constants the
+oracle is still a field-by-field diff against the C.
 """
 
 from __future__ import annotations
@@ -53,12 +64,71 @@ from collections import Counter
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+# (Rust module dir, C source dir), one row per whole-file-translated module directory.
+#
+# HAND-VERIFIED, never derived. Pairing modules by "which C dir holds the most matching
+# stems" looks like it would keep this list current for free, and it is wrong often enough
+# to be dangerous: a one-file module votes on a single common stem, so `wsock32` pairs to
+# `sdk/lib/crt/misc`, `snmpapi` to `base/applications/network/net`, and
+# `shell32-rust/src/dialogs` to `ntoskrnl/cc`. Diffing a translation against an unrelated
+# C file reports every literal in BOTH as a finding, and the noise is what gets a checker
+# switched off. A row that has to be added by hand is a row someone looked at.
 PAIRS = [
-    # (Rust module dir, C source dir)
     ("sdk/lib/rust/msvcrt-crt-rust/src/msvcrt", "dll/win32/msvcrt"),
+    # Tier-3 native userland (batches A-H) — every module that has been cohab-flipped.
+    ("sdk/lib/rust/aclui-rust/src/aclui", "dll/win32/aclui"),
+    ("sdk/lib/rust/authz-rust/src/authz", "dll/win32/authz"),
+    ("sdk/lib/rust/browser-rust/src/browser", "base/services/browser"),
+    ("sdk/lib/rust/desk-rust/src/desk", "dll/cpl/desk"),
+    ("sdk/lib/rust/intl-rust/src/intl", "dll/cpl/intl"),
+    ("sdk/lib/rust/mprapi-rust/src/mprapi", "dll/win32/mprapi"),
+    ("sdk/lib/rust/msv1_0-rust/src/msv1_0", "dll/win32/msv1_0"),
+    ("sdk/lib/rust/msv1_0-rust/src/ntlm", "dll/win32/msv1_0/ntlm"),
+    ("sdk/lib/rust/mswsock-rust/src/mswsock", "dll/win32/mswsock"),
+    ("sdk/lib/rust/netcfgx-rust/src/netcfgx", "dll/win32/netcfgx"),
+    ("sdk/lib/rust/netid-rust/src/netid", "dll/win32/netid"),
+    ("sdk/lib/rust/ntmarta-rust/src/ntmarta", "dll/win32/ntmarta"),
+    ("sdk/lib/rust/rasadhlp-rust/src/rasadhlp", "dll/win32/rasadhlp"),
+    ("sdk/lib/rust/rasapi32-rust/src/rasapi32", "dll/win32/rasapi32"),
+    ("sdk/lib/rust/rasdlg-rust/src/rasdlg", "dll/win32/rasdlg"),
+    ("sdk/lib/rust/rasman-rust/src/rasman", "dll/win32/rasman"),
+    ("sdk/lib/rust/samlib-rust/src/samlib", "dll/win32/samlib"),
+    ("sdk/lib/rust/snmpapi-rust/src/snmpapi", "dll/win32/snmpapi"),
+    ("sdk/lib/rust/sysdm-rust/src/sysdm", "dll/cpl/sysdm"),
+    ("sdk/lib/rust/syssetup-rust/src/syssetup", "dll/win32/syssetup"),
+    ("sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr", "base/services/umpnpmgr"),
+    ("sdk/lib/rust/userenv-rust/src/userenv", "dll/win32/userenv"),
+    ("sdk/lib/rust/wkssvc-rust/src/wkssvc", "base/services/wkssvc"),
+    ("sdk/lib/rust/wlanapi-rust/src/wlanapi", "dll/win32/wlanapi"),
+    ("sdk/lib/rust/wlansvc-rust/src/wlansvc", "base/services/wlansvc"),
+    ("sdk/lib/rust/wldap32-rust/src/wldap32", "dll/win32/wldap32"),
+    ("sdk/lib/rust/wshirda-rust/src/wshirda", "dll/win32/wshirda"),
+    ("sdk/lib/rust/wshtcpip-rust/src/wshtcpip", "dll/win32/wshtcpip"),
+    ("sdk/lib/rust/wsock32-rust/src/wsock32", "dll/win32/wsock32"),
 ]
 
-DEBUG_CHANNELS = ("TRACE", "WARN", "ERR", "FIXME", "MESSAGE")
+DEBUG_CHANNELS = (
+    "TRACE",
+    "WARN",
+    "ERR",
+    "FIXME",
+    "MESSAGE",
+    # ReactOS's own channel, which the native modules use instead of wine/debug.h. Stripped
+    # for the SAME reason and on the same terms: a translated body either lowers these to a
+    # no-op `macro_rules!` or drops the call outright, uniformly, by convention.
+    #
+    # This is NOT the dropped-diagnostic class going unwatched -- `scan_dropped_prints` owns
+    # it and carries its own baseline of the functions that lost their DPRINT. Counting it
+    # HERE as well buried this checker's actual signal: across the tier-3 modules the DPRINT
+    # formats were ~900 of ~950 findings, and underneath them sat real ones nobody would
+    # have reached -- userenv desktop.c's `%HOMEDRIVE%%HOMEPATH%` absent entirely, and its
+    # `.lnk` appearing 4x in the C against 2x in the Rust.
+    "DPRINT",
+    "DPRINT1",
+    "DPRINT2",
+    "DbgPrint",
+    "DbgPrintEx",
+)
 # Assembly is not a translation of the C's text -- `__ASM_GLOBAL_FUNC`'s operand string and
 # a `global_asm!` body say the same thing in different syntaxes, so comparing them as
 # literals is noise. The instructions themselves are covered by the offset/ABI verifiers.
@@ -74,7 +144,18 @@ C_ASM_MACROS = (
     "asm",
 )
 RUST_ASM_MACROS = ("global_asm!", "asm!", "core::arch::global_asm!", "core::arch::asm!")
-RUST_NOOP_CHANNELS = ("TRACE!", "WARN!", "ERR!", "FIXME!", "MESSAGE!")
+RUST_NOOP_CHANNELS = (
+    "TRACE!",
+    "WARN!",
+    "ERR!",
+    "FIXME!",
+    "MESSAGE!",
+    "DPRINT!",
+    "DPRINT1!",
+    "DPRINT2!",
+    "DbgPrint!",
+    "DbgPrintEx!",
+)
 
 
 def strip_c_comments(src: str) -> str:
@@ -138,6 +219,11 @@ C_UNDEFINED = {"_UCRT", "_CRTDLL"}
 def _eval_cond(expr: str) -> bool | None:
     """True/False when the build settles this condition, None when it does not."""
     expr = expr.strip()
+    # `#if 0` is how C parks a block without deleting it, and the translation correctly drops
+    # it. umpnpmgr's rpcserver.c parks the 2k/XP `\pipe\ntsvcs` endpoint that way; leaving both
+    # arms in reported the Rust as having lost an RPC endpoint it was right not to register.
+    if re.fullmatch(r"\d+", expr):
+        return bool(int(expr))
     m = re.fullmatch(r"defined\s*\(?\s*(\w+)\s*\)?", expr)
     if m:
         if m.group(1) in C_DEFINES:
@@ -200,18 +286,86 @@ def strip_untaken_arms(src: str) -> str:
     return "\n".join(out)
 
 
+# A raw control character and its escape are the SAME string; C and Rust just disagree on
+# which to spell. sysdm's virtmem.c writes `L"%s  [%s]\t%s"` and the translation embedded a
+# literal TAB byte, which read as one MISSING and one EXTRA for a pair that is identical at
+# runtime. Normalise to the escape on both sides.
+_RAW_CTRL = {"\t": "\\t", "\n": "\\n", "\r": "\\r"}
+
+
+def _norm_escapes(lit: str) -> str:
+    return "".join(_RAW_CTRL.get(ch, ch) for ch in lit)
+
+
+_C_STR = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+
+
+def _c_strings(src: str) -> list[str]:
+    """Every C string literal, with ADJACENT ones concatenated as the compiler concatenates them.
+
+    C joins string literals separated only by whitespace into one object, and translations
+    quite reasonably emit the joined result. userenv's profile.c spells one message as three
+    adjacent literals across three lines; the Rust holds the single joined string, so a
+    literal-by-literal compare reported three MISSING and one EXTRA for a translation that is
+    exactly right. Merging here is not a filter -- the joined string is what the C program
+    actually contains.
+    """
+    out: list[str] = []
+    prev_end = None
+    for m in _C_STR.finditer(src):
+        # The gap holds whitespace and, for a WIDE literal, the next one's `L` prefix -- which
+        # is why a whitespace-only test silently merged nothing in this tree: every literal
+        # worth comparing here is an `L"..."`.
+        gap = src[prev_end : m.start()].strip() if prev_end is not None else None
+        if gap is not None and gap in ("", "L", "u", "U", "u8"):
+            out[-1] += m.group(1)
+        else:
+            out.append(m.group(1))
+        prev_end = m.end()
+    return out
+
+
 def c_literals(path: Path) -> Counter:
     src = strip_c_comments(path.read_text(errors="replace"))
     src = strip_untaken_arms(src)
     src = re.sub(r'^\s*#\s*include\s+"[^"]*"', " ", src, flags=re.M)
     src = strip_calls(src, DEBUG_CHANNELS + C_ASM_MACROS)
-    return Counter(re.findall(r'"((?:[^"\\\n]|\\.)*)"', src))
+    # Strip one trailing NUL on THIS side too. `_dewiden` already does it for the Rust, and
+    # doing it on only one side is a false positive generator: netcfgx's `L"0.0.0.0\0"` (an
+    # embedded NUL, REG_MULTI_SZ style) compared against a Rust `w!("0.0.0.0\0")` that means
+    # the identical thing read as one MISSING plus one EXTRA.
+    return Counter(_norm_escapes(_strip_trailing_nul(s)) for s in _c_strings(src))
 
 
 # A wide literal spelled as interleaved bytes: `C\0O\0M\0S\0P\0E\0C\0\0` is the C's
 # `L"COMSPEC"`. Collapsing it is what lets a wide string be compared with the C at all;
 # without this every `L"..."` reads as one missing and one extra literal.
 _WIDE = re.compile(r"^(?:(?:[^\\]|\\[^0])\\0)+$")
+
+
+def _is_nul_escape_at(lit: str, i: int) -> bool:
+    r"""Is `lit[i:i+2]` the escape `\0`, rather than a backslash followed by the DIGIT zero?
+
+    Both spell `\0` in source text and only the backslash count tells them apart. sysdm's
+    general.c opens `HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0` -- the CPU-0 subkey,
+    whose last three characters are escaped-backslash then '0'. Peeling that as a terminator
+    left `...CentralProcessor\` and reported the translation as having corrupted a registry
+    path it had copied perfectly.
+    """
+    if lit[i : i + 2] != "\\0":
+        return False
+    n, j = 0, i - 1
+    while j >= 0 and lit[j] == "\\":
+        n += 1
+        j -= 1
+    return n % 2 == 0
+
+
+def _strip_trailing_nul(lit: str) -> str:
+    """Drop one trailing NUL escape, the terminator a C literal does not spell in source."""
+    if len(lit) >= 2 and _is_nul_escape_at(lit, len(lit) - 2):
+        return lit[:-2]
+    return lit
 
 
 def _dewiden(lit: str) -> str:
@@ -222,9 +376,9 @@ def _dewiden(lit: str) -> str:
     # shape first -- stripping only one NUL leaves a trailing `\0` that fails the interleave
     # test, which is how this silently reported every `L"..."` as a mismatched pair.
     body = lit
-    if lit.endswith(r"\0\0") and _WIDE.match(lit[:-4]):
+    if lit.endswith(r"\0\0") and _is_nul_escape_at(lit, len(lit) - 4) and _WIDE.match(lit[:-4]):
         body = lit[:-4]
-    elif lit.endswith(r"\0"):
+    elif _is_nul_escape_at(lit, len(lit) - 2):
         body = lit[:-2]
     if not body or not _WIDE.match(body):
         return body
@@ -405,7 +559,98 @@ def rust_literals(path: Path) -> Counter:
         lits.append(_dewiden(m))
     for m in re.findall(r'(?<![b\w])"((?:[^"\\\n]|\\.)*)"', text):
         lits.append(_dewiden(m))
-    return Counter(lits)
+    lits += _u16_array_literals(text)
+    return Counter(_norm_escapes(x) for x in lits)
+
+
+# `static NAME: [u16; N] = [b'S' as u16, ..., 0];` -- the THIRD way a wide literal is spelled,
+# alongside `b"S\0y\0"` and a plain `"..."`. Reading only the two string forms made this
+# checker report every array-spelled literal as MISSING: userenv alone raised 55 findings and
+# all but two were `static ENV_USERPROFILE: [u16; 12]` sitting under its own `// L"USERPROFILE"`
+# comment. That is the failure mode worth naming -- a checker whose blind spot manifests as a
+# WALL of confident findings costs more than one that stays quiet, because the real two are in
+# there and nobody digs to them.
+#
+# The array's ELEMENTS are decoded, not the intent comment above it. The comment is prose and
+# `scan_wide_literals` already owns checking one against the other; trusting it here would make
+# a wrong array agree with the C it disagrees with.
+# Matched by SHAPE, not by declaration syntax. Keying on the declaration meant a new finding
+# every time the corpus used a spelling the regex had not met -- `static NAME: [u16; N]`, then
+# `const NAME: &[u16]`, then `let NAME: [u16; 8]`, then wkssvc's untyped
+# `let ncacn_np = &[0x6Eu16, ...]` (suffix on the first element), then sysdm's bare
+# `['S' as u16, 't' as u16, 0].as_ptr()` with no binding at all. Each gap presented as a
+# confident MISSING against code that was present and usually correct.
+#
+# So: any bracketed list of integer-ish elements that is NUL-terminated and otherwise entirely
+# printable ASCII is a wide string literal, however it is bound. The terminator plus the
+# printable-only rule is what keeps ordinary numeric tables out -- they do not end in 0 and do
+# not read as text.
+_ARRAY_ELEM = re.compile(
+    r"""b?'(\\.|[^'])'\s*as\s*u16|0[xX]([0-9a-fA-F]+)(?:u\d+)?|(\d+)(?:u\d+)?"""
+)
+_ARRAY_ELEM_ONLY = re.compile(
+    r"""\A\s*(?:(?:b?'(?:\\.|[^'])'\s*as\s*u16|0[xX][0-9a-fA-F]+(?:u\d+)?|\d+(?:u\d+)?)"""
+    r"""\s*,\s*)*(?:b?'(?:\\.|[^'])'\s*as\s*u16|0[xX][0-9a-fA-F]+(?:u\d+)?|\d+(?:u\d+)?)?\s*\Z"""
+)
+_ELEM_ESCAPES = {"\\\\": "\\", "\\'": "'", '\\"': '"', "\\n": "\n", "\\r": "\r", "\\t": "\t"}
+# Re-escape a decoded char back to the SOURCE spelling both sides are captured in. `c_literals`
+# and `rust_literals` both keep escapes uninterpreted (a C `"a\\b"` is captured as the four
+# characters `a\\b`), so a decoded array has to be written the same way or it never matches.
+_REESCAPE = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _u16_array_literals(text: str) -> list[str]:
+    """Every NUL-terminated printable-ASCII array in `text`, decoded to its source spelling."""
+    out = []
+    for start in (mm.start() for mm in re.finditer(r"\[", text)):
+        depth, i = 0, start
+        while i < len(text):
+            if text[i] == "[":
+                depth += 1
+            elif text[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        else:
+            continue
+        body = text[start + 1 : i]
+        if not _ARRAY_ELEM_ONLY.match(body):
+            continue
+        codes, ok = [], True
+        for e in _ARRAY_ELEM.finditer(body):
+            if e.group(1) is not None:
+                ch = e.group(1)
+                if ch.startswith("\\"):
+                    if ch not in _ELEM_ESCAPES:
+                        ok = False  # an escape we do not model -- refuse to guess
+                        break
+                    codes.append(ord(_ELEM_ESCAPES[ch]))
+                else:
+                    codes.append(ord(ch))
+            else:
+                codes.append(int(e.group(2), 16) if e.group(2) is not None else int(e.group(3)))
+        # Must be NUL-terminated: that is the wide-string signature, and what separates a
+        # string from an ordinary numeric table.
+        # Two elements is the floor, not three: a one-character wide string is `[c, 0]`, and
+        # userenv spells the path separator exactly that way eight times.
+        if not ok or len(codes) < 2 or codes[-1] != 0:
+            continue
+        # Strip ALL trailing NULs, not one. An array is routinely declared longer than its
+        # string and zero-padded (desk's `g_CPColors: [u16; 23]` holds 20 characters and three
+        # zeros), and treating the padding as an interior NUL rejected the whole literal --
+        # reporting a correct, present string as missing.
+        while codes and codes[-1] == 0:
+            codes.pop()
+        # Text only, and no interior NUL. Tab/LF/CR count as text -- userenv's profile-load
+        # failure message embeds `\n`, and excluding it dropped the whole string. An interior
+        # NUL means this is not a plain string (a REG_MULTI_SZ, or the DOUBLE-INTERLEAVED shape
+        # wkssvc shipped); skipping it is right, because claiming it holds the whole string is
+        # precisely the bug.
+        if not codes or any(c not in (0x09, 0x0A, 0x0D) and not 0x20 <= c <= 0x7E for c in codes):
+            continue
+        out.append("".join(_REESCAPE.get(chr(c), chr(c)) for c in codes))
+    return out
 
 
 def check_pair(rs: Path, c: Path, companions: list[Path] | None = None) -> list[str]:
@@ -428,11 +673,26 @@ def check_pair(rs: Path, c: Path, companions: list[Path] | None = None) -> list[
     # worktree), raw otherwise -- a fixture pair under /tmp is how the controls exercise
     # this, and a checker that cannot be pointed at a fixture cannot be shown to work.
     rel = rs.relative_to(REPO) if rs.is_relative_to(REPO) else rs
+    # A literal the Rust HOISTS into a named `[u16; N]` static is present exactly once on this
+    # side however many times the C spells it, because each use site is `NAME.as_ptr()` and not
+    # a literal at all. So for those the COUNT carries no information -- it is 1 whether the
+    # translation kept all four uses or none -- and comparing it only manufactured findings:
+    # userenv's `SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList` read as "10x in the
+    # C and 5x here" purely because the C repeats the string and the Rust names it.
+    #
+    # Dropping to PRESENCE for these loses no signal. It is not a weakening of the permutation
+    # check either: a permuted literal (undname's `pascal` -> `__stdcall`) sits inline in a
+    # match arm, is never hoisted, and is still compared by count.
+    hoisted = set(_u16_array_literals(strip_rust_comments(rs.read_text(errors="replace"))))
     for lit in sorted(cl - rl_seen):
+        if lit in hoisted and rl_seen[lit] >= 1:
+            continue
         findings.append(
             f"MISSING: {rel}: {lit!r} appears {cl[lit]}x in {c.name} and {rl_seen[lit]}x here"
         )
     for lit in sorted(rl - cl):
+        if lit in hoisted and cl[lit] >= 1:
+            continue
         findings.append(f"EXTRA: {rel}: {lit!r} appears {rl[lit]}x here and {cl[lit]}x in {c.name}")
     return findings
 

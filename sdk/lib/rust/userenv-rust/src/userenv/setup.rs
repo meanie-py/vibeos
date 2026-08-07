@@ -324,39 +324,34 @@ static mut CommonShellFolders: [FOLDERDATA; 9] = unsafe {
     ]
 };
 
+// The C has ONE StandardProfiles table (setup.c:81). This crate shipped TWO: this one, and a
+// `standardProfiles` differing only in case, built from the aligned statics below but carrying
+// hRootKey `transmute(-2147483646)` / `transmute(-2147483648)` -- HKEY_LOCAL_MACHINE and
+// HKEY_CLASSES_ROOT, where the C says HKEY_USERS and HKEY_LOCAL_MACHINE. It was dead (nothing
+// referenced it) so nothing misbehaved, but a wrong copy of the registry-root table is a trap
+// for the next reader, and `cargo check` cannot see either problem. Collapsed to one table:
+// the correct roots, over the `[u16; N]` statics rather than alignment-1 byte strings.
 static mut StandardProfiles: [PROFILEPARAMS; 2] = unsafe {
     [
         _PROFILEPARAMS {
-            pszProfileName: b"D\0e\0f\0a\0u\0l\0t\0 \0U\0s\0e\0r\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszProfileRegValue: b"D\0e\0f\0a\0u\0l\0t\0U\0s\0e\0r\0P\0r\0o\0f\0i\0l\0e\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszEnvVar: b"U\0S\0E\0R\0P\0R\0O\0F\0I\0L\0E\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszEnvVarProfilePath: b"%\0U\0S\0E\0R\0P\0R\0O\0F\0I\0L\0E\0%\0\0\0"
-                .as_ptr() as LPCWSTR,
+            pszProfileName: DEFAULT_USER_NAME.as_ptr(),
+            pszProfileRegValue: DEFAULT_USER_PROFILE_VALUE.as_ptr(),
+            pszEnvVar: ENV_USERPROFILE2.as_ptr(),
+            pszEnvVarProfilePath: ENV_USERPROFILE_PCT.as_ptr(),
             pFolderList: &raw const UserShellFolders as PFOLDERDATA,
             hRootKey: HKEY_USERS,
-            pszShellFoldersKey: b".\0D\0e\0f\0a\0u\0l\0t\0\\\0S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszUserShellFoldersKey: b".\0D\0e\0f\0a\0u\0l\0t\0\\\0S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0U\0s\0e\0r\0 \0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0"
-                .as_ptr() as LPCWSTR,
+            pszShellFoldersKey: DEFAULT_SHELL_FOLDERS_KEY.as_ptr(),
+            pszUserShellFoldersKey: DEFAULT_USER_SHELL_FOLDERS_KEY.as_ptr(),
         },
         _PROFILEPARAMS {
-            pszProfileName: b"A\0l\0l\0 \0U\0s\0e\0r\0s\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszProfileRegValue: b"A\0l\0l\0U\0s\0e\0r\0s\0P\0r\0o\0f\0i\0l\0e\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszEnvVar: b"A\0L\0L\0U\0S\0E\0R\0S\0P\0R\0O\0F\0I\0L\0E\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszEnvVarProfilePath: b"%\0A\0L\0L\0U\0S\0E\0R\0S\0P\0R\0O\0F\0I\0L\0E\0%\0\0\0"
-                .as_ptr() as LPCWSTR,
+            pszProfileName: ALL_USERS_NAME.as_ptr(),
+            pszProfileRegValue: ALL_USERS_PROFILE_VALUE.as_ptr(),
+            pszEnvVar: ENV_ALLUSERSPROFILE2.as_ptr(),
+            pszEnvVarProfilePath: ENV_ALLUSERSPROFILE_PCT.as_ptr(),
             pFolderList: &raw const CommonShellFolders as PFOLDERDATA,
             hRootKey: HKEY_LOCAL_MACHINE,
-            pszShellFoldersKey: b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0"
-                .as_ptr() as LPCWSTR,
-            pszUserShellFoldersKey: b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0U\0s\0e\0r\0 \0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0"
-                .as_ptr() as LPCWSTR,
+            pszShellFoldersKey: SHELL_FOLDERS_KEY.as_ptr(),
+            pszUserShellFoldersKey: USER_SHELL_FOLDERS_KEY2.as_ptr(),
         },
     ]
 };
@@ -488,28 +483,6 @@ static USER_SHELL_FOLDERS_KEY2: [u16; 70] = [
     b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
 ];
 
-pub static mut standardProfiles: [_PROFILEPARAMS; 2] = [
-    _PROFILEPARAMS {
-        pszProfileName: DEFAULT_USER_NAME.as_ptr(),
-        pszProfileRegValue: DEFAULT_USER_PROFILE_VALUE.as_ptr(),
-        pszEnvVar: ENV_USERPROFILE2.as_ptr(),
-        pszEnvVarProfilePath: ENV_USERPROFILE_PCT.as_ptr(),
-        pFolderList: unsafe { &UserShellFolders[0] as *const _ as *mut _ },
-        hRootKey: unsafe { core::mem::transmute(-2147483646isize) },
-        pszShellFoldersKey: DEFAULT_SHELL_FOLDERS_KEY.as_ptr(),
-        pszUserShellFoldersKey: DEFAULT_USER_SHELL_FOLDERS_KEY.as_ptr(),
-    },
-    _PROFILEPARAMS {
-        pszProfileName: ALL_USERS_NAME.as_ptr(),
-        pszProfileRegValue: ALL_USERS_PROFILE_VALUE.as_ptr(),
-        pszEnvVar: ENV_ALLUSERSPROFILE2.as_ptr(),
-        pszEnvVarProfilePath: ENV_ALLUSERSPROFILE_PCT.as_ptr(),
-        pFolderList: unsafe { &CommonShellFolders[0] as *const _ as *mut _ },
-        hRootKey: unsafe { core::mem::transmute(-2147483648isize) },
-        pszShellFoldersKey: SHELL_FOLDERS_KEY.as_ptr(),
-        pszUserShellFoldersKey: USER_SHELL_FOLDERS_KEY2.as_ptr(),
-    },
-];
 
 const IDS_PROFILEPATH: UINT = 0;
 unsafe extern "C" fn CreateStandardProfile(

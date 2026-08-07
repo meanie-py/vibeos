@@ -5,10 +5,13 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 pub const MAX_SCREENSAVERS: usize = 100;
 
-pub static szPreviewWndClass: [TCHAR; 12] = [
+// 13, not 12 -- same dropped NUL as monslctl's szMonitorSelWndClass. The C sizes
+// `TEXT("SSDemoParent")` at 13 (screensaver.c:15); this array held only the 12 characters,
+// leaving RegisterClass, CreateWindowEx and UnregisterClass to run off the end.
+pub static szPreviewWndClass: [TCHAR; 13] = [
     b'S' as TCHAR, b'S' as TCHAR, b'D' as TCHAR, b'e' as TCHAR,
     b'm' as TCHAR, b'o' as TCHAR, b'P' as TCHAR, b'a' as TCHAR,
-    b'r' as TCHAR, b'e' as TCHAR, b'n' as TCHAR, b't' as TCHAR,
+    b'r' as TCHAR, b'e' as TCHAR, b'n' as TCHAR, b't' as TCHAR, 0,
 ];
 
 #[repr(C)]

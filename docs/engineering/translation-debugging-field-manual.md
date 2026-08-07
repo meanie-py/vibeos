@@ -1290,6 +1290,34 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   had come back as `\Device`, losing the trailing separator that `wcscat` appends the adapter
   UUID after. It is ~20 lines, it needs no annotation in the Rust, and unlike a count it cannot
   report a green over zero comparisons.
+- **A FOURTH mis-encoding: UTF-16 *bytes* used as u16 ELEMENTS.** `let n: &[u16] =
+  &[0x43,0x00,0x68,0x00,0x61,0x00,…]` looks like the three above and is worse: the type is
+  `u16`, so element 1 IS a code unit and IS zero. Every such string terminates after its first
+  character. wkssvc shipped 39 of them — `SaveWorkstationInfo` opened key `"S"` instead of
+  `System\CurrentControlSet\Services\LanmanWorkstation\Parameters` and wrote every value under
+  a one-character name. It never looked broken because the bad key made `RegOpenKeyExW` fail
+  and the function returned early, so the whole routine was a silent no-op. Decidable with no
+  oracle at all: **in a `[u16]`, every second element being 0 is always this bug**, because
+  real UTF-16 puts the zero in the high byte of ONE unit, not in a unit of its own.
+- **An array sized to the character count drops the NUL, and `scan_wide_literals` cannot see
+  it if the element type is spelled `TCHAR`/`WCHAR`.** desk shipped
+  `szMonitorSelWndClass: [TCHAR; 18] = ['M',…,'S']` for `TEXT("MONITORSELWNDCLASS")`, which
+  the C compiler sizes at 19. RegisterClass/CreateWindow/UnregisterClass then read past the
+  array into whatever `.rdata` follows, and it survives only for as long as all three read the
+  same garbage. `scan_wide_literals`'s `_DECL` matches a literal `u16` element type only, so
+  the alias spellings are invisible to it — that is the gap to mechanise, not the alignment
+  question. Note the alignment bullet above is about the KERNEL `ProbeForRead` path, which
+  genuinely enforces WCHAR alignment; for a user-mode DLL that just hands the pointer to a
+  Win32 callee, alignment-1 is a readability problem, not a fault.
+- **The multiset oracle only works if you detect by SHAPE, not by declaration syntax.**
+  `verify_translation_literals.py` covers 29 modules now, not just msvcrt. Getting it there
+  meant abandoning per-spelling regexes: this tree writes the same wide literal as
+  `static N: [u16; K]`, `const N: &[u16]`, `let n: [u16; K]`, an untyped `&[0x6Eu16, …]`, and
+  a bare `['S' as u16, …].as_ptr()` with no binding at all. Each spelling the matcher had not
+  met produced a WALL of confident MISSING findings against present, correct code — which is
+  the failure mode to fear, because the real two are in there and nobody digs to them. Match
+  instead on "bracketed list of integer-ish elements, NUL-terminated, otherwise text": one
+  rule, all five spellings, and ordinary numeric tables stay out.
 
 ### Bitfields and unions
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
