@@ -156,6 +156,17 @@ name = "misc"
 path = "tests/misc.rs"
 harness = false
 
+# math.c — reference TU #10. Its own binary because it INSTALLS A HANDLER through
+# `__setusermatherr` and drives the process MXCSR: both are global state that would follow
+# another suite's rows into a wrong verdict, and the handler in particular has to be the only
+# one registered for the recorded `struct _exception` stream to mean anything. `harness = false`
+# gives it one thread, without which the MXCSR snapshot/restore around each `_control87` row
+# would race — plus the same getenv reason as the rest.
+[[test]]
+name = "math"
+path = "tests/math.rs"
+harness = false
+
 # Wave 18a — file.c's stream layer. Its own binary because it is the only suite that
 # drives the CRT's fd table and FILE ring through hundreds of open/close cycles, and both
 # sides' tables have to start empty and stay in lockstep for the fd numbers to be

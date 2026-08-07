@@ -462,21 +462,27 @@ int HeapFree(void *heap, unsigned int flags, void *ptr)
  * msvcrt writes no terminator and returns -1 when the result does not fit, where C99
  * NUL-terminates and returns the length it wanted. Modelling C99 here would make a
  * short-buffer row pass on the reference and fail in the DLL.
+ *
+ * That contract now lives in ONE place — refimpl.c's `msvcrt_ref_vsnprintf` — and both
+ * sides call it. It used to be written out twice, and the two copies drifted: this one
+ * asked glibc for `count + 1` bytes so the NUL would have a slot, which puts that NUL at
+ * `str[count]`, ONE BYTE PAST the caller's buffer. `_ecvt`/`_fcvt` print into a `char
+ * buf[80]` on the stack, so every full-width conversion smashed the byte after it — and
+ * because the reference had the other copy, truncating a digit early instead, the first
+ * math.c row to reach it reported the two host stand-ins disagreeing and read as a bug in
+ * the Rust. Sharing is correct here for the reason refimpl.c gives at length: this is
+ * environment standing in for an engine neither side owns in this binary.
  */
+int msvcrt_ref_vsnprintf(char *str, size_t len, const char *format, va_list ap);
+
 int _snprintf(char *str, size_t count, const char *format, ...)
 {
     va_list ap;
     int n;
 
     va_start(ap, format);
-    n = vsnprintf(str, count + 1, format, ap);   /* +1: ask glibc for the NUL slot */
+    n = msvcrt_ref_vsnprintf(str, count, format, ap);
     va_end(ap);
-
-    if (n < 0) return -1;
-    if ((size_t)n > count) {
-        /* Did not fit. msvcrt leaves the buffer unterminated and reports -1. */
-        return -1;
-    }
     return n;
 }
 
@@ -527,14 +533,17 @@ short _fdclass(float x)
     return msvcrt_classify(fpclassify(x));
 }
 
-/* `_scprintf` is "how long would this printf be" — vsnprintf into nothing. */
+/* `_scprintf` is "how long would this printf be" — one body, shared with the reference
+ * (refimpl.c's `msvcrt_ref_scprintf`) for the reason `_snprintf` above gives. */
+int msvcrt_ref_scprintf(const char *format, ...);
+
 int _scprintf(const char *format, ...)
 {
     va_list ap;
     int n;
 
     va_start(ap, format);
-    n = vsnprintf(NULL, 0, format, ap);
+    n = msvcrt_ref_vsnprintf((char *)0, 0, format, ap);
     va_end(ap);
     return n;
 }

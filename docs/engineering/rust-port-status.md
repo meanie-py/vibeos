@@ -189,6 +189,41 @@ the final code unit's high half out of bounds and PATH search silently matched n
 every `use_path=1` spawn; and `_wsystem`'s `L" /c "` was plain ASCII cast to `*const wchar_t`.
 Both are now caught by `scan_wide_literals.py` — see the field manual.
 
+**GRADED 2026-08-07 — reference TU #10, 2,247 rows, and every finding was in the ORACLE.**
+`tests/math.rs` drives the 37 exports whose reference twin exists on the host (the rest —
+`_isnan`, `_finite`, `abs`, `div`, `ldexp`, … — are `#[cfg(any())]` here because cnt-rust's
+`cabi` owns them in the DLL, and cnt-difftest grades them; a row for one does not fail, it
+fails to LINK). Most bodies here are `if (isnan(x)) return math_error(…); return <libm>(x);`
+and both sides reach the same host libm, so what is actually graded is the wrapper: THREE
+views of one call — the return value compared BITWISE (a float `==` is blind to both NaN and
+`-0.0`, which is most of what this file computes), errno through the correct per-side
+accessor, and the whole `struct _exception` captured by installing a recording handler through
+msvcrt's own `__setusermatherr`. The third view is the one that sees a permutation, which is
+the class this file is known to carry — and a $0 cross-check ran first: all 11 `math_error`
+call sites tabulated on both sides, type/name/arg1/arg2/retval, 0 divergent.
+
+Four things it turned up, none of them a port bug:
+- **`sqrt(-1.0)`'s NaN sign is a COMPILER FOLD, and the reference's compiler is not the
+  shipping one.** `ret_nan(TRUE)` is `(x - x) / (x - x)`; host gcc folds it to `-NaN`,
+  llvm-mingw clang (measured, at msvcrt's own flags) and rustc to `+NaN`. The subject matches
+  the binary that ships. The row pins the subject to clang's constant absolutely and lets the
+  reference differ in that one bit.
+- **The reference's `_snprintf` and the subject's were two different host stand-ins**, drifted
+  in opposite directions — one truncating a digit early, one writing its NUL one byte PAST the
+  caller's buffer. Now one shared body: the host's formatter under msvcrt's buffer contract.
+- **`_gcvt_s`'s reference path segfaulted** the first time anything drove it, on the flat-vs-
+  SysV `va_list` incoherence; fixed with a per-TU `-include`, because a shared redirect would
+  rename wcs.c's own definition.
+- **`ldexp`/`_fpclass`/`div`/`ldiv` sit in `#ifndef __REACTOS__`** and the textual scrape put
+  them on the rename wall anyway, so `_scalb`'s one-line body called a `ref_ldexp` that nothing
+  defines. The guarded set is now derived and subtracted, and pinned.
+
+Two domains are skipped by predicate and counted (190 cases), both the C's own: inputs that
+overflow its 80-byte scratch and then read the buffer back past the terminator, and `_s`
+destinations smaller than the conversion, where msvcrt's copy loop has no `else` and spins
+forever — faithfully, in the Rust too. All four findings are in the field manual under "The
+oracle can be MISCOMPILED by the host's own headers".
+
 **Wave 20 (2026-08-03) — math.c FLIPPED, and the object symbol table is why it is correct.**
 `msvcrt-crt-rust/src/msvcrt/math.rs` is now `pub mod math;`. The banked translation from
 2026-08-02 (91 exports, $2.29) needed four kinds of work before it could go in, and only the
