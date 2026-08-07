@@ -87,6 +87,7 @@ typedef int                 BOOL;
 #define FALSE 0
 #endif
 typedef unsigned char       UCHAR;
+typedef unsigned char       BOOLEAN;   /* NT's one-byte bool; RtlGenRandom returns it */
 typedef unsigned char       BYTE;
 typedef unsigned short      WORD;
 typedef unsigned int        DWORD;   /* Windows DWORD is 32-bit */
@@ -242,7 +243,14 @@ typedef long            LONG_PTR;
 /* _mbtowc_l left this namespace when mbcs.c became a reference TU: mbcs.c DEFINES
  * it, so it is a reference EXPORT and the prelude renames it to ref__mbtowc_l.
  * Same move _isspace_l/_tolower_l/_toupper_l made for ctype.c above. */
-#define _get_output_format         msvcrt_ref__get_output_format
+/* `_get_output_format` left this namespace when misc.c became reference TU #9, and the
+ * upgrade is the same one ctype.c and mbcs.c made: refimpl.c used to hand-stub it as a
+ * constant 0, so wcs.c's `%e` exponent width was graded against a value THIS HARNESS chose.
+ * misc.c defines the real one over the real `output_format` static that `_set_output_format`
+ * writes, so it is now a reference EXPORT and the prelude renames it to
+ * `ref__get_output_format`. Leaving the #define here would silently win — the refstub is
+ * included AFTER the prelude — and misc.c would emit `msvcrt_ref__get_output_format` while
+ * every `ref__get_output_format` reference failed to link. */
 #define get_current_locale_noalloc msvcrt_ref_get_current_locale_noalloc
 #define free_locale_noalloc        msvcrt_ref_free_locale_noalloc
 #define MSVCRT__pwctype            msvcrt_ref__pwctype
@@ -410,6 +418,10 @@ typedef struct __thread_data {
     char           *strtok_next;
     wchar_t        *wcstok_next;
     unsigned char  *mbstok_next;
+    /* misc.c's `rand`/`srand` LCG state, added when misc.c became reference TU #9. The
+     * subject's copy is msvcrt-sys's real `thread_data_t`; this one carries only what the
+     * reference TUs touch, which is why the field arrives per-TU rather than up front. */
+    unsigned int    random_seed;
     int             locale_flags;
     pthreadmbcinfo  mbcinfo;
     /* file.c's tmpnam/_wtmpnam scratch — same slots as the real
@@ -454,6 +466,23 @@ int __cdecl _toupper_l(int c, _locale_t locale);
  * refimpl.c includes this header WITHOUT the prelude, so that macro is live in it. The
  * prelude's own `#define isdigit ref_isdigit` is object-like and still applies. */
 int __cdecl (isdigit)(int c);
+
+/* ── what the misc.c reference TU needs ────────────────────────────────
+ *
+ * Three kernel32 entry points and the two page-protection bits `_resetstkoflw` passes.
+ * They were ALREADY THERE — fileimpl.c wrote them for the SUBJECT's misc.rs, under a
+ * comment that names this exact wave ("The four misc.c needs … qsort, bsearch, _lsearch
+ * and rand are pure algorithms with real oracles"). So the reference only needs the
+ * prototypes; the definitions stay where they are, one each, SHARED, for the reason the
+ * CompareStringA note above gives: they are the ENVIRONMENT and this crate does not flip kernel32, so modelling them
+ * twice could only make both sides wrong the same way. What the rows grade is the contract
+ * AROUND the call — `_beep`'s argument forwarding, `_sleep`'s zero-to-one adjustment,
+ * `_resetstkoflw`'s return — not our model of kernel32. */
+void  WINAPI Beep(DWORD dwFreq, DWORD dwDuration);
+void  WINAPI Sleep(DWORD dwMilliseconds);
+BOOL  WINAPI VirtualProtect(void *addr, ULONG_PTR size, DWORD prot, DWORD *old);
+#define PAGE_READWRITE 0x04
+#define PAGE_GUARD     0x100
 
 /* ── what the undname.c reference TU needs ─────────────────────────────
  *
