@@ -1,0 +1,5 @@
+dll/win32/msvcrt/undname.c:918: `sym->current` is incremented inside the argument list of `get_calling_convention` and read again in the same expression — check the Rust performs the side effect BEFORE the dependent operand
+dll/win32/msvcrt/undname.c:1428: `sym->current` is incremented inside the argument list of `get_calling_convention` and read again in the same expression — check the Rust performs the side effect BEFORE the dependent operand
+sdk/lib/crt/wine/undname.c:890: `sym->current` is incremented inside the argument list of `get_calling_convention` and read again in the same expression — check the Rust performs the side effect BEFORE the dependent operand
+sdk/lib/crt/wine/undname.c:915: `sym->current` is incremented inside the argument list of `get_calling_convention` and read again in the same expression — check the Rust performs the side effect BEFORE the dependent operand
+sdk/lib/crt/wine/undname.c:1295: `sym->current` is incremented inside the argument list of `get_calling_convention` and read again in the same expression — check the Rust performs the side effect BEFORE the dependent operand

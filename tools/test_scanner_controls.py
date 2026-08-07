@@ -1080,6 +1080,15 @@ UNCOVERED: dict[str, str] = {
         "(float exponent, lifetime tick, nested block comment, raw string), and each is "
         "pinned by the shape that actually produced a false positive."
     ),
+    "scan_arg_side_effects": (
+        "main() walks the real tree and compares against a baseline, but everything that "
+        "decides a finding — the comment/string tokenizer, the logical-line joiner, the "
+        "enclosing-call walk and the for-clause exclusion — is a pure function over a "
+        "string, driven directly in tools/test_scan_arg_side_effects.py (9 tests). Its "
+        "positive control is the REAL msvcrt demangler bug spelled across four lines, and "
+        "each negative control is a shape that made an earlier draft useless (45 findings "
+        "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
+    ),
     "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_inline_flag_literals": "needs the sdk/include header catalog to know the right value",

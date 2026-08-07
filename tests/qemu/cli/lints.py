@@ -735,6 +735,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
+    # observes. Rust has no `++`, so the translation must split it, and where the second
+    # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`
+    # condition and every function signature then parsed its return type from the
+    # calling-convention letter. Both forms advance the cursor exactly once, so no value-based
+    # check can see it; a differential row found it after it had shipped and booted.
+    # Baseline holds the 5 known sites (2 in msvcrt's undname.c, both since verified; 3 in the
+    # un-flipped sdk/lib/crt copy of the same file); a NEW one is the thing to look at.
+    ase = repo / "tools" / "scan_arg_side_effects.py"
+    specs.append(
+        (
+            "scan_arg_side_effects",
+            [py, str(ase), "--lint"] if ase.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
     # link into the kernel PE are masked by --allow-multiple-definition (which is
     # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
