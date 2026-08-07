@@ -425,7 +425,7 @@ silently keeps the C copy.** `msvcrt.spec:715` says `@ extern _mbctype MSVCRT_mb
 export name and the backing symbol differ, and only the backing symbol is what a definition
 must be spelled. mbcs.rs defined `pub static mut MSVCRT_mbctype` without `#[no_mangle]`, so the
 Rust array got a mangled private name, the export resolved to mbcs.c's copy, and the shipping
-amd64 DLL carried **two 257-byte arrays at different RVAs** — `_setmbcp_l` (Rust) writing one
+amd64 DLL carried **two 257-byte arrays at different RVAs** — `_setmbcp` (Rust) writing one
 and the exported `_mbctype` naming the other, permanently zero. (`__p__mbctype` is *not* part
 of the bug: it returns the per-thread `mbcinfo->mbctype`, a different table.) Nothing failed
 to build, link, or boot, because the table IS all-zero in every single-byte locale; it only
@@ -436,6 +436,32 @@ Note that a symbol being in the `.spec` is *not* the check: `_mbctype` was there
 `tools/verify_cohab_coverage.py` now reads the second field of an `extern` line, which is the
 one directive whose export name and backing symbol differ — before that fix, the tool built to
 catch wrong-name flips was blind to the only shape where the name is written down twice.
+
+**Sibling failure in the gate itself: a coverage checker that DERIVES the C object from the
+module name fails open when the derivation misses.** `verify_cohab_coverage` resolved
+`<mod>.c.obj` and treated "not a file" as a bare `continue`, so any module whose Rust name is
+not its C basename was compared against nothing and reported clean — indistinguishable from
+passing. It surfaced when `reactos/misc.c` had to become `reactos_misc.rs` (`misc.rs` is
+msvcrt's *own* Wine-derived misc.c) and `reactos/system.cpp` is not a `.c` at all. **The rule
+for any binary-oracle gate: "I could not find the thing to compare against" is a finding, not
+a skip.** The distinction it does have to keep is arch-conditional compilation — `except_i386.c`
+genuinely has no object on arm64 — so the discriminator is whether the C SOURCE exists in the
+tree, with a short declared list for modules that have no C original at all (`cpp_rtti`,
+`seh_i386`), each carrying its reason. Note the shape is the same as the `extern` bug directly
+above it: both are the gate silently answering a question it never actually asked.
+
+**A C++ TU is not automatically a C++ substrate problem — check what crosses the boundary
+before pricing the lane.** `reactos/system.cpp` sat unported for months labelled "the C++
+lane", and the label was the only thing blocking it: no RTTI, no vtable, no exception object,
+no mangled name on any exported symbol — `system`/`_wsystem` are `extern "C"`, and `throw()`
+is an empty exception specification rather than a use of exceptions. All the C++-ness was a
+`template <typename Character>` instantiated at exactly two types and resolved at compile
+time, which is a Rust generic over a trait. **The cheap check is `llvm-nm` on the object**: if
+the only `_Z`/`?`-mangled globals are ones nothing outside the TU references, the C++ never
+reaches the linker and the port is a plain-C port. The real hazard turned out to be naming, not
+language — process.rs already held Wine's rival `system`/`_wsystem` (correctly `#[cfg(any())]`,
+since process.c wraps them in `#ifndef __REACTOS__`), and two live definitions in one archive
+are settled by member order.
 
 **Sibling failure: an `extern` naming a symbol THIS TREE does not export.** `cargo check` and
 `cargo build` both pass — an extern declaration is a promise to the linker, and the crate link
@@ -4488,6 +4514,17 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **Un-stubbing a global the harness defined as NULL is only HALF the fix; the other half is
+  one per side.** msvcrt-difftest defined `MSVCRT_locale = 0` so mbcs.c would link, and that
+  NULL is why `_setmbcp` was refused for months — its non-thread arm dereferences it. But that
+  arm ends in `memcpy(MSVCRT_mbctype, MSVCRT_locale->mbcinfo->mbctype, …)`, so simply giving
+  the shared global some storage would have had both sides installing into the same slot and
+  each reading back what the other wrote: a row comparing a table against itself, green
+  whatever either side did — and *more* dangerous than the refusal, because it would have
+  looked like coverage. The discriminator is the one this file already states for
+  `MSVCRT_mbctype` and `MSVCRT__sys_errlist`: **shared is right for state both sides must
+  AGREE on (locale environment, kernel32 models), and wrong for anything the code under test
+  WRITES.** Ask who writes it, not what it is.
 - **A branch reached by NO row is a case that cannot fail, and rows are cheap enough that you
   will believe you covered it.** msvcrt's `_s` printf shells take their truncation branch only
   when `ret < 0 || ret == len`, and their ERANGE arm inside it only when `count > sizeOfBuffer`.

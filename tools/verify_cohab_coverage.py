@@ -98,6 +98,20 @@ FAMILIES = [
             "sdk/lib/rust/msvcrt-crt-cargo/src",
             "sdk/lib/rust/cnt-rust/src",
         ],
+        # Modules whose C twin is not `<mod>.c.obj`, and the mapping is not derivable:
+        # `reactos/misc.c` collides with msvcrt's own `misc.c` so its Rust module had to be
+        # named differently, and `system.cpp` is not even a `.c`.
+        "objects": {
+            "reactos_misc": "reactos/misc.c.obj",
+            "reactos_system": "reactos/system.cpp.obj",
+        },
+        # Rust modules with NO C original anywhere — nothing to compare them against, so
+        # "no object" is the truth about them rather than a lookup that failed. Each needs a
+        # reason, because the alternative reading of a missing object is a typo.
+        "no_c_twin": {
+            "cpp_rtti": "the RTTI half of cpp.c; cpp.c.obj carries both halves' symbols",
+            "seh_i386": "i386 SEH substrate written directly in Rust, no C original",
+        },
     },
 ]
 
@@ -240,8 +254,25 @@ def check_family(fam: dict, arch: str, nm: Path) -> list[str]:
 
     findings = []
     for mod in _flipped_modules(fam):
-        obj = obj_dir / f"{mod}.c.obj"
+        if mod in fam.get("no_c_twin", {}):
+            continue
+        obj_rel = fam.get("objects", {}).get(mod, f"{mod}.c.obj")
+        obj = obj_dir / obj_rel
         if not obj.is_file():
+            # Two very different reasons an object can be absent, and skipping both alike is
+            # how a flipped module gets checked against NOTHING and still reports clean. If
+            # the C source exists, this arch simply does not compile it (`except_i386.c` on
+            # arm64) and there is nothing to check. If it does not, the module name does not
+            # name any C file in the tree — a rename or a typo — and its coverage is zero.
+            src = ROOT / fam["obj_root"] / obj_rel.removesuffix(".obj")
+            if src.is_file():
+                continue
+            findings.append(
+                f"{fam['rust_dir']}/{mod}.rs: [{arch}] flipped, but no C object and no C "
+                f"source at {fam['obj_root']}/{obj_rel.removesuffix('.obj')} — this module "
+                f"is being checked against nothing. Add it to the family's `objects` map if "
+                f"its twin is named differently, or to `no_c_twin` if it has none"
+            )
             continue
         for kind, raw in _symbols(nm, obj, "defined"):
             if not kind.isupper():
@@ -253,7 +284,7 @@ def check_family(fam: dict, arch: str, nm: Path) -> list[str]:
                 continue  # defined-but-dead in the C too; nothing goes looking for it
             findings.append(
                 f"{fam['rust_dir']}/{mod}.rs: [{arch}] nothing that links ahead of "
-                f"{Path(fam['obj_dir']).name} defines `{raw}`, which {mod}.c.obj exports and "
+                f"{Path(fam['obj_dir']).name} defines `{raw}`, which {obj_rel} exports and "
                 f"something references — the C object gets pulled back in and duplicates "
                 f"every other symbol in this file"
             )

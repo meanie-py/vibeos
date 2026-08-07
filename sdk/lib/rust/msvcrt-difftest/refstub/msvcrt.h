@@ -212,6 +212,12 @@ typedef long            LONG_PTR;
  * translation bug, and only separate storage can catch that. */
 #define get_mbcinfo             msvcrt_ref_get_mbcinfo
 #define msvcrt_get_thread_data  msvcrt_ref_get_thread_data
+/* Same reasoning as get_mbcinfo, one level up: `_setmbcp`'s non-thread arm installs into
+ * `MSVCRT_locale->mbcinfo` and then copies the result into the exported `MSVCRT_mbctype`.
+ * Shared, the two sides would install into the same slot and each read back what the
+ * other wrote — a row comparing a table against itself, which is what renaming
+ * `MSVCRT_mbctype` for the reference was already done to prevent. */
+#define MSVCRT_locale           msvcrt_ref_locale
 /* CompareStringA / LCMapStringA / …W / GetStringTypeW / WideCharToMultiByte USED to be
  * namespaced here.  As of wave 11 they are SHARED — one definition (refimpl.c), called by
  * both sides.

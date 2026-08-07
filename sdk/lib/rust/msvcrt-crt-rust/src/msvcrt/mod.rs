@@ -297,3 +297,22 @@ pub mod thread;
 // subsystem DllMain initialises — see Cargo.toml.
 #[cfg(feature = "dllmain")]
 pub mod main;
+
+// reactos/misc.c and reactos/system.cpp — the two files in this DLL that Wine never had, and
+// the last C bodies in msvcrt's own directory. Both hand-written: 189 lines between them,
+// against a substrate every earlier wave already built, so a paid translation would have been
+// spending money on the easiest code in the module.
+//
+// Their module names carry the DIRECTORY because both basenames are taken — `misc.rs` is
+// msvcrt's own Wine-derived misc.c, and process.rs holds Wine's `system`/`_wsystem` (gated
+// off; process.c wraps them in `#ifndef __REACTOS__`). Same names, different files, and
+// verify_cohab_coverage's `objects` map is what pairs each module with the right C object.
+//
+// `reactos_misc` needs `data` for `MSVCRT__winver`; `reactos_system` needs `stdio` for the
+// `_spawn*`/`_access_s` family and `dir-environ` for `getenv`/`_wgetenv`. Neither reaches the
+// host harness, which is the same limitation process.c and file.c already carry: the
+// substrate here is CreateProcess, not an algorithm.
+#[cfg(feature = "data")]
+pub mod reactos_misc;
+#[cfg(all(feature = "stdio", feature = "dir-environ"))]
+pub mod reactos_system;
