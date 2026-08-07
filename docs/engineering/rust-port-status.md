@@ -1329,6 +1329,32 @@ sitting in the island's `--allowlist-function` emitting NOTHING, silently — th
 `__INTRIN_INLINE`, a compiler intrinsic with no symbol. `prelude.rs` documented that and
 nobody removed the dead entries. An allowlist entry that matches nothing reads as coverage.
 
+**GRADED 2026-08-07, and it was wrong twice.** undname.c is reference TU #8 —
+`tests/undname.rs`, 63,216 rows over a corpus build.rs scrapes from every `.spec` in the
+repo (878 genuine mangled names; a hand-written list would grade the cases we thought of and
+would rot). It was the cheapest file in msvcrt to grade and the last one anybody worried
+about, which is the point: **the demangler had been shipping two wrong answers, and the first
+row that reached each one failed.**
+
+*Every identifier was one character short.* `sym->current - 1 - ptr` parses as
+`(current - 1) - ptr`; the translation folded `current - ptr` into `offset_from` and kept the
+`- 1` as well. `CBaseUnknown` demangled as `CBaseUnknow`, `_GUID` as `_GUI`.
+
+*Every function signature parsed its return type from the calling-convention letter.* The C
+is `get_calling_convention(*sym->current++, …) || demangle_datatype(sym, …)` — the `++` is a
+side effect inside the first ARGUMENT, so the cursor moves before the second operand reads
+the same `sym`. The translation hoisted it to after the whole `if`. `A` reads as a reference,
+so `void * (__cdecl*)(long)` came out ` & (__cdecl*)(void,long)` with the real return type
+shifted into the argument list. Both forms advance the cursor exactly once — nothing leaks,
+nothing faults, no scanner can see it. Field manual, "Semantic rewrites that flip meaning".
+
+The rows compare more than text: the returned POINTER's identity (with a buffer both sides
+must hand it back, and `if (buffer && buflen)` means a zero length takes the allocate path
+instead — both sides must choose the same), a per-side ALLOCATION LEDGER (memget/memfree are
+the harness's, so `und_free_all` releasing everything is directly observable and is the half
+no text comparison reaches), and truncation over five buffer sizes around the exact fit with
+a `0xAA` tail past the terminator.
+
 **Wave 25 (2026-08-04) — undname.c FLIPPED (1,788 lines, $0.55), and ctype.c CLOSED.**
 
 `undname.c` is the Visual C++ symbol demangler behind `__unDName`/`__unDNameEx`, and the
