@@ -160,9 +160,9 @@ unsafe extern "C" fn wcsrep(
     {
         return;
     }
-    StringCchCopyW(pwsStr, lenStr, b" \0".as_ptr() as *const u16);
+    StringCchCopyW(pwsStr, lenStr, w!(" ") as *const u16);
     StringCchCatW(pwsStr, lenStr, pwStr);
-    StringCchCatW(pwsStr, lenStr, b" \0".as_ptr() as *const u16);
+    StringCchCatW(pwsStr, lenStr, w!(" ") as *const u16);
 
     pwsFind = HeapAlloc(GetProcessHeap(), 0, (lenFind * core::mem::size_of::<u16>()) as SIZE_T) as PWSTR;
     if pwsFind.is_null()
@@ -170,9 +170,9 @@ unsafe extern "C" fn wcsrep(
         HeapFree(GetProcessHeap(), 0, pwsStr as *mut core::ffi::c_void);
         return;
     }
-    StringCchCopyW(pwsFind, lenFind, b" \0".as_ptr() as *const u16);
+    StringCchCopyW(pwsFind, lenFind, w!(" ") as *const u16);
     StringCchCatW(pwsFind, lenFind, pwFind);
-    StringCchCatW(pwsFind, lenFind, b" \0".as_ptr() as *const u16);
+    StringCchCatW(pwsFind, lenFind, w!(" ") as *const u16);
 
     pwsBuf = wcsistr_plus(pwsStr, pwsFind);
     if pwsBuf.is_null()
@@ -195,9 +195,9 @@ unsafe extern "C" fn wcsrep(
         HeapFree(GetProcessHeap(), 0, pwsStr as *mut core::ffi::c_void);
         return;
     }
-    StringCchCopyW(pwsReplace, lenReplace, b" \0".as_ptr() as *const u16);
+    StringCchCopyW(pwsReplace, lenReplace, w!(" ") as *const u16);
     StringCchCatW(pwsReplace, lenReplace, pwReplace);
-    StringCchCatW(pwsReplace, lenReplace, b" \0".as_ptr() as *const u16);
+    StringCchCatW(pwsReplace, lenReplace, w!(" ") as *const u16);
 
     loop
     {
@@ -221,6 +221,14 @@ unsafe extern "C" fn wcsrep(
     HeapFree(GetProcessHeap(), 0, pwsFind as *mut core::ffi::c_void);
     HeapFree(GetProcessHeap(), 0, pwsStr as *mut core::ffi::c_void);
 }
+// Hand-rewritten from dll/cpl/sysdm/smbios.c:257. The paid body replaced every `L"..."` in
+// both tables with TRUE or FALSE, dropped two Devices rows, and inverted the control flow --
+// `i` started at TRUE, a hit returned FALSE, and the fall-through returned TRUE, so the
+// predicate answered the exact opposite of the question. Sealing did not catch it: its
+// invariant is over the CONSTANT set, and a table of STRING LITERALS is not in that set, so
+// the model filled 71 pointer slots from the only tokens it had been given.
+// `BOOL` stays `u8` here as the rest of the file spells it; the function is `static` in the C
+// and has no ABI contract with anything outside this crate.
 unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut u8) -> u8 {
     struct GENERIC_NAME {
         pwName: PCWSTR,
@@ -228,80 +236,82 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
         bRemove: u8,
     }
 
-    static Vendors: [GENERIC_NAME; 20] = [
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-    ];
+    static Vendors: SyncTable<[GENERIC_NAME; 20]> = SyncTable([
+        GENERIC_NAME { pwName: w!("To Be Filled By O.E.M."), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("To Be Filled By O.E.M"), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("System manufacturer"), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Default string"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("LTD Delovoy Office"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Motherboard by ZOTAC"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Type2 - Board Manufacturer"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Type2 - Board Vendor Name1"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("BASE_BOARD_MANUFACTURER"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("$(DEFAULT_STRING)"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("DEPO Computers"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("-"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("N/A"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("OEM"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("O.E.M"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("empty"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("insyde"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Unknow"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Not Applicable"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("innotek GmbH"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+    ]);
 
-    static Devices: [GENERIC_NAME; 49] = [
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: 0 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: 0, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: FALSE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (FALSE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (TRUE) as u8, bRemove: (TRUE) as u8 },
-        GENERIC_NAME { pwName: TRUE as PCWSTR, bCaseSensitive: (FALSE) as u8, bRemove: (TRUE) as u8 },
-    ];
+    static Devices: SyncTable<[GENERIC_NAME; 51]> = SyncTable([
+        GENERIC_NAME { pwName: w!("To Be Filled By O.E.M."), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("To Be Filled By O.E.M"), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("All Series"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("System Product Name"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("System Name"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Default string"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Please change product name"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Computer"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("ChiefRiver Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("OakTrail Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("SharkBay Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("HuronRiver Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("SandyBridge Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Broadwell Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Kabylake Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Sabine Platform"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Base Board Product Name"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Base Board Version"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Type2 - Board Product Name1"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Type2 - Board Product Name"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Type2 - Board Version"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("MODEL_NAME"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("$(DEFAULT_STRING)"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("*"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("T"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("GEG"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("N/A"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("---"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("OEM"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("INVA"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("O.E.M"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("empty"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("DNSNB"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("12345"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("``````"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Uknown"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Desktop"), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Invalid"), bCaseSensitive: FALSE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Reserved"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Not Applicable"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("HaierComputer"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("DEPO Computers"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("InsydeH2O EFI BIOS"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("HP All-in-One"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("MP Server"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("0000000000"), bCaseSensitive: TRUE as u8, bRemove: TRUE as u8 },
+        GENERIC_NAME { pwName: w!("Aquarius Pro, Std, Elt Series"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Aquarius Server"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Aquarius Server G2"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("Super Server"), bCaseSensitive: TRUE as u8, bRemove: FALSE as u8 },
+        GENERIC_NAME { pwName: w!("POSITIVO MOBILE"), bCaseSensitive: FALSE as u8, bRemove: FALSE as u8 },
+    ]);
 
     let mut bMatch: u8;
     let mut i: u32;
@@ -310,7 +320,7 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
         *bRemove = (FALSE) as u8;
     }
 
-    i = (TRUE) as u32;
+    i = 0;
     while i < _countof!(Vendors) {
         if ven.is_null() {
             break;
@@ -324,12 +334,12 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
             if !bRemove.is_null() {
                 *bRemove = Vendors[i as usize].bRemove;
             }
-            return (FALSE) as u8;
+            return (TRUE) as u8;
         }
         i += 1;
     }
 
-    i = (TRUE) as u32;
+    i = 0;
     while i < _countof!(Devices) {
         if dev.is_null() {
             break;
@@ -343,32 +353,34 @@ unsafe extern "C" fn IsGenericSystemName(ven: PCWSTR, dev: PCWSTR, bRemove: *mut
             if !bRemove.is_null() {
                 *bRemove = Devices[i as usize].bRemove;
             }
-            return (FALSE) as u8;
+            return (TRUE) as u8;
         }
         i += 1;
     }
 
-    (TRUE) as u8
+    (FALSE) as u8
 }
 unsafe extern "C" fn AppendSystemFamily(pBuf: PWSTR, cchBuf: usize, DmiStrings: *mut PCSTR, dev: PWSTR) {
-    static KnownFamilies: [PCSTR; 4] = [
+    // Three more literals the paid body dropped: Aliases[3] is `L"IdeaCenter"`, the
+    // StringCchPrintfW format below is `L"%S"`, and the separator is `L" "`.
+    static KnownFamilies: SyncTable<[PCSTR; 4]> = SyncTable([
         b"Eee PC\0".as_ptr() as PCSTR,
         b"ThinkPad\0".as_ptr() as PCSTR,
         b"IdeaPad\0".as_ptr() as PCSTR,
         b"IdeaCentre\0".as_ptr() as PCSTR,
-    ];
-    static Aliases: [PCWSTR; 4] = [
+    ]);
+    static Aliases: SyncTable<[PCWSTR; 4]> = SyncTable([
         core::ptr::null(),
         core::ptr::null(),
         core::ptr::null(),
-        0 as PCWSTR,
-    ];
+        w!("IdeaCenter") as PCWSTR,
+    ]);
     let mut i: u32;
     let mut wideStr: [wchar_t; 128] = [0; 128];
 
     i = 0;
     while i < _countof!(KnownFamilies) as u32 {
-        StringCchPrintfW(wideStr.as_mut_ptr(), _countof!(wideStr) as usize, 0 as PCWSTR, *KnownFamilies.get_unchecked(i as usize));
+        StringCchPrintfW(wideStr.as_mut_ptr(), _countof!(wideStr) as usize, w!("%S"), *KnownFamilies.get_unchecked(i as usize));
 
         if wcsistr(dev, wideStr.as_ptr()) == core::ptr::null_mut() &&
             (*Aliases.get_unchecked(i as usize) == core::ptr::null() || wcsistr(dev, *Aliases.get_unchecked(i as usize)) == core::ptr::null_mut()) &&
@@ -376,7 +388,7 @@ unsafe extern "C" fn AppendSystemFamily(pBuf: PWSTR, cchBuf: usize, DmiStrings: 
             _stricmp(*DmiStrings.offset(SYS_FAMILY as isize), *KnownFamilies.get_unchecked(i as usize)) == 0
         {
             if wcslen(pBuf) > 0 && wcslen(dev) > 0 {
-                StringCchCatW(pBuf, cchBuf, b" \0".as_ptr() as *const u16);
+                StringCchCatW(pBuf, cchBuf, w!(" "));
             }
             StringCchCatW(pBuf, cchBuf, wideStr.as_ptr());
         }
@@ -414,89 +426,90 @@ unsafe extern "C" fn TrimNonPrintableProd(DmiString: PCHAR) -> BOOL {
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
-    static LongNames: [VENDOR_LONG_NAME; 25] = [
-        VENDOR_LONG_NAME { pwLongName: b"A\0S\0U\0S\0T\0e\0K\0\0\0".as_ptr() as PCWSTR, pwShortName: b"A\0S\0U\0S\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"F\0i\0r\0s\0t\0 \0I\0n\0t\0e\0r\0n\0a\0t\0i\0o\0n\0a\0l\0 \0C\0o\0m\0p\0u\0t\0e\0r\0\0\0".as_ptr() as PCWSTR, pwShortName: b"F\0I\0C\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"H\0e\0w\0l\0e\0t\0t\0-\0P\0a\0c\0k\0a\0r\0d\0\0\0".as_ptr() as PCWSTR, pwShortName: b"H\0P\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"M\0I\0C\0R\0O\0-\0S\0T\0A\0R\0\0\0".as_ptr() as PCWSTR, pwShortName: b"M\0S\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"S\0G\0I\0.\0C\0O\0M\0\0\0".as_ptr() as PCWSTR, pwShortName: b"S\0G\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"S\0i\0l\0i\0c\0o\0n\0 \0G\0r\0a\0p\0h\0i\0c\0s\0 \0I\0n\0t\0e\0r\0n\0a\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as PCWSTR, pwShortName: b"S\0G\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"I\0n\0t\0e\0l\0(\0R\0)\0 \0C\0l\0i\0e\0n\0t\0 \0S\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as PCWSTR, pwShortName: b"I\0n\0t\0e\0l\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0C\0o\0m\0p\0u\0t\0e\0r\0S\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as PCWSTR, pwShortName: b"I\0C\0S\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"B\0e\0r\0n\0e\0c\0k\0e\0r\0 \0+\0 \0R\0a\0i\0n\0e\0r\0 \0 \0I\0n\0d\0u\0s\0t\0r\0i\0e\0-\0E\0l\0e\0k\0t\0r\0o\0n\0i\0k\0\0\0".as_ptr() as PCWSTR, pwShortName: b"B\0e\0r\0n\0e\0c\0k\0e\0r\0 \0&\0 \0R\0a\0i\0n\0e\0r\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0H\0U\0W\0I\0 \0I\0N\0N\0O\0V\0A\0T\0I\0O\0N\0 \0A\0N\0D\0 \0T\0E\0C\0H\0N\0O\0L\0O\0G\0Y\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0H\0U\0W\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0H\0U\0W\0I\0 \0I\0N\0N\0O\0V\0A\0T\0I\0O\0N\0 \0L\0I\0M\0I\0T\0E\0D\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0H\0U\0W\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0H\0U\0W\0I\0 \0 \0I\0N\0N\0O\0V\0A\0T\0I\0O\0N\0 \0 \0L\0I\0M\0I\0T\0E\0D\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0H\0U\0W\0I\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"h\0t\0t\0p\0:\0/\0/\0w\0w\0w\0.\0a\0b\0i\0t\0.\0c\0o\0m\0.\0t\0w\0/\0\0\0".as_ptr() as PCWSTR, pwShortName: b"A\0B\0I\0T\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"h\0t\0t\0p\0:\0\\\0\\\0w\0w\0w\0.\0a\0b\0i\0t\0.\0c\0o\0m\0.\0t\0w\0\0\0".as_ptr() as PCWSTR, pwShortName: b"A\0B\0I\0T\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"w\0w\0w\0.\0a\0b\0i\0t\0.\0c\0o\0m\0.\0t\0w\0\0\0".as_ptr() as PCWSTR, pwShortName: b"A\0B\0I\0T\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0A\0S\0P\0E\0R\0 \0B\0I\0L\0G\0I\0S\0A\0Y\0A\0R\0 \0S\0I\0S\0T\0E\0M\0L\0E\0R\0I\0 \0A\0.\0S\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0a\0s\0p\0e\0r\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0o\0l\0o\0r\0f\0u\0l\0 \0T\0e\0c\0h\0n\0o\0l\0o\0g\0y\0 \0A\0n\0d\0 \0D\0e\0v\0e\0l\0o\0p\0m\0e\0n\0t\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0o\0l\0o\0r\0f\0u\0l\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"C\0o\0l\0o\0r\0f\0u\0l\0 \0Y\0u\0 \0G\0o\0n\0g\0 \0T\0e\0c\0h\0n\0o\0l\0o\0g\0y\0 \0A\0n\0d\0 \0D\0e\0v\0e\0l\0o\0p\0m\0e\0n\0t\0\0\0".as_ptr() as PCWSTR, pwShortName: b"C\0o\0l\0o\0r\0f\0u\0l\0 \0Y\0u\0 \0G\0o\0n\0g\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"H\0a\0i\0e\0r\0C\0o\0m\0p\0u\0t\0e\0r\0\0\0".as_ptr() as PCWSTR, pwShortName: b"H\0a\0i\0e\0r\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"H\0a\0i\0e\0r\0 \0I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0 \0T\0e\0c\0h\0n\0o\0l\0o\0g\0y\0 \0(\0S\0h\0e\0n\0 \0Z\0h\0e\0n\0)\0\0\0".as_ptr() as PCWSTR, pwShortName: b"H\0a\0i\0e\0r\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"H\0A\0S\0E\0E\0C\0O\0M\0P\0U\0T\0E\0R\0S\0\0\0".as_ptr() as PCWSTR, pwShortName: b"H\0a\0s\0e\0e\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"H\0E\0L\0I\0O\0S\0 \0B\0U\0S\0I\0N\0E\0S\0S\0 \0C\0O\0M\0P\0U\0T\0E\0R\0\0\0".as_ptr() as PCWSTR, pwShortName: b"H\0E\0L\0I\0O\0S\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"S\0h\0a\0n\0g\0h\0a\0i\0 \0Z\0o\0n\0g\0z\0h\0i\0 \0I\0n\0f\0o\0T\0e\0c\0h\0\0\0".as_ptr() as PCWSTR, pwShortName: b"Z\0o\0n\0g\0z\0h\0i\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"T\0S\0I\0N\0G\0 \0H\0U\0A\0 \0T\0O\0N\0G\0F\0A\0N\0G\0 \0C\0O\0.\0,\0L\0T\0D\0\0\0".as_ptr() as PCWSTR, pwShortName: b"T\0S\0I\0N\0G\0H\0U\0A\0 \0T\0O\0N\0G\0F\0A\0N\0G\0\0\0".as_ptr() as PCWSTR },
-        VENDOR_LONG_NAME { pwLongName: b"Y\0e\0s\0t\0o\0n\0 \0D\0i\0g\0i\0t\0a\0l\0 \0T\0e\0c\0h\0n\0o\0l\0o\0g\0y\0 \0C\0o\0.\0,\0L\0T\0D\0\0\0".as_ptr() as PCWSTR, pwShortName: b"Y\0e\0s\0t\0o\0n\0\0\0".as_ptr() as PCWSTR },
-    ];
-    static RedundantWords: [REDUNDANT_WORD; 52] = [
-        REDUNDANT_WORD { pwStr: b"C\0o\0r\0p\0o\0r\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0o\0m\0m\0u\0n\0i\0c\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0o\0m\0p\0u\0t\0e\0r\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0o\0m\0p\0u\0t\0e\0r\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"G\0r\0o\0u\0p\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0l\0o\0u\0d\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0e\0n\0t\0e\0r\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"M\0i\0c\0r\0o\0s\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0f\0o\0s\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"D\0i\0g\0i\0t\0a\0l\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"E\0l\0e\0c\0t\0r\0o\0n\0i\0c\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"E\0l\0e\0c\0t\0r\0i\0c\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"E\0l\0e\0k\0t\0r\0o\0n\0i\0k\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0o\0f\0t\0w\0a\0r\0e\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"F\0o\0u\0n\0d\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0t\0e\0r\0n\0a\0t\0i\0o\0n\0a\0l\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0t\0e\0r\0a\0n\0t\0o\0n\0a\0l\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0N\0T\0E\0R\0A\0N\0T\0I\0O\0N\0A\0L\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0d\0u\0s\0t\0r\0i\0a\0l\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0d\0u\0s\0t\0r\0i\0e\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0f\0o\0r\0m\0a\0t\0i\0o\0n\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0f\0o\0r\0m\0a\0t\0i\0c\0a\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"P\0r\0o\0d\0u\0k\0t\0e\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"T\0e\0c\0h\0n\0o\0l\0o\0g\0y\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"T\0e\0c\0o\0h\0n\0o\0l\0o\0g\0y\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"T\0e\0c\0h\0n\0o\0l\0o\0g\0i\0e\0s\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"T\0e\0c\0n\0o\0l\0o\0g\0i\0a\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"L\0i\0m\0i\0t\0e\0d\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0t\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0n\0c\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0o\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0o\0r\0p\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"C\0r\0o\0p\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"L\0L\0C\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"L\0t\0d\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"L\0T\0D\0A\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"G\0m\0b\0H\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0.\0p\0.\0A\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"A\0.\0S\0.\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0.\0A\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0.\0A\0.\0S\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0/\0A\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0A\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"S\0A\0S\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"B\0V\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"A\0G\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"O\0O\0O\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: TRUE },
-        REDUNDANT_WORD { pwStr: b"C\0J\0S\0C\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0N\0T\0'\0L\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"I\0N\0T\0L\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-        REDUNDANT_WORD { pwStr: b"p\0l\0c\0\0\0".as_ptr() as PCWSTR, bReplaceFirstWord: FALSE },
-    ];
+    static LongNames: SyncTable<[VENDOR_LONG_NAME; 25]> = SyncTable([
+        VENDOR_LONG_NAME { pwLongName: w!("ASUSTeK") as PCWSTR, pwShortName: w!("ASUS") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("First International Computer") as PCWSTR, pwShortName: w!("FIC") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Hewlett-Packard") as PCWSTR, pwShortName: w!("HP") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("MICRO-STAR") as PCWSTR, pwShortName: w!("MSI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("SGI.COM") as PCWSTR, pwShortName: w!("SGI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Silicon Graphics International") as PCWSTR, pwShortName: w!("SGI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Intel(R) Client Systems") as PCWSTR, pwShortName: w!("Intel") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("InformationComputerSystems") as PCWSTR, pwShortName: w!("ICS") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Bernecker + Rainer  Industrie-Elektronik") as PCWSTR, pwShortName: w!("Bernecker & Rainer") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("CHUWI INNOVATION AND TECHNOLOGY") as PCWSTR, pwShortName: w!("CHUWI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("CHUWI INNOVATION LIMITED") as PCWSTR, pwShortName: w!("CHUWI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("CHUWI  INNOVATION  LIMITED") as PCWSTR, pwShortName: w!("CHUWI") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("http://www.abit.com.tw/") as PCWSTR, pwShortName: w!("ABIT") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("http:\\\\www.abit.com.tw") as PCWSTR, pwShortName: w!("ABIT") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("www.abit.com.tw") as PCWSTR, pwShortName: w!("ABIT") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("CASPER BILGISAYAR SISTEMLERI A.S") as PCWSTR, pwShortName: w!("Casper") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Colorful Technology And Development") as PCWSTR, pwShortName: w!("Colorful") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Colorful Yu Gong Technology And Development") as PCWSTR, pwShortName: w!("Colorful Yu Gong") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("HaierComputer") as PCWSTR, pwShortName: w!("Haier") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Haier Information Technology (Shen Zhen)") as PCWSTR, pwShortName: w!("Haier") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("HASEECOMPUTERS") as PCWSTR, pwShortName: w!("Hasee") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("HELIOS BUSINESS COMPUTER") as PCWSTR, pwShortName: w!("HELIOS") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Shanghai Zongzhi InfoTech") as PCWSTR, pwShortName: w!("Zongzhi") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("TSING HUA TONGFANG CO.,LTD") as PCWSTR, pwShortName: w!("TSINGHUA TONGFANG") as PCWSTR },
+        VENDOR_LONG_NAME { pwLongName: w!("Yeston Digital Technology Co.,LTD") as PCWSTR, pwShortName: w!("Yeston") as PCWSTR },
+    ]);
+    static RedundantWords: SyncTable<[REDUNDANT_WORD; 52]> = SyncTable([
+        REDUNDANT_WORD { pwStr: w!("Corporation") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Communication") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Computer") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Computers") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Group") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Cloud") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Center") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Systems") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Microsystems") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Infosystems") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Digital") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Electronics") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Electric") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Elektronik") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Software") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Foundation") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("International") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Interantonal") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("INTERANTIONAL") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Industrial") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Industrie") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Information") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Informatica") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Produkte") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Technology") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Tecohnology") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Technologies") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Tecnologia") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Limited") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Int") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Inc") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Co") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Corp") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Crop") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("LLC") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("Ltd") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("LTDA") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("GmbH") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("S.p.A") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("A.S.") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("S.A") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("S.A.S") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("S/A") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("SA") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("SAS") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("BV") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("AG") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("OOO") as PCWSTR, bReplaceFirstWord: TRUE },
+        REDUNDANT_WORD { pwStr: w!("CJSC") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("INT'L") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("INTL") as PCWSTR, bReplaceFirstWord: FALSE },
+        REDUNDANT_WORD { pwStr: w!("plc") as PCWSTR, bReplaceFirstWord: FALSE },
+    ]);
     let mut SMBiosBuf: *mut core::ffi::c_void;
-    let mut DmiStrings: [PCSTR; (ID_STRINGS_MAX) as usize] = [core::ptr::null(); (ID_STRINGS_MAX) as usize];
+    // smbios.c:576 is `PCHAR DmiStrings[]`, not PCSTR: these get trimmed in place.
+    let mut DmiStrings: [PCHAR; (ID_STRINGS_MAX) as usize] = [core::ptr::null_mut(); (ID_STRINGS_MAX) as usize];
     let mut ven: [u16; 512] = [0; 512];
     let mut dev: [u16; 512] = [0; 512];
     let mut tmpstr: [i8; 512] = [0; 512];
@@ -527,8 +540,8 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         }
     }
 
-    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
-    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven), TRUE);
+    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
     bGenericName = IsGenericSystemName(ven.as_ptr(), dev.as_ptr(), core::ptr::null_mut()) | bTrimProduct;
 
     if wcslen(dev.as_ptr()) == 0 ||
@@ -559,28 +572,28 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
                 strstr(DmiStrings[(BOARD_VENDOR) as usize], b"  \0".as_ptr() as PCSTR) != DmiStrings[(BOARD_VENDOR) as usize]) ||
                 bGenericVen != 0
             {
-                GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven), TRUE);
             }
-            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
 
             if IsGenericSystemName(ven.as_ptr(), core::ptr::null(), &mut bRemove) != 0 && bRemove != 0 {
                 *ven.as_mut_ptr() = 0;
 
                 if bGenericVen != 0 && bRemoveVen == 0 {
-                    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
+                    GetSMBiosStringW(DmiStrings[(SYS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven), TRUE);
                 }
             }
             if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                 *dev.as_mut_ptr() = 0;
 
                 if bGenericDev == 0 {
-                    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+                    GetSMBiosStringW(DmiStrings[(SYS_PRODUCT) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
                 }
             }
             if wcslen(dev.as_ptr()) == 0 &&
                 !DmiStrings[(SYS_VERSION) as usize].is_null()
             {
-                GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
 
                 if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                     *dev.as_mut_ptr() = 0;
@@ -589,14 +602,14 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
             if wcslen(dev.as_ptr()) == 0 &&
                 !DmiStrings[(BOARD_VERSION) as usize].is_null()
             {
-                GetSMBiosStringW(DmiStrings[(BOARD_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+                GetSMBiosStringW(DmiStrings[(BOARD_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
 
                 if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                     *dev.as_mut_ptr() = 0;
                 }
             }
         } else if !DmiStrings[(BOARD_NAME) as usize].is_null() {
-            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
 
             if IsGenericSystemName(core::ptr::null(), dev.as_ptr(), &mut bRemove) != 0 && bRemove != 0 {
                 *dev.as_mut_ptr() = 0;
@@ -604,11 +617,11 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         }
 
         if wcslen(ven.as_ptr()) == 0 && wcslen(dev.as_ptr()) == 0 {
-            GetSMBiosStringW(DmiStrings[(BIOS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BIOS_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven), TRUE);
         }
     } else {
         if wcslen(ven.as_ptr()) < 2 {
-            GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(BOARD_VENDOR) as usize], ven.as_mut_ptr(), _countof!(ven), TRUE);
 
             if IsGenericSystemName(ven.as_ptr(), core::ptr::null(), &mut bRemove) != 0 && bRemove != 0 {
                 *ven.as_mut_ptr() = 0;
@@ -616,7 +629,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         }
     }
 
-    j = wcsstr(ven.as_ptr(), b" \0\0\0".as_ptr() as PCWSTR);
+    j = wcsstr(ven.as_ptr(), w!(" ") as PCWSTR);
     if !j.is_null() && (j as usize - ven.as_ptr() as usize) / 2 > 2 {
         i = ((j as usize - ven.as_ptr() as usize) / 2) as u32;
         if wcsncmp(ven.as_ptr().offset(wcslen(ven.as_ptr()) as isize - i as isize), ven.as_ptr(), i as usize) == 0 {
@@ -627,23 +640,23 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
     for i in 0..25 {
         if wcsstr(dev.as_ptr(), LongNames[i as usize].pwLongName) == dev.as_ptr() {
             StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
-            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), dev.as_ptr());
-            StringCchCopyW(dev.as_mut_ptr(), _countof!(dev.len()), pBuf);
+            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), dev.as_ptr());
+            StringCchCopyW(dev.as_mut_ptr(), _countof!(dev), pBuf);
         }
         wcsrep(ven.as_mut_ptr(), LongNames[i as usize].pwLongName, LongNames[i as usize].pwShortName, TRUE);
     }
 
     for i in 0..52 {
-        wcsrep(ven.as_mut_ptr(), RedundantWords[i as usize].pwStr, b"\0\0".as_ptr() as PCWSTR, RedundantWords[i as usize].bReplaceFirstWord as i32);
+        wcsrep(ven.as_mut_ptr(), RedundantWords[i as usize].pwStr, w!("") as PCWSTR, RedundantWords[i as usize].bReplaceFirstWord as i32);
     }
     for i in 0..52 {
         StringCchCopyW(pBuf, cchBuf, RedundantWords[i as usize].pwStr);
-        StringCchCatW(pBuf, cchBuf, b".\0\0\0".as_ptr() as PCWSTR);
-        wcsrep(ven.as_mut_ptr(), pBuf, b"\0\0".as_ptr() as PCWSTR, RedundantWords[i as usize].bReplaceFirstWord as i32);
+        StringCchCatW(pBuf, cchBuf, w!(".") as PCWSTR);
+        wcsrep(ven.as_mut_ptr(), pBuf, w!("") as PCWSTR, RedundantWords[i as usize].bReplaceFirstWord as i32);
     }
 
-    if _wcsicmp(ven.as_ptr(), b"L\0E\0N\0O\0V\0O\0\0\0".as_ptr() as PCWSTR) == 0 {
-        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"L\0e\0n\0o\0v\0o\0\0\0".as_ptr() as PCWSTR);
+    if _wcsicmp(ven.as_ptr(), w!("LENOVO") as PCWSTR) == 0 {
+        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("Lenovo") as PCWSTR);
 
         if !DmiStrings[(SYS_VERSION) as usize].is_null() {
             if strncmp(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad   \0".as_ptr() as PCSTR, 11) == 0 {
@@ -656,7 +669,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
                 DmiStrings[(SYS_FAMILY) as usize] = DmiStrings[(SYS_VERSION) as usize];
                 DmiStrings[(SYS_VERSION) as usize] = core::ptr::null();
             } else {
-                StringCchCopyA(tmpstr.as_mut_ptr(), _countof!(tmpstr.len()), DmiStrings[(SYS_VERSION) as usize]);
+                StringCchCopyA(tmpstr.as_mut_ptr(), _countof!(tmpstr), DmiStrings[(SYS_VERSION) as usize]);
                 _strupr(tmpstr.as_mut_ptr());
             }
         }
@@ -672,67 +685,67 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
             (strlen(tmpstr.as_mut_ptr()) >= 3 || IsDigitStrA(tmpstr.as_mut_ptr()) == 0) &&
             strstr(DmiStrings[(SYS_VERSION) as usize], b"Rev \0".as_ptr() as PCSTR).is_null() &&
             strstr(DmiStrings[(SYS_VERSION) as usize], b"1.\0".as_ptr() as PCSTR).is_null() &&
-            wcsistr(dev.as_ptr(), b"S\0y\0s\0t\0e\0m\0 \0\0\0".as_ptr() as PCWSTR).is_null() &&
-            wcsistr(dev.as_ptr(), b"I\0d\0e\0a\0P\0a\0d\0 \0\0\0".as_ptr() as PCWSTR).is_null() &&
-            wcsistr(dev.as_ptr(), b"T\0h\0i\0n\0k\0S\0e\0r\0v\0e\0r\0 \0\0\0".as_ptr() as PCWSTR).is_null()
+            wcsistr(dev.as_ptr(), w!("System ") as PCWSTR).is_null() &&
+            wcsistr(dev.as_ptr(), w!("IdeaPad ") as PCWSTR).is_null() &&
+            wcsistr(dev.as_ptr(), w!("ThinkServer ") as PCWSTR).is_null()
         {
-            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
 
-        if wcsstr(dev.as_ptr(), b"L\0e\0n\0o\0v\0o\0-\0\0\0".as_ptr() as PCWSTR) == dev.as_ptr() {
+        if wcsstr(dev.as_ptr(), w!("Lenovo-") as PCWSTR) == dev.as_ptr() {
             *dev.as_mut_ptr().offset(6 as isize) = b' ' as u16;
         }
 
-        if wcscmp(dev.as_ptr(), b"L\0e\0n\0o\0v\0o\0\0\0".as_ptr() as PCWSTR) == 0 {
-            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+        if wcscmp(dev.as_ptr(), w!("Lenovo") as PCWSTR) == 0 {
+            GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
     }
-    if wcscmp(ven.as_ptr(), b"I\0B\0M\0\0\0".as_ptr() as PCWSTR) == 0 &&
+    if wcscmp(ven.as_ptr(), w!("IBM") as PCWSTR) == 0 &&
         !DmiStrings[(SYS_VERSION) as usize].is_null() &&
         (!strstr(DmiStrings[(SYS_VERSION) as usize], b"ThinkPad \0".as_ptr() as PCSTR).is_null() ||
          !strstr(DmiStrings[(SYS_VERSION) as usize], b"ThinkCentre \0".as_ptr() as PCSTR).is_null())
     {
-        GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+        GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
     }
 
-    if wcscmp(ven.as_ptr(), b"D\0E\0X\0P\0\0\0".as_ptr() as PCWSTR) == 0 {
+    if wcscmp(ven.as_ptr(), w!("DEXP") as PCWSTR) == 0 {
         if !DmiStrings[(SYS_PRODUCT) as usize].is_null() &&
             !DmiStrings[(SYS_VERSION) as usize].is_null() &&
             (_stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Tablet PC\0".as_ptr() as PCSTR) == 0 ||
              _stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Notebook\0".as_ptr() as PCSTR) == 0 ||
              _stricmp(DmiStrings[(SYS_PRODUCT) as usize], b"Decktop\0".as_ptr() as PCSTR) == 0)
         {
-            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
     }
 
-    if wcscmp(ven.as_ptr(), b"R\0a\0z\0e\0r\0\0\0".as_ptr() as PCWSTR) == 0 && wcscmp(dev.as_ptr(), b"B\0l\0a\0d\0e\0\0\0".as_ptr() as PCWSTR) == 0 {
+    if wcscmp(ven.as_ptr(), w!("Razer") as PCWSTR) == 0 && wcscmp(dev.as_ptr(), w!("Blade") as PCWSTR) == 0 {
         if !DmiStrings[(SYS_VERSION) as usize].is_null() {
-            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"R\0a\0z\0e\0r\0 \0B\0l\0a\0d\0e\0\0\0".as_ptr() as PCWSTR);
-            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+            StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("Razer Blade") as PCWSTR);
+            GetSMBiosStringW(DmiStrings[(SYS_VERSION) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
         }
     }
 
-    if wcscmp(ven.as_ptr(), b"M\0S\0I\0\0\0".as_ptr() as PCWSTR) == 0 &&
-        !wcsstr(dev.as_ptr(), b"M\0S\0-\0\0\0".as_ptr() as PCWSTR).is_null() &&
+    if wcscmp(ven.as_ptr(), w!("MSI") as PCWSTR) == 0 &&
+        !wcsstr(dev.as_ptr(), w!("MS-") as PCWSTR).is_null() &&
         !DmiStrings[(BOARD_NAME) as usize].is_null() &&
         !strstr(DmiStrings[(BOARD_NAME) as usize], b"(MS-\0".as_ptr() as PCSTR).is_null()
     {
-        GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev.len()), TRUE);
+        GetSMBiosStringW(DmiStrings[(BOARD_NAME) as usize], dev.as_mut_ptr(), _countof!(dev), TRUE);
     }
     if wcslen(ven.as_ptr()) == 0 &&
-        wcsstr(dev.as_ptr(), b"M\0S\0-\0\0\0".as_ptr() as PCWSTR) == dev.as_ptr()
+        wcsstr(dev.as_ptr(), w!("MS-") as PCWSTR) == dev.as_ptr()
     {
-        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven.len()), b"M\0S\0I\0\0\0".as_ptr() as PCWSTR);
+        StringCchCopyW(ven.as_mut_ptr(), _countof!(ven), w!("MSI") as PCWSTR);
     }
 
     TrimPunctuation(ven.as_mut_ptr());
     TrimPunctuation(dev.as_mut_ptr());
 
     if wcsistr(dev.as_ptr(), ven.as_ptr()) == dev.as_ptr() ||
-        (wcscmp(ven.as_ptr(), b"A\0S\0U\0S\0\0\0".as_ptr() as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), b"A\0S\0U\0S\0\0\0".as_ptr() as PCWSTR).is_null()) ||
-        (wcscmp(ven.as_ptr(), b"H\0P\0\0\0".as_ptr() as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), b" \0b\0y\0 \0H\0P\0\0\0".as_ptr() as PCWSTR).is_null()) ||
-        (wcscmp(ven.as_ptr(), b"I\0N\0T\0E\0L\0\0\0".as_ptr() as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), b" \0I\0N\0T\0E\0L\0\0\0".as_ptr() as PCWSTR).is_null())
+        (wcscmp(ven.as_ptr(), w!("ASUS") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!("ASUS") as PCWSTR).is_null()) ||
+        (wcscmp(ven.as_ptr(), w!("HP") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!(" by HP") as PCWSTR).is_null()) ||
+        (wcscmp(ven.as_ptr(), w!("INTEL") as PCWSTR) == 0 && !wcsstr(dev.as_ptr(), w!(" INTEL") as PCWSTR).is_null())
     {
         StringCchCopyW(pBuf, cchBuf, dev.as_ptr());
     } else {
@@ -749,7 +762,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
         StringCchCopyW(pBuf, cchBuf, ven.as_ptr());
         AppendSystemFamily(pBuf, cchBuf, DmiStrings.as_mut_ptr(), dev.as_mut_ptr());
         if wcslen(pBuf) > 0 && wcslen(dev.as_ptr()) > 0 {
-            StringCchCatW(pBuf, cchBuf, b" \0\0\0".as_ptr() as PCWSTR);
+            StringCchCatW(pBuf, cchBuf, w!(" ") as PCWSTR);
         }
         StringCchCatW(pBuf, cchBuf, dev.as_ptr());
     }

@@ -80,7 +80,7 @@ unsafe extern "C" fn IsProfileNameInUse(
     return FALSE;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CopyProfileDlgProc(
+unsafe extern "system" fn CopyProfileDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -102,7 +102,7 @@ unsafe extern "stdcall" fn CopyProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    IDC_COPYPROFILETO,
@@ -158,7 +158,7 @@ unsafe extern "C" fn CopyProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    (IDC_COPYPROFILETO) as i32,
@@ -205,14 +205,14 @@ unsafe extern "C" fn CopyHardwareProfile(
     LoadStringW(hApplet, IDS_HWPROFILE_PROFILE, szBuffer.as_mut_ptr(), ((core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as u32) as i32);
 
     wcscpy(ProfileNames.szSourceName.as_mut_ptr(), (*pProfile).szFriendlyName.as_ptr());
-    swprintf(ProfileNames.szDestinationName.as_mut_ptr(), b"%s %lu\0".as_ptr() as *const u16, szBuffer.as_ptr(), (*pProfileData).dwProfileCount);
+    swprintf(ProfileNames.szDestinationName.as_mut_ptr(), w!("%s %lu") as *const u16, szBuffer.as_ptr(), (*pProfileData).dwProfileCount);
 
     ProfileNames.pProfileData = pProfileData;
 
     if DialogBoxParam(hApplet,
                        MAKEINTRESOURCE!(IDD_COPYPROFILE),
                        hwndDlg,
-                       CopyProfileDlgProc,
+                       Some(CopyProfileDlgProc),
                        &ProfileNames as *const _ as LPARAM) != IDOK {
         return;
     }
@@ -241,7 +241,7 @@ unsafe extern "C" fn CopyHardwareProfile(
 
     (*pProfileData).dwLastProfile += 1;
     (*pNewProfile).dwProfileNumber = (*pProfileData).dwLastProfile;
-    swprintf((*pNewProfile).szName.as_mut_ptr(), b"%04lu\0".as_ptr() as *const u16, (*pNewProfile).dwProfileNumber);
+    swprintf((*pNewProfile).szName.as_mut_ptr(), w!("%04lu") as *const u16, (*pNewProfile).dwProfileNumber);
 
     (*pNewProfile).dwPreferenceOrder = (*pNewProfile).dwProfileNumber;
 
@@ -250,7 +250,7 @@ unsafe extern "C" fn CopyHardwareProfile(
     UpdateButtons(hwndDlg, pProfileData);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RenameProfileDlgProc(
+unsafe extern "system" fn RenameProfileDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -272,7 +272,7 @@ unsafe extern "stdcall" fn RenameProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    IDC_RENPROFEDITTO,
@@ -328,7 +328,7 @@ unsafe extern "C" fn RenameProfileDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     GetDlgItemText(hwndDlg,
                                    (IDC_RENPROFEDITTO) as i32,
@@ -372,14 +372,14 @@ unsafe extern "C" fn RenameHardwareProfile(
     LoadStringW(hApplet, IDS_HWPROFILE_PROFILE, szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>()) as i32);
 
     wcscpy(ProfileNames.szSourceName.as_mut_ptr(), pProfile.szFriendlyName.as_ptr());
-    swprintf(ProfileNames.szDestinationName.as_mut_ptr(), b"%s %lu\0".as_ptr() as *const u16, szBuffer.as_ptr(), (*pProfileData).dwProfileCount);
+    swprintf(ProfileNames.szDestinationName.as_mut_ptr(), w!("%s %lu") as *const u16, szBuffer.as_ptr(), (*pProfileData).dwProfileCount);
 
     ProfileNames.pProfileData = pProfileData;
 
     if DialogBoxParam(hApplet,
                        MAKEINTRESOURCE!(IDD_RENAMEPROFILE),
                        hwndDlg,
-                       RenameProfileDlgProc,
+                       Some(RenameProfileDlgProc),
                        core::ptr::addr_of_mut!(ProfileNames) as LPARAM) != IDOK
     {
         return;
@@ -509,7 +509,7 @@ unsafe extern "C" fn MoveHardwareProfile(
     UpdateButtons(hwndDlg, pProfileData);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn HardwareProfilePropertiesDlgProc(
+unsafe extern "system" fn HardwareProfilePropertiesDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -550,7 +550,7 @@ unsafe extern "C" fn HardwareProfilePropertiesDlgProc(
     return FALSE;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
+unsafe extern "system" fn PropSheetProc(hwndDlg: HWND, uMsg: u32, lParam: LPARAM) -> i32 {
     let mut hIcon: HICON;
     match uMsg {
         PSCB_INITIALIZED => {
@@ -580,7 +580,7 @@ unsafe extern "C" fn GetUserWaitInterval() -> DWORD {
     let mut hKey: HKEY = core::ptr::null_mut();
 
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                      b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0I\0D\0C\0o\0n\0f\0i\0g\0D\0B\0\0\0".as_ptr() as *const u16,
+                      w!("System\\CurrentControlSet\\Control\\IDConfigDB") as *const u16,
                       0,
                       KEY_QUERY_VALUE,
                       &mut hKey) != 0
@@ -590,7 +590,7 @@ unsafe extern "C" fn GetUserWaitInterval() -> DWORD {
 
     dwSize = core::mem::size_of::<DWORD>() as DWORD;
     RegQueryValueExW(hKey,
-                     b"U\0s\0e\0r\0W\0a\0i\0t\0I\0n\0t\0e\0r\0v\0a\0l\0\0\0".as_ptr() as *const u16,
+                     w!("UserWaitInterval") as *const u16,
                      core::ptr::null_mut(),
                      core::ptr::null_mut(),
                      &mut dwWaitInterval as *mut DWORD as LPBYTE,
@@ -605,7 +605,7 @@ unsafe extern "C" fn SetUserWaitInterval(dwWaitInterval: DWORD) {
 
     if RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0I\0D\0C\0o\0n\0f\0i\0g\0D\0B\0\0\0".as_ptr() as LPWSTR,
+        w!("System\\CurrentControlSet\\Control\\IDConfigDB") as LPWSTR,
         0,
         KEY_SET_VALUE,
         &mut hKey,
@@ -616,7 +616,7 @@ unsafe extern "C" fn SetUserWaitInterval(dwWaitInterval: DWORD) {
 
     RegSetValueExW(
         hKey,
-        b"U\0s\0e\0r\0W\0a\0i\0t\0I\0n\0t\0e\0r\0v\0a\0l\0\0\0".as_ptr() as LPWSTR,
+        w!("UserWaitInterval") as LPWSTR,
         0,
         REG_DWORD,
         (&dwWaitInterval as *const DWORD) as LPBYTE,
@@ -633,7 +633,7 @@ unsafe extern "C" fn GetProfileCount(lpProfileCount: LPDWORD) -> i32 {
 
     lError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0I\0D\0C\0o\0n\0f\0i\0g\0D\0B\0\\\0H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\0\0".as_ptr() as LPWSTR,
+        w!("System\\CurrentControlSet\\Control\\IDConfigDB\\Hardware Profiles") as LPWSTR,
         0,
         KEY_READ,
         &mut hKey,
@@ -727,8 +727,8 @@ unsafe extern "C" fn GetProfiles(hwndDlg: HWND) -> i32 {
         return FALSE;
     }
 
-    (*pProfileData).dwLastProfile = (-1) as DWORD;
-    (*pProfileData).dwSelectedProfileIndex = (-1) as DWORD;
+    (*pProfileData).dwLastProfile = (-1i32) as DWORD;
+    (*pProfileData).dwSelectedProfileIndex = (-1i32) as DWORD;
 
     if GetProfileCount(core::ptr::addr_of_mut!((*pProfileData).dwProfileCount)) == 0 {
         HeapFree(GetProcessHeap(), 0, pProfileData as *mut _);
@@ -745,7 +745,7 @@ unsafe extern "C" fn GetProfiles(hwndDlg: HWND) -> i32 {
     SetWindowLongPtr(hwndDlg, DWLP_USER, pProfileData as isize);
 
     if RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                      b"S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0I\0D\0C\0o\0n\0f\0i\0g\0D\0B\0\\\0H\0a\0r\0d\0w\0a\0r\0e\0 \0P\0r\0o\0f\0i\0l\0e\0s\0\0\0".as_ptr() as LPWSTR,
+                      w!("System\\CurrentControlSet\\Control\\IDConfigDB\\Hardware Profiles") as LPWSTR,
                       0,
                       KEY_READ,
                       core::ptr::addr_of_mut!(hKey)) != (ERROR_SUCCESS) as i32 {
@@ -771,7 +771,7 @@ unsafe extern "C" fn GetProfiles(hwndDlg: HWND) -> i32 {
         // DPRINT removed
         // DPRINT removed
 
-        if ((*pProfileData).dwLastProfile == (-1) as DWORD) ||
+        if ((*pProfileData).dwLastProfile == (-1i32) as DWORD) ||
             ((*pProfileData).dwLastProfile < dwProfileNumber) {
             (*pProfileData).dwLastProfile = dwProfileNumber;
         }
@@ -821,7 +821,7 @@ unsafe extern "C" fn OnOk(hwndDlg: HWND) {
     let dwWaitInterval: DWORD;
 
     if IsDlgButtonChecked(hwndDlg, (IDC_HRDPROFWAIT) as i32) == BST_CHECKED {
-        dwWaitInterval = (-1) as DWORD;
+        dwWaitInterval = (-1i32) as DWORD;
     } else {
         dwWaitInterval = LOWORD!(SendDlgItemMessageW(hwndDlg, (IDC_HRDPROFUPDWN) as i32, UDM_GETPOS, 0, 0));
     }

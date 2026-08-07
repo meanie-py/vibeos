@@ -148,7 +148,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_USERPROFILE),
                         hwndDlg,
-                        UserProfileDlgProc,
+                        Some(UserProfileDlgProc),
                     );
                 }
 
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_STARTUPRECOVERY),
                         hwndDlg,
-                        StartRecDlgProc,
+                        Some(StartRecDlgProc),
                     );
                 }
 
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_SYSSETTINGS),
                         hwndDlg,
-                        SysSettingsDlgProc,
+                        Some(SysSettingsDlgProc),
                     );
                 }
 
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_ENVIRONMENT_VARIABLES),
                         hwndDlg,
-                        EnvironmentDlgProc,
+                        Some(EnvironmentDlgProc),
                     );
                 }
 
@@ -186,7 +186,7 @@ pub unsafe extern "system" fn AdvancedPageProc(
                         BugLink.as_ptr(),
                         core::ptr::null_mut(),
                         core::ptr::null_mut(),
-                        SW_SHOWNORMAL,
+                        (SW_SHOWNORMAL) as i32,
                     );
                 }
 

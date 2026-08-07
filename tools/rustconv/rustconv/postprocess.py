@@ -2275,6 +2275,116 @@ def fix_utf16_vec_literals(code: str) -> str:
     return _UTF16_LITERAL_RE.sub(repl, code)
 
 
+# The WIDE pointer spellings. A `b"..."` behind any of these is the defect below; behind a
+# NARROW one (PCSTR/LPCSTR/*const c_char) it is correct and must not be touched.
+_WIDE_PTR_TYPES = (
+    "PCWSTR",
+    "PWSTR",
+    "LPCWSTR",
+    "LPWSTR",
+    "PCTSTR",
+    "PTSTR",
+    "LPCTSTR",
+    "LPTSTR",
+    "LPCOLESTR",
+    "LPOLESTR",
+    "BSTR",
+    "PCUWSTR",
+    "PUWSTR",
+)
+_WIDE_BYTE_STRING_RE = re.compile(
+    r'b"((?:[^"\\]|\\.)*)"\s*\.as_ptr\(\)\s*as\s+'
+    r"(\*\s*(?:const|mut)\s*u16\b|(?:" + "|".join(_WIDE_PTR_TYPES) + r")\b)"
+)
+_BYTE_ESCAPES = {"0": 0, "n": 0x0A, "r": 0x0D, "t": 0x09, "\\": 0x5C, '"': 0x22, "'": 0x27}
+
+
+def _decode_rust_byte_string(body: str) -> bytes | None:
+    """The bytes a Rust `b"..."` literal denotes, or None if we can't be sure."""
+    out = bytearray()
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\":
+            if ord(c) > 0x7F:
+                return None  # non-ASCII source char in a byte string: not ours to judge
+            out.append(ord(c))
+            i += 1
+            continue
+        if i + 1 >= len(body):
+            return None
+        esc = body[i + 1]
+        if esc == "x":
+            if i + 3 >= len(body):
+                return None
+            try:
+                out.append(int(body[i + 2 : i + 4], 16))
+            except ValueError:
+                return None
+            i += 4
+            continue
+        if esc not in _BYTE_ESCAPES:
+            return None
+        out.append(_BYTE_ESCAPES[esc])
+        i += 2
+    return bytes(out)
+
+
+def fix_wide_byte_string_literals(code: str) -> str:
+    """Rewrite `b"A\\0S\\0U\\0S\\0\\0\\0".as_ptr() as PCWSTR` into `w!("ASUS") as PCWSTR`.
+
+    The model hand-encodes a C `L"..."` as UTF-16LE bytes. The CONTENT is usually right, so
+    nothing fails to compile and nothing looks wrong in review -- but `b"..."` has ALIGNMENT
+    1, and a `*const u16` landing on an odd address is a BUGCHECK 0x1E
+    STATUS_DATATYPE_MISALIGNMENT on amd64 and arm64 (mswsock shipped three of these; sysdm
+    had 110). `w!` builds a real `[u16; N+1]` static, so it is aligned and NUL-terminated.
+
+    Conservative by construction: anything that does not decode to clean NUL-terminated
+    ASCII UTF-16 is left exactly as it was, because a wrong rewrite here is silent data
+    corruption rather than a compile error.
+    """
+
+    def repl(m: re.Match) -> str:
+        raw = _decode_rust_byte_string(m.group(1))
+        if raw is None or len(raw) < 2 or raw[-1] != 0:
+            return m.group(0)
+        units = _as_utf16le(raw) or _as_narrow_ascii(raw)
+        if units is None:
+            return m.group(0)
+        text = "".join(chr(u) for u in units).replace("\\", "\\\\").replace('"', '\\"')
+        # keep the cast: `w!` yields *const u16, and the slot may want *mut / a typedef
+        return f'w!("{text}") as {m.group(2)}'
+
+    return _WIDE_BYTE_STRING_RE.sub(repl, code)
+
+
+def _as_utf16le(raw: bytes) -> list[int] | None:
+    """`b"A\\0S\\0\\0\\0"` -- a hand-encoded `L"AS"`. Right content, alignment 1."""
+    if len(raw) % 2:
+        return None
+    units = [int.from_bytes(raw[i : i + 2], "little") for i in range(0, len(raw), 2)]
+    if units[-1] != 0:
+        return None  # no terminator -- not the pattern we understand
+    units = units[:-1]
+    if any(u == 0 or u >= 0x80 for u in units):
+        return None  # interior NUL, or non-ASCII that `w!` would reject
+    return units
+
+
+def _as_narrow_ascii(raw: bytes) -> list[int] | None:
+    """`b"LogEvent\\0"` behind a `*const u16` -- a NARROW string read as wide.
+
+    Strictly worse than the misencoded case and a different bug: the content is not merely
+    misaligned, it is garbage. `"Sy"` reinterpreted as UTF-16 is one code unit U+7953, so
+    `RegOpenKeyExW` looks up a key nobody has ever created and the call just fails. sysdm
+    shipped 30-odd of these, mostly registry paths and printf formats.
+    """
+    body = raw[:-1]
+    if not body or any(b == 0 or b >= 0x80 for b in body):
+        return None
+    return list(body)
+
+
 def strip_embedded_abspaths(code: str) -> str:
     """Determinism guard (deterministic-builds-plan.md rung 1).
 
@@ -2421,6 +2531,7 @@ def postprocess(
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
         code = fix_utf16_vec_literals(code)
+        code = fix_wide_byte_string_literals(code)
     return code
 
 

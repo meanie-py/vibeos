@@ -45,7 +45,7 @@ pub unsafe extern "C" fn ResourceMessageBox(
                        uType);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn PropSheetAddPage(hpage: HPROPSHEETPAGE, lParam: LPARAM) -> BOOL {
     let ppsh = lParam as *mut PROPSHEETHEADER;
     if !ppsh.is_null() && (*ppsh).nPages < MAX_SYSTEM_PAGES {
         let index = (*ppsh).nPages as usize;
@@ -94,7 +94,7 @@ unsafe extern "C" fn AddNetIdPage(ppsh: *mut PROPSHEETHEADER) -> HMODULE {
     let mut hMod: HMODULE;
     let mut pCreateNetIdPage: PCreateNetIDPropertyPage;
 
-    hMod = LoadLibrary(TEXT(b"netid.dll\0".as_ptr()));
+    hMod = LoadLibrary(TEXT((b"netid.dll\0".as_ptr()).cast()));
     if hMod != core::ptr::null_mut() {
         pCreateNetIdPage = GetProcAddress(hMod, b"CreateNetIDPropertyPage\0".as_ptr() as *const i8) as PCreateNetIDPropertyPage;
         if pCreateNetIdPage != core::ptr::null_mut() {
@@ -118,7 +118,7 @@ unsafe extern "C" fn AddNetIdPage(ppsh: *mut PROPSHEETHEADER) -> HMODULE {
     hMod
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PropSheetProc(
+unsafe extern "system" fn PropSheetProc(
     hwndDlg: HWND,
     uMsg: u32,
     lParam: LPARAM,

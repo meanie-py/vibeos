@@ -54,7 +54,7 @@ unsafe extern "C" fn GetSystemDrive(szSystemDrive: *mut *mut u16) -> u32 {
 
     *szSystemDrive = (HeapAlloc(GetProcessHeap(), 0, (MAX_PATH * (core::mem::size_of::<u16>()) as u32) as SIZE_T)).cast();
     if !(*szSystemDrive).is_null() {
-        dwBufSize = GetEnvironmentVariableW(b"S\0y\0s\0t\0e\0m\0D\0r\0i\0v\0e\0\0\0".as_ptr() as *const u16, *szSystemDrive, MAX_PATH);
+        dwBufSize = GetEnvironmentVariableW(w!("SystemDrive") as *const u16, *szSystemDrive, MAX_PATH);
         if dwBufSize > MAX_PATH {
             let mut szTmp: *mut u16;
             let dwBufSize2: u32;
@@ -68,7 +68,7 @@ unsafe extern "C" fn GetSystemDrive(szSystemDrive: *mut *mut u16) -> u32 {
 
             *szSystemDrive = szTmp;
 
-            dwBufSize2 = GetEnvironmentVariableW(b"S\0y\0s\0t\0e\0m\0D\0r\0i\0v\0e\0\0\0".as_ptr() as *const u16, *szSystemDrive, dwBufSize);
+            dwBufSize2 = GetEnvironmentVariableW(w!("SystemDrive") as *const u16, *szSystemDrive, dwBufSize);
             if dwBufSize2 > dwBufSize || dwBufSize2 == 0 {
                 HeapFree(GetProcessHeap(), 0, *szSystemDrive as *mut core::ffi::c_void);
                 *szSystemDrive = core::ptr::null_mut();
@@ -337,7 +337,7 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     let mut lResult: LRESULT;
 
     if SetupFindFirstLineW(hInf,
-                               b"b\0o\0o\0t\0 \0l\0o\0a\0d\0e\0r\0\0\0".as_ptr() as *const u16,
+                               w!("boot loader") as *const u16,
                                core::ptr::null(),
                                &mut InfContext) == 0 {
         return FALSE;
@@ -360,11 +360,11 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
             return FALSE;
         }
 
-        if _wcsnicmp(szName.as_ptr(), b"t\0i\0m\0e\0o\0u\0t\0\0\0".as_ptr() as *const u16, 7) == 0 {
+        if _wcsnicmp(szName.as_ptr(), w!("timeout") as *const u16, 7) == 0 {
             TimeOut = _wtoi(szValue.as_ptr()) as DWORD;
         }
 
-        if _wcsnicmp(szName.as_ptr(), b"d\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16, 7) == 0 {
+        if _wcsnicmp(szName.as_ptr(), w!("default") as *const u16, 7) == 0 {
             wcscpy(szDefaultOS.as_mut_ptr(), szValue.as_ptr());
         }
 
@@ -374,7 +374,7 @@ unsafe extern "C" fn LoadBootSettings(hInf: HINF, hwndDlg: HWND) -> INT {
     }
 
     if SetupFindFirstLineW(hInf,
-                              b"o\0p\0e\0r\0a\0t\0i\0n\0g\0 \0s\0y\0s\0t\0e\0m\0s\0\0\0".as_ptr() as *const u16,
+                              w!("operating systems") as *const u16,
                               core::ptr::null(),
                               &mut InfContext) == 0 {
         return FALSE;
@@ -538,7 +538,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     lResult = RegCreateKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"System\\CurrentControlSet\\Control\\CrashControl\0".as_ptr() as *const u16,
+        w!("System\\CurrentControlSet\\Control\\CrashControl") as *const u16,
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -563,7 +563,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
     ) as u32;
     RegSetValueExW(
         hKey,
-        b"LogEvent\0".as_ptr() as *const u16,
+        w!("LogEvent") as *const u16,
         0,
         REG_DWORD,
         &lResult as *const u32 as LPBYTE,
@@ -579,7 +579,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
     ) as u32;
     RegSetValueExW(
         hKey,
-        b"SendAlert\0".as_ptr() as *const u16,
+        w!("SendAlert") as *const u16,
         0,
         REG_DWORD,
         &lResult as *const u32 as LPBYTE,
@@ -595,7 +595,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
     ) as u32;
     RegSetValueExW(
         hKey,
-        b"AutoReboot\0".as_ptr() as *const u16,
+        w!("AutoReboot") as *const u16,
         0,
         REG_DWORD,
         &lResult as *const u32 as LPBYTE,
@@ -611,7 +611,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
     ) as u32;
     RegSetValueExW(
         hKey,
-        b"Overwrite\0".as_ptr() as *const u16,
+        w!("Overwrite") as *const u16,
         0,
         REG_DWORD,
         &lResult as *const u32 as LPBYTE,
@@ -630,7 +630,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
         );
         RegSetValueExW(
             hKey,
-            b"DumpFile\0".as_ptr() as *const u16,
+            w!("DumpFile") as *const u16,
             0,
             REG_EXPAND_SZ,
             (*pStartInfo).szDumpFile.as_ptr() as LPBYTE,
@@ -646,7 +646,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
         );
         RegSetValueExW(
             hKey,
-            b"MinidumpDir\0".as_ptr() as *const u16,
+            w!("MinidumpDir") as *const u16,
             0,
             REG_EXPAND_SZ,
             (*pStartInfo).szDumpFile.as_ptr() as LPBYTE,
@@ -656,7 +656,7 @@ unsafe extern "C" fn WriteStartupRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut
 
     RegSetValueExW(
         hKey,
-        b"CrashDumpEnabled\0".as_ptr() as *const u16,
+        w!("CrashDumpEnabled") as *const u16,
         0,
         REG_DWORD,
         &(*pStartInfo).dwCrashDumpEnabled as *const u32 as LPBYTE,
@@ -674,7 +674,7 @@ unsafe extern "C" fn LoadRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut STARTIN
 
     dwResult = RegCreateKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"System\\CurrentControlSet\\Control\\CrashControl\0".as_ptr() as *const u16,
+        w!("System\\CurrentControlSet\\Control\\CrashControl") as *const u16,
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -700,37 +700,37 @@ unsafe extern "C" fn LoadRecoveryOptions(hwndDlg: HWND, pStartInfo: *mut STARTIN
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"LogEvent\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, w!("LogEvent") as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         SendDlgItemMessageW(hwndDlg, (IDC_STRRECWRITEEVENT) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"SendAlert\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, w!("SendAlert") as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         SendDlgItemMessageW(hwndDlg, (IDC_STRRECSENDALERT) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"AutoReboot\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, w!("AutoReboot") as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         SendDlgItemMessageW(hwndDlg, (IDC_STRRECRESTART) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"Overwrite\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, w!("Overwrite") as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         SendDlgItemMessageW(hwndDlg, (IDC_STRRECOVERWRITE) as i32, BM_SETCHECK, BST_CHECKED as WPARAM, 0 as LPARAM);
     }
 
     dwValueLength = core::mem::size_of::<DWORD>() as DWORD;
-    if RegQueryValueExW(hKey, b"CrashDumpEnabled\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
+    if RegQueryValueExW(hKey, w!("CrashDumpEnabled") as *const u16, core::ptr::null_mut(), &mut dwType, &mut dwValue as *mut DWORD as LPBYTE, &mut dwValueLength) == (ERROR_SUCCESS) as i32 && dwType == REG_DWORD && dwValue != 0 {
         (*pStartInfo).dwCrashDumpEnabled = dwValue;
     }
 
     dwValueLength = core::mem::size_of_val(&(*pStartInfo).szDumpFile) as DWORD;
-    if RegQueryValueExW(hKey, b"DumpFile\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szDumpFile.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
+    if RegQueryValueExW(hKey, w!("DumpFile") as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szDumpFile.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
         (*pStartInfo).szDumpFile[0] = 0;
     }
 
     dwValueLength = core::mem::size_of_val(&(*pStartInfo).szMinidumpDir) as DWORD;
-    if RegQueryValueExW(hKey, b"MinidumpDir\0".as_ptr() as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szMinidumpDir.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
+    if RegQueryValueExW(hKey, w!("MinidumpDir") as *const u16, core::ptr::null_mut(), &mut dwType, (*pStartInfo).szMinidumpDir.as_mut_ptr() as LPBYTE, &mut dwValueLength) != (ERROR_SUCCESS) as i32 {
         (*pStartInfo).szMinidumpDir[0] = 0;
     }
 
@@ -800,8 +800,8 @@ pub unsafe extern "system" fn StartRecDlgProc(
                 IDC_STRRECEDIT => {
                     ShellExecuteW(
                         0,
-                        b"o\0p\0e\0n\0\0\0".as_ptr() as *const u16,
-                        b"n\0o\0t\0e\0p\0a\0d\0\0\0".as_ptr() as *const u16,
+                        w!("open") as *const u16,
+                        w!("notepad") as *const u16,
                         (*pStartInfo).szFreeldrIni.as_ptr(),
                         core::ptr::null_mut(),
                         (SW_SHOWNORMAL) as INT,
@@ -827,7 +827,7 @@ pub unsafe extern "system" fn StartRecDlgProc(
                     } else {
                         iTimeout = 0;
                     }
-                    swprintf(szTimeout.as_mut_ptr(), b"%\0i\0\0\0".as_ptr() as *const u16, iTimeout);
+                    swprintf(szTimeout.as_mut_ptr(), w!("%i") as *const u16, iTimeout);
 
                     lResult = SendDlgItemMessageW(
                         hwndDlg,
@@ -852,27 +852,27 @@ pub unsafe extern "system" fn StartRecDlgProc(
                     if pRecord as INT_PTR != CB_ERR {
                         if (*pStartInfo).iFreeLdrIni == 1 {
                             WritePrivateProfileStringW(
-                                b"F\0R\0E\0E\0L\0O\0A\0D\0E\0R\0\0\0".as_ptr() as *const u16,
-                                b"T\0i\0m\0e\0O\0u\0t\0\0\0".as_ptr() as *const u16,
+                                w!("FREELOADER") as *const u16,
+                                w!("TimeOut") as *const u16,
                                 szTimeout.as_ptr(),
                                 (*pStartInfo).szFreeldrIni.as_ptr(),
                             );
                             WritePrivateProfileStringW(
-                                b"F\0R\0E\0E\0L\0O\0A\0D\0E\0R\0\0\0".as_ptr() as *const u16,
-                                b"D\0e\0f\0a\0u\0l\0t\0O\0S\0\0\0".as_ptr() as *const u16,
+                                w!("FREELOADER") as *const u16,
+                                w!("DefaultOS") as *const u16,
                                 (*pRecord).szSectionName.as_ptr(),
                                 (*pStartInfo).szFreeldrIni.as_ptr(),
                             );
                         } else if (*pStartInfo).iFreeLdrIni == 2 {
                             WritePrivateProfileStringW(
-                                b"b\0o\0o\0t\0 \0l\0o\0a\0d\0e\0r\0\0\0".as_ptr() as *const u16,
-                                b"t\0i\0m\0e\0o\0u\0t\0\0\0".as_ptr() as *const u16,
+                                w!("boot loader") as *const u16,
+                                w!("timeout") as *const u16,
                                 szTimeout.as_ptr(),
                                 (*pStartInfo).szFreeldrIni.as_ptr(),
                             );
                             WritePrivateProfileStringW(
-                                b"b\0o\0o\0t\0 \0l\0o\0a\0d\0e\0r\0\0\0".as_ptr() as *const u16,
-                                b"d\0e\0f\0a\0u\0l\0t\0\0\0".as_ptr() as *const u16,
+                                w!("boot loader") as *const u16,
+                                w!("default") as *const u16,
                                 (*pRecord).szBootPath.as_ptr(),
                                 (*pStartInfo).szFreeldrIni.as_ptr(),
                             );

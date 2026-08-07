@@ -51,7 +51,7 @@ unsafe extern "C" fn DetermineDialogBoxType(lpRawValue: LPTSTR) -> BOOL {
         return FALSE;
     }
 
-    StringCchCopy(lpTemp, dwValueLength, lpRawValue);
+    StringCchCopy(lpTemp, (dwValueLength) as usize, lpRawValue);
 
     lpToken = _tcstok(lpTemp, _T(b";\0".as_ptr() as *const TCHAR));
     while !lpToken.is_null() {
@@ -155,8 +155,8 @@ unsafe extern "C" fn GatherDataFromListView(
         if i > 0 {
             StringCchCat(
                 (*VarData).lpRawValue,
-                dwValueLength + 1,
-                _T(b";\0".as_ptr() as *const i8),
+                (dwValueLength + 1) as usize,
+                _T((b";\0".as_ptr() as *const i8).cast()),
             );
         }
         ListView_GetItemText!(
@@ -168,7 +168,7 @@ unsafe extern "C" fn GatherDataFromListView(
         );
         StringCchCat(
             (*VarData).lpRawValue,
-            dwValueLength + 1,
+            (dwValueLength + 1) as usize,
             szData.as_ptr(),
         );
         i += 1;
@@ -204,7 +204,7 @@ unsafe extern "C" fn GetSelectedListViewItem(hwndListView: HWND) -> i32 {
     return -1;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ListViewSubclassProc(
+unsafe extern "system" fn ListViewSubclassProc(
     hListBox: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -214,7 +214,7 @@ unsafe extern "stdcall" fn ListViewSubclassProc(
 ) -> LRESULT {
     match uMsg {
         WM_DESTROY => {
-            RemoveWindowSubclass(hListBox, ListViewSubclassProc, uIdSubclass);
+            RemoveWindowSubclass(hListBox, Some(ListViewSubclassProc), uIdSubclass);
         }
         WM_SIZE => {
             ShowScrollBar(hListBox, SB_HORZ, FALSE);
@@ -301,7 +301,7 @@ unsafe extern "C" fn AddValuesToList(hwndDlg: HWND, DlgData: *mut EDIT_DIALOG_DA
         return;
     }
 
-    StringCchCopy(lpTemp, dwValueLength, (*DlgData).VarData.lpRawValue);
+    StringCchCopy(lpTemp, (dwValueLength) as usize, (*DlgData).VarData.lpRawValue);
 
     lpToken = _tcstok(lpTemp, _T(b";\0".as_ptr() as *const TCHAR));
     i = 0;
@@ -339,7 +339,7 @@ unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
     _T(b"\0".as_ptr());
     _T(b"\0".as_ptr());
 
-    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof!(szFilter.as_ptr()));
+    LoadString(hApplet, IDS_FILE_BROWSE_FILTER, szFilter.as_mut_ptr(), _countof!(szFilter));
 
     ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAME>());
 
@@ -347,7 +347,7 @@ unsafe extern "C" fn BrowseRequiredFile(hwndDlg: HWND) {
     ofn.hwndOwner = hwndDlg;
     ofn.lpstrFilter = szFilter.as_mut_ptr();
     ofn.lpstrFile = szFile.as_mut_ptr();
-    ofn.nMaxFile = _countof!(szFile.as_ptr());
+    ofn.nMaxFile = _countof!(szFile);
     ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if GetOpenFileName(core::ptr::addr_of_mut!(ofn)) != 0 {
@@ -401,7 +401,7 @@ unsafe extern "C" fn BrowseRequiredFolder(
         }
     }
 
-    CoTaskMemFree(pidllist);
+    CoTaskMemFree((pidllist).cast());
 }
 unsafe extern "C" fn MoveListItem(
     hwndDlg: HWND,
@@ -431,14 +431,14 @@ unsafe extern "C" fn MoveListItem(
             dwSrcIndex,
             0,
             szDest.as_mut_ptr(),
-            _countof!(szDest.as_mut_ptr()),
+            _countof!(szDest),
         );
         ListView_GetItemText!(
             hwndListView,
             dwDestIndex,
             0,
             szSource.as_mut_ptr(),
-            _countof!(szSource.as_mut_ptr()),
+            _countof!(szSource),
         );
 
         ListView_SetItemText!(
@@ -810,13 +810,13 @@ unsafe extern "C" fn OnEndLabelEdit(pnmv: *mut NMLVDISPINFO) -> i32 {
         (*pnmv).item.iItem,
         0,
         szOldDir.as_mut_ptr(),
-        _countof!(szOldDir.as_ptr()),
+        _countof!(szOldDir),
     );
 
     SendMessage(
         hwndEdit,
         WM_GETTEXT,
-        _countof!(szNewDir.as_ptr()),
+        _countof!(szNewDir),
         szNewDir.as_mut_ptr() as LPARAM,
     );
 
@@ -882,7 +882,7 @@ unsafe extern "C" fn OnNotifyEditVariableDlg(hwndDlg: HWND, DlgData: PEDIT_DIALO
     FALSE
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn EditVariableDlgProc(
+unsafe extern "system" fn EditVariableDlgProc(
     hwndDlg: HWND,
     uMsg: UINT_PTR,
     wParam: WPARAM,
@@ -910,7 +910,7 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
             (*DlgData).cyMin = (rect.bottom - rect.top) as DWORD;
 
             if (*DlgData).dwDlgID == IDD_EDIT_VARIABLE_FANCY {
-                SetWindowSubclass(hwndListView, ListViewSubclassProc, 1, 0);
+                SetWindowSubclass(hwndListView, Some(ListViewSubclassProc), 1, 0);
 
                 if (*(*DlgData).VarData).lpRawValue != core::ptr::null_mut() {
                     AddValuesToList(hwndDlg, DlgData);
@@ -976,7 +976,7 @@ unsafe extern "stdcall" fn EditVariableDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     let mut p: LPTSTR;
                     let dwValueLength: DWORD;
@@ -1204,7 +1204,7 @@ unsafe extern "C" fn EditVariableDlgProc(
         }
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK => {
                     let mut p: LPTSTR;
                     let dwValueLength: DWORD;
@@ -1507,13 +1507,13 @@ unsafe extern "C" fn SetEnvironmentDialogListViewColumns(hwndListView: HWND) {
     memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, sizeof(column));
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
     column.fmt = (LVCFMT_LEFT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.32) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.32) as INT;
     column.iSubItem = 0;
     LoadString(hApplet, IDS_VARIABLE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of_val(&szStr[0])) as i32);
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 0, &mut column);
 
-    column.cx = ((rect.right - rect.left) * 0.63) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.63) as INT;
     column.iSubItem = 1;
     LoadString(hApplet, IDS_VALUE, szStr.as_mut_ptr(), (core::mem::size_of_val(&szStr) / core::mem::size_of_val(&szStr[0])) as i32);
     column.pszText = szStr.as_mut_ptr();
@@ -1584,7 +1584,7 @@ unsafe extern "C" fn OnNewVariable(
 
     hwndListView = GetDlgItem(hwndDlg, iDlgItem);
     (*DlgData).dwDlgID = IDD_EDIT_VARIABLE;
-    (*DlgData).dwSelectedValueIndex = -1 as DWORD;
+    (*DlgData).dwSelectedValueIndex = (-1i32) as DWORD;
 
     (*DlgData).VarData = GlobalAlloc(GPTR, (core::mem::size_of::<VARIABLE_DATA>()) as SIZE_T) as *mut VARIABLE_DATA;
     if (*DlgData).VarData.is_null() {
@@ -1595,7 +1595,7 @@ unsafe extern "C" fn OnNewVariable(
         hApplet,
         MAKEINTRESOURCE!((*DlgData).dwDlgID),
         hwndDlg,
-        EditVariableDlgProc,
+        Some(EditVariableDlgProc),
         DlgData as LPARAM,
     ) <= 0
     {
@@ -1673,7 +1673,7 @@ unsafe extern "C" fn OnEditVariable(
                 hApplet,
                 MAKEINTRESOURCE!((*DlgData).dwDlgID),
                 hwndDlg,
-                EditVariableDlgProc,
+                Some(EditVariableDlgProc),
                 DlgData as LPARAM,
             )) as i32;
 
@@ -1683,7 +1683,7 @@ unsafe extern "C" fn OnEditVariable(
                     hApplet,
                     MAKEINTRESOURCE!((*DlgData).dwDlgID),
                     hwndDlg,
-                    EditVariableDlgProc,
+                    Some(EditVariableDlgProc),
                     DlgData as LPARAM,
                 )) as i32;
             }

@@ -17,8 +17,8 @@ unsafe extern "C" fn RegTreeOpt_ToggleCheckItem(pRTO: *mut IRegTreeOptions, hIte
 unsafe extern "C" fn RegTreeOpt_OnTreeViewClick(pRTO: *mut IRegTreeOptions, hWndTree: HWND) -> BOOL {
     let mut HitTest: TV_HITTESTINFO = core::mem::zeroed();
     let dwPos: DWORD = GetMessagePos();
-    HitTest.pt.x = GET_X_LPARAM(dwPos);
-    HitTest.pt.y = GET_Y_LPARAM(dwPos);
+    HitTest.pt.x = GET_X_LPARAM!(dwPos);
+    HitTest.pt.y = GET_Y_LPARAM!(dwPos);
     ScreenToClient(hWndTree, &mut HitTest.pt);
     let hItem: HTREEITEM = TreeView_HitTest!(hWndTree, &mut HitTest);
     return RegTreeOpt_ToggleCheckItem(pRTO, hItem);
@@ -32,7 +32,7 @@ unsafe extern "C" fn RegTreeOpt_OnTreeViewKeyDown(pRTO: *mut IRegTreeOptions, hW
     return FALSE;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn VisualEffectsDlgProc(
+unsafe extern "system" fn VisualEffectsDlgProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -57,12 +57,12 @@ unsafe extern "stdcall" fn VisualEffectsDlgProc(
                 IRegTreeOptions_InitTree(pRTO, hWndTree, HKEY_LOCAL_MACHINE, pszPath, core::ptr::null_mut());
             } else {
                 let hWndPS = GetParent(hDlg);
-                let iPage = PropSheet_HwndToIndex(hWndPS, hDlg);
+                let iPage = PropSheet_HwndToIndex!(hWndPS, hDlg);
                 PostMessage(
                     hWndPS,
                     PSM_REMOVEPAGE,
                     0,
-                    SendMessageW(hWndPS, PSM_INDEXTOPAGE, iPage, 0),
+                    SendMessageW(hWndPS, PSM_INDEXTOPAGE, (iPage) as WPARAM, 0),
                 );
             }
             return TRUE;
@@ -132,12 +132,12 @@ unsafe extern "C" fn VisualEffectsDlgProc(
                 IRegTreeOptions_InitTree(pRTO, hWndTree, HKEY_LOCAL_MACHINE, pszPath, core::ptr::null_mut());
             } else {
                 let hWndPS = GetParent(hDlg);
-                let iPage = PropSheet_HwndToIndex(hWndPS, hDlg);
+                let iPage = PropSheet_HwndToIndex!(hWndPS, hDlg);
                 PostMessage(
                     hWndPS,
                     PSM_REMOVEPAGE,
                     0,
-                    SendMessageW(hWndPS, PSM_INDEXTOPAGE, iPage, 0),
+                    SendMessageW(hWndPS, PSM_INDEXTOPAGE, (iPage) as WPARAM, 0),
                 );
             }
             return TRUE;
@@ -181,7 +181,7 @@ unsafe extern "C" fn VisualEffectsDlgProc(
     FALSE
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AdvancedDlgProc(
+unsafe extern "system" fn AdvancedDlgProc(
     hDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -194,9 +194,9 @@ unsafe extern "stdcall" fn AdvancedDlgProc(
             return TRUE;
         }
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_CHANGESWAP => {
-                    DialogBoxW(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
+                    DialogBoxW!(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, Some(VirtMemDlgProc));
                 }
                 _ => {}
             }
@@ -220,9 +220,9 @@ unsafe extern "C" fn AdvancedDlgProc(
             return TRUE;
         }
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDC_CHANGESWAP => {
-                    DialogBoxW(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
+                    DialogBoxW!(hApplet, MAKEINTRESOURCEW!(IDD_VIRTMEM), hDlg, VirtMemDlgProc);
                 }
                 _ => {}
             }

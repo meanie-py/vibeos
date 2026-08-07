@@ -86,7 +86,7 @@ pub unsafe extern "system" fn HardwarePageProc(
                         hApplet,
                         MAKEINTRESOURCE!(IDD_HARDWAREPROFILES),
                         hwndDlg,
-                        HardProfDlgProc,
+                        Some(HardProfDlgProc),
                     );
                     return TRUE;
                 }

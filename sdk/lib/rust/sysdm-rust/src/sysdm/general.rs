@@ -50,7 +50,7 @@ pub unsafe extern "C" fn ShowLastWin32Error(hWndOwner: HWND) {
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         core::ptr::null_mut(),
         LastError,
-        LANG_USER_DEFAULT,
+        (LANG_USER_DEFAULT) as u32,
         (&mut lpMsg as *mut LPTSTR) as LPTSTR,
         0,
         core::ptr::null_mut(),
@@ -471,8 +471,8 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
             }
             StringCchPrintf(
                 szBuf.as_mut_ptr(),
-                _countof!(szBuf),
-                _T(b"%lu %s\0".as_ptr() as *const u16),
+                (_countof!(szBuf)) as usize,
+                _T(w!("%lu %s") as *const u16),
                 ppi.CurrentMhz,
                 szHz.as_ptr(),
             );
@@ -511,7 +511,7 @@ unsafe extern "C" fn GetSystemInformation(hwnd: HWND) {
     core::ptr::copy_nonoverlapping(sys_key_str, (SysKey.as_mut_ptr()).cast(), 64);
     core::ptr::copy_nonoverlapping(proc_key_str, (ProcKey.as_mut_ptr()).cast(), 64);
 
-    if GetSystemName(SMBiosName.as_mut_ptr(), _countof!(SMBiosName.as_ptr())) != 0 {
+    if GetSystemName(SMBiosName.as_mut_ptr(), _countof!(SMBiosName)) != 0 {
         SetDlgItemText(hwnd, CurMachineLine, SMBiosName.as_mut_ptr());
         CurMachineLine += 1;
     } else {
@@ -605,7 +605,7 @@ unsafe extern "C" fn GetSystemVersion(hwnd: HWND) {
     if pwszStr.is_null() {
         return;
     }
-    GetWindowText(hRosVersion, pwszStr, lenStr);
+    GetWindowText(hRosVersion, pwszStr, (lenStr) as i32);
 
     StringCchCatW(pwszStr, lenStr, pwszVersion);
     SetWindowText(hRosVersion, pwszStr);
@@ -639,7 +639,7 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
     }
 
     cSeconds = (cMilliseconds / 1000) as u32;
-    StringCchPrintfW(szBuf.as_mut_ptr(), _countof!(szBuf), szUptimeFormat.as_ptr(),
+    StringCchPrintfW(szBuf.as_mut_ptr(), (_countof!(szBuf)) as usize, szUptimeFormat.as_ptr(),
                      cSeconds / (60*60*24),
                      (cSeconds / (60*60)) % 24,
                      (cSeconds / 60) % 60,
@@ -656,11 +656,11 @@ unsafe extern "C" fn InitSystemUptime(hwndDlg: HWND) {
         return;
     }
 
-    hKernel32 = GetModuleHandleW(b"k\0e\0r\0n\0e\0l\03\02\0.\0d\0l\0l\0\0\0".as_ptr() as *const u16);
+    hKernel32 = GetModuleHandleW(w!("kernel32.dll") as *const u16);
     if !hKernel32.is_null() {
         pGetTickCount64 = core::mem::transmute(GetProcAddress(hKernel32, b"GetTickCount64\0".as_ptr() as *const i8));
         if pGetTickCount64.is_none() {
-            hKernel32Vista = LoadLibraryW(b"k\0e\0r\0n\0e\0l\03\02\0_\0v\0i\0s\0t\0a\0.\0d\0l\0l\0\0\0".as_ptr() as *const u16);
+            hKernel32Vista = LoadLibraryW(w!("kernel32_vista.dll") as *const u16);
             if !hKernel32Vista.is_null() {
                 pGetTickCount64 = core::mem::transmute(GetProcAddress(hKernel32Vista, b"GetTickCount64\0".as_ptr() as *const i8));
             }
@@ -707,7 +707,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
 
         WM_COMMAND => {
             if LOWORD!(wParam) == (IDC_LICENCE) as u16 {
-                DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_LICENCE), hwndDlg, LicenceDlgProc);
+                DialogBox!(hApplet, MAKEINTRESOURCE!(IDD_LICENCE), hwndDlg, Some(LicenceDlgProc));
 
                 return TRUE;
             }
@@ -748,7 +748,7 @@ pub unsafe extern "system" fn GeneralPageProc(hwndDlg: HWND, uMsg: u32, wParam: 
             if (*nmhdr).idFrom == IDC_ROSHOMEPAGE_LINK && (*nmhdr).code == NM_CLICK {
                 let nml = nmhdr as *mut PNMLINK;
 
-                ShellExecuteW(hwndDlg, b"o\0p\0e\0n\0\0".as_ptr() as *const u16, (*(*nml)).item.szUrl, core::ptr::null(), core::ptr::null(), (SW_SHOWNORMAL) as INT);
+                ShellExecuteW(hwndDlg, w!("open"), (*(*nml)).item.szUrl, core::ptr::null(), core::ptr::null(), (SW_SHOWNORMAL) as INT);
             }
         }
 

@@ -52,7 +52,7 @@ pub struct _VIRTMEM {
 pub type VIRTMEM = _VIRTMEM;
 pub type PVIRTMEM = *mut _VIRTMEM;
 
-static lpKey: LPCTSTR = b"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\0".as_ptr() as LPCTSTR;
+static lpKey: LPCTSTR = w!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management") as LPCTSTR;
 unsafe extern "C" fn GetMaxPageFileSize(PageFile: *mut PAGEFILE) -> UINT {
     #[cfg(target_arch = "x86")]
     {
@@ -167,7 +167,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
     let mut PgCnt: UINT = 0;
     let mut PageFile: PPAGEFILE;
 
-    DriveLen = GetLogicalDriveStrings(_countof!(szDrives.len()) - 1, szDrives.as_mut_ptr());
+    DriveLen = (GetLogicalDriveStrings(_countof!(szDrives) - 1, szDrives.as_mut_ptr())) as i32;
 
     DrivePtr = szDrives.as_mut_ptr();
 
@@ -177,7 +177,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
 
         DrivePtr = _tcsupr(DrivePtr);
 
-        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, _countof!(szDrive.len()));
+        lstrcpyn(szDrive.as_mut_ptr(), DrivePtr, _countof!(szDrive));
 
         if GetDriveType(DrivePtr) == DRIVE_FIXED {
             MinSize = -1;
@@ -196,7 +196,7 @@ unsafe extern "C" fn ParseMemSettings(pVirtMem: PVIRTMEM) {
             (*PageFile).bUsed = TRUE;
             lstrcpy((*PageFile).szDrive.as_mut_ptr(), szDrive.as_mut_ptr());
 
-            if GetVolumeInformation(DrivePtr, szVolume.as_mut_ptr(), _countof!(szVolume.len()), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), szFSName.as_mut_ptr(), _countof!(szFSName.len())) != 0 {
+            if GetVolumeInformation(DrivePtr, szVolume.as_mut_ptr(), _countof!(szVolume), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), szFSName.as_mut_ptr(), _countof!(szFSName)) != 0 {
                 (*PageFile).pszVolume = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ((_tcslen(szVolume.as_mut_ptr()) + 1) * core::mem::size_of::<TCHAR>()) as SIZE_T) as LPTSTR;
                 if (*PageFile).pszVolume != core::ptr::null_mut() {
                     _tcscpy((*PageFile).pszVolume, szVolume.as_mut_ptr());
@@ -231,7 +231,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
         {
             _stprintf(
                 szText.as_mut_ptr(),
-                _T(b"%s\\\\pagefile.sys %i %i\0".as_ptr() as LPCTSTR),
+                _T(w!("%s\\\\pagefile.sys %i %i") as LPCTSTR),
                 (*PageFile).szDrive.as_ptr(),
                 (*PageFile).NewMinSize,
                 (*PageFile).NewMaxSize
@@ -241,7 +241,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
 
             nPos += lstrlen(szText.as_ptr()) as UINT + 1;
 
-            *szPagingFiles.as_mut_ptr().add(nPos as usize) = _T(b"\0\0".as_ptr() as LPCTSTR) as TCHAR;
+            *szPagingFiles.as_mut_ptr().add(nPos as usize) = _T(w!("") as LPCTSTR) as TCHAR;
             nPos += 1;
         }
         i += 1;
@@ -261,7 +261,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
     {
         if RegSetValueEx(
             hk,
-            _T(b"PagingFiles\0".as_ptr() as LPCTSTR),
+            _T(w!("PagingFiles") as LPCTSTR),
             0,
             REG_MULTI_SZ,
             szPagingFiles.as_ptr() as LPBYTE,
@@ -282,7 +282,7 @@ unsafe extern "C" fn WritePageFileSettings(pVirtMem: PVIRTMEM) {
             {
                 _stprintf(
                     szText.as_mut_ptr(),
-                    _T(b"%s\\\\pagefile.sys\0".as_ptr() as LPCTSTR),
+                    _T(w!("%s\\\\pagefile.sys") as LPCTSTR),
                     (*pVirtMem).PageFile[i as usize].szDrive.as_ptr()
                 );
 
@@ -424,8 +424,8 @@ unsafe extern "C" fn UpdatePagefileEntry(
 }
 unsafe extern "C" fn OnSet(pVirtMem: PVIRTMEM) {
     let mut Index: INT;
-    let mut MinSize: UINT = -1 as UINT;
-    let mut MaxSize: UINT = -1 as UINT;
+    let mut MinSize: UINT = (-1i32) as UINT;
+    let mut MaxSize: UINT = (-1i32) as UINT;
     let mut bTranslated: BOOL;
     let mut DriveIndex: UINT;
     let mut PageFile: PPAGEFILE;

@@ -12,7 +12,9 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 pub use crate::types::*;
-pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void};
+pub use core::ffi::{
+    c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ulong, c_ushort, c_void,
+};
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
@@ -479,7 +481,10 @@ pub use strsafe_rust::{
 #[macro_export]
 macro_rules! ListView_GetItemCount { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETITEMCOUNT, 0, 0) as c_int }; }
 #[macro_export]
-macro_rules! ListView_GetItem { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETITEM, 0, $p as LPARAM) as BOOL }; }
+// LVM_GETITEM / LVM_EDITLABEL are `#define`d to the W spelling under -DUNICODE, so no island
+// carries the undecorated name. The `as *mut _` hop is the C cast `(LPARAM)(LV_ITEM FAR*)`:
+// a Rust reference cannot go straight to an integer.
+macro_rules! ListView_GetItem { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETITEMW, 0, $p as *mut _ as LPARAM) as BOOL }; }
 #[macro_export]
 macro_rules! ListView_DeleteItem { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_DELETEITEM, $i as WPARAM, 0) as BOOL }; }
 #[macro_export]
@@ -493,7 +498,7 @@ macro_rules! ListView_GetNextItem { ($h:expr, $i:expr, $f:expr $(,)?) => { $crat
 #[macro_export]
 macro_rules! ListView_GetSelectedCount { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETSELECTEDCOUNT, 0, 0) as UINT }; }
 #[macro_export]
-macro_rules! ListView_EditLabel { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_EDITLABEL, $i as WPARAM, 0) as HWND }; }
+macro_rules! ListView_EditLabel { ($h:expr, $i:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_EDITLABELW, $i as WPARAM, 0) as HWND }; }
 #[macro_export]
 macro_rules! ListView_GetEditControl { ($h:expr $(,)?) => { $crate::prelude::SendMessageW($h, LVM_GETEDITCONTROL, 0, 0) as HWND }; }
 #[macro_export]
@@ -525,7 +530,7 @@ macro_rules! TreeView_GetNextItem { ($h:expr, $i:expr, $c:expr $(,)?) => { $crat
 #[macro_export]
 macro_rules! TreeView_GetSelection { ($h:expr $(,)?) => { $crate::TreeView_GetNextItem!($h, core::ptr::null_mut::<core::ffi::c_void>(), TVGN_CARET) }; }
 #[macro_export]
-macro_rules! TreeView_HitTest { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, TVM_HITTEST, 0, $p as LPARAM) as HTREEITEM }; }
+macro_rules! TreeView_HitTest { ($h:expr, $p:expr $(,)?) => { $crate::prelude::SendMessageW($h, TVM_HITTEST, 0, $p as *mut _ as LPARAM) as HTREEITEM }; }
 #[macro_export]
 macro_rules! Button_SetCheck { ($h:expr, $c:expr $(,)?) => { { $crate::prelude::SendMessageW($h, BM_SETCHECK, $c as WPARAM, 0); } }; }
 pub use crate::{

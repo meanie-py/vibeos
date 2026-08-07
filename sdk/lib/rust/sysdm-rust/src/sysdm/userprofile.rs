@@ -69,7 +69,7 @@ unsafe extern "C" fn OnProfileTypeInit(
     TRUE
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn UserProfileTypeDlgProc(
+unsafe extern "system" fn UserProfileTypeDlgProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -84,7 +84,7 @@ unsafe extern "stdcall" fn UserProfileTypeDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
@@ -115,7 +115,7 @@ unsafe extern "C" fn UserProfileTypeDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
@@ -142,7 +142,7 @@ unsafe extern "C" fn ChangeUserProfileType(
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1i32, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
@@ -161,7 +161,7 @@ unsafe extern "C" fn ChangeUserProfileType(
     if DialogBoxParam(hApplet,
                        MAKEINTRESOURCE!(IDD_USERPROFILE_TYPE),
                        hwndDlg,
-                       UserProfileTypeDlgProc,
+                       Some(UserProfileTypeDlgProc),
                        Item.lParam as LPARAM) == IDOK
     {
         return TRUE;
@@ -180,7 +180,7 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1i32, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
@@ -219,7 +219,7 @@ unsafe extern "C" fn DeleteUserProfile(hwndDlg: HWND) -> BOOL {
     return FALSE;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CopyUserProfileDlgProc(
+unsafe extern "system" fn CopyUserProfileDlgProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -233,7 +233,7 @@ unsafe extern "stdcall" fn CopyUserProfileDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
@@ -263,7 +263,7 @@ unsafe extern "C" fn CopyUserProfileDlgProc(
         WM_DESTROY => {}
 
         WM_COMMAND => {
-            match LOWORD!(wParam) {
+            match (LOWORD!(wParam)) as u32 {
                 IDOK | IDCANCEL => {
                     EndDialog(hwndDlg, (LOWORD!(wParam)) as INT_PTR);
                     return TRUE;
@@ -291,7 +291,7 @@ unsafe extern "C" fn CopyUserProfile(
         return FALSE;
     }
 
-    iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
+    iSelected = ListView_GetNextItem!(hwndListView, -1i32, LVNI_SELECTED);
     if iSelected == -1 {
         return FALSE;
     }
@@ -314,7 +314,7 @@ unsafe extern "C" fn CopyUserProfile(
         hApplet,
         MAKEINTRESOURCE!(IDD_USERPROFILE_COPY),
         hwndDlg,
-        CopyUserProfileDlgProc,
+        Some(CopyUserProfileDlgProc),
         Item.lParam as LPARAM
     ) == IDOK {
         return TRUE;
@@ -334,37 +334,37 @@ unsafe extern "C" fn SetListViewColumns(hwndListView: HWND) {
     memset(&mut column as *mut _ as *mut core::ffi::c_void, 0x00, core::mem::size_of::<LV_COLUMN>());
     column.mask = LVCF_FMT | LVCF_WIDTH | LVCF_SUBITEM | LVCF_TEXT;
     column.fmt = (LVCFMT_LEFT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.40) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.40) as INT;
     column.iSubItem = 0;
-    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_NAME, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 0, &mut column);
 
     column.fmt = (LVCFMT_RIGHT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.15) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 1;
-    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_SIZE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 1, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.15) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 2;
-    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_TYPE, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 2, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.15) as INT;
+    column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT;
     column.iSubItem = 3;
-    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_STATUS, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 3, &mut column);
 
     column.fmt = (LVCFMT_LEFT) as i32;
-    column.cx = ((rect.right - rect.left) * 0.15) as INT - GetSystemMetrics((SM_CYHSCROLL) as i32);
+    column.cx = ((rect.right - rect.left) as f64 * 0.15) as INT - GetSystemMetrics((SM_CYHSCROLL) as i32);
     column.iSubItem = 4;
-    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE!(szStr.as_ptr()));
+    LoadString(hApplet, IDS_USERPROFILE_MODIFIED, szStr.as_mut_ptr(), ARRAYSIZE!(szStr));
     column.pszText = szStr.as_mut_ptr();
     ListView_InsertColumn!(hwndListView, 4, &mut column);
 }
@@ -380,7 +380,7 @@ unsafe extern "C" fn GetProfileSize(
 
     dwProfilePathLength = (wcslen(pszProfilePath)) as u32;
 
-    wcscat(pszProfilePath, b"\\*.*\0".as_ptr() as *const u16);
+    wcscat(pszProfilePath, w!("\\*.*") as *const u16);
 
     hFile = FindFirstFileW(pszProfilePath, &mut FindData);
     if hFile == INVALID_HANDLE_VALUE {
@@ -400,8 +400,8 @@ unsafe extern "C" fn GetProfileSize(
 
     loop {
         if FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
-            if (_wcsicmp(FindData.cFileName.as_ptr(), b".\0".as_ptr() as *const u16) == 0) ||
-                (_wcsicmp(FindData.cFileName.as_ptr(), b"..\0".as_ptr() as *const u16) == 0) {
+            if (_wcsicmp(FindData.cFileName.as_ptr(), w!(".") as *const u16) == 0) ||
+                (_wcsicmp(FindData.cFileName.as_ptr(), w!("..") as *const u16) == 0) {
                 if FindNextFile(hFile, &mut FindData) == 0 {
                     break;
                 }
@@ -423,9 +423,9 @@ unsafe extern "C" fn GetProfileSize(
                 return bResult;
             }
         } else {
-            (*Size.u).__bindgen_anon_1.LowPart = FindData.nFileSizeLow;
-            (*Size.u).__bindgen_anon_1.HighPart = FindData.nFileSizeHigh;
-            *pullProfileSize = (*pullProfileSize).wrapping_add(*Size.QuadPart);
+            Size.u.LowPart = FindData.nFileSizeLow;
+            Size.u.HighPart = FindData.nFileSizeHigh;
+            *pullProfileSize = (*pullProfileSize).wrapping_add(Size.QuadPart);
         }
 
         if FindNextFile(hFile, &mut FindData) == 0 {
@@ -548,12 +548,12 @@ unsafe extern "C" fn AddUserProfile(
     FindClose(hFile);
     szProfilePath[dwProfilePathLength as usize] = UNICODE_NULL;
 
-    ullProfileSize = 0ULL;
+    ullProfileSize = 0u64;
     GetProfileSize(szProfilePath.as_mut_ptr(), core::ptr::addr_of_mut!(ullProfileSize));
 
     if GetProfileName(
         pProfileSid,
-        ARRAYSIZE!(szNameBuffer.as_ptr()),
+        ARRAYSIZE!(szNameBuffer),
         szNameBuffer.as_mut_ptr(),
         (core::ptr::addr_of_mut!(bUnknownProfile)).cast(),
     ) == 0
@@ -619,7 +619,7 @@ unsafe extern "C" fn AddUserProfile(
     lvi.lParam = pProfileData as LPARAM;
     iItem = ListView_InsertItem!(hwndListView, core::ptr::addr_of_mut!(lvi));
 
-    StrFormatByteSizeW((ullProfileSize) as LONGLONG, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()) - 1);
+    StrFormatByteSizeW((ullProfileSize) as LONGLONG, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer) - 1);
     ListView_SetItemText!(hwndListView, iItem, 1, szNameBuffer.as_mut_ptr());
 
     if dwState & 0x0010 != 0 {
@@ -628,7 +628,7 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer));
 
     ListView_SetItemText!(hwndListView, iItem, 2, szNameBuffer.as_mut_ptr());
 
@@ -640,7 +640,7 @@ unsafe extern "C" fn AddUserProfile(
         nId = (IDS_USERPROFILE_LOCAL) as i32;
     }
 
-    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer.as_ptr()));
+    LoadStringW(hApplet, nId as u32, szNameBuffer.as_mut_ptr(), ARRAYSIZE!(szNameBuffer));
 
     ListView_SetItemText!(hwndListView, iItem, 3, szNameBuffer.as_mut_ptr());
 
@@ -655,7 +655,7 @@ unsafe extern "C" fn AddUserProfile(
         core::ptr::addr_of_mut!(SystemTime),
         core::ptr::null_mut(),
         szNameBuffer.as_mut_ptr(),
-        ARRAYSIZE!(szNameBuffer.as_ptr()),
+        ARRAYSIZE!(szNameBuffer),
     );
 
     ListView_SetItemText!(hwndListView, iItem, 4, szNameBuffer.as_mut_ptr());
@@ -672,7 +672,7 @@ unsafe extern "C" fn UpdateButtonState(
 
     if ListView_GetSelectedCount!(hwndListView) != 0
     {
-        iSelected = ListView_GetNextItem!(hwndListView, -1, LVNI_SELECTED);
+        iSelected = ListView_GetNextItem!(hwndListView, -1i32, LVNI_SELECTED);
         if iSelected != -1
         {
             ZeroMemory!(&mut Item as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<LVITEM>());
@@ -744,7 +744,7 @@ unsafe extern "C" fn AddUserProfiles(
 
         if RegOpenKeyExW(
             HKEY_LOCAL_MACHINE,
-            b"Software\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\0".as_ptr() as *const u16,
+            w!("Software\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList") as *const u16,
             0,
             KEY_READ,
             &mut hKeyUserProfiles,
@@ -756,7 +756,7 @@ unsafe extern "C" fn AddUserProfiles(
         if bAdmin != 0 {
             dwIndex = 0;
             loop {
-                dwSidLength = ARRAYSIZE!(szProfileSid.as_ptr());
+                dwSidLength = ARRAYSIZE!(szProfileSid);
                 if RegEnumKeyExW(
                     hKeyUserProfiles,
                     dwIndex,
@@ -849,7 +849,7 @@ unsafe extern "C" fn OnNotify(
     let mut pNMLV: LPNMLISTVIEW;
 
     if (*nmhdr).idFrom == IDC_USERACCOUNT_LINK && (*nmhdr).code == NM_CLICK {
-        ShellExecuteW(hwndDlg, core::ptr::null_mut(), b"usrmgr.cpl\0".as_ptr() as PWSTR, core::ptr::null_mut(), core::ptr::null_mut(), 0);
+        ShellExecuteW(hwndDlg, core::ptr::null_mut(), w!("usrmgr.cpl") as PWSTR, core::ptr::null_mut(), core::ptr::null_mut(), 0);
     } else if (*nmhdr).idFrom == IDC_USERPROFILE_LIST {
         match ((*nmhdr).code) as i32 {
             LVN_ITEMCHANGED => {
@@ -1409,7 +1409,7 @@ pub unsafe extern "system" fn UserProfileDlgProc(
 //     szProfilePath[dwProfilePathLength] = UNICODE_NULL;
 //
 //     /* Get the profile size */
-//     ullProfileSize = 0ULL;
+//     ullProfileSize = 0u64;
 //     GetProfileSize(szProfilePath, &ullProfileSize);
 //
 //     /* Get the profile name */
