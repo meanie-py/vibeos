@@ -929,8 +929,8 @@ Each compiles to a **396-byte object with zero defined symbols** on all three ar
 pre-payment; it was read straight past, because in a module whose constants are named
 `ERROR_ACCESS_DENIED` a `grep ERROR` of the report shows forty innocent lines and buries it.
 
-**Wave 33 — main.c's `DllMain`, $0. msvcrt.dll's exported surface is Rust.** The last C
-function in the DLL, and the one every prior wave routed around: `set_module_type(msvcrt
+**Wave 33 — main.c's `DllMain`, $0. The WINE-derived half of msvcrt.dll is Rust.** The last C
+function in that half, and the one every prior wave routed around: `set_module_type(msvcrt
 win32dll ENTRYPOINT DllMain 12)` means this is the *entry point*, and it is what decides the
 order in which the heap, the locks, the locale, the fd table, the signal table, argv and the
 clock come up. Every one of those was already Rust before this file existed — what was left in
@@ -961,6 +961,36 @@ ones, and `_set_printf_count_output(0)`. The `#if _MSVCR_VER == 0` arm — `LdrA
 pinning msvcrt so it can never be unloaded and re-initialised over a live fd table — is the
 one that IS live, and is the branch a translation working from the wine original rather than
 this tree's flags would drop.
+
+**The census that headline needed — and the bug it found.** "Exported surface is Rust" was
+first written as *zero C exports*, and that was measured over `MSVCRT_SOURCE`'s Wine-derived
+`.c` only. `dll/win32/msvcrt/reactos/` is in the same source list and also exports. Re-measured
+properly on amd64 — `llvm-nm` over every `msvcrt_static` object against the providers that link
+ahead of it, joined to `msvcrt.spec` — **8 of 1,119 non-stub, non-C++-mangled exports are still
+backed by a live C body**: five in `reactos/misc.c` (`_fileinfo`, `_mbcasemap`, `_get_fileinfo`,
+`_set_fileinfo`, `_get_winver`, plus `__p__fileinfo`/`__p__mbcasemap` on i386), two in
+`reactos/system.cpp` (`system`, `_wsystem`), and one regression in `mbcs.c`.
+
+Three categories that *look* like remaining work and are not, each checked against the binaries
+rather than assumed: **111** symbols across scanf/wcs/file/process/console are the deliberate
+`...` trampolines in `rust_*_shim.c`, because stable Rust cannot DEFINE a C-variadic; **7** are
+non-exported internals (`asm_sqrt`, `fpnum_parse`, `sse2_supported`) whose Rust twins are
+private on purpose; and **44** exports (`memmove`, `atexit`, `setjmp`, `_rotl`, the `_CI*`
+family) are resolved from other archives entirely, with no `msvcrt_static` object defining them
+at all.
+
+The regression is the one worth carrying forward: `_mbctype` was **two arrays**. `msvcrt.spec`
+exports it as `@ extern _mbctype MSVCRT_mbctype`, mbcs.rs defined `MSVCRT_mbctype` without
+`#[no_mangle]`, and the mangled Rust static therefore did not satisfy the export — mbcs.c's
+copy did. `_setmbcp_l` wrote one; the exported `_mbctype` named the other, permanently zero —
+`__p__mbctype` is not involved, it returns the per-thread `mbcinfo->mbctype`. Green everywhere,
+because that table IS zero in every single-byte locale.
+`verify_cohab_coverage.py`, the tool that exists to catch exactly this, took only the first
+name on a spec line and so never saw the backing symbol — `extern` is the one directive where
+the two differ. Fixed there first, which made the finding appear, and only then in mbcs.rs.
+Scope measured, not guessed: 41 renamed data exports in msvcrt, this the only wrong one
+(`_adjust_fdiv` already carried the same fix and a comment explaining it), and no other
+Rust-flipped module in the tree has a renamed data export at all.
 
 **Wave 32 — wcs.c's last three, $0.** `_wcsdup`, `towctrans` and `wcstombs`, hand-written into
 `wcs_rest.rs`. Wave 16 left them because each delegates to something that was still C at the

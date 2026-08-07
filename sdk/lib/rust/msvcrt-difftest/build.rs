@@ -609,6 +609,56 @@ fn defined_symbols(src: &str) -> Vec<String> {
     out
 }
 
+/// File-scope DATA definitions, sorted — the other half of `defined_symbols`.
+///
+/// `defined_symbols` requires a `(` on the line, so it finds functions and nothing else.
+/// A file-scope array or scalar is just as much a definition, collides at the link just
+/// as hard, and — worse — if one side's copy wins, the two implementations silently SHARE
+/// one piece of state. That is the same lesson the `nm`-based scrape below already
+/// records for file.c's `MSVCRT___pioinfo` / `MSVCRT__iob` / `MSVCRT___badioinfo`; mbcs.c's
+/// `MSVCRT_mbctype` is the same shape and was missed because its scrape is source-based.
+///
+/// House style is the whole grammar: a definition starts at column 0, is not `static`,
+/// `typedef` or `extern`, and reaches its `[` or `=` without passing a `(`.
+fn defined_data_symbols(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        if line.starts_with([' ', '\t', '#', '/', '*', '}']) || line.trim().is_empty() {
+            continue;
+        }
+        if line.starts_with("static") || line.starts_with("typedef") || line.starts_with("extern")
+        {
+            continue;
+        }
+        let Some(end) = line.find(['[', '=']) else { continue };
+        let head = &line[..end];
+        if head.contains('(') {
+            continue; // a function, or a function-pointer declarator we should not guess at
+        }
+        let name: String = head
+            .chars()
+            .rev()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        // A bare `TYPE name;` is a tentative definition and still emits a symbol, but the
+        // head must have held at least a type before the name for this to be a definition
+        // at all rather than an assignment at file scope (which C does not allow anyway).
+        if name.is_empty()
+            || name.chars().next().is_some_and(|c| c.is_ascii_digit())
+            || head[..head.len() - name.len()].trim().is_empty()
+        {
+            continue;
+        }
+        out.push(name);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The externally-visible symbols of a BUILT object whose nm type letter is in
 /// `kinds`, sorted.  `"T"` is code; `"D"`/`"B"` are initialised/zero data.
 ///
@@ -761,8 +811,25 @@ fn main() {
     let mbcs_src = fs::read_to_string(&mbcs_c).unwrap();
     let mbcs_symbols: Vec<String> = defined_symbols(&mbcs_src)
         .into_iter()
+        .chain(defined_data_symbols(&mbcs_src))
         .filter(|name| !NAMESPACED_SYMBOLS.contains(&name.as_str()))
         .collect();
+    // `MSVCRT_mbctype` is the reason the data half exists: msvcrt.spec exports it by name,
+    // so the subject crate must define it `#[no_mangle]`, and an un-renamed reference copy
+    // then collides. Assert it rather than trust the scrape — a silent miss here is a
+    // duplicate symbol at best and one shared MBCS table between the two sides at worst.
+    //
+    // It is renamed, unlike ctype.c's `MSVCRT__ctype`/`MSVCRT__wctype` which are shared on
+    // purpose, and the line between them is WHO WRITES IT. ctype's tables are locale
+    // ENVIRONMENT the two sides must agree on. This one is written by `_setmbcp_l` — code
+    // under test — so sharing it would let each side read what the other wrote, which is
+    // the failure errno.c's stage 5 comment already spells out for `MSVCRT__sys_errlist`:
+    // the row would compare a table against itself.
+    assert!(
+        mbcs_symbols.iter().any(|s| s == "MSVCRT_mbctype"),
+        "mbcs.c's data scrape did not find MSVCRT_mbctype — the reference copy would keep \
+         its plain name and collide with the subject's exported one"
+    );
     assert!(
         mbcs_symbols.len() > 150,
         "mbcs.c scrape found only {} definitions — the scan is broken, and a short list \

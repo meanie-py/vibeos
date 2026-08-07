@@ -6,6 +6,14 @@
 use crate::prelude::*;
 
 // ---- file-scope preamble (translated) ----
+// `#[no_mangle]` because msvcrt.spec:715 says `@ extern _mbctype MSVCRT_mbctype` — the DLL
+// exports this array BY NAME, so a mangled Rust static does not satisfy the export and the
+// C's copy in mbcs.c stays live to do it. That is what shipped: two 257-byte arrays at
+// different addresses, `_setmbcp_l` (Rust) writing one and the exported `_mbctype` naming
+// the other, permanently zero. Invisible in every locale whose table IS zero, which is why
+// nothing failed. (`__p__mbctype` was never affected — it returns the PER-THREAD
+// `mbcinfo->mbctype`, not this global.) An exported global crosses with its writer.
+#[no_mangle]
 pub static mut MSVCRT_mbctype: [u8; 257] = [0; 257];
 
 #[repr(C)]

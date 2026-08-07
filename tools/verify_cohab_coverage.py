@@ -193,8 +193,18 @@ def _referenced(build: Path, fam: dict, nm: Path) -> set[str]:
             out |= _spellings(name)
     spec = ROOT / fam["spec"]
     if spec.is_file():
-        for m in re.finditer(r"^\s*(?:@|\d+)\s+\S+(?:\s+-\S+)*\s+(\w+)", spec.read_text(), re.M):
+        text = spec.read_text()
+        for m in re.finditer(r"^\s*(?:@|\d+)\s+\S+(?:\s+-\S+)*\s+(\w+)", text, re.M):
             out |= {m.group(1), "_" + m.group(1)}
+        # `extern` is the one directive whose EXPORT NAME and BACKING SYMBOL differ:
+        # `@ extern _mbctype MSVCRT_mbctype` exports `_mbctype` from a symbol named
+        # `MSVCRT_mbctype`. The pass above captures only the first name, so a data export
+        # whose Rust twin is a MANGLED private static looked unreferenced and passed —
+        # which is precisely the wrong-name failure this file exists to catch, in the one
+        # shape it could not see. That shipped: `_mbctype` was a second, permanently-zero
+        # array while `_setmbcp` wrote the Rust one.
+        for m in re.finditer(r"^\s*(?:@|\d+)\s+extern(?:\s+-\S+)*\s+\w+\s+(\w+)", text, re.M):
+            out |= _spellings(m.group(1))
     return out
 
 
