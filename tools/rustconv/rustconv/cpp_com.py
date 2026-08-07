@@ -383,10 +383,28 @@ _MAP_ENTRY = re.compile(r"\b(COM_INTERFACE_ENTRY(?:2)?(?:_IID)?)\s*\(([^)]*)\)")
 _UNSUPPORTED_MAP = re.compile(
     r"\b(COM_INTERFACE_ENTRY_(?:CHAIN|FUNC|FUNC_BLIND|AGGREGATE|BREAK|NOINTERFACE))\s*\("
 )
+# A method DECLARATION, consumed whole. Two prefixes must be inside the match or their
+# leftovers merge with the next real field into a bogus one: the `static` storage specifier,
+# and a POINTER return type (`SApp *AddInternal(...)` used to match only from `AddInternal`,
+# stranding `SApp *`). COpenWithList's private section has both, and produced the field
+# `SApp * static static static static` — which would have been a silent struct-layout change
+# had it happened to parse.
 _METHOD_DECL = re.compile(
-    r"(?:STDMETHOD(?:IMP)?|virtual\s+[^;()]+|[A-Za-z_]\w*(?:\s+WINAPI)?)\s*"
-    r"(?:\([^;{}]*\)|[A-Za-z_]\w*\s*\([^;{}]*\))\s*(?:override\s*)?;"
+    r"(?:static\s+|inline\s+|explicit\s+)*"
+    r"~?\s*"
+    # The return type may be scope-qualified (`COpenWithList::SApp *GetCurrentApp()`);
+    # matching only from `SApp` stranded `COpenWithList::` onto the next member.
+    r"(?:STDMETHOD(?:IMP)?|virtual\s+[^;()]+"
+    r"|[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*(?:\s+(?:WINAPI|CALLBACK|APIENTRY|PASCAL"
+    r"|STDMETHODCALLTYPE|NTAPI|WINAPIV|FASTCALL|CDECL|__stdcall|__cdecl|__fastcall))?)\s*"
+    r"(?:[*&]\s*)?"
+    r"(?:\([^;{}]*\)|[A-Za-z_]\w*\s*\([^;{}]*\))\s*(?:const\s*)?(?:override\s*)?;"
 )
+
+# Tokens that can only be parser debris once a statement is claimed to be a data member.
+# A field carrying one of these is a mis-parse, and a mis-parsed field silently changes the
+# object layout — so it HARD FAILS instead of being dropped or guessed at.
+_FIELD_DEBRIS = re.compile(r"\b(?:static|typedef|virtual|inline|template|explicit|friend)\b")
 
 
 def _balanced_block(text: str, open_brace: int) -> tuple[str, int]:
@@ -565,7 +583,10 @@ def _state_fields(body: str) -> list[str]:
     # declaration while removing the nested type block before semicolon
     # splitting.  The type block is independently captured by
     # ``_discover_pod_state_types`` from the unmodified class text.
-    nested_type = re.compile(r"\b(?:struct|union|enum)\s+[A-Za-z_]\w*\s*\{")
+    # `typedef` must be part of the match, not left dangling in front of the next
+    # declaration — `typedef struct _LANGANDCODEPAGE {...} LANGANDCODEPAGE, *LP...;`
+    # otherwise leaves a bare `typedef` that glues onto the field below it.
+    nested_type = re.compile(r"\b(?:typedef\s+)?(?:struct|union|enum)\s+[A-Za-z_]\w*\s*\{")
     while match := nested_type.search(stripped):
         open_brace = stripped.find("{", match.start())
         _, close_brace = _balanced_block(stripped, open_brace)
@@ -582,11 +603,31 @@ def _state_fields(body: str) -> list[str]:
         statement = " ".join(statement.split())
         if not statement or "(" in statement or ")" in statement or statement == "override":
             continue
-        # Static declarations do not contribute to an instance layout.  Macro
-        # removal can also leave a destructor's leading `~` or disabled `#if`
-        # method debris joined to the following static declaration.
-        if statement.startswith(("static ", "~", "#")) or " #" in statement:
+        if statement.startswith("#") or " #" in statement:
             continue
+        # A static member is not part of the instance layout, so it is dropped — but drop it
+        # only when it is a CLEAN static declaration. `static INT_PTR CALLBACK DialogProc();`
+        # once stranded `static INT_PTR`, which glued onto the following member and made the
+        # whole thing start with `static ` — so the drop silently swallowed a real field.
+        # Debris after the storage class means the strip is wrong, not that the member is.
+        if statement.startswith("static "):
+            if _FIELD_DEBRIS.search(statement[len("static ") :]):
+                raise CppComError(
+                    f"class layout parse merged debris into a static declaration: "
+                    f"{statement!r}. Dropping it would silently delete the data member "
+                    "trailing it — fix the method-declaration stripping."
+                )
+            continue
+        # A destructor's leading `~` used to make the whole statement be DROPPED. When the
+        # `~` stands alone that is right, but `~COpenWithList();` is followed by the first
+        # data member, and once the declaration was consumed the two joined into
+        # `~ SApp *m_pApp` — so the class SILENTLY LOST its first field, for every class
+        # that declares a destructor. `_METHOD_DECL` now eats the `~` with the declaration;
+        # strip any survivor rather than discarding the member behind it.
+        if statement.startswith("~"):
+            statement = statement.lstrip("~").strip()
+            if not statement:
+                continue
         # Access labels and macro debris contain no plausible declarator.
         if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", statement):
             # C permits ``UINT first, second``. There is one base type and two
@@ -605,6 +646,15 @@ def _state_fields(body: str) -> list[str]:
                 )
             else:
                 fields.append(statement)
+    for statement in fields:
+        debris = _FIELD_DEBRIS.search(statement)
+        if debris is not None:
+            raise CppComError(
+                f"class layout parse produced a field carrying `{debris.group(0)}`: "
+                f"{statement!r}. That is method/typedef debris merged into a data member, "
+                "and a mis-parsed member silently changes the object layout — fix the "
+                "declaration stripping rather than shipping a guessed struct."
+            )
     return fields
 
 
@@ -5627,9 +5677,16 @@ def render_class_scaffold(
     interfaces: list[InterfaceSpec],
     *,
     allow_internal: bool = False,
+    allow_plain: bool = False,
 ) -> str:
-    """Render the ABI-owned portion. Method worker bodies remain separate LLM output."""
-    cls.require_supported(allow_internal=allow_internal)
+    """Render the ABI-owned portion. Method worker bodies remain separate LLM output.
+
+    ``allow_plain`` must be threaded from the caller, not re-derived here: this is the SECOND
+    preflight of a run, and the first one already gated the paid work. Defaulting it to False
+    refused the assembly of an already-bought plain class — every worker replayed from cache,
+    then the scaffold rejected the class that had just been translated.
+    """
+    cls.require_supported(allow_internal=allow_internal, allow_plain=allow_plain)
     by_name = {item.name: item for item in interfaces}
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
@@ -5729,7 +5786,10 @@ def render_class_scaffold(
     )
     for entry in layout_entries:
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
-    lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
+    if cls.com_map:
+        # A plain helper has no COM lifetime: its owner `new`s and `delete`s it directly, so
+        # a refcount field would be dead weight the C++ layout never had.
+        lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
     for state in cls.plain_state_fields():
         lines.append(f"    pub {state.name}: {state.rust_type},")
     lines.extend(["}", ""])
@@ -5810,6 +5870,42 @@ def render_class_scaffold(
         for method in iface.methods:
             lines.append(f"    {method.name}: {prefix}_{method.name},")
         lines.extend(["};", ""])
+
+    if not cls.com_map:
+        # Plain helper: everything below this point is COM lifetime machinery (QueryInterface,
+        # AddRef/Release, the object-map factory) that the class does not have. What it DOES
+        # need is a construction path, because its C++ owner reaches it through `new`/`delete`
+        # — `new COpenWithList` at COpenWithMenu.cpp:224/1049/1360, `delete` at 229/1059/1393.
+        # Emit that pair explicitly rather than leaving each caller to invent one: the
+        # free-function bridges for this very class were bought before the class existed, and
+        # duly invented `COpenWithList_new`, `COpenWithList_destructor`, and a free through
+        # `ExFreePoolWithTag` — a KERNEL pool allocator, in a usermode shell DLL, releasing
+        # memory it never allocated.
+        lines.extend(
+            [
+                f"/// `new {cls.name}` — operator new plus the constructor body.",
+                f"pub unsafe fn {cls.name}_new() -> *mut {cls.name} {{",
+                "    let this = HeapAlloc(",
+                "        GetProcessHeap(),",
+                "        HEAP_ZERO_MEMORY,",
+                f"        core::mem::size_of::<{cls.name}>(),",
+                f"    ) as *mut {cls.name};",
+                "    if this.is_null() { return core::ptr::null_mut(); }",
+                f"    {cls.name}_ctor_body(this);",
+                "    this",
+                "}",
+                "",
+                f"/// `delete` — the destructor body, then the matching free. Pairs with",
+                f"/// `{cls.name}_new`; freeing through any other allocator is a heap bug.",
+                f"pub unsafe fn {cls.name}_delete(this: *mut {cls.name}) {{",
+                "    if this.is_null() { return; }",
+                f"    {cls.name}_dtor_body(this);",
+                "    HeapFree(GetProcessHeap(), 0, this);",
+                "}",
+                "",
+            ]
+        )
+        return "\n".join(lines)
 
     first = cls.com_map[0]
     first_physical = physical_by_interface[first.interface]

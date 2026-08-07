@@ -2226,6 +2226,32 @@ of them were **ours**, not the model's:
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
 
+  **CALL tokens permute too, and there the envelope DOES catch it — because arity is a
+  second, independent witness.** Same disease as the constant permutation above, seen on
+  DeepSeek v4-pro translating `COpenWithList::LoadInfo` (2026-08-06). The C is
+  `HeapFree(GetProcessHeap(), 0, pBuf); return FALSE;`; the model emitted the `HeapFree` token
+  as a **bare zero-argument call** and put the real 3-argument call on a different token:
+
+  ```rust
+  __RUSTCONV_CALL_0005__();                                     // = HeapFree, 0 args
+  __RUSTCONV_CALL_0011__(__RUSTCONV_CALL_0006__(), __RUSTCONV_FACT_0010__, pBuf);
+  ```
+
+  `--seal-calls` rejected it loudly and precisely: *"wrong call site (argument count):
+  `__RUSTCONV_CALL_0005__`=HeapFree wants 3, got 0; not exactly once:
+  `__RUSTCONV_CALL_0011__`"*. Note WHY this is caught while the constant permutation is not:
+  a call token carries an **arity and an occurrence count** that must both hold, so a swap
+  breaks an invariant the closed-set check cannot express for a bare constant. That is the
+  shape the tracked `(callee, argument index)` fact anchoring above is trying to buy for
+  constants — calls already have it. Unsealed, this body would have compiled as a plausible
+  `HeapFree(GetProcessHeap(), 0, pBuf)` somewhere adjacent, in a function whose whole job is
+  freeing a version-info buffer down three exit paths.
+
+  Shared-cleanup CFGs are the recurring habitat: this TU's one reject in 29 is the same
+  function shape (multi-exit, one buffer, repeated free) the pipeline already measured as the
+  DeepSeek reject class. Retrying it with a stronger model measured **0/3 accepted for
+  $0.13** — treat it as decomposition work or hand-write the body, not a model upgrade.
+
   **An ABSENT constant is not sealed — it is INVENTED, and no audit fires.** Sealing can only
   seal a name the `-sys` island CARRIES; a constant the island lacks never becomes a token, so
   the model writes it from memory and the envelope has nothing to check. This is the mirror of

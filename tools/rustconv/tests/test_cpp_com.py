@@ -2769,3 +2769,44 @@ def test_hicon_truthiness_negation_wraps_the_whole_place_expression():
     # `m_hIcon` has no word boundary before `hIcon`, so the bare-name rule must not reach
     # inside it — its own receiver-qualified rule runs first.
     assert "m_!hIcon" not in normalize_worker_semantics("", "if (*this).m_hIcon != 0 { }")
+
+
+def test_declaration_only_destructor_does_not_eat_the_first_data_member():
+    """`~COpenWithList();` used to strand its `~` onto the member below it.
+
+    The statement became `~ SApp *m_pApp`, and the "starts with ~" filter dropped the whole
+    thing — so every class with an OUT-OF-LINE destructor silently lost its first field. ATL
+    classes write `~CFoo() {}` inline, where the block remover leaves a clean `;`, which is
+    why this survived until the first plain helper class.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithList", object_map_source=SHELL32 / "shell32.cpp")
+    # Exact C++ declaration order, first member included.
+    assert cls.state_fields == [
+        "SApp *m_pApp",
+        "UINT m_cApp",
+        "UINT m_cRecommended",
+        "BOOL m_bNoOpen",
+    ]
+
+
+def test_calling_convention_and_qualified_return_types_leave_no_debris():
+    """Two more strandings that each swallowed the member behind them.
+
+    `static INT_PTR CALLBACK DialogProc(...)` matched only from `CALLBACK`, leaving
+    `static INT_PTR`; `COpenWithList::SApp *GetCurrentApp()` matched only from `SApp`,
+    leaving `COpenWithList::`. Both glued onto `const OPENASINFO *m_pInfo`.
+    """
+    source = SHELL32 / "COpenWithMenu.cpp"
+    cls = analyze_class(source, "COpenWithDialog", object_map_source=SHELL32 / "shell32.cpp")
+    assert cls.state_fields[0] == "const OPENASINFO *m_pInfo"
+    assert len(cls.state_fields) == 10
+    assert not any("static" in f or "::" in f for f in cls.state_fields)
+
+
+def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
+    """A mis-parsed member silently changes the object layout, so it must never ship."""
+    from rustconv.cpp_com import _state_fields
+
+    with pytest.raises(CppComError, match="static"):
+        _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")

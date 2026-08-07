@@ -1010,7 +1010,14 @@ def cmd_cpp_com(args):
         return
 
     chunks = [render_interface(interface) for interface in interfaces]
-    chunks.append(render_class_scaffold(cls, interfaces, allow_internal=args.internal))
+    chunks.append(
+        render_class_scaffold(
+            cls,
+            interfaces,
+            allow_internal=args.internal,
+            allow_plain=getattr(args, "plain", False),
+        )
+    )
     output = "\n\n".join(chunks) + "\n"
     if args.output:
         out = Path(args.output)
@@ -3415,6 +3422,7 @@ def cmd_translate(args):
                     cpp_com_cls,
                     cpp_com_interfaces,
                     allow_internal=getattr(args, "internal", False),
+                    allow_plain=getattr(args, "plain", False),
                 )
             )
             support_selection = "\n".join(
