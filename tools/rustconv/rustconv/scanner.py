@@ -1484,8 +1484,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
             # those belong to the ctor/dtor lowering, which synthesises the bodies, not to the
             # per-function extractor asking "is there source code here we would miss?"
             if any(
-                c.type in ("delete_method_clause", "default_method_clause")
-                for c in node.children
+                c.type in ("delete_method_clause", "default_method_clause") for c in node.children
             ):
                 return
             func = _parse_function(node, source, source_text)

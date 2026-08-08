@@ -96,21 +96,27 @@ extern "C" {
 // recyclebin_private.h sets) as `(This)->lpVtbl->Method(This, ...)`. They are macros, so the
 // island cannot carry them, and the C bodies call them by name throughout. Each one below is
 // that expansion and nothing more — the island's C-mode vtables are what make it spellable.
+//
+// `unwrap_unchecked`, not `unwrap`: bindgen types every vtable slot as `Option<fn>`, but the C
+// these replace is `(This)->lpVtbl->Release(This)` with no check at all, so a PANIC here would
+// be less faithful than the wild call C would make — and this is a no_std staticlib linked into
+// shell32, where a panic is not a diagnostic. Option<fn> carries the null-pointer optimization,
+// so this is also the identical codegen. Same spelling as avltable/src/lib.rs:130.
 #[inline]
 pub unsafe fn IRecycleBin_Release(This: *mut IRecycleBin) -> ULONG {
-    ((*(*This).lpVtbl).Release.unwrap())(This)
+    ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
 pub unsafe fn IRecycleBin_AddRef(This: *mut IRecycleBin) -> ULONG {
-    ((*(*This).lpVtbl).AddRef.unwrap())(This)
+    ((*(*This).lpVtbl).AddRef.unwrap_unchecked())(This)
 }
 #[inline]
 pub unsafe fn IRecycleBinEnumList_Release(This: *mut IRecycleBinEnumList) -> ULONG {
-    ((*(*This).lpVtbl).Release.unwrap())(This)
+    ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 #[inline]
 pub unsafe fn IRecycleBinFile_Release(This: *mut IRecycleBinFile) -> ULONG {
-    ((*(*This).lpVtbl).Release.unwrap())(This)
+    ((*(*This).lpVtbl).Release.unwrap_unchecked())(This)
 }
 
 /// `recyclebin.h:50` `#define IRecycleBinFileFromHDELFILE(hDF) ((IRecycleBinFile*)(hDF))` — an
