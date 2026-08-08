@@ -86,24 +86,22 @@ pub const CLASS_E_CLASSNOTAVAILABLE: HRESULT = 0x8004_0111u32 as HRESULT;
 pub const SELFREG_E_CLASS: HRESULT = 0x8004_0201u32 as HRESULT;
 pub const RPC_S_OK: RPC_STATUS = 0; // winerror.h: ERROR_SUCCESS
 
-// winbase.h `#define INVALID_HANDLE_VALUE (HANDLE)(-1)`. Written through isize so the value
-// is all-ones at the target's pointer width, not a zero-extended 0xFFFFFFFF on 64-bit.
-pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+// INVALID_HANDLE_VALUE is shared — HANDLE really is `*mut c_void` in every island, and the
+// shared copy is written through isize so the value is all-ones at the target's pointer width
+// rather than a zero-extended 0xFFFFFFFF on 64-bit.
+pub use win32macros_rust::INVALID_HANDLE_VALUE;
 // winreg.h: ((HKEY)(LONG_PTR)(LONG)0x80000002). The sign-extend through LONG matters on
 // 64-bit: 0x80000002 as i32 as isize gives 0xFFFFFFFF80000002, which is what the C produces.
 pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
 pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
-// ntdef.h `#define UNICODE_NULL ((WCHAR)0)`
-pub const UNICODE_NULL: WCHAR = 0;
+pub use win32macros_rust::UNICODE_NULL; // ntdef.h `((WCHAR)0)`
 // wtypes.idl enum tagCLSCTX. Not in the island: objbase.h is reached with COM_NO_WINDOWS_H,
 // which keeps the enum out of the parse the profile allowlists.
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1;
 // winuser.h: DWLP_USER = DWLP_MSGRESULT + sizeof(LRESULT) + sizeof(DLGPROC). POINTER-WIDTH
 // DEPENDENT (8 on i386, 16 on amd64/arm64) — computed, never a literal, or the 64-bit builds
-// read the wrong dialog word.
-pub const DWLP_MSGRESULT: c_int = 0;
-pub const DWLP_DLGPROC: c_int = DWLP_MSGRESULT + core::mem::size_of::<LRESULT>() as c_int;
-pub const DWLP_USER: c_int = DWLP_DLGPROC + core::mem::size_of::<*mut c_void>() as c_int;
+// read the wrong dialog word. Shared, still computed.
+pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER};
 
 // DEFINE_GUID statics. netcfgx links `uuid` (the CMakeLists' target_link_libraries), which is
 // where the C picks them up too — declared, never defined here.
@@ -121,24 +119,17 @@ extern "C" {
 //
 // Each body is transcribed from the header named beside it, cast for cast.
 
-// winuser.h: ((WORD)((DWORD_PTR)(l) & 0xffff)) / ((WORD)(((DWORD_PTR)(l) >> 16) & 0xffff))
-#[macro_export]
-macro_rules! LOWORD { ($l:expr $(,)?) => { (($l as usize) & 0xffff) as WORD }; }
-#[macro_export]
-macro_rules! HIWORD { ($l:expr $(,)?) => { ((($l as usize) >> 16) & 0xffff) as WORD }; }
-// winuser.h MAKEINTRESOURCEW(i) = ((LPWSTR)(ULONG_PTR)LOWORD(i)) — an integer id smuggled
-// through a string pointer. The WORD truncation is load-bearing.
-#[macro_export]
-macro_rules! MAKEINTRESOURCEW { ($i:expr $(,)?) => { ((($i as usize) & 0xffff) as usize) as LPWSTR }; }
+// The word/resource family lives in `win32macros-rust`, ported once from the headers and
+// known-answer tested there. Re-exported here under the same names, so no call site changed.
+// (MAKEINTRESOURCEW's WORD truncation is load-bearing and the shared port keeps it.)
+pub use win32macros_rust::{HIWORD, LOWORD, MAKEINTRESOURCEW};
 // winnt.h FIELD_OFFSET(Type, Field) = ((LONG)(LONG_PTR)&(((Type*)0)->Field))
 #[macro_export]
 macro_rules! FIELD_OFFSET { ($t:ty, $f:ident $(,)?) => { (core::mem::offset_of!($t, $f) as LONG) }; }
-// winbase.h ZeroMemory→RtlZeroMemory, CopyMemory→RtlCopyMemory. Routed to the CRT entry points
-// rather than a Rust byte loop: LLVM folds any such loop back into a call to memset/memcpy.
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { $crate::prelude::memset($d as *mut c_void, 0, $l as usize) };
-}
+// winbase.h ZeroMemory→RtlZeroMemory, CopyMemory→RtlCopyMemory. Never a Rust byte loop: LLVM
+// folds any such loop back into a call to memset/memcpy. The zeroing half is shared; CopyMemory
+// below stays here because it reaches this crate's `memcpy` declaration.
+pub use win32macros_rust::ZeroMemory;
 #[macro_export]
 macro_rules! CopyMemory {
     ($d:expr, $s:expr, $l:expr $(,)?) => {
@@ -272,13 +263,14 @@ macro_rules! ListView_DeleteItem {
 pub use crate::{
     Button_SetCheck, ComboBox_AddString, ComboBox_GetCurSel, ComboBox_ResetContent,
     ComboBox_SetCurSel, CopyMemory, Edit_GetText, Edit_GetTextLength, Edit_LimitText,
-    Edit_SetText, FIELD_OFFSET, FIRST_IPADDRESS, FOURTH_IPADDRESS, HIWORD, IsEqualCLSID,
-    IsEqualGUID, IsEqualIID, LOWORD, ListBox_AddString, ListBox_GetCurSel, ListBox_GetItemData,
+    Edit_SetText, FIELD_OFFSET, FIRST_IPADDRESS, FOURTH_IPADDRESS, IsEqualCLSID,
+    IsEqualGUID, IsEqualIID, ListBox_AddString, ListBox_GetCurSel, ListBox_GetItemData,
     ListBox_SetCurSel, ListBox_SetItemData, ListView_DeleteItem, ListView_GetItemCount,
-    MAKEINTRESOURCEW, MAKEIPADDRESS, MAKEIPRANGE, PropSheet_Changed, SECOND_IPADDRESS,
-    THIRD_IPADDRESS, ZeroMemory,
+    MAKEIPADDRESS, MAKEIPRANGE, PropSheet_Changed, SECOND_IPADDRESS, THIRD_IPADDRESS,
 };
-pub use crate::MAKEINTRESOURCEW as MAKEINTRESOURCE;
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because netcfgx compiles -DUNICODE.
+// That is this module's property, not the shared crate's, so the alias stays here.
+pub use win32macros_rust::MAKEINTRESOURCEW as MAKEINTRESOURCE;
 
 // ================= COM dispatch (COBJMACROS) ==================================================
 // `#define IFACE_Method(p,a,b) (p)->lpVtbl->Method(p,a,b)` — netcfgx's precomp.h defines

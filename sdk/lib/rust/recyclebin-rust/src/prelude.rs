@@ -146,12 +146,9 @@ extern "C" {
 
 /// `ZeroMemory(dst, len)` (winbase.h) — a MACRO for `memset(dst, 0, len)`. Kept a macro here:
 /// an out-of-line no-op-shaped wrapper is the optimization barrier §9.65 warns about.
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => {{
-        core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize)
-    }};
-}
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::ZeroMemory;
 /// `_countof(a)` (stdlib.h) — element count of a fixed C array, as a MACRO so the array is
 /// never moved by value.
 #[macro_export]
@@ -160,7 +157,7 @@ macro_rules! _countof {
         ($a.len())
     };
 }
-pub use crate::{ZeroMemory, _countof};
+pub use crate::_countof;
 
 // ================= more gap fillers ===========================================================
 // guiddef.h spells REFIID as a MACRO (`#define REFIID const IID* const`), so bindgen drops it

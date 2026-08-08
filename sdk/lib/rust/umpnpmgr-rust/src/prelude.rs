@@ -164,18 +164,11 @@ macro_rules! MoveMemory {
         core::ptr::copy($src as *const u8, $dst as *mut u8, $len as usize)
     };
 }
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => { core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize) };
-}
-#[macro_export]
-macro_rules! RtlZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => { core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize) };
-}
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::{RtlZeroMemory, ZeroMemory};
 #[macro_export]
 macro_rules! UNREFERENCED_PARAMETER { ($($p:expr),* $(,)?) => { $( let _ = &$p; )* }; }
 #[macro_export]
 macro_rules! RtlGetProcessHeap { () => { (*NtCurrentPeb()).ProcessHeap }; }
-pub use crate::{
-    CopyMemory, MoveMemory, RtlGetProcessHeap, RtlZeroMemory, UNREFERENCED_PARAMETER, ZeroMemory,
-};
+pub use crate::{CopyMemory, MoveMemory, RtlGetProcessHeap, UNREFERENCED_PARAMETER};

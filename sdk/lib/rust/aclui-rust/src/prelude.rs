@@ -90,9 +90,10 @@ pub const STATUS_NONE_MAPPED: NTSTATUS = 0xC0000073u32 as NTSTATUS;
 // MAKEINTRESOURCE(6)` — MAKEINTRESOURCE is a cast, so both are macro EXPRESSIONS.
 pub const IDC_ARROW: LPCWSTR = 32512 as LPCWSTR;
 pub const RT_STRING: LPCWSTR = 6 as LPCWSTR;
-// winuser.h `#define DWLP_USER (DWLP_MSGRESULT + sizeof(LRESULT))`, itself built on
-// `DWLP_MSGRESULT 0` — computed, so bindgen emits neither.
-pub const DWLP_USER: c_int = (core::mem::size_of::<LRESULT>() * 2) as c_int;
+// winuser.h:881-883, a three-macro chain ending in
+// `DWLP_USER (DWLP_DLGPROC + sizeof(DLGPROC))` — computed, so bindgen emits none of it. Shared,
+// and the shared copy records why it must stay computed rather than pasted per target.
+pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER};
 // objsel.h `#define CFSTR_DSOP_DS_SELECTION_LIST TEXT("CFSTR_DSOP_DS_SELECTION_LIST")` — a wide
 // string under UNICODE, so it needs the w!() backing rather than the island's narrow byte array.
 #[macro_export]
@@ -105,23 +106,18 @@ macro_rules! CFSTR_DSOP_DS_SELECTION_LIST {
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an
 // out-of-line forwarder is an optimization barrier that uncloaks latent ABI mismatches (§9.65).
+// The word/colour/resource family lives in `win32macros-rust`, ported once from the headers and
+// known-answer tested there. Re-exported here under the same names, so no call site changed.
+pub use win32macros_rust::{HIWORD, LOWORD, MAKEINTRESOURCEW, MAKELONG, RGB};
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because aclui compiles -DUNICODE. That is
+// this module's property, not the shared crate's, so the alias stays here.
 #[macro_export]
-macro_rules! LOWORD { ($l:expr $(,)?) => { (($l as DWORD_PTR) & 0xffff) as WORD }; }
+macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::prelude::MAKEINTRESOURCEW!($i) }; }
+// winuser.h:4111. Stays module-local because WPARAM is a pointer-width island alias (c_uint on
+// i386, c_ulonglong on the 64-bit pair) — NOT usize, which is a distinct primitive and would not
+// unify. Only the MAKELONG inside it is shared.
 #[macro_export]
-macro_rules! HIWORD { ($l:expr $(,)?) => { ((($l as DWORD_PTR) >> 16) & 0xffff) as WORD }; }
-#[macro_export]
-macro_rules! MAKEWPARAM {
-    ($lo:expr, $hi:expr $(,)?) => { ((($lo as WORD) as DWORD) | ((($hi as WORD) as DWORD) << 16)) as WPARAM };
-}
-#[macro_export]
-macro_rules! RGB {
-    ($r:expr, $g:expr, $b:expr $(,)?) => {
-        (($r as COLORREF) | (($g as COLORREF) << 8) | (($b as COLORREF) << 16)) as COLORREF
-    };
-}
-// winuser.h `#define MAKEINTRESOURCEW(i) ((LPWSTR)((ULONG_PTR)((WORD)(i))))`
-#[macro_export]
-macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { (($i as WORD) as usize) as LPWSTR }; }
+macro_rules! MAKEWPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::prelude::MAKELONG!($lo, $hi) as WPARAM }; }
 // winuser.h `#define IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)`
 #[macro_export]
 macro_rules! IS_INTRESOURCE { ($r:expr $(,)?) => { ((($r as ULONG_PTR) >> 16) == 0) }; }
@@ -155,12 +151,7 @@ macro_rules! CopyMemory {
         core::ptr::copy_nonoverlapping($src as *const u8, $dst as *mut u8, $len as usize)
     };
 }
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => {
-        core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize)
-    };
-}
+pub use win32macros_rust::ZeroMemory;
 // The C's `max`/`min` (windef.h), which evaluate their arguments TWICE — kept macros so that
 // stays true rather than becoming a single-evaluation fn the C never had.
 #[macro_export]
@@ -240,12 +231,12 @@ macro_rules! ListView_SetExtendedListViewStyleEx {
 }
 
 pub use crate::{
-    CFSTR_DSOP_DS_SELECTION_LIST, CopyMemory, FAILED, HandleToScm, ScmToHandle, SUCCEEDED, FIELD_OFFSET, HIWORD, IS_INTRESOURCE,
-    InterlockedDecrement, InterlockedIncrement, LOWORD, ListView_FindItem, ListView_GetItem,
+    CFSTR_DSOP_DS_SELECTION_LIST, CopyMemory, FAILED, HandleToScm, ScmToHandle, SUCCEEDED, FIELD_OFFSET, IS_INTRESOURCE,
+    InterlockedDecrement, InterlockedIncrement, ListView_FindItem, ListView_GetItem,
     ListView_GetNextItem, ListView_InsertColumn, ListView_InsertItem,
     ListView_SetColumn, ListView_SetExtendedListViewStyleEx, ListView_SetImageList,
-    ListView_SetItem, ListView_SortItems, MAKEINTRESOURCE, MAKEWPARAM, RGB, V_ARRAY, V_VT,
-    ZeroMemory, max, min,
+    ListView_SetItem, ListView_SortItems, MAKEINTRESOURCE, MAKEWPARAM, V_ARRAY, V_VT,
+    max, min,
 };
 
 // winbase.h's InterlockedIncrement/Decrement are COMPILER INTRINSICS, not library symbols, and

@@ -46,20 +46,16 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 #[macro_export] macro_rules! UNREFERENCED_PARAMETER { ($($arg:tt)*) => {{}}; }
 // winbase.h ZeroMemory→RtlZeroMemory, CopyMemory→RtlCopyMemory. Routed to the CRT entry points
 // rather than a Rust byte loop: LLVM folds any such loop back into a call to memset/memcpy.
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { $crate::prelude::memset($d as *mut c_void, 0, $l as usize) };
-}
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::ZeroMemory;
 #[macro_export]
 macro_rules! CopyMemory {
     ($d:expr, $s:expr, $l:expr $(,)?) => {
         $crate::prelude::memcpy($d as *mut c_void, $s as *const c_void, $l as usize)
     };
 }
-pub use crate::{
-    CopyMemory, UNIMPLEMENTED, UNREFERENCED_PARAMETER, VALIDATE_CLIENTCTX_HANDLE,
-    VALIDATE_RESMAN_HANDLE, ZeroMemory,
-};
+pub use crate::{CopyMemory, UNIMPLEMENTED, UNREFERENCED_PARAMETER, VALIDATE_CLIENTCTX_HANDLE, VALIDATE_RESMAN_HANDLE};
 
 // ntdef.h `#define UNICODE_NULL ((WCHAR)0)`
 pub const UNICODE_NULL: WCHAR = 0;

@@ -100,16 +100,9 @@ macro_rules! RtlCopyMemory {
         core::ptr::copy_nonoverlapping($src as *const u8, $dst as *mut u8, $len as usize)
     };
 }
-#[macro_export]
-macro_rules! RtlZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => {
-        core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize)
-    };
-}
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => { $crate::RtlZeroMemory!($dst, $len) };
-}
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::{RtlZeroMemory, ZeroMemory};
 // `#define RtlEqualMemory(d,s,l) (!memcmp((d),(s),(l)))` — a BOOLEAN, and the C uses it
 // directly as an `if` condition, so this yields a Rust bool.
 #[macro_export]
@@ -172,10 +165,7 @@ pub unsafe fn UIntPtrToUShort(operand: UINT_PTR, result: *mut USHORT) -> HRESULT
     }
 }
 
-pub use crate::{
-    ARRAYSIZE, FIXUP_POINTER, RtlCopyMemory, RtlEqualMemory, RtlGetProcessHeap, RtlZeroMemory,
-    RTL_CONSTANT_STRING, ZeroMemory,
-};
+pub use crate::{ARRAYSIZE, FIXUP_POINTER, RtlCopyMemory, RtlEqualMemory, RtlGetProcessHeap, RTL_CONSTANT_STRING};
 
 // ================= the crate's own cross-TU surface ===========================================
 // `ntlm/util.c` and `sam.c` define helpers the other TUs call. In C they resolve through
