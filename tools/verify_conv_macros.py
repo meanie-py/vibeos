@@ -58,28 +58,36 @@ _NOISE = re.compile(
     r"\b(FAR|NEAR|EXTERN_C|extern|DECLSPEC_\w+)\b|__declspec\([^)]*\)|/\*.*?\*/|//.*$"
 )
 
-# Vendored third-party libs: we do NOT translate these (AGENTS.md: ACPICA/FreeType and
-# friends are vendored by policy), so their aliases are noise in the table. Excluded from
-# --check so a zlib bump can't fail our gate; still shown by --emit.
-_VENDORED = (
-    "libs/zlib",
-    "libs/libpng",
-    "libs/libjpeg",
-    "libs/expat",
-    "libs/libxslt",
-    "libs/libxml",
-)
+# Vendored third-party libs: we do NOT translate these, so their aliases are noise in
+# the table. Excluded from --check so a zlib bump can't fail our gate; still shown by --emit.
+#
+# The membership question is answered by vendor.yaml, NOT by a list here. It used to be a
+# hardcoded 6-tuple covering 5 of the 19 directories under sdk/include/reactos/libs/ (it
+# missed mbedtls's 78 headers, libmpg123's 38, libtiff's 15, fullfat's 19) with one stale
+# entry, `libs/libxml`, matching nothing at all.
+#
+# HONEST SCOPE: switching to the registry widened the excluded set from 5 trees to 23 and
+# dropped ZERO aliases from the table — measured, not assumed. 5,749 `#define`s now sit
+# inside registered trees and not one of them resolves to a calling convention. So this is
+# a GUARD, not an active filter: its job is the day an mbedtls or libtiff bump introduces
+# some `FOOAPI` alias, which would otherwise show up as MISSING and get "fixed" by adding a
+# foreign library's macro to abi_enforce's table of conventions WE translate against.
+# A local list of what is foreign drifts because nothing tells it when a library arrives;
+# the registry has a container ratchet that does. See tools/vendored.py.
+sys.path.insert(0, str(REPO / "tools"))
+import vendored  # noqa: E402
 
 
 def harvest(root: Path) -> dict[str, tuple[str, str]]:
     """alias -> (convention, "path:line"), transitively resolved."""
     defs: dict[str, tuple[list[str], str, bool]] = {}
+    registry = vendored.load(root)
     for hdr_dir in (root / "sdk" / "include" / "psdk", root / "sdk" / "include" / "reactos"):
         if not hdr_dir.is_dir():
             continue
         for h in sorted(hdr_dir.rglob("*.h")):
             rel = h.relative_to(root).as_posix()
-            vendored = any(v in rel for v in _VENDORED)
+            is_vendored = registry.is_vendored(rel)
             try:
                 lines = h.read_text(errors="replace").splitlines()
             except OSError:
@@ -95,7 +103,7 @@ def harvest(root: Path) -> dict[str, tuple[str, str]]:
                     continue
                 # First definition wins: headers re-#define under #ifdef guards, and the
                 # first is the one the normal (non-exotic-arch) build sees.
-                defs.setdefault(name, (toks, f"{rel}:{i}", vendored))
+                defs.setdefault(name, (toks, f"{rel}:{i}", is_vendored))
 
     def resolve(name: str, seen: frozenset[str] = frozenset()) -> str | None:
         if name in ROOTS:
@@ -109,9 +117,9 @@ def harvest(root: Path) -> dict[str, tuple[str, str]]:
         return None
 
     out: dict[str, tuple[str, str]] = {}
-    for name, (_toks, cite, vendored) in defs.items():
+    for name, (_toks, cite, from_vendored) in defs.items():
         conv = resolve(name)
-        if conv and not vendored:
+        if conv and not from_vendored:
             out[name] = (conv, cite)
     return out
 

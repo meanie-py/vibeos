@@ -26,7 +26,7 @@ on all three arches with an essentially all-Rust runtime.
 
 The remaining C is four well-bounded categories, **none on the boot-critical path**: (1) the
 bulk userland **CRT** (msvcrt/ucrt leaf library — the assemble-from-`cnt-rust`+`rtl-rust`
-track), (2) **vendored/by-policy** C (ACPICA, FreeType), (3) **legacy dead** C superseded by
+track), (2) **vendored/by-policy** C (enumerated in `vendor.yaml` — see below), (3) **legacy dead** C superseded by
 Rust (videoprt, old NDIS/tcpip), and (4) **irreducible glue** (variadic trampolines, arch
 `.S`, generated RPC/syscall stubs). *(The desktop shell `explorer.exe` is NO LONGER a
 remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* The broad
@@ -1977,7 +1977,36 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   three sealer defects (preprocessor directives, array-parameter bounds, and `-E -dM` not
   reporting a macro the TU `#undef`s). Field manual: "A DIRECTIVE is not code, and an array
   PARAMETER's bound is not a value".
-- **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
+- **Vendored, by policy (NOT targets):** enumerated in **`vendor.yaml`** at the repo root —
+  **23 trees, ~1.77M lines**, gated by `tools/vendored.py` (a stage of `vibeos-cli check`).
+  Run `python3 tools/vendored.py --emit` for the table; do not restate it here, and do not
+  hand-maintain a second list anywhere. This entry used to read "ACPICA (~155 `.c`),
+  FreeType (~208K LOC)" and was one of three disagreeing lists — the others being
+  `external/README-fex-vendor.md` (one tree) and a hardcoded 6-tuple in
+  `verify_conv_macros.py` that covered 5 of the 19 directories under
+  `sdk/include/reactos/libs/` and carried one entry matching nothing at all.
+
+  Two properties worth knowing. **The list cannot be a glob:**
+  `sdk/include/reactos/libs/` holds `zlib` and `mbedtls` beside `audiosrv`, `samsrv`,
+  `umpnpmgr`, `syssetup`, `fslib`, `fmifs`, `epsapi`, `cportlib` and `fast486`, all of
+  which are ours, and no path convention anywhere in the tree separates foreign code from
+  ours (ACPICA under `drivers/`, FreeType under `sdk/lib/3rdparty/`, FEX under `external/`,
+  ucrt under `sdk/lib/`). **Versions are probes, not copies:** each entry records the file
+  and regex where its version lives and the tool derives it, so a re-vendor cannot leave a
+  stale literal behind. `--check` fails on a probe that stops matching, on a stale
+  `VENDORED` stamp, and — the ratchet — on any unregistered directory appearing inside a
+  vendor container.
+
+  **`sdk/lib/ucrt` (78K lines, 459 TUs) is registered**, which is what makes ucrtbase's
+  goal sayable: ucrtbase.dll is vendored Microsoft ucrt plus **our** `msvcrt_shared`
+  (5.7K lines — `cpp.c`, `except.c`, `undname.c`, `except_<arch>.c`,
+  `reactos/ucrt_tls_sup.c`). Counting ucrt as debt makes the DLL read as permanently ~8%
+  reachable; excluding it makes the target "everything in ucrtbase that is ours is Rust"
+  — 0% today, 100% after task #55. Four entries carry a `review:` note flagging a
+  classification that is NOT settled (ucrt's unknown SDK version; `cardlib`'s unestablished
+  provenance; `libwine` and `strmbase`, which are Wine-derived and therefore arguably
+  translation TARGETS under the roadmap's Tier 3 — they sit in the registry only because
+  upstream files them under `3rdparty`). `--emit` prints those under NEEDS REVIEW.
 
 ## Open items / flagged regressions
 

@@ -5965,3 +5965,40 @@ def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_se
     )
     assert r.returncode == 1
     assert "[NO_REFERENCE]" in r.stdout
+
+
+def test_check_registers_the_vendored_registry_stage():
+    """`vibeos-cli check` must run tools/vendored.py.
+
+    The registry answers "which C is NOT ours to translate" — the denominator under
+    every progress number in this project. Its container ratchet only ratchets if
+    something runs it, and a tool nobody runs decays into a liability (see the
+    difftest driver's docstring for the version of this lesson that cost us two red
+    harnesses on master).
+    """
+    from . import lints as lints_mod
+
+    repo = Path(__file__).resolve().parents[3]
+    specs = lints_mod.source_lint_specs(repo)
+    names = [s[0] for s in specs]
+    assert "vendored_registry" in names
+    argv = next(s[1] for s in specs if s[0] == "vendored_registry")
+    assert argv != ["MISSING"], "tools/vendored.py is not where the stage expects it"
+
+
+def test_vendored_registry_stage_is_silent_on_stdout_when_green():
+    """stdout IS the findings channel for a `stdout`-mode lint stage.
+
+    Any non-tally line there counts as a finding, so a chatty success message would
+    park this stage permanently red. The pass condition is an empty stdout.
+    """
+    repo = Path(__file__).resolve().parents[3]
+    r = subprocess.run(
+        ["python3", str(repo / "tools" / "vendored.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(repo),
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
+    assert "OK" in r.stderr
