@@ -69,7 +69,7 @@ _EXCLUDED = {
 # never sees either as a call it might try to tokenize.
 _NEVER_DISCLOSED = {"sizeof", "TRACE", "WARN", "ERR", "FIXME", "MESSAGE"}
 _PURE_REUSABLE_CALLS = {"strlen", "wcslen"}
-_ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT)_[0-9]{4}__\b")
+_ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT|WIDE)_[0-9]{4}__\b")
 
 
 # Shared with fact_seal and cpp_com. It masks Rust as well as C++, which the three

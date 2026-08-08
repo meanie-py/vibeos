@@ -1229,11 +1229,18 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   names a macro the crate lacks (an unresolvable macro call is worse than no advice, because
   the repair pass has nothing to resolve it to). It rides in the per-file cached block, so it
   is not re-billed per function, and prompt prose is out of the resume-cache key, so adding it
-  re-bills nothing already banked. **The durable version of this fix is a seal, not prose** —
-  `--seal-facts` is explicitly lexical and skips string literals, so a wide-literal seal that
-  tokenises `L"..."` out of the body and restores `w!("...")` at assembly would make the class
-  unexpressible rather than merely discouraged. Until then the multiset oracle
-  (`verify_translation_literals.py`) is the backstop, and it must be run on fresh output.
+  re-bills nothing already banked. **The durable version of this fix is a seal, not prose**, and
+  it now exists: `--seal-wide` (`rustconv/wide_seal.py`, 2026-08-07) tokenises every wide
+  literal out of the body, reveals only its Rust TYPE, and substitutes the code units after the
+  response, so a dropped or invented one fails loudly instead of shipping. The prose contract
+  stays as the backstop for the 48 occurrences the seal declines. Two things that measuring it
+  changed about the story above: the dominant C shape is **not** `L"..."` but Wine's brace list
+  `{'C','o','m','b','o','L','B','o','x',0}` (4,272 declarations vs 10,871 quoted tokens — and
+  every array in the "18 missing terminators" batch was a brace list), and the restore is a
+  generated static rather than `w!`, because `w!`'s result type is not uniform across this tree
+  (secur32's yields `&[u16; N]`, aclui's `*const u16`), so naming it would be a type error in
+  half the crates. The multiset oracle (`verify_translation_literals.py`) remains the backstop
+  and must still be run on fresh output.
 - **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
   string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
   `L"%s.%s"` came back once UTF-16-encoded *including the L* (`b"L\0%\0s\0…"` — every full

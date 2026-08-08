@@ -516,6 +516,9 @@ def build_preamble_prompt(
     scan: ScanResult,
     resolve: ResolveResult,
     target: Target | None = None,
+    *,
+    sealed_c: str | None = None,
+    extra_contract: str = "",
 ) -> str:
     """Build the prompt for translating a file's FILE-SCOPE PREAMBLE.
 
@@ -528,8 +531,18 @@ def build_preamble_prompt(
     Uses the same resolved import context as the function prompts. The C
     text is scan.preamble_text (AST-derived, marker-independent), falling
     back to globals_text for marker-split files.
+
+    `sealed_c` replaces that text when a seal owns part of it, and
+    `extra_contract` carries the matching envelope. This is where the wide seal
+    earns most of its keep: file-scope `static const WCHAR X[] = L"...";` is
+    exactly the shape that shipped 18 arrays missing the terminator every reader
+    of them scans for, and the preamble is the ONLY pass that sees it.
     """
-    preamble_c = (scan.preamble_text or scan.globals_text or "").strip()
+    preamble_c = (
+        sealed_c
+        if sealed_c is not None
+        else (scan.preamble_text or scan.globals_text or "").strip()
+    )
     parts: list[str] = []
     parts.append(f"## Translate the FILE-SCOPE PREAMBLE of `{scan.path.name}`\n")
     parts.append(_format_import_context(resolve, target=target))
@@ -564,6 +577,8 @@ def build_preamble_prompt(
         'statements, `extern ".." {}` blocks, ANY `fn` definitions, or\n'
         "prose. The caller assembles imports and function bodies separately."
     )
+    if extra_contract:
+        parts.append(extra_contract)
     parts.append("\n## C File-Scope Preamble\n")
     parts.append("```c")
     parts.append(preamble_c)
