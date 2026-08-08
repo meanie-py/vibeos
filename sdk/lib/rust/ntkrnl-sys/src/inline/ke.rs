@@ -506,8 +506,11 @@ pub unsafe fn KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     // is what broke i386 boot when validation was first switched on. This takes
     // only the subset that is provably already a hang.
     //
-    // Precedent: KeTryToAcquireSpinLockAtDpcLevel (ntoskrnl-rust ke/spinlock.rs)
-    // has carried exactly this check for its own path without incident.
+    // This once cited KeTryToAcquireSpinLockAtDpcLevel (ntoskrnl-rust
+    // ke/spinlock.rs) as precedent for "carried this check without incident".
+    // It was not one: that copy was gated on cargo's `debug_assertions`, which
+    // the release profile leaves off, so it had never executed. Both are now on
+    // `feature = "dbg"` and genuinely share the rationale above.
     #[cfg(all(feature = "smp", feature = "dbg"))]
     if core::ptr::read_volatile(spin_lock) == (current_thread() as ULONG_PTR | 1) {
         ddk::KeBugCheckEx(SPIN_LOCK_ALREADY_OWNED, spin_lock as ULONG_PTR as _, 0, 0, 0);
