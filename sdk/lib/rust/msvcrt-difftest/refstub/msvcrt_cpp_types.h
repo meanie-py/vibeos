@@ -35,7 +35,16 @@
 #define CALLBACK
 #define DECLSPEC_NORETURN __attribute__((noreturn))
 
-typedef long NTSTATUS;
+/* `int`, NOT `long` — on Windows `long` is 32 bits and on this LP64 host it is 64, and
+ * NTSTATUS is a 32-bit signed quantity in both.  Spelled `long` it silently rewrote the
+ * reference: except.c's `float_exception_map[].status` sign-extended each
+ * `((int)0xC000008D)` to `0xFFFFFFFFC000008D`, while the `ExceptionCode` it is compared
+ * against is a 32-bit DWORD that widens to a POSITIVE long — so the mapping loop matched
+ * nothing and every FP fault came out of `msvcrt_exception_filter` as the default
+ * `_FPE_INVALID` instead of its own subcode.  The suite reported that as a divergence in the
+ * subject; the subject was right and the oracle was miscompiled, which is the §9.66 class.
+ * It also silently widened `_XcptFilter`'s and `__CppXcptFilter`'s first parameter. */
+typedef int NTSTATUS;
 typedef unsigned long long ULONG64;
 typedef long INT_PTR;
 typedef void *PVOID;

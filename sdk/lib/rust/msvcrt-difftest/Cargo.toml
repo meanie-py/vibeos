@@ -218,3 +218,17 @@ harness = false
 name = "process"
 path = "tests/process.rs"
 harness = false
+
+# cpp.c (#14) + except.c (#15) — the C++ EH subsystem. Its own binary for three reasons, all
+# of them state. It installs per-thread terminate/unexpected/se_translator handlers and drives
+# except.c's file-static `sighandlers` table, none of which any other suite expects to find
+# moved. It calls `msvcrt_init_exception`, which rewrites BOTH sides' static RTTI tables from
+# absolute pointers into RVAs — a one-way conversion that must happen exactly once per process.
+# And it FORKS, for the arms that terminate; a child inherits whatever the rest of a shared
+# binary had already set up. `harness = false` gives it one thread, without which the shared
+# `RaiseException` sink would be read by one row while another wrote it — plus the same getenv
+# reason as the rest.
+[[test]]
+name = "cpp"
+path = "tests/cpp.rs"
+harness = false

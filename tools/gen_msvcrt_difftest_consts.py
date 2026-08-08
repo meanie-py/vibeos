@@ -81,7 +81,37 @@ PROBE_INCLUDES = [
     # msvcrt's own, for `frame_info` / `cxx_frame_info` — the linked list except.c
     # walks.  Last, so nothing above it is compiled under msvcrt.h's own macros.
     '"msvcrt.h"',
+    # cxx.h, for `exception` and `type_info` — the two objects cpp.c's 40-odd
+    # ctor/dtor/accessor exports are all methods ON.  It comes after msvcrt.h
+    # because it is what cpp.c does.  Nothing here is transcribed FROM it; it is
+    # here so DERIVED below can measure it.
+    '"cxx.h"',
 ]
+
+# ── DERIVED: measured numbers that are not constants and cannot be asserted ──
+#
+# The layout guardian (render_layout) works by asserting a transcription, which
+# needs the struct DEFINITION in scope at the point of the assert.  That rules it
+# out for `exception` and `type_info`: they are defined by the genuine cxx.h,
+# which the reference TU includes long AFTER the wall, and nothing else in the
+# harness may define them without colliding with it.
+#
+# But tests/cpp.rs still has to build a `type_info` to hand to `type_info_name`
+# and the comparison trio — its `mangled` member is the only input those three
+# read — so it needs a Rust `#[repr(C)]` mirror, which is a transcription like any
+# other and would be checked by nothing.  So: measure the numbers here, emit them
+# as macros, and let cppimpl.c hand them to the test to assert its mirror against.
+# The 128-byte `mangled` tail is exactly the sort of number a reader guesses wrong.
+#
+# {macro name: C expression}.  Any constant expression the probe can evaluate.
+DERIVED: dict[str, str] = {
+    "MSVCRT_SIZEOF_EXCEPTION": "sizeof(exception)",
+    "MSVCRT_OFF_EXCEPTION_NAME": "__builtin_offsetof(exception, name)",
+    "MSVCRT_OFF_EXCEPTION_DO_FREE": "__builtin_offsetof(exception, do_free)",
+    "MSVCRT_SIZEOF_TYPE_INFO": "sizeof(type_info)",
+    "MSVCRT_OFF_TYPE_INFO_NAME": "__builtin_offsetof(type_info, name)",
+    "MSVCRT_OFF_TYPE_INFO_MANGLED": "__builtin_offsetof(type_info, mangled)",
+}
 
 # ── the allowlist ────────────────────────────────────────────────────────
 #
@@ -750,6 +780,8 @@ def _probe_exprs() -> list[tuple[str, str]]:
     for group in CONSTANTS.values():
         for n in group:
             items.append((f"const:{n}", n))
+    for name, expr in DERIVED.items():
+        items.append((f"derived:{name}", expr))
     for group in (LAYOUTS, CPP_LAYOUTS):
         for struct_name, fields in group.items():
             for f in fields:
@@ -936,6 +968,14 @@ def render(values: dict[str, int]) -> str:
                 out.append(f"#undef  {n}")
             out.append(f"#define {n:<{width}} {lit}{suffix}")
         out.append("")
+    out.append(
+        "/* MEASURED, not transcribed: cxx.h's two object layouts, for the Rust mirror in\n"
+        " * tests/cpp.rs to assert itself against.  See DERIVED in the generator. */"
+    )
+    width = max(len(n) for n in DERIVED)
+    for n in DERIVED:
+        out.append(f"#define {n:<{width}} {values[f'derived:{n}']}")
+    out.append("")
     out.append("/* Pointer-valued; not an integer initializer, so emitted verbatim. */")
     for n, expr in VERBATIM.items():
         out.append(f"#define {n} {expr}")
@@ -977,7 +1017,7 @@ def main() -> int:
         ),
     ]
 
-    n_const = sum(len(v) for v in CONSTANTS.values()) + len(VERBATIM)
+    n_const = sum(len(v) for v in CONSTANTS.values()) + len(VERBATIM) + len(DERIVED)
     n_assert = (
         len(SCALAR_SIZES)
         + len(CPP_SCALAR_SIZES)

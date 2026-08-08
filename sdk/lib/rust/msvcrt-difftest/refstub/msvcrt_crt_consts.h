@@ -308,6 +308,15 @@
 #define UNDNAME_NO_ARGUMENTS  0x00002000
 #define UNDNAME_32_BIT_DECODE 0x00000800
 
+/* MEASURED, not transcribed: cxx.h's two object layouts, for the Rust mirror in
+ * tests/cpp.rs to assert itself against.  See DERIVED in the generator. */
+#define MSVCRT_SIZEOF_EXCEPTION      24
+#define MSVCRT_OFF_EXCEPTION_NAME    8
+#define MSVCRT_OFF_EXCEPTION_DO_FREE 16
+#define MSVCRT_SIZEOF_TYPE_INFO      144
+#define MSVCRT_OFF_TYPE_INFO_NAME    8
+#define MSVCRT_OFF_TYPE_INFO_MANGLED 16
+
 /* Pointer-valued; not an integer initializer, so emitted verbatim. */
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
 

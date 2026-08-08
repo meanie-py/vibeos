@@ -3110,7 +3110,17 @@ fn main() {
              #define __ASM_BLOCK_END\n\
              #define DEFINE_THISCALL_WRAPPER(func,args) /* nothing off i386 */\n\
              #define THISCALL(func) func\n\
-             #define THISCALL_NAME(func) __ASM_NAME(#func)\n\n\
+             /* NOT `__ASM_NAME(#func)`, which is what wine/asm.h says and what produced\n\
+              * `ref_ref_exception_what` in the five vtables.  The two spellings sit either\n\
+              * side of the ONE place a rename wall behaves differently: `#` suppresses macro\n\
+              * expansion of its OWN operand and nothing else.  cxx.h reaches the vtable slot\n\
+              * name through `VTABLE_ADD_FUNC(name) -> THISCALL_NAME(name)`, so `name` is an\n\
+              * ordinary argument at the outer layer and the wall has already rewritten it to\n\
+              * `ref_exception_what` by the time `#` sees it — prefixing again doubles it.  The\n\
+              * `__ASM_NAME(#name ...)` uses in the same macro DO need the prefix, because\n\
+              * there `#name` is direct and the wall never ran.  Same macro, two jobs; splitting\n\
+              * them here is the fix, and the linker is what found it. */\n\
+             #define THISCALL_NAME(func) #func\n\n\
              /* ═══ stage 7: PSEH, the REAL header. ═══════════════════════════════════\n\
               * Pulled here rather than left to wine/exception.h, which spells __TRY in terms\n\
               * of _SEH2_TRY without including the header that defines it (the DLL build gets\n\
@@ -4079,7 +4089,27 @@ fn main() {
             .include(repo.join("sdk/lib/pseh/include"))
             .include(repo.join("sdk/include"))
             // The arm of pseh2.h the amd64/arm64 DLL builds, and the one cpp.rs models.
-            .define("_USE_DUMMY_PSEH", None);
+            .define("_USE_DUMMY_PSEH", None)
+            // `_WIN64`, which clang predefines for x86_64-w64-mingw32 and does NOT predefine
+            // for x86_64-unknown-linux-gnu — so on the host it has to be supplied, and it is
+            // the FIRST reference TU in this crate to need it.  Two things branch on it and
+            // both are silent if it is missing:
+            //
+            //   * cxx.h's `__ASM_VTABLE` emits `.quad` slots on a 64-bit target and `.long`
+            //     on a 32-bit one.  Without this the reference's five vtables were built with
+            //     i386's four-byte slots on an LP64 host — every entry half a pointer wide,
+            //     the rtti word before the table truncated.  The LINKER caught it here
+            //     ("relocation R_X86_64_32 cannot be used against ref_type_info_rtti"), but
+            //     only because a row finally referenced a vtable; nothing about the symbol
+            //     SET differs, which is what the earlier fidelity check compared.
+            //   * cppexcept.h's `catchblock_info` carries an extra `UINT frame` under _WIN64,
+            //     so without it every catch record in the reference is four bytes short of
+            //     the one the DLL walks.
+            //
+            // Scoped to this pair rather than to `ref_tu`: the other reference TUs are green
+            // without it and widening the definition would change what they compile for no
+            // reason anyone has measured.
+            .define("_WIN64", None);
         tu
     };
     objects.extend(cpp_pair_tu(&cpp_c, &cpp_prelude_h).compile_intermediates());

@@ -19,6 +19,8 @@
 #include <setjmp.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* PSEH's dummy arm declares this extern and both TUs reference it; sdk/lib/pseh/dummy.c is
  * where the DLL gets it.  Zero is what makes `__EXCEPT_PAGE_FAULT` compile and never run. */
@@ -269,30 +271,110 @@ void  ref_console_reset(void)
  * than walk an invented TEB. */
 void *WINAPI NtCurrentTeb(void) { return NULL; }
 
-/* `operator_delete` is heap.c's, which this crate does not compile as a reference TU.  Routed
- * to the reference's own allocator rather than to the subject's #[no_mangle] `free`, so
- * cpp.c's vector-dtor path frees what cpp.c's ctor allocated.  `ref_free` is string.c's wall
- * name for free — declared here rather than reached through the prelude, which this TU
- * deliberately does not include. */
-void __cdecl ref_free(void *ptr);
-void __cdecl operator_delete(void *ptr) { ref_free(ptr); }
+/* The SUBJECT's debug channel.  except.rs and except_x86_64.rs lower wine's always-on `FIXME`
+ * to a single `OutputDebugStringA` at the call site, so the symbol is in the link even though
+ * nothing here wants the output.  Recorded rather than empty: `_FindAndUnlinkFrame`'s FIXME
+ * fires exactly when a frame is not on the list, which is a real arm a row drives on purpose,
+ * and a count is the only way to see from the outside that the C took it. */
+static int ref_dbgstr_calls;
 
-/* except.c's Ctrl-C path calls `_exit`; the prelude redirects it here.  Same rule as
- * process.c's `ref_process_exit_overlay`: a reference that terminated the process would take
- * the whole suite down mid-row instead of failing one, and silent-green is the one outcome a
- * differential harness must never have. */
-static int ref_exit_seen;
-static int ref_exit_code;
+void WINAPI OutputDebugStringA(const char *str)
+{
+    (void)str;
+    ref_dbgstr_calls++;
+}
+
+int  ref_dbgstr_count(void) { return ref_dbgstr_calls; }
+void ref_dbgstr_reset(void) { ref_dbgstr_calls = 0; }
+
+/* `operator_delete` is heap.c's, which this crate compiles neither as a reference TU nor as a
+ * subject (the `heap` feature is off for host harnesses).  So it is the host's `free`, which
+ * is also what the two reference TUs' own `free`/`malloc` calls resolve to: those are external
+ * symbols, so the rename wall never touches them, and with `heap` off nothing in the link
+ * exports a competing `free`.  Both sides therefore allocate and release through ONE
+ * allocator, which is what lets a row hand a `calloc`'d object to a deleting destructor and
+ * expect the pair to balance.
+ *
+ * ONE definition serving both sides is correct here and would not be for anything graded: this
+ * is the layer BELOW the code under test, like fileimpl.c's Win32 surface. */
+void __cdecl operator_delete(void *ptr) { free(ptr); }
+
+/* ── running a body that THROWS, from a row ───────────────────────────────
+ *
+ * The `setjmp` has to live in C.  A `setjmp` in Rust would have to survive a `longjmp` back
+ * into a Rust frame across an FFI boundary, which is exactly the shape Rust does not define —
+ * and the buffer's own frame must still be live when the jump lands, which a Rust helper that
+ * returned would violate.  So the row hands over a callback and this frame is the landing pad.
+ *
+ * Returns 1 if the body threw and 0 if it returned normally, which is itself part of a
+ * verdict: `_CxxThrowException` is DECLSPEC_NORETURN, so a side that came back did not throw. */
+int ref_run_throw(void (*fn)(void *), void *ctx)
+{
+    ref_raise_reset();
+    if (setjmp(ref_raise_landing) != 0)
+        return 1;
+    ref_raise_armed = 1;
+    fn(ctx);
+    ref_raise_armed = 0;
+    return 0;
+}
+
+/* except.c's `raise` and `__security_error_handler` call `_exit(3)`; the prelude redirects it
+ * here so the reference cannot bind to exit.c's `#[no_mangle]` copy — a reference dispatching
+ * through the code under test is the one thing a reference may never do (§9.66).
+ *
+ * It TERMINATES, and that is not a wart, it is the only sound shape.  `_exit` is declared
+ * DECLSPEC_NORETURN, and the prelude's `#define _exit ref_cpp_exit_overlay` rewrites that
+ * declaration too — so the compiler emits no code at all after the call and an overlay that
+ * RETURNED would drop the caller into whatever instruction happened to be laid out next.
+ * (The first draft of this file did return, which is a "record and continue" overlay that
+ * works for process.c's `_P_OVERLAY` only because that one `_Exit`s.)
+ *
+ * So the rows that grade a `_exit` arm FORK, and compare the child's exit status — which is
+ * also what makes them symmetric, since the subject's `_exit` is the host's and does exactly
+ * the same thing.  `ref_cpp_exit_expect` is set by the child right after `fork()` to keep the
+ * expected case quiet; an UNEXPECTED reach still gets a line naming it, because a suite that
+ * simply vanished with status 3 would say nothing about which row did it. */
+void ref_cpp_exit_expect(int on);
+
+static int ref_exit_expected;
+
+void ref_cpp_exit_expect(int on) { ref_exit_expected = on; }
+
+DECLSPEC_NORETURN void ref_cpp_exit_overlay(int code);
 
 void ref_cpp_exit_overlay(int code)
 {
-    ref_exit_seen = 1;
-    ref_exit_code = code;
+    if (!ref_exit_expected) {
+        fprintf(stderr,
+                "cppimpl: the reference reached _exit(%d) outside a forked row — whatever row\n"
+                "         did this took the suite down instead of failing. Arms that terminate\n"
+                "         are graded under fork(); see tests/cpp.rs.\n",
+                code);
+        fflush(stderr);
+    }
+    _Exit(code);
 }
 
-int ref_cpp_exit_was_called(void) { return ref_exit_seen; }
-int ref_cpp_exit_code(void) { return ref_exit_code; }
-void ref_cpp_exit_reset(void) { ref_exit_seen = 0; ref_exit_code = 0; }
+/* ── the two cxx.h layouts the rows mirror in Rust, MEASURED ──────────────
+ *
+ * `exception` and `type_info` are defined by the genuine dll/win32/msvcrt/cxx.h, which only
+ * the reference TUs include — so the layout guardian cannot reach them: `_Static_assert`
+ * needs the definition in scope, and the wall is included long before cxx.h.  tests/cpp.rs
+ * needs them all the same, because `type_info::mangled` is the sole input of `type_info_name`
+ * and the comparison trio, so the test has to build one.
+ *
+ * These six numbers are therefore DERIVED — the generator's `DERIVED` table measures them
+ * with the pinned cross-compiler against msvcrt's real include set and emits them into
+ * msvcrt_crt_consts.h — and handed to the test so its `#[repr(C)]` mirror is asserted rather
+ * than believed.  `sizeof(type_info)` is 144, not the 40-odd a reader would guess: `mangled`
+ * is a 128-byte tail cxx.h sizes for static RTTI. */
+size_t ref_sizeof_exception(void)      { return MSVCRT_SIZEOF_EXCEPTION; }
+size_t ref_off_exception_name(void)    { return MSVCRT_OFF_EXCEPTION_NAME; }
+size_t ref_off_exception_do_free(void) { return MSVCRT_OFF_EXCEPTION_DO_FREE; }
+size_t ref_sizeof_type_info(void)      { return MSVCRT_SIZEOF_TYPE_INFO; }
+size_t ref_off_type_info_name(void)    { return MSVCRT_OFF_TYPE_INFO_NAME; }
+size_t ref_off_type_info_mangled(void) { return MSVCRT_OFF_TYPE_INFO_MANGLED; }
 
 /* ── Rust's own startup, out from under the subject's `signal` ────────────
  *
