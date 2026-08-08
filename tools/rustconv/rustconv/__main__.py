@@ -3879,6 +3879,14 @@ def cmd_translate(args):
         elif re.search(r"^use crate::prelude::\*;$", code, re.M):
             code = re.sub(r"^use crate::(?:shellcom|types|win32)::\*;\n", "", code, flags=re.M)
 
+        # Per-line trailing whitespace, stripped once here so BOTH writers below get it --
+        # the `-o` path writes `code` directly and the crate path hands it to the assembler.
+        # A model that wraps a call argument list leaves a space after the comma, which
+        # `git diff --check` flags on every commit of generated output; stripping it by hand
+        # does not stick, because the next regeneration (a $0 cache replay, so it happens
+        # often) puts it straight back. Indentation and blank lines are untouched.
+        code = "\n".join(line.rstrip() for line in code.split("\n"))
+
         # --- Post-translation audits -------------------------------------
         # These catch the SILENT class: output that compiles, links and boots but
         # is wrong. A dropped struct is a compile error and finds itself; a table
