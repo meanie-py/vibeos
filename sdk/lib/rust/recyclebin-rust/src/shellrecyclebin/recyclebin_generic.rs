@@ -1,4 +1,10 @@
 // rustconv-assembly: whole-tu
+//! ORPHAN-BY-DESIGN: superseded by the class-atomic modules (RecycleBinGeneric.rs,
+//! RecycleBinGenericEnum.rs, RecycleBin5.rs, RecycleBin5File.rs, RecycleBin5Enum.rs).
+//! This is the older `whole-tu` assembly, produced before `--cpp-com` could run for a
+//! non-shell32 target: it has no vtable, no `_new`/`_delete` and never stores `lpVtbl`,
+//! so an object built from it null-derefs on its first method call. Kept only until its
+//! removal is approved; the paid bodies live in .responses/ and regenerate for $0.
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -84,7 +90,7 @@ pub unsafe extern "system" fn RecycleBinGeneric_DeleteFile(this: *mut RecycleBin
             CoTaskMemFree((szFullName).cast());
         }
         dwBufferLength = len;
-        szFullName = CoTaskMemAlloc((dwBufferLength * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
+        szFullName = CoTaskMemAlloc((dwBufferLength * (core::mem::size_of::<u16>()) as u32) as SIZE_T) as LPWSTR;
         if szFullName.is_null() {
             return HRESULT_FROM_WIN32((ERROR_NOT_ENOUGH_MEMORY) as LONG);
         }
@@ -102,10 +108,10 @@ pub unsafe extern "system" fn RecycleBinGeneric_DeleteFile(this: *mut RecycleBin
         && (szVolume[2 as usize] == 0x2Eu16 || szVolume[2 as usize] == 0x3Fu16)
         && szVolume[3 as usize] == 0x5Cu16
     {
-        MoveMemory(
+        MoveMemory!(
             szVolume.as_mut_ptr() as *mut core::ffi::c_void,
             szVolume.as_ptr().add(4 as usize) as *const core::ffi::c_void,
-            (_countof!(szVolume) - 4) * core::mem::size_of::<u16>() as u32,
+            (_countof!(szVolume) - 4) * (core::mem::size_of::<u16>() as u32) as usize,
         );
     }
 

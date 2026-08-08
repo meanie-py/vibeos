@@ -338,6 +338,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # exports). Baseline EMPTY = strict: a header that grows a new alias fails here.
     vcm = repo / "tools" / "verify_conv_macros.py"
     specs.append(("verify_conv_macros", [py, str(vcm)] if vcm.is_file() else ["MISSING"], "stdout"))
+    # vendor.yaml — which C is NOT ours to translate. Every progress number in this project
+    # is a fraction whose denominator is "C that is ours", and before the registry that set
+    # was prose in rust-port-status.md, a one-tree manifest under external/, and a hardcoded
+    # tuple in verify_conv_macros — three lists, three contents. This checks the registry
+    # against the tree: registered paths exist, every version PROBE still resolves (a probe
+    # is stored instead of a copied version so it cannot rot silently), the VENDORED stamps
+    # are fresh, and — the ratchet — no unregistered directory has appeared inside a vendor
+    # container. That last one is why this is a gate and not a doc: a library dropped into
+    # dll/3rdparty/ otherwise joins the translation denominator with nobody noticing.
+    vnd = repo / "tools" / "vendored.py"
+    specs.append(("vendored_registry", [py, str(vnd)] if vnd.is_file() else ["MISSING"], "stdout"))
     # msvcrt's two 257-entry ctype tables are GENERATED from dll/win32/msvcrt/ctype.c, not
     # copied — 514 numbers with no compiler check is the one shape where a single wrong
     # entry misclassifies exactly one character and nothing anywhere says so. This is the

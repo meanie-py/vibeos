@@ -26,10 +26,17 @@ pub mod shellrecyclebin {
     pub mod recyclebin_support;
 
     pub mod recyclebin;
-    pub mod recyclebin_generic;
-    pub mod recyclebin_generic_enumerator;
-    pub mod recyclebin_v5;
-    pub mod recyclebin_v5_enumerator;
+
+    // One module per CLASS, not per TU: these are hand-rolled COM classes, and `--cpp-com
+    // --class X` is the only mode that emits the vtable + thunks + vptr store they need.
+    // recyclebin_v5_enumerator.cpp holds TWO of them, so a per-TU file would force one
+    // class run to clobber the other's slice (assembler.py refuses exactly that).
+    pub mod RecycleBin5;
+    pub mod RecycleBin5Enum;
+    pub mod RecycleBin5File;
+    pub mod RecycleBinGeneric;
+    pub mod RecycleBinGenericEnum;
+
     pub mod guid;
 }
 

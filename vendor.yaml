@@ -1,0 +1,335 @@
+# vendor.yaml — the registry of C/C++ we do NOT translate.
+#
+# WHY THIS EXISTS
+# ---------------
+# The project's goal is Rust, so the only number that matters is "how much of the C
+# that is OURS is translated". That question has no answer unless something says which
+# C is ours. Before this file, three places claimed to:
+#
+#   * docs/engineering/rust-port-status.md  — prose, names ACPICA + FreeType
+#   * external/README-fex-vendor.md         — a good manifest, covering exactly one tree
+#   * tools/verify_conv_macros.py:_VENDORED — a 6-entry hardcoded tuple
+#
+# Three lists, three different contents, none of them complete. The tuple covered 5 of
+# the 19 directories under sdk/include/reactos/libs/, carried one stale entry that
+# matches nothing (`libs/libxml`), and omitted the four largest trees there.
+#
+# A GLOB CANNOT REPLACE THIS LIST. sdk/include/reactos/libs/ mixes third-party with
+# ReactOS-native code — audiosrv, samsrv, umpnpmgr, syssetup, fslib, fmifs, epsapi,
+# cportlib and fast486 are all ours, sitting in the same directory as zlib and mbedtls.
+# No path convention encodes vendored-ness anywhere in this tree: ACPICA lives under
+# drivers/, FreeType under sdk/lib/3rdparty/, FEX under external/, ucrt under sdk/lib/.
+# So the list is explicit, and `vendored.py --check` refuses a vendor directory that
+# is not in it.
+#
+# VERSION IS A PROBE, NOT A COPY. Each entry says WHERE its version lives (file +
+# regex) and the tool derives it on demand. A copied literal is a second source of
+# truth that goes stale silently at the next re-vendor — which is how the tree ended
+# up with 78K lines of Microsoft ucrt carrying no version stamp at all.
+#
+# Adding a vendored tree: add an entry here, run `tools/vendored.py --write-stamps`.
+# Field reference and the check semantics: tools/vendored.py.
+
+# Directories whose every immediate child is a vendored tree and must be registered.
+# This is what makes --check a ratchet rather than a snapshot: drop a new library into
+# one of these and the gate fails until it has an entry.
+containers:
+  - sdk/lib/3rdparty
+  - dll/3rdparty
+  - external
+
+trees:
+  # ── ACPI ────────────────────────────────────────────────────────────────
+  - path: drivers/bus/acpi/acpica
+    name: ACPICA
+    upstream: https://github.com/acpica/acpica
+    license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
+    modified: unknown
+    version:
+      file: drivers/bus/acpi/acpica/include/acpixf.h
+      pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
+    reason: >
+      Intel's ACPI Component Architecture, the reference implementation every OS
+      vendors rather than reimplements. Tracking upstream is worth more than owning
+      the code, and a Rust fork would have to be re-merged on every ACPICA release.
+      The Rust-facing boundary is sdk/lib/rust/acpica-sys.
+
+  # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
+  - path: sdk/lib/ucrt
+    name: Microsoft UCRT
+    upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
+    license: Microsoft (see the Windows SDK licence terms)
+    modified: unknown
+    headers:
+      - sdk/include/ucrt
+    reason: >
+      Microsoft's Universal CRT source as vendored by upstream ReactOS long before
+      this fork (oldest commit touching it here is 5213cf717cf, upstream, predating
+      the ARM64 port). It is built against its own corecrt_internal.h substrate and
+      shares nothing with the Wine-derived msvcrt code we translate, so it is a
+      distinct bring-up rather than an extension of the msvcrt lane.
+
+      This is the entry that motivated the registry. ucrtbase.dll is vendored ucrt
+      plus OUR msvcrt_shared (dll/win32/msvcrt: cpp.c, except.c, undname.c,
+      except_<arch>.c, reactos/ucrt_tls_sup.c). Counting ucrt as translation debt
+      makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
+      sayable — everything in ucrtbase that is ours is Rust. See task #55.
+    review: >
+      No version probe: there is no version macro, no stamp, and no manifest anywhere
+      in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from
+      or diff it against upstream. `grep -rl ReactOS sdk/lib/ucrt` is empty across all
+      459 TUs, which is consistent with an unmodified drop but does not prove one.
+      Identifying the SDK version is owed.
+
+  # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
+  - path: external/fex
+    name: FEX-Emu
+    upstream: https://github.com/FEX-Emu/FEX
+    license: MIT
+    license_file: external/fex/LICENSE
+    modified: "no"  # asserted by external/README-fex-vendor.md
+    version:
+      literal: FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08)
+    reason: >
+      A pruned byte-identical snapshot of an upstream tag, built out-of-band by
+      tools/fex/build-fex.sh and deliberately outside the ReactOS cmake graph.
+      Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
+
+  # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
+  - path: sdk/lib/3rdparty/freetype
+    name: FreeType
+    upstream: https://freetype.org/
+    license: FTL OR GPL-2.0
+    modified: unknown
+    version:
+      file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
+      patterns:
+        - '#define FREETYPE_MAJOR\s+(\d+)'
+        - '#define FREETYPE_MINOR\s+(\d+)'
+        - '#define FREETYPE_PATCH\s+(\d+)'
+      join: "."
+    reason: >
+      Font rasteriser, ~208K lines and the single largest vendored tree. win32k
+      consumes it through a stable C API; upstream tracking beats ownership.
+
+  - path: sdk/lib/3rdparty/zlib
+    name: zlib
+    upstream: https://zlib.net/
+    license: Zlib
+    license_file: sdk/lib/3rdparty/zlib/LICENSE
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/zlib
+    version:
+      file: sdk/include/reactos/libs/zlib/zlib.h
+      pattern: '#define ZLIB_VERSION "([^"]+)"'
+    reason: Ubiquitous compression library; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/libxml2
+    name: libxml2
+    upstream: https://gitlab.gnome.org/GNOME/libxml2
+    license: MIT
+    license_file: sdk/lib/3rdparty/libxml2/COPYING
+    modified: unknown
+    version:
+      file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
+      pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
+    reason: XML parser; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/adns
+    name: adns
+    upstream: https://www.chiark.greenend.org.uk/~ian/adns/
+    license: GPL-2.0-or-later
+    license_file: sdk/lib/3rdparty/adns/COPYING
+    modified: unknown
+    version:
+      file: sdk/lib/3rdparty/adns/client/client.h
+      pattern: '#define ADNS_VERSION_STRING "([^"]+)"'
+    reason: Asynchronous DNS resolver; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/libmpg123
+    name: libmpg123
+    upstream: https://www.mpg123.de/
+    license: LGPL-2.1
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/libmpg123
+    version:
+      file: sdk/include/reactos/libs/libmpg123/mpg123.h
+      pattern: '#define MPG123_API_VERSION\s+(\d+)'
+    reason: MPEG audio decoder; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/libsamplerate
+    name: libsamplerate
+    upstream: https://libsndfile.github.io/libsamplerate/
+    license: BSD-2-Clause
+    license_file: sdk/lib/3rdparty/libsamplerate/COPYING
+    modified: unknown
+    reason: Sample-rate conversion; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/libwin-iconv
+    name: win-iconv
+    upstream: https://github.com/win-iconv/win-iconv
+    license: Unlicense OR MIT
+    modified: unknown
+    reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
+
+  - path: sdk/lib/3rdparty/stlport
+    name: STLport
+    upstream: http://www.stlport.org/
+    license: STLport licence (permissive)
+    modified: unknown
+    reason: >
+      C++ standard library used by the C++ substrate. Upstream is long dead, but it
+      is still a foreign STL implementation rather than ReactOS code; translating an
+      STL to Rust is not a goal of this project.
+
+  - path: sdk/lib/3rdparty/cardlib
+    name: cardlib
+    upstream: unknown
+    license: unknown
+    modified: unknown
+    reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
+    review: >
+      Provenance not established — no COPYING, and ReadMe.txt does not name an
+      upstream. If this turns out to be ReactOS-authored it belongs OUT of this
+      registry and IN the translation denominator.
+
+  - path: sdk/lib/3rdparty/libwine
+    name: libwine
+    upstream: https://gitlab.winehq.org/wine/wine
+    license: LGPL-2.1
+    modified: unknown
+    reason: Wine's port/support library, carried in the 3rdparty tree by upstream ReactOS.
+    review: >
+      CLASSIFICATION IS A JUDGEMENT CALL, flagged rather than made quietly: the
+      roadmap's Phase 0 Tier 3 treats the Wine-derived bucket (~154 DLLs) as a
+      translation TARGET, and this is Wine-derived. It sits here only because
+      upstream files it under 3rdparty. 1.1K lines, so the stakes are small either
+      way — but the answer should be deliberate.
+
+  - path: sdk/lib/3rdparty/strmbase
+    name: strmbase
+    upstream: https://gitlab.winehq.org/wine/wine
+    license: LGPL-2.1
+    modified: unknown
+    reason: Wine's DirectShow base classes, carried in the 3rdparty tree by upstream ReactOS.
+    review: Same open question as libwine — Wine-derived, and the Wine bucket is a target.
+
+  # ── dll/3rdparty ────────────────────────────────────────────────────────
+  - path: dll/3rdparty/mbedtls
+    name: Mbed TLS
+    upstream: https://github.com/Mbed-TLS/mbedtls
+    license: Apache-2.0
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/mbedtls
+    version:
+      file: sdk/include/reactos/libs/mbedtls/version.h
+      pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
+    reason: >
+      TLS implementation. The largest omission from the old hardcoded tuple — 78
+      headers, none of them excluded from the convention-alias scan.
+
+  - path: dll/3rdparty/libjpeg
+    name: libjpeg
+    upstream: https://ijg.org/
+    license: IJG
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/libjpeg
+    version:
+      file: sdk/include/reactos/libs/libjpeg/jpeglib.h
+      pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
+    reason: JPEG codec; upstream-tracked.
+
+  - path: dll/3rdparty/libpng
+    name: libpng
+    upstream: http://www.libpng.org/pub/png/libpng.html
+    license: libpng-2.0
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/libpng
+    version:
+      file: sdk/include/reactos/libs/libpng/png.h
+      pattern: '#define PNG_LIBPNG_VER_STRING "([^"]+)"'
+    reason: PNG codec; upstream-tracked.
+
+  - path: dll/3rdparty/libtiff
+    name: libtiff
+    upstream: http://www.libtiff.org/
+    license: libtiff (BSD-like)
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/libtiff
+    version:
+      file: sdk/include/reactos/libs/libtiff/tiffvers.h
+      pattern: 'LIBTIFF, Version ([0-9.]+)'
+    reason: TIFF codec; upstream-tracked.
+
+  - path: dll/3rdparty/libxslt
+    name: libxslt
+    upstream: https://gitlab.gnome.org/GNOME/libxslt
+    license: MIT
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/libxslt
+    version:
+      file: sdk/include/reactos/libs/libxslt/xsltconfig.h
+      pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
+    reason: XSLT processor; upstream-tracked.
+
+  - path: dll/3rdparty/libtirpc
+    name: libtirpc
+    upstream: https://sourceforge.net/projects/libtirpc/
+    license: BSD-3-Clause
+    license_file: dll/3rdparty/libtirpc/COPYING
+    modified: unknown
+    version:
+      file: dll/3rdparty/libtirpc/VERSION
+      patterns:
+        - 'PKG_MAJOR=(\d+)'
+        - 'PKG_MINOR=(\d+)'
+        - 'PKG_REVISION=(\d+)'
+      join: "."
+    reason: Transport-independent RPC; upstream-tracked.
+
+  - path: dll/3rdparty/dxtn
+    name: dxtn (S3TC)
+    upstream: unknown
+    license: MIT
+    modified: unknown
+    reason: S3TC/DXTn texture (de)compression for the GL stack.
+
+  # ── headers with no source in this tree ─────────────────────────────────
+  # Registered because the convention-alias scanner walks them and they are foreign
+  # code, even though the implementation is not vendored here.
+  - path: sdk/include/reactos/libs/expat
+    name: Expat (headers only)
+    upstream: https://libexpat.github.io/
+    license: MIT
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/expat
+    version:
+      file: sdk/include/reactos/libs/expat/expat.h
+      patterns:
+        - '#define XML_MAJOR_VERSION\s+(\d+)'
+        - '#define XML_MINOR_VERSION\s+(\d+)'
+        - '#define XML_MICRO_VERSION\s+(\d+)'
+      join: "."
+    reason: >
+      Headers only — there is NO expat source anywhere in this tree. Surfaced by
+      building this registry; it was one of the six entries in the old hardcoded
+      tuple, which gave no hint that the library behind it is absent.
+
+  - path: sdk/include/reactos/libs/fullfat
+    name: FullFAT (headers only)
+    upstream: https://github.com/jameswalmsley/FullFAT
+    license: unknown  # James Walmsley, 2009
+    modified: unknown
+    headers:
+      - sdk/include/reactos/libs/fullfat
+    reason: >
+      Headers only — no FullFAT source in this tree. 19 headers, none of them
+      excluded from the convention-alias scan before this registry existed.
