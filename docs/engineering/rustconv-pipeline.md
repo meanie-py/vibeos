@@ -95,6 +95,22 @@ hand-authored allowlist. Key behaviours:
   the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
   them for a while without the argparser defining them. A fail-loud whose remedy does not
   exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
+- **An already-FLIPPED module refuses rather than reporting empty sections.** The empty-TU case
+  always hard-failed; the one that went quiet is subtler. A cohab flip comments the real `.c`
+  out but leaves the `rust_*.c` scaffolding compiled, so the TU list is *not* empty — it is one
+  shim with no switch statements, no enum members and no dead bodies in it. Every audit then
+  printed an empty section that read as a pass. sysdm reported "(no case labels with
+  identifiers)" that way while carrying the exact defect the case-label audit exists to catch.
+  `is_shim_tu` recognises the scaffolding (the tree spells all 12 of them `rust_*.c`), and a
+  shim-only source list exits 2. **`--flipped-sources` re-enables the list the flip commented
+  out and audits against THAT** — a flip does not delete the source list, so the pre-flip
+  translation surface is still in the CMakeLists and a flipped module can be re-audited without
+  going to git (sysdm: 1 TU / 0 switch constants → 13 TUs / 77). It is deliberately narrow —
+  the commented block must be a `list(APPEND X …)`/`set(X …)` whose every argument looks like a
+  source file, and its parens must balance inside the commented run, so a `# set(WITH_DEBUG
+  TRUE)` somebody disabled on purpose is never resurrected. 37 of the tree's CMakeLists have a
+  restorable list, and every one is a module we flipped. The run says so
+  (`FLIPPED_SOURCES_RESTORED`), because the report then describes C the build does not compile.
 
 **Stage 1 — the paid call, with both envelopes.** See the sealing note below; always
 `--seal-facts --seal-calls`. In the same run, `trivial_c.py` lowers the provable trivial band

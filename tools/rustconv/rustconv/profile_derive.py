@@ -504,6 +504,70 @@ def _strip_cmake_comments(text: str) -> str:
     return "\n".join(out)
 
 
+#: A TU that exists only to hold what stable Rust cannot DEFINE — a `va_start`, a
+#: `__forceinline` body, a layout assertion, a cohab stub. The tree spells every one of them
+#: `rust_*.c` (12 distinct names as of 2026-08-07: rust_varargs_shim, rust_scanf_shim,
+#: rust_strsafe_shim, rust_cohab_fat, rust_layout_assert, …). None is a translation surface, so
+#: a module whose whole compiled source list is these is FLIPPED, not un-translated.
+_SHIM_TU_RE = re.compile(r"^rust_\w*\.c$")
+
+
+def is_shim_tu(path: Path) -> bool:
+    """True for a cohab scaffolding TU — never something to derive a translation island from."""
+    return bool(_SHIM_TU_RE.match(path.name))
+
+
+#: `# list(APPEND SOURCE` / `# set(SOURCE` — what a cohab flip leaves behind.
+_COMMENTED_LIST_OPEN = re.compile(r"^[ \t]*#[ \t]?(list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+)")
+_SOURCE_ARG = re.compile(r"^(?:\$\{[^}]+\}|[\w./+-]+\.(?:c|cpp|cc|h|hpp|idl|rc))$")
+
+
+def uncomment_flipped_source_lists(text: str) -> tuple[str, list[str]]:
+    """Restore the source list a cohab flip commented out. Returns `(text, restored files)`.
+
+    A flip does not DELETE the source list, it comments it out — so the pre-flip translation
+    surface is still sitting in the CMakeLists, and a flipped module can be re-audited without
+    going to git. That matters because the audits worth re-running (case labels, dead bodies,
+    enum members) are exactly the ones that answer "was this flip correct".
+
+    Deliberately narrow: the block must be a `list(APPEND X ...)`/`set(X ...)` whose every
+    argument looks like a source file or a `${VAR}`, and its parens must balance before the
+    commented run ends. Un-commenting an arbitrary `# set(FOO ...)` would resurrect a
+    build decision somebody disabled on purpose.
+    """
+    lines = text.splitlines()
+    out: list[str] = []
+    restored: list[str] = []
+    index = 0
+    while index < len(lines):
+        if _COMMENTED_LIST_OPEN.match(lines[index]) is None:
+            out.append(lines[index])
+            index += 1
+            continue
+        block: list[str] = []
+        cursor = index
+        depth = 0
+        while cursor < len(lines) and lines[cursor].lstrip().startswith("#"):
+            bare = lines[cursor].lstrip()[1:].lstrip()
+            block.append(bare)
+            depth += bare.count("(") - bare.count(")")
+            cursor += 1
+            if depth == 0:
+                break
+        joined = " ".join(block)
+        args = _split_args(joined[joined.index("(") + 1 : joined.rindex(")")]) if depth == 0 else []
+        # The first argument of `list(APPEND X ...)` is the variable, not a source.
+        values = args[2:] if joined.lstrip().lower().startswith("list") else args[1:]
+        if depth == 0 and values and all(_SOURCE_ARG.match(a) for a in values):
+            out.extend(block)
+            restored.extend(values)
+            index = cursor
+            continue
+        out.append(lines[index])
+        index += 1
+    return "\n".join(out), restored
+
+
 def _cmake_commands(text: str) -> list[tuple[str, str, int]]:
     """Yield ``(command, raw-args, line)`` honouring nested parens and strings."""
     cmds: list[tuple[str, str, int]] = []
@@ -612,6 +676,7 @@ def parse_cmakelists(
     repo_root: Path,
     arch: str = "i386",
     target: str | None = None,
+    flipped_sources: bool = False,
 ) -> CMakeModule:
     """Parse a module's CMakeLists into the set of TUs the build ACTUALLY compiles.
 
@@ -625,7 +690,11 @@ def parse_cmakelists(
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
     module_dir = cmake.parent
-    text = _strip_cmake_comments(_read(cmake))
+    raw_text = _read(cmake)
+    restored_sources: list[str] = []
+    if flipped_sources:
+        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text)
+    text = _strip_cmake_comments(raw_text)
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
         "REACTOS_SOURCE_DIR": [str(repo_root)],
@@ -759,6 +828,17 @@ def parse_cmakelists(
         rpc_interfaces=rpc,
         findings=findings,
     )
+    if restored_sources:
+        findings.append(
+            Finding(
+                "warn",
+                "FLIPPED_SOURCES_RESTORED",
+                f"--flipped-sources re-enabled {len(restored_sources)} commented-out source(s) "
+                f"({', '.join(sorted(restored_sources)[:8])}"
+                f"{', …' if len(restored_sources) > 8 else ''}). This module is FLIPPED: the "
+                "audit below describes the C the Rust replaced, not what the build compiles.",
+            )
+        )
 
     # Dead source: on disk, absent from the compiled list. Translating one of these
     # is paid-for work that nobody links (it happened last batch).
@@ -1928,6 +2008,7 @@ def derive(
     use_compile_db: bool = True,
     extra_inc_dirs: tuple[Path, ...] = (),
     usermode: bool | None = None,
+    flipped_sources: bool = False,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -1938,7 +2019,13 @@ def derive(
     ``dll/win32/dhcpcsvc/include``) when there is no compile db to learn it from.
     """
     module_dir = module_dir.resolve()
-    module = parse_cmakelists(module_dir / "CMakeLists.txt", repo_root, arch=arch, target=target)
+    module = parse_cmakelists(
+        module_dir / "CMakeLists.txt",
+        repo_root,
+        arch=arch,
+        target=target,
+        flipped_sources=flipped_sources,
+    )
     module.usermode_override = usermode
     findings = list(module.findings)
     tus = [p for p in module.compiled_tus if p.is_file()]
@@ -1962,8 +2049,27 @@ def derive(
         raise ProfileDeriveError(
             f"{module.cmake}: target {module.name!r} compiles no in-tree .c — nothing to derive "
             "an island for. (An already-Rust-flipped module looks exactly like this: its .c are "
-            "commented out of the source list. Use git to read the pre-flip CMakeLists if you "
-            "need to re-derive its profile.)"
+            "commented out of the source list. Re-run with --flipped-sources to audit against "
+            "the list the flip commented out, or use git to read the pre-flip CMakeLists.)"
+        )
+
+    # THE SAME CONDITION, one step less obvious, and it is the one that goes quiet. A cohab flip
+    # comments out the real .c but LEAVES the `rust_*.c` scaffolding compiled, so `tus` is not
+    # empty — it is one shim with no switch statements, no enum members and no dead bodies in it.
+    # Every audit then reports nothing and every empty section reads as a pass. sysdm printed
+    # "(no case labels with identifiers)" that way while carrying the exact defect the case-label
+    # audit exists to catch: `LVN_BEGINLABELEDIT` is `__MINGW_NAME_AW(...)`, a function-like
+    # macro, so bindgen emits no constant and the match arm is a catch-all binding
+    # (SWITCH_CONST_NOT_BINDGENABLE, severity ERROR). Run against the live list it would have
+    # named that before a single paid call. A vacuous clean bill is worse than no report:
+    # AGENTS.md, "fail loud, never silently degrade".
+    if all(is_shim_tu(tu) for tu in tus):
+        shims = ", ".join(sorted(tu.name for tu in tus))
+        raise ProfileDeriveError(
+            f"{module.cmake}: target {module.name!r} compiles ONLY cohab scaffolding ({shims}) — "
+            "this module is already flipped, and every audit below would report an empty "
+            "section that reads as a pass.\n  To re-audit the C the Rust replaced:\n\n"
+            "    --flipped-sources\n"
         )
 
     # The compile db is loaded FIRST so its real `-I` list can seed the search path: it is the
@@ -2903,6 +3009,16 @@ def main(argv: list[str] | None = None) -> int:
         metavar="DIR",
         help="extra include dir (repeatable) for a module that includes from an unusual path",
     )
+    ap.add_argument(
+        "--flipped-sources",
+        dest="flipped_sources",
+        action="store_true",
+        help="Re-enable the source list a cohab flip commented out, and audit against THAT. "
+        "A flip does not delete the list, so the pre-flip translation surface is still in the "
+        "CMakeLists — which is how a flipped module gets re-audited (case labels, dead bodies, "
+        "enum members) without going to git. Without it, a flipped module refuses rather than "
+        "reporting empty sections that read as passes.",
+    )
     ap.add_argument("--scaffold-dir", type=Path, default=None, help="also write the crate skeleton")
     ap.add_argument("--force", action="store_true", help="scaffold may overwrite existing files")
     mode = ap.add_mutually_exclusive_group()
@@ -2933,6 +3049,7 @@ def main(argv: list[str] | None = None) -> int:
             use_compile_db=not args.no_compile_db,
             extra_inc_dirs=tuple(args.extra_inc),
             usermode=args.usermode,
+            flipped_sources=args.flipped_sources,
         )
     except ProfileDeriveError as exc:
         print(f"profile_derive: FAILED\n{exc}", file=sys.stderr)

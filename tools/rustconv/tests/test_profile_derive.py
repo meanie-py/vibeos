@@ -30,11 +30,13 @@ from rustconv.profile_derive import (
     find_conflicts,
     find_switch_constants,
     header_symbols,
+    is_shim_tu,
     parse_cmakelists,
     scaffold_crate,
     scan_includes,
     scan_preamble,
     to_json,
+    uncomment_flipped_source_lists,
     walk_includes,
 )
 
@@ -358,7 +360,7 @@ def test_case_macro_with_a_parenthesised_argument_is_audited(tmp_path):
         _mod(tmp_path) / "helper.c",
         '#include "precomp.h"\n'
         "const char *n(int t){ switch (t) {\n"
-        '#define X(x)    case (x): return #x;\n'
+        "#define X(x)    case (x): return #x;\n"
         "    X(WIDGET_TYPE_A)\n"
         "    X(WIDGET_TYPE_B)\n"
         "} return 0; }\n",
@@ -1028,9 +1030,7 @@ class TestIntegerGatedDeadCode:
         assert "main.c" in hits[0].detail
         assert hits[0].severity == "error", "it is BLOCKING — it is about to cost money"
 
-    def test_one_false_conjunct_kills_the_block_despite_an_unknown_neighbour(
-        self, tmp_path: Path
-    ):
+    def test_one_false_conjunct_kills_the_block_despite_an_unknown_neighbour(self, tmp_path: Path):
         """handler4.c's shape. We never learn whether `__x86_64__` is defined, and short
         circuit means we do not need to: `_MSVCR_VER>=140` is false on every arch."""
         dead = "\n".join(f"int fn{i}(void) {{ return {i}; }}" for i in range(60))
@@ -1106,3 +1106,88 @@ class TestIntGuardEvaluator:
 
     def test_an_unpinned_macro_is_unknown(self):
         assert self._ev("_MSVCR_VER >= 100", SOMETHING_ELSE=1) is None
+
+
+# --- an already-flipped module must refuse, not report empty sections ----------------
+
+
+class TestFlippedModule:
+    """A cohab flip comments the real `.c` out and leaves `rust_*.c` compiled, so the TU list
+    is not EMPTY — it is one shim with no switch statements in it. Every audit then printed an
+    empty section that read as a pass. sysdm shipped that way while carrying the exact defect
+    the case-label audit exists to catch."""
+
+    def test_a_cohab_scaffolding_tu_is_not_a_translation_surface(self):
+        for name in (
+            "rust_varargs_shim.c",
+            "rust_scanf_shim.c",
+            "rust_strsafe_shim.c",
+            "rust_cohab_fat.c",
+            "rust_layout_assert.c",
+        ):
+            assert is_shim_tu(Path("dll/cpl/sysdm") / name), name
+
+    def test_a_real_tu_is_not_mistaken_for_scaffolding(self):
+        for name in ("sysdm.c", "environment.c", "rustle.c", "trust.c"):
+            assert not is_shim_tu(Path("dll/cpl/sysdm") / name), name
+
+    def test_a_commented_out_source_list_is_restored(self):
+        text = (
+            "# list(APPEND SOURCE\n"
+            "#     advanced.c\n"
+            "#     environment.c\n"
+            "#     precomp.h)\n"
+            "\n"
+            "list(APPEND SOURCE\n"
+            "    rust_varargs_shim.c\n"
+            "    precomp.h)\n"
+        )
+        out, restored = uncomment_flipped_source_lists(text)
+        assert restored == ["advanced.c", "environment.c", "precomp.h"]
+        assert "#" not in out
+        assert out.count("list(APPEND SOURCE") == 2
+
+    def test_a_commented_out_NON_source_block_is_left_commented(self):
+        """Somebody disabled `# set(FOO bar)` on purpose; resurrecting it is not our business."""
+        text = "# set(WITH_DEBUG TRUE)\n# set(OPTIMIZE off)\nlist(APPEND SOURCE a.c)\n"
+        out, restored = uncomment_flipped_source_lists(text)
+        assert restored == [] and out == text.rstrip("\n")
+
+    def test_an_unbalanced_commented_block_is_left_alone(self):
+        """Prose that happens to open a paren must not swallow the rest of the file."""
+        text = "# list(APPEND SOURCE\n#     advanced.c\n\nlist(APPEND SOURCE b.c)\n"
+        _out, restored = uncomment_flipped_source_lists(text)
+        assert restored == []
+
+    def test_a_comment_that_merely_mentions_sources_is_not_a_list(self):
+        text = "# these used to be here: advanced.c environment.c\nlist(APPEND SOURCE a.c)\n"
+        _out, restored = uncomment_flipped_source_lists(text)
+        assert restored == []
+
+    def test_a_shim_only_module_refuses_instead_of_auditing_nothing(self, tmp_path):
+        flipped = CMAKE_USERMODE.replace(
+            "list(APPEND SOURCE\n    main.c\n    helper.c\n",
+            "# list(APPEND SOURCE\n#     main.c\n#     helper.c)\n\nlist(APPEND SOURCE\n"
+            "    rust_varargs_shim.c\n",
+        )
+        root = _basic_module(tmp_path, cmake=flipped)
+        _write(_mod(tmp_path) / "rust_varargs_shim.c", "#include <stdarg.h>\nvoid shim(void) {}\n")
+        with pytest.raises(ProfileDeriveError, match="ONLY cohab scaffolding"):
+            derive(_mod(tmp_path), root, use_compile_db=False)
+
+    def test_flipped_sources_restores_the_translation_surface_it_refused_on(self, tmp_path):
+        """The point of refusing: the pre-flip surface is still IN the CMakeLists, so a flipped
+        module can be re-audited without going to git. sysdm goes 1 TU / 0 switch constants →
+        13 TUs / 77 this way."""
+        flipped = CMAKE_USERMODE.replace(
+            "list(APPEND SOURCE\n    main.c\n    helper.c\n",
+            "# list(APPEND SOURCE\n#     main.c\n#     helper.c)\n\nlist(APPEND SOURCE\n"
+            "    rust_varargs_shim.c\n",
+        )
+        root = _basic_module(tmp_path, cmake=flipped)
+        _write(_mod(tmp_path) / "rust_varargs_shim.c", "#include <stdarg.h>\nvoid shim(void) {}\n")
+        dp = derive(_mod(tmp_path), root, use_compile_db=False, flipped_sources=True)
+        assert {p.name for p in dp.module.compiled_tus} >= {"main.c", "helper.c"}
+        assert {s.ident for s in dp.switch_consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
+        # And it says so, because the audit now describes C the build does not compile.
+        assert any(f.code == "FLIPPED_SOURCES_RESTORED" for f in dp.module.findings)
