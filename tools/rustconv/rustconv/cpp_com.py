@@ -6048,8 +6048,10 @@ def render_class_scaffold(
                 "    HeapFree(GetProcessHeap(), 0, this);",
                 "}",
                 "",
-                _CPP_COM_IID_EQUAL,
-                "",
+                # Only a class with interfaces has a QueryInterface to compare IIDs in. A true
+                # plain helper (no vtable, e.g. shell32's COpenWithList) does not, so emitting
+                # it there would be dead code and a pointless diff on the next regeneration.
+                *([_CPP_COM_IID_EQUAL, ""] if layout_entries else []),
             ]
         )
         return "\n".join(lines)
