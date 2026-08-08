@@ -95,6 +95,7 @@ from .cpp_com import (
     strip_debug_statements,
     worker_signature,
 )
+from .crate_integrate import resolve_in_crate_imports, strip_top_level_items
 from .dead_regions import never_compiled_lines, pinned_int_macros
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
@@ -2368,6 +2369,26 @@ def cmd_translate(args):
             sorted_deps = prepare_helper_closure(
                 deps, args.class_name, cpp_com_cls.plain_state_fields()
             )
+            # The mirror of the --free-functions report above, and it was missing for years.
+            # prepare_helper_closure keeps the class closure, so the TU's file-scope functions
+            # fall out with no diagnostic — shellrecyclebin lost all six of its `extern "C"`
+            # entry points (the *_Constructor family) that way. Silence is what makes it
+            # dangerous: cargo check only catches the ones another Rust module happens to call,
+            # and once the TU is cohab-flipped the rest link-resolve to the still-compiled C,
+            # leaving a half-Rust module that reports nothing. shell32 gets this right purely by
+            # convention (cidldataobj_free.rs, CDefaultContextMenu_tu.rs) — a convention
+            # documented only in a CMakeLists comment, which is a missing mechanism.
+            kept = {dep.name for dep in sorted_deps}
+            dropped = sorted(
+                dep.name for dep in deps if dep.cpp_class is None and dep.name not in kept
+            )
+            if dropped:
+                print(
+                    f"  [cpp-com] {args.class_name}: skipping {len(dropped)} file-scope "
+                    f"function(s) — these need a separate --free-functions run on the same "
+                    f"file: {', '.join(dropped)}",
+                    file=sys.stderr,
+                )
             require_supported_worker_raii(sorted_deps, provided=set(local_raii_impls))
             cpp_com_wide_statics = render_wide_literal_statics(deps, sorted_deps)
 
@@ -3696,6 +3717,22 @@ def cmd_translate(args):
                 file=sys.stderr,
             )
 
+        # A `--local-raii` type is OWNED by one module and imported everywhere else, but the
+        # file-scope preamble the free-functions half translates re-declares it from the C++
+        # header — so the module ended up with both `use …::CStringW;` and its own
+        # `pub struct CStringW`. That is E0255, and had it compiled it would be worse: two
+        # distinct Rust types for one C++ class, silently incompatible across the two halves.
+        # cpp_com mode sidesteps this by skipping the preamble outright; the free half needs
+        # the rest of it, so drop just the duplicated items.
+        if preamble_rust.strip() and local_raii_uses:
+            preamble_rust, deduped = strip_top_level_items(preamble_rust, set(local_raii_uses))
+            if deduped:
+                print(
+                    f"  [preamble] dropped {len(deduped)} re-declaration(s) of "
+                    f"--local-raii type(s): {', '.join(sorted(set(deduped)))}",
+                    file=sys.stderr,
+                )
+
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:
             print(
@@ -3878,6 +3915,15 @@ def cmd_translate(args):
                     code = "use crate::prelude::*;\n" + code
         elif re.search(r"^use crate::prelude::\*;$", code, re.M):
             code = re.sub(r"^use crate::(?:shellcom|types|win32)::\*;\n", "", code, flags=re.M)
+
+        # Cross-module names, resolved from the crate on disk rather than left to the model.
+        # Runs here, on the ASSEMBLED file, so it also repairs bodies replayed from the resume
+        # cache -- the prompt hint that used to be the only source of these `use` lines cannot,
+        # because prompt prose is out of the cache key.
+        if rustconv_target.output_crate.is_dir():
+            code, import_notes = resolve_in_crate_imports(code, rustconv_target.output_crate)
+            for note in import_notes:
+                print(f"  [imports] {note}", file=sys.stderr)
 
         # Per-line trailing whitespace, stripped once here so BOTH writers below get it --
         # the `-o` path writes `code` directly and the crate path hands it to the assembler.

@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_Init_body;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_dtor_body;
 // Deterministic from recyclebin.h
 #[repr(C)]
 pub struct IRecycleBinEnumList {
@@ -356,14 +358,15 @@ pub unsafe fn RecycleBin5File_Constructor_body(prb: *mut IRecycleBin5, Folder: L
     }
     *ppFile = core::ptr::null_mut();
 
-    let pThis = RecycleBin5File() as *mut RecycleBin5File;
+    let pThis: *mut RecycleBin5File = RecycleBin5File();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    let hr = Init(pThis, prb, Folder, pDeletedFile);
+    let hr = RecycleBin5File_Init_body(pThis, prb, Folder, pDeletedFile);
     if hr < 0 {
-        RecycleBin5File_delete(pThis);
+        RecycleBin5File_dtor_body(pThis);
+        free(pThis as *mut u8);
         return hr;
     }
 

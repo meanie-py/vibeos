@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin_generic_free::RecycleBinGeneric_IsEqualFileIdentity;
 // Deterministic from recyclebin.h
 #[repr(C)]
 pub struct IRecycleBinFile {

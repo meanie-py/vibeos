@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin::GetDefaultRecycleBin;
+use crate::shellrecyclebin::recyclebin_generic_enumerator_free::RecycleBinGenericEnum_Constructor;
 // Deterministic from recyclebin.h
 #[repr(C)]
 pub struct IRecycleBin {
