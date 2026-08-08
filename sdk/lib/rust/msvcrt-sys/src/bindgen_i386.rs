@@ -5292,10 +5292,10 @@ pub struct _RTL_CRITICAL_SECTION {
 }
 pub type RTL_CRITICAL_SECTION = _RTL_CRITICAL_SECTION;
 pub type PRTL_CRITICAL_SECTION = *mut _RTL_CRITICAL_SECTION;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlPcToFileHeader(PcValue: PVOID, BaseOfImage: *mut PVOID) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn __wine_RtlUnwind(
         TargetFrame: PVOID,
         TargetIp: PVOID,
@@ -5349,7 +5349,7 @@ pub struct _EXCEPTION_REGISTRATION_RECORD {
 }
 pub type EXCEPTION_REGISTRATION_RECORD = _EXCEPTION_REGISTRATION_RECORD;
 pub type LPARAM = LONG_PTR;
-pub type FARPROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
+pub type FARPROC = ::core::option::Option<unsafe extern "stdcall" fn() -> INT_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct HINSTANCE__ {
@@ -5379,7 +5379,7 @@ pub struct tagPOINT {
 }
 pub type POINT = tagPOINT;
 pub type PTHREAD_START_ROUTINE =
-    ::core::option::Option<unsafe extern "system" fn(lpThreadParameter: LPVOID) -> DWORD>;
+    ::core::option::Option<unsafe extern "stdcall" fn(lpThreadParameter: LPVOID) -> DWORD>;
 pub type LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -5546,7 +5546,7 @@ pub struct _PROCESS_INFORMATION {
 }
 pub type PROCESS_INFORMATION = _PROCESS_INFORMATION;
 pub type LPPROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
 }
 pub type LPEXCEPTION_POINTERS = PEXCEPTION_POINTERS;
@@ -5575,21 +5575,21 @@ pub struct _TIME_ZONE_INFORMATION {
 pub type TIME_ZONE_INFORMATION = _TIME_ZONE_INFORMATION;
 pub type LPTIME_ZONE_INFORMATION = *mut _TIME_ZONE_INFORMATION;
 pub type PTOP_LEVEL_EXCEPTION_FILTER =
-    ::core::option::Option<unsafe extern "system" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
+    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPEXCEPTION_POINTERS) -> LONG>;
 pub type LPTOP_LEVEL_EXCEPTION_FILTER = PTOP_LEVEL_EXCEPTION_FILTER;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreateDirectoryW(
         lpPathName: LPCWSTR,
         lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreateFileA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -5600,7 +5600,7 @@ unsafe extern "system" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreateFileW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -5611,7 +5611,7 @@ unsafe extern "system" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreatePipe(
         arg1: PHANDLE,
         arg2: PHANDLE,
@@ -5619,7 +5619,7 @@ unsafe extern "system" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreateProcessW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -5633,7 +5633,7 @@ unsafe extern "system" {
         arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CreateThread(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: DWORD,
@@ -5643,16 +5643,16 @@ unsafe extern "system" {
         arg6: PDWORD,
     ) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn DebugBreak();
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn DeleteCriticalSection(arg1: PCRITICAL_SECTION);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn DeleteFileW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn DuplicateHandle(
         arg1: HANDLE,
         arg2: HANDLE,
@@ -5663,64 +5663,64 @@ unsafe extern "system" {
         arg7: DWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ExitProcess(arg1: UINT) -> !;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FindClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCommandLineA() -> LPSTR;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCommandLineW() -> LPWSTR;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCurrentProcess() -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCurrentProcessId() -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetCurrentThreadId() -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetDiskFreeSpaceW(
         arg1: LPCWSTR,
         arg2: PDWORD,
@@ -5729,134 +5729,134 @@ unsafe extern "system" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetEnvironmentStrings() -> LPSTR;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetEnvironmentStringsW() -> LPWSTR;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFileAttributesExW(
         lpFileName: LPCWSTR,
         fInfoLevelId: GET_FILEEX_INFO_LEVELS,
         lpFileInformation: PVOID,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFileSizeEx(arg1: HANDLE, arg2: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetLastError() -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetLocalTime(arg1: LPSYSTEMTIME);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetModuleFileNameA(hModule: HINSTANCE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetModuleHandleW(arg1: LPCWSTR) -> HMODULE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetProcAddress(arg1: HINSTANCE, arg2: LPCSTR) -> FARPROC;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetProcessHeap() -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetSystemTimeAsFileTime(arg1: LPFILETIME);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapCompact(arg1: HANDLE, arg2: DWORD) -> SIZE_T;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapCreate(arg1: DWORD, arg2: SIZE_T, arg3: SIZE_T) -> HANDLE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapDestroy(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapValidate(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn HeapWalk(arg1: HANDLE, arg2: LPPROCESS_HEAP_ENTRY) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn lstrcpynA(arg1: LPSTR, arg2: LPCSTR, arg3: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn OutputDebugStringA(arg1: LPCSTR);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ReadFile(
         arg1: HANDLE,
         arg2: PVOID,
@@ -5865,28 +5865,28 @@ unsafe extern "system" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ResumeThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetFilePointer(arg1: HANDLE, arg2: LONG, arg3: PLONG, arg4: DWORD) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetFilePointerEx(
         arg1: HANDLE,
         arg2: LARGE_INTEGER,
@@ -5894,7 +5894,7 @@ unsafe extern "system" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetFileTime(
         arg1: HANDLE,
         arg2: *const FILETIME,
@@ -5902,53 +5902,53 @@ unsafe extern "system" {
         arg4: *const FILETIME,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetLastError(arg1: DWORD);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn Sleep(arg1: DWORD);
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SystemTimeToTzSpecificLocalTime(
         arg1: *const TIME_ZONE_INFORMATION,
         arg2: *const SYSTEMTIME,
         arg3: LPSYSTEMTIME,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TlsAlloc() -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TlsFree(arg1: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TlsGetValue(arg1: DWORD) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn UnlockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn VirtualProtect(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: PDWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn WriteFile(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -5957,7 +5957,7 @@ unsafe extern "system" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn InitializeCriticalSectionEx(
         lpCriticalSection: LPCRITICAL_SECTION,
         dwSpinCount: DWORD,
@@ -5966,7 +5966,7 @@ unsafe extern "system" {
 }
 pub type LCTYPE = DWORD;
 pub type LOCALE_ENUMPROCEX = ::core::option::Option<
-    unsafe extern "system" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
+    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5976,7 +5976,7 @@ pub struct _cpinfo {
     pub LeadByte: [BYTE; 12usize],
 }
 pub type CPINFO = _cpinfo;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CompareStringA(
         Locale: LCID,
         dwCmpFlags: DWORD,
@@ -5986,7 +5986,7 @@ unsafe extern "system" {
         cchCount2: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn CompareStringW(
         Locale: LCID,
         dwCmpFlags: DWORD,
@@ -5996,7 +5996,7 @@ unsafe extern "system" {
         cchCount2: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn EnumSystemLocalesEx(
         lpLocaleEnumProcEx: LOCALE_ENUMPROCEX,
         dwFlags: DWORD,
@@ -6004,10 +6004,10 @@ unsafe extern "system" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetACP() -> UINT;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetDateFormatW(
         arg1: LCID,
         arg2: DWORD,
@@ -6017,7 +6017,7 @@ unsafe extern "system" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetLocaleInfoA(
         Locale: LCID,
         LCType: LCTYPE,
@@ -6025,7 +6025,7 @@ unsafe extern "system" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetLocaleInfoW(
         Locale: LCID,
         LCType: LCTYPE,
@@ -6033,7 +6033,7 @@ unsafe extern "system" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetTimeFormatW(
         arg1: LCID,
         arg2: DWORD,
@@ -6043,16 +6043,16 @@ unsafe extern "system" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetUserDefaultLocaleName(
         lpLocaleName: LPWSTR,
         cchLocaleName: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn IsValidCodePage(arg1: UINT) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn WideCharToMultiByte(
         arg1: UINT,
         arg2: DWORD,
@@ -6064,7 +6064,7 @@ unsafe extern "system" {
         arg8: LPBOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetLocaleInfoEx(
         lpLocaleName: LPCWSTR,
         LCType: LCTYPE,
@@ -6072,10 +6072,10 @@ unsafe extern "system" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn LCIDToLocaleName(
         Locale: LCID,
         lpName: LPWSTR,
@@ -6360,7 +6360,7 @@ pub struct _COORD {
 }
 pub type COORD = _COORD;
 pub type PHANDLER_ROUTINE =
-    ::core::option::Option<unsafe extern "system" fn(CtrlType: DWORD) -> BOOL>;
+    ::core::option::Option<unsafe extern "stdcall" fn(CtrlType: DWORD) -> BOOL>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _KEY_EVENT_RECORD {
@@ -6422,13 +6422,13 @@ pub union _INPUT_RECORD__bindgen_ty_1 {
 }
 pub type INPUT_RECORD = _INPUT_RECORD;
 pub type PINPUT_RECORD = *mut _INPUT_RECORD;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetConsoleMode(hConsoleHandle: HANDLE, lpMode: LPDWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetNumberOfConsoleInputEvents(hConsoleInput: HANDLE, lpNumberOfEvents: LPDWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn PeekConsoleInputA(
         hConsoleInput: HANDLE,
         lpBuffer: PINPUT_RECORD,
@@ -6436,7 +6436,7 @@ unsafe extern "system" {
         lpNumberOfEventsRead: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ReadConsoleA(
         hConsoleInput: HANDLE,
         lpBuffer: LPVOID,
@@ -6445,7 +6445,7 @@ unsafe extern "system" {
         pInputControl: PCONSOLE_READCONSOLE_CONTROL,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ReadConsoleInputA(
         hConsoleInput: HANDLE,
         lpBuffer: PINPUT_RECORD,
@@ -6453,7 +6453,7 @@ unsafe extern "system" {
         lpNumberOfEventsRead: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn ReadConsoleInputW(
         hConsoleInput: HANDLE,
         lpBuffer: PINPUT_RECORD,
@@ -6461,13 +6461,13 @@ unsafe extern "system" {
         lpNumberOfEventsRead: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE, Add: BOOL) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SetConsoleMode(hConsoleHandle: HANDLE, dwMode: DWORD) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn WriteConsoleA(
         hConsoleOutput: HANDLE,
         lpBuffer: *const ::core::ffi::c_void,
@@ -6476,7 +6476,7 @@ unsafe extern "system" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn WriteConsoleW(
         hConsoleOutput: HANDLE,
         lpBuffer: *const ::core::ffi::c_void,
@@ -6624,7 +6624,7 @@ pub struct _TEB_FLS_DATA {
 }
 pub type TEB_FLS_DATA = _TEB_FLS_DATA;
 pub type KERNEL_CALLBACK_PROC = ::core::option::Option<
-    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void, arg2: ULONG) -> NTSTATUS,
+    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void, arg2: ULONG) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -7772,10 +7772,10 @@ pub union _IO_STATUS_BLOCK__bindgen_ty_1 {
 }
 pub type IO_STATUS_BLOCK = _IO_STATUS_BLOCK;
 pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn LdrAddRefDll(arg1: ULONG, arg2: HMODULE) -> NTSTATUS;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn NtQueryInformationFile(
         arg1: HANDLE,
         arg2: PIO_STATUS_BLOCK,
@@ -7784,28 +7784,28 @@ unsafe extern "system" {
         arg5: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn NtQuerySystemTime(arg1: PLARGE_INTEGER) -> NTSTATUS;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlFreeHeap(arg1: HANDLE, arg2: ULONG, arg3: PVOID) -> BOOLEAN;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlAllocateHeap(arg1: HANDLE, arg2: ULONG, arg3: SIZE_T) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlReAllocateHeap(arg1: HANDLE, arg2: ULONG, arg3: PVOID, arg4: SIZE_T) -> PVOID;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlSizeHeap(arg1: HANDLE, arg2: ULONG, arg3: *const ::core::ffi::c_void) -> SIZE_T;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlTimeToSecondsSince1970(arg1: *const LARGE_INTEGER, arg2: LPDWORD) -> BOOLEAN;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn RtlValidateHeap(arg1: HANDLE, arg2: ULONG, arg3: LPCVOID) -> BOOLEAN;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn VerifyConsoleIoHandle(arg1: HANDLE) -> BOOL;
 }
 #[repr(C)]
@@ -7834,7 +7834,7 @@ pub struct _onexit_table_t {
 pub type _beginthread_start_routine_t =
     ::core::option::Option<unsafe extern "C" fn(arg1: *mut ::core::ffi::c_void)>;
 pub type _beginthreadex_start_routine_t = ::core::option::Option<
-    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> ::core::ffi::c_uint,
+    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void) -> ::core::ffi::c_uint,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -7847,7 +7847,7 @@ pub struct tagHELPINFO {
     pub MousePos: POINT,
 }
 pub type LPHELPINFO = *mut tagHELPINFO;
-pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: LPHELPINFO)>;
+pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPHELPINFO)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct MSGBOXPARAMSW {
@@ -7862,14 +7862,14 @@ pub struct MSGBOXPARAMSW {
     pub lpfnMsgBoxCallback: MSGBOXCALLBACK,
     pub dwLanguageId: DWORD,
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn GetActiveWindow() -> HWND;
 }
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
 pub type __sighandler_t = ::core::option::Option<unsafe extern "C" fn(arg1: ::core::ffi::c_int)>;
-unsafe extern "system" {
+unsafe extern "stdcall" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
 }
 pub const _FPIEEE_FORMAT__FpFormatFp32: _FPIEEE_FORMAT = 0;

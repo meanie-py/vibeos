@@ -325,16 +325,9 @@ unsafe extern "C" fn compare_info(name: *mut u16, flags: u32, buff: *mut u16, cm
 // leaves the upper 24 bits of the return register undefined and `STOP_LOOKING` (0) can
 // read as nonzero — the enumeration would then never stop early, silently scanning every
 // locale on the system and taking the LAST match instead of the best one.
-
-// `LOCALE_ENUMPROCEX` used to be `extern "stdcall"` in the i386 island and `extern "C"` in
-// the other two, because bindgen writes the ABI it saw rather than the `system` alias — and
-// Rust does not UNIFY those spellings nominally, nor is there any legal `as` cast between fn
-// pointers of differing ABI. This body therefore lived inside a macro taking the ABI as a
-// parameter, invoked once per arch.
-//
-// normalize_island_abi.py spells that slot `system` on all three, so the body is written
-// once, directly, and compiles on every arch instead of only the one being built.
-unsafe extern "system" fn find_best_locale_proc(
+macro_rules! define_find_best_locale_proc {
+    ($abi:literal) => {
+unsafe extern $abi fn find_best_locale_proc(
     name: *mut u16,
     locale_flags: u32,
     lParam: LPARAM,
@@ -421,6 +414,19 @@ unsafe extern "system" fn find_best_locale_proc(
     }
     return CONTINUE_LOOKING;
 }
+    };
+}
+
+// `LOCALE_ENUMPROCEX` is `extern "stdcall"` in the i386 island and `extern "C"` in the other
+// two, because bindgen writes the ABI it saw rather than the `system` alias. `extern "system"`
+// IS that same ABI on every one of these targets, but Rust does not UNIFY the two spellings
+// nominally, so a `system` fn cannot be passed where bindgen's type is expected — and there is
+// no legal `as` cast between fn pointers of differing ABI strings either. Hence the macro: the
+// body is written exactly once, and only the ABI token varies.
+#[cfg(target_arch = "x86")]
+define_find_best_locale_proc!("stdcall");
+#[cfg(not(target_arch = "x86"))]
+define_find_best_locale_proc!("C");
 
 #[no_mangle]
 pub unsafe extern "C" fn locale_to_sname(locale: *const i8, codepage: *mut u16, sname_match: *mut BOOL, sname: *mut wchar_t) -> BOOL {

@@ -62,6 +62,22 @@ import sys
 
 ARCHES = ("i386", "amd64", "arm64")
 
+# Crates that are ALSO compiled for a 32-bit HOST target by a difftest harness
+# (`i686-unknown-linux-gnu`). They must keep their literal `stdcall`, because the whole premise
+# of this pass — that `system` IS stdcall on x86 — is false off Windows: `"system"` is stdcall
+# only on 32-bit WINDOWS, while an explicit `extern "stdcall"` is honoured on x86 whatever the
+# OS. `target_arch = "x86"` is true for the host harness too, so normalizing here silently
+# turns the harness's Win32 imports cdecl, leaves four bytes on the stack per call, and the
+# following `ret` jumps to a stack-resident value: SIGSEGV with the PC inside the stack, no
+# symbol, nowhere near the cause. That is what took msvcrt-seh-difftest down
+# (`cxx_frame_handler` faulting) with all three product arches perfectly green.
+#
+# See the field manual, "On a 32-bit HOST harness, `extern "system"` and `extern "stdcall"`
+# stop agreeing". Keep in sync with the difftest harnesses' path dependencies.
+HOST_HARNESS_CRATES = frozenset(
+    {"msvcrt-crt-rust", "msvcrt-sys", "cnt-rust", "cnt-ctype", "rtl-strings"}
+)
+
 # What makes a file an island is that it is GENERATED per arch — not what it happens to be
 # named. This was an allowlist of stems ("types", "bindgen") and silently skipped every island
 # generated under another name: oleaut32's `win_sys_<arch>.rs` (bindgen), ntkrnl-sys's
@@ -253,6 +269,13 @@ def rewrite(text: str, keys: set[str], from_abi: str) -> tuple[str, int]:
 def normalize_crate(
     crate_src: pathlib.Path, apply: bool, stem: str | None = None
 ) -> tuple[int, list[str]]:
+    # `crate_src` is <crate>/src for a real crate; name the crate from its parent.
+    crate_name = (crate_src.parent if crate_src.name == "src" else crate_src).name
+    if crate_name in HOST_HARNESS_CRATES:
+        return 0, [
+            f"    {crate_name}: SKIPPED — compiled for a 32-bit HOST target by a difftest "
+            f"harness, where `system` is cdecl and an explicit `stdcall` is not"
+        ]
     islands = island_paths(crate_src, stem)
     if not islands["i386"]:
         return 0, []
@@ -323,6 +346,10 @@ def main(argv: list[str]) -> int:
             print(f"{c.name}: {n}")
             print("\n".join(notes))
             grand += n
+        elif notes:
+            # A crate deliberately left alone still says so. A silent skip is indistinguishable
+            # from "nothing to do", which is exactly how a missing island stays missing.
+            print("\n".join(notes))
     verb = "normalized" if args.apply else "would normalize"
     print(f"\n{verb} {grand} callback slot(s)")
     return 0

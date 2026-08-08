@@ -39,6 +39,17 @@ import sys
 X86 = '#[cfg(target_arch = "x86")]'
 NOT_X86 = '#[cfg(not(target_arch = "x86"))]'
 
+# Crates a difftest harness ALSO compiles for `i686-unknown-linux-gnu`. `target_arch = "x86"`
+# is true there, but `"system"` is stdcall only on 32-bit WINDOWS — off Windows it is cdecl,
+# while an explicit `extern "stdcall"` stays stdcall on x86 regardless. So in these crates the
+# x86 twin's literal spelling is load-bearing and folding it changes the convention IN THE
+# HARNESS ONLY: msvcrt-seh-difftest died in `cxx_frame_handler` while all three product arches
+# built and booted clean. Field manual: "On a 32-bit HOST harness, `extern "system"` and
+# `extern "stdcall"` stop agreeing".
+HOST_HARNESS_CRATES = frozenset(
+    {"msvcrt-crt-rust", "msvcrt-sys", "cnt-rust", "cnt-ctype", "rtl-strings"}
+)
+
 # `unsafe extern "stdcall" fn Name(`, `pub unsafe extern "C" fn Name(`, `extern "C" fn Name(` …
 # `system` is in the alternation because a pair that has ALREADY had its ABI reconciled
 # (by --abi-only, or by hand) is still a forked pair, and dropping it from the match makes the
@@ -447,6 +458,13 @@ def main(argv: list[str]) -> int:
     )
     grand = 0
     for c in crates:
+        if c.name in HOST_HARNESS_CRATES:
+            print(
+                f"{c.name}: SKIPPED — a difftest harness compiles this crate for "
+                f"i686-unknown-linux-gnu, where `system` is cdecl rather than stdcall, so the "
+                f"x86 twin's explicit `stdcall` is load-bearing and must not be folded"
+            )
+            continue
         src = c / "src" if (c / "src").is_dir() else c
         total: list[str] = []
         n = 0
