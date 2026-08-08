@@ -1,0 +1,49 @@
+# The 32-bit differential harness: `dll/win32/msvcrt/except_i386.c` against
+# `msvcrt-crt-rust`'s `except_i386.rs` + `seh_i386.rs`.
+#
+# WHY THIS IS A SEPARATE CRATE FROM msvcrt-difftest
+# -------------------------------------------------
+# except_i386.c is inside `#ifdef __i386__`, and its Rust counterpart is
+# `#![cfg(target_arch = "x86")]` — so grading it needs a 32-bit BINARY, and cargo
+# builds one crate for one target per invocation.  msvcrt-difftest is an x86-64
+# host crate whose whole refstub substrate (the FILE model, fileimpl.c,
+# processimpl.c) is shaped for that target; dragging it along would be a second
+# port of everything for the sake of one TU.  So this crate is small and 32-bit
+# and grades exactly the arch-gated half.
+#
+# It carries `[package.metadata.difftest] target = ...`, which is how
+# `vibeos-cli difftest` learns to pass `--target` — DISCOVERED from the manifest,
+# never listed in the driver, for the same reason the crate set itself is.
+#
+# PREREQUISITE, and it fails loudly rather than skipping:
+#     rustup target add i686-unknown-linux-gnu
+# plus a 32-bit libc (`/usr/lib32/libc.so`, from gcc-multilib on Debian/Ubuntu).
+[package]
+name = "msvcrt-seh-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata.difftest]
+target = "i686-unknown-linux-gnu"
+
+[dependencies]
+# `cpp` is the feature that gates except_i386.rs and seh_i386.rs; `conio-exit` is
+# pulled in because cpp.rs calls exit.rs's `abort`.  Nothing else is enabled — the
+# smaller the subject surface, the fewer Win32 imports the harness has to stand in
+# for, and every one it stands in for is one it is no longer grading.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = [
+    "cpp",
+    "conio-exit",
+] }
+msvcrt-sys = { path = "../msvcrt-sys" }
+
+[build-dependencies]
+cc = "1"
+
+# `harness = false` for the reason the sibling crates document: msvcrt-crt-rust
+# exports `#[no_mangle]` shims that shadow glibc's, and libtest reads its
+# environment through them.  A plain single-threaded `fn main()` never does.
+[[test]]
+name = "seh"
+harness = false

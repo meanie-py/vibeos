@@ -1351,6 +1351,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-seh-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
 name = "msvcrt-sys"
 version = "0.1.0"
 

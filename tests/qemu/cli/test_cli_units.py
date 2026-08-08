@@ -5270,6 +5270,50 @@ def test_difftest_discovers_every_generated_refstub_artifact(tmp_path: Path):
     assert argv[-2:] == ["process.c", "--check"], argv
 
 
+def test_difftest_reads_a_crates_target_triple_from_its_manifest(tmp_path: Path):
+    """A harness that only exists in a 32-bit binary declares its triple, and the driver
+    reads it. Building msvcrt-seh-difftest for the host is not a failure — every `#[cfg]`
+    in it compiles to nothing and it grades zero rows, which the run would then have to
+    catch downstream instead of never happening."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    (ws / "plain-difftest").mkdir(parents=True)
+    (ws / "plain-difftest" / "Cargo.toml").write_text(
+        '[package]\nname = "plain-difftest"\n\n[dependencies]\n'
+    )
+    (ws / "msvcrt-seh-difftest").mkdir(parents=True)
+    (ws / "msvcrt-seh-difftest" / "Cargo.toml").write_text(
+        '[package]\nname = "msvcrt-seh-difftest"\n\n'
+        '[package.metadata.difftest]\ntarget = "i686-unknown-linux-gnu"\n\n'
+        '[dependencies]\ntarget = "not this one"\n'
+    )
+
+    assert difftest_mod.crate_target(tmp_path, "plain-difftest") is None
+    assert difftest_mod.crate_target(tmp_path, "absent-difftest") is None
+    # …and the key must come from the metadata table, not from whatever `target =` line
+    # happens to appear first in the manifest.
+    assert difftest_mod.crate_target(tmp_path, "msvcrt-seh-difftest") == "i686-unknown-linux-gnu"
+
+
+def test_difftest_covers_the_seh_layout_guardian(tmp_path: Path):
+    """The i386 SEH layout header is generated from the tree's own PSDK headers, so it goes
+    stale without anyone editing it — and a stale offset there regrades a structure walk
+    rather than failing."""
+    from . import difftest as difftest_mod
+
+    refstub = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-difftest" / "refstub"
+    refstub.mkdir(parents=True)
+    assert "layout:seh-i386" not in dict(difftest_mod.generated_checks(tmp_path))
+
+    seh = tmp_path / "sdk" / "lib" / "rust" / "msvcrt-seh-difftest" / "refstub"
+    seh.mkdir(parents=True)
+    (seh / "seh_layout.h").write_text("")
+    argv = dict(difftest_mod.generated_checks(tmp_path))["layout:seh-i386"]
+    assert argv[-1] == "--check"
+    assert argv[-2].endswith("gen_msvcrt_seh_layout.py")
+
+
 def test_difftest_a_stale_generated_header_fails_the_run(tmp_path, monkeypatch):
     """A stale refstub header does not make one row wrong — it makes every row over
     that TU suspect, and the row that finally reaches it reports a DIVERGENCE in the

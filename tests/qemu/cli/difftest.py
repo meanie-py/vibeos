@@ -64,6 +64,35 @@ def discover(repo: Path) -> list[str]:
     return sorted({n.rsplit("/", 1)[-1] for n in names if n.rsplit("/", 1)[-1].endswith(_SUFFIX)})
 
 
+def crate_target(repo: Path, name: str) -> str | None:
+    """The `--target` triple a harness declares, or None for the host.
+
+    `msvcrt-seh-difftest` grades `except_i386.c`, which is inside `#ifdef __i386__` and whose
+    Rust counterpart is `#![cfg(target_arch = "x86")]` — so it only exists in a 32-bit binary.
+    Cargo builds one crate for one target per invocation, so that crate declares its triple in
+    its own manifest:
+
+        [package.metadata.difftest]
+        target = "i686-unknown-linux-gnu"
+
+    DISCOVERED from the manifest for the same reason the crate set is: a driver that carried
+    the list would silently build the next such harness for the host, where its `#[cfg]`s
+    compile to nothing and it grades zero rows.
+    """
+    manifest = repo.joinpath(*RUST_WS) / name / "Cargo.toml"
+    if not manifest.is_file():
+        return None
+    m = re.search(
+        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
+        manifest.read_text(),
+        re.S | re.M,
+    )
+    if not m:
+        return None
+    t = re.search(r'^\s*target\s*=\s*"([^"]+)"', m.group(1), re.M)
+    return t.group(1) if t else None
+
+
 def _salient(out: str, limit: int = 6) -> list[str]:
     """The lines a human needs from a failed harness: the assertion and its two
     values, not the linker command line."""
@@ -140,6 +169,14 @@ def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
                 [py, str(repo / "tools" / "gen_msvcrt_ref_protos.py"), f"{stem}.c", "--check"],
             )
         )
+    # The 32-bit harness's i386 layout guardian. Same argument as the two above: it is
+    # generated from headers this repo also owns, so it can go stale without anyone editing
+    # it — and a stale SEH layout does not fail, it regrades a structure walk against offsets
+    # msvcrt.dll no longer has.
+    if (repo / "sdk/lib/rust/msvcrt-seh-difftest/refstub/seh_layout.h").is_file():
+        checks.append(
+            ("layout:seh-i386", [py, str(repo / "tools" / "gen_msvcrt_seh_layout.py"), "--check"])
+        )
     return checks
 
 
@@ -205,12 +242,11 @@ def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool
     for name in names:
         # Separate invocation per crate — see the module docstring on feature
         # unification. Sharing one `cargo test -p a -p b` breaks the link.
-        cp = run.run(
-            ["cargo", "test", "--release", "-p", name],
-            cwd=ws,
-            env=dict(os.environ),
-            stage=name,
-        )
+        argv = ["cargo", "test", "--release", "-p", name]
+        target = crate_target(repo, name)
+        if target:
+            argv += ["--target", target]
+        cp = run.run(argv, cwd=ws, env=dict(os.environ), stage=name)
         out = (cp.stdout or "") + (cp.stderr or "")
         n = graded(out)
         ok = cp.returncode == 0 and n > 0
