@@ -510,6 +510,23 @@ Crates are discovered from the `[workspace] members` list, never hardcoded — a
 `foo-difftest` to the workspace and it is covered. `--only` restricts the set and
 **refuses an unknown name** rather than silently grading a subset.
 
+**A harness may declare its own `--target`.** `msvcrt-seh-difftest` grades
+`except_i386.c`, which lives inside `#ifdef __i386__` and whose Rust counterpart
+is `#![cfg(target_arch = "x86")]`, so it only exists in a 32-bit binary; cargo
+builds one crate for one target per invocation, so that crate says so in its own
+manifest:
+
+```toml
+[package.metadata.difftest]
+target = "i686-unknown-linux-gnu"
+```
+
+Read from the manifest for the same reason the crate set is: a driver carrying
+the list would silently build the next such harness for the host, where every
+`#[cfg]` in it compiles to nothing and it grades zero rows. It needs
+`rustup target add i686-unknown-linux-gnu` and a 32-bit libc, and it fails loudly
+without them rather than skipping.
+
 **The `drift:*` stages run first, and they check the ORACLE'S OWN INPUTS.**
 msvcrt-difftest force-includes seven generated headers — the derived CRT/Win32
 constants, the two-compiler layout guardian, and a prototype set per reference TU
@@ -528,6 +545,14 @@ runs on a fresh worktree with no build dir; `difftest` already hard-requires one
 The artifact set is discovered from `refstub/msvcrt_*_protos.h`: **the header's
 existence is the registration**, so a new reference TU is covered the moment it
 lands. That set went three → five → seven in two months, once per TU.
+
+`drift:layout:seh-i386` is the eighth and the only one keyed to `build-i386` —
+so `difftest` now wants **both** build dirs, and says which is missing rather
+than skipping. It
+re-derives msvcrt-seh-difftest's transcription of the i386 exception structures
+from the real headers. Everything that harness grades is a walk **by offset** —
+32-bit SEH is a linked list plus a scope table indexed by trylevel — so a field
+that moves does not fail there, it regrades correct Rust as wrong.
 
 ---
 

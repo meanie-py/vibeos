@@ -131,7 +131,21 @@ pub struct SCOPETABLE_V4 {
     pub gs_cookie_xor: u32,
     pub eh_cookie_offset: i32,
     pub eh_cookie_xor: u32,
+    /// `SCOPETABLE entries[1]` in the C — the flexible-array idiom, not a one-element
+    /// array. The compiler emits as many entries as the function has `__try` levels, and
+    /// every reader indexes past the declared bound.
     pub entries: [SCOPETABLE; 1],
+}
+
+/// `scope_table->entries[i]`, as the C means it.
+///
+/// A plain `entries[i as usize]` is a Rust ARRAY index against the declared length of 1,
+/// and that bounds check is not a debug-only one — so the shipping i386 DLL panicked inside
+/// its own SEH handler for any function with more than one `__try` level. `.offset()` on
+/// the first element is what the C compiles to.
+#[inline(always)]
+unsafe fn scope_entry(table: *const SCOPETABLE_V4, index: i32) -> *const SCOPETABLE {
+    (*table).entries.as_ptr().offset(index as isize)
 }
 
 pub const TRYLEVEL_END: i32 = -1;
@@ -525,9 +539,9 @@ unsafe extern "C" fn msvcrt_local_unwind4(
 
     while (*frame).trylevel != -2 && (*frame).trylevel != trylevel {
         let level = (*frame).trylevel;
-        (*frame).trylevel = (*scopetable).entries[level as usize].previousTryLevel;
-        if (*scopetable).entries[level as usize].lpfnFilter.is_none() {
-            call_handler((*scopetable).entries[level as usize].lpfnHandler, ebp);
+        (*frame).trylevel = (*scope_entry(scopetable, level)).previousTryLevel;
+        if (*scope_entry(scopetable, level)).lpfnFilter.is_none() {
+            call_handler((*scope_entry(scopetable, level)).lpfnHandler, ebp);
         }
     }
     __wine_pop_frame(&mut reg);
@@ -566,9 +580,9 @@ pub unsafe extern "C" fn _except_handler4_common(
         trylevel = (*frame).trylevel;
 
         while trylevel != -2 {
-            if (*scope_table).entries[trylevel as usize].lpfnFilter.is_some() {
+            if (*scope_entry(scope_table, trylevel)).lpfnFilter.is_some() {
                 retval = call_filter(
-                    (*scope_table).entries[trylevel as usize].lpfnFilter,
+                    (*scope_entry(scope_table, trylevel)).lpfnFilter,
                     (core::ptr::addr_of_mut!(exceptPtrs)).cast(),
                     core::ptr::addr_of_mut!((*frame)._ebp) as *mut core::ffi::c_void,
                 );
@@ -583,14 +597,14 @@ pub unsafe extern "C" fn _except_handler4_common(
                     _global_unwind2(frame as *mut EXCEPTION_REGISTRATION_RECORD);
                     msvcrt_local_unwind4(cookie, frame, trylevel, core::ptr::addr_of_mut!((*frame)._ebp) as *mut core::ffi::c_void);
 
-                    (*frame).trylevel = (*scope_table).entries[trylevel as usize].previousTryLevel;
+                    (*frame).trylevel = (*scope_entry(scope_table, trylevel)).previousTryLevel;
                     call_finally_block(
-                        core::mem::transmute((*scope_table).entries[trylevel as usize].lpfnHandler),
+                        core::mem::transmute((*scope_entry(scope_table, trylevel)).lpfnHandler),
                         core::ptr::addr_of_mut!((*frame)._ebp) as *mut core::ffi::c_void,
                     );
                 }
             }
-            trylevel = (*scope_table).entries[trylevel as usize].previousTryLevel;
+            trylevel = (*scope_entry(scope_table, trylevel)).previousTryLevel;
         }
     }
     return _EXCEPTION_DISPOSITION_ExceptionContinueSearch as i32;

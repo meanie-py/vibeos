@@ -2447,11 +2447,18 @@ pub unsafe extern "C" fn _scalbf(num: f32, power: __msvcrt_long) -> f32 {
 //    through __ASM_NAME -> "_acos" in the `call` instruction.
 // ============================================================================
 
+// The `.def/.scl/.endef` triple below is a COFF directive and the leading underscore is
+// i386 PE's decoration, so this body can only be assembled for a PE target — on any other
+// object format the assembler rejects the directive outright. `target_arch = "x86"` alone
+// said less than that, which is why the 32-bit host harness (msvcrt-seh-difftest, which
+// builds this crate for i686-unknown-linux-gnu) could not compile the crate at all. msvcrt
+// is only ever built for Windows, so narrowing the predicate loses no product code.
 // macro_rules! mirror of CREATE_FPU_FUNC1(name, call) — math.c:477-511.
 // One double popped off the FPU stack in, one pushed back out.
 #[cfg(target_arch = "x86")]
 macro_rules! create_fpu_func1 {
     ($name:ident, $call:ident) => {
+        #[cfg(target_os = "windows")]
         core::arch::global_asm!(
             ".text",
             ".align 4",
@@ -2496,6 +2503,7 @@ macro_rules! create_fpu_func1 {
 #[cfg(target_arch = "x86")]
 macro_rules! create_fpu_func2 {
     ($name:ident, $call:ident) => {
+        #[cfg(target_os = "windows")]
         core::arch::global_asm!(
             ".text",
             ".align 4",
@@ -2619,7 +2627,7 @@ extern "C" {
 //        "leave\n\t"
 //        "ret")
 // ASMNAME = __ASM_NAME("_ftol") = "__ftol" (second leading underscore).
-#[cfg(target_arch = "x86")]
+#[cfg(all(target_arch = "x86", target_os = "windows"))]
 core::arch::global_asm!(
     ".text",
     ".align 4",

@@ -129,6 +129,7 @@ members = [
     "msvcrt-crt-cargo",
     "msvcrt-difftest",
     "msvcrt-scanf-difftest",
+    "msvcrt-seh-difftest",
     "compress",
     "crc32",
     "encode",
