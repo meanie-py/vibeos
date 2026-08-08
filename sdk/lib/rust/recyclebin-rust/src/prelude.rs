@@ -148,7 +148,7 @@ extern "C" {
 /// an out-of-line no-op-shaped wrapper is the optimization barrier §9.65 warns about.
 #[macro_export]
 macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr) => {{
+    ($dst:expr, $len:expr $(,)?) => {{
         core::ptr::write_bytes($dst as *mut u8, 0u8, $len as usize)
     }};
 }
@@ -156,8 +156,67 @@ macro_rules! ZeroMemory {
 /// never moved by value.
 #[macro_export]
 macro_rules! _countof {
-    ($a:expr) => {
+    ($a:expr $(,)?) => {
         ($a.len())
     };
 }
 pub use crate::{ZeroMemory, _countof};
+
+// ================= more gap fillers ===========================================================
+// guiddef.h spells REFIID as a MACRO (`#define REFIID const IID* const`), so bindgen drops it
+// while the emitted vtable slots already say `*const IID`. Same identity, under the name the
+// translated bodies use.
+pub type REFIID = *const IID;
+
+/// `INVALID_HANDLE_VALUE` — `((HANDLE)(LONG_PTR)-1)` (handleapi.h), a cast macro.
+/// Spelled as in shell32-rust/src/island_extra.rs:28.
+pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
+/// `UNICODE_NULL` (ntdef.h).
+pub const UNICODE_NULL: WCHAR = 0;
+/// `INT_MAX` (limits.h).
+pub const INT_MAX: c_int = 2147483647;
+
+/// C's `max(a, b)` macro. `core::cmp::max` IS that function and is generic, so there is no
+/// reason to hand-roll one — and no double-evaluation, which the C macro does have.
+pub use core::cmp::max;
+
+// ================= CRT string/memory ==========================================================
+extern "C" {
+    pub fn wcscpy(dest: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    pub fn wcscat(dest: *mut WCHAR, src: *const WCHAR) -> *mut WCHAR;
+    pub fn wcsstr(haystack: *const WCHAR, needle: *const WCHAR) -> *mut WCHAR;
+    pub fn _ultow(value: ULONG, buf: *mut WCHAR, radix: c_int) -> *mut WCHAR;
+    pub fn tolower(c: c_int) -> c_int;
+}
+extern "system" {
+    pub fn wsprintfA(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
+    pub fn wsprintfW(buf: *mut WCHAR, fmt: *const WCHAR, ...) -> c_int;
+}
+
+/// `MoveMemory` (winbase.h) is a MACRO for `memmove`; `swprintf` here is only ever the
+/// count-bounded form the two call sites use.
+#[macro_export]
+macro_rules! MoveMemory {
+    ($dst:expr, $src:expr, $len:expr $(,)?) => {{
+        $crate::prelude::memmove($dst as *mut _, $src as *const _, $len as usize)
+    }};
+}
+pub use crate::MoveMemory;
+
+extern "C" {
+    pub fn swprintf(buf: *mut WCHAR, count: usize, fmt: *const WCHAR, ...) -> c_int;
+}
+
+// ================= sibling TU / shell32 externs ===============================================
+// GetDefaultRecycleBin lives in this crate's recyclebin.rs; the island already declares it, but
+// SHUpdateRecycleBinIcon is shell32's and recyclebin_v5.cpp declares it EXTERN_C by hand.
+extern "system" {
+    pub fn SHUpdateRecycleBinIcon() -> HRESULT;
+}
+
+/// `recyclebin.h:62` `static inline` — an inline, so bindgen emits nothing for it.
+#[inline]
+pub unsafe fn InitializeRecycleBinStringRef(pRBS: *mut RECYCLEBINSTRING, String: LPCWSTR) {
+    (*pRBS).String = String;
+    (*pRBS).Alloc = core::ptr::null_mut();
+}

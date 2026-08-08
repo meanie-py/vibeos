@@ -293,3 +293,81 @@ impl Drop for CZZWStr {
         }
     }
 }
+
+// ================= wide literals ==============================================================
+// The `L"..."` constants the two v5 TUs use. Hand-encoded UTF-16 with the intent comment above
+// each one, which is the form `tools/scan_wide_literals.py` decodes and checks — a miscounted
+// length is invisible to rustc (the array is well-formed at ANY length), and that is exactly how
+// SERVICES_KEY once shipped one character short and broke every service registration.
+//
+// Defined HERE rather than in the generated modules because this file survives a re-translate.
+
+/// L"*"
+pub static W_STAR: [WCHAR; 2] = [0x002A, 0];
+
+/// L"\\"
+pub static W_BACKSLASH: [WCHAR; 2] = [0x005C, 0];
+
+/// L"\\D"
+pub static W_BACKSLASH_D: [WCHAR; 3] = [0x005C, 0x0044, 0];
+
+/// L"desktop.ini"
+pub static W_DESKTOP_INI: [WCHAR; 12] = [
+    0x0064, 0x0065, 0x0073, 0x006B, 0x0074, 0x006F, 0x0070, 0x002E, 0x0069, 0x006E, 0x0069, 0,
+];
+
+/// L"%lu"
+pub static W_FMT_LU: [WCHAR; 4] = [0x0025, 0x006C, 0x0075, 0];
+
+/// `L'\\'` — a wide CHARACTER literal, not a string.
+pub const WC_BACKSLASH: WCHAR = 0x005C;
+
+// The three `#define`s from recyclebin_private.h:26-28. Exposed as pointers under their C
+// names so the generated call sites — `wcslen(RECYCLE_BIN_FILE_NAME)` — need no edit, and so a
+// re-translate does not have to be re-patched.
+
+/// L"INFO2"
+pub static W_INFO2: [WCHAR; 6] = [0x0049, 0x004E, 0x0046, 0x004F, 0x0032, 0];
+/// L"RECYCLER"
+pub static W_RECYCLER: [WCHAR; 9] =
+    [0x0052, 0x0045, 0x0043, 0x0059, 0x0043, 0x004C, 0x0045, 0x0052, 0];
+/// L"RECYCLED"
+pub static W_RECYCLED: [WCHAR; 9] =
+    [0x0052, 0x0045, 0x0043, 0x0059, 0x0043, 0x004C, 0x0045, 0x0044, 0];
+
+pub const RECYCLE_BIN_FILE_NAME: LPCWSTR = W_INFO2.as_ptr();
+pub const RECYCLE_BIN_DIRECTORY_WITH_ACL: LPCWSTR = W_RECYCLER.as_ptr();
+pub const RECYCLE_BIN_DIRECTORY_WITHOUT_ACL: LPCWSTR = W_RECYCLED.as_ptr();
+
+// ---- snake_case spellings -------------------------------------------------------------------
+// `--local-raii` seals this API into the prompt, but the model rendered the calls in Rust
+// snake_case (`assign`/`append_str`/`left`) rather than ATL's own PascalCase. Forwarders rather
+// than a rewrite of the generated call sites: they cost nothing, they keep BOTH spellings valid,
+// and a re-translate that picks either one still compiles. The ATL names above stay the
+// definition site so there is exactly one implementation of each operation.
+impl CStringW {
+    /// `operator=(PCXSTR)`
+    pub unsafe fn assign(&mut self, pszSrc: *const WCHAR) {
+        self.SetString(pszSrc, wide_len(pszSrc) as i32);
+    }
+    /// `operator=(const CStringT&)`
+    pub unsafe fn assign_cstringw(&mut self, other: &CStringW) {
+        self.AssignStr(other);
+    }
+    /// `operator+=(PCXSTR)`
+    pub unsafe fn append_str(&mut self, pszSrc: *const WCHAR) {
+        self.Append(pszSrc);
+    }
+    /// `operator+=(XCHAR)`
+    pub unsafe fn append_char(&mut self, ch: WCHAR) {
+        self.AppendChar(ch);
+    }
+    /// `Left(int)`
+    pub unsafe fn left(&self, nCount: i32) -> Self {
+        self.Left(nCount)
+    }
+    /// `GetLength()`
+    pub fn len(&self) -> i32 {
+        self.GetLength()
+    }
+}

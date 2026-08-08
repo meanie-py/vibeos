@@ -99,7 +99,7 @@ pub unsafe extern "system" fn DeleteFileToRecycleBinW(FileName: LPCWSTR) -> i32 
     } else {
         unsafe { SetLastError(ERROR_GEN_FAILURE) };
     }
-    return FALSE;
+    return (FALSE) as i32;
 }
 
 #[no_mangle]
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn EmptyRecycleBinA(pszRoot: LPCSTR) -> i32 {
             szRootW = (HeapAlloc(
                 GetProcessHeap(),
                 0,
-                len * core::mem::size_of::<u16>(),
+                (len * (core::mem::size_of::<u16>()) as i32) as SIZE_T,
             )).cast();
             if szRootW.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn EmptyRecycleBinW(pszRoot: LPCWSTR) -> i32 {
     } else {
         SetLastError(ERROR_GEN_FAILURE);
     }
-    return FALSE;
+    return (FALSE) as i32;
 }
 
 #[no_mangle]
@@ -298,7 +298,7 @@ pub unsafe extern "system" fn EnumerateRecycleBinW(
     } else {
         SetLastError(ERROR_GEN_FAILURE);
     }
-    return FALSE;
+    return (FALSE) as i32;
 }
 #[cfg(target_arch = "x86")]
 unsafe extern "stdcall" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL {
@@ -321,7 +321,7 @@ unsafe extern "C" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFil
         return (FALSE) as i32;
     }
     CloseRecycleBinHandle(hDeletedFile);
-    return TRUE;
+    return (TRUE) as i32;
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetRecycleBinFileHandle(

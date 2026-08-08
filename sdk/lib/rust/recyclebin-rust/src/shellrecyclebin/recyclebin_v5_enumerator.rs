@@ -1,5 +1,12 @@
 // rustconv-assembly: whole-tu
+//! ORPHAN-BY-DESIGN: superseded by the class-atomic modules (RecycleBinGeneric.rs,
+//! RecycleBinGenericEnum.rs, RecycleBin5.rs, RecycleBin5File.rs, RecycleBin5Enum.rs).
+//! This is the older `whole-tu` assembly, produced before `--cpp-com` could run for a
+//! non-shell32 target: it has no vtable, no `_new`/`_delete` and never stores `lpVtbl`,
+//! so an object built from it null-derefs on its first method call. Kept only until its
+//! removal is approved; the paid bodies live in .responses/ and regenerate for $0.
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin_support::{W_BACKSLASH_D, W_FMT_LU};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -301,12 +308,12 @@ pub unsafe extern "system" fn RecycleBin5File_Init(
     StringCchPrintfW(
         szUniqueId.as_mut_ptr(),
         _countof!(szUniqueId),
-        L"%lu".as_ptr() as LPCWSTR,
+        W_FMT_LU.as_ptr() as LPCWSTR,
         (*pDeletedFile).dwRecordUniqueId,
     );
 
     let mut strFullName = CStringW::from_ptr(Folder);
-    strFullName.Append(L"\\D".as_ptr());
+    strFullName.Append(W_BACKSLASH_D.as_ptr());
     strFullName.AppendChar((0x0061u16 + (*pDeletedFile).dwDriveNumber as u16) as WCHAR);
     strFullName.Append(szUniqueId.as_ptr());
     strFullName.Append(PathFindExtensionW((*pDeletedFile).FileNameW));
