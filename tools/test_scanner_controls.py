@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+import vendored
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -856,7 +857,58 @@ pub unsafe fn CmpQuiet(a: u32) -> u8 { if a == 0 { return 0u8; } 1u8 }
 // }
 """
 
+# vendored_registry (tools/vendored.py). The bug it exists to catch is a vendored library
+# arriving in dll/3rdparty or sdk/lib/3rdparty with no vendor.yaml entry — it then silently
+# joins the "C we owe a translation" denominator, and nothing anywhere says so. BAD is a
+# container holding one registered tree and one that is not; GOOD registers both.
+#
+# The stamp text is FORMATTED FROM THE TOOL'S OWN TEMPLATE rather than pasted, because a
+# hand-copied stamp would make this control fail the day the template gains a line — a
+# false alarm about the fixture rather than about the scanner.
+_VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
+    name="Known", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
+    name="Surprise", upstream="http://example.invalid/", license="MIT"
+)
+_VENDOR_TREE = """\
+  - path: libs/known
+    name: Known
+    upstream: http://example.invalid/
+    license: MIT
+    reason: a registered vendored tree
+"""
+_VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
+_VENDOR_GOOD_YAML = (
+    _VENDOR_BAD_YAML
+    + """\
+  - path: libs/surprise
+    name: Surprise
+    upstream: http://example.invalid/
+    license: MIT
+    reason: the library that used to arrive unnoticed
+"""
+)
+
 CONTROLS: list[Control] = [
+    Control(
+        name="vendored_registry",
+        script="tools/vendored.py",
+        argv=["--repo"],
+        bad={
+            "vendor.yaml": _VENDOR_BAD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/b.c": "int b;\n",
+        },
+        good={
+            "vendor.yaml": _VENDOR_GOOD_YAML,
+            "libs/known/VENDORED": _VENDOR_STAMP,
+            "libs/known/a.c": "int a;\n",
+            "libs/surprise/VENDORED": _VENDOR_STAMP_2,
+            "libs/surprise/b.c": "int b;\n",
+        },
+    ),
     Control(
         name="scan_dropped_prints",
         script="tools/scan_dropped_prints.py",

@@ -445,6 +445,7 @@ or status into memory, stop and put it in its committed home.
 |---|---|
 | A reusable bug / recipe / gotcha that will recur | `docs/engineering/translation-debugging-field-manual.md`, in the section its **symptom** belongs to (see below) |
 | Per-subsystem / driver / lib status | `docs/engineering/rust-port-status.md` (single source of truth for Rust-vs-C coverage) |
+| That a tree is vendored / NOT a translation target | `vendor.yaml` (repo root) — the only list; `tools/vendored.py --emit` reads it, `vibeos-cli check` gates it |
 | A roadmap / strategy / design | product: `docs/product/vibeos-roadmap.md`; engineering: `docs/engineering/*-roadmap.md` / `*-design.md` / `*-plan.md` / `*-quest.md` |
 | A cohab / cargo-cutover / link recipe | `docs/engineering/rust-in-kernel.md` |
 | A command, path, or platform detail | `docs/engineering/agent-reference.md` |
