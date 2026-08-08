@@ -63,11 +63,20 @@ default = ["stdio", "invalid-parameter", "dir-environ", "conio-exit", "locale", 
 heap = []
 
 # cpp.c (`src/msvcrt/cpp.rs` + `src/msvcrt/cpp_rtti.rs`) — the C++ RTTI / exception-object
-# subsystem. ON for every build that produces msvcrt.dll, OFF for both host harnesses, and
-# the reason is structural rather than a preference: `cpp_rtti` builds its five vtables with
-# `global_asm!` into `.data` under COFF symbol names, and the RTTI walk resolves an image
-# base through `RtlPcToFileHeader`. An ELF host binary has neither, so the module cannot
-# link there at all — this gate is what keeps msvcrt-difftest buildable.
+# subsystem, and except.c's dispatcher with it. ON everywhere, including msvcrt-difftest,
+# which grades it against reference TUs #14/#15.
+#
+# This comment used to say the module "cannot link there at all" — COFF-only `global_asm!`
+# vtables plus a `RtlPcToFileHeader` an ELF binary has no answer for — and both halves were
+# wrong. The x86-64 arm of `cpp_rtti`'s `asm_vtable!` emits `.data` / `.balign 8` / `.quad` /
+# `.globl`, which is valid ELF as written and is the same text cxx.h's `__ASM_VTABLE` emits
+# for the reference TU sitting beside it in the same binary; only the `#[cfg(target_arch =
+# "x86")]` arm's leading `_` is COFF-specific, and x86-64 never takes it. And
+# `RtlPcToFileHeader` was never a platform property, only an undefined symbol —
+# msvcrt-difftest/cppimpl.c supplies it with a real, stable image base and asserts every RVA
+# fits. The gate stayed shut on that reasoning for a whole wave; nothing was measured.
+#
+# msvcrt-scanf-difftest and msvcrt-seh-difftest still leave it off, for their own reasons.
 cpp = []
 
 # lock.c + thread.c (`src/msvcrt/lock.rs`, `src/msvcrt/thread.rs`) — the CRT's mutual

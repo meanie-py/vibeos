@@ -120,6 +120,25 @@ typedef struct _DISPATCHER_CONTEXT {
  * either TU dereferences it — it is handed straight to the user's handler. */
 typedef struct _FPIEEE_RECORD _FPIEEE_RECORD;
 
+/* ── msvcrt's <signal.h>, the part that is not a number ───────────────────
+ *
+ * The socket displaces glibc's <signal.h> so the DERIVED signal numbers win (msvcrt's SIGABRT
+ * is 22 where glibc's is 6 — see the generator).  These four come with it: they are POINTER
+ * constants, not integers, so the object probe cannot carry them the way it carries SIGABRT.
+ * Transcribed verbatim from sdk/include/crt/signal.h:44-52, where they have never varied —
+ * `SIG_DFL`/`SIG_IGN` are the sentinel slots `signal()` stores and `raise()` tests, so their
+ * VALUES are what several graded rows compare, and the names are what except.c spells.
+ *
+ * `__sighandler_t` is except.c's own spelling of msvcrt's `__p_sig_fn_t`; both are a plain
+ * `void (*)(int)`. */
+typedef void(__cdecl *__p_sig_fn_t)(int);
+typedef __p_sig_fn_t __sighandler_t;
+#define SIG_DFL ((__p_sig_fn_t)0)
+#define SIG_IGN ((__p_sig_fn_t)1)
+#define SIG_SGE ((__p_sig_fn_t)3)
+#define SIG_ACK ((__p_sig_fn_t)4)
+#define SIG_ERR ((__p_sig_fn_t)-1)
+
 /* NT_TIB exists only because sdk/include/wine/exception.h defines two inline
  * frame-push helpers over it.  Neither TU calls them; they still have to
  * compile. */
@@ -150,11 +169,18 @@ void WINAPI   RtlUnwindEx(void *end_frame, void *target_ip, EXCEPTION_RECORD *re
 void WINAPI   RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR *args);
 BOOL WINAPI   SetConsoleCtrlHandler(BOOL (WINAPI *handler)(DWORD), BOOL add);
 void *WINAPI  NtCurrentTeb(void);
-void *        InterlockedCompareExchangePointer(void **dest, void *xchg, void *cmp);
 void __cdecl  operator_delete(void *ptr);
 char *__cdecl __unDName(char *buffer, const char *mangled, int len,
                         void *(__cdecl *pfn_alloc)(size_t),
                         void (__cdecl *pfn_free)(void *), unsigned short flags);
+
+/* The one exception to "the bodies are in cppimpl.c": fileimpl.c already defines this, and
+ * fileimpl.o is in EVERY test binary's link line — a second definition here is a duplicate
+ * symbol, which is how this first showed up.  Signature kept character-for-character equal to
+ * refstub/msvcrt_shim_decls.h:107, so a TU that pulls in both sees one declaration twice
+ * rather than two that disagree.  cpp.c's two call sites pass `(void**)`, which converts to
+ * the `volatile`-qualified pointee by the ordinary assignment rule. */
+void *WINAPI  InterlockedCompareExchangePointer(void * volatile *dst, void *xchg, void *cmp);
 
 /* ── msvcrt's own C++ EH types and entry points ───────────────────────────
  *
