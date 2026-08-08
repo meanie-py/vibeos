@@ -45,9 +45,12 @@ from tree_sitter import Language, Parser
 # #defined to nothing, tree-sitter does not know that, and a parameter spelled
 # `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
 # reimplemented so both parsers agree on what the C says.
-from .scanner import _blank_memmodel, _expand_case_macros, _normalize_callbacks
+from .scanner import CPP_LANG, _blank_memmodel, _expand_case_macros, _normalize_callbacks
 
 C_LANG = Language(tsc.language())
+
+#: Suffixes the function catalog parses with the C++ grammar (scanner.py picks the same way).
+_CPP_SUFFIXES = (".cpp", ".cxx", ".cc", ".hpp", ".hxx")
 
 #: Kinds whose absence BREAKS things (silently, in the vtbl case). Always reported.
 CRITICAL_KINDS = ("table", "variable", "struct", "union", "enum")
@@ -132,7 +135,13 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     # top-level ERROR and skipped every file-scope check it exists to perform.
     text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(raw)))
     src = text.encode()
-    tree = Parser(C_LANG).parse(src)
+    # Parse a .cpp with the C++ grammar, as the function catalog already does. Using the C
+    # grammar on C++ makes `class X : public Y {` a top-level ERROR by construction, which
+    # this function reads as "cannot trust the parse" and returns INCOMPLETE -- so every
+    # file-scope check was skipped for exactly the files most likely to hold a hand-rolled
+    # vtable. recyclebin_v5_enumerator.cpp (two COM classes) never got audited at all.
+    language = CPP_LANG if Path(c_path).suffix.lower() in _CPP_SUFFIXES else C_LANG
+    tree = Parser(language).parse(src)
     root = tree.root_node
 
     unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
