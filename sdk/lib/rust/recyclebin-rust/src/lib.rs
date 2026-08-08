@@ -37,6 +37,15 @@ pub mod shellrecyclebin {
     pub mod RecycleBinGeneric;
     pub mod RecycleBinGenericEnum;
 
+    // The other half of each C++ TU. `--cpp-com --class` emits ONLY the class closure and
+    // drops every file-scope function, so these nine `extern "C"` entry points — the
+    // *_Constructor family that recyclebin.c calls to make an object at all — live in a
+    // companion `--free-functions` run. Same split as shell32's cidldataobj_free.rs.
+    pub mod recyclebin_generic_enumerator_free;
+    pub mod recyclebin_generic_free;
+    pub mod recyclebin_v5_enumerator_free;
+    pub mod recyclebin_v5_free;
+
     pub mod guid;
 }
 
