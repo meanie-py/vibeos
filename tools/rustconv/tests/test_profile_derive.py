@@ -1191,3 +1191,55 @@ class TestFlippedModule:
         assert {s.ident for s in dp.switch_consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
         # And it says so, because the audit now describes C the build does not compile.
         assert any(f.code == "FLIPPED_SOURCES_RESTORED" for f in dp.module.findings)
+
+
+class TestBlocklistFuncsEvidence:
+    """The measurement REPORTS. It does not recommend, and the calibration is why."""
+
+    def test_the_survey_separates_declared_prototypes_from_undeclared_calls(self, tmp_path):
+        root = _basic_module(
+            tmp_path,
+            main_extra=(
+                "int use(void)\n{\n"
+                "    WidgetOpen(0);\n"      # declared by a closure header -> a prototype
+                "    SamrConnect(0);\n"     # declared nowhere the closure walked
+                "    return helper();\n"    # defined in this module -> not external
+                "}\n"
+            ),
+        )
+        _write(
+            tmp_path / "sdk/include/psdk/widget_base.h",
+            "#ifndef _WIDGET_BASE_H\n#define _WIDGET_BASE_H\n"
+            "typedef struct _WBASE { int x; } WBASE;\n#define WIDGET_BASE_OK 1\n"
+            "int WidgetOpen(int);\n#endif\n",
+        )
+        dp = derive(_mod(tmp_path), root, use_compile_db=False)
+        assert dp.prototype_survey is not None
+        assert "WidgetOpen" in dp.prototype_survey.prototypes
+        assert "SamrConnect" in dp.prototype_survey.undeclared
+        assert "helper" not in dp.prototype_survey.prototypes
+
+    def test_the_crt_and_the_macro_vocabulary_are_not_a_hand_writing_burden(self, tmp_path):
+        """A Rust crate gets `wcslen` from its own substrate and `ARRAYSIZE` expands inline.
+        Leaving them in moved tcpsvcs a whole band (66 -> ~44)."""
+        root = _basic_module(
+            tmp_path,
+            main_extra="int use(void) { return wcslen(0) + ARRAYSIZE(0) + NT_SUCCESS(0); }\n",
+        )
+        dp = derive(_mod(tmp_path), root, use_compile_db=False)
+        both = set(dp.prototype_survey.prototypes) | set(dp.prototype_survey.undeclared)
+        assert both.isdisjoint({"wcslen", "ARRAYSIZE", "NT_SUCCESS"})
+
+    def test_the_survey_never_picks_the_flag(self, tmp_path):
+        """samlib measures 60 declared prototypes and chose 0; tcpsvcs measures 47 and kept 1.
+        A 13-unit gap on ten samples, whose boundary pair is exactly the pair whose reasoning
+        was never about the count — so there is deliberately no recommendation field."""
+        root = _basic_module(tmp_path)
+        dp = derive(_mod(tmp_path), root, use_compile_db=False)
+        assert not hasattr(dp.prototype_survey, "recommendation")
+        assert "does NOT settle BLOCKLIST_FUNCS" in dp.prototype_survey.summary
+        # And the emitted profile still says 1, with the measurement beside it, never in it.
+        profile = emit_profile(dp)
+        assert "    BLOCKLIST_FUNCS=1" in profile
+        assert "BLOCKLIST_FUNCS=0" not in profile
+        assert "# BLOCKLIST_FUNCS, MEASURED:" in profile

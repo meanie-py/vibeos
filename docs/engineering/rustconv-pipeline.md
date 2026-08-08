@@ -95,6 +95,22 @@ hand-authored allowlist. Key behaviours:
   the CMakeLists — pass `--usermode` / `--kernel`. (Those flags are new: the error had named
   them for a while without the argparser defining them. A fail-loud whose remedy does not
   exist is worse than no message; see `test_usermode_override_exists_for_a_target_with_no_set_module_type`.)
+- **BLOCKLIST_FUNCS is MEASURED and reported, never picked.** `--emit report` now carries the
+  external-prototype survey: how many functions the module calls that the include closure
+  really declares (the surface `BLOCKLIST_FUNCS=1` makes you hand-write), how many it calls
+  that no closure header declares at all, and every name. The emitted profile keeps
+  `BLOCKLIST_FUNCS=1` and puts the measurement in a comment BESIDE it. It does not choose,
+  and the calibration is why. Raw `called - defined` over the twelve hand-set modules nearly
+  separates them (samlib 73 vs tcpsvcs 66 — a 7-unit margin on twelve samples); refined to
+  closure-declared prototypes it tightens to `intl 69 | desk 198 | sysdm 130 | syssetup 205 |
+  aclui 97 | samlib 60` for the modules that chose 0 against `tcpsvcs 47 | wlanapi 16 |
+  snmpapi 7 | wsock32 0` for those that kept 1. A real gap, still not a rule: ten samples, and
+  the boundary pair is exactly the pair whose reasoning was never about a count — samlib chose
+  0 because a hand-written declaration of an RPC-shaped SAM entrypoint wrong by one pointer
+  level *links* and then corrupts at run time. Decide it the MACRO_SIGNED way: island it both
+  ways, one cargo check each. There is also an ordering constraint that makes 1 the only safe
+  unattended answer — `BLOCKLIST_FUNCS_FROM_CRATE=1` greps OUT_CRATE for `#[no_mangle]` names,
+  so on a FIRST derive against an empty scaffold it blocklists nothing.
 - **An already-FLIPPED module refuses rather than reporting empty sections.** The empty-TU case
   always hard-failed; the one that went quiet is subtler. A cohab flip comments the real `.c`
   out but leaves the `rust_*.c` scaffolding compiled, so the TU list is *not* empty — it is one
