@@ -448,6 +448,9 @@ class DerivedProfile:
     excluded: dict[str, str] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     compile_db_used: Path | None = None
+    #: The BLOCKLIST_FUNCS evidence. None only for a kernel module, where the flag is not
+    #: emitted at all.
+    prototype_survey: PrototypeSurvey | None = None
 
     @property
     def crate_name(self) -> str:
@@ -502,6 +505,126 @@ def _strip_cmake_comments(text: str) -> str:
                 break
         out.append(line[:cut])
     return "\n".join(out)
+
+
+#: A TU that exists only to hold what stable Rust cannot DEFINE — a `va_start`, a
+#: `__forceinline` body, a layout assertion, a cohab stub. The tree spells every one of them
+#: `rust_*.c` (12 distinct names as of 2026-08-07: rust_varargs_shim, rust_scanf_shim,
+#: rust_strsafe_shim, rust_cohab_fat, rust_layout_assert, …). None is a translation surface, so
+#: a module whose whole compiled source list is these is FLIPPED, not un-translated.
+_SHIM_TU_RE = re.compile(r"^rust_\w*\.c$")
+
+
+def is_shim_tu(path: Path) -> bool:
+    """True for a cohab scaffolding TU — never something to derive a translation island from."""
+    return bool(_SHIM_TU_RE.match(path.name))
+
+
+#: Commands whose argument list is a source list. A flip comments entries out of one of
+#: these — `add_library` included: wsock32's only `.c` is commented inside `add_library(...)`,
+#: not inside a `list(APPEND SOURCE)` at all.
+_SOURCE_LIST_OPEN = re.compile(
+    r"^[ \t]*(?:list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+"
+    r"|add_(?:library|executable)\s*\(\s*\w+)"
+)
+#: A comment line inside such a list whose first token is a C source file. Four annotation
+#: spellings are live in this tree and there is no point discriminating among them — being
+#: INSIDE the list is what makes a line an entry:
+#:     `#     stubs.c`                                                  (wsock32)
+#:     `#     tcpsvcs.c    (→ tcpsvcs-rust src/tcpsvcs/tcpsvcs.rs — …)` (tcpsvcs)
+#:     `#     gdi/eng/clip.c   # replaced by Rust (…) — cohabitation`   (win32ss, 158)
+#:     `#     byteswap.c — replaced by Rust implementation (…)`         (rtl)
+#: The precision comes from two other places instead: the depth tracking that decides
+#: "inside", and the on-disk check below, which is what stops a HEADING that merely names a
+#: file (shell32 writes one above each flipped block) from inventing an entry.
+_COMMENTED_ENTRY = re.compile(r"^[ \t]*#[ \t]*([\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$")
+
+#: `# list(APPEND SOURCE` / `# set(SOURCE` — what a cohab flip leaves behind.
+_COMMENTED_LIST_OPEN = re.compile(r"^[ \t]*#[ \t]?(list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+)")
+_SOURCE_ARG = re.compile(r"^(?:\$\{[^}]+\}|[\w./+-]+\.(?:c|cpp|cc|h|hpp|idl|rc))$")
+
+
+def uncomment_flipped_source_lists(
+    text: str, module_dir: Path | None = None
+) -> tuple[str, list[str]]:
+    """Restore the source list a cohab flip commented out. Returns `(text, restored files)`.
+
+    A flip does not DELETE the source list, it comments it out — so the pre-flip translation
+    surface is still sitting in the CMakeLists, and a flipped module can be re-audited without
+    going to git. That matters because the audits worth re-running (case labels, dead bodies,
+    enum members) are exactly the ones that answer "was this flip correct".
+
+    Deliberately narrow: the block must be a `list(APPEND X ...)`/`set(X ...)` whose every
+    argument looks like a source file or a `${VAR}`, and its parens must balance before the
+    commented run ends. Un-commenting an arbitrary `# set(FOO ...)` would resurrect a
+    build decision somebody disabled on purpose.
+    """
+    lines = text.splitlines()
+    out: list[str] = []
+    restored: list[str] = []
+    index = 0
+    while index < len(lines):
+        if _COMMENTED_LIST_OPEN.match(lines[index]) is None:
+            out.append(lines[index])
+            index += 1
+            continue
+        block: list[str] = []
+        cursor = index
+        depth = 0
+        while cursor < len(lines) and lines[cursor].lstrip().startswith("#"):
+            bare = lines[cursor].lstrip()[1:].lstrip()
+            block.append(bare)
+            depth += bare.count("(") - bare.count(")")
+            cursor += 1
+            if depth == 0:
+                break
+        joined = " ".join(block)
+        args = _split_args(joined[joined.index("(") + 1 : joined.rindex(")")]) if depth == 0 else []
+        # The first argument of `list(APPEND X ...)` is the variable, not a source.
+        values = args[2:] if joined.lstrip().lower().startswith("list") else args[1:]
+        if depth == 0 and values and all(_SOURCE_ARG.match(a) for a in values):
+            out.extend(block)
+            restored.extend(values)
+            index = cursor
+            continue
+        out.append(lines[index])
+        index += 1
+
+    # SECOND shape, and the commoner one: the source-list command stays LIVE and the entries
+    # inside it are commented out one per line. tcpsvcs (8 entries in `list(APPEND SOURCE)`)
+    # and wsock32 (one entry inside `add_library`) are both this, and both are why
+    # --flipped-sources first reported them as having no sources at all.
+    final: list[str] = []
+    depth = 0
+    for line in out:
+        if depth == 0 and _SOURCE_LIST_OPEN.match(line) is None:
+            final.append(line)
+            continue
+        # The OPENING line's own parens are counted like any other, which is the whole trick:
+        # `set(X "...")` opens and closes on one line, and skipping it left depth stuck at 1
+        # for the rest of the file — wsock32 then restored a PROSE comment
+        # (`#   stubs.c  → wsock32-rust`) sitting outside every list.
+        entry = _COMMENTED_ENTRY.match(line) if depth > 0 else None
+        # An entry names a file that is STILL THERE — a flip comments sources out, it never
+        # deletes them (the never-delete rule). That is what separates an entry from the
+        # heading shell32 writes above each flipped block, which names the same file in prose.
+        # Deduped for the same reason, and because rtl legitimately lists `byteswap.c` in two
+        # different `if(ARCH)` arms.
+        if (
+            entry is not None
+            and module_dir is not None
+            and not (module_dir / entry.group(1)).is_file()
+        ):
+            entry = None
+        if entry is not None:
+            final.append("    " + entry.group(1))
+            if entry.group(1) not in restored:
+                restored.append(entry.group(1))
+            continue
+        code = line.split("#", 1)[0]
+        depth = max(depth + code.count("(") - code.count(")"), 0)
+        final.append(line)
+    return "\n".join(final), restored
 
 
 def _cmake_commands(text: str) -> list[tuple[str, str, int]]:
@@ -612,6 +735,7 @@ def parse_cmakelists(
     repo_root: Path,
     arch: str = "i386",
     target: str | None = None,
+    flipped_sources: bool = False,
 ) -> CMakeModule:
     """Parse a module's CMakeLists into the set of TUs the build ACTUALLY compiles.
 
@@ -625,7 +749,11 @@ def parse_cmakelists(
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
     module_dir = cmake.parent
-    text = _strip_cmake_comments(_read(cmake))
+    raw_text = _read(cmake)
+    restored_sources: list[str] = []
+    if flipped_sources:
+        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir)
+    text = _strip_cmake_comments(raw_text)
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
         "REACTOS_SOURCE_DIR": [str(repo_root)],
@@ -759,6 +887,17 @@ def parse_cmakelists(
         rpc_interfaces=rpc,
         findings=findings,
     )
+    if restored_sources:
+        findings.append(
+            Finding(
+                "warn",
+                "FLIPPED_SOURCES_RESTORED",
+                f"--flipped-sources re-enabled {len(restored_sources)} commented-out source(s) "
+                f"({', '.join(sorted(restored_sources)[:8])}"
+                f"{', …' if len(restored_sources) > 8 else ''}). This module is FLIPPED: the "
+                "audit below describes the C the Rust replaced, not what the build compiles.",
+            )
+        )
 
     # Dead source: on disk, absent from the compiled list. Translating one of these
     # is paid-for work that nobody links (it happened last batch).
@@ -1461,6 +1600,259 @@ def _macro_switch_constants(src: bytes, key: str, parser) -> list[SwitchConst]:
     return found
 
 
+#: Names that are CALLED like functions and are never a hand-written FFI burden: the CRT
+#: (a Rust crate gets these from its own substrate, not from this island) and the fixed
+#: NT/Win32 macro vocabulary that expands inline. Both contaminate a raw `called - defined`
+#: count badly enough to move a module a whole band — tcpsvcs drops from 66 to ~44.
+_NOT_A_PROTOTYPE = frozenset(
+    [
+        "strlen",
+        "wcslen",
+        "strcpy",
+        "wcscpy",
+        "strcat",
+        "wcscat",
+        "strcmp",
+        "wcscmp",
+        "stricmp",
+        "wcsicmp",
+        "strncmp",
+        "wcsncmp",
+        "strchr",
+        "wcschr",
+        "strrchr",
+        "wcsrchr",
+        "strstr",
+        "wcsstr",
+        "strtok",
+        "wcstok",
+        "sprintf",
+        "swprintf",
+        "snprintf",
+        "_snwprintf",
+        "vsprintf",
+        "vswprintf",
+        "sscanf",
+        "swscanf",
+        "atoi",
+        "atol",
+        "wtoi",
+        "wcstol",
+        "wcstoul",
+        "strtoul",
+        "strtol",
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+        "memcpy",
+        "memmove",
+        "memset",
+        "memcmp",
+        "qsort",
+        "bsearch",
+        "abs",
+        "labs",
+        "rand",
+        "srand",
+        "time",
+        "localtime",
+        "gmtime",
+        "mktime",
+        "toupper",
+        "tolower",
+        "towupper",
+        "towlower",
+        "isdigit",
+        "iswdigit",
+        "isalpha",
+        "iswalpha",
+        "isspace",
+        "iswspace",
+        "isalnum",
+        "iswalnum",
+        "printf",
+        "fprintf",
+        "fputs",
+        "fopen",
+        "fclose",
+        "fread",
+        "fwrite",
+        "exit",
+        "abort",
+        "assert",
+        "va_start",
+        "va_end",
+        "va_arg",
+        "offsetof",
+    ]
+)
+
+#: Function-like macro spellings the include closure declares as macros rather than functions.
+#: Derived per module (see `_external_prototype_survey`); this is only the fallback vocabulary
+#: for the ones every module uses and no closure header spells as a prototype.
+_ALWAYS_MACRO = frozenset(
+    [
+        "ARRAYSIZE",
+        "_countof",
+        "RTL_NUMBER_OF",
+        "FIELD_OFFSET",
+        "CONTAINING_RECORD",
+        "MAKELANGID",
+        "MAKEWORD",
+        "MAKELONG",
+        "LOWORD",
+        "HIWORD",
+        "LOBYTE",
+        "HIBYTE",
+        "MAKEINTRESOURCE",
+        "ZeroMemory",
+        "CopyMemory",
+        "MoveMemory",
+        "FillMemory",
+        "RtlZeroMemory",
+        "RtlCopyMemory",
+        "NT_SUCCESS",
+        "NT_ERROR",
+        "NT_WARNING",
+        "SUCCEEDED",
+        "FAILED",
+        "HRESULT_FROM_WIN32",
+        "TRACE",
+        "WARN",
+        "ERR",
+        "FIXME",
+        "DPRINT",
+        "DPRINT1",
+        "ASSERT",
+        "InitializeListHead",
+        "IsListEmpty",
+        "InsertHeadList",
+        "InsertTailList",
+        "RemoveEntryList",
+        "RemoveHeadList",
+        "RemoveTailList",
+        "FD_SET",
+        "FD_ZERO",
+        "FD_ISSET",
+        "FD_CLR",
+        "min",
+        "max",
+    ]
+)
+
+
+@dataclass(frozen=True)
+class PrototypeSurvey:
+    """How much FFI surface `BLOCKLIST_FUNCS=1` would make somebody hand-write.
+
+    IT REPORTS. IT DOES NOT RECOMMEND. `called - defined` over the twelve modules whose flag
+    was set by hand very nearly separates them:
+
+        intl 111 | desk 359 | sysdm 268 | syssetup 301 | umpnpmgr 101 | aclui 163 | samlib 73
+        tcpsvcs 66 | mswsock 39 | wlanapi 20 | snmpapi 18 | wsock32 0
+
+    — the first seven chose 0, the last five kept 1, and samlib 73 against tcpsvcs 66 is a
+    7-unit margin on twelve samples. Refining it to the prototypes the include closure really
+    DECLARES (dropping the CRT and the macro vocabulary) tightens the number a lot:
+
+        intl 69 | desk 198 | sysdm 130 | syssetup 205 | aclui 97 | samlib 60     <- chose 0
+        tcpsvcs 47 | wlanapi 16 | snmpapi 7 | wsock32 0                          <- kept 1
+
+    60 against 47 is a real gap, and it is still not a rule. Ten samples, and the pair that
+    defines the boundary is exactly the pair whose reasoning was never about the count:
+    samlib's own comment argues that a hand-written declaration of an RPC-shaped SAM
+    entrypoint wrong by one pointer level LINKS and then corrupts at run time. That is a RISK
+    argument. A threshold fitted to ten points would be picking against the only written-down
+    rationale in the set.
+
+    So the evidence is printed — both counts and every name — and the flag stays a human
+    decision, settled the MACRO_SIGNED way: island it both ways, one cargo check each. Same
+    discipline as the substrate protocol's "ambiguous layouts stay red".
+
+    THE FIRST ATTEMPT AT THIS MEASURED THE EXACT COMPLEMENT OF WHAT IT WANTED, and the shape
+    of that mistake is worth keeping. It asked `header_symbols` which names the closure
+    "declares" — but that function answers a different question (which CONSTANTS a header
+    owns) and returns only macros and enum members, never a declaration. Every name it
+    returned was therefore counted as a prototype. The numbers looked plausible (intl 26,
+    desk 122, samlib 2) and were meaningless; the tell was samlib landing on 2, tied with
+    wlanapi's 2, which would have recommended `1` for the module with the documented reason
+    to choose 0. A helper whose name nearly fits is worth reading before it is trusted.
+    """
+
+    #: External functions the module calls that the include closure really declares — the
+    #: prototypes bindgen would emit, i.e. what `BLOCKLIST_FUNCS=1` makes you hand-write.
+    prototypes: tuple[str, ...]
+    #: Called, not defined here, and declared by no header in the closure: reached through a
+    #: header the closure did not walk, or an import library. samlib's SAM entrypoints are
+    #: these, which is exactly why the `prototypes` count understates its risk.
+    undeclared: tuple[str, ...]
+
+    @property
+    def summary(self) -> str:
+        return (
+            f"{len(self.prototypes)} external prototype(s) the closure declares, "
+            f"{len(self.undeclared)} called but declared nowhere in it. The count does NOT "
+            "settle BLOCKLIST_FUNCS (samlib chose 0 on 60; tcpsvcs kept 1 on 47) — "
+            "decide it the MACRO_SIGNED way, island both ways, one cargo check each. Note "
+            "the ordering constraint: BLOCKLIST_FUNCS_FROM_CRATE greps OUT_CRATE for "
+            "#[no_mangle] names, so on a FIRST derive against an empty scaffold it blocklists "
+            "nothing and 1 is the only safe unattended answer"
+        )
+
+
+def _external_prototype_survey(tus: list[Path], closure: Closure) -> PrototypeSurvey:
+    """Measure the hand-writing burden `BLOCKLIST_FUNCS=1` imposes on this module."""
+    try:
+        from tree_sitter import Parser
+
+        from .scanner import C_LANG
+    except Exception as exc:  # pragma: no cover - env without tree-sitter
+        raise ProfileDeriveError(
+            f"tree-sitter is required for the BLOCKLIST_FUNCS survey: {exc}"
+        ) from exc
+
+    parser = Parser(C_LANG)
+    called: set[str] = set()
+    defined: set[str] = set()
+    for tu in tus:
+        src = tu.read_bytes()
+        stack = [parser.parse(src).root_node]
+        while stack:
+            node = stack.pop()
+            if node.type == "call_expression":
+                fn = node.child_by_field_name("function")
+                if fn is not None and fn.type == "identifier":
+                    called.add(src[fn.start_byte : fn.end_byte].decode("utf-8", "replace"))
+            elif node.type == "function_definition":
+                decl = node.child_by_field_name("declarator")
+                while decl is not None and decl.type != "identifier":
+                    decl = decl.child_by_field_name("declarator")
+                if decl is not None:
+                    defined.add(src[decl.start_byte : decl.end_byte].decode("utf-8", "replace"))
+            stack.extend(node.children)
+
+    external = called - defined - _NOT_A_PROTOTYPE - _ALWAYS_MACRO
+    # A name the closure spells as a MACRO or an ENUM member is not a prototype bindgen would
+    # emit, whatever it looks like at the call site. Asking the headers is what keeps this from
+    # being a hand-maintained exclusion list that rots — `header_symbols` returns ONLY those
+    # two families (kinds: literal / expression / function-like / enum), never a declaration,
+    # so its whole key set is the exclusion.
+    macro_or_enum: set[str] = set()
+    declared: set[str] = set()
+    for header in closure.headers:
+        try:
+            macro_or_enum |= set(header_symbols(header, frozenset(external)))
+            declared |= header_prototypes(header, frozenset(external))
+        except OSError:
+            continue
+    prototypes = declared - macro_or_enum
+    return PrototypeSurvey(
+        tuple(sorted(prototypes)),
+        tuple(sorted(external - prototypes - macro_or_enum)),
+    )
+
+
 def _in_dead_preproc_branch(node, src: bytes) -> bool:
     """True if *node* sits in a preprocessor branch this tree never compiles.
 
@@ -1578,6 +1970,49 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
             if mm:
                 out.setdefault(mm.group(1), ("enum", member.strip()))
     return out
+
+
+def header_prototypes(path: Path, wanted: frozenset[str]) -> set[str]:
+    """Which of *wanted* this header DECLARES as a function — `RET Name(args);`.
+
+    `header_symbols` deliberately answers a different question (which constants a header
+    OWNS) and returns only macros and enum members. Using it as a stand-in for "declared"
+    silently measured the exact complement of what was wanted: every name it returned was
+    counted as a prototype, so the BLOCKLIST_FUNCS survey was reporting the macro-shaped
+    call targets and calling them the FFI burden.
+
+    Deliberately lexical and narrow, in the same spirit: a candidate is `Name(` whose line
+    does not begin a preprocessor directive (that would be a function-like macro) and whose
+    balanced argument list is followed by `;`. A DEFINITION has `{` there instead, and a call
+    site has neither. It will miss a declaration wrapped in a macro (`STDAPI_(x) Name(...)`
+    still matches; `DECLARE_HANDLE`-style ones do not), which understates rather than
+    invents — the survey reports both halves precisely so the reader is not left inferring
+    from one number.
+    """
+    if not wanted:
+        return set()
+    text = _read(path)
+    alt = "|".join(re.escape(w) for w in sorted(wanted, key=lambda w: (-len(w), w)))
+    found: set[str] = set()
+    for m in re.finditer(rf"\b({alt})\s*\(", text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        if text[line_start : m.start()].lstrip().startswith("#"):
+            continue  # `#define Name(a, b) ...` — a macro, not a declaration
+        depth, index = 0, m.end() - 1
+        while index < len(text):
+            if text[index] == "(":
+                depth += 1
+            elif text[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        tail = text[index + 1 : index + 200].lstrip()
+        # Skip a trailing attribute/calling-convention macro before the terminator.
+        tail = re.sub(r"^(?:__attribute__\s*\(\([^)]*\)\)|\w+)\s*", "", tail, count=1)
+        if tail.startswith(";"):
+            found.add(m.group(1))
+    return found
 
 
 def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
@@ -1928,6 +2363,7 @@ def derive(
     use_compile_db: bool = True,
     extra_inc_dirs: tuple[Path, ...] = (),
     usermode: bool | None = None,
+    flipped_sources: bool = False,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -1938,7 +2374,13 @@ def derive(
     ``dll/win32/dhcpcsvc/include``) when there is no compile db to learn it from.
     """
     module_dir = module_dir.resolve()
-    module = parse_cmakelists(module_dir / "CMakeLists.txt", repo_root, arch=arch, target=target)
+    module = parse_cmakelists(
+        module_dir / "CMakeLists.txt",
+        repo_root,
+        arch=arch,
+        target=target,
+        flipped_sources=flipped_sources,
+    )
     module.usermode_override = usermode
     findings = list(module.findings)
     tus = [p for p in module.compiled_tus if p.is_file()]
@@ -1962,8 +2404,27 @@ def derive(
         raise ProfileDeriveError(
             f"{module.cmake}: target {module.name!r} compiles no in-tree .c — nothing to derive "
             "an island for. (An already-Rust-flipped module looks exactly like this: its .c are "
-            "commented out of the source list. Use git to read the pre-flip CMakeLists if you "
-            "need to re-derive its profile.)"
+            "commented out of the source list. Re-run with --flipped-sources to audit against "
+            "the list the flip commented out, or use git to read the pre-flip CMakeLists.)"
+        )
+
+    # THE SAME CONDITION, one step less obvious, and it is the one that goes quiet. A cohab flip
+    # comments out the real .c but LEAVES the `rust_*.c` scaffolding compiled, so `tus` is not
+    # empty — it is one shim with no switch statements, no enum members and no dead bodies in it.
+    # Every audit then reports nothing and every empty section reads as a pass. sysdm printed
+    # "(no case labels with identifiers)" that way while carrying the exact defect the case-label
+    # audit exists to catch: `LVN_BEGINLABELEDIT` is `__MINGW_NAME_AW(...)`, a function-like
+    # macro, so bindgen emits no constant and the match arm is a catch-all binding
+    # (SWITCH_CONST_NOT_BINDGENABLE, severity ERROR). Run against the live list it would have
+    # named that before a single paid call. A vacuous clean bill is worse than no report:
+    # AGENTS.md, "fail loud, never silently degrade".
+    if all(is_shim_tu(tu) for tu in tus):
+        shims = ", ".join(sorted(tu.name for tu in tus))
+        raise ProfileDeriveError(
+            f"{module.cmake}: target {module.name!r} compiles ONLY cohab scaffolding ({shims}) — "
+            "this module is already flipped, and every audit below would report an empty "
+            "section that reads as a pass.\n  To re-audit the C the Rust replaced:\n\n"
+            "    --flipped-sources\n"
         )
 
     # The compile db is loaded FIRST so its real `-I` list can seed the search path: it is the
@@ -2023,6 +2484,11 @@ def derive(
     )
     sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
     owners = own_constants(switch_consts, closure, tus, sys_consts)
+
+    # ---- BLOCKLIST_FUNCS evidence (never a decision) ----
+    survey = _external_prototype_survey(tus, closure) if module.is_usermode else None
+    if survey is not None:
+        findings.append(Finding("info", "BLOCKLIST_FUNCS_EVIDENCE", survey.summary))
 
     # ---- allowlist decisions ----
     # Tiering mirrors how a human reads precomp.h: the module's OWN headers, its generated
@@ -2419,6 +2885,7 @@ def derive(
         excluded=excluded,
         findings=findings,
         compile_db_used=db_path,
+        prototype_survey=survey,
     )
 
 
@@ -2462,6 +2929,21 @@ def emit_profile(dp: DerivedProfile) -> str:
     out.append("    # that exact sequence is bindgen-able). Review the WHY notes in the report.")
     out.append(f"    USERMODE={1 if m.is_usermode else 0}")
     if m.is_usermode:
+        # Emitted as 1 always, and the measurement goes NEXT TO IT rather than into it. A
+        # count that nearly separates twelve samples is a count that will pick wrong on the
+        # thirteenth (see PrototypeSurvey), and BLOCKLIST_FUNCS_FROM_CRATE has an ordering
+        # constraint that makes 1 the only safe unattended answer anyway.
+        survey = dp.prototype_survey
+        if survey is not None:
+            out.append(
+                f"    # BLOCKLIST_FUNCS, MEASURED: {len(survey.prototypes)} external "
+                f"prototype(s) declared by the include closure, {len(survey.undeclared)} "
+                "called but declared nowhere in it."
+            )
+            out.append(
+                "    # The count does NOT settle the flag — island it both ways and run one "
+                "cargo check each. See the report."
+            )
         out.append("    BLOCKLIST_FUNCS=1")
     out.append(f'    DRIVER_DIR="${{SRC}}/{rel}"')
     if not multi:
@@ -2600,6 +3082,21 @@ def emit_report(dp: DerivedProfile) -> str:
         how = "-sys glob" if o.in_sys else ("island" if o.allowlisted else o.owner_kind)
         L.append(f"  {mark} {o.ident:38s} {owner:24s} [{o.macro_kind}] via {how:10s} {site}")
     L.append("")
+    if dp.prototype_survey is not None:
+        s = dp.prototype_survey
+        L.append("--- BLOCKLIST_FUNCS evidence (measured; the flag stays yours) ---")
+        L.append(f"  external prototypes the closure declares  : {len(s.prototypes)}")
+        L.append(f"  called but declared nowhere in the closure: {len(s.undeclared)}")
+        L.append(f"  {s.summary}")
+        if s.prototypes:
+            line = "   "
+            for name in s.prototypes:
+                if len(line) + len(name) > 96:
+                    L.append(line)
+                    line = "   "
+                line += f" {name}"
+            L.append(line)
+        L.append("")
     L.append("--- findings ---")
     if not dp.findings:
         L.append("  (none)")
@@ -2903,6 +3400,16 @@ def main(argv: list[str] | None = None) -> int:
         metavar="DIR",
         help="extra include dir (repeatable) for a module that includes from an unusual path",
     )
+    ap.add_argument(
+        "--flipped-sources",
+        dest="flipped_sources",
+        action="store_true",
+        help="Re-enable the source list a cohab flip commented out, and audit against THAT. "
+        "A flip does not delete the list, so the pre-flip translation surface is still in the "
+        "CMakeLists — which is how a flipped module gets re-audited (case labels, dead bodies, "
+        "enum members) without going to git. Without it, a flipped module refuses rather than "
+        "reporting empty sections that read as passes.",
+    )
     ap.add_argument("--scaffold-dir", type=Path, default=None, help="also write the crate skeleton")
     ap.add_argument("--force", action="store_true", help="scaffold may overwrite existing files")
     mode = ap.add_mutually_exclusive_group()
@@ -2933,6 +3440,7 @@ def main(argv: list[str] | None = None) -> int:
             use_compile_db=not args.no_compile_db,
             extra_inc_dirs=tuple(args.extra_inc),
             usermode=args.usermode,
+            flipped_sources=args.flipped_sources,
         )
     except ProfileDeriveError as exc:
         print(f"profile_derive: FAILED\n{exc}", file=sys.stderr)
