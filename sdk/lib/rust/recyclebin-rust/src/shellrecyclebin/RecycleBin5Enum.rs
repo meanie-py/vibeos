@@ -79,15 +79,15 @@ pub struct RecycleBin5Enum {
 
 unsafe extern "system" fn RecycleBin5Enum_IRecycleBinEnumList_QueryInterface(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5Enum, IRecycleBinEnumList_iface)) as *mut RecycleBin5Enum;
-    RecycleBin5Enum_QueryInterface(this, riid, ppvObject)
+    RecycleBin5Enum_QueryInterface_body(this, riid, ppvObject)
 }
 unsafe extern "system" fn RecycleBin5Enum_IRecycleBinEnumList_AddRef(This: *mut IRecycleBinEnumList) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5Enum, IRecycleBinEnumList_iface)) as *mut RecycleBin5Enum;
-    RecycleBin5Enum_AddRef(this)
+    RecycleBin5Enum_AddRef_body(this)
 }
 unsafe extern "system" fn RecycleBin5Enum_IRecycleBinEnumList_Release(This: *mut IRecycleBinEnumList) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5Enum, IRecycleBinEnumList_iface)) as *mut RecycleBin5Enum;
-    RecycleBin5Enum_Release(this)
+    RecycleBin5Enum_Release_body(this)
 }
 unsafe extern "system" fn RecycleBin5Enum_IRecycleBinEnumList_Next(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5Enum, IRecycleBinEnumList_iface)) as *mut RecycleBin5Enum;
@@ -387,7 +387,7 @@ pub unsafe fn RecycleBin5Enum_QueryInterface_body(this: *mut RecycleBin5Enum, ri
     return S_OK;
 }
 
-pub unsafe fn RecycleBin5Enum_AddRef_body(this: *mut RecycleBin5Enum) -> STDMETHODIMP_(ULONG) {
+pub unsafe fn RecycleBin5Enum_AddRef_body(this: *mut RecycleBin5Enum) -> ULONG {
     InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref))
 }
 
@@ -399,10 +399,11 @@ pub unsafe fn RecycleBin5Enum_dtor_body(this: *mut RecycleBin5Enum) -> () {
     SHFree(((*this).m_pszPrefix) as LPVOID);
 }
 
-pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) -> STDMETHODIMP_(ULONG) {
-    let refCount = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref));
+pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) -> ULONG {
+    let refCount = InterlockedDecrement(&raw mut (*this).m_ref);
     if refCount == 0 {
-        RecycleBin5Enum_delete(this);
+        RecycleBin5Enum_dtor_body(this);
+    free(this as *mut core::ffi::c_void);
     }
     refCount
 }

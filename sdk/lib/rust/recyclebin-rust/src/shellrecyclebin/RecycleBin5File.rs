@@ -59,15 +59,15 @@ pub struct RecycleBin5File {
 
 unsafe extern "system" fn RecycleBin5File_IRecycleBinFile_QueryInterface(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5File, IRecycleBinFile_iface)) as *mut RecycleBin5File;
-    RecycleBin5File_QueryInterface(this, riid, ppvObject)
+    RecycleBin5File_QueryInterface_body(this, riid, ppvObject)
 }
 unsafe extern "system" fn RecycleBin5File_IRecycleBinFile_AddRef(This: *mut IRecycleBinFile) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5File, IRecycleBinFile_iface)) as *mut RecycleBin5File;
-    RecycleBin5File_AddRef(this)
+    RecycleBin5File_AddRef_body(this)
 }
 unsafe extern "system" fn RecycleBin5File_IRecycleBinFile_Release(This: *mut IRecycleBinFile) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5File, IRecycleBinFile_iface)) as *mut RecycleBin5File;
-    RecycleBin5File_Release(this)
+    RecycleBin5File_Release_body(this)
 }
 unsafe extern "system" fn RecycleBin5File_IRecycleBinFile_IsEqualIdentity(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5File, IRecycleBinFile_iface)) as *mut RecycleBin5File;
@@ -409,8 +409,8 @@ pub unsafe fn RecycleBin5File_QueryInterface_body(this: *mut RecycleBin5File, ri
     S_OK
 }
 
-pub unsafe fn RecycleBin5File_AddRef_body(this: *mut RecycleBin5File) -> STDMETHODIMP_(ULONG) {
-    InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref))
+pub unsafe fn RecycleBin5File_AddRef_body(this: *mut RecycleBin5File) -> ULONG {
+    InterlockedIncrement(&raw mut (*this).m_ref)
 }
 
 pub unsafe fn RecycleBin5File_dtor_body(this: *mut RecycleBin5File) -> () {
@@ -418,10 +418,11 @@ pub unsafe fn RecycleBin5File_dtor_body(this: *mut RecycleBin5File) -> () {
     SHFree(((*this).m_FullName) as LPVOID);
 }
 
-pub unsafe fn RecycleBin5File_Release_body(this: *mut RecycleBin5File) -> STDMETHODIMP_(ULONG) {
-    let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref)) as u32;
-    if ref_count == 0 as u32 {
-        RecycleBin5File_Destroy(this);
+pub unsafe fn RecycleBin5File_Release_body(this: *mut RecycleBin5File) -> ULONG {
+    let ref_count = InterlockedDecrement(&mut (*this).m_ref as *mut LONG) as ULONG;
+    if ref_count == 0 {
+        // delete this: run destructor and free allocation
+        drop(Box::from_raw(this));
     }
     ref_count
 }

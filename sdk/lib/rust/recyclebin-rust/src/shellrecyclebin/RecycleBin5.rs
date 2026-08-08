@@ -109,15 +109,15 @@ unsafe fn RecycleBin5_cpp_com_assign_m_Folder(this: *mut RecycleBin5, value: LPC
 
 unsafe extern "system" fn RecycleBin5_IRecycleBin5_QueryInterface(This: *mut IRecycleBin5, riid: IN REFIID, ppvObject: *mut *mut OUT void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
-    RecycleBin5_QueryInterface(this, riid, ppvObject)
+    RecycleBin5_QueryInterface_body(this, riid, ppvObject)
 }
 unsafe extern "system" fn RecycleBin5_IRecycleBin5_AddRef(This: *mut IRecycleBin5) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
-    RecycleBin5_AddRef(this)
+    RecycleBin5_AddRef_body(this)
 }
 unsafe extern "system" fn RecycleBin5_IRecycleBin5_Release(This: *mut IRecycleBin5) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
-    RecycleBin5_Release(this)
+    RecycleBin5_Release_body(this)
 }
 unsafe extern "system" fn RecycleBin5_IRecycleBin5_DeleteFile(This: *mut IRecycleBin5, szFileName: IN LPCWSTR) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
@@ -591,9 +591,8 @@ pub unsafe fn RecycleBin5_QueryInterface_body(this: *mut RecycleBin5, riid: REFI
     S_OK
 }
 
-pub unsafe fn RecycleBin5_AddRef_body(this: *mut RecycleBin5) -> STDMETHODIMP_(ULONG) {
-    let result = InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref));
-    result as u32
+pub unsafe fn RecycleBin5_AddRef_body(this: *mut RecycleBin5) -> ULONG {
+    ntdll_sys::nt::InterlockedIncrement(&mut (*this).m_ref) as u32
 }
 
 pub unsafe fn RecycleBin5_dtor_body(this: *mut RecycleBin5) -> () {
@@ -605,10 +604,10 @@ pub unsafe fn RecycleBin5_dtor_body(this: *mut RecycleBin5) -> () {
     }
 }
 
-pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> STDMETHODIMP_(ULONG) {
-    let refCount = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref));
+pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> ULONG {
+    let refCount = InterlockedDecrement(&mut (*this).m_ref);
     if refCount == 0 {
-        RecycleBin5_destructor(this);
+        __rustconv_delete(this);
     }
     refCount
 }
