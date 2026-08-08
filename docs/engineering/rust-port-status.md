@@ -1055,7 +1055,7 @@ still-C when it is 3).
 
 | file | defines | still reached in C |
 |---|---|---|
-| `except.c` | 21 | **0** — flipped in wave 29 |
+| `except.c` | 21 | **0** — flipped in wave 29, GRADED 2026-08-08 (reference TU #15, with cpp.c, 848 rows) |
 | `except_i386.c` | 13 | **0** — flipped in wave 30, GRADED 2026-08-07 (reference TU #13, 9,982 rows) |
 | `except_x86_64.c` | 5 | **0** — flipped in wave 31 |
 | `except_arm64.c` | 5 | **0** — flipped in wave 31 |
@@ -1352,6 +1352,72 @@ Three things generalise:
   mask, Cause = Enable & Status). Plain field writes would have compiled if the fields were
   plain; because they are bitfields the body had to be rewritten against the C by hand. A pair
   swapped between two of those three slots is invisible to every other check we run.
+
+**GRADED 2026-08-08 — reference TUs #14 (cpp.c) and #15 (except.c), 848 rows, and the two
+divergences it found were both the ORACLE.** `tests/cpp.rs`, over the shipping
+`msvcrt-crt-rust` with the `cpp` feature ON for the first time in a host harness.
+
+The feature's own comment said that was impossible — `cpp_rtti`'s `global_asm!` vtables are
+COFF-only, the RTTI walk needs `RtlPcToFileHeader`, "the module cannot link there at all" —
+and it was wrong on both counts. The x86-64 arm of `asm_vtable!` emits `.data`/`.balign 8`/
+`.quad`/`.globl`, valid ELF as written and the same text cxx.h's `__ASM_VTABLE` emits for the
+reference TU beside it; only the i386 arm's leading `_` is COFF-specific. `RtlPcToFileHeader`
+was never a platform property, only an undefined symbol. **The one genuinely PE-only thing is
+`except_x86_64.rs`'s `call_exc_handler` thunk** — COFF `.def`/`.endef` plus four `.seh_*`
+records over a Win64-ABI body — and unlike `seh_i386.rs` it has no honest ELF twin, because
+re-spelling the directives would leave an invented calling sequence. It is gated to Windows
+and left undefined elsewhere for the harness to supply as a loud out-of-reach sink.
+
+Three instruments this file needs and no other suite here uses: cppimpl.c's **`RaiseException`
+sink**, which records a throw's marshalling and longjmps back (the alternative, a fake unwind,
+would let a row pass having graded a control flow that does not exist); **`fork()`** for the
+arms that terminate, comparing the child's RAW wait status so `_exit(3)` and death by SIGABRT
+are distinguishable; and **structural** comparison of handler pointers, since the two sides
+install different functions and only "which sentinel, or the one I installed" carries across.
+
+Both divergences it reported were in the reference, and both are the §9.66 class — the oracle
+rewritten on the way in by the host's own model:
+
+* **`typedef long NTSTATUS` is 64 bits on an LP64 host and 32 on Windows.** except.c's
+  `float_exception_map[].status` therefore sign-extended every `((int)0xC000008D)` to
+  `0xFFFFFFFFC000008D`, while the `DWORD ExceptionCode` it is compared against widens to a
+  POSITIVE long — so the mapping loop matched nothing and every FP fault came out of
+  `msvcrt_exception_filter` carrying the default `_FPE_INVALID` instead of its own subcode.
+  Seven rows read DIVERGE with the subject correct. It also silently widened `_XcptFilter`'s
+  first parameter.
+* **`-Wl,--wrap=signal` redirects EVERY reference in the link, including the test's.** The
+  wrap exists so Rust's startup `signal(SIGPIPE, SIG_IGN)` does not land in msvcrt's `signal`,
+  which has no SIGPIPE and answers SIG_ERR. A row spelling `signal` was therefore grading
+  cppimpl.c's `sigaction` shim against the genuine C. The subject is reached as
+  `__real_signal`, the linker's name for the definition itself.
+
+Two harness bugs the LINKER found, both of which a symbol-set comparison had already passed:
+
+* **`_WIN64` is predefined for x86_64-w64-mingw32 and not for x86_64-unknown-linux-gnu.** The
+  first reference TU to branch on it. Without it cxx.h's `__ASM_VTABLE` built the five vtables
+  with i386's four-byte slots on an LP64 host, and cppexcept.h's `catchblock_info` came out
+  four bytes short of the one the DLL walks.
+* **A rename wall and `#` interact in exactly one place.** `#` suppresses expansion of its own
+  operand and nothing else, so `VTABLE_ADD_FUNC(name) -> THISCALL_NAME(name)` sees a name the
+  wall has *already* rewritten, and prefixing again produced `ref_ref_exception_what`. The
+  `__ASM_NAME(#name ...)` uses in the same macro DO need the prefix. Same macro, two jobs.
+
+**The `__UCRTSUPPORT__` config has no subject to grade, and that is the finding.** Both TUs are
+compiled TWICE — into `msvcrt_static` without it and `msvcrt_shared` with it — and the second
+build has a *complementary* live set: `signal`, `raise`, `terminate`, `unexpected`,
+`set_terminate`/`_get_terminate` and `__pxcptinfoptrs` are all inside `#ifndef
+__UCRTSUPPORT__` and vanish, while the eleven `#if _MSVCR_VER >= 80/140 ||
+defined(__UCRTSUPPORT__)` bodies (`__AdjustPointer`, the four `__std_type_info_*`,
+`_is_exception_typeof`, …) come alive. Wave 27/29 deliberately did not translate those eleven,
+and they are still present in `cpp.rs` only as commented-out original C. So a second reference
+TU under `-D__UCRTSUPPORT__` would compile a reference and compare it against nothing. It is
+owed to the ucrtbase lane, not to this one — see the `ucrt_tls_sup.c` entry below.
+
+Ungraded on purpose and listed by the suite itself rather than faked: `__CxxFrameHandler`,
+`find_catch_handler`, `dump_function_descr`, `_fpieee_flt`, the three `__RT*` casts, and
+`__CxxExceptionFilter`'s type-matching walk. The first six need a real PE unwind table and a
+real stack; the last needs a LIVE thrown object's descriptor graph, which the sink's longjmp
+out of the throw is what makes unavailable.
 
 **Wave 29 — except.c (21/21), behind the `cpp` feature.** The signal layer (`signal`/`raise`,
 the `sighandlers` table, the SEH filter that maps a hardware fault to a C signal) and the C++

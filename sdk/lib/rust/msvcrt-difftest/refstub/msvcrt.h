@@ -457,6 +457,16 @@ typedef void (__cdecl *_invalid_parameter_handler)(const wchar_t *, const wchar_
                                                    const wchar_t *, unsigned int,
                                                    uintptr_t);
 
+/* The three handler slots cpp.c hands out and except.c calls through
+ * (dll/win32/msvcrt/msvcrt.h:75-77).  `set_terminate`/`set_unexpected`/
+ * `_set_se_translator` write them and return the previous value, so the TYPE is
+ * part of the contract every one of those rows grades. */
+struct _EXCEPTION_POINTERS;  /* completed by msvcrt_cpp_types.h, included after */
+typedef void (__cdecl *terminate_function)(void);
+typedef void (__cdecl *unexpected_function)(void);
+typedef void (__cdecl *_se_translator_function)(unsigned int code,
+                                                struct _EXCEPTION_POINTERS *info);
+
 typedef struct __thread_data {
     char           *strtok_next;
     wchar_t        *wcstok_next;
@@ -506,6 +516,31 @@ typedef struct __thread_data {
     char                           *asctime_buffer;
     wchar_t                        *wasctime_buffer;
     struct tm                      *time_buffer;
+    /* The C++ EH slots, arriving with cpp.c (reference TU #14) and except.c (#15)
+     * under the same per-TU rule as everything above: this struct carries only
+     * what the reference TUs actually touch.
+     *
+     * These are per-THREAD and that is the whole point of several rows.  The
+     * terminate/unexpected/se_translator handlers are what `set_terminate` and
+     * friends install and `terminate()` calls, and `processing_throw` is the
+     * re-entrancy counter that decides whether a throw during a throw becomes a
+     * `terminate`.  `frame_info_head` is the head of the linked list
+     * `_CreateFrameInfo` pushes onto and `_FindAndUnlinkFrame` pops — a global
+     * whose corruption stays invisible until a later unwind reads it, which is
+     * exactly why it is graded rather than assumed.
+     *
+     * The pointer members are spelled `struct _X *` rather than by typedef
+     * because msvcrt_cpp_types.h — where those structs are defined and proved —
+     * is included AFTER this header, and an incomplete pointee is all a pointer
+     * slot needs. */
+    struct _EXCEPTION_POINTERS     *xcptinfo;
+    terminate_function              terminate_handler;
+    unexpected_function             unexpected_handler;
+    _se_translator_function         se_translator;
+    struct _EXCEPTION_RECORD       *exc_record;
+    struct _CONTEXT                *ctx_record;
+    int                             processing_throw;
+    struct _frame_info             *frame_info_head;
 } thread_data_t;
 
 #define LOCALE_FREE    0x1

@@ -40,6 +40,19 @@ macro_rules! FIXME {
 // AT&T operands are pasted verbatim under `options(att_syntax)`, which is what makes the
 // result checkable: `llvm-objdump -d` of this against the C's own .obj must agree byte for
 // byte.
+//
+// PE-only, and unlike `seh_i386.rs` there is no ELF twin beside it. `.def`/`.endef` is COFF's
+// symbol-type directive and the four `.seh_*` are Windows unwind records — an ELF assembler
+// rejects all six outright, which is what kept `cpp` switched off for msvcrt-difftest and got
+// mis-recorded in Cargo.toml as the vtables being COFF-only (they are not; they assemble
+// fine). Re-spelling the directives for ELF would not be enough and would be worse than
+// nothing: the body is Win64 ABI throughout — handler in %rcx, frame in %rdx, flags in %r8d,
+// stored into the scratch slots the Windows unwinder reads — and a host binary calls it
+// SysV, so an "ELF arm" here would be an invented calling sequence, not a translation. The
+// symbol is therefore left UNDEFINED off Windows, for the host harness to supply as the loud
+// out-of-reach sink it is (msvcrt-difftest/cppimpl.c). A harness that forgets gets a link
+// error naming it, which is the failure we want.
+#[cfg(target_os = "windows")]
 core::arch::global_asm!(
     ".text",
     ".align 4",

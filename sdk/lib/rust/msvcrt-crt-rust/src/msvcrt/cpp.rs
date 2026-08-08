@@ -4,8 +4,6 @@ use crate::prelude::*;
 // `rtti_rva*` helpers and the seven `CREATE_*` bodies. See cpp_rtti.rs for why they
 // cannot come from the translator.
 use super::cpp_rtti::*;
-// abort() is exit.c's export, already Rust — `terminate` falls through to it.
-use super::exit::abort;
 use msvcrt_sys::*;
 use core::ffi::c_void;
 
@@ -19,6 +17,20 @@ pub type __non_rtti_object = exception;
 // compile and which this wave deliberately did not translate. Keeping them would have left
 // the only reference to `SLIST_ENTRY` in the file — a type the island does not carry,
 // because nothing msvcrt builds needs it.
+extern "C" {
+    /// `abort` is exit.c's export — `terminate` falls through to it. Reached by SYMBOL
+    /// rather than as a `use super::exit::abort` Rust path, which is both more faithful and
+    /// what makes the module linkable in a host harness. Faithful: the C calls `abort()`
+    /// across a TU boundary and the linker resolves it, so in msvcrt.dll this binds to
+    /// exactly the same `#[no_mangle]` body the `use` did. Linkable: exit.c defines `exit`,
+    /// `_exit` and `abort` under their plain names, so a harness that had to switch on the
+    /// `conio-exit` feature just to satisfy one call would hand the Rust test runtime's own
+    /// exit path to a body that calls `ExitProcess` — see that feature's note in Cargo.toml.
+    /// The path form made `cpp` un-buildable without `conio-exit` and hid that behind an
+    /// unresolved-import error rather than a link error.
+    fn abort();
+}
+
 unsafe extern "C" fn get_vtable(obj: *mut core::ffi::c_void) -> *const vtable_ptr {
     *(obj as *const *const vtable_ptr)
 }
