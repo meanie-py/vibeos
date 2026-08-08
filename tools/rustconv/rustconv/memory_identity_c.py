@@ -307,10 +307,18 @@ def preparation_namespace(
     cache_tag: str | None = None,
     fact_sealed: bool = False,
     call_sealed: bool = False,
+    wide_sealed: bool = False,
     c2rust_anchored: bool = False,
     debug_stripped: bool = False,
 ) -> str:
-    """Stable name for the prompt-shaping pipeline state (see module docstring)."""
+    """Stable name for the prompt-shaping pipeline state (see module docstring).
+
+    Each flag contributes an INDEPENDENT token, which is what makes a new protection
+    free to add: `--seal-wide` appends `wideseal_v1` and leaves every already-banked
+    `mechanical__factseal_v1__callseal_v1` entry addressable exactly as it was. Adding a
+    protection to an EXISTING token's meaning would instead re-bill every paid body under
+    it — see fact_seal's frozen `cpp` dialect for what that costs.
+    """
     parts = [mode or "default"]
     if cache_tag:
         parts.append(cache_tag)
@@ -318,6 +326,8 @@ def preparation_namespace(
         parts.append("factseal_v1")
     if call_sealed:
         parts.append("callseal_v1")
+    if wide_sealed:
+        parts.append("wideseal_v1")
     if c2rust_anchored:
         parts.append("c2rust")
     if debug_stripped:

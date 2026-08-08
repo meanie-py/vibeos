@@ -554,8 +554,37 @@ python -m rustconv dup-census dll/win32/shell32 --top 20
 ```
 
 `--seal-facts` owns HRESULT predicates and constant occurrences. `--seal-calls` owns each
-known runtime callee occurrence with a unique exactly-once executable token. Either envelope
-fails loud before the normal body audit. Each mode has a separate response-cache suffix.
+known runtime callee occurrence with a unique exactly-once executable token. `--seal-wide`
+owns every UTF-16 literal. Any of the three envelopes fails loud before the normal body
+audit, and each flag contributes its own INDEPENDENT response-cache token (`factseal_v1`,
+`callseal_v1`, `wideseal_v1`, joined by `__`) — which is exactly what makes a new protection
+free to add: turning one on misses the cache and pays for the bodies it covers, while every
+body already banked under the other tokens stays addressable and is never re-billed. Folding
+a new protection into an existing token's meaning would re-charge for work already owned.
+
+**`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
+has nothing correct to write: it invents an encoding, and every invention is a hand-count no
+compiler checks — a `b"..."` byte string behind a wide pointer (mswsock), an alignment-1
+interleave, a `[u16; N]` one character short (wkssvc's 39 registry names), `L"0000%s"` banked
+as five zeros (intl), or a terminator simply left off (18 shipped arrays). The seal replaces
+each occurrence with an opaque token, reveals only its Rust TYPE (`*const u16` / `[u16; N]` /
+`u16` — the model needs that to declare around the token, and rustconv computed it), and
+substitutes the real code units afterward. Two C shapes, and **the second is the larger**:
+across the tree's 5,987 `.c` files `L"..."`/`L'x'` is 27,545 tokens, while the Wine-style
+brace list `{'C','o','m','b','o','L','B','o','x',0}` is 4,272 declarations and 55,928
+elements — and every one of the 18 arrays #60 repaired was a brace list. They are not symmetric: `L"..."`
+IMPLIES a terminator so the seal appends one; a brace list STATES its own, 195 of them
+deliberately end without one, so the seal copies exactly what the C wrote. The restore is a
+generated `RUSTCONV_WSTR_<hash>` static behind `.as_ptr()` in pointer position and an inline
+array elsewhere — deliberately NOT the crate's `w!` macro, whose result type is not uniform
+across this tree (secur32's yields `&[u16; N]`, aclui's `*const u16`). Measured coverage over
+those 5,987 files: **31,127 sealed, 76 reported as `UNSEALED WIDE LITERAL` audit findings**
+(0.24% — macro-pasted runs, sized initializers whose lowering is a copy rather than a value,
+non-literal brace elements). Pure zero-fills (`= {0}`, `= L""`) are neither sealed nor
+reported: they carry no bytes, and demanding a token there would reject the `[0u16; N]` /
+`zeroed()` lowerings that are correct for them. The seal also covers the **file-scope
+preamble**, which is a separate paid call the other two seals never reach and is precisely
+where those 18 arrays lived.
 
 **Sealing is NOT shell32-only any more (2026-07-24).** It works for any plain-C module —
 kernel drivers, Win32 DLLs, services — and you should pass `--seal-facts --seal-calls` by
