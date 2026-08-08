@@ -156,7 +156,7 @@ pub unsafe extern "system" fn RecycleBinGenericEnum_Next(
             return S_OK;
         }
     }
-    return UNREACHABLE;
+    // C: `while (TRUE)` with every exit a `return` — the loop above diverges.
 }
 
 #[no_mangle]

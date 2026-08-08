@@ -2175,6 +2175,13 @@ case "$DRIVER" in
     # recyclebin.h, so without this the island re-emits IUnknown/IID/HRESULT and anything
     # bridging to shell32-rust sees two incompatible identities for the same ABI.
     SYS_CRATES=( "com-sys:com-sys/src" )
+    # com-sys carries the enum TAGS (_APTTYPE/_APTTYPEQUALIFIER, from objidl.h) but not these
+    # typedef aliases, which objbase.h declares — and objbase.h's CoGetApartmentType takes them
+    # BY POINTER, so the island emits a signature naming types it never defines. Same two lines
+    # shell32's profile carries, for the same reason. Aliasing to the com-sys tags keeps one
+    # identity rather than emitting a second enum.
+    EXTRA_RAW_LINES=( 'pub type APTTYPE = com_sys::_APTTYPE;'
+                      'pub type APTTYPEQUALIFIER = com_sys::_APTTYPEQUALIFIER;' )
     # New usermode crate, so real unions per the REAL_UNIONS note at the top of this file —
     # nothing here is compiled against the __BindgenUnionField accessor API yet, and
     # ULARGE_INTEGER is threaded through the file-size methods of IRecycleBinFile.

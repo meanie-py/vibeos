@@ -6,6 +6,8 @@
 // ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).
 pub use ntdll_sys::nt::*;
 pub use com_sys::{ARRAYDESC,BINDINFO,BINDPTR,BIND_OPTS,BIND_OPTS2,BIND_OPTS3,BLOB,BSTR,BSTRBLOB,BYTE_SIZEDARR,CABOOL,CABSTR,CABSTRBLOB,CACLIPDATA,CACLSID,CACY,CADATE,CADBL,CADWORD,CAFILETIME,CAFLT,CAH,CAI,CAL,CALPOLESTR,CALPSTR,CALPWSTR,CAPROPVARIANT,CASCODE,CAUB,CAUH,CAUI,CAUL,CAUUID,CLEANLOCALSTORAGE,CLIPDATA,CLIPFORMAT,COAUTHIDENTITY,COAUTHINFO,CONTROLINFO,COORD,COSERVERINFO,CUSTDATA,CUSTDATAITEM,CY,DATE,DECIMAL,DISPID,DISPPARAMS,DOUBLE,DVEXTENTINFO,DVTARGETDEVICE,DWORD_SIZEDARR,ELEMDESC,EXCEPINFO,FLAGGED_WORD_BLOB,FOCUS_EVENT_RECORD,FORMATETC,FUNCDESC,HIMC,HIMC__,HMETAFILEPICT,HOLEMENU,HREFTYPE,HYPER_SIZEDARR,IAddrExclusionControl,IAddrExclusionControlVtbl,IAddrTrackingControl,IAddrTrackingControlVtbl,IAdviseSink,IAdviseSink2,IAdviseSink2Vtbl,IAdviseSinkEx,IAdviseSinkExVtbl,IAdviseSinkVtbl,IAgileObject,IAgileObjectVtbl,IAgileReference,IAgileReferenceVtbl,IApartmentShutdown,IApartmentShutdownVtbl,IAsyncManager,IAsyncManagerVtbl,IAsyncRpcChannelBuffer,IAsyncRpcChannelBufferVtbl,IAsyncSetup,IAsyncSetupVtbl,IAuthenticate,IAuthenticateVtbl,IBindCallbackRedirect,IBindCallbackRedirectVtbl,IBindCtx,IBindCtxVtbl,IBindHost,IBindHostVtbl,IBindProtocol,IBindProtocolVtbl,IBindStatusCallback,IBindStatusCallbackEx,IBindStatusCallbackExVtbl,IBindStatusCallbackVtbl,IBinding,IBindingVtbl,IBlockingLock,IBlockingLockVtbl,ICMENUMPROCA,ICMENUMPROCW,ICONMETRICS,ICONMETRICSA,ICONMETRICSW,ICallFactory,ICallFactoryVtbl,ICancelMethodCalls,ICancelMethodCallsVtbl,IChannelHook,IChannelHookVtbl,IClassActivator,IClassActivatorVtbl,IClassFactory,IClassFactory2,IClassFactory2Vtbl,IClassFactoryVtbl,IClientSecurity,IClientSecurityVtbl,ICodeInstall,ICodeInstallVtbl,IComThreadingInfo,IComThreadingInfoVtbl,IConnectionPoint,IConnectionPointContainer,IConnectionPointContainerVtbl,IConnectionPointVtbl,IContext,IContinue,IContinueVtbl,ICreateErrorInfo,ICreateErrorInfoVtbl,ICreateTypeInfo,ICreateTypeInfo2,ICreateTypeInfo2Vtbl,ICreateTypeInfoVtbl,ICreateTypeLib,ICreateTypeLib2,ICreateTypeLib2Vtbl,ICreateTypeLibVtbl,IDLDESC,IDataAdviseHolder,IDataAdviseHolderVtbl,IDataObject,IDataObjectVtbl,IDirectWriterLock,IDirectWriterLockVtbl,IDispatch,IDispatchVtbl,IDropSource,IDropSourceNotify,IDropSourceNotifyVtbl,IDropSourceVtbl,IDropTarget,IDropTargetVtbl,IDummyHICONIncluder,IDummyHICONIncluderVtbl,IEnumConnectionPoints,IEnumConnectionPointsVtbl,IEnumConnections,IEnumConnectionsVtbl,IEnumContextProps,IEnumFORMATETC,IEnumFORMATETCVtbl,IEnumMoniker,IEnumMonikerVtbl,IEnumOLEVERB,IEnumOLEVERBVtbl,IEnumOleUndoUnits,IEnumOleUndoUnitsVtbl,IEnumSTATDATA,IEnumSTATDATAVtbl,IEnumSTATPROPSETSTG,IEnumSTATPROPSETSTGVtbl,IEnumSTATPROPSTG,IEnumSTATPROPSTGVtbl,IEnumSTATSTG,IEnumSTATSTGVtbl,IEnumString,IEnumStringVtbl,IEnumUnknown,IEnumUnknownVtbl,IEnumVARIANT,IEnumVARIANTVtbl,IErrorInfo,IErrorInfoVtbl,IErrorLog,IErrorLogVtbl,IExternalConnection,IExternalConnectionVtbl,IFillLockBytes,IFillLockBytesVtbl,IFont,IFontDisp,IFontDispVtbl,IFontEventsDisp,IFontEventsDispVtbl,IFontVtbl,IForegroundTransfer,IForegroundTransferVtbl,IGetBindHandle,IGetBindHandleVtbl,IGlobalInterfaceTable,IGlobalInterfaceTableVtbl,IGlobalOptions,IGlobalOptionsVtbl,IHttpNegotiate,IHttpNegotiate2,IHttpNegotiate2Vtbl,IHttpNegotiateVtbl,IHttpSecurity,IHttpSecurityVtbl,IInitializeSpy,IInitializeSpyVtbl,IInternalUnknown,IInternalUnknownVtbl,IInternet,IInternetBindInfo,IInternetBindInfoVtbl,IInternetHostSecurityManager,IInternetHostSecurityManagerVtbl,IInternetPriority,IInternetPriorityVtbl,IInternetProtocol,IInternetProtocolEx,IInternetProtocolExVtbl,IInternetProtocolInfo,IInternetProtocolInfoVtbl,IInternetProtocolRoot,IInternetProtocolRootVtbl,IInternetProtocolSink,IInternetProtocolSinkVtbl,IInternetProtocolVtbl,IInternetSecurityManager,IInternetSecurityManagerEx,IInternetSecurityManagerEx2,IInternetSecurityManagerEx2Vtbl,IInternetSecurityManagerExVtbl,IInternetSecurityManagerVtbl,IInternetSecurityMgrSite,IInternetSecurityMgrSiteVtbl,IInternetSession,IInternetSessionVtbl,IInternetVtbl,IInternetZoneManager,IInternetZoneManagerEx,IInternetZoneManagerEx2,IInternetZoneManagerEx2Vtbl,IInternetZoneManagerExVtbl,IInternetZoneManagerVtbl,ILayoutStorage,ILayoutStorageVtbl,ILockBytes,ILockBytesVtbl,IMCENUMPROC,IMECHARPOSITION,IMEMENUITEMINFO,IMEMENUITEMINFOA,IMEMENUITEMINFOW,IMalloc,IMallocSpy,IMallocSpyVtbl,IMallocVtbl,IMarshal,IMarshal2,IMarshal2Vtbl,IMarshalVtbl,IMessageFilter,IMessageFilterVtbl,IMoniker,IMonikerProp,IMonikerPropVtbl,IMonikerVtbl,IMultiQI,IMultiQIVtbl,INPUT_RECORD,INTERFACEDATA,INTERFACEINFO,INoMarshal,INoMarshalVtbl,IObjContext,IObjectWithSite,IObjectWithSiteVtbl,IOleAdviseHolder,IOleAdviseHolderVtbl,IOleCache,IOleCache2,IOleCache2Vtbl,IOleCacheControl,IOleCacheControlVtbl,IOleCacheVtbl,IOleClientSite,IOleClientSiteVtbl,IOleContainer,IOleContainerVtbl,IOleControl,IOleControlSite,IOleControlSiteVtbl,IOleControlVtbl,IOleInPlaceActiveObject,IOleInPlaceActiveObjectVtbl,IOleInPlaceFrame,IOleInPlaceFrameVtbl,IOleInPlaceObject,IOleInPlaceObjectVtbl,IOleInPlaceObjectWindowless,IOleInPlaceObjectWindowlessVtbl,IOleInPlaceSite,IOleInPlaceSiteEx,IOleInPlaceSiteExVtbl,IOleInPlaceSiteVtbl,IOleInPlaceSiteWindowless,IOleInPlaceSiteWindowlessVtbl,IOleInPlaceUIWindow,IOleInPlaceUIWindowVtbl,IOleItemContainer,IOleItemContainerVtbl,IOleLink,IOleLinkVtbl,IOleObject,IOleObjectVtbl,IOleParentUndoUnit,IOleParentUndoUnitVtbl,IOleUndoManager,IOleUndoManagerVtbl,IOleUndoUnit,IOleUndoUnitVtbl,IOleWindow,IOleWindowVtbl,IOplockStorage,IOplockStorageVtbl,IPPROTO,IPSFactoryBuffer,IPSFactoryBufferVtbl,IParseDisplayName,IParseDisplayNameVtbl,IPerPropertyBrowsing,IPerPropertyBrowsingVtbl,IPersist,IPersistFile,IPersistFileVtbl,IPersistMemory,IPersistMemoryVtbl,IPersistMoniker,IPersistMonikerVtbl,IPersistPropertyBag,IPersistPropertyBag2,IPersistPropertyBag2Vtbl,IPersistPropertyBagVtbl,IPersistStorage,IPersistStorageVtbl,IPersistStream,IPersistStreamInit,IPersistStreamInitVtbl,IPersistStreamVtbl,IPersistVtbl,IPicture,IPictureDisp,IPictureDispVtbl,IPictureVtbl,IPointerInactive,IPointerInactiveVtbl,IPrintDialogCallback,IPrintDialogCallbackVtbl,IPrintDialogServices,IPrintDialogServicesVtbl,IProcessInitControl,IProcessInitControlVtbl,IProgressNotify,IProgressNotifyVtbl,IPropertyBag,IPropertyBag2,IPropertyBag2Vtbl,IPropertyBagVtbl,IPropertyNotifySink,IPropertyNotifySinkVtbl,IPropertyPage,IPropertyPage2,IPropertyPage2Vtbl,IPropertyPageSite,IPropertyPageSiteVtbl,IPropertyPageVtbl,IPropertySetStorage,IPropertySetStorageVtbl,IPropertyStorage,IPropertyStorageVtbl,IProvideClassInfo,IProvideClassInfo2,IProvideClassInfo2Vtbl,IProvideClassInfoVtbl,IProvideMultipleClassInfo,IProvideMultipleClassInfoVtbl,IQuickActivate,IQuickActivateVtbl,IROTData,IROTDataVtbl,IRecordInfo,IRecordInfoVtbl,IReleaseMarshalBuffers,IReleaseMarshalBuffersVtbl,IRootStorage,IRootStorageVtbl,IRpcChannelBuffer,IRpcChannelBuffer2,IRpcChannelBuffer2Vtbl,IRpcChannelBuffer3,IRpcChannelBuffer3Vtbl,IRpcChannelBufferVtbl,IRpcHelper,IRpcHelperVtbl,IRpcOptions,IRpcOptionsVtbl,IRpcProxyBuffer,IRpcProxyBufferVtbl,IRpcStubBuffer,IRpcStubBufferVtbl,IRpcSyntaxNegotiate,IRpcSyntaxNegotiateVtbl,IRunnableObject,IRunnableObjectVtbl,IRunningObjectTable,IRunningObjectTableVtbl,ISequentialStream,ISequentialStreamVtbl,IServerSecurity,IServerSecurityVtbl,IServiceProvider,IServiceProviderVtbl,ISimpleFrameSite,ISimpleFrameSiteVtbl,ISoftDistExt,ISoftDistExtVtbl,ISpecifyPropertyPages,ISpecifyPropertyPagesVtbl,IStdMarshalInfo,IStdMarshalInfoVtbl,IStorage,IStorageVtbl,ISupportErrorInfo,ISupportErrorInfoVtbl,ISurrogate,ISurrogateVtbl,ISynchronize,ISynchronizeContainer,ISynchronizeContainerVtbl,ISynchronizeEvent,ISynchronizeEventVtbl,ISynchronizeHandle,ISynchronizeHandleVtbl,ISynchronizeMutex,ISynchronizeMutexVtbl,ISynchronizeVtbl,IThumbnailExtractor,IThumbnailExtractorVtbl,ITimeAndNoticeControl,ITimeAndNoticeControlVtbl,ITypeChangeEvents,ITypeChangeEventsVtbl,ITypeComp,ITypeCompVtbl,ITypeFactory,ITypeFactoryVtbl,ITypeInfo,ITypeInfo2,ITypeInfo2Vtbl,ITypeInfoVtbl,ITypeLib,ITypeLib2,ITypeLib2Vtbl,ITypeLibVtbl,ITypeMarshal,ITypeMarshalVtbl,IUnknown,IUnknownVtbl,IUri,IUriBuilder,IUriBuilderFactory,IUriBuilderFactoryVtbl,IUriBuilderVtbl,IUriContainer,IUriContainerVtbl,IUriVtbl,IUrlMon,IUrlMonVtbl,IViewObject,IViewObject2,IViewObject2Vtbl,IViewObjectEx,IViewObjectExVtbl,IViewObjectVtbl,IWaitMultiple,IWaitMultipleVtbl,IWinInetHttpInfo,IWinInetHttpInfoVtbl,IWinInetInfo,IWinInetInfoVtbl,IWindowForBindingUI,IWindowForBindingUIVtbl,IXMLAttribute,IXMLAttributeVtbl,IXMLDOMAttribute,IXMLDOMAttributeVtbl,IXMLDOMCDATASection,IXMLDOMCDATASectionVtbl,IXMLDOMCharacterData,IXMLDOMCharacterDataVtbl,IXMLDOMComment,IXMLDOMCommentVtbl,IXMLDOMDocument,IXMLDOMDocumentFragment,IXMLDOMDocumentFragmentVtbl,IXMLDOMDocumentType,IXMLDOMDocumentTypeVtbl,IXMLDOMDocumentVtbl,IXMLDOMElement,IXMLDOMElementVtbl,IXMLDOMEntity,IXMLDOMEntityReference,IXMLDOMEntityReferenceVtbl,IXMLDOMEntityVtbl,IXMLDOMImplementation,IXMLDOMImplementationVtbl,IXMLDOMNamedNodeMap,IXMLDOMNamedNodeMapVtbl,IXMLDOMNode,IXMLDOMNodeList,IXMLDOMNodeListVtbl,IXMLDOMNodeVtbl,IXMLDOMNotation,IXMLDOMNotationVtbl,IXMLDOMParseError,IXMLDOMParseErrorVtbl,IXMLDOMProcessingInstruction,IXMLDOMProcessingInstructionVtbl,IXMLDOMText,IXMLDOMTextVtbl,IXMLDSOControl,IXMLDSOControlVtbl,IXMLDocument,IXMLDocument2,IXMLDocument2Vtbl,IXMLDocumentVtbl,IXMLElement,IXMLElement2,IXMLElement2Vtbl,IXMLElementCollection,IXMLElementCollectionVtbl,IXMLElementNotificationSink,IXMLElementNotificationSinkVtbl,IXMLElementVtbl,IXMLError,IXMLErrorVtbl,IXMLHttpRequest,IXMLHttpRequestVtbl,KEY_EVENT_RECORD,LICINFO,LOGFONTA,LOGFONTW,LOGPALETTE,LPBC,LPBINDCTX,LPBSTR,LPCBORDERWIDTHS,LPCODEBASEHOLD,LPCOLESTR,LPCONNECTDATA,LPCONNECTIONPOINT,LPCUSTDATAITEM,LPDATAOBJECT,LPDEVMODEW,LPINTERFACEINFO,LPOLEINPLACEFRAMEINFO,LPOLEMENUGROUPWIDTHS,LPOLESTR,LPOLEVERB,LPPARAMDESCEX,LPSAFEARRAY,LPSOFTDISTINFO,LPSTREAM,MEMBERID,MENU_EVENT_RECORD,METHODDATA,MOUSE_EVENT_RECORD,MULTI_QI,NUMPARSE,OLECHAR,OLE_COLOR,OLE_HANDLE,OLE_XPOS_HIMETRIC,OLE_XSIZE_HIMETRIC,OLE_YPOS_HIMETRIC,OLE_YSIZE_HIMETRIC,PALETTEENTRY,PARAMDATA,PARAMDESC,PARAMDESCEX,POINTF,PROPBAG2,PROPID,PROPPAGEINFO,PROPSPEC,PROPVARIANT,PROTOCOLDATA,QACONTAINER,QACONTROL,RPCOLEDATAREP,RPCOLEMESSAGE,SAFEARRAY,SAFEARRAYBOUND,SAFEARRAYUNION,SAFEARR_BRECORD,SAFEARR_BSTR,SAFEARR_DISPATCH,SAFEARR_HAVEIID,SAFEARR_UNKNOWN,SAFEARR_VARIANT,SCODE,SNB,STATDATA,STATPROPSETSTG,STATPROPSTG,STATSTG,STGMEDIUM,StorageLayout,TEXTMETRICOLE,TEXTMETRICW,TLIBATTR,TYPEATTR,TYPEDESC,UDATE,VARDESC,VARENUM,VARIANT,VARIANTARG,VARIANT_BOOL,VARTYPE,WINDOW_BUFFER_SIZE_RECORD,WORD_SIZEDARR,XML_ERROR,ZONEATTRIBUTES,_APTTYPE,_APTTYPEQUALIFIER,_BYTE_SIZEDARR,_COAUTHIDENTITY,_COAUTHINFO,_COORD,_COSERVERINFO,_FLAGGED_WORD_BLOB,_FOCUS_EVENT_RECORD,_HYPER_SIZEDARR,_IDL_CS_CONVERT,_INPUT_RECORD,_INPUT_RECORD__bindgen_ty_1,_KEY_EVENT_RECORD,_KEY_EVENT_RECORD__bindgen_ty_1,_LONG_SIZEDARR,_MENU_EVENT_RECORD,_MOUSE_EVENT_RECORD,_SHORT_SIZEDARR,_THDTYPE,_URLZONEREG,_WINDOW_BUFFER_SIZE_RECORD,_ZONEATTRIBUTES,__WIDL_urlmon_generated_name_00000015,__WIDL_urlmon_generated_name_00000019,__WIDL_urlmon_generated_name_0000001B,_devicemodeW,_devicemodeW__bindgen_ty_1,_devicemodeW__bindgen_ty_1__bindgen_ty_1,_devicemodeW__bindgen_ty_1__bindgen_ty_2,_devicemodeW__bindgen_ty_2,_tagBINDINFO,_tagCODEBASEHOLD,_tagINTERNETFEATURELIST,_tagPARSEACTION,_tagPROTOCOLDATA,_tagQUERYOPTION,_tagSOFTDISTINFO,_wireBRECORD,_wireSAFEARRAY,_wireSAFEARRAY_UNION,_wireSAFEARRAY_UNION___WIDL_oaidl_generated_name_0000000C,_wireSAFEARR_BRECORD,_wireSAFEARR_BSTR,_wireSAFEARR_DISPATCH,_wireSAFEARR_HAVEIID,_wireSAFEARR_UNKNOWN,_wireSAFEARR_VARIANT,_wireVARIANT,_wireVARIANT__bindgen_ty_1,_xml_error,byte,hyper,tagARRAYDESC,tagBINDPTR,tagBIND_OPTS,tagBIND_OPTS2,tagBIND_OPTS3,tagBLOB,tagBSTRBLOB,tagCABOOL,tagCABSTR,tagCABSTRBLOB,tagCACLIPDATA,tagCACLSID,tagCACY,tagCADATE,tagCADBL,tagCADWORD,tagCAFILETIME,tagCAFLT,tagCAH,tagCAI,tagCAL,tagCALLCONV,tagCALPOLESTR,tagCALPSTR,tagCALPWSTR,tagCAPROPVARIANT,tagCASCODE,tagCAUB,tagCAUH,tagCAUI,tagCAUL,tagCAUUID,tagCHANGEKIND,tagCLEANLOCALSTORAGE,tagCLIPDATA,tagCLSCTX,tagCOINIT,tagCONNECTDATA,tagCONTROLINFO,tagCUSTDATA,tagCUSTDATAITEM,tagCY,tagCY__bindgen_ty_1,tagDEC,tagDEC__bindgen_ty_1,tagDEC__bindgen_ty_1__bindgen_ty_1,tagDEC__bindgen_ty_2,tagDEC__bindgen_ty_2__bindgen_ty_1,tagDESCKIND,tagDISPPARAMS,tagDOMNodeType,tagDVTARGETDEVICE,tagELEMDESC,tagELEMDESC__bindgen_ty_1,tagEXCEPINFO,tagEXTCONN,tagExtentInfo,tagFORMATETC,tagFUNCDESC,tagFUNCKIND,tagGLOBALOPT_PROPERTIES,tagICONMETRICSA,tagICONMETRICSW,tagIDLDESC,tagIMECHARPOSITION,tagIMEMENUITEMINFOA,tagIMEMENUITEMINFOW,tagINTERFACEDATA,tagINTERFACEINFO,tagINVOKEKIND,tagLICINFO,tagLOGFONTA,tagLOGFONTW,tagLOGPALETTE,tagMETHODDATA,tagMSHCTX,tagMSHLFLAGS,tagMULTI_QI,tagOLECLOSE,tagOLECONTF,tagOLEGETMONIKER,tagOLELINKBIND,tagOLERENDER,tagOLEUPDATE,tagOLEVERB,tagOLEWHICHMK,tagOleInPlaceFrameInfo,tagOleMenuGroupWidths,tagPALETTEENTRY,tagPARAMDATA,tagPARAMDESC,tagPARAMDESCEX,tagPOINTF,tagPROPBAG2,tagPROPPAGEINFO,tagPROPSPEC,tagPROPSPEC__bindgen_ty_1,tagPROPVARIANT,tagPROPVARIANT__bindgen_ty_1,tagQACONTAINER,tagQACONTROL,tagREGCLS,tagREGKIND,tagRPCOLEMESSAGE,tagSAFEARRAY,tagSAFEARRAYBOUND,tagSF_TYPE,tagSTATDATA,tagSTATPROPSETSTG,tagSTATPROPSTG,tagSTGMEDIUM,tagSTGMEDIUM__bindgen_ty_1,tagSYSKIND,tagStorageLayout,tagTEXTMETRICW,tagTLIBATTR,tagTYPEATTR,tagTYPEDESC,tagTYPEDESC__bindgen_ty_1,tagTYPEKIND,tagVARDESC,tagVARDESC__bindgen_ty_1,tagVARIANT,tagVARIANT__bindgen_ty_1,tagVARIANT__bindgen_ty_1___tagVARIANT,tagVARIANT__bindgen_ty_1___tagVARIANT__bindgen_ty_1,tagVARIANT__bindgen_ty_1___tagVARIANT__bindgen_ty_1___tagBRECORD,tagVARKIND,uSTGMEDIUM,wireBRECORD,wireBSTR,wireSAFEARRAY,wireVARIANT};
+pub type APTTYPE = com_sys::_APTTYPE;
+pub type APTTYPEQUALIFIER = com_sys::_APTTYPEQUALIFIER;
 
 #[repr(C)]
 pub struct __BindgenUnionField<T>(::core::marker::PhantomData<T>);
@@ -16533,55 +16535,8 @@ pub struct HDELFILE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type HDELFILE = *mut HDELFILE__;
-unsafe extern "C" {
-    pub fn GetRecycleBinPathFromDriveNumber(Drive: UINT, Path: LPWSTR) -> HRESULT;
-}
 pub type PENUMERATE_RECYCLEBIN_CALLBACK =
     ::core::option::Option<unsafe extern "system" fn(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL>;
-unsafe extern "C" {
-    pub fn CloseRecycleBinHandle(hDeletedFile: HDELFILE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn DeleteFileToRecycleBinA(FileName: LPCSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn DeleteFileToRecycleBinW(FileName: LPCWSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn DeleteFileInRecycleBin(hDeletedFile: HDELFILE) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn EmptyRecycleBinA(pszRoot: LPCSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn EmptyRecycleBinW(pszRoot: LPCWSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn EnumerateRecycleBinA(
-        pszRoot: LPCSTR,
-        pFnCallback: PENUMERATE_RECYCLEBIN_CALLBACK,
-        Context: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn EnumerateRecycleBinW(
-        pszRoot: LPCWSTR,
-        pFnCallback: PENUMERATE_RECYCLEBIN_CALLBACK,
-        Context: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetRecycleBinFileHandle(
-        pszRoot: LPCWSTR,
-        pFI: *const RECYCLEBINFILEIDENTITY,
-    ) -> HDELFILE;
-}
-unsafe extern "C" {
-    pub fn RemoveFromRecycleBinDatabase(pFI: *const RECYCLEBINFILEIDENTITY) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn RestoreFileFromRecycleBin(hDeletedFile: HDELFILE) -> BOOL;
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IRecycleBinFile {
@@ -16646,9 +16601,6 @@ unsafe extern "C" {
     pub static IID_IRecycleBin: IID;
 }
 unsafe extern "C" {
-    pub fn GetDefaultRecycleBin(pszVolume: LPCWSTR, pprb: *mut *mut IRecycleBin) -> HRESULT;
-}
-unsafe extern "C" {
     pub fn CRecycleBin_NotifyRecycled(
         OrigPath: LPCWSTR,
         pFind: *const WIN32_FIND_DATAW,
@@ -16690,15 +16642,6 @@ pub struct IRecycleBin5Vtbl {
     pub RemoveFromDatabase: ::core::option::Option< unsafe extern "system" fn( This: *mut IRecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD, ) -> HRESULT, >,
     pub OnClosing: ::core::option::Option< unsafe extern "system" fn(This: *mut IRecycleBin5, prbel: *mut IRecycleBinEnumList) -> HRESULT, >,
 }
-unsafe extern "C" {
-    pub fn RecycleBin5Enum_Constructor(
-        prb: *mut IRecycleBin5,
-        hInfo: HANDLE,
-        hInfoMapped: HANDLE,
-        szPrefix: LPCWSTR,
-        ppUnknown: *mut *mut IUnknown,
-    ) -> HRESULT;
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct __wine_debug_channel {
@@ -16722,21 +16665,6 @@ pub struct _INFO2_HEADER {
 }
 pub type INFO2_HEADER = _INFO2_HEADER;
 pub type PINFO2_HEADER = *mut _INFO2_HEADER;
-unsafe extern "C" {
-    pub fn RecycleBinGeneric_Constructor(ppUnknown: *mut *mut IUnknown) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn RecycleBinGeneric_IsEqualFileIdentity(
-        p1: *const RECYCLEBINFILEIDENTITY,
-        p2: *const RECYCLEBINFILEIDENTITY,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn RecycleBinGenericEnum_Constructor(pprbel: *mut *mut IRecycleBinEnumList) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn RecycleBin5_Constructor(VolumePath: LPCWSTR, ppUnknown: *mut *mut IUnknown) -> HRESULT;
-}
 unsafe extern "C" {
     pub fn SHAutoComplete(arg1: HWND, arg2: DWORD) -> HRESULT;
 }

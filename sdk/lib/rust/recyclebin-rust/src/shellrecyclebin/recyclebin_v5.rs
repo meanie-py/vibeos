@@ -1,5 +1,9 @@
 // rustconv-assembly: whole-tu
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin_support::{
+    RECYCLE_BIN_DIRECTORY_WITHOUT_ACL, RECYCLE_BIN_DIRECTORY_WITH_ACL,
+    RECYCLE_BIN_FILE_NAME, WC_BACKSLASH, W_BACKSLASH, W_DESKTOP_INI, W_STAR,
+};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -36,7 +40,7 @@ unsafe extern "C" fn SHELL_SingleFileOperation(
     let mut szzFrom = CZZWStr::new();
     let mut szzTo = CZZWStr::new();
     if !szzFrom.Initialize(pszFrom) || !szzTo.Initialize(pszTo) {
-        return ERROR_OUTOFMEMORY;
+        return (ERROR_OUTOFMEMORY) as i32;
     }
     let mut fos = SHFILEOPSTRUCTW {
         hwnd: hWnd,
@@ -58,13 +62,13 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
     let mut pFilePart: LPWSTR;
     let FileAttributes: DWORD;
     let dwLength: SIZE_T;
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = (FALSE) as i32;
 
     'cleanup: {
         FileAttributes = GetFileAttributesW(FullName);
         if FileAttributes == INVALID_FILE_ATTRIBUTES {
             if GetLastError() == ERROR_FILE_NOT_FOUND {
-                ret = TRUE;
+                ret = (TRUE) as i32;
             }
             break 'cleanup;
         }
@@ -82,7 +86,7 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
             FullPath = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (dwLength as usize + 1 as usize + MAX_PATH as usize + 1 as usize) * core::mem::size_of::<u16>(),
+                ((dwLength as usize + 1 as usize + MAX_PATH as usize + 1 as usize) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as LPWSTR;
             if FullPath.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -94,7 +98,7 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
                 dwLength += 1;
             }
             pFilePart = FullPath.offset(dwLength as isize);
-            wcscpy(pFilePart, L"*");
+            wcscpy(pFilePart, W_STAR.as_ptr());
             hSearch = FindFirstFileW(FullPath, core::ptr::addr_of_mut!(FindData));
             if hSearch == INVALID_HANDLE_VALUE {
                 break 'cleanup;
@@ -122,13 +126,13 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
                 break 'cleanup;
             }
         }
-        ret = TRUE;
+        ret = (TRUE) as i32;
     }
 
     HeapFree(
         GetProcessHeap(),
         0,
-        FullPath,
+        (FullPath).cast(),
     );
 
     ret
@@ -144,7 +148,7 @@ pub unsafe extern "system" fn RecycleBin5_GetDirectory(
     if *str_ptr.offset(0) == 0 {
         return E_UNEXPECTED;
     }
-    lstrcpynW(szPath, str_ptr, MAX_PATH);
+    lstrcpynW(szPath, str_ptr, (MAX_PATH) as i32);
     S_OK
 }
 
@@ -192,7 +196,7 @@ pub unsafe extern "system" fn RecycleBin5_Release(this: *mut RecycleBin5) -> u32
     if refCount == 0 {
         RecycleBin5_destructor(this);
     }
-    refCount
+    (refCount) as u32
 }
 
 #[no_mangle]
@@ -222,7 +226,7 @@ pub unsafe extern "system" fn RecycleBin5_DeleteFile(
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
 
     if (*this).m_EnumeratorCount != 0 {
-        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION);
+        return HRESULT_FROM_WIN32((ERROR_SHARING_VIOLATION) as LONG);
     }
 
     // Get full file name
@@ -235,228 +239,237 @@ pub unsafe extern "system" fn RecycleBin5_DeleteFile(
         );
         if len == 0 {
             if !szFullName.is_null() {
-                CoTaskMemFree(szFullName);
+                CoTaskMemFree((szFullName).cast());
             }
             return HResultFromWin32(GetLastError());
         } else if len < dwBufferLength {
             break;
         }
         if !szFullName.is_null() {
-            CoTaskMemFree(szFullName);
+            CoTaskMemFree((szFullName).cast());
         }
         dwBufferLength = len;
         szFullName = CoTaskMemAlloc((dwBufferLength as usize * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
         if szFullName.is_null() {
-            return HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
+            return HRESULT_FROM_WIN32((ERROR_NOT_ENOUGH_MEMORY) as LONG);
         }
     }
 
     // Check if file exists
     dwAttributes = GetFileAttributesW(szFullName);
     if dwAttributes == INVALID_FILE_ATTRIBUTES {
-        CoTaskMemFree(szFullName);
+        CoTaskMemFree((szFullName).cast());
         return HResultFromWin32(GetLastError());
     }
 
     if dwBufferLength < 2 || *szFullName.add(1 as usize) != 0x003A
     {
         // Not a local file
-        CoTaskMemFree(szFullName);
-        return HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
+        CoTaskMemFree((szFullName).cast());
+        return HRESULT_FROM_WIN32((ERROR_INVALID_NAME) as LONG);
     }
 
-    hFile = CreateFileW(
-        szFullName,
-        0,
-        0,
-        core::ptr::null_mut(),
-        OPEN_EXISTING,
-        if (dwAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-            FILE_FLAG_BACKUP_SEMANTICS
+    // C `goto cleanup` x9 -> a labeled block, the tree's lowering for a single-exit C
+    // function (shell32-rust/src/vista.rs:151 does the same for the same idiom). Every
+    // `hr = ...` stays exactly where the C has it and the block yields unit, so this is a
+    // 1:1 control-flow mapping and not a rewrite: the cleanup below still runs on all 10
+    // paths, which is the whole point of the C idiom (UnmapViewOfFile / CloseHandle /
+    // CoTaskMemFree). The early returns ABOVE this block predate hFile and pHeader and do
+    // their own CoTaskMemFree, exactly as in the C.
+    'cleanup: {
+        hFile = CreateFileW(
+            szFullName,
+            0,
+            0,
+            core::ptr::null_mut(),
+            OPEN_EXISTING,
+            if (dwAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                FILE_FLAG_BACKUP_SEMANTICS
+            } else {
+                0
+            },
+            core::ptr::null_mut(),
+        );
+        if hFile == INVALID_HANDLE_VALUE {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+
+        // Increase INFO2 file size
+        CloseHandle((*this).m_hInfoMapped);
+        SetFilePointer(
+            (*this).m_hInfo,
+            core::mem::size_of::<DELETED_FILE_RECORD>() as LONG,
+            core::ptr::null_mut(),
+            FILE_END,
+        );
+        SetEndOfFile((*this).m_hInfo);
+        (*this).m_hInfoMapped = CreateFileMappingW(
+            (*this).m_hInfo,
+            core::ptr::null_mut(),
+            PAGE_READWRITE | SEC_COMMIT,
+            0,
+            0,
+            core::ptr::null_mut(),
+        );
+        if (*this).m_hInfoMapped.is_null() {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+
+        // Open INFO2 file
+        pHeader = MapViewOfFile(
+            (*this).m_hInfoMapped,
+            FILE_MAP_WRITE,
+            0,
+            0,
+            0,
+        ) as *mut INFO2_HEADER;
+        if pHeader.is_null() {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+
+        // Get number of entries
+        {
+            let mut high_part: DWORD = 0;
+            FileSize.u.__bindgen_anon_1.LowPart = GetFileSize((*this).m_hInfo, &mut high_part);
+            FileSize.u.__bindgen_anon_1.HighPart = high_part;
+        }
+        if FileSize.u.__bindgen_anon_1.LowPart < (core::mem::size_of::<INFO2_HEADER>() as DWORD) {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+        dwEntries = ((FileSize.QuadPart - core::mem::size_of::<INFO2_HEADER>() as u64)
+            / core::mem::size_of::<DELETED_FILE_RECORD>() as u64) as DWORD
+            - 1;
+        pDeletedFile =
+            ((pHeader as *mut u8).add(1 as usize) as *mut DELETED_FILE_RECORD)
+                .add(dwEntries as usize);
+
+        // Get file size
+        {
+            let mut high_part: DWORD = 0;
+            FileSize.u.__bindgen_anon_1.LowPart = GetFileSize(hFile, &mut high_part);
+            FileSize.u.__bindgen_anon_1.HighPart = high_part;
+        }
+        if FileSize.u.__bindgen_anon_1.LowPart == INVALID_FILE_SIZE && GetLastError() != NO_ERROR {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+        // Check if file size is > 4Gb
+        if FileSize.u.__bindgen_anon_1.HighPart != 0 {
+            hr = HRESULT_FROM_WIN32((ERROR_NOT_SUPPORTED) as LONG);
+            break 'cleanup;
+        }
+        (*pHeader).dwTotalLogicalSize += FileSize.u.__bindgen_anon_1.LowPart;
+
+        // Generate new name
+        Extension = PathFindExtensionW(szFullName);
+        ZeroMemory!(
+            pDeletedFile as *mut c_void,
+            core::mem::size_of::<DELETED_FILE_RECORD>(),
+        );
+        if dwEntries == 0 {
+            (*pDeletedFile).dwRecordUniqueId = 0;
         } else {
-            0
-        },
-        core::ptr::null_mut(),
-    );
-    if hFile == INVALID_HANDLE_VALUE {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
+            let pLastDeleted = ((pHeader as *mut u8).add(1 as usize)
+                as *mut DELETED_FILE_RECORD)
+                .add(dwEntries as usize - 1);
+            (*pDeletedFile).dwRecordUniqueId = (*pLastDeleted).dwRecordUniqueId + 1;
+        }
+
+        (*pDeletedFile).dwDriveNumber =
+            tolower((*szFullName.add(0 as usize)) as i32) as DWORD
+                - 0x0061u16 as DWORD;
+        _ultow(
+            (*pDeletedFile).dwRecordUniqueId,
+            szUniqueId.as_mut_ptr(),
+            10,
+        );
+
+        DeletedFileName.AssignStr(&(*this).m_Folder);
+        {
+            let w_d: [WCHAR; 3] = [0x005C, 0x0044, 0]; // L"\\D"
+            DeletedFileName.Append(w_d.as_ptr());
+        }
+        DeletedFileName.AppendChar((0x0061u16 + (*pDeletedFile).dwDriveNumber as u16) as WCHAR);
+        DeletedFileName.Append(szUniqueId.as_ptr());
+        DeletedFileName.Append(Extension);
+
+        // Get cluster size
+        if GetDiskFreeSpaceW(
+            (*this).m_VolumePath.as_ptr(),
+            &mut SectorsPerCluster,
+            &mut BytesPerSector,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) == 0
+        {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+        ClusterSize = BytesPerSector * SectorsPerCluster;
+
+        // Get current time
+        GetSystemTime(&mut SystemTime);
+        if SystemTimeToFileTime(&SystemTime, &mut (*pDeletedFile).DeletionTime) == 0 {
+            hr = HResultFromWin32(GetLastError());
+            break 'cleanup;
+        }
+        (*pDeletedFile).dwPhysicalFileSize = ROUND_UP(FileSize.u.__bindgen_anon_1.LowPart, ClusterSize);
+
+        // Set name
+        wcscpy((*pDeletedFile).FileNameW.as_mut_ptr(), szFullName);
+        if WideCharToMultiByte(
+            CP_ACP,
+            0,
+            (*pDeletedFile).FileNameW.as_ptr(),
+            -(1 as i32),
+            (*pDeletedFile).FileNameA.as_mut_ptr(),
+            (MAX_PATH) as i32,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) == 0
+        {
+            hr = HRESULT_FROM_WIN32((ERROR_INVALID_NAME) as LONG);
+            SetLastError(ERROR_INVALID_NAME);
+            break 'cleanup;
+        }
+
+        wfd.dwFileAttributes = dwAttributes;
+        wfd.nFileSizeLow = FileSize.u.__bindgen_anon_1.LowPart;
+        GetFileTime(
+            hFile,
+            &mut wfd.ftCreationTime,
+            &mut wfd.ftLastAccessTime,
+            &mut wfd.ftLastWriteTime,
+        );
+
+        // Move file
+        if MoveFileW(szFullName, DeletedFileName.as_ptr()) != 0 {
+            hr = S_OK;
+        } else {
+            hr = HResultFromWin32(GetLastError());
+        }
+
+        if hr >= 0 {
+            let ident = RECYCLEBINFILEIDENTITY {
+                DeletionTime: (*pDeletedFile).DeletionTime,
+                FileName: DeletedFileName.as_ptr(),
+            };
+            CRecycleBin_NotifyRecycled(szFullName, &wfd, &ident);
+        }
     }
 
-    // Increase INFO2 file size
-    CloseHandle((*this).m_hInfoMapped);
-    SetFilePointer(
-        (*this).m_hInfo,
-        core::mem::size_of::<DELETED_FILE_RECORD>() as LONG,
-        core::ptr::null_mut(),
-        FILE_END,
-    );
-    SetEndOfFile((*this).m_hInfo);
-    (*this).m_hInfoMapped = CreateFileMappingW(
-        (*this).m_hInfo,
-        core::ptr::null_mut(),
-        PAGE_READWRITE | SEC_COMMIT,
-        0,
-        0,
-        core::ptr::null_mut(),
-    );
-    if (*this).m_hInfoMapped.is_null() {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-
-    // Open INFO2 file
-    pHeader = MapViewOfFile(
-        (*this).m_hInfoMapped,
-        FILE_MAP_WRITE,
-        0,
-        0,
-        0,
-    ) as *mut INFO2_HEADER;
-    if pHeader.is_null() {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-
-    // Get number of entries
-    {
-        let mut high_part: DWORD = 0;
-        FileSize.u.__bindgen_anon_1.LowPart = GetFileSize((*this).m_hInfo, &mut high_part);
-        FileSize.u.__bindgen_anon_1.HighPart = high_part;
-    }
-    if FileSize.u.__bindgen_anon_1.LowPart < (core::mem::size_of::<INFO2_HEADER>() as DWORD) {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-    dwEntries = ((FileSize.QuadPart - core::mem::size_of::<INFO2_HEADER>() as u64)
-        / core::mem::size_of::<DELETED_FILE_RECORD>() as u64) as DWORD
-        - 1;
-    pDeletedFile =
-        ((pHeader as *mut u8).add(1 as usize) as *mut DELETED_FILE_RECORD)
-            .add(dwEntries as usize);
-
-    // Get file size
-    {
-        let mut high_part: DWORD = 0;
-        FileSize.u.__bindgen_anon_1.LowPart = GetFileSize(hFile, &mut high_part);
-        FileSize.u.__bindgen_anon_1.HighPart = high_part;
-    }
-    if FileSize.u.__bindgen_anon_1.LowPart == INVALID_FILE_SIZE && GetLastError() != NO_ERROR {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-    // Check if file size is > 4Gb
-    if FileSize.u.__bindgen_anon_1.HighPart != 0 {
-        hr = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
-        goto cleanup;
-    }
-    (*pHeader).dwTotalLogicalSize += FileSize.u.__bindgen_anon_1.LowPart;
-
-    // Generate new name
-    Extension = PathFindExtensionW(szFullName);
-    ZeroMemory(
-        pDeletedFile as *mut c_void,
-        core::mem::size_of::<DELETED_FILE_RECORD>(),
-    );
-    if dwEntries == 0 {
-        (*pDeletedFile).dwRecordUniqueId = 0;
-    } else {
-        let pLastDeleted = ((pHeader as *mut u8).add(1 as usize)
-            as *mut DELETED_FILE_RECORD)
-            .add(dwEntries as usize - 1);
-        (*pDeletedFile).dwRecordUniqueId = (*pLastDeleted).dwRecordUniqueId + 1;
-    }
-
-    (*pDeletedFile).dwDriveNumber =
-        tolower(*szFullName.add(0 as usize)) as DWORD
-            - 0x0061u16 as DWORD;
-    _ultow(
-        (*pDeletedFile).dwRecordUniqueId,
-        szUniqueId.as_mut_ptr(),
-        10,
-    );
-
-    DeletedFileName.AssignStr(&(*this).m_Folder);
-    {
-        let w_d: [WCHAR; 3] = [0x005C, 0x0044, 0]; // L"\\D"
-        DeletedFileName.Append(w_d.as_ptr());
-    }
-    DeletedFileName.AppendChar((0x0061u16 + (*pDeletedFile).dwDriveNumber as u16) as WCHAR);
-    DeletedFileName.Append(szUniqueId.as_ptr());
-    DeletedFileName.Append(Extension);
-
-    // Get cluster size
-    if GetDiskFreeSpaceW(
-        (*this).m_VolumePath.as_ptr(),
-        &mut SectorsPerCluster,
-        &mut BytesPerSector,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-    ) == 0
-    {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-    ClusterSize = BytesPerSector * SectorsPerCluster;
-
-    // Get current time
-    GetSystemTime(&mut SystemTime);
-    if SystemTimeToFileTime(&SystemTime, &mut (*pDeletedFile).DeletionTime) == 0 {
-        hr = HResultFromWin32(GetLastError());
-        goto cleanup;
-    }
-    (*pDeletedFile).dwPhysicalFileSize = ROUND_UP(FileSize.u.__bindgen_anon_1.LowPart, ClusterSize);
-
-    // Set name
-    wcscpy((*pDeletedFile).FileNameW.as_mut_ptr(), szFullName);
-    if WideCharToMultiByte(
-        CP_ACP,
-        0,
-        (*pDeletedFile).FileNameW.as_ptr(),
-        -(1 as i32),
-        (*pDeletedFile).FileNameA.as_mut_ptr(),
-        MAX_PATH,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-    ) == 0
-    {
-        hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
-        SetLastError(ERROR_INVALID_NAME);
-        goto cleanup;
-    }
-
-    wfd.dwFileAttributes = dwAttributes;
-    wfd.nFileSizeLow = FileSize.u.__bindgen_anon_1.LowPart;
-    GetFileTime(
-        hFile,
-        &mut wfd.ftCreationTime,
-        &mut wfd.ftLastAccessTime,
-        &mut wfd.ftLastWriteTime,
-    );
-
-    // Move file
-    if MoveFileW(szFullName, DeletedFileName.as_ptr()) != 0 {
-        hr = S_OK;
-    } else {
-        hr = HResultFromWin32(GetLastError());
-    }
-
-    if hr >= 0 {
-        let ident = RECYCLEBINFILEIDENTITY {
-            DeletionTime: (*pDeletedFile).DeletionTime,
-            FileName: DeletedFileName.as_ptr(),
-        };
-        CRecycleBin_NotifyRecycled(szFullName, &wfd, &ident);
-    }
-
-    // label cleanup:
-    cleanup: if !pHeader.is_null() {
+    // cleanup:
+    if !pHeader.is_null() {
         UnmapViewOfFile(pHeader);
     }
     if hFile != INVALID_HANDLE_VALUE {
         CloseHandle(hFile);
     }
-    CoTaskMemFree(szFullName);
+    CoTaskMemFree((szFullName).cast());
     return hr;
 }
 
@@ -573,7 +586,7 @@ pub unsafe extern "system" fn RecycleBin5_RemoveFromDatabase(
     pDeletedFile: *mut DELETED_FILE_RECORD,
 ) -> HRESULT {
     if (*this).m_EnumeratorCount != 0 {
-        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION);
+        return HRESULT_FROM_WIN32((ERROR_SHARING_VIOLATION) as LONG);
     }
 
     let pHeader = MapViewOfFile(
@@ -585,7 +598,7 @@ pub unsafe extern "system" fn RecycleBin5_RemoveFromDatabase(
     ) as *mut INFO2_HEADER;
 
     if pHeader.is_null() {
-        return HRESULT_FROM_WIN32(GetLastError());
+        return HRESULT_FROM_WIN32((GetLastError()) as LONG);
     }
 
     let mut FileSize = ULARGE_INTEGER {
@@ -597,7 +610,7 @@ pub unsafe extern "system" fn RecycleBin5_RemoveFromDatabase(
     );
     if FileSize.__bindgen_anon_1.LowPart == 0 {
         UnmapViewOfFile(pHeader);
-        return HRESULT_FROM_WIN32(GetLastError());
+        return HRESULT_FROM_WIN32((GetLastError()) as LONG);
     }
 
     let dwEntries = ((FileSize.QuadPart - core::mem::size_of::<INFO2_HEADER>() as u64)
@@ -607,14 +620,14 @@ pub unsafe extern "system" fn RecycleBin5_RemoveFromDatabase(
     let mut i = 0;
     while i < dwEntries {
         if (*pRecord).dwRecordUniqueId == (*pDeletedFile).dwRecordUniqueId {
-            MoveMemory(
+            MoveMemory!(
                 pRecord,
                 pRecord.add(1 as usize),
                 ((dwEntries - i - 1) as usize)
                     * core::mem::size_of::<DELETED_FILE_RECORD>(),
             );
             let pLast = pRecord.add((dwEntries - i - 1) as usize);
-            ZeroMemory(pLast, core::mem::size_of::<DELETED_FILE_RECORD>());
+            ZeroMemory!(pLast, core::mem::size_of::<DELETED_FILE_RECORD>());
             UnmapViewOfFile(pHeader);
 
             CloseHandle((*this).m_hInfoMapped);
@@ -651,7 +664,7 @@ pub unsafe extern "system" fn RecycleBin5_RemoveFromDatabase(
     }
 
     UnmapViewOfFile(pHeader);
-    HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
+    HRESULT_FROM_WIN32((ERROR_FILE_NOT_FOUND) as LONG)
 }
 
 #[no_mangle]
@@ -659,7 +672,8 @@ pub unsafe extern "system" fn RecycleBin5_OnClosing(this: *mut RecycleBin5, prbe
     (*this).m_EnumeratorCount -= 1;
     S_OK
 }
-static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) -> HRESULT {
+// C file-scope `static` = internal linkage, which is Rust's default for a non-`pub` item.
+unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) -> HRESULT {
     let mut BufferName: LPWSTR = core::ptr::null_mut();
     let mut Separator: LPWSTR;
     let mut FileName: LPWSTR;
@@ -683,7 +697,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             + 1
             + max(
                 wcslen(RECYCLE_BIN_FILE_NAME),
-                wcslen(L"desktop.ini"),
+                wcslen(W_DESKTOP_INI.as_ptr()),
             )
             + 1)
             * core::mem::size_of::<u16>();
@@ -693,12 +707,12 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             Needed,
         ) as LPWSTR;
         if BufferName.is_null() {
-            hr = ERROR_NOT_ENOUGH_MEMORY;
+            hr = (ERROR_NOT_ENOUGH_MEMORY) as i32;
             break 'cleanup;
         }
 
         wcscpy(BufferName, Folder);
-        Separator = wcsstr(BufferName.add(3), L"\\") as LPWSTR;
+        Separator = wcsstr(BufferName.add(3), W_BACKSLASH.as_ptr()) as LPWSTR;
         if !Separator.is_null() {
             *Separator = UNICODE_NULL as u16;
         }
@@ -706,29 +720,29 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
         if CreateDirectoryW(BufferName, core::ptr::null_mut()) == 0
             && GetLastError() != ERROR_ALREADY_EXISTS
         {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
         SetFileAttributesW(BufferName, FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
 
         if !Separator.is_null() {
-            *Separator = L'\\';
+            *Separator = WC_BACKSLASH;
             if CreateDirectoryW(BufferName, core::ptr::null_mut()) == 0
                 && GetLastError() != ERROR_ALREADY_EXISTS
             {
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
                 break 'cleanup;
             }
         }
 
         /* FIXME: ACL handling not yet implemented */
 
-        wcscat(BufferName, L"\\");
+        wcscat(BufferName, W_BACKSLASH.as_ptr());
         FileName = BufferName.add(wcslen(BufferName));
 
         /* Create desktop.ini */
-        wcscpy(FileName, L"desktop.ini");
+        wcscpy(FileName, W_DESKTOP_INI.as_ptr());
         hFile = CreateFileW(
             BufferName,
             GENERIC_WRITE,
@@ -739,7 +753,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             core::ptr::null_mut(),
         ) as HANDLE;
         if hFile == INVALID_HANDLE_VALUE as HANDLE {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
@@ -752,7 +766,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             core::ptr::null_mut(),
         ) == 0
         {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
         if BytesWritten != BytesToWrite {
@@ -774,7 +788,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             core::ptr::null_mut(),
         ) as HANDLE;
         if hFile == INVALID_HANDLE_VALUE as HANDLE {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
@@ -787,7 +801,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
             core::ptr::null_mut(),
         ) == 0
         {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
         if BytesWritten == BytesToWrite {
@@ -799,7 +813,7 @@ static unsafe extern "C" fn RecycleBin5_Create(Folder: LPCWSTR, OwnerSid: PSID) 
     }
 
     // cleanup
-    HeapFree(GetProcessHeap(), 0, BufferName);
+    HeapFree(GetProcessHeap(), 0, (BufferName).cast());
     if hFile != INVALID_HANDLE_VALUE as HANDLE {
         CloseHandle(hFile);
     }
@@ -841,7 +855,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
             0,
         ) == 0
         {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
@@ -858,7 +872,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
                 &mut tokenHandle,
             ) == 0
             {
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
                 break 'cleanup;
             }
 
@@ -875,7 +889,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
                 break 'cleanup;
             }
             if GetLastError() != ERROR_INSUFFICIENT_BUFFER {
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
                 break 'cleanup;
             }
 
@@ -883,7 +897,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
             TokenUserInfo = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                Needed,
+                (Needed) as SIZE_T,
             ) as PTOKEN_USER;
             if TokenUserInfo.is_null() {
                 hr = E_OUTOFMEMORY;
@@ -894,12 +908,12 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
             if GetTokenInformation(
                 tokenHandle,
                 TokenUser,
-                TokenUserInfo,
+                (TokenUserInfo).cast(),
                 Needed as DWORD,
                 &mut Needed,
             ) == 0
             {
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
                 break 'cleanup;
             }
 
@@ -909,7 +923,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
                 &mut StringSid,
             ) == 0
             {
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
                 break 'cleanup;
             }
         }
@@ -977,7 +991,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
 
         // Still invalid handle => error
         if (*this).m_hInfo == INVALID_HANDLE_VALUE {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
@@ -992,7 +1006,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
         );
 
         if (*this).m_hInfoMapped.is_null() {
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            hr = HRESULT_FROM_WIN32((GetLastError()) as LONG);
             break 'cleanup;
         }
 
@@ -1015,7 +1029,7 @@ pub unsafe extern "C" fn RecycleBin5_Init(this: *mut RecycleBin5, VolumePath: LP
         TokenUserInfo as *mut core::ffi::c_void,
     );
     if !StringSid.is_null() {
-        LocalFree(StringSid);
+        LocalFree((StringSid).cast());
     }
 
     hr
@@ -1135,7 +1149,7 @@ pub unsafe extern "C" fn RecycleBin5_Constructor(
 //             dwLength++;
 //         }
 //         pFilePart = &FullPath[dwLength];
-//         wcscpy(pFilePart, L"*");
+//         wcscpy(pFilePart, W_STAR.as_ptr());
 //
 //         /* Enumerate contents, and delete it */
 //         hSearch = FindFirstFileW(FullPath, &FindData);
@@ -1625,7 +1639,7 @@ pub unsafe extern "C" fn RecycleBin5_Constructor(
 //     SetFileAttributesW(BufferName, FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN);
 //     if (Separator)
 //     {
-//         *Separator = L'\\';
+//         *Separator = WC_BACKSLASH;
 //         if (!CreateDirectoryW(BufferName, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
 //         {
 //             hr = HRESULT_FROM_WIN32(GetLastError());
@@ -1654,11 +1668,11 @@ pub unsafe extern "C" fn RecycleBin5_Constructor(
 //         */
 //     }
 //
-//     wcscat(BufferName, L"\\");
+//     wcscat(BufferName, W_BACKSLASH.as_ptr());
 //     FileName = &BufferName[wcslen(BufferName)];
 //
 //     /* Create desktop.ini */
-//     wcscpy(FileName, L"desktop.ini");
+//     wcscpy(FileName, W_DESKTOP_INI.as_ptr());
 //     hFile = CreateFileW(BufferName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN, NULL);
 //     if (hFile == INVALID_HANDLE_VALUE)
 //     {
