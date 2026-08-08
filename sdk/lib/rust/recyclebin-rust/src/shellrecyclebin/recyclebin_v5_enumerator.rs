@@ -1,4 +1,10 @@
 // rustconv-assembly: whole-tu
+//! ORPHAN-BY-DESIGN: superseded by the class-atomic modules (RecycleBinGeneric.rs,
+//! RecycleBinGenericEnum.rs, RecycleBin5.rs, RecycleBin5File.rs, RecycleBin5Enum.rs).
+//! This is the older `whole-tu` assembly, produced before `--cpp-com` could run for a
+//! non-shell32 target: it has no vtable, no `_new`/`_delete` and never stores `lpVtbl`,
+//! so an object built from it null-derefs on its first method call. Kept only until its
+//! removal is approved; the paid bodies live in .responses/ and regenerate for $0.
 use crate::prelude::*;
 use crate::shellrecyclebin::recyclebin_support::{W_BACKSLASH_D, W_FMT_LU};
 use core::ffi::c_void;

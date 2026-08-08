@@ -96,7 +96,11 @@ def load_function_system_prompt(
     """
     if target is None:
         target = TARGETS["ntoskrnl"]
-    if target.name == "shell32" and cpp_com:
+    # `cpp_com` DEFAULTS TO TRUE, so it alone does not mean "class translation" — pairing it
+    # with a target that actually has a class scaffold is what makes this specific. Dropping
+    # the target half entirely sent every C++-source run down the COM prompt and lost the C++
+    # coda (caught by test_cpp_coda_is_appended_for_a_cpp_source).
+    if cpp_com and target.com_island_files:
         # C++ COM mode is body-only in BOTH styles. The deterministic cpp_com
         # layer owns every ABI artifact; using the generic mechanical/kernel
         # prompt here would tell the model to regenerate those artifacts.
@@ -105,7 +109,17 @@ def load_function_system_prompt(
         # those deps have no class, no vtable and no generated scaffold, so the
         # COM body prompt would be describing artifacts that do not exist for
         # them. They take the ordinary mechanical/idiomatic contract below.
-        return target.system_prompt.read_text()
+        #
+        # Keyed to the MODE, not to `target.name == "shell32"` as it was: the worker contract
+        # (emit `X_body`, no #[no_mangle], no extern declarations, because the deterministic
+        # scaffold owns every ABI artifact) describes the SCAFFOLD, and the scaffold is now
+        # reachable for any module. A non-shell32 class run used to fall through to the generic
+        # prompt and produce ASSEMBLED-shaped bodies, which audit_worker_body then rejected —
+        # 57 of them in one shellrecyclebin run, every single body, all three findings the same.
+        # A module may override the template; shell32's own `system_prompt` IS this file, so
+        # its behaviour is unchanged.
+        template = target.com_system_prompt or (TEMPLATES_DIR / "system_prompt_shell32_com.md")
+        return template.read_text()
     if mode == "mechanical":
         mech = TEMPLATES_DIR / "function_prompt_mechanical.md"
         base = mech.read_text()

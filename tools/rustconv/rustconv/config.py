@@ -384,6 +384,25 @@ class Target:
     # here, abi_enforce emits one `stdmethod! { … }`; without it, the body is
     # duplicated under two cfgs (correct, just verbose). See abi_enforce.py.
     com_method_macro: str | None = None
+    # The C++ CLASS path's two inputs, which used to be hard-coded to shell32 at the call
+    # sites in __main__ — so `--cpp-com` could not run for any other module, `cpp_com_mode`
+    # was False there, and with it went the class scaffold (vtable instance, _new/_delete,
+    # lpVtbl wiring), the interface rendering AND every audit_worker_body call. The failure
+    # was silent: shellrecyclebin's four hand-rolled COM classes translated to bodies with no
+    # vtable ever populated, which is a wild jump on the first method call, and nine raw C
+    # `goto`s shipped past a check that exists and works.
+    #
+    # com_object_map: the DLL's class-object map (shell32.cpp's OBJECT_ENTRY table). None for
+    # a module whose classes are created by plain `*_Constructor` free functions rather than a
+    # COM class factory — which is every non-shell32 case so far.
+    com_object_map: Path | None = None
+    # com_island_files: arch → the crate's OWN bindgen island, which the class analyzer reads
+    # for exact layouts. NOT `crate_bindgen_files`: that names the COM ABI module
+    # (shell32 → shellcom), a different thing that happens to live in the same crate.
+    com_island_files: dict = field(default_factory=dict)
+    # Optional per-module override of the C++ CLASS body prompt. None means the shared
+    # template, whose worker contract is target-independent — see load_function_system_prompt.
+    com_system_prompt: Path | None = None
 
 
 TARGETS = {
@@ -1472,6 +1491,10 @@ TARGETS = {
         arches=("i386", "amd64", "arm64"),
         crate_bindgen_files=SHELL32_COM_FILES,
         crate_module="shellcom",
+        # Exactly what the two analyze_class call sites used to hard-code, so shell32's
+        # behaviour is unchanged by the parameterization.
+        com_object_map=SHELL32_DIR / "shell32.cpp",
+        com_island_files=SHELL32_ISLAND_FILES,
         sys_crate="crate",
         sys_umbrella=None,
     ),
@@ -1918,7 +1941,31 @@ def make_user_dll_target(
         sys_umbrella=umbrella,
         system_prompt_addendum=_user_prompt_addendum(name),
         com_method_macro=_detect_com_method_macro(crate),
+        # com_object_map stays None: a module outside shell32 has no OBJECT_ENTRY class-object
+        # map, its COM classes being created by plain `*_Constructor` free functions.
+        com_island_files=_derive_com_islands(crate),
     )
+
+
+def _derive_com_islands(crate: Path) -> dict:
+    """arch → the crate's own bindgen island, for the C++ class analyzer.
+
+    Two stems occur in the tree and both are legitimate: `island_<arch>.rs` when the profile
+    sets TYPES_STEM=island (shell32, to leave a hand-written types.rs alone) and
+    `types_<arch>.rs`, which is gen_driver_types.sh's default. Probed rather than configured
+    because the profile already decided, and a second place to say it is a second place to
+    get it wrong. Empty dict when the crate has no island yet — the caller reports that as a
+    missing prerequisite rather than proceeding against no layouts.
+    """
+    src = crate / "src"
+    islands = {}
+    for arch in ("i386", "amd64", "arm64"):
+        for stem in ("island", "types"):
+            candidate = src / f"{stem}_{arch}.rs"
+            if candidate.is_file():
+                islands[arch] = candidate
+                break
+    return islands
 
 
 def _user_prompt_addendum(name: str) -> Path:

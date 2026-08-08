@@ -258,6 +258,29 @@ def test_class_scaffold_owns_offsets_and_vtable_order(tmp_path: Path):
     assert "HEAP_ZERO_MEMORY" in rust
 
 
+def test_class_scaffold_stores_the_vptr_for_a_hand_rolled_com_class():
+    """A hand-rolled COM class has no ATL base, so the SCAFFOLD owes the vptr store.
+
+    C++ sets the vtable pointer in the constructor PROLOGUE, so it appears in no
+    source the model sees and a faithful `_ctor_body` cannot contain it. The ATL
+    path already writes `lpVtbl` in its `core::ptr::write` initializer; the plain
+    path used to skip it because a plain helper has no interfaces -- until a class
+    with interfaces and no BEGIN_COM_MAP arrived, and shipped a NULL `lpVtbl`.
+    """
+    recyclebin = SHELL32 / "shellrecyclebin"
+    cls = analyze_class(recyclebin / "recyclebin_generic.cpp", "RecycleBinGeneric")
+    assert cls.com_map == [], "fixture must stay the no-ATL-map case this guards"
+    interface = parse_widl_interface(recyclebin / "recyclebin.h", "IRecycleBin")
+    rust = render_class_scaffold(cls, [interface], allow_plain=True)
+    store = (
+        "    (*this).IRecycleBin_iface.lpVtbl = "
+        "core::ptr::addr_of!(RECYCLEBINGENERIC_IRECYCLEBIN_VTBL);"
+    )
+    assert store in rust
+    # C++ order: the vptr is live before the written body runs, which may call a virtual.
+    assert rust.index(store) < rust.index("RecycleBinGeneric_ctor_body(this);")
+
+
 @needs_generated_psdk_i386
 def test_class_scaffold_uses_one_slot_for_com_map_iid_aliases(tmp_path: Path):
     menu = analyze_class(
@@ -2307,6 +2330,48 @@ def test_worker_normalizer_discards_model_comments_inside_generated_signature():
     normalized = normalize_worker_body(model, expected)
     assert normalized.startswith(expected + " {")
     assert "retained for ABI" not in normalized
+
+
+def test_worker_normalizer_adopts_an_assembled_shaped_emission():
+    """On famous COM boilerplate the model writes the WRAPPER's shape from recall."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = (
+        '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 '
+        "{ InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref)) as u32 }"
+    )
+    normalized = normalize_worker_body(model, expected)
+    assert normalized.startswith(expected + " {")
+    assert "no_mangle" not in normalized
+    assert 'extern "C"' not in normalized
+    assert (
+        audit_worker_body("{ return InterlockedIncrement(&m_ref); }", normalized, "C_AddRef_body")
+        == []
+    )
+
+
+def test_worker_normalizer_refuses_to_adopt_a_forwarder_into_self_recursion():
+    """Renaming the wrapper's FORWARDER body would make `X_body` call `X_body`."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 { C_AddRef_body(this) }'
+    normalized = normalize_worker_body(model, expected)
+    assert "C_AddRef_body(this: *mut C)" not in normalized
+    assert audit_worker_body(
+        "{ return InterlockedIncrement(&m_ref); }", normalized, "C_AddRef_body"
+    )
+
+
+def test_worker_normalizer_refuses_to_adopt_when_the_slots_disagree():
+    """A rename cannot prove a body whose parameter list is not the generated one."""
+    expected = "pub unsafe fn C_f_body(this: *mut C, value: DWORD) -> HRESULT"
+    model = '#[no_mangle]\npub unsafe extern "C" fn C_f(this: *mut C, other: DWORD) -> i32 { S_OK }'
+    assert "C_f_body" not in normalize_worker_body(model, expected)
+
+
+def test_worker_normalizer_leaves_a_correct_worker_alone():
+    """The adoption must never fire when the contracted name is already present."""
+    expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
+    model = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG { 1 }"
+    assert normalize_worker_body(model, expected) == model
 
 
 def test_island_integer_aliases_requires_every_arch_to_agree(tmp_path):

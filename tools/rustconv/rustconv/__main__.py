@@ -1899,11 +1899,29 @@ def cmd_translate(args):
     # and the abi_enforce opt-out all exist to serve a translated COM class. A
     # --free-functions run has no class, so it takes the ordinary per-function path
     # that every other user-mode DLL uses.
-    cpp_com_mode = rustconv_target.name == "shell32" and not free_functions
+    # Does this run translate a C++ CLASS? shell32 always does — its whole remaining tail is
+    # C++ — and any other module does when the caller asks for one. This used to read
+    # `rustconv_target.name == "shell32"`, which made the class path unreachable everywhere
+    # else: `cpp_com_mode` was False for e.g. shellrecyclebin, and with it went the class
+    # scaffold, the interface rendering and EVERY audit_worker_body call. Nothing said so.
+    # The module still produced bodies, so it looked like it had worked.
+    cpp_class_target = rustconv_target.name == "shell32" or bool(
+        getattr(args, "cpp_com", False) or free_functions
+    )
+    # `--plain` is a MODIFIER of the class path (it drops the three COM preflight requirements
+    # for a file-local helper), not a mode of its own. Alone it silently fell through to the
+    # whole-TU path, which is how four hand-rolled COM classes got translated with no vtable
+    # instance, no _new/_delete and no lpVtbl wiring — a wild jump on the first method call.
+    if getattr(args, "plain", False) and not getattr(args, "cpp_com", False):
+        raise CppComError(
+            "--plain modifies the C++ class path; it is not a mode. Pass --cpp-com --class "
+            "<Name> with it for a file-local helper class, or drop it."
+        )
+    cpp_com_mode = cpp_class_target and not free_functions
 
     cpp_com_cls = None
     cpp_com_interfaces = []
-    if rustconv_target.name == "shell32" and free_functions:
+    if cpp_class_target and free_functions:
         if getattr(args, "cpp_com", False):
             raise CppComError(
                 "--free-functions and --cpp-com are mutually exclusive: one translates the "
@@ -1913,10 +1931,10 @@ def cmd_translate(args):
             raise CppComError(
                 "--free-functions accepts one C++ implementation file, not a directory"
             )
-    elif rustconv_target.name == "shell32":
+    elif cpp_class_target:
         if not getattr(args, "cpp_com", False) or not getattr(args, "class_name", None):
             raise CppComError(
-                "shell32 C++ translation is class-atomic: pass --cpp-com --class <Name> "
+                "C++ translation is class-atomic: pass --cpp-com --class <Name> "
                 "for a COM class, or --free-functions for the TU's classless functions. "
                 "The paid class path is disabled until deterministic COM preflight succeeds."
             )
@@ -1932,8 +1950,8 @@ def cmd_translate(args):
         cpp_com_cls = analyze_class(
             target_path,
             args.class_name,
-            object_map_source=rustconv_target.source_dir / "shell32.cpp",
-            island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
+            object_map_source=rustconv_target.com_object_map,
+            island_files=list(rustconv_target.com_island_files.values()),
         )
         scan = _extend_cpp_class_scan(
             scan_file(target_path),
@@ -1966,7 +1984,12 @@ def cmd_translate(args):
         else:
             cpp_com_interfaces = [
                 parse_widl_interface(
-                    discover_widl_header(REACTOS_ROOT, args.arch, interface=name),
+                    discover_widl_header(
+                        REACTOS_ROOT,
+                        args.arch,
+                        interface=name,
+                        extra_roots=[target_path.parent],
+                    ),
                     name,
                 )
                 for name in cpp_com_cls.interface_names()
@@ -1988,7 +2011,9 @@ def cmd_translate(args):
             }
             for name in sorted(referenced - known_interfaces):
                 try:
-                    header = discover_widl_header(REACTOS_ROOT, args.arch, interface=name)
+                    header = discover_widl_header(
+                        REACTOS_ROOT, args.arch, interface=name, extra_roots=[target_path.parent]
+                    )
                     dependency = parse_widl_interface(header, name)
                 except CppComError:
                     # Not every I-prefixed pointer is a COM interface
@@ -2097,6 +2122,8 @@ def cmd_translate(args):
     # --local-raii NAME=PATH: hand-verified Rust lowerings for file-local C++ RAII
     # structs. Parsed and read up front so a bad path fails before any paid call.
     local_raii_impls: dict[str, str] = {}
+    # NAME -> module path, for lowerings that live inside the output crate already.
+    local_raii_uses: dict[str, str] = {}
     for spec_arg in getattr(args, "local_raii", []) or []:
         if "=" not in spec_arg:
             raise CppComError(f"--local-raii expects NAME=PATH, got: {spec_arg}")
@@ -2127,6 +2154,20 @@ def cmd_translate(args):
         if not raii_file.is_file():
             raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
         local_raii_impls[raii_name] = raii_file.read_text()
+        # SEAL from the file, but SPLICE only when the lowering is genuinely file-local.
+        # The splice is verbatim, so pointing several runs at one SHARED support module
+        # copies it into each output: N incompatible `CStringW` types, and N copies of a
+        # `//!` module doc that is only legal at the top of a file. (Five recyclebin
+        # classes did exactly that -- 863 errors, ~600 of them this one root.) When the
+        # lowering already lives inside the output crate it is a real module, so import
+        # it instead; the worker contract is unaffected either way.
+        crate_src = (rustconv_target.output_crate / "src").resolve()
+        try:
+            relative = raii_file.resolve().relative_to(crate_src)
+        except ValueError:
+            continue
+        module = "::".join(("crate", *relative.with_suffix("").parts))
+        local_raii_uses[raii_name] = module
     if not args.dry_run:
         warn_if_tmp_output(getattr(args, "output", None))
         archive = RunArchive(label=target_path.name, model=model, target=rustconv_target.name)
@@ -2231,7 +2272,7 @@ def cmd_translate(args):
         sorted_deps = topological_sort(deps)
         cpp_com_wide_statics = ""
 
-        if rustconv_target.name == "shell32" and free_functions:
+        if cpp_class_target and free_functions:
             # Free functions only: a class method needs the deterministic COM scaffold
             # (vtable slot, `this` recovery, state layout) that only --cpp-com builds.
             # Name every skipped method rather than dropping it silently — an
@@ -3589,11 +3630,20 @@ def cmd_translate(args):
                     | {f"IID_{interface.name}" for interface in cpp_com_interfaces},
                     support_selection,
                     {pod.name for pod in cpp_com_cls.pod_state_types},
+                    provided_types=set(local_raii_impls),
                 )
             )
             if cpp_com_wide_statics:
                 deterministic.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():
+                if raii_name in local_raii_uses:
+                    deterministic.append(
+                        f"// --local-raii {raii_name}: owned by {local_raii_uses[raii_name]} "
+                        "in this crate; imported, not copied (workers received this API as a "
+                        "sealed contract either way)\n"
+                        f"use {local_raii_uses[raii_name]}::{raii_name};"
+                    )
+                    continue
                 deterministic.append(
                     f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
@@ -3607,6 +3657,14 @@ def cmd_translate(args):
             if cpp_com_wide_statics:
                 prelude.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():
+                if raii_name in local_raii_uses:
+                    prelude.append(
+                        f"// --local-raii {raii_name}: owned by {local_raii_uses[raii_name]} "
+                        "in this crate; imported, not copied (workers received this API as a "
+                        "sealed contract either way)\n"
+                        f"use {local_raii_uses[raii_name]}::{raii_name};"
+                    )
+                    continue
                 prelude.append(
                     f"// --local-raii {raii_name}: hand-verified lowering (spliced verbatim; "
                     "workers received this API as a sealed contract)\n" + raii_rust.rstrip()
@@ -3682,8 +3740,21 @@ def cmd_translate(args):
         # of a single TU two different substrates. CIDLDataObj.cpp is three slices and hit
         # exactly that. shell32's COM path is island-first by decision, so put every slice
         # on the prelude regardless of how it was written out.
-        if rustconv_target.name == "shell32" and (cpp_com_mode or args.free_functions):
+        if cpp_class_target and (cpp_com_mode or args.free_functions):
             narrow = r"^use crate::(?:shellcom|types|win32)::\*;\n"
+            # ...and the SYS-crate glob is just as narrow when the crate keeps its own island.
+            # shell32 has no sys glob to collapse, so this only bites a target whose substrate
+            # is `crate::types` reached through a prelude -- there the class path was importing
+            # `<sys>::<umbrella>::*` while every other module in the same crate imported
+            # `crate::prelude::*`, so the module's OWN generated types (recyclebin's
+            # DELETED_FILE_RECORD, INFO2_HEADER, IRecycleBin5) were simply not in scope. A
+            # `src/prelude.rs` is what makes a crate that shape, so key on it rather than on a
+            # crate name.
+            if (rustconv_target.output_crate / "src" / "prelude.rs").is_file():
+                umbrella = rustconv_target.sys_umbrella
+                if umbrella:
+                    sys_glob = re.escape(f"{rustconv_target.sys_crate}::{umbrella}")
+                    narrow = rf"(?:{narrow}|^use {sys_glob}::\*;\n)"
             if re.search(narrow, code, re.M):
                 code = re.sub(narrow, "", code, flags=re.M)
                 if not re.search(r"^use crate::prelude::\*;$", code, re.M):
