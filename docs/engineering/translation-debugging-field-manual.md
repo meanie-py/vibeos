@@ -2980,6 +2980,22 @@ implementation of the function it lives in — per arch AND per build flavour �
 suspect path actually reaches it.** A tripwire in a shared funnel is only as broad as the set of
 callers that genuinely funnel.
 
+**Reachability is not the only way an instrument can be structurally blind. Three more, all
+found on one wedge:** *(1)* **An instrument driven by the mechanism under suspicion goes silent
+exactly when it should fire.** The `[CENSUS]` sync watchdog loops on
+`KeDelayExecutionThread(10s)` — a timed wait — so a stall in timed-wait expiry stops the
+watchdog first, and its silence gets read as "nothing is stuck". Ask what your detector *depends
+on*, not just where it lives. *(2)* **A capture written to a directory someone else prunes is the
+same as no capture.** `wait_for_boot` wrote its per-vCPU PC dump to the VM's `work_dir`, which
+under the pytest `vm` fixture is a `tmp_path_factory` dir — pytest keeps the last 3 runs, so the
+one dump anybody ever needed had been deleted by unrelated later runs before it was read, and
+the run dir held only serial. Diagnostics go to the caller's durable dir, not wherever the
+harness happened to be working. *(3)* **One sample cannot tell FROZEN from BLOCKED.** A dead
+clock and a thread waiting on something that never arrives both park every vCPU in the idle loop
+and produce byte-identical dumps — and they are completely different bugs. Sample twice, seconds
+apart, and write the verdict into the artifact while the guest is still alive; the fork cannot be
+recovered afterwards.
+
 And after fixing anything a harness caught, **re-break one site deliberately and confirm the
 suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a
 tuple that can never disagree, and the result reads exactly like a stronger test.
