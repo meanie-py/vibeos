@@ -2352,7 +2352,10 @@ def test_worker_normalizer_adopts_an_assembled_shaped_emission():
 def test_worker_normalizer_refuses_to_adopt_a_forwarder_into_self_recursion():
     """Renaming the wrapper's FORWARDER body would make `X_body` call `X_body`."""
     expected = "pub unsafe fn C_AddRef_body(this: *mut C) -> ULONG"
-    model = '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 { C_AddRef_body(this) }'
+    model = (
+        '#[no_mangle]\npub unsafe extern "C" fn C_AddRef(this: *mut C) -> u32 '
+        "{ C_AddRef_body(this) }"
+    )
     normalized = normalize_worker_body(model, expected)
     assert "C_AddRef_body(this: *mut C)" not in normalized
     assert audit_worker_body(
@@ -2875,3 +2878,89 @@ def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
 
     with pytest.raises(CppComError, match="static"):
         _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
+
+
+class TestDeleteThisLowering:
+    """`delete this` is the scaffold's business, never the model's.
+
+    C++ hides `operator new` and the vtable store in the constructor prologue, so the
+    allocation strategy appears in no source the model reads. Asked to free memory it
+    cannot see the origin of, it produced five different answers for shellrecyclebin's five
+    identical `delete this;` -- CRT `free` and `Box::from_raw` over `HeapAlloc`'d memory,
+    plus a placeholder symbol.
+    """
+
+    SOURCE = (
+        "ULONG RecycleBin5Enum::Release() { ULONG r = InterlockedDecrement(&m_ref); "
+        "if (r == 0) delete this; return r; }"
+    )
+
+    @pytest.mark.parametrize(
+        "emitted",
+        [
+            "drop(Box::from_raw(this));",
+            "let _ = Box::from_raw(this);",
+            "alloc::boxed::Box::from_raw(this);",
+            "__rustconv_delete(this);",
+            "free(this as *mut core::ffi::c_void);",
+            "let _ = SENDTO_ITEM_delete(this);",
+        ],
+    )
+    def test_every_emitted_spelling_becomes_the_scaffold_delete(self, emitted):
+        out = normalize_worker_semantics(
+            self.SOURCE,
+            "pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) {\n    "
+            + emitted
+            + "\n}",
+        )
+        assert "RecycleBin5Enum_delete(this);" in out
+        for banned in ("Box::from_raw", "__rustconv_", "free(", "SENDTO_ITEM_delete"):
+            assert banned not in out
+
+    def test_the_redundant_dtor_call_goes_with_it(self):
+        # X_delete runs the destructor itself; keeping the model's explicit dtor call too
+        # would run every member destructor twice.
+        out = normalize_worker_semantics(
+            self.SOURCE,
+            "pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) {\n"
+            "    RecycleBin5Enum_dtor_body(this);\n"
+            "    free(this as *mut core::ffi::c_void);\n}",
+        )
+        assert out.count("RecycleBin5Enum_dtor_body") == 0
+        assert out.count("RecycleBin5Enum_delete(this);") == 1
+
+    def test_a_body_with_no_delete_this_is_untouched(self):
+        source = "ULONG X::AddRef() { return InterlockedIncrement(&m_ref); }"
+        rust = "pub unsafe fn X_AddRef_body(this: *mut X) {\n    let _ = Box::from_raw(other);\n}"
+        assert normalize_worker_semantics(source, rust) == rust
+
+    def test_the_sendto_item_rewrite_is_scoped_to_sendto_item(self):
+        # Unguarded, this rewrote EVERY `Box::from_raw(x);` in every module into a call to a
+        # shell32 helper. recyclebin's RecycleBinGeneric::Release came out calling
+        # SENDTO_ITEM_delete -- a function absent from that crate, which read as a model
+        # hallucination and was ours.
+        source = "void CFoo::Drop() { free_item(p); }"
+        rust = "pub unsafe fn CFoo_Drop_body(this: *mut CFoo) {\n    alloc::boxed::Box::from_raw(p);\n}"
+        assert "SENDTO_ITEM_delete" not in normalize_worker_semantics(source, rust)
+
+    def test_a_worker_that_still_owns_a_deallocator_is_a_finding(self):
+        findings = audit_worker_body(
+            "void X::F() {}",
+            "pub unsafe fn X_F_body(this: *mut X) { free(this as *mut c_void); }",
+            "X_F_body",
+        )
+        assert any("deallocator" in f for f in findings)
+
+    def test_a_body_with_no_double_colon_still_lowers(self):
+        # `owner` scrapes a `Class::Method(` token out of the BODY text, and RecycleBin5::Release
+        # is three lines with no `::` in them at all — so the class came back empty and exactly
+        # one of the five sites silently kept its invented deallocator. The worker signature
+        # always carries `this: *mut <Class>`.
+        source = "{ ULONG r = InterlockedDecrement(&m_ref); if (r == 0) delete this; return r; }"
+        rust = (
+            "pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> ULONG {\n"
+            "    __rustconv_delete(this);\n}"
+        )
+        out = normalize_worker_semantics(source, rust)
+        assert "RecycleBin5_delete(this);" in out
+        assert "__rustconv_delete" not in out
