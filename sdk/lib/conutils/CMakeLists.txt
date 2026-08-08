@@ -28,7 +28,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(CONUTILS_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE CONUTILS_RUST_SRCS ${CONUTILS_RUST_WORKSPACE_DIR}/conutils-rust/src/*.rs)
+rust_crate_sources(CONUTILS_RUST_SRCS "${CONUTILS_RUST_WORKSPACE_DIR}" conutils-rust)
 add_custom_command(
     OUTPUT ${CONUTILS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

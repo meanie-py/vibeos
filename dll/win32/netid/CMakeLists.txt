@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(NETID_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netid-target")
 set(NETID_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnetid_rust.a")
-file(GLOB_RECURSE NETID_RUST_SRCS "${NETID_RUST_WORKSPACE_DIR}/netid-rust/src/*.rs")
+rust_crate_sources(NETID_RUST_SRCS "${NETID_RUST_WORKSPACE_DIR}" netid-rust)
 add_custom_command(
     OUTPUT ${NETID_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

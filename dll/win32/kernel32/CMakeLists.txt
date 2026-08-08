@@ -18,7 +18,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(KERNEL32_SHARED_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-shared-target")
 set(KERNEL32_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_shared_rust.a")
-file(GLOB_RECURSE KERNEL32_SHARED_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-shared-rust/src/*.rs")
+rust_crate_sources(KERNEL32_SHARED_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}" kernel32-shared-rust)
 add_custom_command(
     OUTPUT ${KERNEL32_SHARED_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -43,7 +43,7 @@ add_custom_target(rust_kernel32_shared DEPENDS ${KERNEL32_SHARED_RUST_LIB})
 # kernel32-rust's DllMain in kernel32.dll, which this .a also links into).
 set(KERNEL32_VISTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-kernel32-vista-target")
 set(KERNEL32_VISTA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libkernel32_vista_rust.a")
-file(GLOB_RECURSE KERNEL32_VISTA_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-vista-rust/src/*.rs")
+rust_crate_sources(KERNEL32_VISTA_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}" kernel32-vista-rust)
 add_custom_command(
     OUTPUT ${KERNEL32_VISTA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -171,7 +171,7 @@ endif()
 # GLOB_RECURSE so .rs under src/<subdir>/ (e.g. src/string/locale.rs) also retrigger
 # the libkernel32_rust.a rebuild — a non-recursive src/*.rs glob silently used a stale
 # archive when only subdir files changed.
-file(GLOB_RECURSE KERNEL32_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}/kernel32-rust/src/*.rs")
+rust_crate_sources(KERNEL32_RUST_SRCS "${KERNEL32_RUST_WORKSPACE_DIR}" kernel32-rust)
 add_custom_command(
     OUTPUT ${KERNEL32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

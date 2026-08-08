@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBSTOR_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBSTOR_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBSTOR_RUST_SRCS ${USBSTOR_RUST_WORKSPACE_DIR}/usbstor-rust/src/*.rs)
+rust_crate_sources(USBSTOR_RUST_SRCS "${USBSTOR_RUST_WORKSPACE_DIR}" usbstor-rust)
 add_custom_command(
     OUTPUT ${USBSTOR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

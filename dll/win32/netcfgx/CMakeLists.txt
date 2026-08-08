@@ -31,7 +31,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(NETCFGX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-netcfgx-target")
 set(NETCFGX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libnetcfgx_rust.a")
-file(GLOB_RECURSE NETCFGX_RUST_SRCS "${NETCFGX_RUST_WORKSPACE_DIR}/netcfgx-rust/src/*.rs")
+rust_crate_sources(NETCFGX_RUST_SRCS "${NETCFGX_RUST_WORKSPACE_DIR}" netcfgx-rust)
 add_custom_command(
     OUTPUT ${NETCFGX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

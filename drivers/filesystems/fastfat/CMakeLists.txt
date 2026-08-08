@@ -28,7 +28,7 @@ elseif(ARCH STREQUAL "arm64")
     set(FASTFAT_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(FASTFAT_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE FASTFAT_RUST_SRCS ${FASTFAT_RUST_WORKSPACE_DIR}/fastfat-rust/src/*.rs)
+rust_crate_sources(FASTFAT_RUST_SRCS "${FASTFAT_RUST_WORKSPACE_DIR}" fastfat-rust)
 add_custom_command(
     OUTPUT ${FASTFAT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(MOUHID_RUST_RUSTFLAGS "")
 endif()
 
-file(GLOB_RECURSE MOUHID_RUST_SRCS ${MOUHID_RUST_WORKSPACE_DIR}/mouhid-rust/src/*.rs)
+rust_crate_sources(MOUHID_RUST_SRCS "${MOUHID_RUST_WORKSPACE_DIR}" mouhid-rust)
 
 add_custom_command(
     OUTPUT ${MOUHID_RUST_LIB}

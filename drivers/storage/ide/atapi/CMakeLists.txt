@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(ATAPI_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(ATAPI_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE ATAPI_RUST_SRCS ${ATAPI_RUST_WORKSPACE_DIR}/atapi-rust/src/*.rs)
+rust_crate_sources(ATAPI_RUST_SRCS "${ATAPI_RUST_WORKSPACE_DIR}" atapi-rust)
 add_custom_command(
     OUTPUT ${ATAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -29,7 +29,7 @@ elseif(ARCH STREQUAL "arm64")
     set(AFD_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(AFD_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE AFD_RUST_SRCS ${AFD_RUST_WORKSPACE_DIR}/afd-rust/src/*.rs)
+rust_crate_sources(AFD_RUST_SRCS "${AFD_RUST_WORKSPACE_DIR}" afd-rust)
 add_custom_command(
     OUTPUT ${AFD_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

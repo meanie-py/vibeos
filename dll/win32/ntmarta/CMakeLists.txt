@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(NTMARTA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ntmarta-target")
 set(NTMARTA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libntmarta_rust.a")
-file(GLOB_RECURSE NTMARTA_RUST_SRCS "${NTMARTA_RUST_WORKSPACE_DIR}/ntmarta-rust/src/*.rs")
+rust_crate_sources(NTMARTA_RUST_SRCS "${NTMARTA_RUST_WORKSPACE_DIR}" ntmarta-rust)
 add_custom_command(
     OUTPUT ${NTMARTA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

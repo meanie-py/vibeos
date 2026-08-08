@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBHUB_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBHUB_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBHUB_RUST_SRCS ${USBHUB_RUST_WORKSPACE_DIR}/usbhub-rust/src/*.rs)
+rust_crate_sources(USBHUB_RUST_SRCS "${USBHUB_RUST_WORKSPACE_DIR}" usbhub-rust)
 add_custom_command(
     OUTPUT ${USBHUB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

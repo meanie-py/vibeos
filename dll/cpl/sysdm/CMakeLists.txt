@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(SYSDM_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-sysdm-target")
 set(SYSDM_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsysdm_rust.a")
-file(GLOB_RECURSE SYSDM_RUST_SRCS "${SYSDM_RUST_WORKSPACE_DIR}/sysdm-rust/src/*.rs")
+rust_crate_sources(SYSDM_RUST_SRCS "${SYSDM_RUST_WORKSPACE_DIR}" sysdm-rust)
 add_custom_command(
     OUTPUT ${SYSDM_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

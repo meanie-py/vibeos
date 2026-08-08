@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(MSAFD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msafd-target")
 set(MSAFD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsafd_rust.a")
-file(GLOB_RECURSE MSAFD_RUST_SRCS "${MSAFD_RUST_WORKSPACE_DIR}/msafd-rust/src/*.rs")
+rust_crate_sources(MSAFD_RUST_SRCS "${MSAFD_RUST_WORKSPACE_DIR}" msafd-rust)
 add_custom_command(
     OUTPUT ${MSAFD_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

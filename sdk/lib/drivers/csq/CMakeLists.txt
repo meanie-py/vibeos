@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(CSQ_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(CSQ_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE CSQ_RUST_SRCS ${CSQ_RUST_WORKSPACE_DIR}/csq-rust/src/*.rs)
+rust_crate_sources(CSQ_RUST_SRCS "${CSQ_RUST_WORKSPACE_DIR}" csq-rust)
 add_custom_command(
     OUTPUT ${CSQ_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

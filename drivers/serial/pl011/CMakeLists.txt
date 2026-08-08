@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(PL011_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PL011_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE PL011_RUST_SRCS ${PL011_RUST_WORKSPACE_DIR}/pl011-rust/src/*.rs)
+rust_crate_sources(PL011_RUST_SRCS "${PL011_RUST_WORKSPACE_DIR}" pl011-rust)
 add_custom_command(
     OUTPUT ${PL011_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

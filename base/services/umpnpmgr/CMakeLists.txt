@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(UMPNPMGR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-umpnpmgr-target")
 set(UMPNPMGR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libumpnpmgr_rust.a")
-file(GLOB_RECURSE UMPNPMGR_RUST_SRCS "${UMPNPMGR_RUST_WORKSPACE_DIR}/umpnpmgr-rust/src/*.rs")
+rust_crate_sources(UMPNPMGR_RUST_SRCS "${UMPNPMGR_RUST_WORKSPACE_DIR}" umpnpmgr-rust)
 add_custom_command(
     OUTPUT ${UMPNPMGR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

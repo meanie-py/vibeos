@@ -24,7 +24,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WKSSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wkssvc-target")
 set(WKSSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwkssvc_rust.a")
-file(GLOB_RECURSE WKSSVC_RUST_SRCS "${WKSSVC_RUST_WORKSPACE_DIR}/wkssvc-rust/src/*.rs")
+rust_crate_sources(WKSSVC_RUST_SRCS "${WKSSVC_RUST_WORKSPACE_DIR}" wkssvc-rust)
 add_custom_command(
     OUTPUT ${WKSSVC_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

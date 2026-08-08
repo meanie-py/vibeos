@@ -27,7 +27,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(MSV1_0_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-msv1_0-target")
 set(MSV1_0_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsv1_0_rust.a")
-file(GLOB_RECURSE MSV1_0_RUST_SRCS "${MSV1_0_RUST_WORKSPACE_DIR}/msv1_0-rust/src/*.rs")
+rust_crate_sources(MSV1_0_RUST_SRCS "${MSV1_0_RUST_WORKSPACE_DIR}" msv1_0-rust)
 add_custom_command(
     OUTPUT ${MSV1_0_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

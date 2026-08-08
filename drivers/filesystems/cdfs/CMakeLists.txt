@@ -28,7 +28,7 @@ elseif(ARCH STREQUAL "arm64")
     set(CDFS_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(CDFS_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE CDFS_RUST_SRCS ${CDFS_RUST_WORKSPACE_DIR}/cdfs-rust/src/*.rs)
+rust_crate_sources(CDFS_RUST_SRCS "${CDFS_RUST_WORKSPACE_DIR}" cdfs-rust)
 add_custom_command(
     OUTPUT ${CDFS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
