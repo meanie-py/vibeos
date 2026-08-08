@@ -185,7 +185,7 @@ pub unsafe fn RecycleBinGenericEnum_dtor_body(this: *mut RecycleBinGenericEnum) 
 pub unsafe fn RecycleBinGenericEnum_Release_body(this: *mut RecycleBinGenericEnum) -> ULONG {
     let refCount = InterlockedDecrement(&mut (*this).m_ref);
     if refCount == 0 {
-        let _ = Box::from_raw(this);
+        RecycleBinGenericEnum_delete(this);
     }
     refCount as u32
 }

@@ -358,7 +358,7 @@ pub unsafe fn RecycleBin5File_Constructor_body(prb: *mut IRecycleBin5, Folder: L
     }
     *ppFile = core::ptr::null_mut();
 
-    let pThis: *mut RecycleBin5File = RecycleBin5File();
+    let pThis: *mut RecycleBin5File = RecycleBin5File() as *mut RecycleBin5File;
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -366,7 +366,10 @@ pub unsafe fn RecycleBin5File_Constructor_body(prb: *mut IRecycleBin5, Folder: L
     let hr = RecycleBin5File_Init_body(pThis, prb, Folder, pDeletedFile);
     if hr < 0 {
         RecycleBin5File_dtor_body(pThis);
-        free(pThis as *mut u8);
+        core::alloc::dealloc(
+            pThis as *mut u8,
+            core::alloc::Layout::new::<RecycleBin5File>(),
+        );
         return hr;
     }
 
@@ -405,8 +408,7 @@ pub unsafe fn RecycleBin5Enum_dtor_body(this: *mut RecycleBin5Enum) -> () {
 pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) -> ULONG {
     let refCount = InterlockedDecrement(&raw mut (*this).m_ref);
     if refCount == 0 {
-        RecycleBin5Enum_dtor_body(this);
-    free(this as *mut core::ffi::c_void);
+        RecycleBin5Enum_delete(this);
     }
     refCount
 }

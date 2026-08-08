@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_delete;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_delete;
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
 use crate::shellrecyclebin::recyclebin_support::CZZWStr;
 
@@ -31,27 +32,26 @@ pub struct RecycleBin5Enum {
 unsafe extern "C" fn RecycleBin5File_Constructor(
     prb: *mut IRecycleBin5,
     Folder: LPCWSTR,
-    pDeletedFile: PDELETED_FILE_RECORD,
-    ppFile: *mut *mut IRecycleBinFile,
+    pDeletedFile: *mut DELETED_FILE_RECORD,
+    ppFile: *mut *mut IRecycleBinFile
 ) -> HRESULT {
     if ppFile.is_null() {
         return E_POINTER;
     }
-    {
-        *ppFile = core::ptr::null_mut();
-    }
-    let pThis: *mut RecycleBin5File = RecycleBin5File();
+    *ppFile = core::ptr::null_mut();
+
+    let pThis = RecycleBin5File() as *mut RecycleBin5File;
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
-    let hr: HRESULT = RecycleBin5File_Init(pThis, prb, Folder, pDeletedFile);
+
+    let hr = (*pThis).Init(prb, Folder, pDeletedFile);
     if hr < 0 {
-        RecycleBin5File_Delete(pThis);
+        RecycleBin5File_delete(pThis);
         return hr;
     }
-    {
-        *ppFile = pThis as *mut IRecycleBinFile;
-    }
+
+    *ppFile = pThis as *mut IRecycleBinFile;
     S_OK
 }
 
