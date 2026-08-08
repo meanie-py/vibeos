@@ -706,20 +706,8 @@ unsafe fn acpi_bus_get_perf_flags(device: *mut acpi_device) -> i32 {
 // Use the ddk `_KDPC` (the type KeInitializeDpc's PKDEFERRED_ROUTINE expects);
 // `use ntkrnl_sys::ke::*` also pulls an opaque ke::KDPC whose PKDPC would not
 // unify with the ddk binding.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn acpi_bus_generate_event_dpc(
-    Dpc: *mut ntkrnl_sys::ddk::_KDPC,
-    DeferredContext: PVOID,
-    SystemArgument1: PVOID,
-    SystemArgument2: PVOID,
-) {
-    acpi_bus_generate_event_dpc_impl(Dpc, DeferredContext, SystemArgument1, SystemArgument2)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn acpi_bus_generate_event_dpc(
+pub unsafe extern "system" fn acpi_bus_generate_event_dpc(
     Dpc: *mut ntkrnl_sys::ddk::_KDPC,
     DeferredContext: PVOID,
     SystemArgument1: PVOID,

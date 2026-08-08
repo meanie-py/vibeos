@@ -135,20 +135,7 @@ extern "fastcall" {
 // but referenced an extern; reading the C carefully: it DOES set it to
 // xHalGetInterruptTranslator). The C declares it in include/internal/hal.h
 // but the implementation lives in hal.dll. Declare it as extern.
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
-    fn xHalGetInterruptTranslator(
-        ParentInterfaceType: INTERFACE_TYPE,
-        ParentBusNumber: ULONG,
-        BridgeInterfaceType: INTERFACE_TYPE,
-        Size: USHORT,
-        Version: USHORT,
-        Translator: PTRANSLATOR_INTERFACE,
-        BridgeBusNumber: PULONG,
-    ) -> NTSTATUS;
-}
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn xHalGetInterruptTranslator(
         ParentInterfaceType: INTERFACE_TYPE,
         ParentBusNumber: ULONG,
@@ -164,45 +151,23 @@ extern "stdcall" {
 // Function bodies — NTAPI (stdcall on i386, "C" elsewhere).
 // ============================================================================
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalVectorToIDTEntry(Vector: ULONG) -> UCHAR {
-    Vector as UCHAR
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalVectorToIDTEntry(Vector: ULONG) -> UCHAR {
+pub unsafe extern "system" fn xHalVectorToIDTEntry(Vector: ULONG) -> UCHAR {
     Vector as UCHAR
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalHaltSystem() {
-    loop {}
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalHaltSystem() {
+pub unsafe extern "system" fn xHalHaltSystem() {
     loop {}
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalEndOfBoot() {
-    // PAGED_CODE();
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalEndOfBoot() {
+pub unsafe extern "system" fn xHalEndOfBoot() {
     // PAGED_CODE();
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalSetWakeEnable(_Enable: BOOLEAN) {}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalSetWakeEnable(_Enable: BOOLEAN) {}
+pub unsafe extern "system" fn xHalSetWakeEnable(_Enable: BOOLEAN) {}
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
@@ -228,86 +193,39 @@ pub unsafe extern "C" fn xHalReferenceHandler(_BusHandler: PBUS_HANDLER) {}
 #[no_mangle]
 pub unsafe extern "fastcall" fn xHalReferenceHandler(_BusHandler: PBUS_HANDLER) {}
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalInitPnpDriver() -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalInitPnpDriver() -> NTSTATUS {
+pub unsafe extern "system" fn xHalInitPnpDriver() -> NTSTATUS {
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalInitPowerManagement(
-    _PmDriverDispatchTable: PPM_DISPATCH_TABLE,
-    _PmHalDispatchTable: *mut PPM_DISPATCH_TABLE,
-) -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalInitPowerManagement(
+pub unsafe extern "system" fn xHalInitPowerManagement(
     _PmDriverDispatchTable: PPM_DISPATCH_TABLE,
     _PmHalDispatchTable: *mut PPM_DISPATCH_TABLE,
 ) -> NTSTATUS {
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalStartMirroring() -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalStartMirroring() -> NTSTATUS {
+pub unsafe extern "system" fn xHalStartMirroring() -> NTSTATUS {
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalEndMirroring(_PassNumber: ULONG) -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalEndMirroring(_PassNumber: ULONG) -> NTSTATUS {
+pub unsafe extern "system" fn xHalEndMirroring(_PassNumber: ULONG) -> NTSTATUS {
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalMirrorPhysicalMemory(
-    _PhysicalAddress: PHYSICAL_ADDRESS,
-    _NumberOfBytes: LARGE_INTEGER,
-) -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalMirrorPhysicalMemory(
+pub unsafe extern "system" fn xHalMirrorPhysicalMemory(
     _PhysicalAddress: PHYSICAL_ADDRESS,
     _NumberOfBytes: LARGE_INTEGER,
 ) -> NTSTATUS {
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalQueryBusSlots(
-    _BusHandler: PBUS_HANDLER,
-    _BufferSize: ULONG,
-    _SlotNumbers: PULONG,
-    _ReturnedLength: PULONG,
-) -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalQueryBusSlots(
+pub unsafe extern "system" fn xHalQueryBusSlots(
     _BusHandler: PBUS_HANDLER,
     _BufferSize: ULONG,
     _SlotNumbers: PULONG,
@@ -316,18 +234,8 @@ pub unsafe extern "stdcall" fn xHalQueryBusSlots(
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalSetSystemInformation(
-    _InformationClass: HAL_SET_INFORMATION_CLASS,
-    _BufferSize: ULONG,
-    _Buffer: PVOID,
-) -> NTSTATUS {
-    STATUS_INVALID_LEVEL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalSetSystemInformation(
+pub unsafe extern "system" fn xHalSetSystemInformation(
     _InformationClass: HAL_SET_INFORMATION_CLASS,
     _BufferSize: ULONG,
     _Buffer: PVOID,
@@ -335,19 +243,8 @@ pub unsafe extern "stdcall" fn xHalSetSystemInformation(
     STATUS_INVALID_LEVEL
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalQuerySystemInformation(
-    _InformationClass: HAL_QUERY_INFORMATION_CLASS,
-    _BufferSize: ULONG,
-    _Buffer: PVOID,
-    _ReturnedLength: PULONG,
-) -> NTSTATUS {
-    STATUS_INVALID_LEVEL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalQuerySystemInformation(
+pub unsafe extern "system" fn xHalQuerySystemInformation(
     _InformationClass: HAL_QUERY_INFORMATION_CLASS,
     _BufferSize: ULONG,
     _Buffer: PVOID,
@@ -356,30 +253,11 @@ pub unsafe extern "stdcall" fn xHalQuerySystemInformation(
     STATUS_INVALID_LEVEL
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalLocateHiberRanges(_MemoryMap: PVOID) {}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalLocateHiberRanges(_MemoryMap: PVOID) {}
+pub unsafe extern "system" fn xHalLocateHiberRanges(_MemoryMap: PVOID) {}
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalRegisterBusHandler(
-    _InterfaceType: INTERFACE_TYPE,
-    _ConfigSpace: BUS_DATA_TYPE,
-    _BusNumber: ULONG,
-    _ParentInterfaceType: INTERFACE_TYPE,
-    _ParentBusNumber: ULONG,
-    _ContextSize: ULONG,
-    _InstallCallback: PINSTALL_BUS_HANDLER,
-    _BusHandler: *mut PBUS_HANDLER,
-) -> NTSTATUS {
-    STATUS_NOT_SUPPORTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalRegisterBusHandler(
+pub unsafe extern "system" fn xHalRegisterBusHandler(
     _InterfaceType: INTERFACE_TYPE,
     _ConfigSpace: BUS_DATA_TYPE,
     _BusNumber: ULONG,
@@ -392,16 +270,8 @@ pub unsafe extern "stdcall" fn xHalRegisterBusHandler(
     STATUS_NOT_SUPPORTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalSetWakeAlarm(
-    _AlartTime: ULONGLONG,
-    _TimeFields: PTIME_FIELDS,
-) {
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalSetWakeAlarm(
+pub unsafe extern "system" fn xHalSetWakeAlarm(
     _AlartTime: ULONGLONG,
     _TimeFields: PTIME_FIELDS,
 ) {
@@ -409,7 +279,7 @@ pub unsafe extern "stdcall" fn xHalSetWakeAlarm(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalTranslateBusAddress(
+pub unsafe extern "system" fn xHalTranslateBusAddress(
     _InterfaceType: INTERFACE_TYPE,
     _BusNumber: ULONG,
     _BusAddress: PHYSICAL_ADDRESS,
@@ -421,7 +291,7 @@ pub unsafe extern "C" fn xHalTranslateBusAddress(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn xHalTranslateBusAddress(
+pub unsafe extern "system" fn xHalTranslateBusAddress(
     _InterfaceType: INTERFACE_TYPE,
     _BusNumber: ULONG,
     _BusAddress: PHYSICAL_ADDRESS,
@@ -434,19 +304,8 @@ pub unsafe extern "stdcall" fn xHalTranslateBusAddress(
     KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0, 0, 0, 0);
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xHalAllocateMapRegisters(
-    _AdapterObject: PADAPTER_OBJECT,
-    _Unknown: ULONG,
-    _Unknown2: ULONG,
-    _Registers: PMAP_REGISTER_ENTRY,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xHalAllocateMapRegisters(
+pub unsafe extern "system" fn xHalAllocateMapRegisters(
     _AdapterObject: PADAPTER_OBJECT,
     _Unknown: ULONG,
     _Unknown2: ULONG,
@@ -455,67 +314,31 @@ pub unsafe extern "stdcall" fn xHalAllocateMapRegisters(
     STATUS_NOT_IMPLEMENTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xKdSetupPciDeviceForDebugging(
-    _LoaderBlock: PVOID,
-    _PciDevice: PDEBUG_DEVICE_DESCRIPTOR,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xKdSetupPciDeviceForDebugging(
+pub unsafe extern "system" fn xKdSetupPciDeviceForDebugging(
     _LoaderBlock: PVOID,
     _PciDevice: PDEBUG_DEVICE_DESCRIPTOR,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xKdReleasePciDeviceForDebugging(
-    _PciDevice: PDEBUG_DEVICE_DESCRIPTOR,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xKdReleasePciDeviceForDebugging(
+pub unsafe extern "system" fn xKdReleasePciDeviceForDebugging(
     _PciDevice: PDEBUG_DEVICE_DESCRIPTOR,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xKdGetAcpiTablePhase(
-    _LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
-    _Signature: ULONG,
-) -> PVOID {
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xKdGetAcpiTablePhase(
+pub unsafe extern "system" fn xKdGetAcpiTablePhase(
     _LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
     _Signature: ULONG,
 ) -> PVOID {
     core::ptr::null_mut()
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn MatchAll(
-    _PhysicalAddress: PHYSICAL_ADDRESS,
-    _NumberPages: ULONG,
-    _FlushCurrentTLB: BOOLEAN,
-) -> PVOID {
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn MatchAll(
+pub unsafe extern "system" fn MatchAll(
     _PhysicalAddress: PHYSICAL_ADDRESS,
     _NumberPages: ULONG,
     _FlushCurrentTLB: BOOLEAN,
@@ -523,17 +346,8 @@ pub unsafe extern "stdcall" fn MatchAll(
     core::ptr::null_mut()
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn xKdUnmapVirtualAddress(
-    _VirtualAddress: PVOID,
-    _NumberPages: ULONG,
-    _FlushCurrentTLB: BOOLEAN,
-) {
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn xKdUnmapVirtualAddress(
+pub unsafe extern "system" fn xKdUnmapVirtualAddress(
     _VirtualAddress: PVOID,
     _NumberPages: ULONG,
     _FlushCurrentTLB: BOOLEAN,
@@ -669,7 +483,7 @@ pub static mut HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH = HAL_PRIVATE_DISPA
     #[cfg(not(target_arch = "x86"))]
     KdMapPhysicalMemory64: unsafe {
         core::mem::transmute::<
-            Option<unsafe extern "C" fn(PHYSICAL_ADDRESS, ULONG, BOOLEAN) -> PVOID>,
+            Option<unsafe extern "system" fn(PHYSICAL_ADDRESS, ULONG, BOOLEAN) -> PVOID>,
             ntkrnl_sys::ddk::pKdMapPhysicalMemory64,
         >(Some(MatchAll))
     },
@@ -686,7 +500,7 @@ pub static mut HalPrivateDispatchTable: HAL_PRIVATE_DISPATCH = HAL_PRIVATE_DISPA
     #[cfg(not(target_arch = "x86"))]
     KdUnmapVirtualAddress: unsafe {
         core::mem::transmute::<
-            Option<unsafe extern "C" fn(PVOID, ULONG, BOOLEAN)>,
+            Option<unsafe extern "system" fn(PVOID, ULONG, BOOLEAN)>,
             ntkrnl_sys::ddk::pKdUnmapVirtualAddress,
         >(Some(xKdUnmapVirtualAddress))
     },

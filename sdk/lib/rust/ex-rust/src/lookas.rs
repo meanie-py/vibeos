@@ -49,10 +49,13 @@ extern "C" {
     ExfInterlockedInsertTailList(ListHead, ListEntry, Lock)
 }
 
-// PALLOCATE_FUNCTION / PFREE_FUNCTION use "stdcall" on i386 and "C" on amd64/arm64.
-// Provide two sets of wrappers gated by cfg.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ExAllocatePoolWithTag_C(
+// PALLOCATE_FUNCTION / PFREE_FUNCTION are `system` in the island now, which is the stdcall
+// they compile to on i386 and the C they compile to on amd64/arm64 — so one wrapper each
+// replaces the two cfg-gated sets. (They were written as two GROUPS rather than adjacent
+// twins, so collapse_abi_twins.py, which requires the twin to follow its partner, could not
+// see them: the item after the x86 allocate wrapper is the x86 free wrapper.)
+/// Wrapper matching the PALLOCATE_FUNCTION signature.
+unsafe extern "system" fn ExAllocatePoolWithTag_C(
     PoolType: POOL_TYPE,
     NumberOfBytes: SIZE_T,
     Tag: ULONG,
@@ -60,24 +63,8 @@ unsafe extern "stdcall" fn ExAllocatePoolWithTag_C(
     ExAllocatePoolWithTag(PoolType, NumberOfBytes as usize, Tag)
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ExFreePool_C(Buffer: PVOID) {
-    ExFreePoolWithTag(Buffer, 0);
-}
-
-#[cfg(not(target_arch = "x86"))]
-/// Wrapper with `extern "C"` ABI matching PALLOCATE_FUNCTION signature.
-unsafe extern "C" fn ExAllocatePoolWithTag_C(
-    PoolType: POOL_TYPE,
-    NumberOfBytes: SIZE_T,
-    Tag: ULONG,
-) -> PVOID {
-    ExAllocatePoolWithTag(PoolType, NumberOfBytes as usize, Tag)
-}
-
-#[cfg(not(target_arch = "x86"))]
-/// Wrapper with `extern "C"` ABI matching PFREE_FUNCTION signature.
-unsafe extern "C" fn ExFreePool_C(Buffer: PVOID) {
+/// Wrapper matching the PFREE_FUNCTION signature.
+unsafe extern "system" fn ExFreePool_C(Buffer: PVOID) {
     ExFreePoolWithTag(Buffer, 0);
 }
 

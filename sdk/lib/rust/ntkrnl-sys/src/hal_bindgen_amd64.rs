@@ -7148,7 +7148,7 @@ pub struct _PROCESSOR_NUMBER {
 pub type PROCESSOR_NUMBER = _PROCESSOR_NUMBER;
 pub type PPROCESSOR_NUMBER = *mut _PROCESSOR_NUMBER;
 pub type EXCEPTION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ExceptionRecord: *mut _EXCEPTION_RECORD,
         EstablisherFrame: PVOID,
         ContextRecord: *mut _CONTEXT,
@@ -7678,7 +7678,7 @@ pub struct _RTL_BITMAP_RUN {
 pub type RTL_BITMAP_RUN = _RTL_BITMAP_RUN;
 pub type PRTL_BITMAP_RUN = *mut _RTL_BITMAP_RUN;
 pub type RTL_QUERY_REGISTRY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ValueName: PWSTR,
         ValueType: ULONG,
         ValueData: PVOID,
@@ -9026,7 +9026,7 @@ pub const _KBUGCHECK_CALLBACK_REASON_KbCallbackAddPages: _KBUGCHECK_CALLBACK_REA
 pub type _KBUGCHECK_CALLBACK_REASON = ::core::ffi::c_uint;
 pub use self::_KBUGCHECK_CALLBACK_REASON as KBUGCHECK_CALLBACK_REASON;
 pub type KBUGCHECK_REASON_CALLBACK_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Reason: KBUGCHECK_CALLBACK_REASON,
         Record: *mut _KBUGCHECK_REASON_CALLBACK_RECORD,
         ReasonSpecificData: PVOID,
@@ -9094,7 +9094,7 @@ pub const _KBUGCHECK_BUFFER_DUMP_STATE_BufferIncomplete: _KBUGCHECK_BUFFER_DUMP_
 pub type _KBUGCHECK_BUFFER_DUMP_STATE = ::core::ffi::c_uint;
 pub use self::_KBUGCHECK_BUFFER_DUMP_STATE as KBUGCHECK_BUFFER_DUMP_STATE;
 pub type KBUGCHECK_CALLBACK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID, Length: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID, Length: ULONG)>;
 pub type PKBUGCHECK_CALLBACK_ROUTINE = KBUGCHECK_CALLBACK_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -9110,7 +9110,7 @@ pub struct _KBUGCHECK_CALLBACK_RECORD {
 pub type KBUGCHECK_CALLBACK_RECORD = _KBUGCHECK_CALLBACK_RECORD;
 pub type PKBUGCHECK_CALLBACK_RECORD = *mut _KBUGCHECK_CALLBACK_RECORD;
 pub type NMI_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Handled: BOOLEAN) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Handled: BOOLEAN) -> BOOLEAN>;
 pub type PNMI_CALLBACK = NMI_CALLBACK;
 pub const _KE_PROCESSOR_CHANGE_NOTIFY_STATE_KeProcessorAddStartNotify:
     _KE_PROCESSOR_CHANGE_NOTIFY_STATE = 0;
@@ -9130,7 +9130,7 @@ pub struct _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT {
 pub type KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT = _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT;
 pub type PKE_PROCESSOR_CHANGE_NOTIFY_CONTEXT = *mut _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT;
 pub type PROCESSOR_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         CallbackContext: PVOID,
         ChangeContext: PKE_PROCESSOR_CHANGE_NOTIFY_CONTEXT,
         OperationStatus: PNTSTATUS,
@@ -9229,15 +9229,15 @@ pub const _KINTERRUPT_MODE_LevelSensitive: _KINTERRUPT_MODE = 0;
 pub const _KINTERRUPT_MODE_Latched: _KINTERRUPT_MODE = 1;
 pub type _KINTERRUPT_MODE = ::core::ffi::c_uint;
 pub use self::_KINTERRUPT_MODE as KINTERRUPT_MODE;
-pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "C" fn(StartContext: PVOID)>;
+pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "system" fn(StartContext: PVOID)>;
 pub type PKSTART_ROUTINE = KSTART_ROUTINE;
-pub type PKINTERRUPT_ROUTINE = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PKINTERRUPT_ROUTINE = ::core::option::Option<unsafe extern "system" fn()>;
 pub type KSERVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN,
 >;
 pub type PKSERVICE_ROUTINE = KSERVICE_ROUTINE;
 pub type KMESSAGE_SERVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Interrupt: *mut _KINTERRUPT,
         ServiceContext: PVOID,
         MessageID: ULONG,
@@ -9248,11 +9248,11 @@ pub const _KD_OPTION_KD_OPTION_SET_BLOCK_ENABLE: _KD_OPTION = 0;
 pub type _KD_OPTION = ::core::ffi::c_uint;
 pub use self::_KD_OPTION as KD_OPTION;
 pub type PKNORMAL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
+    unsafe extern "system" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
 >;
-pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Apc: *mut _KAPC)>;
+pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Apc: *mut _KAPC)>;
 pub type PKKERNEL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Apc: *mut _KAPC,
         NormalRoutine: *mut PKNORMAL_ROUTINE,
         NormalContext: *mut PVOID,
@@ -9295,7 +9295,7 @@ pub type PKDEVICE_QUEUE_ENTRY = *mut _KDEVICE_QUEUE_ENTRY;
 pub type PRKDEVICE_QUEUE_ENTRY = *mut _KDEVICE_QUEUE_ENTRY;
 pub type PKIPI_CONTEXT = PVOID;
 pub type PKIPI_WORKER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PacketContext: PKIPI_CONTEXT,
         Parameter1: PVOID,
         Parameter2: PVOID,
@@ -9323,7 +9323,7 @@ pub struct _KIPI_COUNTS {
 pub type KIPI_COUNTS = _KIPI_COUNTS;
 pub type PKIPI_COUNTS = *mut _KIPI_COUNTS;
 pub type KIPI_BROADCAST_WORKER =
-    ::core::option::Option<unsafe extern "C" fn(Argument: ULONG_PTR) -> ULONG_PTR>;
+    ::core::option::Option<unsafe extern "system" fn(Argument: ULONG_PTR) -> ULONG_PTR>;
 pub type PKIPI_BROADCAST_WORKER = KIPI_BROADCAST_WORKER;
 pub type KSPIN_LOCK = ULONG_PTR;
 pub type PKSPIN_LOCK = *mut ULONG_PTR;
@@ -9345,7 +9345,7 @@ pub type KLOCK_QUEUE_HANDLE = _KLOCK_QUEUE_HANDLE;
 pub type PKLOCK_QUEUE_HANDLE = *mut _KLOCK_QUEUE_HANDLE;
 pub type KSPIN_LOCK_QUEUE_NUMBER = ULONG64;
 pub type KDEFERRED_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Dpc: *mut _KDPC,
         DeferredContext: PVOID,
         SystemArgument1: PVOID,
@@ -10181,7 +10181,7 @@ pub const _LOCK_OPERATION_IoModifyAccess: _LOCK_OPERATION = 2;
 pub type _LOCK_OPERATION = ::core::ffi::c_uint;
 pub use self::_LOCK_OPERATION as LOCK_OPERATION;
 pub type KSYNCHRONIZE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(SynchronizeContext: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(SynchronizeContext: PVOID) -> BOOLEAN>;
 pub type PKSYNCHRONIZE_ROUTINE = KSYNCHRONIZE_ROUTINE;
 pub const _POOL_TYPE_NonPagedPool: _POOL_TYPE = 0;
 pub const _POOL_TYPE_PagedPool: _POOL_TYPE = 1;
@@ -10405,21 +10405,21 @@ pub type _EX_POOL_PRIORITY = ::core::ffi::c_uint;
 pub use self::_EX_POOL_PRIORITY as EX_POOL_PRIORITY;
 pub type PLOOKASIDE_LIST_EX = *mut _LOOKASIDE_LIST_EX;
 pub type PALLOCATE_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID,
+    unsafe extern "system" fn(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID,
 >;
 pub type PALLOCATE_FUNCTION_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PoolType: POOL_TYPE,
         NumberOfBytes: SIZE_T,
         Tag: ULONG,
         Lookaside: PLOOKASIDE_LIST_EX,
     ) -> PVOID,
 >;
-pub type PFREE_FUNCTION = ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID)>;
+pub type PFREE_FUNCTION = ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID)>;
 pub type PFREE_FUNCTION_EX =
-    ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID, Lookaside: PLOOKASIDE_LIST_EX)>;
+    ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID, Lookaside: PLOOKASIDE_LIST_EX)>;
 pub type CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID),
+    unsafe extern "system" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID),
 >;
 pub type PCALLBACK_FUNCTION = CALLBACK_FUNCTION;
 #[repr(C)]
@@ -10585,7 +10585,7 @@ pub const _WORK_QUEUE_TYPE_HyperCriticalWorkQueue: _WORK_QUEUE_TYPE = 2;
 pub const _WORK_QUEUE_TYPE_MaximumWorkQueue: _WORK_QUEUE_TYPE = 3;
 pub type _WORK_QUEUE_TYPE = ::core::ffi::c_uint;
 pub use self::_WORK_QUEUE_TYPE as WORK_QUEUE_TYPE;
-pub type WORKER_THREAD_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID)>;
+pub type WORKER_THREAD_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID)>;
 pub type PWORKER_THREAD_ROUTINE = WORKER_THREAD_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -10924,7 +10924,7 @@ pub union _ACCESS_STATE__bindgen_ty_1 {
 pub type ACCESS_STATE = _ACCESS_STATE;
 pub type PACCESS_STATE = *mut _ACCESS_STATE;
 pub type PNTFS_DEREF_EXPORTED_SECURITY_DESCRIPTOR = ::core::option::Option<
-    unsafe extern "C" fn(Vcb: PVOID, SecurityDescriptor: PSECURITY_DESCRIPTOR),
+    unsafe extern "system" fn(Vcb: PVOID, SecurityDescriptor: PSECURITY_DESCRIPTOR),
 >;
 pub const _SE_ADT_PARAMETER_TYPE_SeAdtParmTypeNone: _SE_ADT_PARAMETER_TYPE = 0;
 pub const _SE_ADT_PARAMETER_TYPE_SeAdtParmTypeString: _SE_ADT_PARAMETER_TYPE = 1;
@@ -11568,7 +11568,7 @@ unsafe extern "C" {
     pub static GUID_ENABLE_SWITCH_FORCED_SHUTDOWN: GUID;
 }
 pub type REQUEST_POWER_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         MinorFunction: UCHAR,
         PowerState: POWER_STATE,
@@ -11578,7 +11578,7 @@ pub type REQUEST_POWER_COMPLETE = ::core::option::Option<
 >;
 pub type PREQUEST_POWER_COMPLETE = REQUEST_POWER_COMPLETE;
 pub type POWER_SETTING_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         SettingGuid: LPCGUID,
         Value: PVOID,
         ValueLength: ULONG,
@@ -12579,7 +12579,7 @@ pub type _REG_NOTIFY_CLASS = ::core::ffi::c_uint;
 pub use self::_REG_NOTIFY_CLASS as REG_NOTIFY_CLASS;
 pub type PREG_NOTIFY_CLASS = *mut _REG_NOTIFY_CLASS;
 pub type EX_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID) -> NTSTATUS,
 >;
 pub type PEX_CALLBACK_FUNCTION = EX_CALLBACK_FUNCTION;
 #[repr(C)]
@@ -12889,7 +12889,7 @@ pub type _IO_ALLOCATION_ACTION = ::core::ffi::c_uint;
 pub use self::_IO_ALLOCATION_ACTION as IO_ALLOCATION_ACTION;
 pub type PIO_ALLOCATION_ACTION = *mut _IO_ALLOCATION_ACTION;
 pub type DRIVER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         MapRegisterBase: PVOID,
@@ -13178,10 +13178,10 @@ pub struct _IO_WORKITEM {
 }
 pub type PIO_WORKITEM = *mut _IO_WORKITEM;
 pub type IO_WORKITEM_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Context: PVOID)>;
 pub type PIO_WORKITEM_ROUTINE = IO_WORKITEM_ROUTINE;
 pub type IO_WORKITEM_ROUTINE_EX = ::core::option::Option<
-    unsafe extern "C" fn(IoObject: PVOID, Context: PVOID, IoWorkItem: PIO_WORKITEM),
+    unsafe extern "system" fn(IoObject: PVOID, Context: PVOID, IoWorkItem: PIO_WORKITEM),
 >;
 pub type PIO_WORKITEM_ROUTINE_EX = IO_WORKITEM_ROUTINE_EX;
 #[repr(C)]
@@ -13225,7 +13225,7 @@ pub struct _IO_STATUS_BLOCK32 {
 pub type IO_STATUS_BLOCK32 = _IO_STATUS_BLOCK32;
 pub type PIO_STATUS_BLOCK32 = *mut _IO_STATUS_BLOCK32;
 pub type PIO_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+    unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
 >;
 pub const _IO_SESSION_EVENT_IoSessionEventIgnore: _IO_SESSION_EVENT = 0;
 pub const _IO_SESSION_EVENT_IoSessionEventCreated: _IO_SESSION_EVENT = 1;
@@ -14328,10 +14328,10 @@ pub struct _CM_EISA_FUNCTION_INFORMATION {
 }
 pub type CM_EISA_FUNCTION_INFORMATION = _CM_EISA_FUNCTION_INFORMATION;
 pub type PCM_EISA_FUNCTION_INFORMATION = *mut _CM_EISA_FUNCTION_INFORMATION;
-pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
-pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
+pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type TRANSLATE_BUS_ADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         BusAddress: PHYSICAL_ADDRESS,
         Length: ULONG,
@@ -14341,7 +14341,7 @@ pub type TRANSLATE_BUS_ADDRESS = ::core::option::Option<
 >;
 pub type PTRANSLATE_BUS_ADDRESS = TRANSLATE_BUS_ADDRESS;
 pub type GET_DMA_ADAPTER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DeviceDescriptor: *mut _DEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
@@ -14349,7 +14349,7 @@ pub type GET_DMA_ADAPTER = ::core::option::Option<
 >;
 pub type PGET_DMA_ADAPTER = GET_DMA_ADAPTER;
 pub type GET_SET_DEVICE_DATA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DataType: ULONG,
         Buffer: PVOID,
@@ -14380,7 +14380,7 @@ pub const _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval: _DEVICE_REM
 pub type _DEVICE_REMOVAL_POLICY = ::core::ffi::c_uint;
 pub use self::_DEVICE_REMOVAL_POLICY as DEVICE_REMOVAL_POLICY;
 pub type PDEVICE_REMOVAL_POLICY = *mut _DEVICE_REMOVAL_POLICY;
-pub type PREENUMERATE_SELF = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PREENUMERATE_SELF = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _REENUMERATE_SELF_INTERFACE_STANDARD {
@@ -14394,7 +14394,7 @@ pub struct _REENUMERATE_SELF_INTERFACE_STANDARD {
 pub type REENUMERATE_SELF_INTERFACE_STANDARD = _REENUMERATE_SELF_INTERFACE_STANDARD;
 pub type PREENUMERATE_SELF_INTERFACE_STANDARD = *mut _REENUMERATE_SELF_INTERFACE_STANDARD;
 pub type PIO_DEVICE_EJECT_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Status: NTSTATUS, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Status: NTSTATUS, Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PCI_DEVICE_PRESENCE_PARAMETERS {
@@ -14412,7 +14412,7 @@ pub struct _PCI_DEVICE_PRESENCE_PARAMETERS {
 pub type PCI_DEVICE_PRESENCE_PARAMETERS = _PCI_DEVICE_PRESENCE_PARAMETERS;
 pub type PPCI_DEVICE_PRESENCE_PARAMETERS = *mut _PCI_DEVICE_PRESENCE_PARAMETERS;
 pub type PCI_IS_DEVICE_PRESENT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         VendorID: USHORT,
         DeviceID: USHORT,
         RevisionID: UCHAR,
@@ -14423,7 +14423,7 @@ pub type PCI_IS_DEVICE_PRESENT = ::core::option::Option<
 >;
 pub type PPCI_IS_DEVICE_PRESENT = PCI_IS_DEVICE_PRESENT;
 pub type PCI_IS_DEVICE_PRESENT_EX = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Parameters: PPCI_DEVICE_PRESENCE_PARAMETERS) -> BOOLEAN,
+    unsafe extern "system" fn(Context: PVOID, Parameters: PPCI_DEVICE_PRESENCE_PARAMETERS) -> BOOLEAN,
 >;
 pub type PPCI_IS_DEVICE_PRESENT_EX = PCI_IS_DEVICE_PRESENT_EX;
 #[repr(C)]
@@ -15458,7 +15458,7 @@ pub struct _TARGET_DEVICE_REMOVAL_NOTIFICATION {
 pub type TARGET_DEVICE_REMOVAL_NOTIFICATION = _TARGET_DEVICE_REMOVAL_NOTIFICATION;
 pub type PTARGET_DEVICE_REMOVAL_NOTIFICATION = *mut _TARGET_DEVICE_REMOVAL_NOTIFICATION;
 pub type PREPLACE_MAP_MEMORY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TargetPhysicalAddress: PHYSICAL_ADDRESS,
         SparePhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: PLARGE_INTEGER,
@@ -15518,35 +15518,35 @@ pub struct _PNP_REPLACE_PARAMETERS {
 }
 pub type PNP_REPLACE_PARAMETERS = _PNP_REPLACE_PARAMETERS;
 pub type PPNP_REPLACE_PARAMETERS = *mut _PNP_REPLACE_PARAMETERS;
-pub type PREPLACE_UNLOAD = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PREPLACE_UNLOAD = ::core::option::Option<unsafe extern "system" fn()>;
 pub type PREPLACE_BEGIN = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: PPNP_REPLACE_PARAMETERS, Context: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: PPNP_REPLACE_PARAMETERS, Context: *mut PVOID) -> NTSTATUS,
 >;
-pub type PREPLACE_END = ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+pub type PREPLACE_END = ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_MIRROR_PHYSICAL_MEMORY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PhysicalAddress: PHYSICAL_ADDRESS,
         ByteCount: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type PREPLACE_SET_PROCESSOR_ID = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, ApicId: ULONG, Target: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ApicId: ULONG, Target: BOOLEAN) -> NTSTATUS,
 >;
-pub type PREPLACE_SWAP = ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+pub type PREPLACE_SWAP = ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_INITIATE_HARDWARE_MIRROR =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_MIRROR_PLATFORM_MEMORY =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_GET_MEMORY_DESTINATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SourceAddress: PHYSICAL_ADDRESS,
         DestinationAddress: PPHYSICAL_ADDRESS,
     ) -> NTSTATUS,
 >;
 pub type PREPLACE_ENABLE_DISABLE_HARDWARE_QUIESCE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PNP_REPLACE_DRIVER_INTERFACE {
@@ -15567,7 +15567,7 @@ pub struct _PNP_REPLACE_DRIVER_INTERFACE {
 pub type PNP_REPLACE_DRIVER_INTERFACE = _PNP_REPLACE_DRIVER_INTERFACE;
 pub type PPNP_REPLACE_DRIVER_INTERFACE = *mut _PNP_REPLACE_DRIVER_INTERFACE;
 pub type PREPLACE_DRIVER_INIT = ::core::option::Option<
-    unsafe extern "C" fn(Interface: PPNP_REPLACE_DRIVER_INTERFACE, Unused: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Interface: PPNP_REPLACE_DRIVER_INTERFACE, Unused: PVOID) -> NTSTATUS,
 >;
 pub const _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeUndefined:
     _DEVICE_USAGE_NOTIFICATION_TYPE = 0;
@@ -15639,11 +15639,11 @@ pub const _IO_PRIORITY_HINT_MaxIoPriorityTypes: _IO_PRIORITY_HINT = 5;
 pub type _IO_PRIORITY_HINT = ::core::ffi::c_uint;
 pub use self::_IO_PRIORITY_HINT as IO_PRIORITY_HINT;
 pub type DRIVER_NOTIFICATION_CALLBACK_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(NotificationStructure: PVOID, Context: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(NotificationStructure: PVOID, Context: PVOID) -> NTSTATUS,
 >;
 pub type PDRIVER_NOTIFICATION_CALLBACK_ROUTINE = DRIVER_NOTIFICATION_CALLBACK_ROUTINE;
 pub type DEVICE_CHANGE_COMPLETE_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PDEVICE_CHANGE_COMPLETE_CALLBACK = DEVICE_CHANGE_COMPLETE_CALLBACK;
 pub const _FILE_INFORMATION_CLASS_FileDirectoryInformation: _FILE_INFORMATION_CLASS = 1;
 pub const _FILE_INFORMATION_CLASS_FileFullDirectoryInformation: _FILE_INFORMATION_CLASS = 2;
@@ -15838,7 +15838,7 @@ pub struct _FILE_SFIO_VOLUME_INFORMATION {
 pub type FILE_SFIO_VOLUME_INFORMATION = _FILE_SFIO_VOLUME_INFORMATION;
 pub type PFILE_SFIO_VOLUME_INFORMATION = *mut _FILE_SFIO_VOLUME_INFORMATION;
 pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -15851,7 +15851,7 @@ pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
 >;
 pub type PFAST_IO_CHECK_IF_POSSIBLE = FAST_IO_CHECK_IF_POSSIBLE;
 pub type FAST_IO_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -15864,7 +15864,7 @@ pub type FAST_IO_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_READ = FAST_IO_READ;
 pub type FAST_IO_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -15877,7 +15877,7 @@ pub type FAST_IO_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE = FAST_IO_WRITE;
 pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_BASIC_INFORMATION,
@@ -15887,7 +15887,7 @@ pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_BASIC_INFO = FAST_IO_QUERY_BASIC_INFO;
 pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_STANDARD_INFORMATION,
@@ -15897,7 +15897,7 @@ pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_STANDARD_INFO = FAST_IO_QUERY_STANDARD_INFO;
 pub type FAST_IO_LOCK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -15911,7 +15911,7 @@ pub type FAST_IO_LOCK = ::core::option::Option<
 >;
 pub type PFAST_IO_LOCK = FAST_IO_LOCK;
 pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -15923,7 +15923,7 @@ pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_SINGLE = FAST_IO_UNLOCK_SINGLE;
 pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PEPROCESS,
         IoStatus: PIO_STATUS_BLOCK,
@@ -15932,7 +15932,7 @@ pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL = FAST_IO_UNLOCK_ALL;
 pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PVOID,
         Key: ULONG,
@@ -15942,7 +15942,7 @@ pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL_BY_KEY = FAST_IO_UNLOCK_ALL_BY_KEY;
 pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         InputBuffer: PVOID,
@@ -15956,17 +15956,17 @@ pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
 >;
 pub type PFAST_IO_DEVICE_CONTROL = FAST_IO_DEVICE_CONTROL;
 pub type FAST_IO_ACQUIRE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_ACQUIRE_FILE = FAST_IO_ACQUIRE_FILE;
 pub type FAST_IO_RELEASE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_RELEASE_FILE = FAST_IO_RELEASE_FILE;
 pub type FAST_IO_DETACH_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
+    unsafe extern "system" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
 >;
 pub type PFAST_IO_DETACH_DEVICE = FAST_IO_DETACH_DEVICE;
 pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: *mut _FILE_NETWORK_OPEN_INFORMATION,
@@ -15976,7 +15976,7 @@ pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_NETWORK_OPEN_INFO = FAST_IO_QUERY_NETWORK_OPEN_INFO;
 pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         EndingOffset: PLARGE_INTEGER,
         ResourceToRelease: *mut *mut _ERESOURCE,
@@ -15985,7 +15985,7 @@ pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_ACQUIRE_FOR_MOD_WRITE = FAST_IO_ACQUIRE_FOR_MOD_WRITE;
 pub type FAST_IO_MDL_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -15997,7 +15997,7 @@ pub type FAST_IO_MDL_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ = FAST_IO_MDL_READ;
 pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -16005,7 +16005,7 @@ pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE = FAST_IO_MDL_READ_COMPLETE;
 pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -16017,7 +16017,7 @@ pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_PREPARE_MDL_WRITE = FAST_IO_PREPARE_MDL_WRITE;
 pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -16026,7 +16026,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE = FAST_IO_MDL_WRITE_COMPLETE;
 pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -16041,7 +16041,7 @@ pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_READ_COMPRESSED = FAST_IO_READ_COMPRESSED;
 pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -16056,7 +16056,7 @@ pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE_COMPRESSED = FAST_IO_WRITE_COMPRESSED;
 pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -16064,7 +16064,7 @@ pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE_COMPRESSED = FAST_IO_MDL_READ_COMPLETE_COMPRESSED;
 pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -16073,7 +16073,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED;
 pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Irp: *mut _IRP,
         NetworkInformation: PFILE_NETWORK_OPEN_INFORMATION,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -16081,7 +16081,7 @@ pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_OPEN = FAST_IO_QUERY_OPEN;
 pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ResourceToRelease: *mut _ERESOURCE,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -16089,14 +16089,14 @@ pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_RELEASE_FOR_MOD_WRITE = FAST_IO_RELEASE_FOR_MOD_WRITE;
 pub type FAST_IO_ACQUIRE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFAST_IO_ACQUIRE_FOR_CCFLUSH = FAST_IO_ACQUIRE_FOR_CCFLUSH;
 pub type FAST_IO_RELEASE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -16361,7 +16361,7 @@ pub struct _SCATTER_GATHER_LIST {
 pub type SCATTER_GATHER_LIST = _SCATTER_GATHER_LIST;
 pub type PSCATTER_GATHER_LIST = *mut _SCATTER_GATHER_LIST;
 pub type DRIVER_ADD_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -16378,25 +16378,25 @@ pub struct _DRIVER_EXTENSION {
 pub type DRIVER_EXTENSION = _DRIVER_EXTENSION;
 pub type PDRIVER_EXTENSION = *mut _DRIVER_EXTENSION;
 pub type DRIVER_INITIALIZE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PDRIVER_INITIALIZE = DRIVER_INITIALIZE;
 pub type DRIVER_STARTIO =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_STARTIO = DRIVER_STARTIO;
 pub type DRIVER_UNLOAD =
-    ::core::option::Option<unsafe extern "C" fn(DriverObject: *mut _DRIVER_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(DriverObject: *mut _DRIVER_OBJECT)>;
 pub type PDRIVER_UNLOAD = DRIVER_UNLOAD;
 pub type DRIVER_DISPATCH = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
 >;
 pub type PDRIVER_DISPATCH = DRIVER_DISPATCH;
 pub type DRIVER_DISPATCH_RAISED = DRIVER_DISPATCH;
 pub type DRIVER_DISPATCH_PAGED = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
 >;
 pub type PDRIVER_DISPATCH_PAGED = DRIVER_DISPATCH_PAGED;
 #[repr(C)]
@@ -16434,9 +16434,9 @@ pub const DMA_COMPLETION_STATUS_DmaAborted: DMA_COMPLETION_STATUS = 1;
 pub const DMA_COMPLETION_STATUS_DmaError: DMA_COMPLETION_STATUS = 2;
 pub const DMA_COMPLETION_STATUS_DmaCancelled: DMA_COMPLETION_STATUS = 3;
 pub type DMA_COMPLETION_STATUS = ::core::ffi::c_uint;
-pub type PPUT_DMA_ADAPTER = ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER)>;
+pub type PPUT_DMA_ADAPTER = ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER)>;
 pub type PALLOCATE_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Length: ULONG,
         LogicalAddress: PPHYSICAL_ADDRESS,
@@ -16444,7 +16444,7 @@ pub type PALLOCATE_COMMON_BUFFER = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PFREE_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Length: ULONG,
         LogicalAddress: PHYSICAL_ADDRESS,
@@ -16453,7 +16453,7 @@ pub type PFREE_COMMON_BUFFER = ::core::option::Option<
     ),
 >;
 pub type PALLOCATE_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         NumberOfMapRegisters: ULONG,
@@ -16462,7 +16462,7 @@ pub type PALLOCATE_ADAPTER_CHANNEL = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_ADAPTER_BUFFERS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -16472,16 +16472,16 @@ pub type PFLUSH_ADAPTER_BUFFERS = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFREE_ADAPTER_CHANNEL =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER)>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER)>;
 pub type PFREE_MAP_REGISTERS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MapRegisterBase: PVOID,
         NumberOfMapRegisters: ULONG,
     ),
 >;
 pub type PMAP_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -16491,11 +16491,11 @@ pub type PMAP_TRANSFER = ::core::option::Option<
     ) -> PHYSICAL_ADDRESS,
 >;
 pub type PGET_DMA_ALIGNMENT =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
 pub type PREAD_DMA_COUNTER =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
 pub type DRIVER_LIST_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         ScatterGather: *mut _SCATTER_GATHER_LIST,
@@ -16504,7 +16504,7 @@ pub type DRIVER_LIST_CONTROL = ::core::option::Option<
 >;
 pub type PDRIVER_LIST_CONTROL = DRIVER_LIST_CONTROL;
 pub type PGET_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         Mdl: PMDL,
@@ -16516,14 +16516,14 @@ pub type PGET_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PPUT_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         ScatterGather: PSCATTER_GATHER_LIST,
         WriteToDevice: BOOLEAN,
     ),
 >;
 pub type PCALCULATE_SCATTER_GATHER_LIST_SIZE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         CurrentVa: PVOID,
@@ -16533,7 +16533,7 @@ pub type PCALCULATE_SCATTER_GATHER_LIST_SIZE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         Mdl: PMDL,
@@ -16547,7 +16547,7 @@ pub type PBUILD_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_MDL_FROM_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         ScatterGather: PSCATTER_GATHER_LIST,
         OriginalMdl: PMDL,
@@ -16555,10 +16555,10 @@ pub type PBUILD_MDL_FROM_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_DMA_ADAPTER_INFO = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, AdapterInfo: PDMA_ADAPTER_INFO) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, AdapterInfo: PDMA_ADAPTER_INFO) -> NTSTATUS,
 >;
 pub type PGET_DMA_TRANSFER_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         Offset: ULONGLONG,
@@ -16568,10 +16568,10 @@ pub type PGET_DMA_TRANSFER_INFO = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PINITIALIZE_DMA_TRANSFER_CONTEXT = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
 >;
 pub type PALLOCATE_COMMON_BUFFER_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MaximumAddress: PPHYSICAL_ADDRESS,
         Length: ULONG,
@@ -16581,7 +16581,7 @@ pub type PALLOCATE_COMMON_BUFFER_EX = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PALLOCATE_ADAPTER_CHANNEL_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -16593,21 +16593,21 @@ pub type PALLOCATE_ADAPTER_CHANNEL_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCONFIGURE_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         FunctionNumber: ULONG,
         Context: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PCANCEL_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
     ) -> BOOLEAN,
 >;
 pub type DMA_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         CompletionContext: PVOID,
@@ -16616,7 +16616,7 @@ pub type DMA_COMPLETION_ROUTINE = ::core::option::Option<
 >;
 pub type PDMA_COMPLETION_ROUTINE = DMA_COMPLETION_ROUTINE;
 pub type PMAP_TRANSFER_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -16631,7 +16631,7 @@ pub type PMAP_TRANSFER_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_SCATTER_GATHER_LIST_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -16648,7 +16648,7 @@ pub type PGET_SCATTER_GATHER_LIST_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_SCATTER_GATHER_LIST_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -16667,7 +16667,7 @@ pub type PBUILD_SCATTER_GATHER_LIST_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_ADAPTER_BUFFERS_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -16677,13 +16677,13 @@ pub type PFLUSH_ADAPTER_BUFFERS_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFREE_ADAPTER_OBJECT = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, AllocationAction: IO_ALLOCATION_ACTION),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, AllocationAction: IO_ALLOCATION_ACTION),
 >;
 pub type PCANCEL_MAPPED_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
 >;
 pub type PALLOCATE_DOMAIN_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DomainHandle: HANDLE,
         MaximumAddress: PPHYSICAL_ADDRESS,
@@ -16696,17 +16696,17 @@ pub type PALLOCATE_DOMAIN_COMMON_BUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_DMA_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Mdl: PMDL, ReadOperation: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Mdl: PMDL, ReadOperation: BOOLEAN) -> NTSTATUS,
 >;
 pub type PJOIN_DMA_DOMAIN = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DomainHandle: HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DomainHandle: HANDLE) -> NTSTATUS,
 >;
 pub type PLEAVE_DMA_DOMAIN =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> NTSTATUS>;
 pub type PGET_DMA_DOMAIN =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> HANDLE>;
 pub type PALLOCATE_COMMON_BUFFER_WITH_BOUNDS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MinimumAddress: PPHYSICAL_ADDRESS,
         MaximumAddress: PPHYSICAL_ADDRESS,
@@ -16725,7 +16725,7 @@ pub struct _DMA_COMMON_BUFFER_VECTOR {
 pub type DMA_COMMON_BUFFER_VECTOR = _DMA_COMMON_BUFFER_VECTOR;
 pub type PDMA_COMMON_BUFFER_VECTOR = *mut _DMA_COMMON_BUFFER_VECTOR;
 pub type PALLOCATE_COMMON_BUFFER_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         LowAddress: PHYSICAL_ADDRESS,
         HighAddress: PHYSICAL_ADDRESS,
@@ -16738,7 +16738,7 @@ pub type PALLOCATE_COMMON_BUFFER_VECTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_COMMON_BUFFER_FROM_VECTOR_BY_INDEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Vector: PDMA_COMMON_BUFFER_VECTOR,
         Index: ULONG,
@@ -16747,10 +16747,10 @@ pub type PGET_COMMON_BUFFER_FROM_VECTOR_BY_INDEX = ::core::option::Option<
     ),
 >;
 pub type PFREE_COMMON_BUFFER_FROM_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR, Index: ULONG),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR, Index: ULONG),
 >;
 pub type PFREE_COMMON_BUFFER_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -16905,7 +16905,7 @@ pub struct _IO_RESOURCE_REQUIREMENTS_LIST {
 pub type IO_RESOURCE_REQUIREMENTS_LIST = _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type PIO_RESOURCE_REQUIREMENTS_LIST = *mut _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type DRIVER_CANCEL =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_CANCEL = DRIVER_CANCEL;
 #[repr(C)]
 #[repr(align(16))]
@@ -17007,7 +17007,7 @@ pub const _IO_PAGING_PRIORITY_IoPagingPriorityReserved2: _IO_PAGING_PRIORITY = 4
 pub type _IO_PAGING_PRIORITY = ::core::ffi::c_uint;
 pub use self::_IO_PAGING_PRIORITY as IO_PAGING_PRIORITY;
 pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         Context: PVOID,
@@ -17015,7 +17015,7 @@ pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
 >;
 pub type PIO_COMPLETION_ROUTINE = IO_COMPLETION_ROUTINE;
 pub type IO_DPC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Dpc: *mut _KDPC,
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
@@ -17024,10 +17024,10 @@ pub type IO_DPC_ROUTINE = ::core::option::Option<
 >;
 pub type PIO_DPC_ROUTINE = IO_DPC_ROUTINE;
 pub type PMM_DLL_INITIALIZE =
-    ::core::option::Option<unsafe extern "C" fn(RegistryPath: PUNICODE_STRING) -> NTSTATUS>;
-pub type PMM_DLL_UNLOAD = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(RegistryPath: PUNICODE_STRING) -> NTSTATUS>;
+pub type PMM_DLL_UNLOAD = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type IO_TIMER_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
 pub type PIO_TIMER_ROUTINE = IO_TIMER_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17049,27 +17049,27 @@ pub struct _IO_CSQ_IRP_CONTEXT {
 pub type IO_CSQ_IRP_CONTEXT = _IO_CSQ_IRP_CONTEXT;
 pub type PIO_CSQ_IRP_CONTEXT = *mut _IO_CSQ_IRP_CONTEXT;
 pub type IO_CSQ_INSERT_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_INSERT_IRP = IO_CSQ_INSERT_IRP;
 pub type IO_CSQ_INSERT_IRP_EX = ::core::option::Option<
-    unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP, InsertContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP, InsertContext: PVOID) -> NTSTATUS,
 >;
 pub type PIO_CSQ_INSERT_IRP_EX = IO_CSQ_INSERT_IRP_EX;
 pub type IO_CSQ_REMOVE_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_REMOVE_IRP = IO_CSQ_REMOVE_IRP;
 pub type IO_CSQ_PEEK_NEXT_IRP = ::core::option::Option<
-    unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP, PeekContext: PVOID) -> PIRP,
+    unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP, PeekContext: PVOID) -> PIRP,
 >;
 pub type PIO_CSQ_PEEK_NEXT_IRP = IO_CSQ_PEEK_NEXT_IRP;
 pub type IO_CSQ_ACQUIRE_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irql: PKIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irql: PKIRQL)>;
 pub type PIO_CSQ_ACQUIRE_LOCK = IO_CSQ_ACQUIRE_LOCK;
 pub type IO_CSQ_RELEASE_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irql: KIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irql: KIRQL)>;
 pub type PIO_CSQ_RELEASE_LOCK = IO_CSQ_RELEASE_LOCK;
 pub type IO_CSQ_COMPLETE_CANCELED_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_COMPLETE_CANCELED_IRP = IO_CSQ_COMPLETE_CANCELED_IRP;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17100,9 +17100,9 @@ pub type _DEVICE_TEXT_TYPE = ::core::ffi::c_uint;
 pub use self::_DEVICE_TEXT_TYPE as DEVICE_TEXT_TYPE;
 pub type PDEVICE_TEXT_TYPE = *mut _DEVICE_TEXT_TYPE;
 pub type PGPE_SERVICE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
 pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: ULONG,
         arg3: KINTERRUPT_MODE,
@@ -17113,24 +17113,24 @@ pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> NTSTATUS>;
 pub type PGPE_ENABLE_EVENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PGPE_DISABLE_EVENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PGPE_CLEAR_STATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PDEVICE_NOTIFY_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: ULONG)>;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: PDEVICE_NOTIFY_CALLBACK,
         arg3: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -17151,10 +17151,10 @@ pub struct _ACPI_INTERFACE_STANDARD {
 pub type ACPI_INTERFACE_STANDARD = _ACPI_INTERFACE_STANDARD;
 pub type PACPI_INTERFACE_STANDARD = *mut _ACPI_INTERFACE_STANDARD;
 pub type PGPE_SERVICE_ROUTINE2 = ::core::option::Option<
-    unsafe extern "C" fn(ObjectContext: PVOID, ServiceContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(ObjectContext: PVOID, ServiceContext: PVOID) -> BOOLEAN,
 >;
 pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         GpeNumber: ULONG,
         Mode: KINTERRUPT_MODE,
@@ -17165,24 +17165,24 @@ pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_ENABLE_EVENT2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_DISABLE_EVENT2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_CLEAR_STATUS2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PDEVICE_NOTIFY_CALLBACK2 =
-    ::core::option::Option<unsafe extern "C" fn(NotificationContext: PVOID, NotifyCode: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(NotificationContext: PVOID, NotifyCode: ULONG)>;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         NotificationHandler: PDEVICE_NOTIFY_CALLBACK2,
         NotificationContext: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ACPI_INTERFACE_STANDARD2 {
@@ -17575,7 +17575,7 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_39 {
 pub type IO_STACK_LOCATION = _IO_STACK_LOCATION;
 pub type PIO_STACK_LOCATION = *mut _IO_STACK_LOCATION;
 pub type FWMI_NOTIFICATION_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Wnode: PVOID, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Wnode: PVOID, Context: PVOID)>;
 pub type WMI_NOTIFICATION_CALLBACK = FWMI_NOTIFICATION_CALLBACK;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -25776,10 +25776,10 @@ pub struct _PCI_EXPRESS_SRIOV_CAPABILITY {
 pub type PCI_EXPRESS_SRIOV_CAPABILITY = _PCI_EXPRESS_SRIOV_CAPABILITY;
 pub type PPCI_EXPRESS_SRIOV_CAPABILITY = *mut _PCI_EXPRESS_SRIOV_CAPABILITY;
 pub type PCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PPCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE = PCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE;
 pub type PCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PPCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE = PCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -25795,10 +25795,10 @@ pub struct _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE {
 pub type PCI_EXPRESS_LINK_QUIESCENT_INTERFACE = _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE;
 pub type PPCI_EXPRESS_LINK_QUIESCENT_INTERFACE = *mut _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE;
 pub type PPCI_EXPRESS_ROOT_PORT_READ_CONFIG_SPACE = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
+    unsafe extern "system" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
 >;
 pub type PPCI_EXPRESS_ROOT_PORT_WRITE_CONFIG_SPACE = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
+    unsafe extern "system" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -25814,14 +25814,14 @@ pub struct _PCI_EXPRESS_ROOT_PORT_INTERFACE {
 pub type PCI_EXPRESS_ROOT_PORT_INTERFACE = _PCI_EXPRESS_ROOT_PORT_INTERFACE;
 pub type PPCI_EXPRESS_ROOT_PORT_INTERFACE = *mut _PCI_EXPRESS_ROOT_PORT_INTERFACE;
 pub type PCI_MSIX_SET_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, TableEntry: ULONG, MessageNumber: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, TableEntry: ULONG, MessageNumber: ULONG) -> NTSTATUS,
 >;
 pub type PPCI_MSIX_SET_ENTRY = PCI_MSIX_SET_ENTRY;
 pub type PCI_MSIX_MASKUNMASK_ENTRY =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, TableEntry: ULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, TableEntry: ULONG) -> NTSTATUS>;
 pub type PPCI_MSIX_MASKUNMASK_ENTRY = PCI_MSIX_MASKUNMASK_ENTRY;
 pub type PCI_MSIX_GET_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         TableEntry: ULONG,
         MessageNumber: PULONG,
@@ -25830,7 +25830,7 @@ pub type PCI_MSIX_GET_ENTRY = ::core::option::Option<
 >;
 pub type PPCI_MSIX_GET_ENTRY = PCI_MSIX_GET_ENTRY;
 pub type PCI_MSIX_GET_TABLE_SIZE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, TableSize: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, TableSize: PULONG) -> NTSTATUS>;
 pub type PPCI_MSIX_GET_TABLE_SIZE = PCI_MSIX_GET_TABLE_SIZE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -25849,7 +25849,7 @@ pub struct _PCI_MSIX_TABLE_CONFIG_INTERFACE {
 pub type PCI_MSIX_TABLE_CONFIG_INTERFACE = _PCI_MSIX_TABLE_CONFIG_INTERFACE;
 pub type PPCI_MSIX_TABLE_CONFIG_INTERFACE = *mut _PCI_MSIX_TABLE_CONFIG_INTERFACE;
 pub type SET_D3COLD_SUPPORT =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, D3ColdSupport: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, D3ColdSupport: BOOLEAN)>;
 pub type PSET_D3COLD_SUPPORT = SET_D3COLD_SUPPORT;
 pub const _DEVICE_WAKE_DEPTH_DeviceWakeDepthNotWakeable: _DEVICE_WAKE_DEPTH = 0;
 pub const _DEVICE_WAKE_DEPTH_DeviceWakeDepthD0: _DEVICE_WAKE_DEPTH = 1;
@@ -25862,7 +25862,7 @@ pub type _DEVICE_WAKE_DEPTH = ::core::ffi::c_uint;
 pub use self::_DEVICE_WAKE_DEPTH as DEVICE_WAKE_DEPTH;
 pub type PDEVICE_WAKE_DEPTH = *mut _DEVICE_WAKE_DEPTH;
 pub type GET_IDLE_WAKE_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SystemPowerState: SYSTEM_POWER_STATE,
         DeepestWakeableDstate: PDEVICE_WAKE_DEPTH,
@@ -25870,7 +25870,7 @@ pub type GET_IDLE_WAKE_INFO = ::core::option::Option<
 >;
 pub type PGET_IDLE_WAKE_INFO = GET_IDLE_WAKE_INFO;
 pub type GET_D3COLD_CAPABILITY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, D3ColdSupported: PBOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, D3ColdSupported: PBOOLEAN) -> NTSTATUS,
 >;
 pub type PGET_D3COLD_CAPABILITY = GET_D3COLD_CAPABILITY;
 pub const _D3COLD_LAST_TRANSITION_STATUS_LastDStateTransitionStatusUnknown:
@@ -25883,7 +25883,7 @@ pub type _D3COLD_LAST_TRANSITION_STATUS = ::core::ffi::c_uint;
 pub use self::_D3COLD_LAST_TRANSITION_STATUS as D3COLD_LAST_TRANSITION_STATUS;
 pub type PD3COLD_LAST_TRANSITION_STATUS = *mut _D3COLD_LAST_TRANSITION_STATUS;
 pub type GET_D3COLD_LAST_TRANSITION_STATUS = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, LastTransitionStatus: PD3COLD_LAST_TRANSITION_STATUS),
+    unsafe extern "system" fn(Context: PVOID, LastTransitionStatus: PD3COLD_LAST_TRANSITION_STATUS),
 >;
 pub type PGET_D3COLD_LAST_TRANSITION_STATUS = GET_D3COLD_LAST_TRANSITION_STATUS;
 #[repr(C)]
@@ -25903,10 +25903,10 @@ pub struct _D3COLD_SUPPORT_INTERFACE {
 pub type D3COLD_SUPPORT_INTERFACE = _D3COLD_SUPPORT_INTERFACE;
 pub type PD3COLD_SUPPORT_INTERFACE = *mut _D3COLD_SUPPORT_INTERFACE;
 pub type D3COLD_REQUEST_CORE_POWER_RAIL =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, CorePowerRailNeeded: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, CorePowerRailNeeded: BOOLEAN)>;
 pub type PD3COLD_REQUEST_CORE_POWER_RAIL = D3COLD_REQUEST_CORE_POWER_RAIL;
 pub type D3COLD_REQUEST_AUX_POWER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         AuxPowerInMilliWatts: ULONG,
         RetryInSeconds: PULONG,
@@ -25914,7 +25914,7 @@ pub type D3COLD_REQUEST_AUX_POWER = ::core::option::Option<
 >;
 pub type PD3COLD_REQUEST_AUX_POWER = D3COLD_REQUEST_AUX_POWER;
 pub type D3COLD_REQUEST_PERST_DELAY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, DelayInMicroSeconds: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, DelayInMicroSeconds: ULONG) -> NTSTATUS,
 >;
 pub type PD3COLD_REQUEST_PERST_DELAY = D3COLD_REQUEST_PERST_DELAY;
 #[repr(C)]
@@ -26202,13 +26202,13 @@ pub type _OB_PREOP_CALLBACK_STATUS = ::core::ffi::c_uint;
 pub use self::_OB_PREOP_CALLBACK_STATUS as OB_PREOP_CALLBACK_STATUS;
 pub type POB_PREOP_CALLBACK_STATUS = *mut _OB_PREOP_CALLBACK_STATUS;
 pub type POB_PRE_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistrationContext: PVOID,
         OperationInformation: POB_PRE_OPERATION_INFORMATION,
     ) -> OB_PREOP_CALLBACK_STATUS,
 >;
 pub type POB_POST_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistrationContext: PVOID,
         OperationInformation: POB_POST_OPERATION_INFORMATION,
     ),
@@ -26345,7 +26345,7 @@ pub struct _EVENT_FILTER_HEADER {
 pub type EVENT_FILTER_HEADER = _EVENT_FILTER_HEADER;
 pub type PEVENT_FILTER_HEADER = *mut _EVENT_FILTER_HEADER;
 pub type PETWENABLECALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         SourceId: LPCGUID,
         ControlCode: ULONG,
         Level: UCHAR,
@@ -26663,7 +26663,7 @@ pub struct _TRANSACTION_LIST_INFORMATION {
 pub type TRANSACTION_LIST_INFORMATION = _TRANSACTION_LIST_INFORMATION;
 pub type PTRANSACTION_LIST_INFORMATION = *mut _TRANSACTION_LIST_INFORMATION;
 pub type PFN_NT_CREATE_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -26677,7 +26677,7 @@ pub type PFN_NT_CREATE_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_OPEN_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -26686,7 +26686,7 @@ pub type PFN_NT_OPEN_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_QUERY_INFORMATION_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: HANDLE,
         TransactionInformationClass: TRANSACTION_INFORMATION_CLASS,
         TransactionInformation: PVOID,
@@ -26695,7 +26695,7 @@ pub type PFN_NT_QUERY_INFORMATION_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_SET_INFORMATION_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: HANDLE,
         TransactionInformationClass: TRANSACTION_INFORMATION_CLASS,
         TransactionInformation: PVOID,
@@ -26703,10 +26703,10 @@ pub type PFN_NT_SET_INFORMATION_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_COMMIT_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
 >;
 pub type PFN_NT_ROLLBACK_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -27479,7 +27479,7 @@ pub type _CONFIGURATION_TYPE = ::core::ffi::c_uint;
 pub use self::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
 pub type PCONFIGURATION_TYPE = *mut _CONFIGURATION_TYPE;
 pub type PIO_QUERY_DEVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PathName: PUNICODE_STRING,
         BusType: INTERFACE_TYPE,
@@ -27503,7 +27503,7 @@ pub type _IO_QUERY_DEVICE_DATA_FORMAT = ::core::ffi::c_uint;
 pub use self::_IO_QUERY_DEVICE_DATA_FORMAT as IO_QUERY_DEVICE_DATA_FORMAT;
 pub type PIO_QUERY_DEVICE_DATA_FORMAT = *mut _IO_QUERY_DEVICE_DATA_FORMAT;
 pub type PDRIVER_REINITIALIZE = ::core::option::Option<
-    unsafe extern "C" fn(DriverObject: *mut _DRIVER_OBJECT, Context: PVOID, Count: ULONG),
+    unsafe extern "system" fn(DriverObject: *mut _DRIVER_OBJECT, Context: PVOID, Count: ULONG),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -27593,7 +27593,7 @@ pub struct _AGP_TARGET_BUS_INTERFACE_STANDARD {
 pub type AGP_TARGET_BUS_INTERFACE_STANDARD = _AGP_TARGET_BUS_INTERFACE_STANDARD;
 pub type PAGP_TARGET_BUS_INTERFACE_STANDARD = *mut _AGP_TARGET_BUS_INTERFACE_STANDARD;
 pub type PGET_LOCATION_STRING = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, LocationStrings: *mut PZZWSTR) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, LocationStrings: *mut PZZWSTR) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -27739,7 +27739,7 @@ pub struct _ARBITER_LIST_ENTRY {
 pub type ARBITER_LIST_ENTRY = _ARBITER_LIST_ENTRY;
 pub type PARBITER_LIST_ENTRY = *mut _ARBITER_LIST_ENTRY;
 pub type PARBITER_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Action: ARBITER_ACTION,
         Parameters: PARBITER_PARAMETERS,
@@ -27765,7 +27765,7 @@ pub const _RESOURCE_TRANSLATION_DIRECTION_TranslateParentToChild: _RESOURCE_TRAN
 pub type _RESOURCE_TRANSLATION_DIRECTION = ::core::ffi::c_uint;
 pub use self::_RESOURCE_TRANSLATION_DIRECTION as RESOURCE_TRANSLATION_DIRECTION;
 pub type PTRANSLATE_RESOURCE_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Source: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
         Direction: RESOURCE_TRANSLATION_DIRECTION,
@@ -27776,7 +27776,7 @@ pub type PTRANSLATE_RESOURCE_HANDLER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PTRANSLATE_RESOURCE_REQUIREMENTS_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Source: PIO_RESOURCE_DESCRIPTOR,
         PhysicalDeviceObject: PDEVICE_OBJECT,
@@ -36469,7 +36469,7 @@ pub struct _PHYSICAL_COUNTER_RESOURCE_LIST {
 pub type PHYSICAL_COUNTER_RESOURCE_LIST = _PHYSICAL_COUNTER_RESOURCE_LIST;
 pub type PPHYSICAL_COUNTER_RESOURCE_LIST = *mut _PHYSICAL_COUNTER_RESOURCE_LIST;
 pub type PciPin2Line = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         RootHandler: *mut _BUS_HANDLER,
         SlotNumber: PCI_SLOT_NUMBER,
@@ -36477,7 +36477,7 @@ pub type PciPin2Line = ::core::option::Option<
     ),
 >;
 pub type PciLine2Pin = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         RootHandler: *mut _BUS_HANDLER,
         SlotNumber: PCI_SLOT_NUMBER,
@@ -36486,7 +36486,7 @@ pub type PciLine2Pin = ::core::option::Option<
     ),
 >;
 pub type PciReadWriteConfig = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
         Buffer: PVOID,
@@ -36509,7 +36509,7 @@ pub struct _PCIBUSDATA {
 pub type PCIBUSDATA = _PCIBUSDATA;
 pub type PPCIBUSDATA = *mut _PCIBUSDATA;
 pub type PCI_READ_WRITE_CONFIG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         BusOffset: ULONG,
         Slot: ULONG,
@@ -36519,19 +36519,19 @@ pub type PCI_READ_WRITE_CONFIG = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PCI_PIN_TO_LINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, PciData: PPCI_COMMON_CONFIG)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, PciData: PPCI_COMMON_CONFIG)>;
 pub type PCI_LINE_TO_PIN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PciNewData: PPCI_COMMON_CONFIG,
         PciOldData: PPCI_COMMON_CONFIG,
     ),
 >;
 pub type PCI_ROOT_BUS_CAPABILITY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, HardwareCapability: PPCI_ROOT_BUS_HARDWARE_CAPABILITY),
+    unsafe extern "system" fn(Context: PVOID, HardwareCapability: PPCI_ROOT_BUS_HARDWARE_CAPABILITY),
 >;
 pub type PCI_EXPRESS_WAKE_CONTROL =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, EnableWake: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, EnableWake: BOOLEAN)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PCI_BUS_INTERFACE_STANDARD {
@@ -36667,7 +36667,7 @@ pub type _BUS_DATA_TYPE = ::core::ffi::c_int;
 pub use self::_BUS_DATA_TYPE as BUS_DATA_TYPE;
 pub type PBUS_DATA_TYPE = *mut _BUS_DATA_TYPE;
 pub type PLEGACY_DEVICE_DETECTION_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         LegacyBusType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -36685,7 +36685,7 @@ pub struct _ROUTING_TOKEN {
 pub type ROUTING_TOKEN = _ROUTING_TOKEN;
 pub type PROUTING_TOKEN = *mut _ROUTING_TOKEN;
 pub type PGET_INTERRUPT_ROUTING = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pdo: PDEVICE_OBJECT,
         Bus: *mut ULONG,
         PciSlot: *mut ULONG,
@@ -36699,10 +36699,10 @@ pub type PGET_INTERRUPT_ROUTING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PSET_INTERRUPT_ROUTING_TOKEN = ::core::option::Option<
-    unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, RoutingToken: PROUTING_TOKEN) -> NTSTATUS,
+    unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, RoutingToken: PROUTING_TOKEN) -> NTSTATUS,
 >;
 pub type PUPDATE_INTERRUPT_LINE =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, LineRegister: UCHAR)>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, LineRegister: UCHAR)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _INT_ROUTE_INTERFACE_STANDARD {
@@ -36736,17 +36736,17 @@ unsafe extern "C" {
     pub static GUID_PCI_PME_INTERFACE: GUID;
 }
 pub type PCARDBUSADD = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, DeviceContext: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, DeviceContext: *mut PVOID) -> NTSTATUS,
 >;
 pub type PCARDBUSDELETE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceContext: PVOID) -> NTSTATUS>;
 pub type PCARDBUSPCIDISPATCH =
-    ::core::option::Option<unsafe extern "C" fn(DeviceContext: PVOID, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceContext: PVOID, Irp: PIRP) -> NTSTATUS>;
 pub type PPME_SET_PME_ENABLE =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, PmeEnable: BOOLEAN)>;
-pub type PPME_CLEAR_PME_STATUS = ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, PmeEnable: BOOLEAN)>;
+pub type PPME_CLEAR_PME_STATUS = ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT)>;
 pub type PPME_GET_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pdo: PDEVICE_OBJECT,
         PmeCapable: PBOOLEAN,
         PmeStatus: PBOOLEAN,
@@ -36783,7 +36783,7 @@ pub struct _PCI_PME_INTERFACE {
 pub type PCI_PME_INTERFACE = _PCI_PME_INTERFACE;
 pub type PPCI_PME_INTERFACE = *mut _PCI_PME_INTERFACE;
 pub type PHAL_RESET_DISPLAY_PARAMETERS =
-    ::core::option::Option<unsafe extern "C" fn(Columns: ULONG, Rows: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Columns: ULONG, Rows: ULONG) -> BOOLEAN>;
 pub type pHalHandlerForBus = ::core::option::Option<
     unsafe extern "C" fn(InterfaceType: INTERFACE_TYPE, BusNumber: ULONG) -> PBUS_HANDLER,
 >;
@@ -36845,7 +36845,7 @@ pub type _HAL_SET_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_HAL_SET_INFORMATION_CLASS as HAL_SET_INFORMATION_CLASS;
 pub type PHAL_SET_INFORMATION_CLASS = *mut _HAL_SET_INFORMATION_CLASS;
 pub type pHalQuerySystemInformation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InformationClass: HAL_QUERY_INFORMATION_CLASS,
         BufferSize: ULONG,
         Buffer: PVOID,
@@ -36853,7 +36853,7 @@ pub type pHalQuerySystemInformation = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type pHalSetSystemInformation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InformationClass: HAL_SET_INFORMATION_CLASS,
         BufferSize: ULONG,
         Buffer: PVOID,
@@ -36893,14 +36893,14 @@ pub type pHalIoWritePartitionTable = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type pHalQueryBusSlots = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         BufferSize: ULONG,
         SlotNumbers: PULONG,
         ReturnedLength: PULONG,
     ) -> NTSTATUS,
 >;
-pub type pHalInitPnpDriver = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type pHalInitPnpDriver = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PM_DISPATCH_TABLE {
@@ -36911,20 +36911,20 @@ pub struct _PM_DISPATCH_TABLE {
 pub type PM_DISPATCH_TABLE = _PM_DISPATCH_TABLE;
 pub type PPM_DISPATCH_TABLE = *mut _PM_DISPATCH_TABLE;
 pub type pHalInitPowerManagement = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PmDriverDispatchTable: PPM_DISPATCH_TABLE,
         PmHalDispatchTable: *mut PPM_DISPATCH_TABLE,
     ) -> NTSTATUS,
 >;
 pub type pHalGetDmaAdapter = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DeviceDescriptor: *mut _DEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
     ) -> *mut _DMA_ADAPTER,
 >;
 pub type pHalGetInterruptTranslator = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ParentInterfaceType: INTERFACE_TYPE,
         ParentBusNumber: ULONG,
         BridgeInterfaceType: INTERFACE_TYPE,
@@ -36934,23 +36934,23 @@ pub type pHalGetInterruptTranslator = ::core::option::Option<
         BridgeBusNumber: PULONG,
     ) -> NTSTATUS,
 >;
-pub type pHalStartMirroring = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type pHalStartMirroring = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type pHalEndMirroring =
-    ::core::option::Option<unsafe extern "C" fn(PassNumber: ULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(PassNumber: ULONG) -> NTSTATUS>;
 pub type pHalMirrorPhysicalMemory = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type pHalMirrorVerify = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type pHalTranslateBusAddress = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
         BusAddress: PHYSICAL_ADDRESS,
@@ -36959,7 +36959,7 @@ pub type pHalTranslateBusAddress = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type pHalAssignSlotResources = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistryPath: PUNICODE_STRING,
         DriverClassName: PUNICODE_STRING,
         DriverObject: PDRIVER_OBJECT,
@@ -36970,8 +36970,8 @@ pub type pHalAssignSlotResources = ::core::option::Option<
         AllocatedResources: *mut PCM_RESOURCE_LIST,
     ) -> NTSTATUS,
 >;
-pub type pHalHaltSystem = ::core::option::Option<unsafe extern "C" fn()>;
-pub type pHalResetDisplay = ::core::option::Option<unsafe extern "C" fn() -> BOOLEAN>;
+pub type pHalHaltSystem = ::core::option::Option<unsafe extern "system" fn()>;
+pub type pHalResetDisplay = ::core::option::Option<unsafe extern "system" fn() -> BOOLEAN>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _MAP_REGISTER_ENTRY {
@@ -36981,9 +36981,9 @@ pub struct _MAP_REGISTER_ENTRY {
 pub type MAP_REGISTER_ENTRY = _MAP_REGISTER_ENTRY;
 pub type PMAP_REGISTER_ENTRY = *mut _MAP_REGISTER_ENTRY;
 pub type pHalVectorToIDTEntry =
-    ::core::option::Option<unsafe extern "C" fn(Vector: ULONG) -> UCHAR>;
+    ::core::option::Option<unsafe extern "system" fn(Vector: ULONG) -> UCHAR>;
 pub type pHalFindBusAddressTranslation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusAddress: PHYSICAL_ADDRESS,
         AddressSpace: PULONG,
         TranslatedAddress: PPHYSICAL_ADDRESS,
@@ -36991,13 +36991,13 @@ pub type pHalFindBusAddressTranslation = ::core::option::Option<
         NextBus: BOOLEAN,
     ) -> BOOLEAN,
 >;
-pub type pHalEndOfBoot = ::core::option::Option<unsafe extern "C" fn()>;
+pub type pHalEndOfBoot = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pHalGetAcpiTable = ::core::option::Option<
-    unsafe extern "C" fn(Signature: ULONG, OemId: PCSTR, OemTableId: PCSTR) -> PVOID,
+    unsafe extern "system" fn(Signature: ULONG, OemId: PCSTR, OemTableId: PCSTR) -> PVOID,
 >;
-pub type PCI_ERROR_HANDLER_CALLBACK = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PCI_ERROR_HANDLER_CALLBACK = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pHalSetPciErrorHandlerCallback =
-    ::core::option::Option<unsafe extern "C" fn(Callback: PCI_ERROR_HANDLER_CALLBACK)>;
+    ::core::option::Option<unsafe extern "system" fn(Callback: PCI_ERROR_HANDLER_CALLBACK)>;
 pub type pHalIoAssignDriveLetters = ::core::option::Option<
     unsafe extern "C" fn(
         LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
@@ -37121,7 +37121,7 @@ pub struct _HAL_PROCESSOR_FEATURE {
 }
 pub type HAL_PROCESSOR_FEATURE = _HAL_PROCESSOR_FEATURE;
 pub type PHALIOREADWRITEHANDLER = ::core::option::Option<
-    unsafe extern "C" fn(fRead: BOOLEAN, dwAddr: ULONG, dwSize: ULONG, pdwData: PULONG) -> NTSTATUS,
+    unsafe extern "system" fn(fRead: BOOLEAN, dwAddr: ULONG, dwSize: ULONG, pdwData: PULONG) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -37133,10 +37133,10 @@ pub struct _HAL_AMLI_BAD_IO_ADDRESS_LIST {
 }
 pub type HAL_AMLI_BAD_IO_ADDRESS_LIST = _HAL_AMLI_BAD_IO_ADDRESS_LIST;
 pub type PHAL_AMLI_BAD_IO_ADDRESS_LIST = *mut _HAL_AMLI_BAD_IO_ADDRESS_LIST;
-pub type PHALMCAINTERFACELOCK = ::core::option::Option<unsafe extern "C" fn()>;
-pub type PHALMCAINTERFACEUNLOCK = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PHALMCAINTERFACELOCK = ::core::option::Option<unsafe extern "system" fn()>;
+pub type PHALMCAINTERFACEUNLOCK = ::core::option::Option<unsafe extern "system" fn()>;
 pub type PHALMCAINTERFACEREADREGISTER =
-    ::core::option::Option<unsafe extern "C" fn(BankNumber: UCHAR, Exception: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BankNumber: UCHAR, Exception: PVOID) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _HAL_MCA_INTERFACE {
@@ -37153,7 +37153,7 @@ pub const HAL_APIC_DESTINATION_MODE_ApicDestinationModeUnknown: HAL_APIC_DESTINA
 pub type HAL_APIC_DESTINATION_MODE = ::core::ffi::c_uint;
 pub type PHAL_APIC_DESTINATION_MODE = *mut HAL_APIC_DESTINATION_MODE;
 pub type PDRIVER_EXCPTN_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         TrapFrame: *mut _KTRAP_FRAME,
         ExceptionFrame: *mut _KEXCEPTION_FRAME,
@@ -37204,9 +37204,9 @@ pub struct _HAL_ERROR_INFO {
 pub type HAL_ERROR_INFO = _HAL_ERROR_INFO;
 pub type PHAL_ERROR_INFO = *mut _HAL_ERROR_INFO;
 pub type PDRIVER_CMC_EXCEPTION_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, CmcLog: PCMC_EXCEPTION)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, CmcLog: PCMC_EXCEPTION)>;
 pub type PDRIVER_CPE_EXCEPTION_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, CmcLog: PCPE_EXCEPTION)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, CmcLog: PCPE_EXCEPTION)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CMC_DRIVER_INFO {
@@ -37297,10 +37297,10 @@ pub union _NT_TIB64__bindgen_ty_1 {
 }
 pub type NT_TIB64 = _NT_TIB64;
 pub type PNT_TIB64 = *mut _NT_TIB64;
-pub type EXPAND_STACK_CALLOUT = ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID)>;
+pub type EXPAND_STACK_CALLOUT = ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID)>;
 pub type PEXPAND_STACK_CALLOUT = EXPAND_STACK_CALLOUT;
 pub type PTIMER_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
+    unsafe extern "system" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
 >;
 pub const _TIMER_SET_INFORMATION_CLASS_TimerSetCoalescableTimer: _TIMER_SET_INFORMATION_CLASS = 0;
 pub const _TIMER_SET_INFORMATION_CLASS_MaxTimerInfoClass: _TIMER_SET_INFORMATION_CLASS = 1;
@@ -37825,21 +37825,21 @@ pub struct _DEBUG_DEVICE_DESCRIPTOR {
 pub type DEBUG_DEVICE_DESCRIPTOR = _DEBUG_DEVICE_DESCRIPTOR;
 pub type PDEBUG_DEVICE_DESCRIPTOR = *mut _DEBUG_DEVICE_DESCRIPTOR;
 pub type pKdSetupPciDeviceForDebugging = ::core::option::Option<
-    unsafe extern "C" fn(LoaderBlock: PVOID, PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS,
+    unsafe extern "system" fn(LoaderBlock: PVOID, PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS,
 >;
 pub type pKdReleasePciDeviceForDebugging =
-    ::core::option::Option<unsafe extern "C" fn(PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS>;
 pub type pKdGetAcpiTablePhase0 = ::core::option::Option<
-    unsafe extern "C" fn(LoaderBlock: *mut _LOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID,
+    unsafe extern "system" fn(LoaderBlock: *mut _LOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID,
 >;
-pub type pKdCheckPowerButton = ::core::option::Option<unsafe extern "C" fn()>;
+pub type pKdCheckPowerButton = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pKdMapPhysicalMemory64 = ::core::option::Option<
-    unsafe extern "C" fn(PhysicalAddress: PHYSICAL_ADDRESS, NumberPages: ULONG) -> PVOID,
+    unsafe extern "system" fn(PhysicalAddress: PHYSICAL_ADDRESS, NumberPages: ULONG) -> PVOID,
 >;
 pub type pKdUnmapVirtualAddress =
-    ::core::option::Option<unsafe extern "C" fn(VirtualAddress: PVOID, NumberPages: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(VirtualAddress: PVOID, NumberPages: ULONG)>;
 pub type pKdGetPciDataByOffset = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusNumber: ULONG,
         SlotNumber: ULONG,
         Buffer: PVOID,
@@ -37848,7 +37848,7 @@ pub type pKdGetPciDataByOffset = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type pKdSetPciDataByOffset = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusNumber: ULONG,
         SlotNumber: ULONG,
         Buffer: PVOID,
@@ -37865,7 +37865,7 @@ pub struct _PHYSICAL_MEMORY_RANGE {
 pub type PHYSICAL_MEMORY_RANGE = _PHYSICAL_MEMORY_RANGE;
 pub type PPHYSICAL_MEMORY_RANGE = *mut _PHYSICAL_MEMORY_RANGE;
 pub type PMM_ROTATE_COPY_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(DestinationMdl: PMDL, SourceMdl: PMDL, Context: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DestinationMdl: PMDL, SourceMdl: PMDL, Context: PVOID) -> NTSTATUS,
 >;
 pub const _MM_ROTATE_DIRECTION_MmToFrameBuffer: _MM_ROTATE_DIRECTION = 0;
 pub const _MM_ROTATE_DIRECTION_MmToFrameBufferNoCopy: _MM_ROTATE_DIRECTION = 1;
@@ -38096,7 +38096,7 @@ pub struct _PROCESS_EXCEPTION_PORT {
 pub type PROCESS_EXCEPTION_PORT = _PROCESS_EXCEPTION_PORT;
 pub type PPROCESS_EXCEPTION_PORT = *mut _PROCESS_EXCEPTION_PORT;
 pub type PCREATE_PROCESS_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ParentId: HANDLE, ProcessId: HANDLE, Create: BOOLEAN),
+    unsafe extern "system" fn(ParentId: HANDLE, ProcessId: HANDLE, Create: BOOLEAN),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -38210,10 +38210,10 @@ impl _PS_CREATE_NOTIFY_INFO__bindgen_ty_1__bindgen_ty_1 {
 pub type PS_CREATE_NOTIFY_INFO = _PS_CREATE_NOTIFY_INFO;
 pub type PPS_CREATE_NOTIFY_INFO = *mut _PS_CREATE_NOTIFY_INFO;
 pub type PCREATE_PROCESS_NOTIFY_ROUTINE_EX = ::core::option::Option<
-    unsafe extern "C" fn(Process: PEPROCESS, ProcessId: HANDLE, CreateInfo: PPS_CREATE_NOTIFY_INFO),
+    unsafe extern "system" fn(Process: PEPROCESS, ProcessId: HANDLE, CreateInfo: PPS_CREATE_NOTIFY_INFO),
 >;
 pub type PCREATE_THREAD_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ProcessId: HANDLE, ThreadId: HANDLE, Create: BOOLEAN),
+    unsafe extern "system" fn(ProcessId: HANDLE, ThreadId: HANDLE, Create: BOOLEAN),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -38446,7 +38446,7 @@ pub struct _IMAGE_INFO_EX {
 pub type IMAGE_INFO_EX = _IMAGE_INFO_EX;
 pub type PIMAGE_INFO_EX = *mut _IMAGE_INFO_EX;
 pub type PLOAD_IMAGE_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(FullImageName: PUNICODE_STRING, ProcessId: HANDLE, ImageInfo: PIMAGE_INFO),
+    unsafe extern "system" fn(FullImageName: PUNICODE_STRING, ProcessId: HANDLE, ImageInfo: PIMAGE_INFO),
 >;
 pub const _PROCESSINFOCLASS_ProcessBasicInformation: _PROCESSINFOCLASS = 0;
 pub const _PROCESSINFOCLASS_ProcessQuotaLimits: _PROCESSINFOCLASS = 1;
@@ -38909,7 +38909,7 @@ pub union _RTL_RUN_ONCE {
 pub type RTL_RUN_ONCE = _RTL_RUN_ONCE;
 pub type PRTL_RUN_ONCE = *mut _RTL_RUN_ONCE;
 pub type RTL_RUN_ONCE_INIT_FN = ::core::option::Option<
-    unsafe extern "C" fn(RunOnce: PRTL_RUN_ONCE, Parameter: PVOID, Context: *mut PVOID) -> ULONG,
+    unsafe extern "system" fn(RunOnce: PRTL_RUN_ONCE, Parameter: PVOID, Context: *mut PVOID) -> ULONG,
 >;
 pub type PRTL_RUN_ONCE_INIT_FN = RTL_RUN_ONCE_INIT_FN;
 pub const _TABLE_SEARCH_RESULT_TableEmptyTree: _TABLE_SEARCH_RESULT = 0;
@@ -38924,7 +38924,7 @@ pub const _RTL_GENERIC_COMPARE_RESULTS_GenericEqual: _RTL_GENERIC_COMPARE_RESULT
 pub type _RTL_GENERIC_COMPARE_RESULTS = ::core::ffi::c_uint;
 pub use self::_RTL_GENERIC_COMPARE_RESULTS as RTL_GENERIC_COMPARE_RESULTS;
 pub type RTL_AVL_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Table: *mut _RTL_AVL_TABLE,
         FirstStruct: PVOID,
         SecondStruct: PVOID,
@@ -38932,14 +38932,14 @@ pub type RTL_AVL_COMPARE_ROUTINE = ::core::option::Option<
 >;
 pub type PRTL_AVL_COMPARE_ROUTINE = RTL_AVL_COMPARE_ROUTINE;
 pub type RTL_AVL_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, ByteSize: CLONG) -> PVOID,
+    unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, ByteSize: CLONG) -> PVOID,
 >;
 pub type PRTL_AVL_ALLOCATE_ROUTINE = RTL_AVL_ALLOCATE_ROUTINE;
 pub type RTL_AVL_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, Buffer: PVOID)>;
 pub type PRTL_AVL_FREE_ROUTINE = RTL_AVL_FREE_ROUTINE;
 pub type RTL_AVL_MATCH_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, UserData: PVOID, MatchData: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, UserData: PVOID, MatchData: PVOID) -> NTSTATUS,
 >;
 pub type PRTL_AVL_MATCH_FUNCTION = RTL_AVL_MATCH_FUNCTION;
 #[repr(C)]
@@ -38980,7 +38980,7 @@ pub struct _RTL_SPLAY_LINKS {
 pub type RTL_SPLAY_LINKS = _RTL_SPLAY_LINKS;
 pub type PRTL_SPLAY_LINKS = *mut _RTL_SPLAY_LINKS;
 pub type RTL_GENERIC_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Table: *mut _RTL_GENERIC_TABLE,
         FirstStruct: PVOID,
         SecondStruct: PVOID,
@@ -38988,11 +38988,11 @@ pub type RTL_GENERIC_COMPARE_ROUTINE = ::core::option::Option<
 >;
 pub type PRTL_GENERIC_COMPARE_ROUTINE = RTL_GENERIC_COMPARE_ROUTINE;
 pub type RTL_GENERIC_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_GENERIC_TABLE, ByteSize: CLONG) -> PVOID,
+    unsafe extern "system" fn(Table: *mut _RTL_GENERIC_TABLE, ByteSize: CLONG) -> PVOID,
 >;
 pub type PRTL_GENERIC_ALLOCATE_ROUTINE = RTL_GENERIC_ALLOCATE_ROUTINE;
 pub type RTL_GENERIC_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Table: *mut _RTL_GENERIC_TABLE, Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Table: *mut _RTL_GENERIC_TABLE, Buffer: PVOID)>;
 pub type PRTL_GENERIC_FREE_ROUTINE = RTL_GENERIC_FREE_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -39305,7 +39305,7 @@ pub const _INTERLOCKED_RESULT_ResultZero: _INTERLOCKED_RESULT = 0;
 pub const _INTERLOCKED_RESULT_ResultPositive: _INTERLOCKED_RESULT = 2;
 pub type _INTERLOCKED_RESULT = ::core::ffi::c_uint;
 pub use self::_INTERLOCKED_RESULT as INTERLOCKED_RESULT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAllocateCommonBuffer(
         AdapterObject: PADAPTER_OBJECT,
         Length: ULONG,
@@ -39313,7 +39313,7 @@ unsafe extern "C" {
         CacheEnabled: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalFreeCommonBuffer(
         AdapterObject: PADAPTER_OBJECT,
         Length: ULONG,
@@ -39322,10 +39322,10 @@ unsafe extern "C" {
         CacheEnabled: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalReadDmaCounter(AdapterObject: PADAPTER_OBJECT) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAllocateAdapterChannel(
         AdapterObject: PADAPTER_OBJECT,
         Wcb: PWAIT_CONTEXT_BLOCK,
@@ -39333,7 +39333,7 @@ unsafe extern "C" {
         ExecutionRoutine: PDRIVER_CONTROL,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAssignSlotResources(
         RegistryPath: PUNICODE_STRING,
         DriverClassName: PUNICODE_STRING,
@@ -39345,7 +39345,7 @@ unsafe extern "C" {
         AllocatedResources: *mut PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetInterruptVector(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -39355,7 +39355,7 @@ unsafe extern "C" {
         Affinity: PKAFFINITY,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetBusData(
         BusDataType: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -39364,7 +39364,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetBusData(
         BusDataType: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -39373,22 +39373,22 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalMakeBeep(Frequency: ULONG) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetAdapter(
         DeviceDescription: PDEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
     ) -> PADAPTER_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalPutDmaAdapter(DmaAdapter: PADAPTER_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAcquireDisplayOwnership(ResetDisplayParameters: PHAL_RESET_DISPLAY_PARAMETERS);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetBusDataByOffset(
         BusDataType: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -39398,7 +39398,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetBusDataByOffset(
         BusDataType: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -39408,7 +39408,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalTranslateBusAddress(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -39417,13 +39417,13 @@ unsafe extern "C" {
         TranslatedAddress: PPHYSICAL_ADDRESS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAllocateCrashDumpRegisters(
         AdapterObject: PADAPTER_OBJECT,
         NumberOfMapRegisters: PULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetScatterGatherList(
         DmaAdapter: PADAPTER_OBJECT,
         DeviceObject: PDEVICE_OBJECT,
@@ -39435,7 +39435,7 @@ unsafe extern "C" {
         WriteToDevice: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalPutScatterGatherList(
         DmaAdapter: PADAPTER_OBJECT,
         ScatterGather: PSCATTER_GATHER_LIST,
@@ -39456,7 +39456,7 @@ pub struct _WHEA_ERROR_RECORD {
     _unused: [u8; 0],
 }
 pub type PWHEA_ERROR_RECORD = *mut _WHEA_ERROR_RECORD;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalBugCheckSystem(ErrorRecord: PWHEA_ERROR_RECORD);
 }
 #[repr(C)]
@@ -39499,7 +39499,7 @@ pub struct _SYSTEM_FIRMWARE_TABLE_HANDLER {
 pub type SYSTEM_FIRMWARE_TABLE_HANDLER = _SYSTEM_FIRMWARE_TABLE_HANDLER;
 pub type PSYSTEM_FIRMWARE_TABLE_HANDLER = *mut _SYSTEM_FIRMWARE_TABLE_HANDLER;
 pub type PDRIVER_VERIFIER_THUNK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> ULONG_PTR>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> ULONG_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DRIVER_VERIFIER_THUNK_PAIRS {
@@ -40093,7 +40093,7 @@ pub struct _SE_EXPORTS {
 pub type SE_EXPORTS = _SE_EXPORTS;
 pub type PSE_EXPORTS = *mut _SE_EXPORTS;
 pub type PSE_LOGON_SESSION_TERMINATED_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(LogonId: PLUID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(LogonId: PLUID) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SECURITY_CLIENT_CONTEXT {
@@ -40116,8 +40116,8 @@ pub const _OBJECT_INFORMATION_CLASS_MaxObjectInfoClass: _OBJECT_INFORMATION_CLAS
 pub type _OBJECT_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_OBJECT_INFORMATION_CLASS as OBJECT_INFORMATION_CLASS;
 pub type PRTL_ALLOCATE_STRING_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(NumberOfBytes: SIZE_T) -> PVOID>;
-pub type PRTL_FREE_STRING_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(NumberOfBytes: SIZE_T) -> PVOID>;
+pub type PRTL_FREE_STRING_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID)>;
 unsafe extern "C" {
     pub static RtlAllocateStringRoutine: PRTL_ALLOCATE_STRING_ROUTINE;
 }
@@ -40125,7 +40125,7 @@ unsafe extern "C" {
     pub static RtlFreeStringRoutine: PRTL_FREE_STRING_ROUTINE;
 }
 pub type PRTL_HEAP_COMMIT_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T) -> NTSTATUS,
+    unsafe extern "system" fn(Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -41598,7 +41598,7 @@ pub struct _REMOTE_LINK_TRACKING_INFORMATION {
 pub type REMOTE_LINK_TRACKING_INFORMATION = _REMOTE_LINK_TRACKING_INFORMATION;
 pub type PREMOTE_LINK_TRACKING_INFORMATION = *mut _REMOTE_LINK_TRACKING_INFORMATION;
 pub type DRIVER_FS_NOTIFICATION =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, FsActive: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, FsActive: BOOLEAN)>;
 pub type PDRIVER_FS_NOTIFICATION = DRIVER_FS_NOTIFICATION;
 pub const _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeOther: _FS_FILTER_SECTION_SYNC_TYPE = 0;
 pub const _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeCreateSection: _FS_FILTER_SECTION_SYNC_TYPE = 1;
@@ -41670,10 +41670,10 @@ pub struct _FS_FILTER_CALLBACK_DATA {
 pub type FS_FILTER_CALLBACK_DATA = _FS_FILTER_CALLBACK_DATA;
 pub type PFS_FILTER_CALLBACK_DATA = *mut _FS_FILTER_CALLBACK_DATA;
 pub type PFS_FILTER_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(Data: PFS_FILTER_CALLBACK_DATA, CompletionContext: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Data: PFS_FILTER_CALLBACK_DATA, CompletionContext: *mut PVOID) -> NTSTATUS,
 >;
 pub type PFS_FILTER_COMPLETION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Data: PFS_FILTER_CALLBACK_DATA,
         OperationStatus: NTSTATUS,
         CompletionContext: PVOID,
@@ -42106,7 +42106,7 @@ pub const _FSRTL_COMPARISON_RESULT_GreaterThan: _FSRTL_COMPARISON_RESULT = 1;
 pub type _FSRTL_COMPARISON_RESULT = ::core::ffi::c_int;
 pub use self::_FSRTL_COMPARISON_RESULT as FSRTL_COMPARISON_RESULT;
 pub type PFSRTL_STACK_OVERFLOW_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Event: PKEVENT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Event: PKEVENT)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _FSRTL_PER_FILE_CONTEXT {
@@ -42139,7 +42139,7 @@ pub struct _FSRTL_PER_FILEOBJECT_CONTEXT {
 pub type FSRTL_PER_FILEOBJECT_CONTEXT = _FSRTL_PER_FILEOBJECT_CONTEXT;
 pub type PFSRTL_PER_FILEOBJECT_CONTEXT = *mut _FSRTL_PER_FILEOBJECT_CONTEXT;
 pub type PCOMPLETE_LOCK_IRP_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _FILE_LOCK_INFO {
@@ -42154,7 +42154,7 @@ pub struct _FILE_LOCK_INFO {
 pub type FILE_LOCK_INFO = _FILE_LOCK_INFO;
 pub type PFILE_LOCK_INFO = *mut _FILE_LOCK_INFO;
 pub type PUNLOCK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, FileLockInfo: PFILE_LOCK_INFO)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, FileLockInfo: PFILE_LOCK_INFO)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _FILE_LOCK {
@@ -42221,19 +42221,19 @@ pub type PEOF_WAIT_BLOCK = *mut _EOF_WAIT_BLOCK;
 pub type OPLOCK = PVOID;
 pub type POPLOCK = *mut PVOID;
 pub type POPLOCK_WAIT_COMPLETE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP)>;
 pub type POPLOCK_FS_PREPOST_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP)>;
 pub type PNOTIFY_SYNC = PVOID;
 pub type PCHECK_FOR_TRAVERSE_ACCESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         NotifyContext: PVOID,
         TargetContext: PVOID,
         SubjectContext: PSECURITY_SUBJECT_CONTEXT,
     ) -> BOOLEAN,
 >;
 pub type PFILTER_REPORT_CHANGE = ::core::option::Option<
-    unsafe extern "C" fn(NotifyContext: PVOID, FilterContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(NotifyContext: PVOID, FilterContext: PVOID) -> BOOLEAN,
 >;
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
@@ -42259,11 +42259,11 @@ pub struct _CC_FILE_SIZES {
 pub type CC_FILE_SIZES = _CC_FILE_SIZES;
 pub type PCC_FILE_SIZES = *mut _CC_FILE_SIZES;
 pub type PACQUIRE_FOR_LAZY_WRITE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
-pub type PRELEASE_FROM_LAZY_WRITE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
+pub type PRELEASE_FROM_LAZY_WRITE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PACQUIRE_FOR_READ_AHEAD =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
-pub type PRELEASE_FROM_READ_AHEAD = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
+pub type PRELEASE_FROM_READ_AHEAD = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CACHE_MANAGER_CALLBACKS {
@@ -42283,7 +42283,7 @@ pub struct _CACHE_UNINITIALIZE_EVENT {
 pub type CACHE_UNINITIALIZE_EVENT = _CACHE_UNINITIALIZE_EVENT;
 pub type PCACHE_UNINITIALIZE_EVENT = *mut _CACHE_UNINITIALIZE_EVENT;
 pub type PDIRTY_PAGE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: PFILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -42294,9 +42294,9 @@ pub type PDIRTY_PAGE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type PFLUSH_TO_LSN =
-    ::core::option::Option<unsafe extern "C" fn(LogHandle: PVOID, Lsn: LARGE_INTEGER)>;
+    ::core::option::Option<unsafe extern "system" fn(LogHandle: PVOID, Lsn: LARGE_INTEGER)>;
 pub type PCC_POST_DEFERRED_WRITE =
-    ::core::option::Option<unsafe extern "C" fn(Context1: PVOID, Context2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context1: PVOID, Context2: PVOID)>;
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut CcFastMdlReadWait: ULONG;
@@ -42623,7 +42623,7 @@ pub type PSecPkgContext_LogoffTime = *mut _SecPkgContext_LogoffTime;
 pub type SecurityFunctionTableW = _SECURITY_FUNCTION_TABLE_W;
 pub type PSecurityFunctionTableW = *mut _SECURITY_FUNCTION_TABLE_W;
 pub type SEC_GET_KEY_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Arg: PVOID,
         Principal: PVOID,
         KeyVer: ULONG,
@@ -42632,7 +42632,7 @@ pub type SEC_GET_KEY_FN = ::core::option::Option<
     ),
 >;
 pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: PSecBufferDesc,
@@ -42645,7 +42645,7 @@ pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PSECURITY_STRING,
         arg2: PSECURITY_STRING,
         arg3: ULONG,
@@ -42658,7 +42658,7 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: *mut SEC_CHAR,
         arg3: *mut SEC_CHAR,
@@ -42670,7 +42670,7 @@ pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PSECURITY_STRING,
         arg3: PSECURITY_STRING,
@@ -42682,13 +42682,13 @@ pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type APPLY_CONTROL_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type COMPLETE_AUTH_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -42696,9 +42696,9 @@ pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type DELETE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -42706,10 +42706,10 @@ pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ENUMERATE_SECURITY_PACKAGES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBuffer,
@@ -42717,13 +42717,13 @@ pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type FREE_CONTEXT_BUFFER_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> SECURITY_STATUS>;
 pub type FREE_CREDENTIALS_HANDLE_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
 pub type IMPERSONATE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PSECURITY_STRING,
         arg2: PSecBuffer,
         arg3: PVOID,
@@ -42731,7 +42731,7 @@ pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: PSECURITY_STRING,
@@ -42747,9 +42747,9 @@ pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type INIT_SECURITY_INTERFACE_W =
-    ::core::option::Option<unsafe extern "C" fn() -> PSecurityFunctionTableW>;
+    ::core::option::Option<unsafe extern "system" fn() -> PSecurityFunctionTableW>;
 pub type MAKE_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -42757,21 +42757,21 @@ pub type MAKE_SIGNATURE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type QUERY_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_CONTEXT_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: *mut PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: *mut PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PSECURITY_STRING, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PSECURITY_STRING, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type REVERT_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type SET_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PVOID,
@@ -42779,7 +42779,7 @@ pub type SET_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type SET_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: ULONG,
         arg3: PVOID,
@@ -42787,7 +42787,7 @@ pub type SET_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type VERIFY_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -44049,9 +44049,9 @@ pub type pHalHandlerForConfigSpace = ::core::option::Option<
     unsafe extern "C" fn(ConfigSpace: BUS_DATA_TYPE, BusNumber: ULONG) -> PBUS_HANDLER,
 >;
 pub type PINSTALL_BUS_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(Bus: PBUS_HANDLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Bus: PBUS_HANDLER) -> NTSTATUS>;
 pub type pHalRegisterBusHandler = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InterfaceType: INTERFACE_TYPE,
         ConfigSpace: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -44062,12 +44062,12 @@ pub type pHalRegisterBusHandler = ::core::option::Option<
         BusHandler: *mut PBUS_HANDLER,
     ) -> NTSTATUS,
 >;
-pub type pHalSetWakeEnable = ::core::option::Option<unsafe extern "C" fn(Enable: BOOLEAN)>;
+pub type pHalSetWakeEnable = ::core::option::Option<unsafe extern "system" fn(Enable: BOOLEAN)>;
 pub type pHalSetWakeAlarm =
-    ::core::option::Option<unsafe extern "C" fn(AlartTime: ULONGLONG, TimeFields: PTIME_FIELDS)>;
-pub type pHalLocateHiberRanges = ::core::option::Option<unsafe extern "C" fn(MemoryMap: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(AlartTime: ULONGLONG, TimeFields: PTIME_FIELDS)>;
+pub type pHalLocateHiberRanges = ::core::option::Option<unsafe extern "system" fn(MemoryMap: PVOID)>;
 pub type pHalAllocateMapRegisters = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         AdapterObject: PADAPTER_OBJECT,
         Unknown: ULONG,
         Unknown2: ULONG,
@@ -44075,14 +44075,14 @@ pub type pHalAllocateMapRegisters = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PADJUSTRESOURCELIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS,
 >;
 pub type PASSIGNSLOTRESOURCES = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         RegistryPath: PUNICODE_STRING,
@@ -44094,7 +44094,7 @@ pub type PASSIGNSLOTRESOURCES = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGETSETBUSDATA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         SlotNumber: ULONG,
@@ -44104,7 +44104,7 @@ pub type PGETSETBUSDATA = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PGETINTERRUPTVECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         BusInterruptLevel: ULONG,
@@ -44114,7 +44114,7 @@ pub type PGETINTERRUPTVECTOR = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PTRANSLATEBUSADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         BusAddress: PHYSICAL_ADDRESS,
@@ -44273,9 +44273,9 @@ pub type _POWER_STATE_HANDLER_TYPE = ::core::ffi::c_uint;
 pub use self::_POWER_STATE_HANDLER_TYPE as POWER_STATE_HANDLER_TYPE;
 pub type PPOWER_STATE_HANDLER_TYPE = *mut _POWER_STATE_HANDLER_TYPE;
 pub type PENTER_STATE_SYSTEM_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(SystemContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(SystemContext: PVOID) -> NTSTATUS>;
 pub type PENTER_STATE_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SystemHandler: PENTER_STATE_SYSTEM_HANDLER,
         SystemContext: PVOID,
@@ -44295,7 +44295,7 @@ pub struct _POWER_STATE_HANDLER {
 pub type POWER_STATE_HANDLER = _POWER_STATE_HANDLER;
 pub type PPOWER_STATE_HANDLER = *mut _POWER_STATE_HANDLER;
 pub type PENTER_STATE_NOTIFY_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         State: POWER_STATE_HANDLER_TYPE,
         Context: PVOID,
         Entering: BOOLEAN,
@@ -44613,7 +44613,7 @@ pub const _VDMSERVICECLASS_VdmQueryVdmProcess: _VDMSERVICECLASS = 14;
 pub type _VDMSERVICECLASS = ::core::ffi::c_uint;
 pub use self::_VDMSERVICECLASS as VDMSERVICECLASS;
 pub type PKSYSTEM_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID),
+    unsafe extern "system" fn(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID),
 >;
 pub const _KAPC_ENVIRONMENT_OriginalApcEnvironment: _KAPC_ENVIRONMENT = 0;
 pub const _KAPC_ENVIRONMENT_AttachedApcEnvironment: _KAPC_ENVIRONMENT = 1;
@@ -47184,53 +47184,53 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut KeServiceDescriptorTableShadow: [KSERVICE_TABLE_DESCRIPTOR; 2usize];
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalDisplayString(String: PCSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAllProcessorsStarted() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalInitializeProcessor(
         ProcessorNumber: ULONG,
         LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalInitSystem(BootPhase: ULONG, LoaderBlock: *mut _LOADER_PARAMETER_BLOCK) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalStartNextProcessor(
         LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
         ProcessorState: PKPROCESSOR_STATE,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalReturnToFirmware(Action: FIRMWARE_REENTRY);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalProcessorIdle();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalBeginSystemInterrupt(Irql: KIRQL, Vector: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
 unsafe extern "C" {
     pub fn HalClearSoftwareInterrupt(Request: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalDisableSystemInterrupt(Vector: ULONG, Irql: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalEnableSystemInterrupt(
         Vector: ULONG,
         Irql: KIRQL,
         InterruptMode: KINTERRUPT_MODE,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalEndSystemInterrupt(Irql: KIRQL, TrapFrame: PKTRAP_FRAME);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalReportResourceUsage();
 }
 unsafe extern "C" {
@@ -47242,10 +47242,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn HalSendSoftwareInterrupt(TargetSet: KAFFINITY, Irql: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalRequestIpi(TargetSet: KAFFINITY);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalHandleNMI(NmiInfo: PVOID);
 }
 unsafe extern "C" {
@@ -47255,31 +47255,31 @@ unsafe extern "C" {
         NoConnection: *mut PKINTERRUPT_ROUTINE,
     ) -> UCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAdjustResourceList(pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetEnvironmentVariable(Name: PCH, Value: PCH) -> ARC_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalGetEnvironmentVariable(Variable: PCH, Length: USHORT, Buffer: PCH) -> ARC_STATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalStartProfileInterrupt(ProfileSource: KPROFILE_SOURCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalStopProfileInterrupt(ProfileSource: KPROFILE_SOURCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetProfileInterval(Interval: ULONG_PTR) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalQueryRealTimeClock(RtcTime: PTIME_FIELDS) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetRealTimeClock(RtcTime: PTIME_FIELDS) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalSetTimeIncrement(Increment: ULONG) -> ULONG;
 }
 pub const _INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_OWNED: _INBV_DISPLAY_STATE = 0;
@@ -47288,9 +47288,9 @@ pub const _INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_LOST: _INBV_DISPLAY_STATE = 2;
 pub type _INBV_DISPLAY_STATE = ::core::ffi::c_uint;
 pub use self::_INBV_DISPLAY_STATE as INBV_DISPLAY_STATE;
 pub type INBV_RESET_DISPLAY_PARAMETERS =
-    ::core::option::Option<unsafe extern "C" fn(Cols: ULONG, Rows: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Cols: ULONG, Rows: ULONG) -> BOOLEAN>;
 pub type INBV_DISPLAY_STRING_FILTER =
-    ::core::option::Option<unsafe extern "C" fn(String: *mut PCSTR)>;
+    ::core::option::Option<unsafe extern "system" fn(String: *mut PCSTR)>;
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut IoAdapterObjectType: POBJECT_TYPE;
@@ -51562,7 +51562,7 @@ pub union _IMAGE_THUNK_DATA32__bindgen_ty_1 {
 pub type IMAGE_THUNK_DATA32 = _IMAGE_THUNK_DATA32;
 pub type PIMAGE_THUNK_DATA32 = *mut _IMAGE_THUNK_DATA32;
 pub type PIMAGE_TLS_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(DllHandle: PVOID, Reason: ULONG, Reserved: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DllHandle: PVOID, Reason: ULONG, Reserved: PVOID)>;
 #[repr(C, packed(4))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IMAGE_TLS_DIRECTORY64 {
@@ -52221,7 +52221,7 @@ pub const _EVENT_INFORMATION_CLASS_EventBasicInformation: _EVENT_INFORMATION_CLA
 pub type _EVENT_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_EVENT_INFORMATION_CLASS as EVENT_INFORMATION_CLASS;
 pub type PEX_ENUM_HANDLE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         HandleTableEntry: *mut _HANDLE_TABLE_ENTRY,
         Handle: HANDLE,
         Context: PVOID,
@@ -58924,7 +58924,7 @@ pub type LDR_DLL_NOTIFICATION_DATA = _LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_DATA = *mut _LDR_DLL_NOTIFICATION_DATA;
 pub type PCLDR_DLL_NOTIFICATION_DATA = *const LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         NotificationReason: ULONG,
         NotificationData: PCLDR_DLL_NOTIFICATION_DATA,
         Context: PVOID,
@@ -58940,7 +58940,7 @@ pub struct _ALT_RESOURCE_MODULE {
 pub type ALT_RESOURCE_MODULE = _ALT_RESOURCE_MODULE;
 pub type PALT_RESOURCE_MODULE = *mut _ALT_RESOURCE_MODULE;
 pub type LDR_ENUM_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ModuleInformation: PLDR_DATA_TABLE_ENTRY,
         Context: PVOID,
         Stop: *mut BOOLEAN,
@@ -58948,11 +58948,11 @@ pub type LDR_ENUM_CALLBACK = ::core::option::Option<
 >;
 pub type PLDR_ENUM_CALLBACK = LDR_ENUM_CALLBACK;
 pub type LDR_MANIFEST_PROBER_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(DllHandle: PVOID, FullDllName: PCWSTR, ActCtx: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DllHandle: PVOID, FullDllName: PCWSTR, ActCtx: *mut PVOID) -> NTSTATUS,
 >;
 pub type PLDR_MANIFEST_PROBER_ROUTINE = LDR_MANIFEST_PROBER_ROUTINE;
 pub type PDLL_INIT_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
+    unsafe extern "system" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
 >;
 pub const _RTL_BSD_ITEM_TYPE_RtlBsdItemVersionNumber: _RTL_BSD_ITEM_TYPE = 0;
 pub const _RTL_BSD_ITEM_TYPE_RtlBsdItemProductType: _RTL_BSD_ITEM_TYPE = 1;
@@ -58989,31 +58989,31 @@ pub const _HEAP_INFORMATION_CLASS_HeapEnableTerminationOnCorruption: _HEAP_INFOR
 pub type _HEAP_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_HEAP_INFORMATION_CLASS as HEAP_INFORMATION_CLASS;
 pub type WAITORTIMERCALLBACKFUNC =
-    ::core::option::Option<unsafe extern "C" fn(pvContext: PVOID, fTimerOrWaitFired: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(pvContext: PVOID, fTimerOrWaitFired: BOOLEAN)>;
 pub type PVECTORED_EXCEPTION_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(ExceptionPointers: PEXCEPTION_POINTERS) -> LONG>;
-pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(ExceptionPointers: PEXCEPTION_POINTERS) -> LONG>;
+pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type RTLP_UNHANDLED_EXCEPTION_FILTER =
-    ::core::option::Option<unsafe extern "C" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> ULONG>;
 pub type PRTLP_UNHANDLED_EXCEPTION_FILTER = RTLP_UNHANDLED_EXCEPTION_FILTER;
 pub type PHEAP_ENUMERATION_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS>;
 pub type PTHREAD_START_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID) -> ULONG>;
 pub type PRTL_BASE_PROCESS_START_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
+    unsafe extern "system" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
 >;
 pub type PRTL_START_POOL_THREAD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Function: PTHREAD_START_ROUTINE,
         Parameter: PVOID,
         ThreadHandle: PHANDLE,
     ) -> NTSTATUS,
 >;
 pub type PRTL_EXIT_POOL_THREAD =
-    ::core::option::Option<unsafe extern "C" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
 pub type PRTL_CONFLICT_RANGE_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ACTIVATION_CONTEXT_STACK {
@@ -60071,7 +60071,7 @@ pub union _STACK_TRACE_DATABASE__bindgen_ty_1 {
 pub type STACK_TRACE_DATABASE = _STACK_TRACE_DATABASE;
 pub type PSTACK_TRACE_DATABASE = *mut _STACK_TRACE_DATABASE;
 pub type RTL_TRACE_HASH_FUNCTION =
-    ::core::option::Option<unsafe extern "C" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _RTL_TRACE_BLOCK {
@@ -60288,9 +60288,9 @@ pub struct _OB_DUMP_CONTROL {
 pub type OB_DUMP_CONTROL = _OB_DUMP_CONTROL;
 pub type POB_DUMP_CONTROL = *mut _OB_DUMP_CONTROL;
 pub type OB_DUMP_METHOD =
-    ::core::option::Option<unsafe extern "C" fn(Object: PVOID, Control: POB_DUMP_CONTROL)>;
+    ::core::option::Option<unsafe extern "system" fn(Object: PVOID, Control: POB_DUMP_CONTROL)>;
 pub type OB_OPEN_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Reason: OB_OPEN_REASON,
         Process: PEPROCESS,
         ObjectBody: PVOID,
@@ -60299,7 +60299,7 @@ pub type OB_OPEN_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_CLOSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Process: PEPROCESS,
         Object: PVOID,
         GrantedAccess: ACCESS_MASK,
@@ -60307,9 +60307,9 @@ pub type OB_CLOSE_METHOD = ::core::option::Option<
         SystemHandleCount: ULONG,
     ),
 >;
-pub type OB_DELETE_METHOD = ::core::option::Option<unsafe extern "C" fn(Object: PVOID)>;
+pub type OB_DELETE_METHOD = ::core::option::Option<unsafe extern "system" fn(Object: PVOID)>;
 pub type OB_PARSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ParseObject: PVOID,
         ObjectType: PVOID,
         AccessState: PACCESS_STATE,
@@ -60323,7 +60323,7 @@ pub type OB_PARSE_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_SECURITY_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Object: PVOID,
         OperationType: SECURITY_OPERATION_CODE,
         SecurityInformation: PSECURITY_INFORMATION,
@@ -60335,7 +60335,7 @@ pub type OB_SECURITY_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_QUERYNAME_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Object: PVOID,
         HasObjectName: BOOLEAN,
         ObjectNameInfo: POBJECT_NAME_INFORMATION,
@@ -60345,7 +60345,7 @@ pub type OB_QUERYNAME_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_OKAYTOCLOSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Process: PEPROCESS,
         Object: PVOID,
         Handle: HANDLE,
@@ -61251,43 +61251,43 @@ pub struct _W32PROCESS {
     _unused: [u8; 0],
 }
 pub type PKWIN32_PROCESS_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Process: *mut _EPROCESS, Create: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Process: *mut _EPROCESS, Create: BOOLEAN) -> NTSTATUS,
 >;
 pub type PKWIN32_THREAD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Thread: *mut _ETHREAD, Type: PSW32THREADCALLOUTTYPE) -> NTSTATUS,
+    unsafe extern "system" fn(Thread: *mut _ETHREAD, Type: PSW32THREADCALLOUTTYPE) -> NTSTATUS,
 >;
 pub type PKWIN32_GLOBALATOMTABLE_CALLOUT =
-    ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type PKWIN32_POWEREVENT_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_POWEREVENT_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_POWEREVENT_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_POWERSTATE_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_POWERSTATE_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_POWERSTATE_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_JOB_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_JOBCALLOUT_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_JOBCALLOUT_PARAMETERS) -> NTSTATUS,
 >;
-pub type PGDI_BATCHFLUSH_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type PGDI_BATCHFLUSH_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type PKWIN32_OPENMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_OPENMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_OPENMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_OKTOCLOSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_OKAYTOCLOSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_OKAYTOCLOSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_CLOSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_CLOSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_CLOSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_DELETEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_DELETEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_DELETEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_PARSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_PARSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_PARSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_SESSION_CALLOUT =
-    ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID) -> NTSTATUS>;
-pub type PLEGO_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Thread: PKTHREAD)>;
-pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
-pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "C" fn(PebLock: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID) -> NTSTATUS>;
+pub type PLEGO_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Thread: PKTHREAD)>;
+pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
+pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "system" fn(PebLock: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PEB_FREE_BLOCK {
@@ -65405,7 +65405,7 @@ unsafe extern "C" {
     pub static mut KeTickCount: KSYSTEM_TIME;
 }
 pub type PciIrqRange = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         PciSlot: PCI_SLOT_NUMBER,
@@ -65449,7 +65449,7 @@ pub struct _PCIPBUSDATA__bindgen_ty_1__bindgen_ty_2 {
 pub type PCIPBUSDATA = _PCIPBUSDATA;
 pub type PPCIPBUSDATA = *mut _PCIPBUSDATA;
 pub type FncConfigIO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusData: PPCIPBUSDATA,
         State: PVOID,
         Buffer: PUCHAR,
@@ -65457,7 +65457,7 @@ pub type FncConfigIO = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type FncSync = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
         Irql: PKIRQL,
@@ -65465,7 +65465,7 @@ pub type FncSync = ::core::option::Option<
     ),
 >;
 pub type FncReleaseSync =
-    ::core::option::Option<unsafe extern "C" fn(BusHandler: PBUS_HANDLER, Irql: KIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(BusHandler: PBUS_HANDLER, Irql: KIRQL)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PCI_CONFIG_HANDLER {
@@ -66521,10 +66521,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut PCIConfigHandlerType2: PCI_CONFIG_HANDLER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_INTERNAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCISynchronizeType1(
         BusHandler: PBUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
@@ -66532,10 +66532,10 @@ unsafe extern "C" {
         PciCfg: PPCI_TYPE1_CFG_BITS,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReleaseSynchronzationType1(BusHandler: PBUS_HANDLER, Irql: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCISynchronizeType2(
         BusHandler: PBUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
@@ -66543,10 +66543,10 @@ unsafe extern "C" {
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReleaseSynchronizationType2(BusHandler: PBUS_HANDLER, Irql: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUcharType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66554,7 +66554,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUshortType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66562,7 +66562,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUlongType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66570,7 +66570,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUcharType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66578,7 +66578,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUshortType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66586,7 +66586,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIReadUlongType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66594,7 +66594,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUcharType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66602,7 +66602,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUshortType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66610,7 +66610,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUlongType1(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE1_CFG_BITS,
@@ -66618,7 +66618,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUcharType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66626,7 +66626,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUshortType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66634,7 +66634,7 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIWriteUlongType2(
         BusData: PPCIPBUSDATA,
         PciCfg: PPCI_TYPE2_ADDRESS_BITS,
@@ -66642,10 +66642,10 @@ unsafe extern "C" {
         Offset: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpValidPCISlot(BusHandler: PBUS_HANDLER, Slot: PCI_SLOT_NUMBER) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReadPCIConfig(
         BusHandler: PBUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
@@ -66654,7 +66654,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpWritePCIConfig(
         BusHandler: PBUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
@@ -66663,7 +66663,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetPCIData(
         BusHandler: PBUS_HANDLER,
         RootBusHandler: PBUS_HANDLER,
@@ -66673,7 +66673,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpSetPCIData(
         BusHandler: PBUS_HANDLER,
         RootBusHandler: PBUS_HANDLER,
@@ -66683,7 +66683,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAssignPCISlotResources(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66713,7 +66713,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetRootInterruptVector(
         BusInterruptLevel: ULONG,
         BusInterruptVector: ULONG,
@@ -66721,7 +66721,7 @@ unsafe extern "C" {
         Affinity: PKAFFINITY,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetCmosData(
         BusNumber: ULONG,
         SlotNumber: ULONG,
@@ -66729,7 +66729,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpSetCmosData(
         BusNumber: ULONG,
         SlotNumber: ULONG,
@@ -66737,13 +66737,13 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializePciBus();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializePciStubs();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpTranslateBusAddress(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -66752,7 +66752,7 @@ unsafe extern "C" {
         TranslatedAddress: PPHYSICAL_ADDRESS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAssignSlotResources(
         RegistryPath: PUNICODE_STRING,
         DriverClassName: PUNICODE_STRING,
@@ -66764,7 +66764,7 @@ unsafe extern "C" {
         AllocatedResources: *mut PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpFindBusAddressTranslation(
         BusAddress: PHYSICAL_ADDRESS,
         AddressSpace: PULONG,
@@ -66773,10 +66773,10 @@ unsafe extern "C" {
         NextBus: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpRegisterPciDebuggingDeviceInfo();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliTranslateBusAddress(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -66785,7 +66785,7 @@ unsafe extern "C" {
         TranslatedAddress: PPHYSICAL_ADDRESS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliFindBusAddressTranslation(
         BusAddress: PHYSICAL_ADDRESS,
         AddressSpace: PULONG,
@@ -66794,14 +66794,14 @@ unsafe extern "C" {
         NextBus: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAdjustPCIResourceList(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetPCIIntOnISABus(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66811,7 +66811,7 @@ unsafe extern "C" {
         Affinity: PKAFFINITY,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIPin2ISALine(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66819,7 +66819,7 @@ unsafe extern "C" {
         PciData: PPCI_COMMON_CONFIG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpPCIISALine2Pin(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66828,7 +66828,7 @@ unsafe extern "C" {
         PciOldData: PPCI_COMMON_CONFIG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetISAFixedPCIIrq(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66836,10 +66836,10 @@ unsafe extern "C" {
         Range: *mut PSUPPORTED_RANGE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitBusHandler();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpContextToBusHandler(ContextValue: ULONG_PTR) -> PBUS_HANDLER;
 }
 unsafe extern "C" {
@@ -66848,7 +66848,7 @@ unsafe extern "C" {
         BusNumber: ULONG,
     ) -> PBUS_HANDLER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpNoBusData(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66858,7 +66858,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpcGetCmosData(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66868,7 +66868,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpcSetCmosData(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66878,7 +66878,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpTranslateSystemBusAddress(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66887,7 +66887,7 @@ unsafe extern "C" {
         TranslatedAddress: PPHYSICAL_ADDRESS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpTranslateIsaBusAddress(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -66896,7 +66896,7 @@ unsafe extern "C" {
         TranslatedAddress: PPHYSICAL_ADDRESS,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetSystemInterruptVector(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
@@ -67678,17 +67678,17 @@ pub struct _GROW_WORK_ITEM {
 }
 pub type GROW_WORK_ITEM = _GROW_WORK_ITEM;
 pub type PGROW_WORK_ITEM = *mut _GROW_WORK_ITEM;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDmaAllocateMasterAdapter() -> PADAPTER_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetDmaAdapter(
         Context: PVOID,
         DeviceDescription: PDEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
     ) -> PDMA_ADAPTER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDmaGetDmaAlignment(AdapterObject: PADAPTER_OBJECT) -> ULONG;
 }
 pub const _TIMER_OPERATING_MODES_PitOperatingMode0: _TIMER_OPERATING_MODES = 0;
@@ -70640,30 +70640,30 @@ pub type PHAL_SW_INTERRUPT_HANDLER = ::core::option::Option<unsafe extern "C" fn
 pub type PHAL_SW_INTERRUPT_HANDLER_2ND_ENTRY =
     ::core::option::Option<unsafe extern "C" fn(TrapFrame: PKTRAP_FRAME)>;
 pub type PHAL_DISMISS_INTERRUPT = ::core::option::Option<
-    unsafe extern "C" fn(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN,
+    unsafe extern "system" fn(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrqGeneric(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq15(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq13(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq07(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrqLevel(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq15Level(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq13Level(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDismissIrq07Level(Irql: KIRQL, Irq: ULONG, OldIrql: PKIRQL) -> BOOLEAN;
 }
 unsafe extern "C" {
@@ -70697,17 +70697,17 @@ pub struct _HalAddressUsage__bindgen_ty_1 {
 }
 pub type ADDRESS_USAGE = _HalAddressUsage;
 pub type PADDRESS_USAGE = *mut _HalAddressUsage;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAllocateAdapterEx(
         NumberOfMapRegisters: ULONG,
         IsMaster: BOOLEAN,
         Dma32BitAddresses: BOOLEAN,
     ) -> PADAPTER_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpRegisterVector(Flags: UCHAR, BusVector: ULONG, SystemVector: ULONG, Irql: KIRQL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpEnableInterruptHandler(
         Flags: UCHAR,
         BusVector: ULONG,
@@ -70717,7 +70717,7 @@ unsafe extern "C" {
         Mode: KINTERRUPT_MODE,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializePICs(EnableInterrupts: BOOLEAN);
 }
 unsafe extern "C" {
@@ -70738,7 +70738,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut HalpProfilingStopped: BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializeClock();
 }
 unsafe extern "C" {
@@ -70758,7 +70758,7 @@ pub struct _HALP_ROLLOVER {
 }
 pub type HALP_ROLLOVER = _HALP_ROLLOVER;
 pub type PHALP_ROLLOVER = *mut _HALP_ROLLOVER;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpCalibrateStallExecution();
 }
 unsafe extern "C" {
@@ -70773,25 +70773,25 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn HalpInitPhase1();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpFlushTLB();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpCheckPowerButton();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpRegisterKdSupportFunctions();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpSetupPciDeviceForDebugging(
         LoaderBlock: PVOID,
         PciDevice: PDEBUG_DEVICE_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReleasePciDeviceForDebugging(PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAllocPhysicalMemory(
         LoaderBlock: PLOADER_PARAMETER_BLOCK,
         MaxAddress: ULONG64,
@@ -70799,30 +70799,30 @@ unsafe extern "C" {
         Aligned: BOOLEAN,
     ) -> ULONG64;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpMapPhysicalMemory64Vista(
         PhysicalAddress: PHYSICAL_ADDRESS,
         PageCount: PFN_COUNT,
         FlushCurrentTLB: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpUnmapVirtualAddressVista(
         VirtualAddress: PVOID,
         NumberPages: PFN_COUNT,
         FlushCurrentTLB: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpMapPhysicalMemory64(
         PhysicalAddress: PHYSICAL_ADDRESS,
         PageCount: PFN_COUNT,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpUnmapVirtualAddress(VirtualAddress: PVOID, NumberPages: PFN_COUNT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliHandlePCIConfigSpaceAccess(
         IsRead: BOOLEAN,
         Port: ULONG,
@@ -70830,7 +70830,7 @@ unsafe extern "C" {
         Buffer: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliQuerySystemInformation(
         InformationClass: HAL_QUERY_INFORMATION_CLASS,
         BufferSize: ULONG,
@@ -70838,14 +70838,14 @@ unsafe extern "C" {
         ReturnedLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliSetSystemInformation(
         InformationClass: HAL_SET_INFORMATION_CLASS,
         BufferSize: ULONG,
         Buffer: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpBiosDisplayReset() -> BOOLEAN;
 }
 unsafe extern "C" {
@@ -70854,28 +70854,28 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn HalpRealModeStart();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliHaltSystem();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializeCmos();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReadCmos(Reg: UCHAR) -> UCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpWriteCmos(Reg: UCHAR, Value: UCHAR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAcquireCmosSpinLock();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReleaseCmosSpinLock();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitializeLegacyPICs();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpOpenRegistryKey(
         KeyHandle: PHANDLE,
         RootKey: HANDLE,
@@ -70884,39 +70884,39 @@ unsafe extern "C" {
         Create: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetNMICrashFlag();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpGetDebugPortTable() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReportSerialNumber();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpMarkAcpiHal() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpBuildAddressMap();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpReportResourceUsage(HalName: PUNICODE_STRING, InterfaceType: INTERFACE_TYPE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpIs16BitPortDecodeSupported() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpQueryAcpiResourceRequirements(
         Requirements: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitBusHandlers();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HaliInitPnpDriver() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpDebugPciDumpBus(
         BusHandler: PBUS_HANDLER,
         PciSlot: PCI_SLOT_NUMBER,
@@ -70926,10 +70926,10 @@ unsafe extern "C" {
         PciData: PPCI_COMMON_CONFIG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpInitProcessor(ProcessorNumber: ULONG, LoaderBlock: PLOADER_PARAMETER_BLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalInitializeBios(Phase: ULONG, LoaderBlock: PLOADER_PARAMETER_BLOCK);
 }
 unsafe extern "C" {
@@ -71095,16 +71095,16 @@ pub struct _ACPI_CACHED_TABLE {
 }
 pub type ACPI_CACHED_TABLE = _ACPI_CACHED_TABLE;
 pub type PACPI_CACHED_TABLE = *mut _ACPI_CACHED_TABLE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAcpiTableCacheInit(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpAcpiGetTable(LoaderBlock: PLOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalpSetupAcpiPhase0(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HalAcpiGetTable(LoaderBlock: PLOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID;
 }
 pub type _fsize_t = ::core::ffi::c_ulong;

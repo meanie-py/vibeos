@@ -758,9 +758,8 @@ unsafe extern "system" fn IntSetImeHotKey(
         _ => FALSE as BOOL,
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetImeHotKey(
+pub unsafe extern "system" fn NtUserGetImeHotKey(
     dwHotKeyId: DWORD,
     lpuModifiers: PUINT,
     lpuVirtualKey: PUINT,
@@ -809,61 +808,8 @@ pub unsafe extern "stdcall" fn NtUserGetImeHotKey(
     UserLeave();
     (!pNode.is_null()) as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetImeHotKey(
-    dwHotKeyId: DWORD,
-    lpuModifiers: PUINT,
-    lpuVirtualKey: PUINT,
-    lphKL: LPHKL,
-) -> BOOL {
-    let mut pNode: PIMEHOTKEY = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'block: {
-        let mut Status = SafeProbeForWrite(
-            lpuModifiers as *mut core::ffi::c_void,
-            core::mem::size_of::<UINT>() as _,
-            1,
-        );
-        if NT_SUCCESS(Status) {
-            Status = SafeProbeForWrite(
-                lpuVirtualKey as *mut core::ffi::c_void,
-                core::mem::size_of::<UINT>() as _,
-                1,
-            );
-        }
-        if NT_SUCCESS(Status) && !lphKL.is_null() {
-            Status = SafeProbeForWrite(
-                lphKL as *mut core::ffi::c_void,
-                core::mem::size_of::<HKL>() as _,
-                1,
-            );
-        }
-        if !NT_SUCCESS(Status) {
-            break 'block;
-        }
-
-        pNode = IntGetImeHotKeyById(gpImeHotKeyList, dwHotKeyId);
-        if pNode.is_null() {
-            break 'block;
-        }
-
-        core::ptr::write_volatile(lpuModifiers, (*pNode).uModifiers);
-        core::ptr::write_volatile(lpuVirtualKey, (*pNode).uVirtualKey);
-        if !lphKL.is_null() {
-            core::ptr::write_volatile(lphKL, (*pNode).hKL);
-        }
-    }
-
-    UserLeave();
-    (!pNode.is_null()) as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetImeHotKey(
+pub unsafe extern "system" fn NtUserSetImeHotKey(
     dwHotKeyId: DWORD,
     uModifiers: UINT,
     uVirtualKey: UINT,
@@ -876,51 +822,8 @@ pub unsafe extern "stdcall" fn NtUserSetImeHotKey(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetImeHotKey(
-    dwHotKeyId: DWORD,
-    uModifiers: UINT,
-    uVirtualKey: UINT,
-    hKL: HKL,
-    dwAction: DWORD,
-) -> BOOL {
-    let ret: BOOL;
-    UserEnterExclusive();
-    ret = IntSetImeHotKey(dwHotKeyId, uModifiers, uVirtualKey, hKL, dwAction);
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCheckImeHotKey(
-    uVirtualKey: UINT,
-    lParam: LPARAM,
-) -> DWORD {
-    let pNode: PIMEHOTKEY;
-    let mut ret: DWORD = INVALID_HOTKEY as DWORD;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if gpqForeground.is_null() || IS_IMM_MODE() == 0 {
-            break 'quit;
-        }
-
-        pNode = IntCheckImeHotKey(gpqForeground, uVirtualKey, lParam);
-        if !pNode.is_null() {
-            ret = (*pNode).dwHotKeyId;
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCheckImeHotKey(
+pub unsafe extern "system" fn NtUserCheckImeHotKey(
     uVirtualKey: UINT,
     lParam: LPARAM,
 ) -> DWORD {
@@ -991,48 +894,8 @@ unsafe extern "C" fn IntAssociateInputContext(pWnd: PWND, pImc: PIMC) -> HIMC {
     };
     hOldImc
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetThreadLayoutHandles(
-    hNewKL: HKL,
-    hOldKL: HKL,
-) -> DWORD {
-    let pti: PTHREADINFO;
-    let pOldKL: PKL;
-    let pNewKL: PKL;
-
-    UserEnterExclusive();
-
-    'quit: {
-        pti = GetW32ThreadInfo();
-        pOldKL = (*pti).KeyboardLayout;
-        if !pOldKL.is_null() && (*pOldKL).hkl != hOldKL {
-            break 'quit;
-        }
-
-        pNewKL = UserHklToKbl(hNewKL);
-        if pNewKL.is_null() {
-            break 'quit;
-        }
-
-        if IS_IME_HKL(hNewKL) != IS_IME_HKL(hOldKL) {
-            (*pti).hklPrev = hOldKL;
-        }
-
-        UserAssignmentLock(
-            core::ptr::addr_of_mut!((*pti).KeyboardLayout) as *mut PVOID,
-            pNewKL as PVOID,
-        );
-        (*(*pti).pClientInfo).hKL = (*pNewKL).hkl;
-    }
-
-    UserLeave();
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetThreadLayoutHandles(
+pub unsafe extern "system" fn NtUserSetThreadLayoutHandles(
     hNewKL: HKL,
     hOldKL: HKL,
 ) -> DWORD {
@@ -1263,55 +1126,8 @@ unsafe fn IntImmProcessKey_impl(
 
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBuildHimcList(
-    dwThreadId: DWORD,
-    dwCount: DWORD,
-    phList: *mut HIMC,
-    pdwCount: PDWORD,
-) -> NTSTATUS {
-    let mut ret: NTSTATUS = STATUS_UNSUCCESSFUL as NTSTATUS;
-    let mut dwRealCount: DWORD = 0;
-    let pti: PTHREADINFO;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        if dwThreadId == 0 {
-            pti = gptiCurrent;
-        } else if dwThreadId == (!0u32) {
-            pti = core::ptr::null_mut();
-        } else {
-            pti = IntTID2PTI(UlongToHandle(dwThreadId));
-            if pti.is_null() || (*pti).rpdesk.is_null() {
-                break 'quit;
-            }
-        }
-
-        dwRealCount = UserBuildHimcList(pti, dwCount, phList);
-        core::ptr::write_volatile(pdwCount, dwRealCount);
-
-        if dwCount < dwRealCount {
-            ret = STATUS_BUFFER_TOO_SMALL as NTSTATUS;
-        } else {
-            ret = STATUS_SUCCESS as NTSTATUS;
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserBuildHimcList(
+pub unsafe extern "system" fn NtUserBuildHimcList(
     dwThreadId: DWORD,
     dwCount: DWORD,
     phList: *mut HIMC,
@@ -1423,9 +1239,8 @@ unsafe fn UserSetImeConversionKeyStateImpl(pti: PTHREADINFO, dwConversion: DWORD
         _ => {}
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserNotifyIMEStatus(
+pub unsafe extern "system" fn NtUserNotifyIMEStatus(
     hwnd: HWND,
     fOpen: BOOL,
     dwConversion: DWORD,
@@ -1493,80 +1308,8 @@ pub unsafe extern "stdcall" fn NtUserNotifyIMEStatus(
     UserLeave();
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserNotifyIMEStatus(
-    hwnd: HWND,
-    fOpen: BOOL,
-    dwConversion: DWORD,
-) -> DWORD {
-
-    let pwnd: PWND;
-    let pti: PTHREADINFO;
-    let hKL: HKL;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr());
-            break 'quit;
-        }
-
-        pwnd = ValidateHwndNoErr(hwnd);
-        if pwnd.is_null() {
-            ERR!(b"Invalid HWND %p\n\0".as_ptr(), hwnd);
-            break 'quit;
-        }
-
-        pti = head_pti(pwnd);
-        if pti.is_null() || gptiForeground.is_null() {
-            break 'quit;
-        }
-        if pti != gptiForeground
-            && (*pti).MessageQueue != (*gptiForeground).MessageQueue
-        {
-            break 'quit;
-        }
-        if ghIMC == (*pwnd).hImc
-            && gfImeOpen == (fOpen != 0) as BOOL
-            && gdwImeConversion == dwConversion
-        {
-            break 'quit;
-        }
-
-        ghIMC = (*pwnd).hImc;
-        if !ghIMC.is_null() {
-            gfImeOpen = (fOpen != 0) as BOOL;
-            gdwImeConversion = dwConversion;
-            UserSetImeConversionKeyState(
-                pti,
-                if fOpen != 0 { dwConversion } else { IME_CMODE_ALPHANUMERIC },
-            );
-        }
-
-        if ISITHOOKED(WH_SHELL as core::ffi::c_int) != 0 {
-            hKL = if !(*pti).KeyboardLayout.is_null() {
-                (*(*pti).KeyboardLayout).hkl
-            } else {
-                core::ptr::null_mut()
-            };
-            co_HOOK_CallHooks(
-                WH_SHELL as core::ffi::c_int,
-                HSHELL_LANGUAGE as core::ffi::c_int,
-                hwnd as WPARAM,
-                hKL as LPARAM,
-            );
-        }
-    }
-
-    UserLeave();
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL {
+pub unsafe extern "system" fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL {
     let pti: PTHREADINFO;
     let ptiCurrent: PTHREADINFO;
     let ppi: PPROCESSINFO;
@@ -1627,103 +1370,8 @@ pub unsafe extern "stdcall" fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL {
-    let pti: PTHREADINFO;
-    let ptiCurrent: PTHREADINFO;
-    let ppi: PPROCESSINFO;
-    let mut ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        ptiCurrent = GetW32ThreadInfo();
-
-        if dwThreadID == INVALID_THREAD_ID {
-            ppi = (*ptiCurrent).ppi;
-            (*ppi_w32(ppi)).W32PF_flags |= W32PF_DISABLEIME;
-
-            'retry: loop {
-                let mut p = (*ppi).ptiList;
-                while !p.is_null() {
-                    (*p).TIF_flags |= TIF_DISABLEIME;
-
-                    if !(*p).spwndDefaultIme.is_null() {
-                        co_UserDestroyWindow((*p).spwndDefaultIme as _);
-                        (*p).spwndDefaultIme = core::ptr::null_mut();
-                        continue 'retry;
-                    }
-
-                    p = (*p).ptiSibling;
-                }
-                break 'retry;
-            }
-        } else {
-            if dwThreadID == 0 {
-                pti = ptiCurrent;
-            } else {
-                pti = IntTID2PTI(UlongToHandle(dwThreadID));
-
-                if pti.is_null() || (*pti).ppi != (*ptiCurrent).ppi {
-                    break 'quit;
-                }
-            }
-
-            (*pti).TIF_flags |= TIF_DISABLEIME;
-
-            if !(*pti).spwndDefaultIme.is_null() {
-                co_UserDestroyWindow((*pti).spwndDefaultIme as _);
-                (*pti).spwndDefaultIme = core::ptr::null_mut();
-            }
-        }
-
-        ret = 1;
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetAppImeLevel(hWnd: HWND) -> DWORD {
-    let mut ret: DWORD = 0;
-    let pWnd: PWND;
-    let pti: PTHREADINFO;
-
-    UserEnterShared();
-
-    'quit: {
-        pWnd = ValidateHwndNoErr(hWnd);
-        if pWnd.is_null() {
-            break 'quit;
-        }
-
-        if IS_IMM_MODE() == 0 {
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-        if (*head_pti(pWnd)).ppi == (*pti).ppi {
-            ret = HandleToUlong(UserGetProp(pWnd, AtomImeLevel, 1u8));
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetAppImeLevel(hWnd: HWND) -> DWORD {
+pub unsafe extern "system" fn NtUserGetAppImeLevel(hWnd: HWND) -> DWORD {
     let mut ret: DWORD = 0;
     let pWnd: PWND;
     let pti: PTHREADINFO;
@@ -1824,9 +1472,8 @@ unsafe fn UserGetImeInfoEx_impl(
 
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetImeInfoEx(
+pub unsafe extern "system" fn NtUserGetImeInfoEx(
     pImeInfoEx: PIMEINFOEX,
     SearchType: IMEINFOEXCLASS,
 ) -> BOOL {
@@ -1869,87 +1516,8 @@ pub unsafe extern "stdcall" fn NtUserGetImeInfoEx(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetImeInfoEx(
-    pImeInfoEx: PIMEINFOEX,
-    SearchType: IMEINFOEXCLASS,
-) -> BOOL {
-    let mut ImeInfoEx: IMEINFOEX = core::mem::zeroed();
-    let mut ret: BOOL = 0;
-    let pWinSta: PWINSTATION_OBJECT;
-    let Status: NTSTATUS;
-
-    UserEnterShared();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        {
-            let __SehStatus: NTSTATUS =
-                SafeProbeForRead(pImeInfoEx as *mut _, core::mem::size_of::<IMEINFOEX>() as _, 1);
-            if !NT_SUCCESS(__SehStatus) {
-                break 'quit;
-            }
-        }
-        ImeInfoEx = *pImeInfoEx;
-
-        pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-        ret = UserGetImeInfoEx(pWinSta, &mut ImeInfoEx, SearchType);
-        if ret == 0 {
-            break 'quit;
-        }
-
-        Status = SafeProbeForWrite(pImeInfoEx as *mut _, core::mem::size_of::<IMEINFOEX>() as _, 1);
-        if !NT_SUCCESS(Status) {
-            ret = 0;
-        } else {
-            core::ptr::write_volatile(pImeInfoEx, ImeInfoEx);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetAppImeLevel(hWnd: HWND, dwLevel: DWORD) -> BOOL {
-    let mut ret: BOOL = 0;
-    let pWnd: PWND;
-    let pti: PTHREADINFO;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        pWnd = ValidateHwndNoErr(hWnd);
-        if pWnd.is_null() {
-            ERR!(b"Invalid HWND: %p\n\0".as_ptr() as *const i8, hWnd);
-            break 'quit;
-        }
-
-        pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-        if (*head_pti(pWnd)).ppi == (*pti).ppi {
-            ret = UserSetProp(pWnd, AtomImeLevel, UlongToHandle(dwLevel), 1);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetAppImeLevel(hWnd: HWND, dwLevel: DWORD) -> BOOL {
+pub unsafe extern "system" fn NtUserSetAppImeLevel(hWnd: HWND, dwLevel: DWORD) -> BOOL {
     let mut ret: BOOL = 0;
     let pWnd: PWND;
     let pti: PTHREADINFO;
@@ -2031,47 +1599,8 @@ unsafe fn UserSetImeInfoEx_impl(
 
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -> BOOL {
-    let mut ret: BOOL = 0;
-    let mut ImeInfoEx: IMEINFOEX = core::mem::zeroed();
-    let pWinSta: PWINSTATION_OBJECT;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            break 'quit;
-        }
-
-        let __SehStatus = SafeProbeForRead(
-            pImeInfoEx as *mut core::ffi::c_void,
-            core::mem::size_of::<IMEINFOEX>() as _,
-            1,
-        );
-        if !NT_SUCCESS(__SehStatus) {
-            ERR!(
-                b"Exception in NtUserSetImeInfoEx: pImeInfoEx=%p\n\0".as_ptr() as *const i8,
-                pImeInfoEx,
-            );
-            break 'quit;
-        }
-
-        ImeInfoEx = *pImeInfoEx;
-
-        pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-        ret = UserSetImeInfoEx(pWinSta, core::ptr::addr_of_mut!(ImeInfoEx));
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -> BOOL {
+pub unsafe extern "system" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -> BOOL {
     let mut ret: BOOL = 0;
     let mut ImeInfoEx: IMEINFOEX = core::mem::zeroed();
     let pWinSta: PWINSTATION_OBJECT;
@@ -2359,78 +1888,8 @@ unsafe fn IntImeCheckTopmost_impl(pImeWnd: PWND) {
     bTopMost = ((*pwndOwner).ExStyle & WS_EX_TOPMOST != 0) as BOOL;
     IntImeSetTopMost(pImeWnd, bTopMost, pwndInsertBefore);
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetImeOwnerWindow(hImeWnd: HWND, hwndFocus: HWND) -> BOOL {
-    let mut ret: BOOL = 0;
-    let pImeWnd: PWND;
-    let pwndFocus: PWND;
-    let mut pwndTopLevel: PWND;
-    let mut pwndNode: PWND;
-    let pwndActive: PWND;
-    let ptiIme: PTHREADINFO;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            break 'quit;
-        }
-
-        pImeWnd = ValidateHwndNoErr(hImeWnd);
-        if pImeWnd.is_null() || (*pImeWnd).fnid as u32 != FNID_IME {
-            ERR!(b"Not IME window: %p\n\0".as_ptr() as *const i8, hImeWnd);
-            break 'quit;
-        }
-
-        pwndFocus = ValidateHwndNoErr(hwndFocus);
-        if !pwndFocus.is_null() {
-            if IS_WND_IMELIKE(pwndFocus) != 0 {
-                break 'quit;
-            }
-
-            pwndTopLevel = IntGetTopLevelWindow(pwndFocus);
-
-            pwndNode = pwndTopLevel;
-            while !pwndNode.is_null() {
-                if (*(*pwndNode).pcls).atomClassName == (*gpsi).atomSysClass[ICLS_IME as usize] {
-                    pwndTopLevel = core::ptr::null_mut();
-                    break;
-                }
-                pwndNode = (*pwndNode).spwndOwner;
-            }
-
-            WndSetOwner(pImeWnd, pwndTopLevel);
-            IntImeCheckTopmost(pImeWnd);
-        } else {
-            ptiIme = head_pti(pImeWnd);
-            pwndActive = (*(*ptiIme).MessageQueue).spwndActive;
-
-            if pwndActive.is_null() || pwndActive != (*pImeWnd).spwndOwner {
-                if !pwndActive.is_null()
-                    && ptiIme == head_pti(pwndActive)
-                    && IS_WND_IMELIKE(pwndActive) == 0
-                {
-                    WndSetOwner(pImeWnd, pwndActive);
-                } else {
-                    IntImeSetFutureOwner(pImeWnd, (*pImeWnd).spwndOwner);
-                }
-
-                IntImeCheckTopmost(pImeWnd);
-            }
-        }
-
-        ret = 1;
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetImeOwnerWindow(hImeWnd: HWND, hwndFocus: HWND) -> BOOL {
+pub unsafe extern "system" fn NtUserSetImeOwnerWindow(hImeWnd: HWND, hwndFocus: HWND) -> BOOL {
     let mut ret: BOOL = 0;
     let pImeWnd: PWND;
     let pwndFocus: PWND;
@@ -2599,33 +2058,8 @@ unsafe fn IntDestroyInputContext(pIMC: PIMC) -> BOOL {
     UserDeleteObject(hIMC, TYPE_INPUTCONTEXT as _);
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDestroyInputContext(hIMC: HIMC) -> BOOL {
-    let mut ret: BOOL = 0;
-    let pIMC: PIMC;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        pIMC = UserGetObjectNoErr(gHandleTable, hIMC as _, TYPE_INPUTCONTEXT) as PIMC;
-        if !pIMC.is_null() {
-            ret = IntDestroyInputContext(pIMC);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDestroyInputContext(hIMC: HIMC) -> BOOL {
+pub unsafe extern "system" fn NtUserDestroyInputContext(hIMC: HIMC) -> BOOL {
     let mut ret: BOOL = 0;
     let pIMC: PIMC;
 
@@ -2704,39 +2138,8 @@ unsafe fn UserCreateInputContext_impl(dwClientImcData: ULONG_PTR) -> PIMC {
     (*pIMC).dwClientImcData = dwClientImcData;
     pIMC
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateInputContext(dwClientImcData: ULONG_PTR) -> HIMC {
-    let pIMC: PIMC;
-    let mut ret: HIMC = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            EngSetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-            break 'quit;
-        }
-
-        if dwClientImcData == 0 {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'quit;
-        }
-
-        pIMC = UserCreateInputContext(dwClientImcData);
-        if !pIMC.is_null() {
-            ret = UserHMGetHandle(pIMC) as HIMC;
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserCreateInputContext(dwClientImcData: ULONG_PTR) -> HIMC {
+pub unsafe extern "system" fn NtUserCreateInputContext(dwClientImcData: ULONG_PTR) -> HIMC {
     let pIMC: PIMC;
     let mut ret: HIMC = core::ptr::null_mut();
 
@@ -2847,46 +2250,8 @@ unsafe fn IntAssociateInputContextExImpl(pWnd: PWND, mut pIMC: PIMC, dwFlags: DW
 
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserAssociateInputContext(
-    hWnd: HWND,
-    hIMC: HIMC,
-    dwFlags: DWORD,
-) -> DWORD {
-    let mut ret: DWORD = 2;
-    let pWnd: PWND;
-    let pIMC: PIMC;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            break 'quit;
-        }
-
-        pWnd = ValidateHwndNoErr(hWnd);
-        if pWnd.is_null() {
-            ERR!(b"Invalid HWND: %p\n\0".as_ptr() as *const i8, hWnd);
-            break 'quit;
-        }
-
-        pIMC = if !hIMC.is_null() {
-            UserGetObjectNoErr(gHandleTable, hIMC as *mut core::ffi::c_void, TYPE_INPUTCONTEXT) as PIMC
-        } else {
-            core::ptr::null_mut()
-        };
-        ret = IntAssociateInputContextEx(pWnd, pIMC, dwFlags);
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserAssociateInputContext(
+pub unsafe extern "system" fn NtUserAssociateInputContext(
     hWnd: HWND,
     hIMC: HIMC,
     dwFlags: DWORD,
@@ -2960,9 +2325,8 @@ unsafe fn UserUpdateInputContextImpl(pIMC: PIMC, dwType: DWORD, dwValue: DWORD_P
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUpdateInputContext(
+pub unsafe extern "system" fn NtUserUpdateInputContext(
     hIMC: HIMC,
     dwType: DWORD,
     dwValue: DWORD_PTR,
@@ -2990,89 +2354,8 @@ pub unsafe extern "stdcall" fn NtUserUpdateInputContext(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserUpdateInputContext(
-    hIMC: HIMC,
-    dwType: DWORD,
-    dwValue: DWORD_PTR,
-) -> BOOL {
-    let pIMC: PIMC;
-    let mut ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            ERR!(b"!IS_IMM_MODE()\n\0".as_ptr() as *const i8);
-            break 'quit;
-        }
-
-        pIMC = UserGetObject(gHandleTable, hIMC as _, TYPE_INPUTCONTEXT) as PIMC;
-        if pIMC.is_null() {
-            ERR!(b"Invalid HIMC %p\n\0".as_ptr() as *const i8, hIMC);
-            break 'quit;
-        }
-
-        ret = UserUpdateInputContext(pIMC, dwType, dwValue);
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserQueryInputContext(hIMC: HIMC, dwType: DWORD) -> DWORD_PTR {
-    let pIMC: PIMC;
-    let ptiIMC: PTHREADINFO;
-    let mut ret: DWORD_PTR = 0;
-
-    UserEnterExclusive();
-
-    'quit: {
-        if IS_IMM_MODE() == 0 {
-            break 'quit;
-        }
-
-        pIMC = UserGetObject(gHandleTable, hIMC as _, TYPE_INPUTCONTEXT) as PIMC;
-        if pIMC.is_null() {
-            ERR!(b"Invalid HIMC %p\n\0".as_ptr() as *const i8, hIMC);
-            break 'quit;
-        }
-
-        ptiIMC = head_pti(pIMC);
-
-        match dwType {
-            QIC_INPUTPROCESSID => {
-                ret = PsGetThreadProcessId(pti_ethread(ptiIMC) as _) as DWORD_PTR;
-            }
-            QIC_INPUTTHREADID => {
-                ret = PsGetThreadId(pti_ethread(ptiIMC) as _) as DWORD_PTR;
-            }
-            QIC_DEFAULTWINDOWIME => {
-                if !(*ptiIMC).spwndDefaultIme.is_null() {
-                    ret = UserHMGetHandle((*ptiIMC).spwndDefaultIme) as DWORD_PTR;
-                }
-            }
-            QIC_DEFAULTIMC => {
-                if !(*ptiIMC).spDefaultImc.is_null() {
-                    ret = UserHMGetHandle((*ptiIMC).spDefaultImc) as DWORD_PTR;
-                }
-            }
-            _ => {
-                FIXME!(b"dwType: %ld\n\0".as_ptr() as *const i8, dwType);
-            }
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserQueryInputContext(hIMC: HIMC, dwType: DWORD) -> DWORD_PTR {
+pub unsafe extern "system" fn NtUserQueryInputContext(hIMC: HIMC, dwType: DWORD) -> DWORD_PTR {
     let pIMC: PIMC;
     let ptiIMC: PTHREADINFO;
     let mut ret: DWORD_PTR = 0;

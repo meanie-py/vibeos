@@ -206,10 +206,10 @@ pub struct IUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct IUnknownVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IUnknown, arg2: *const IID, arg3: *mut PVOID) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IUnknown, arg2: *const IID, arg3: *mut PVOID) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IUnknown) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IUnknown) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IUnknown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IUnknown) -> ULONG>,
 }
 pub type PUNKNOWN = *mut IUnknown;
 pub type PKSWORKER = PVOID;
@@ -684,10 +684,10 @@ pub struct KSDISPATCH_TABLE {
     pub FastWrite: PFAST_IO_WRITE,
 }
 pub type PKSDISPATCH_TABLE = *mut KSDISPATCH_TABLE;
-pub type PFNREFERENCEDEVICEOBJECT = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
-pub type PFNDEREFERENCEDEVICEOBJECT = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PFNREFERENCEDEVICEOBJECT = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
+pub type PFNDEREFERENCEDEVICEOBJECT = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PFNQUERYREFERENCESTRING =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, String: *mut PWCHAR) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, String: *mut PWCHAR) -> NTSTATUS>;
 #[repr(C)]
 pub struct BUS_INTERFACE_REFERENCE {
     pub Interface: INTERFACE,
@@ -797,9 +797,9 @@ pub struct KSPROPERTY_VALUES {
 }
 pub type PKSPROPERTY_VALUES = *mut KSPROPERTY_VALUES;
 pub type PFNKSCONTEXT_DISPATCH =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
 pub type PFNKSHANDLER = ::core::option::Option<
-    unsafe extern "C" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
 >;
 #[repr(C)]
 pub struct KSPROPERTY_ITEM {
@@ -828,7 +828,7 @@ pub struct KSPROPERTY_ITEM__bindgen_ty_2 {
 }
 pub type PKSPROPERTY_ITEM = *mut KSPROPERTY_ITEM;
 pub type PFNKSFASTHANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: PFILE_OBJECT,
         Request: PKSIDENTIFIER,
         RequestLength: ULONG,
@@ -1093,7 +1093,7 @@ pub struct KSOBJECT_CREATE {
 }
 pub type PKSOBJECT_CREATE = *mut KSOBJECT_CREATE;
 pub type PFNKSITEMFREECALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(CreateItem: PKSOBJECT_CREATE_ITEM)>;
+    ::core::option::Option<unsafe extern "system" fn(CreateItem: PKSOBJECT_CREATE_ITEM)>;
 #[repr(C)]
 pub struct KSMULTIPLE_ITEM {
     pub Size: ULONG,
@@ -1180,14 +1180,14 @@ pub type PKSNODE_CREATE = *mut KSNODE_CREATE;
 pub type KSEVENT_ENTRY = _KSEVENT_ENTRY;
 pub type PKSEVENT_ENTRY = *mut _KSEVENT_ENTRY;
 pub type PFNKSADDEVENT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Irp: PIRP,
         EventData: PKSEVENTDATA,
         EventEntry: *mut _KSEVENT_ENTRY,
     ) -> NTSTATUS,
 >;
 pub type PFNKSREMOVEEVENT = ::core::option::Option<
-    unsafe extern "C" fn(FileObject: PFILE_OBJECT, EventEntry: *mut _KSEVENT_ENTRY),
+    unsafe extern "system" fn(FileObject: PFILE_OBJECT, EventEntry: *mut _KSEVENT_ENTRY),
 >;
 #[repr(C)]
 pub struct KSEVENT_ITEM {
@@ -1244,12 +1244,12 @@ pub struct KSHANDSHAKE {
 }
 pub type PKSHANDSHAKE = *mut KSHANDSHAKE;
 pub type PFNKSPINHANDSHAKE = ::core::option::Option<
-    unsafe extern "C" fn(Pin: PKSPIN, In: PKSHANDSHAKE, Out: PKSHANDSHAKE) -> NTSTATUS,
+    unsafe extern "system" fn(Pin: PKSPIN, In: PKSHANDSHAKE, Out: PKSHANDSHAKE) -> NTSTATUS,
 >;
 pub type PFNKSPINPOWER =
-    ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, State: DEVICE_POWER_STATE)>;
+    ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN, State: DEVICE_POWER_STATE)>;
 pub type PFNKSPINFRAMERETURN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pin: PKSPIN,
         Data: PVOID,
         Size: ULONG,
@@ -1259,13 +1259,13 @@ pub type PFNKSPINFRAMERETURN = ::core::option::Option<
     ),
 >;
 pub type PFNKSPINIRPCOMPLETION =
-    ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN, Irp: PIRP)>;
 pub type PFNKSPINIRP =
-    ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, Irp: PIRP) -> NTSTATUS>;
-pub type PFNKSPIN = ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN) -> NTSTATUS>;
-pub type PFNKSPINVOID = ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN)>;
+    ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN, Irp: PIRP) -> NTSTATUS>;
+pub type PFNKSPIN = ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN) -> NTSTATUS>;
+pub type PFNKSPINVOID = ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN)>;
 pub type PFNKSSTREAMPOINTER =
-    ::core::option::Option<unsafe extern "C" fn(StreamPointer: PKSSTREAM_POINTER)>;
+    ::core::option::Option<unsafe extern "system" fn(StreamPointer: PKSSTREAM_POINTER)>;
 #[repr(C)]
 pub struct KSATTRIBUTE_LIST {
     pub Count: ULONG,
@@ -1273,7 +1273,7 @@ pub struct KSATTRIBUTE_LIST {
 }
 pub type PKSATTRIBUTE_LIST = *mut KSATTRIBUTE_LIST;
 pub type PFNKSPINSETDATAFORMAT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pin: PKSPIN,
         OldFormat: PKSDATAFORMAT,
         OldAttributeList: PKSMULTIPLE_ITEM,
@@ -1282,7 +1282,7 @@ pub type PFNKSPINSETDATAFORMAT = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFNKSPINSETDEVICESTATE = ::core::option::Option<
-    unsafe extern "C" fn(Pin: PKSPIN, ToState: KSSTATE, FromState: KSSTATE) -> NTSTATUS,
+    unsafe extern "system" fn(Pin: PKSPIN, ToState: KSSTATE, FromState: KSSTATE) -> NTSTATUS,
 >;
 pub type KSCLOCK_DISPATCH = _KSCLOCK_DISPATCH;
 pub type PKSCLOCK_DISPATCH = *mut _KSCLOCK_DISPATCH;
@@ -1304,7 +1304,7 @@ pub struct KSPIN_DISPATCH {
 }
 pub type PKSPIN_DISPATCH = *mut KSPIN_DISPATCH;
 pub type PFNKSPINSETTIMER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pin: PKSPIN,
         Timer: PKTIMER,
         DueTime: LARGE_INTEGER,
@@ -1312,11 +1312,11 @@ pub type PFNKSPINSETTIMER = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFNKSPINCANCELTIMER =
-    ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, Timer: PKTIMER) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN, Timer: PKTIMER) -> BOOLEAN>;
 pub type PFNKSPINCORRELATEDTIME =
     ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, SystemTime: PLONGLONG) -> LONGLONG>;
 pub type PFNKSPINRESOLUTION =
-    ::core::option::Option<unsafe extern "C" fn(Pin: PKSPIN, Resolution: PKSRESOLUTION)>;
+    ::core::option::Option<unsafe extern "system" fn(Pin: PKSPIN, Resolution: PKSRESOLUTION)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _KSCLOCK_DISPATCH {
@@ -1326,18 +1326,18 @@ pub struct _KSCLOCK_DISPATCH {
     pub Resolution: PFNKSPINRESOLUTION,
 }
 pub type PFNKSPININITIALIZEALLOCATOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pin: PKSPIN,
         AllocatorFraming: PKSALLOCATOR_FRAMING,
         Context: *mut PVOID,
     ) -> NTSTATUS,
 >;
 pub type PFNKSDELETEALLOCATOR =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> PVOID>;
 pub type PFNKSDEFAULTALLOCATE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> PVOID>;
 pub type PFNKSDEFAULTFREE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Buffer: PVOID) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Buffer: PVOID) -> PVOID>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _KSALLOCATOR_DISPATCH {
@@ -1387,7 +1387,7 @@ pub struct KSPIN_DESCRIPTOR__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type PKSPIN_DESCRIPTOR = *mut KSPIN_DESCRIPTOR;
 pub type PFNKSINTERSECTHANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Irp: PIRP,
         Pin: PKSP_PIN,
         DataRange: PKSDATARANGE,
@@ -1395,7 +1395,7 @@ pub type PFNKSINTERSECTHANDLER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFNKSINTERSECTHANDLEREX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Irp: PIRP,
         Pin: PKSP_PIN,
@@ -1437,7 +1437,7 @@ pub struct _KSPIN {
     pub ResetState: KSRESET,
     pub ClientState: KSSTATE,
 }
-pub type PFNKSFREE = ::core::option::Option<unsafe extern "C" fn(Data: PVOID)>;
+pub type PFNKSFREE = ::core::option::Option<unsafe extern "system" fn(Data: PVOID)>;
 #[repr(C)]
 pub struct KSPIN_CONNECT {
     pub Interface: KSPIN_INTERFACE,
@@ -1469,17 +1469,17 @@ pub struct KSTOPOLOGY {
 pub type PKSTOPOLOGY = *mut KSTOPOLOGY;
 pub type UNKNOWN = *mut ::core::ffi::c_void;
 pub type PFNKSINITIALIZEALLOCATOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InitialContext: PVOID,
         AllocatorFraming: PKSALLOCATOR_FRAMING,
         Context: *mut PVOID,
     ) -> PVOID,
 >;
 pub type PFNKSALLOCATOR = ::core::option::Option<
-    unsafe extern "C" fn(Irp: PIRP, BufferSize: ULONG, InputOperation: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Irp: PIRP, BufferSize: ULONG, InputOperation: BOOLEAN) -> NTSTATUS,
 >;
 pub type PFNKINTERSECTHANDLEREX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Irp: PIRP,
         Pin: PKSP_PIN,
@@ -1491,10 +1491,10 @@ pub type PFNKINTERSECTHANDLEREX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFNALLOCATOR_ALLOCATEFRAME = ::core::option::Option<
-    unsafe extern "C" fn(FileObject: PFILE_OBJECT, Frame: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(FileObject: PFILE_OBJECT, Frame: *mut PVOID) -> NTSTATUS,
 >;
 pub type PFNALLOCATOR_FREEFRAME =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: PFILE_OBJECT, Frame: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: PFILE_OBJECT, Frame: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct KSSTREAMALLOCATOR_FUNCTIONTABLE {
@@ -1536,7 +1536,7 @@ pub struct _KSGATE {
     pub Count: LONG,
     pub NextGate: PKSGATE,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinGetAndGate(Pin: PKSPIN) -> PKSGATE;
 }
 #[repr(C)]
@@ -1602,29 +1602,29 @@ pub type PKSFILTER_DESCRIPTOR = *mut _KSFILTER_DESCRIPTOR;
 pub type KSDEVICE_DESCRIPTOR = _KSDEVICE_DESCRIPTOR;
 pub type PKSDEVICE_DESCRIPTOR = *mut _KSDEVICE_DESCRIPTOR;
 pub type PFNKSDEVICECREATE =
-    ::core::option::Option<unsafe extern "C" fn(Device: PKSDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Device: PKSDEVICE) -> NTSTATUS>;
 pub type PFNKSDEVICEPNPSTART = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Device: PKSDEVICE,
         Irp: PIRP,
         TranslatedResourceList: PCM_RESOURCE_LIST,
         UntranslatedResourceList: PCM_RESOURCE_LIST,
     ) -> NTSTATUS,
 >;
-pub type PFNKSDEVICE = ::core::option::Option<unsafe extern "C" fn(Device: PKSDEVICE) -> NTSTATUS>;
+pub type PFNKSDEVICE = ::core::option::Option<unsafe extern "system" fn(Device: PKSDEVICE) -> NTSTATUS>;
 pub type PFNKSDEVICEIRP =
-    ::core::option::Option<unsafe extern "C" fn(Device: PKSDEVICE, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Device: PKSDEVICE, Irp: PIRP) -> NTSTATUS>;
 pub type PFNKSDEVICEIRPVOID =
-    ::core::option::Option<unsafe extern "C" fn(Device: PKSDEVICE, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Device: PKSDEVICE, Irp: PIRP)>;
 pub type PFNKSDEVICEQUERYCAPABILITIES = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Device: PKSDEVICE,
         Irp: PIRP,
         Capabilities: PDEVICE_CAPABILITIES,
     ) -> NTSTATUS,
 >;
 pub type PFNKSDEVICEQUERYPOWER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Device: PKSDEVICE,
         Irp: PIRP,
         DeviceTo: DEVICE_POWER_STATE,
@@ -1635,7 +1635,7 @@ pub type PFNKSDEVICEQUERYPOWER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFNKSDEVICESETPOWER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Device: PKSDEVICE,
         Irp: PIRP,
         To: DEVICE_POWER_STATE,
@@ -1681,14 +1681,14 @@ pub struct _KSFILTER {
     pub Context: PVOID,
 }
 pub type PFNKSFILTERPOWER =
-    ::core::option::Option<unsafe extern "C" fn(Filter: PKSFILTER, State: DEVICE_POWER_STATE)>;
+    ::core::option::Option<unsafe extern "system" fn(Filter: PKSFILTER, State: DEVICE_POWER_STATE)>;
 pub type PFNKSFILTERIRP =
-    ::core::option::Option<unsafe extern "C" fn(Filter: PKSFILTER, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Filter: PKSFILTER, Irp: PIRP) -> NTSTATUS>;
 pub type PFNKSFILTERPROCESS = ::core::option::Option<
-    unsafe extern "C" fn(Filter: PKSFILTER, ProcessPinsIndex: PKSPROCESSPIN_INDEXENTRY) -> NTSTATUS,
+    unsafe extern "system" fn(Filter: PKSFILTER, ProcessPinsIndex: PKSPROCESSPIN_INDEXENTRY) -> NTSTATUS,
 >;
 pub type PFNKSFILTERVOID =
-    ::core::option::Option<unsafe extern "C" fn(Filter: PKSFILTER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Filter: PKSFILTER) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _KSFILTER_DISPATCH {
@@ -1738,28 +1738,28 @@ pub struct _KSFILTERFACTORY {
     pub Context: PVOID,
 }
 pub type KStrMethodHandler = ::core::option::Option<
-    unsafe extern "C" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
 >;
 pub type KStrSupportHandler = ::core::option::Option<
-    unsafe extern "C" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Irp: PIRP, Request: PKSIDENTIFIER, Data: PVOID) -> NTSTATUS,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateAllocator(
         ConnectionHandle: HANDLE,
         AllocatorFraming: PKSALLOCATOR_FRAMING,
         AllocatorHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateDefaultAllocator(Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsValidateAllocatorCreateRequest(
         Irp: PIRP,
         AllocatorFraming: *mut PKSALLOCATOR_FRAMING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateDefaultAllocatorEx(
         Irp: PIRP,
         InitializeContext: PVOID,
@@ -1769,7 +1769,7 @@ unsafe extern "C" {
         DeleteAllocator: PFNKSDELETEALLOCATOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsValidateAllocatorFramingEx(
         Framing: PKSALLOCATOR_FRAMING_EX,
         BufferSize: ULONG,
@@ -1777,7 +1777,7 @@ unsafe extern "C" {
     ) -> NTSTATUS;
 }
 pub type PFNKSSETTIMER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Timer: PKTIMER,
         DueTime: LARGE_INTEGER,
@@ -1785,23 +1785,23 @@ pub type PFNKSSETTIMER = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFNKSCANCELTIMER =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Timer: PKTIMER) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Timer: PKTIMER) -> BOOLEAN>;
 pub type PFNKSCORRELATEDTIME =
     ::core::option::Option<unsafe extern "C" fn(Context: PVOID, SystemTime: PLONGLONG) -> LONGLONG>;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateClock(
         ConnectionHandle: HANDLE,
         ClockCreate: PKSCLOCK_CREATE,
         ClockHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateDefaultClock(Irp: PIRP, DefaultClock: PKSDEFAULTCLOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateDefaultClock(DefaultClock: *mut PKSDEFAULTCLOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateDefaultClockEx(
         DefaultClock: *mut PKSDEFAULTCLOCK,
         Context: PVOID,
@@ -1812,32 +1812,32 @@ unsafe extern "C" {
         Flags: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeDefaultClock(DefaultClock: PKSDEFAULTCLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsValidateClockCreateRequest(Irp: PIRP, ClockCreate: *mut PKSCLOCK_CREATE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetDefaultClockState(DefaultClock: PKSDEFAULTCLOCK) -> KSSTATE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetDefaultClockState(DefaultClock: PKSDEFAULTCLOCK, State: KSSTATE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetDefaultClockTime(DefaultClock: PKSDEFAULTCLOCK) -> LONGLONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetDefaultClockTime(DefaultClock: PKSDEFAULTCLOCK, Time: LONGLONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsMethodHandler(
         Irp: PIRP,
         MethodSetsCount: ULONG,
         MethodSet: *const KSMETHOD_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsMethodHandlerWithAllocator(
         Irp: PIRP,
         MethodSetsCount: ULONG,
@@ -1846,7 +1846,7 @@ unsafe extern "C" {
         MethodItemSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFastMethodHandler(
         FileObject: PFILE_OBJECT,
         Method: PKSMETHOD,
@@ -1858,14 +1858,14 @@ unsafe extern "C" {
         MethodSet: *const KSMETHOD_SET,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPropertyHandler(
         Irp: PIRP,
         PropertySetsCount: ULONG,
         PropertySet: *const KSPROPERTY_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPropertyHandlerWithAllocator(
         Irp: PIRP,
         PropertySetsCount: ULONG,
@@ -1874,14 +1874,14 @@ unsafe extern "C" {
         PropertyItemSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsUnserializeObjectPropertiesFromRegistry(
         FileObject: PFILE_OBJECT,
         ParentKey: HANDLE,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFastPropertyHandler(
         FileObject: PFILE_OBJECT,
         Property: PKSPROPERTY,
@@ -1894,12 +1894,12 @@ unsafe extern "C" {
     ) -> BOOLEAN;
 }
 pub type PFNKSGENERATEEVENTCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, EventEntry: PKSEVENT_ENTRY) -> BOOLEAN,
+    unsafe extern "system" fn(Context: PVOID, EventEntry: PKSEVENT_ENTRY) -> BOOLEAN,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGenerateEvent(EntryEvent: PKSEVENT_ENTRY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGenerateEvents(
         Object: PVOID,
         EventSet: *const GUID,
@@ -1910,7 +1910,7 @@ unsafe extern "C" {
         CallBackContext: PVOID,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsEnableEventWithAllocator(
         Irp: PIRP,
         EventSetsCount: ULONG,
@@ -1922,14 +1922,14 @@ unsafe extern "C" {
         EventItemSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGenerateDataEvent(
         EventEntry: PKSEVENT_ENTRY,
         DataSize: ULONG,
         Data: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsEnableEvent(
         Irp: PIRP,
         EventSetsCount: ULONG,
@@ -1939,10 +1939,10 @@ unsafe extern "C" {
         EventsLock: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDiscardEvent(EventEntry: PKSEVENT_ENTRY);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDisableEvent(
         Irp: PIRP,
         EventsList: PLIST_ENTRY,
@@ -1950,7 +1950,7 @@ unsafe extern "C" {
         EventsLock: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeEventList(
         FileObject: PFILE_OBJECT,
         EventsList: PLIST_ENTRY,
@@ -1958,14 +1958,14 @@ unsafe extern "C" {
         EventsLock: PVOID,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsValidateTopologyNodeCreateRequest(
         Irp: PIRP,
         Topology: PKSTOPOLOGY,
         NodeCreate: *mut PKSNODE_CREATE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateTopologyNode(
         ParentHandle: HANDLE,
         NodeCreate: PKSNODE_CREATE,
@@ -1973,7 +1973,7 @@ unsafe extern "C" {
         NodeHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsTopologyPropertyHandler(
         Irp: PIRP,
         Property: PKSPROPERTY,
@@ -1981,7 +1981,7 @@ unsafe extern "C" {
         Topology: *const KSTOPOLOGY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreatePin(
         FilterHandle: HANDLE,
         Connect: PKSPIN_CONNECT,
@@ -1989,7 +1989,7 @@ unsafe extern "C" {
         ConnectionHandle: PHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsValidateConnectRequest(
         Irp: PIRP,
         DescriptorsCount: ULONG,
@@ -1997,7 +1997,7 @@ unsafe extern "C" {
         Connect: *mut PKSPIN_CONNECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinPropertyHandler(
         Irp: PIRP,
         Property: PKSPROPERTY,
@@ -2006,7 +2006,7 @@ unsafe extern "C" {
         Descriptor: *const KSPIN_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinDataIntersection(
         Irp: PIRP,
         Pin: PKSP_PIN,
@@ -2016,7 +2016,7 @@ unsafe extern "C" {
         IntersectHandler: PFNKSINTERSECTHANDLER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinDataIntersectionEx(
         Irp: PIRP,
         Pin: PKSP_PIN,
@@ -2028,28 +2028,28 @@ unsafe extern "C" {
         HandlerContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinGetParentFilter(Pin: PKSPIN) -> PKSFILTER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinGetNextSiblingPin(Pin: PKSPIN) -> PKSPIN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinGetLeadingEdgeStreamPointer(
         Pin: PKSPIN,
         State: KSSTREAM_POINTER_STATE,
     ) -> PKSSTREAM_POINTER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerSetStatusCode(
         StreamPointer: PKSSTREAM_POINTER,
         Status: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerDelete(StreamPointer: PKSSTREAM_POINTER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerClone(
         StreamPointer: PKSSTREAM_POINTER,
         CancelCallback: PFNKSSTREAMPOINTER,
@@ -2057,7 +2057,7 @@ unsafe extern "C" {
         CloneStreamPointer: *mut PKSSTREAM_POINTER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsHandleSizedListQuery(
         Irp: PIRP,
         DataItemsCount: ULONG,
@@ -2066,11 +2066,11 @@ unsafe extern "C" {
     ) -> NTSTATUS;
 }
 pub type PFNKSIRPLISTCALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Irp: PIRP, Context: PVOID) -> NTSTATUS>;
-unsafe extern "C" {
+    ::core::option::Option<unsafe extern "system" fn(Irp: PIRP, Context: PVOID) -> NTSTATUS>;
+unsafe extern "system" {
     pub fn KsAcquireResetValue(Irp: PIRP, ResetValue: *mut KSRESET) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddIrpToCancelableQueue(
         QueueHead: PLIST_ENTRY,
         SpinLock: PKSPIN_LOCK,
@@ -2079,7 +2079,7 @@ unsafe extern "C" {
         DriverCancel: PDRIVER_CANCEL,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddObjectCreateItemToDeviceHeader(
         Header: KSDEVICE_HEADER,
         Create: PDRIVER_DISPATCH,
@@ -2088,7 +2088,7 @@ unsafe extern "C" {
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddObjectCreateItemToObjectHeader(
         Header: KSOBJECT_HEADER,
         Create: PDRIVER_DISPATCH,
@@ -2097,17 +2097,17 @@ unsafe extern "C" {
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateDeviceHeader(
         Header: *mut KSDEVICE_HEADER,
         ItemsCount: ULONG,
         ItemsList: PKSOBJECT_CREATE_ITEM,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateExtraData(Irp: PIRP, ExtraSize: ULONG, ExtraBuffer: *mut PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateObjectCreateItem(
         Header: KSDEVICE_HEADER,
         CreateItem: PKSOBJECT_CREATE_ITEM,
@@ -2115,7 +2115,7 @@ unsafe extern "C" {
         ItemFreeCallback: PFNKSITEMFREECALLBACK,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateObjectHeader(
         Header: *mut KSOBJECT_HEADER,
         ItemsCount: ULONG,
@@ -2124,16 +2124,16 @@ unsafe extern "C" {
         Table: *mut KSDISPATCH_TABLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCancelIo(QueueHead: PLIST_ENTRY, SpinLock: PKSPIN_LOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCancelRoutine(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDefaultDeviceIoCompletion(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchFastIoDeviceControlFailure(
         FileObject: PFILE_OBJECT,
         Wait: BOOLEAN,
@@ -2146,7 +2146,7 @@ unsafe extern "C" {
         DeviceObject: PDEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchFastReadFailure(
         FileObject: PFILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
@@ -2158,19 +2158,19 @@ unsafe extern "C" {
         DeviceObject: PDEVICE_OBJECT,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchInvalidDeviceRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchSpecificMethod(Irp: PIRP, Handler: PFNKSHANDLER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchSpecificProperty(Irp: PIRP, Handler: PFNKSHANDLER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsForwardAndCatchIrp(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -2178,23 +2178,23 @@ unsafe extern "C" {
         StackUse: KSSTACK_USE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsForwardIrp(
         Irp: PIRP,
         FileObject: PFILE_OBJECT,
         ReuseStackLocation: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeDeviceHeader(Header: KSDEVICE_HEADER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeObjectHeader(Header: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetChildCreateParameter(Irp: PIRP, CreateParameter: *mut PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsMoveIrpsOnCancelableQueue(
         SourceList: PLIST_ENTRY,
         SourceLock: PKSPIN_LOCK,
@@ -2205,10 +2205,10 @@ unsafe extern "C" {
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsProbeStreamIrp(Irp: PIRP, ProbeFlags: ULONG, HeaderSize: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsQueryInformationFile(
         FileObject: PFILE_OBJECT,
         FileInformation: PVOID,
@@ -2216,13 +2216,13 @@ unsafe extern "C" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsQueryObjectAccessMask(Header: KSOBJECT_HEADER) -> ACCESS_MASK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsQueryObjectCreateItem(Header: KSOBJECT_HEADER) -> PKSOBJECT_CREATE_ITEM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsReadFile(
         FileObject: PFILE_OBJECT,
         Event: PKEVENT,
@@ -2234,13 +2234,13 @@ unsafe extern "C" {
         RequestorMode: KPROCESSOR_MODE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsReleaseDevice(arg1: PKSDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsReleaseIrpOnCancelableQueue(Irp: PIRP, DriverCancel: PDRIVER_CANCEL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRemoveIrpFromCancelableQueue(
         QueueHead: PLIST_ENTRY,
         SpinLock: PKSPIN_LOCK,
@@ -2248,10 +2248,10 @@ unsafe extern "C" {
         RemovalOperation: KSIRP_REMOVAL_OPERATION,
     ) -> PIRP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRemoveSpecificIrpFromCancelableQueue(Irp: PIRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetInformationFile(
         FileObject: PFILE_OBJECT,
         FileInformation: PVOID,
@@ -2259,13 +2259,13 @@ unsafe extern "C" {
         FileInformationClass: FILE_INFORMATION_CLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetMajorFunctionHandler(
         DriverObject: PDRIVER_OBJECT,
         MajorFunction: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamIo(
         FileObject: PFILE_OBJECT,
         Event: PKEVENT,
@@ -2280,10 +2280,10 @@ unsafe extern "C" {
         RequestorMode: KPROCESSOR_MODE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerUnlock(StreamPointer: PKSSTREAM_POINTER, Eject: BOOLEAN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerAdvanceOffsets(
         StreamPointer: PKSSTREAM_POINTER,
         InUsed: ULONG,
@@ -2291,10 +2291,10 @@ unsafe extern "C" {
         Eject: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerAdvance(StreamPointer: PKSSTREAM_POINTER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsStreamPointerAdvanceOffsetsAndUnlock(
         StreamPointer: PKSSTREAM_POINTER,
         InUsed: ULONG,
@@ -2302,7 +2302,7 @@ unsafe extern "C" {
         Eject: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsWriteFile(
         FileObject: PFILE_OBJECT,
         Event: PKEVENT,
@@ -2314,32 +2314,32 @@ unsafe extern "C" {
         RequestorMode: KPROCESSOR_MODE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDefaultForwardIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRegisterWorker(WorkQueueType: WORK_QUEUE_TYPE, Worker: *mut PKSWORKER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsUnregisterWorker(Worker: PKSWORKER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRegisterCountedWorker(
         WorkQueueType: WORK_QUEUE_TYPE,
         CountedWorkItem: PWORK_QUEUE_ITEM,
         Worker: *mut PKSWORKER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDecrementCountedWorker(Worker: PKSWORKER) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsIncrementCountedWorker(Worker: PKSWORKER) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsQueueWorkItem(Worker: PKSWORKER, WorkItem: PWORK_QUEUE_ITEM) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsLoadResource(
         ImageBase: PVOID,
         PoolType: POOL_TYPE,
@@ -2349,7 +2349,7 @@ unsafe extern "C" {
         ResourceSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetImageNameAndResourceId(
         RegKey: HANDLE,
         ImageName: PUNICODE_STRING,
@@ -2357,7 +2357,7 @@ unsafe extern "C" {
         ValueType: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsMapModuleName(
         PhysicalDeviceObject: PDEVICE_OBJECT,
         ModuleName: PUNICODE_STRING,
@@ -2366,65 +2366,65 @@ unsafe extern "C" {
         ValueType: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetNextSibling(Object: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCacheMedium(
         SymbolicLink: PUNICODE_STRING,
         Medium: PKSPIN_MEDIUM,
         PinDirection: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDefaultDispatchPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetDevicePnpAndBaseObject(
         Header: KSDEVICE_HEADER,
         PnpDeviceObject: PDEVICE_OBJECT,
         BaseDevice: PDEVICE_OBJECT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDefaultDispatchPower(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetPowerDispatch(
         Header: KSOBJECT_HEADER,
         PowerDispatch: PFNKSCONTEXT_DISPATCH,
         PowerContext: PVOID,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsReferenceBusObject(Header: KSDEVICE_HEADER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDereferenceBusObject(Header: KSDEVICE_HEADER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeObjectCreateItem(Header: KSDEVICE_HEADER, CreateItem: PUNICODE_STRING)
         -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeObjectCreateItemsByContext(Header: KSDEVICE_HEADER, Context: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsNullDriverUnload(DriverObject: PDRIVER_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsQueryDevicePnpObject(Header: KSDEVICE_HEADER) -> PDEVICE_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRecalculateStackDepth(Header: KSDEVICE_HEADER, ReuseStackLocation: BOOLEAN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetTargetDeviceObject(Header: KSOBJECT_HEADER, TargetDevice: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSetTargetState(Header: KSOBJECT_HEADER, TargetState: KSTARGET_STATE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsSynchronousIoControlDevice(
         FileObject: PFILE_OBJECT,
         RequestorMode: KPROCESSOR_MODE,
@@ -2436,13 +2436,13 @@ unsafe extern "C" {
         BytesReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterGetFirstChildPin(Filter: PKSFILTER, PinId: ULONG) -> PKSPIN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinGetConnectedPinFileObject(Pin: PKSPIN) -> PFILE_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsMergeAutomationTables(
         AutomationTableAB: *mut PKSAUTOMATION_TABLE,
         AutomationTableA: PKSAUTOMATION_TABLE,
@@ -2450,7 +2450,7 @@ unsafe extern "C" {
         Bag: KSOBJECT_BAG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsInitializeDriver(
         DriverObject: PDRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
@@ -2459,7 +2459,7 @@ unsafe extern "C" {
 }
 pub type KSFILTERFACTORY = _KSFILTERFACTORY;
 pub type PKSFILTERFACTORY = *mut _KSFILTERFACTORY;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsInitializeDevice(
         FunctionalDeviceObject: PDEVICE_OBJECT,
         PhysicalDeviceObject: PDEVICE_OBJECT,
@@ -2468,9 +2468,9 @@ unsafe extern "C" {
     ) -> NTSTATUS;
 }
 pub type PFNKSFILTERFACTORYPOWER = ::core::option::Option<
-    unsafe extern "C" fn(FilterFactory: PKSFILTERFACTORY, State: DEVICE_POWER_STATE),
+    unsafe extern "system" fn(FilterFactory: PKSFILTERFACTORY, State: DEVICE_POWER_STATE),
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _KsEdit(
         ObjectBag: KSOBJECT_BAG,
         PointerToPointerToItem: *mut PVOID,
@@ -2479,43 +2479,43 @@ unsafe extern "C" {
         Tag: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAcquireControl(Object: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAcquireDevice(Device: PKSDEVICE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddDevice(
         DriverObject: PDRIVER_OBJECT,
         PhysicalDeviceObject: PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddEvent(Object: PVOID, EventEntry: PKSEVENT_ENTRY);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAddItemToObjectBag(ObjectBag: KSOBJECT_BAG, Item: PVOID, Free: PFNKSFREE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsRemoveItemFromObjectBag(ObjectBag: KSOBJECT_BAG, Item: PVOID, Free: BOOLEAN) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsAllocateObjectBag(Device: PKSDEVICE, ObjectBag: *mut KSOBJECT_BAG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFreeObjectBag(ObjectBag: KSOBJECT_BAG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCompletePendingRequest(Irp: PIRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCopyObjectBagItems(
         ObjectBagDestination: KSOBJECT_BAG,
         ObjectBagSource: KSOBJECT_BAG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateDevice(
         DriverObject: PDRIVER_OBJECT,
         PhysicalDeviceObject: PDEVICE_OBJECT,
@@ -2524,7 +2524,7 @@ unsafe extern "C" {
         Device: *mut PKSDEVICE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsCreateFilterFactory(
         DeviceObject: PDEVICE_OBJECT,
         Descriptor: *const KSFILTER_DESCRIPTOR,
@@ -2536,50 +2536,50 @@ unsafe extern "C" {
         FilterFactory: *mut PKSFILTERFACTORY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterFactorySetDeviceClassesState(
         FilterFactory: PKSFILTERFACTORY,
         NewState: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterFactoryUpdateCacheData(
         FilterFactory: PKSFILTERFACTORY,
         FilterDescriptor: *const KSFILTER_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetPinFromIrp(Irp: PIRP) -> PKSPIN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetFilterFromIrp(Irp: PIRP) -> PKSFILTER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDefaultAddEventHandler(
         Irp: PIRP,
         EventData: PKSEVENTDATA,
         EventEntry: PKSEVENT_ENTRY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchQuerySecurity(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDispatchSetSecurity(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinAttemptProcessing(Pin: PKSPIN, Asynchronous: BOOLEAN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinAcquireProcessingMutex(Pin: PKSPIN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsPinReleaseProcessingMutex(Pin: PKSPIN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetParent(Object: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDeviceGetBusData(
         Device: PKSDEVICE,
         DataType: ULONG,
@@ -2588,16 +2588,16 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetFirstChild(Object: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDeviceGetFirstChildFilterFactory(Device: PKSDEVICE) -> PKSFILTERFACTORY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetOuterUnknown(Object: PVOID) -> PUNKNOWN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDeviceRegisterAggregatedClientUnknown(
         Device: PKSDEVICE,
         ClientUnknown: PUNKNOWN,
@@ -2613,30 +2613,30 @@ pub struct IKsReferenceClock {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsReferenceClockVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsReferenceClock,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsReferenceClock) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsReferenceClock) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsReferenceClock) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsReferenceClock) -> ULONG>,
     pub GetTime:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsReferenceClock) -> LONGLONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsReferenceClock) -> LONGLONG>,
     pub GetPhysicalTime:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsReferenceClock) -> LONGLONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsReferenceClock) -> LONGLONG>,
     pub GetCorrelatedTime: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsReferenceClock, SystemTime: PLONGLONG) -> LONGLONG,
+        unsafe extern "system" fn(arg1: *mut IKsReferenceClock, SystemTime: PLONGLONG) -> LONGLONG,
     >,
     pub GetCorrelatedPhysicalTime: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsReferenceClock, SystemTime: PLONGLONG) -> LONGLONG,
+        unsafe extern "system" fn(arg1: *mut IKsReferenceClock, SystemTime: PLONGLONG) -> LONGLONG,
     >,
     pub GetResolution: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsReferenceClock, Resolution: PKSRESOLUTION) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsReferenceClock, Resolution: PKSRESOLUTION) -> NTSTATUS,
     >,
     pub GetState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsReferenceClock, State: PKSSTATE) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsReferenceClock, State: PKSSTATE) -> NTSTATUS,
     >,
 }
 unsafe extern "C" {
@@ -2651,16 +2651,16 @@ pub struct IKsControl {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsControlVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsControl,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsControl) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsControl) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsControl) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsControl) -> ULONG>,
     pub KsProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsControl,
             Property: PKSPROPERTY,
             PropertyLength: ULONG,
@@ -2670,7 +2670,7 @@ pub struct IKsControlVtbl {
         ) -> NTSTATUS,
     >,
     pub KsMethod: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsControl,
             Method: PKSMETHOD,
             MethodLength: ULONG,
@@ -2680,7 +2680,7 @@ pub struct IKsControlVtbl {
         ) -> NTSTATUS,
     >,
     pub KsEvent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsControl,
             Event: PKSEVENT,
             EventLength: ULONG,
@@ -2691,7 +2691,7 @@ pub struct IKsControlVtbl {
     >,
 }
 pub type PIKSCONTROL = *mut IKsControl;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDeviceRegisterAdapterObject(
         Device: PKSDEVICE,
         AdapterObject: PADAPTER_OBJECT,
@@ -2699,7 +2699,7 @@ unsafe extern "C" {
         MappingTableStride: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsDeviceSetBusData(
         Device: PKSDEVICE,
         DataType: ULONG,
@@ -2708,40 +2708,40 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsReleaseControl(Object: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterAcquireProcessingMutex(Filter: PKSFILTER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterAddTopologyConnections(
         Filter: PKSFILTER,
         NewConnectionsCount: ULONG,
         NewTopologyConnections: *const KSTOPOLOGY_CONNECTION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterAttemptProcessing(Filter: PKSFILTER, Asynchronous: BOOLEAN);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterCreateNode(
         Filter: PKSFILTER,
         NodeDescriptor: *const KSNODE_DESCRIPTOR,
         NodeID: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterCreatePinFactory(
         Filter: PKSFILTER,
         PinDescriptor: *const KSPIN_DESCRIPTOR_EX,
         PinID: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsGetDevice(Object: PVOID) -> PKSDEVICE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsFilterReleaseProcessingMutex(Filter: PKSFILTER);
 }
 #[repr(C)]
@@ -2768,7 +2768,7 @@ unsafe extern "C" {
 pub type PCPROPERTY_REQUEST = _PCPROPERTY_REQUEST;
 pub type PPCPROPERTY_REQUEST = *mut _PCPROPERTY_REQUEST;
 pub type PCPFNPROPERTY_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(PropertyRequest: PPCPROPERTY_REQUEST) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(PropertyRequest: PPCPROPERTY_REQUEST) -> NTSTATUS>;
 #[repr(C)]
 pub struct PCPROPERTY_ITEM {
     pub Set: *const GUID,
@@ -2791,7 +2791,7 @@ pub struct _PCPROPERTY_REQUEST {
     pub Irp: PIRP,
 }
 pub type PCPFNEVENT_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(EventRequest: *mut _PCEVENT_REQUEST) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(EventRequest: *mut _PCEVENT_REQUEST) -> NTSTATUS>;
 #[repr(C)]
 pub struct _PCEVENT_ITEM {
     pub Set: *const GUID,
@@ -2814,7 +2814,7 @@ pub struct _PCEVENT_REQUEST {
 pub type PCEVENT_REQUEST = _PCEVENT_REQUEST;
 pub type PPCEVENT_REQUEST = *mut _PCEVENT_REQUEST;
 pub type PCPFNMETHOD_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(MethodRequest: *mut _PCMETHOD_REQUEST) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(MethodRequest: *mut _PCMETHOD_REQUEST) -> NTSTATUS>;
 #[repr(C)]
 pub struct _PCMETHOD_ITEM {
     pub Set: *const GUID,
@@ -2901,42 +2901,42 @@ pub struct IResourceList {
 #[derive(Debug, Copy, Clone)]
 pub struct IResourceListVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IResourceList,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IResourceList) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IResourceList) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IResourceList) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IResourceList) -> ULONG>,
     pub NumberOfEntries:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IResourceList) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IResourceList) -> ULONG>,
     pub NumberOfEntriesOfType: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IResourceList, Type: CM_RESOURCE_TYPE) -> ULONG,
+        unsafe extern "system" fn(arg1: *mut IResourceList, Type: CM_RESOURCE_TYPE) -> ULONG,
     >,
     pub FindTranslatedEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IResourceList,
             Type: CM_RESOURCE_TYPE,
             Index: ULONG,
         ) -> PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     >,
     pub FindUntranslatedEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IResourceList,
             Type: CM_RESOURCE_TYPE,
             Index: ULONG,
         ) -> PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     >,
     pub AddEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IResourceList,
             Translated: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
             Untranslated: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub AddEntryFromParent: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IResourceList,
             Parent: *mut IResourceList,
             Type: CM_RESOURCE_TYPE,
@@ -2944,9 +2944,9 @@ pub struct IResourceListVtbl {
         ) -> NTSTATUS,
     >,
     pub TranslatedList:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IResourceList) -> PCM_RESOURCE_LIST>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IResourceList) -> PCM_RESOURCE_LIST>,
     pub UntranslatedList:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IResourceList) -> PCM_RESOURCE_LIST>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IResourceList) -> PCM_RESOURCE_LIST>,
 }
 pub type PRESOURCELIST = *mut IResourceList;
 unsafe extern "C" {
@@ -2961,15 +2961,15 @@ pub struct IServiceSink {
 #[derive(Debug, Copy, Clone)]
 pub struct IServiceSinkVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IServiceSink,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceSink) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceSink) -> ULONG>,
-    pub RequestService: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceSink)>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceSink) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceSink) -> ULONG>,
+    pub RequestService: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceSink)>,
 }
 pub type PSERVICESINK = *mut IServiceSink;
 unsafe extern "C" {
@@ -2984,27 +2984,27 @@ pub struct IServiceGroup {
 #[derive(Debug, Copy, Clone)]
 pub struct IServiceGroupVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IServiceGroup,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup) -> ULONG>,
-    pub RequestService: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup)>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup) -> ULONG>,
+    pub RequestService: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup)>,
     pub AddMember: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IServiceGroup, pServiceSink: PSERVICESINK) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IServiceGroup, pServiceSink: PSERVICESINK) -> NTSTATUS,
     >,
     pub RemoveMember: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IServiceGroup, pServiceSink: PSERVICESINK),
+        unsafe extern "system" fn(arg1: *mut IServiceGroup, pServiceSink: PSERVICESINK),
     >,
     pub SupportDelayedService:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup)>,
     pub RequestDelayedService:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup, ullDelay: ULONGLONG)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup, ullDelay: ULONGLONG)>,
     pub CancelDelayedService:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IServiceGroup)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IServiceGroup)>,
 }
 pub type PSERVICEGROUP = *mut IServiceGroup;
 unsafe extern "C" {
@@ -3019,18 +3019,18 @@ pub struct IUnregisterSubdevice {
 #[derive(Debug, Copy, Clone)]
 pub struct IUnregisterSubdeviceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterSubdevice,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IUnregisterSubdevice) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IUnregisterSubdevice) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IUnregisterSubdevice) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IUnregisterSubdevice) -> ULONG>,
     pub UnregisterSubdevice: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterSubdevice,
             DeviceObject: PDEVICE_OBJECT,
             Unknown: PUNKNOWN,
@@ -3050,20 +3050,20 @@ pub struct IUnregisterPhysicalConnection {
 #[derive(Debug, Copy, Clone)]
 pub struct IUnregisterPhysicalConnectionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterPhysicalConnection,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IUnregisterPhysicalConnection) -> ULONG,
+        unsafe extern "system" fn(arg1: *mut IUnregisterPhysicalConnection) -> ULONG,
     >,
     pub Release: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IUnregisterPhysicalConnection) -> ULONG,
+        unsafe extern "system" fn(arg1: *mut IUnregisterPhysicalConnection) -> ULONG,
     >,
     pub UnregisterPhysicalConnection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterPhysicalConnection,
             DeviceObject: PDEVICE_OBJECT,
             FromUnknown: PUNKNOWN,
@@ -3073,7 +3073,7 @@ pub struct IUnregisterPhysicalConnectionVtbl {
         ) -> NTSTATUS,
     >,
     pub UnregisterPhysicalConnectionToExternal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterPhysicalConnection,
             DeviceObject: PDEVICE_OBJECT,
             FromUnknown: PUNKNOWN,
@@ -3083,7 +3083,7 @@ pub struct IUnregisterPhysicalConnectionVtbl {
         ) -> NTSTATUS,
     >,
     pub UnregisterPhysicalConnectionFromExternal: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IUnregisterPhysicalConnection,
             DeviceObject: PDEVICE_OBJECT,
             FromString: PUNICODE_STRING,
@@ -3106,39 +3106,39 @@ pub struct IDmaChannel {
 #[derive(Debug, Copy, Clone)]
 pub struct IDmaChannelVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannel,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
     pub AllocateBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannel,
             BufferSize: ULONG,
             PhysicalAddressConstraint: PPHYSICAL_ADDRESS,
         ) -> NTSTATUS,
     >,
-    pub FreeBuffer: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel)>,
+    pub FreeBuffer: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel)>,
     pub TransferCount:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
     pub MaximumBufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
     pub AllocatedBufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
-    pub BufferSize: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
+    pub BufferSize: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> ULONG>,
     pub SetBufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel, BufferSize: ULONG)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel, BufferSize: ULONG)>,
     pub SystemAddress:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> PVOID>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> PVOID>,
     pub PhysicalAddress:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> PHYSICAL_ADDRESS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> PHYSICAL_ADDRESS>,
     pub GetAdapterObject:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannel) -> PADAPTER_OBJECT>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannel) -> PADAPTER_OBJECT>,
     pub CopyTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannel,
             Destination: PVOID,
             Source: PVOID,
@@ -3146,7 +3146,7 @@ pub struct IDmaChannelVtbl {
         ),
     >,
     pub CopyFrom: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannel,
             Destination: PVOID,
             Source: PVOID,
@@ -3167,43 +3167,43 @@ pub struct IDmaChannelSlave {
 #[derive(Debug, Copy, Clone)]
 pub struct IDmaChannelSlaveVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannelSlave,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub AllocateBuffer: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannelSlave,
             BufferSize: ULONG,
             PhysicalAddressConstraint: PPHYSICAL_ADDRESS,
         ) -> NTSTATUS,
     >,
-    pub FreeBuffer: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave)>,
+    pub FreeBuffer: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave)>,
     pub TransferCount:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub MaximumBufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub AllocatedBufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub BufferSize:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub SetBufferSize: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDmaChannelSlave, BufferSize: ULONG),
+        unsafe extern "system" fn(arg1: *mut IDmaChannelSlave, BufferSize: ULONG),
     >,
     pub SystemAddress:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> PVOID>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> PVOID>,
     pub PhysicalAddress: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> PHYSICAL_ADDRESS,
+        unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> PHYSICAL_ADDRESS,
     >,
     pub GetAdapterObject: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> PADAPTER_OBJECT,
+        unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> PADAPTER_OBJECT,
     >,
     pub CopyTo: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannelSlave,
             Destination: PVOID,
             Source: PVOID,
@@ -3211,7 +3211,7 @@ pub struct IDmaChannelSlaveVtbl {
         ),
     >,
     pub CopyFrom: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannelSlave,
             Destination: PVOID,
             Source: PVOID,
@@ -3219,17 +3219,17 @@ pub struct IDmaChannelSlaveVtbl {
         ),
     >,
     pub Start: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDmaChannelSlave,
             MapSize: ULONG,
             WriteToDevice: BOOLEAN,
         ) -> NTSTATUS,
     >,
-    pub Stop: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> NTSTATUS>,
+    pub Stop: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> NTSTATUS>,
     pub ReadCounter:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDmaChannelSlave) -> ULONG>,
     pub WaitForTC: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDmaChannelSlave, Timeout: ULONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IDmaChannelSlave, Timeout: ULONG) -> NTSTATUS,
     >,
 }
 pub type PDMACHANNELSLAVE = *mut IDmaChannelSlave;
@@ -3238,7 +3238,7 @@ pub const INTERRUPTSYNCMODE_InterruptSyncModeAll: INTERRUPTSYNCMODE = 2;
 pub const INTERRUPTSYNCMODE_InterruptSyncModeRepeat: INTERRUPTSYNCMODE = 3;
 pub type INTERRUPTSYNCMODE = ::core::ffi::c_uint;
 pub type PINTERRUPTSYNCROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(InterruptSync: *mut IInterruptSync, DynamicContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(InterruptSync: *mut IInterruptSync, DynamicContext: PVOID) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3249,28 +3249,28 @@ pub struct IInterruptSync {
 #[derive(Debug, Copy, Clone)]
 pub struct IInterruptSyncVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IInterruptSync,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IInterruptSync) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IInterruptSync) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IInterruptSync) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IInterruptSync) -> ULONG>,
     pub CallSynchronizedRoutine: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IInterruptSync,
             Routine: PINTERRUPTSYNCROUTINE,
             DynamicContext: PVOID,
         ) -> NTSTATUS,
     >,
     pub GetKInterrupt:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IInterruptSync) -> PKINTERRUPT>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IInterruptSync) -> PKINTERRUPT>,
     pub Connect:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IInterruptSync) -> NTSTATUS>,
-    pub Disconnect: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IInterruptSync)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IInterruptSync) -> NTSTATUS>,
+    pub Disconnect: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IInterruptSync)>,
     pub RegisterServiceRoutine: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IInterruptSync,
             Routine: PINTERRUPTSYNCROUTINE,
             DynamicContext: PVOID,
@@ -3300,16 +3300,16 @@ pub struct IRegistryKey {
 #[derive(Debug, Copy, Clone)]
 pub struct IRegistryKeyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IRegistryKey) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IRegistryKey) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IRegistryKey) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IRegistryKey) -> ULONG>,
     pub QueryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             KeyInformationClass: KEY_INFORMATION_CLASS,
             KeyInformation: PVOID,
@@ -3318,7 +3318,7 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub EnumerateKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             Index: ULONG,
             KeyInformationClass: KEY_INFORMATION_CLASS,
@@ -3328,7 +3328,7 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub QueryValueKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             ValueName: PUNICODE_STRING,
             KeyValueInformationClass: KEY_VALUE_INFORMATION_CLASS,
@@ -3338,7 +3338,7 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub EnumerateValueKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             Index: ULONG,
             KeyValueInformationClass: KEY_VALUE_INFORMATION_CLASS,
@@ -3348,7 +3348,7 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub SetValueKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             ValueName: PUNICODE_STRING,
             Type: ULONG,
@@ -3357,14 +3357,14 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub QueryRegistryValues: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             QueryTable: PRTL_QUERY_REGISTRY_TABLE,
             Context: PVOID,
         ) -> NTSTATUS,
     >,
     pub NewSubKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             RegistrySubKey: *mut *mut IRegistryKey,
             OuterUnknown: PUNKNOWN,
@@ -3375,7 +3375,7 @@ pub struct IRegistryKeyVtbl {
         ) -> NTSTATUS,
     >,
     pub DeleteKey:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IRegistryKey) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IRegistryKey) -> NTSTATUS>,
 }
 pub type PREGISTRYKEY = *mut IRegistryKey;
 #[repr(C)]
@@ -3387,16 +3387,16 @@ pub struct IMusicTechnology {
 #[derive(Debug, Copy, Clone)]
 pub struct IMusicTechnologyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IRegistryKey,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IRegistryKey) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IRegistryKey) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IRegistryKey) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IRegistryKey) -> ULONG>,
     pub SetTechnology: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IRegistryKey, Technology: *const GUID) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IRegistryKey, Technology: *const GUID) -> NTSTATUS,
     >,
 }
 pub type PMUSICTECHNOLOGY = *mut IMusicTechnology;
@@ -3415,16 +3415,16 @@ pub struct IPort {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPort,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPort) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPort) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPort) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPort) -> ULONG>,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPort,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -3434,7 +3434,7 @@ pub struct IPortVtbl {
         ) -> NTSTATUS,
     >,
     pub GetDeviceProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPort,
             DeviceProperty: DEVICE_REGISTRY_PROPERTY,
             BufferLength: ULONG,
@@ -3443,7 +3443,7 @@ pub struct IPortVtbl {
         ) -> NTSTATUS,
     >,
     pub NewRegistryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPort,
             OutRegistryKey: *mut PREGISTRYKEY,
             OuterUnknown: PUNKNOWN,
@@ -3471,16 +3471,16 @@ pub struct IPortMidi {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortMidiVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortMidi,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortMidi) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortMidi) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortMidi) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortMidi) -> ULONG>,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortMidi,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -3490,7 +3490,7 @@ pub struct IPortMidiVtbl {
         ) -> NTSTATUS,
     >,
     pub GetDeviceProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortMidi,
             DeviceProperty: DEVICE_REGISTRY_PROPERTY,
             BufferLength: ULONG,
@@ -3499,7 +3499,7 @@ pub struct IPortMidiVtbl {
         ) -> NTSTATUS,
     >,
     pub NewRegistryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortMidi,
             OutRegistryKey: *mut PREGISTRYKEY,
             OuterUnknown: PUNKNOWN,
@@ -3511,10 +3511,10 @@ pub struct IPortMidiVtbl {
         ) -> NTSTATUS,
     >,
     pub Notify: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortMidi, ServiceGroup: PSERVICEGROUP),
+        unsafe extern "system" fn(arg1: *mut IPortMidi, ServiceGroup: PSERVICEGROUP),
     >,
     pub RegisterServiceGroup: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortMidi, ServiceGroup: PSERVICEGROUP) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IPortMidi, ServiceGroup: PSERVICEGROUP) -> NTSTATUS,
     >,
 }
 pub type PPORTMIDI = *mut IPortMidi;
@@ -3533,16 +3533,16 @@ pub struct IPortWaveCyclic {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortWaveCyclicVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWaveCyclic) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWaveCyclic) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWaveCyclic) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWaveCyclic) -> ULONG>,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -3552,7 +3552,7 @@ pub struct IPortWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub GetDeviceProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             DeviceProperty: DEVICE_REGISTRY_PROPERTY,
             BufferLength: ULONG,
@@ -3561,7 +3561,7 @@ pub struct IPortWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub NewRegistryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             OutRegistryKey: *mut PREGISTRYKEY,
             OuterUnknown: PUNKNOWN,
@@ -3573,10 +3573,10 @@ pub struct IPortWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub Notify: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortWaveCyclic, ServiceGroup: PSERVICEGROUP),
+        unsafe extern "system" fn(arg1: *mut IPortWaveCyclic, ServiceGroup: PSERVICEGROUP),
     >,
     pub NewSlaveDmaChannel: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             DmaChannel: *mut PDMACHANNELSLAVE,
             OuterUnknown: PUNKNOWN,
@@ -3588,7 +3588,7 @@ pub struct IPortWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub NewMasterDmaChannel: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWaveCyclic,
             DmaChannel: *mut PDMACHANNEL,
             OuterUnknown: PUNKNOWN,
@@ -3617,16 +3617,16 @@ pub struct IPortWavePci {
 #[derive(Copy, Clone)]
 pub struct IPortWavePciVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePci,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWavePci) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWavePci) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWavePci) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWavePci) -> ULONG>,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePci,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -3636,7 +3636,7 @@ pub struct IPortWavePciVtbl {
         ) -> NTSTATUS,
     >,
     pub GetDeviceProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePci,
             DeviceProperty: DEVICE_REGISTRY_PROPERTY,
             BufferLength: ULONG,
@@ -3645,7 +3645,7 @@ pub struct IPortWavePciVtbl {
         ) -> NTSTATUS,
     >,
     pub NewRegistryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePci,
             OutRegistryKey: *mut PREGISTRYKEY,
             OuterUnknown: PUNKNOWN,
@@ -3657,10 +3657,10 @@ pub struct IPortWavePciVtbl {
         ) -> NTSTATUS,
     >,
     pub Notify: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortWavePci, ServiceGroup: PSERVICEGROUP),
+        unsafe extern "system" fn(arg1: *mut IPortWavePci, ServiceGroup: PSERVICEGROUP),
     >,
     pub NewMasterDmaChannel: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePci,
             DmaChannel: *mut PDMACHANNEL,
             OuterUnknown: PUNKNOWN,
@@ -3690,22 +3690,22 @@ pub struct IMiniport {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut INTERFACE,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut INTERFACE) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut INTERFACE) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut INTERFACE) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut INTERFACE) -> ULONG>,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut INTERFACE,
             Description: *mut PPCFILTER_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub DataRangeIntersection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut INTERFACE,
             PinId: ULONG,
             DataRange: PKSDATARANGE,
@@ -3729,24 +3729,24 @@ pub struct IMiniportMidiStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportMidiStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidiStream,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportMidiStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportMidiStream) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportMidiStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportMidiStream) -> ULONG>,
     pub SetFormat: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportMidiStream, DataFormat: PKSDATAFORMAT) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportMidiStream, DataFormat: PKSDATAFORMAT) -> NTSTATUS,
     >,
     pub SetState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportMidiStream, State: KSSTATE) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportMidiStream, State: KSSTATE) -> NTSTATUS,
     >,
     pub Read: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidiStream,
             BufferAddress: PVOID,
             BufferLength: ULONG,
@@ -3754,7 +3754,7 @@ pub struct IMiniportMidiStreamVtbl {
         ) -> NTSTATUS,
     >,
     pub Write: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidiStream,
             BufferAddress: PVOID,
             BytesToWrite: ULONG,
@@ -3775,22 +3775,22 @@ pub struct IMiniportMidi {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportMidiVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidi,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportMidi) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportMidi) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportMidi) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportMidi) -> ULONG>,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidi,
             Description: *mut PPCFILTER_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub DataRangeIntersection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidi,
             PinId: ULONG,
             DataRange: PKSDATARANGE,
@@ -3801,7 +3801,7 @@ pub struct IMiniportMidiVtbl {
         ) -> NTSTATUS,
     >,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidi,
             UnknownAdapter: PUNKNOWN,
             ResourceList: PRESOURCELIST,
@@ -3809,9 +3809,9 @@ pub struct IMiniportMidiVtbl {
             ServiceGroup: *mut PSERVICEGROUP,
         ) -> NTSTATUS,
     >,
-    pub Service: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportMidi)>,
+    pub Service: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportMidi)>,
     pub NewStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportMidi,
             Stream: *mut PMINIPORTMIDISTREAM,
             OuterUnknown: PUNKNOWN,
@@ -3845,16 +3845,16 @@ pub struct IPortTopology {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortTopologyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortTopology,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortTopology) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortTopology) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortTopology) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortTopology) -> ULONG>,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortTopology,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -3864,7 +3864,7 @@ pub struct IPortTopologyVtbl {
         ) -> NTSTATUS,
     >,
     pub GetDeviceProperty: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortTopology,
             DeviceProperty: DEVICE_REGISTRY_PROPERTY,
             BufferLength: ULONG,
@@ -3873,7 +3873,7 @@ pub struct IPortTopologyVtbl {
         ) -> NTSTATUS,
     >,
     pub NewRegistryKey: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortTopology,
             OutRegistryKey: *mut PREGISTRYKEY,
             OuterUnknown: PUNKNOWN,
@@ -3898,23 +3898,23 @@ pub struct IMiniportTopology {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportTopologyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportTopology,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportTopology) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportTopology) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportTopology) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportTopology) -> ULONG>,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportTopology,
             Description: *mut PPCFILTER_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub DataRangeIntersection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportTopology,
             PinId: ULONG,
             DataRange: PKSDATARANGE,
@@ -3925,7 +3925,7 @@ pub struct IMiniportTopologyVtbl {
         ) -> NTSTATUS,
     >,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportTopology,
             UnknownAdapter: PUNKNOWN,
             ResourceList: PRESOURCELIST,
@@ -3946,43 +3946,43 @@ pub struct IMiniportWaveCyclicStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportWaveCyclicStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclicStream,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclicStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclicStream) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclicStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclicStream) -> ULONG>,
     pub SetFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclicStream,
             DataFormat: PKSDATAFORMAT,
         ) -> NTSTATUS,
     >,
     pub SetNotificationFreq: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclicStream,
             Interval: ULONG,
             FrameSize: PULONG,
         ) -> ULONG,
     >,
     pub SetState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclicStream, State: KSSTATE) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclicStream, State: KSSTATE) -> NTSTATUS,
     >,
     pub GetPosition: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclicStream, Position: PULONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclicStream, Position: PULONG) -> NTSTATUS,
     >,
     pub NormalizePhysicalPosition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclicStream,
             PhysicalPosition: PLONGLONG,
         ) -> NTSTATUS,
     >,
     pub Silence: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclicStream, Buffer: PVOID, ByteCount: ULONG),
+        unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclicStream, Buffer: PVOID, ByteCount: ULONG),
     >,
 }
 pub type PMINIPORTWAVECYCLICSTREAM = *mut IMiniportWaveCyclicStream;
@@ -3998,24 +3998,24 @@ pub struct IMiniportWaveCyclic {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportWaveCyclicVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclic,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclic) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclic) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWaveCyclic) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWaveCyclic) -> ULONG>,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclic,
             Description: *mut PPCFILTER_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub DataRangeIntersection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclic,
             PinId: ULONG,
             DataRange: PKSDATARANGE,
@@ -4026,7 +4026,7 @@ pub struct IMiniportWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclic,
             UnknownAdapter: PUNKNOWN,
             ResourceList: PRESOURCELIST,
@@ -4034,7 +4034,7 @@ pub struct IMiniportWaveCyclicVtbl {
         ) -> NTSTATUS,
     >,
     pub NewStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWaveCyclic,
             Stream: *mut PMINIPORTWAVECYCLICSTREAM,
             OuterUnknown: PUNKNOWN,
@@ -4060,18 +4060,18 @@ pub struct IPortWavePciStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortWavePciStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePciStream,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWavePciStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWavePciStream) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWavePciStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWavePciStream) -> ULONG>,
     pub GetMapping: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortWavePciStream,
             Tag: PVOID,
             PhysicalAddress: PPHYSICAL_ADDRESS,
@@ -4081,10 +4081,10 @@ pub struct IPortWavePciStreamVtbl {
         ) -> NTSTATUS,
     >,
     pub ReleaseMapping: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortWavePciStream, Tag: PVOID) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IPortWavePciStream, Tag: PVOID) -> NTSTATUS,
     >,
     pub TerminatePacket:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortWavePciStream) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortWavePciStream) -> NTSTATUS>,
 }
 pub type PPORTWAVEPCISTREAM = *mut IPortWavePciStream;
 unsafe extern "C" {
@@ -4099,42 +4099,42 @@ pub struct IMiniportWavePciStream {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportWavePciStreamVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePciStream,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream) -> ULONG>,
     pub SetFormat: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePciStream,
             DataFormat: PKSDATAFORMAT,
         ) -> NTSTATUS,
     >,
     pub SetState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream, State: KSSTATE) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream, State: KSSTATE) -> NTSTATUS,
     >,
     pub GetPosition: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream, Position: PULONGLONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream, Position: PULONGLONG) -> NTSTATUS,
     >,
     pub NormalizePhysicalPosition: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePciStream,
             PhysicalPosition: PLONGLONG,
         ) -> NTSTATUS,
     >,
     pub GetAllocatorFraming: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePciStream,
             AllocatorFraming: PKSALLOCATOR_FRAMING,
         ) -> NTSTATUS,
     >,
     pub RevokeMappings: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePciStream,
             FirstTag: PVOID,
             LastTag: PVOID,
@@ -4142,8 +4142,8 @@ pub struct IMiniportWavePciStreamVtbl {
         ) -> NTSTATUS,
     >,
     pub MappingAvailable:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream)>,
-    pub Service: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePciStream)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream)>,
+    pub Service: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePciStream)>,
 }
 pub type PMINIPORTWAVEPCISTREAM = *mut IMiniportWavePciStream;
 unsafe extern "C" {
@@ -4158,22 +4158,22 @@ pub struct IMiniportWavePci {
 #[derive(Debug, Copy, Clone)]
 pub struct IMiniportWavePciVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePci,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePci) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePci) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePci) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePci) -> ULONG>,
     pub GetDescription: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePci,
             Description: *mut PPCFILTER_DESCRIPTOR,
         ) -> NTSTATUS,
     >,
     pub DataRangeIntersection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePci,
             PinId: ULONG,
             DataRange: PKSDATARANGE,
@@ -4184,7 +4184,7 @@ pub struct IMiniportWavePciVtbl {
         ) -> NTSTATUS,
     >,
     pub Init: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePci,
             UnknownAdapter: PUNKNOWN,
             ResourceList: PRESOURCELIST,
@@ -4193,7 +4193,7 @@ pub struct IMiniportWavePciVtbl {
         ) -> NTSTATUS,
     >,
     pub NewStream: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IMiniportWavePci,
             Stream: *mut PMINIPORTWAVEPCISTREAM,
             OuterUnknown: PUNKNOWN,
@@ -4206,7 +4206,7 @@ pub struct IMiniportWavePciVtbl {
             ServiceGroup: *mut PSERVICEGROUP,
         ) -> NTSTATUS,
     >,
-    pub Service: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IMiniportWavePci)>,
+    pub Service: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IMiniportWavePci)>,
 }
 pub type PMINIPORTWAVEPCI = *mut IMiniportWavePci;
 unsafe extern "C" {
@@ -4221,27 +4221,27 @@ pub struct IAdapterPowerManagement {
 #[derive(Debug, Copy, Clone)]
 pub struct IAdapterPowerManagementVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IAdapterPowerManagement,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IAdapterPowerManagement) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IAdapterPowerManagement) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IAdapterPowerManagement) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IAdapterPowerManagement) -> ULONG>,
     pub PowerChangeState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IAdapterPowerManagement, NewState: POWER_STATE),
+        unsafe extern "system" fn(arg1: *mut IAdapterPowerManagement, NewState: POWER_STATE),
     >,
     pub QueryPowerChangeState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IAdapterPowerManagement,
             NewStateQuery: POWER_STATE,
         ) -> NTSTATUS,
     >,
     pub QueryDeviceCapabilities: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IAdapterPowerManagement,
             PowerDeviceCaps: PDEVICE_CAPABILITIES,
         ) -> NTSTATUS,
@@ -4260,16 +4260,16 @@ pub struct IPowerNotify {
 #[derive(Debug, Copy, Clone)]
 pub struct IPowerNotifyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPowerNotify,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPowerNotify) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPowerNotify) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPowerNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPowerNotify) -> ULONG>,
     pub PowerChangeNotify: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPowerNotify, PowerState: POWER_STATE),
+        unsafe extern "system" fn(arg1: *mut IPowerNotify, PowerState: POWER_STATE),
     >,
 }
 pub type PPOWERNOTIFY = *mut IPowerNotify;
@@ -4285,16 +4285,16 @@ pub struct IPinCount {
 #[derive(Debug, Copy, Clone)]
 pub struct IPinCountVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPinCount,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPinCount) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPinCount) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPinCount) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPinCount) -> ULONG>,
     pub PinCount: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPinCount,
             PinId: ULONG,
             FilterNecessary: PULONG,
@@ -4318,19 +4318,19 @@ pub struct IPortEvents {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortEventsVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortEvents,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortEvents) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortEvents) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortEvents) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortEvents) -> ULONG>,
     pub AddEventToEventList: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPortEvents, EventEntry: PKSEVENT_ENTRY),
+        unsafe extern "system" fn(arg1: *mut IPortEvents, EventEntry: PKSEVENT_ENTRY),
     >,
     pub GenerateEventList: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortEvents,
             Set: *mut GUID,
             EventId: ULONG,
@@ -4354,16 +4354,16 @@ pub struct IDrmPort {
 #[derive(Debug, Copy, Clone)]
 pub struct IDrmPortVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDrmPort) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDrmPort) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDrmPort) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDrmPort) -> ULONG>,
     pub CreateContentMixed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort,
             paContentId: PULONG,
             cContentId: ULONG,
@@ -4371,17 +4371,17 @@ pub struct IDrmPortVtbl {
         ) -> NTSTATUS,
     >,
     pub DestroyContent: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDrmPort, ContentId: ULONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IDrmPort, ContentId: ULONG) -> NTSTATUS,
     >,
     pub ForwardContentToFileObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort,
             ContentId: ULONG,
             FileObject: PFILE_OBJECT,
         ) -> NTSTATUS,
     >,
     pub ForwardContentToInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort,
             ContentId: ULONG,
             pUnknown: PUNKNOWN,
@@ -4389,7 +4389,7 @@ pub struct IDrmPortVtbl {
         ) -> NTSTATUS,
     >,
     pub GetContentRights: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort,
             ContentId: ULONG,
             DrmRights: PDRMRIGHTS,
@@ -4409,16 +4409,16 @@ pub struct IDrmPort2 {
 #[derive(Debug, Copy, Clone)]
 pub struct IDrmPort2Vtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDrmPort2) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IDrmPort2) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDrmPort2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IDrmPort2) -> ULONG>,
     pub CreateContentMixed: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             paContentId: PULONG,
             cContentId: ULONG,
@@ -4426,17 +4426,17 @@ pub struct IDrmPort2Vtbl {
         ) -> NTSTATUS,
     >,
     pub DestroyContent: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IDrmPort2, ContentId: ULONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IDrmPort2, ContentId: ULONG) -> NTSTATUS,
     >,
     pub ForwardContentToFileObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             ContentId: ULONG,
             FileObject: PFILE_OBJECT,
         ) -> NTSTATUS,
     >,
     pub ForwardContentToInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             ContentId: ULONG,
             pUnknown: PUNKNOWN,
@@ -4444,14 +4444,14 @@ pub struct IDrmPort2Vtbl {
         ) -> NTSTATUS,
     >,
     pub GetContentRights: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             ContentId: ULONG,
             DrmRights: PDRMRIGHTS,
         ) -> NTSTATUS,
     >,
     pub AddContentHandlers: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             ContentId: ULONG,
             paHandlers: *mut PVOID,
@@ -4459,7 +4459,7 @@ pub struct IDrmPort2Vtbl {
         ) -> NTSTATUS,
     >,
     pub ForwardContentToDeviceObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IDrmPort2,
             ContentId: ULONG,
             Reserved: PVOID,
@@ -4480,16 +4480,16 @@ pub struct IPortClsVersion {
 #[derive(Debug, Copy, Clone)]
 pub struct IPortClsVersionVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPortClsVersion,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortClsVersion) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortClsVersion) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortClsVersion) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortClsVersion) -> ULONG>,
     pub GetVersion:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPortClsVersion) -> DWORD>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPortClsVersion) -> DWORD>,
 }
 pub type PPORTCLSVERSION = *mut IPortClsVersion;
 unsafe extern "C" {
@@ -4507,27 +4507,27 @@ pub struct IPreFetchOffset {
 #[derive(Debug, Copy, Clone)]
 pub struct IPreFetchOffsetVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IPreFetchOffset,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPreFetchOffset) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IPreFetchOffset) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPreFetchOffset) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IPreFetchOffset) -> ULONG>,
     pub SetPreFetchOffset: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IPreFetchOffset, PreFetchOffset: ULONG) -> DWORD,
+        unsafe extern "system" fn(arg1: *mut IPreFetchOffset, PreFetchOffset: ULONG) -> DWORD,
     >,
 }
 pub type PPREFETCHOFFSET = *mut IPreFetchOffset;
 pub type PCPFNSTARTDEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         ResourceList: PRESOURCELIST,
     ) -> NTSTATUS,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcAddAdapterDevice(
         DriverObject: PDRIVER_OBJECT,
         PhysicalDeviceObject: PDEVICE_OBJECT,
@@ -4536,14 +4536,14 @@ unsafe extern "C" {
         DeviceExtensionSize: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcInitializeAdapterDriver(
         DriverObject: PDRIVER_OBJECT,
         RegistryPathName: PUNICODE_STRING,
         AddDevice: PDRIVER_ADD_DEVICE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewDmaChannel(
         OutDmaChannel: *mut PDMACHANNEL,
         OuterUnknown: PUNKNOWN,
@@ -4552,7 +4552,7 @@ unsafe extern "C" {
         DeviceObject: PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewInterruptSync(
         OUtInterruptSync: *mut PINTERRUPTSYNC,
         OuterUnknown: PUNKNOWN,
@@ -4561,13 +4561,13 @@ unsafe extern "C" {
         Mode: INTERRUPTSYNCMODE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewMiniport(OutMiniport: *mut PMINIPORT, ClassId: *const CLSID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewPort(OutPort: *mut PPORT, ClassId: *const CLSID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewRegistryKey(
         OutRegistryKey: *mut PREGISTRYKEY,
         OuterUnknown: PUNKNOWN,
@@ -4580,7 +4580,7 @@ unsafe extern "C" {
         Disposition: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewResourceList(
         OutResourceList: *mut PRESOURCELIST,
         OuterUnknown: PUNKNOWN,
@@ -4589,7 +4589,7 @@ unsafe extern "C" {
         UntranslatedResources: PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewResourceSublist(
         OutResourceList: *mut PRESOURCELIST,
         OuterUnknown: PUNKNOWN,
@@ -4598,34 +4598,34 @@ unsafe extern "C" {
         MaximumEntries: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcNewServiceGroup(
         OutServiceGroup: *mut PSERVICEGROUP,
         OuterUnknown: PUNKNOWN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcDispatchIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcCompleteIrp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Status: NTSTATUS) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcForwardIrpSynchronous(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterAdapterPowerManagement(pUnknown: PUNKNOWN, pvContext1: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcUnregisterAdapterPowerManagement(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRequestNewPowerState(
         pDeviceObject: PDEVICE_OBJECT,
         RequestedNewState: DEVICE_POWER_STATE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcGetDeviceProperty(
         DeviceObject: PVOID,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -4634,27 +4634,27 @@ unsafe extern "C" {
         ResultLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcCompletePendingPropertyRequest(
         PropertyRequest: PPCPROPERTY_REQUEST,
         NtStatus: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterIoTimeout(
         pDeviceObject: PDEVICE_OBJECT,
         pTimerRoutine: PIO_TIMER_ROUTINE,
         pContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcUnregisterIoTimeout(
         pDeviceObject: PDEVICE_OBJECT,
         pTimerRoutine: PIO_TIMER_ROUTINE,
         pContext: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterPhysicalConnection(
         DeviceObject: PDEVICE_OBJECT,
         FromUnknown: PUNKNOWN,
@@ -4663,7 +4663,7 @@ unsafe extern "C" {
         ToPin: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterPhysicalConnectionFromExternal(
         DeviceObject: PDEVICE_OBJECT,
         FromString: PUNICODE_STRING,
@@ -4672,7 +4672,7 @@ unsafe extern "C" {
         ToPin: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterPhysicalConnectionToExternal(
         DeviceObject: PDEVICE_OBJECT,
         FromUnknown: PUNKNOWN,
@@ -4681,51 +4681,51 @@ unsafe extern "C" {
         ToPin: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcGetTimeInterval(Since: ULONGLONG) -> ULONGLONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcRegisterSubdevice(
         DeviceObject: PDEVICE_OBJECT,
         Name: PWCHAR,
         Unknown: PUNKNOWN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcAddContentHandlers(
         ContentId: ULONG,
         paHandlers: *mut PVOID,
         NumHandlers: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcCreateContentMixed(
         paContentId: PULONG,
         cContentId: ULONG,
         pMixedContentId: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcDestroyContent(ContentId: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcForwardContentToDeviceObject(
         ContentId: ULONG,
         Reserved: PVOID,
         DrmForward: PCDRMFORWARD,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcForwardContentToFileObject(ContentId: ULONG, FileObject: PFILE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcForwardContentToInterface(
         ContentId: ULONG,
         pUnknown: PUNKNOWN,
         NumMethods: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PcGetContentRights(ContentId: ULONG, DrmRights: PDRMRIGHTS) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -4751,16 +4751,16 @@ pub struct INonDelegatedUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct INonDelegatedUnknownVtbl {
     pub NonDelegatedQueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut INonDelegatedUnknown,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> HRESULT,
     >,
     pub NonDelegatedAddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut INonDelegatedUnknown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut INonDelegatedUnknown) -> ULONG>,
     pub NonDelegatedRelease:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut INonDelegatedUnknown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut INonDelegatedUnknown) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4771,16 +4771,16 @@ pub struct IIndirectedUnknown {
 #[derive(Debug, Copy, Clone)]
 pub struct IIndirectedUnknownVtbl {
     pub IndirectedQueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IIndirectedUnknown,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> HRESULT,
     >,
     pub IndirectedAddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IIndirectedUnknown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IIndirectedUnknown) -> ULONG>,
     pub IndirectedRelease:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IIndirectedUnknown) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IIndirectedUnknown) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4791,16 +4791,16 @@ pub struct IKoInitializeParentDeviceObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IKoInitializeParentDeviceObjectVtbl {
     pub SetParentDeviceObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKoInitializeParentDeviceObject,
             ParentDeviceObject: PDEVICE_OBJECT,
         ) -> HRESULT,
     >,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KoRelease(ClassId: *const CLSID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KoCreateInstance(
         ClassId: *const CLSID,
         UnkOuter: *mut IUnknown,
@@ -4809,10 +4809,10 @@ unsafe extern "C" {
         Interface: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KoDeviceInitialize(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KoDriverInitialize(
         DriverObject: PDRIVER_OBJECT,
         RegistryPathName: PUNICODE_STRING,
@@ -4949,7 +4949,7 @@ pub struct KSEVENT_CTX {
 }
 pub type PKSEVENT_CTX = *mut KSEVENT_CTX;
 pub type PKSEVENT_SYNCHRONIZED_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PKSEVENT_CTX) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PKSEVENT_CTX) -> BOOLEAN>;
 #[repr(C)]
 pub struct COMMON_DEVICE_EXTENSION {
     pub Entry: LIST_ENTRY,
@@ -5097,27 +5097,27 @@ pub struct IKsAllocator {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsAllocatorVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsAllocator,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsAllocator) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsAllocator) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsAllocator) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsAllocator) -> ULONG>,
     pub DispatchDeviceIoControl: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsAllocator,
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
         ) -> NTSTATUS,
     >,
-    pub Close: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsAllocator) -> NTSTATUS>,
+    pub Close: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsAllocator) -> NTSTATUS>,
     pub AllocateFrame: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsAllocator, OutFrame: *mut PVOID) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsAllocator, OutFrame: *mut PVOID) -> NTSTATUS,
     >,
     pub FreeFrame:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsAllocator, OutFrame: PVOID)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsAllocator, OutFrame: PVOID)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5128,14 +5128,14 @@ pub struct IKsClock {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsClockVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsClock,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsClock) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsClock) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsClock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsClock) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5146,14 +5146,14 @@ pub struct IKsTransport {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsTransportVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsTransport,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsTransport) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsTransport) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsTransport) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsTransport) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5169,26 +5169,26 @@ pub struct IKsPin {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsPinVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> ULONG>,
     pub TransferKsIrp: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             Irp: PIRP,
             OutTransport: *mut *mut IKsTransport,
         ) -> NTSTATUS,
     >,
     pub DiscardKsIrp: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsPin, Irp: PIRP, OutTransport: *mut *mut IKsTransport),
+        unsafe extern "system" fn(arg1: *mut IKsPin, Irp: PIRP, OutTransport: *mut *mut IKsTransport),
     >,
     pub Connect: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             TransportIn: *mut IKsTransport,
             OutTransportIn: *mut *mut IKsTransport,
@@ -5197,7 +5197,7 @@ pub struct IKsPinVtbl {
         ) -> NTSTATUS,
     >,
     pub SetDeviceState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             OldState: KSSTATE,
             NewState: KSSTATE,
@@ -5205,14 +5205,14 @@ pub struct IKsPinVtbl {
         ) -> NTSTATUS,
     >,
     pub SetResetState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             ResetState: KSRESET,
             OutTransportOut: *mut *mut IKsTransport,
         ),
     >,
     pub GetTransportConfig: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             TransportConfig: *mut KSPTRANSPORTCONFIG,
             OutTransportIn: *mut *mut IKsTransport,
@@ -5220,7 +5220,7 @@ pub struct IKsPinVtbl {
         ) -> NTSTATUS,
     >,
     pub SetTransportConfig: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             TransportConfig: *const KSPTRANSPORTCONFIG,
             OutTransportIn: *mut *mut IKsTransport,
@@ -5228,22 +5228,22 @@ pub struct IKsPinVtbl {
         ) -> NTSTATUS,
     >,
     pub ResetTransportConfig: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPin,
             OutTransportIn: *mut *mut IKsTransport,
             OutTransportOut: *mut *mut IKsTransport,
         ) -> NTSTATUS,
     >,
-    pub GetStruct: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> PKSPIN>,
+    pub GetStruct: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> PKSPIN>,
     pub GetProcessPin:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> PKSPROCESSPIN>,
-    pub AttemptBypass: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> PKSPROCESSPIN>,
+    pub AttemptBypass: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> NTSTATUS>,
     pub AttemptUnbypass:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin) -> NTSTATUS>,
     pub GenerateConnectionEvents:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPin, EventMask: ULONG)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPin, EventMask: ULONG)>,
     pub ClientSetDeviceState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsPin, StateIn: KSSTATE, StateOut: KSSTATE) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsPin, StateIn: KSSTATE, StateOut: KSSTATE) -> NTSTATUS,
     >,
 }
 #[repr(C)]
@@ -5255,14 +5255,14 @@ pub struct IKsQueue {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsQueueVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsQueue,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsQueue) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsQueue) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsQueue) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsQueue) -> ULONG>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5278,19 +5278,19 @@ pub struct IKsFilter {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsFilterVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilter,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilter) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilter) -> ULONG>,
-    pub GetStruct: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilter) -> PKSFILTER>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilter) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilter) -> ULONG>,
+    pub GetStruct: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilter) -> PKSFILTER>,
     pub DoAllNecessaryPinsExist:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilter) -> BOOL>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilter) -> BOOL>,
     pub CreateNode: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilter,
             Irp: PIRP,
             Pin: *mut IKsPin,
@@ -5298,7 +5298,7 @@ pub struct IKsFilterVtbl {
         ) -> NTSTATUS,
     >,
     pub BindProcessPinsToPipeSection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilter,
             Section: *mut KSPROCESSPIPESECTION,
             Create: PVOID,
@@ -5308,34 +5308,34 @@ pub struct IKsFilterVtbl {
         ) -> NTSTATUS,
     >,
     pub UnbindProcessPinsFromPipeSection: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilter, Section: *mut KSPROCESSPIPESECTION) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsFilter, Section: *mut KSPROCESSPIPESECTION) -> NTSTATUS,
     >,
     pub AddProcessPin: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilter, ProcessPin: PKSPROCESSPIN) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsFilter, ProcessPin: PKSPROCESSPIN) -> NTSTATUS,
     >,
     pub RemoveProcessPin: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilter, ProcessPin: PKSPROCESSPIN) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsFilter, ProcessPin: PKSPROCESSPIN) -> NTSTATUS,
     >,
     pub ReprepareProcessPipeSection: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilter,
             PipeSection: *mut KSPROCESSPIPESECTION,
             Data: PULONG,
         ) -> BOOL,
     >,
     pub DeliverResetState: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilter,
             PipeSection: *mut KSPROCESSPIPESECTION,
             ResetState: KSRESET,
         ),
     >,
-    pub IsFrameHolding: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilter) -> BOOL>,
+    pub IsFrameHolding: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilter) -> BOOL>,
     pub RegisterForCopyCallbacks: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilter, Queue: *mut IKsQueue, Enable: BOOL),
+        unsafe extern "system" fn(arg1: *mut IKsFilter, Queue: *mut IKsQueue, Enable: BOOL),
     >,
     pub GetProcessDispatch: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilter) -> PKSPROCESSPIN_INDEXENTRY,
+        unsafe extern "system" fn(arg1: *mut IKsFilter) -> PKSPROCESSPIN_INDEXENTRY,
     >,
 }
 #[repr(C)]
@@ -5347,22 +5347,22 @@ pub struct IKsFilterFactory {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsFilterFactoryVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilterFactory,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilterFactory) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsFilterFactory) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilterFactory) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsFilterFactory) -> ULONG>,
     pub GetStruct: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilterFactory) -> *mut KSFILTERFACTORY,
+        unsafe extern "system" fn(arg1: *mut IKsFilterFactory) -> *mut KSFILTERFACTORY,
     >,
     pub SetDeviceClassesState: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsFilterFactory, Enable: BOOLEAN) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsFilterFactory, Enable: BOOLEAN) -> NTSTATUS,
     >,
     pub Initialize: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsFilterFactory,
             DeviceObject: PDEVICE_OBJECT,
             Descriptor: *const KSFILTER_DESCRIPTOR,
@@ -5384,18 +5384,18 @@ pub struct IKsPowerNotify {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsPowerNotifyVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsPowerNotify,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPowerNotify) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPowerNotify) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPowerNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPowerNotify) -> ULONG>,
     pub Sleep: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsPowerNotify, State: DEVICE_POWER_STATE),
+        unsafe extern "system" fn(arg1: *mut IKsPowerNotify, State: DEVICE_POWER_STATE),
     >,
-    pub Wake: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsPowerNotify)>,
+    pub Wake: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsPowerNotify)>,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5411,29 +5411,29 @@ pub struct IKsDevice {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsDeviceVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
-    pub AddRef: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsDevice) -> ULONG>,
-    pub Release: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsDevice) -> ULONG>,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsDevice) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsDevice) -> ULONG>,
     pub GetStruct:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsDevice) -> *mut KSDEVICE>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsDevice) -> *mut KSDEVICE>,
     pub InitializeObjectBag: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             Bag: PKSIOBJECT_BAG,
             Mutex: PRKMUTEX,
         ) -> NTSTATUS,
     >,
     pub AcquireDevice:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsDevice) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsDevice) -> NTSTATUS>,
     pub ReleaseDevice:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsDevice) -> NTSTATUS>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsDevice) -> NTSTATUS>,
     pub GetAdapterObject: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             Object: *mut PADAPTER_OBJECT,
             MaxMappingsByteCount: PULONG,
@@ -5441,17 +5441,17 @@ pub struct IKsDeviceVtbl {
         ) -> NTSTATUS,
     >,
     pub AddPowerEntry: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             Entry: *mut KSPOWER_ENTRY,
             Notify: *mut IKsPowerNotify,
         ) -> NTSTATUS,
     >,
     pub RemovePowerEntry: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsDevice, Entry: *mut KSPOWER_ENTRY) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsDevice, Entry: *mut KSPOWER_ENTRY) -> NTSTATUS,
     >,
     pub PinStateChange: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             Pin: KSPIN,
             Irp: PIRP,
@@ -5460,7 +5460,7 @@ pub struct IKsDeviceVtbl {
         ) -> NTSTATUS,
     >,
     pub ArbitrateAdapterChannel: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsDevice,
             NumberOfMapRegisters: ULONG,
             ExecutionRoutine: PDRIVER_CONTROL,
@@ -5468,7 +5468,7 @@ pub struct IKsDeviceVtbl {
         ) -> NTSTATUS,
     >,
     pub CheckIoCapability: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsDevice, Unknown: ULONG) -> NTSTATUS,
+        unsafe extern "system" fn(arg1: *mut IKsDevice, Unknown: ULONG) -> NTSTATUS,
     >,
 }
 #[repr(C)]
@@ -5480,24 +5480,24 @@ pub struct IKsProcessingObject {
 #[derive(Debug, Copy, Clone)]
 pub struct IKsProcessingObjectVtbl {
     pub QueryInterface: ::core::option::Option<
-        unsafe extern "C" fn(
+        unsafe extern "system" fn(
             arg1: *mut IKsProcessingObject,
             InterfaceId: *const IID,
             Interface: *mut PVOID,
         ) -> NTSTATUS,
     >,
     pub AddRef:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject) -> ULONG>,
     pub Release:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject) -> ULONG>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject) -> ULONG>,
     pub ProcessingObjectWork:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject)>,
     pub GetAndGate:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject) -> PKSGATE>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject) -> PKSGATE>,
     pub Process: ::core::option::Option<
-        unsafe extern "C" fn(arg1: *mut IKsProcessingObject, Asynchronous: BOOLEAN),
+        unsafe extern "system" fn(arg1: *mut IKsProcessingObject, Asynchronous: BOOLEAN),
     >,
-    pub Reset: ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject)>,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject)>,
     pub TriggerNotification:
-        ::core::option::Option<unsafe extern "C" fn(arg1: *mut IKsProcessingObject)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: *mut IKsProcessingObject)>,
 }

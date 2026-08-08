@@ -42,22 +42,8 @@ unsafe fn gdidev_copybits(pso: *mut SURFOBJ) -> PFN_DrvCopyBits {
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate from the preamble.
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCopyBits(
-    psoDest: *mut SURFOBJ,
-    psoSource: *mut SURFOBJ,
-    Clip: *mut CLIPOBJ,
-    ColorTranslation: *mut XLATEOBJ,
-    DestRect: *mut RECTL,
-    SourcePoint: *mut POINTL,
-) -> BOOL {
-    eng_copybits_body(psoDest, psoSource, Clip, ColorTranslation, DestRect, SourcePoint)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngCopyBits(
+pub unsafe extern "system" fn EngCopyBits(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     Clip: *mut CLIPOBJ,
@@ -282,22 +268,8 @@ unsafe fn eng_copybits_body(
     ret
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngCopyBits(
-    psoDest: *mut SURFOBJ,
-    psoSource: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    prclDest: *mut RECTL,
-    ptlSource: *mut POINTL,
-) -> BOOL {
-    EngCopyBits(psoDest, psoSource, pco, pxlo, prclDest, ptlSource)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngCopyBits(
+pub unsafe extern "system" fn IntEngCopyBits(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     pco: *mut CLIPOBJ,

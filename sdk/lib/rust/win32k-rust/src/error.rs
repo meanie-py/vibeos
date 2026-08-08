@@ -3,9 +3,8 @@ use win32k_sys::win32k::*;
 // not the bindgen extern decl in ddk — the latter has no link symbol on i386.
 use ntkrnl_sys::inline::ke::NtCurrentTeb;
 use ntkrnl_sys::ddk::RtlNtStatusToDosError;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngGetLastError() -> ULONG {
+pub unsafe extern "system" fn EngGetLastError() -> ULONG {
     let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
     if !pTeb.is_null() {
         (*pTeb).LastErrorValue
@@ -13,29 +12,8 @@ pub unsafe extern "stdcall" fn EngGetLastError() -> ULONG {
         ERROR_SUCCESS
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetLastError() -> ULONG {
-    let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
-    if !pTeb.is_null() {
-        (*pTeb).LastErrorValue
-    } else {
-        ERROR_SUCCESS
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngSetLastError(iError: ULONG) {
-    let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
-    if !pTeb.is_null() {
-        (*pTeb).LastErrorValue = iError;
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngSetLastError(iError: ULONG) {
+pub unsafe extern "system" fn EngSetLastError(iError: ULONG) {
     let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
     if !pTeb.is_null() {
         (*pTeb).LastErrorValue = iError;

@@ -20,26 +20,8 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngTransparentBlt(
-    psoDest: *mut SURFOBJ,
-    psoSource: *mut SURFOBJ,
-    Clip: *mut CLIPOBJ,
-    ColorTranslation: *mut XLATEOBJ,
-    DestRect: PRECTL,
-    SourceRect: PRECTL,
-    iTransColor: u32,
-    Reserved: u32,
-) -> u8 {
-    eng_transparent_blt_body(
-        psoDest, psoSource, Clip, ColorTranslation, DestRect, SourceRect, iTransColor, Reserved,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngTransparentBlt(
+pub unsafe extern "system" fn EngTransparentBlt(
     psoDest: *mut SURFOBJ,
     psoSource: *mut SURFOBJ,
     Clip: *mut CLIPOBJ,

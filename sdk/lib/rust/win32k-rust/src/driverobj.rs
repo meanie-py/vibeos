@@ -18,9 +18,8 @@ pub unsafe extern "system" fn DRIVEROBJ_vCleanup(pObject: PVOID) {
         let _ = pFreeProc.unwrap()(&mut (*pedo).drvobj);
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateDriverObj(
+pub unsafe extern "system" fn EngCreateDriverObj(
     pvObj: *mut core::ffi::c_void,
     pFreeObjProc: FREEOBJPROC,
     hdev: HDEV,
@@ -48,40 +47,8 @@ pub unsafe extern "stdcall" fn EngCreateDriverObj(
 
     return hdo;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateDriverObj(
-    pvObj: *mut core::ffi::c_void,
-    pFreeObjProc: FREEOBJPROC,
-    hdev: HDEV,
-) -> HDRVOBJ {
-    // Macro DRIVEROBJ_AllocObjectWithHandle / DRIVEROBJ_UnlockObject — see gdi/eng/driverobj.h:17-18
-    let pedo: PEDRIVEROBJ;
-    let hdo: HDRVOBJ;
-    let ppdev = hdev as *mut PDEVOBJ;
-
-    pedo = GDIOBJ_AllocObjWithHandle(
-        GDI_OBJECT_TYPE_DRIVEROBJ as ULONG,
-        core::mem::size_of::<EDRIVEROBJ>() as ULONG,
-    ) as PEDRIVEROBJ;
-    if pedo.is_null() {
-        return core::ptr::null_mut();
-    }
-    hdo = (*pedo).baseobj.hHmgr as HDRVOBJ;
-
-    (*pedo).drvobj.pvObj = pvObj;
-    (*pedo).drvobj.pFreeProc = pFreeObjProc;
-    (*pedo).drvobj.hdev = hdev;
-    (*pedo).drvobj.dhpdev = (*ppdev).dhpdev;
-
-    GDIOBJ_vUnlockObject(pedo as POBJ);
-
-    return hdo;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteDriverObj(
+pub unsafe extern "system" fn EngDeleteDriverObj(
     hdo: HDRVOBJ,
     bCallBack: i32,
     bLocked: i32,
@@ -112,43 +79,8 @@ pub unsafe extern "stdcall" fn EngDeleteDriverObj(
     GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*pedo).baseobj));
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteDriverObj(
-    hdo: HDRVOBJ,
-    bCallBack: i32,
-    bLocked: i32,
-) -> i32 {
-    // Macros DRIVEROBJ_TryLockObject / DRIVEROBJ_UnlockObject — see gdi/eng/driverobj.h:18,22
-
-    let pedo: PEDRIVEROBJ = GDIOBJ_TryLockObject(hdo as HGDIOBJ, GDIObjType_DRVOBJ_TYPE as UCHAR) as PEDRIVEROBJ;
-    if pedo.is_null() {
-        return 0;
-    }
-
-    if bCallBack != 0 {
-        if (*pedo).drvobj.pFreeProc.is_some() {
-            let callback = (*pedo).drvobj.pFreeProc.unwrap();
-            if callback(core::ptr::addr_of_mut!((*pedo).drvobj)) == 0 {
-                GDIOBJ_vUnlockObject(pedo as POBJ);
-                return 0;
-            }
-        }
-    }
-
-    (*pedo).drvobj.pFreeProc = None;
-
-    if bLocked != 0 {
-        GDIOBJ_vUnlockObject(pedo as POBJ);
-    }
-
-    GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*pedo).baseobj));
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngLockDriverObj(
+pub unsafe extern "system" fn EngLockDriverObj(
     hdo: HDRVOBJ
 ) -> PDRIVEROBJ {
     // Macro DRIVEROBJ_TryLockObject — see gdi/eng/driverobj.h:22
@@ -161,52 +93,8 @@ pub unsafe extern "stdcall" fn EngLockDriverObj(
         core::ptr::null_mut()
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLockDriverObj(
-    hdo: HDRVOBJ
-) -> PDRIVEROBJ {
-    // Macro DRIVEROBJ_TryLockObject — see gdi/eng/driverobj.h:22
-
-    let pedo: PEDRIVEROBJ = GDIOBJ_TryLockObject(hdo as HGDIOBJ, GDIObjType_DRVOBJ_TYPE as UCHAR) as PEDRIVEROBJ;
-
-    if !pedo.is_null() {
-        core::ptr::addr_of_mut!((*pedo).drvobj)
-    } else {
-        core::ptr::null_mut()
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnlockDriverObj(
-    hdo: HDRVOBJ
-) -> i32 {
-    // Macros DRIVEROBJ_TryLockObject / DRIVEROBJ_UnlockObject — see gdi/eng/driverobj.h:18,22
-
-    let pedo: PEDRIVEROBJ;
-    let cLocks: ULONG;
-
-    pedo = GDIOBJ_TryLockObject(hdo as HGDIOBJ, GDIObjType_DRVOBJ_TYPE as UCHAR) as PEDRIVEROBJ;
-    if pedo.is_null() {
-        return 0;
-    }
-
-    cLocks = (*pedo).baseobj.cExclusiveLock as ULONG;
-    GDIOBJ_vUnlockObject(pedo as POBJ);
-
-    if cLocks < 2 {
-        return 0;
-    }
-
-    GDIOBJ_vUnlockObject(pedo as POBJ);
-
-    return 1;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngUnlockDriverObj(
+pub unsafe extern "system" fn EngUnlockDriverObj(
     hdo: HDRVOBJ
 ) -> i32 {
     // Macros DRIVEROBJ_TryLockObject / DRIVEROBJ_UnlockObject — see gdi/eng/driverobj.h:18,22

@@ -3,26 +3,8 @@ use win32k_sys::win32k::*;
 extern "C" {
     fn qsort( base: *mut core::ffi::c_void, num: usize, size: usize, compar: SORTCOMP, );
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngSort(
-    Buf: PBYTE,
-    ElemSize: u32,
-    ElemCount: u32,
-    CompFunc: SORTCOMP,
-) {
-    
-    qsort(
-        Buf as *mut core::ffi::c_void,
-        ElemCount as usize,
-        ElemSize as usize,
-        CompFunc,
-    );
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngSort(
+pub unsafe extern "system" fn EngSort(
     Buf: PBYTE,
     ElemSize: u32,
     ElemCount: u32,

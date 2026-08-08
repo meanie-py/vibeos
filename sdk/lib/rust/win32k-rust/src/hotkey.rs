@@ -238,110 +238,8 @@ unsafe extern "C" fn IsHotKey(fsModifiers: UINT, wVk: WORD) -> PHOT_KEY {
 
     core::ptr::null_mut()
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn co_UserProcessHotKeys(wVk: WORD, bIsDown: BOOL) -> BOOL {
-    let fModifiers: UINT;
-    let mut pHotKey: PHOT_KEY = core::ptr::null_mut();
-    let mut pWnd: PWND;
-    let DoNotPostMsg: BOOL = FALSE;
-    let mut IsModifier: BOOL = FALSE;
-
-    if wVk == VK_SHIFT as WORD || wVk == VK_CONTROL as WORD || wVk == VK_MENU as WORD ||
-        wVk == VK_LWIN as WORD || wVk == VK_RWIN as WORD
-    {
-        IsModifier = TRUE;
-    }
-
-    fModifiers = IntGetModifiers(core::ptr::addr_of_mut!(gafAsyncKeyState) as PBYTE);
-
-    if bIsDown != 0 {
-        if IsModifier != 0 {
-            gfsModOnlyCandidate = fModifiers;
-            return FALSE;
-        } else {
-            pHotKey = IsHotKey(fModifiers, wVk);
-            gfsModOnlyCandidate = 0;
-        }
-    } else {
-        if IsModifier != 0 {
-            pHotKey = IsHotKey(gfsModOnlyCandidate, 0);
-            gfsModOnlyCandidate = 0;
-        } else {
-            gfsModOnlyCandidate = 0;
-            return FALSE;
-        }
-    }
-
-    if !pHotKey.is_null() {
-        if (*pHotKey).id == IDHK_SHIFTF12 || (*pHotKey).id == IDHK_F12 {
-            if bIsDown != 0 {
-                ERR!(b"Hot key pressed for Debug Activation!\n\0".as_ptr());
-            }
-            return DoNotPostMsg;
-        }
-
-        if (*pHotKey).id == IDHK_WINKEY {
-            pWnd = ValidateHwndNoErr((*InputWindowStation).ShellWindow as _);
-            if !pWnd.is_null() {
-                UserPostMessage(UserHMGetHandle(pWnd), WM_SYSCOMMAND, SC_TASKLIST as WPARAM, 0);
-                co_IntShellHookNotify(HSHELL_TASKMAN as WPARAM, 0, 0);
-                return FALSE;
-            }
-        }
-
-        if (*pHotKey).id == IDHK_SNAP_LEFT ||
-            (*pHotKey).id == IDHK_SNAP_RIGHT ||
-            (*pHotKey).id == IDHK_SNAP_UP ||
-            (*pHotKey).id == IDHK_SNAP_DOWN
-        {
-            let topWnd: HWND = UserGetForegroundWindow();
-            if !topWnd.is_null() {
-                UserPostMessage(topWnd, WM_KEYDOWN, wVk as WPARAM, 0);
-            }
-            return TRUE;
-        }
-
-        if (*pHotKey).pWnd.is_null() {
-            UserPostThreadMessage((*pHotKey).pti, WM_HOTKEY, (*pHotKey).id as WPARAM,
-                                  MAKELONG(fModifiers, wVk as UINT) as LPARAM);
-            return TRUE;
-        } else {
-            pWnd = (*pHotKey).pWnd;
-            if pWnd == PWND_BOTTOM {
-                if gpqForeground.is_null() {
-                    return FALSE;
-                }
-                pWnd = (*gpqForeground).spwndFocus;
-            }
-
-            if !pWnd.is_null() {
-                if pWnd == ValidateHwndNoErr((*InputWindowStation).ShellWindow as _) && (*pHotKey).id == SC_TASKLIST as i32 {
-                    UserPostMessage(UserHMGetHandle(pWnd), WM_SYSCOMMAND, SC_TASKLIST as WPARAM, 0);
-                    co_IntShellHookNotify(HSHELL_TASKMAN as WPARAM, 0, 0);
-                } else if IsWindowHotKey(pHotKey) {
-                    if bIsDown != 0 {
-                        if !gpqForeground.is_null() && !(*gpqForeground).spwndActive.is_null() {
-                            pWnd = (*gpqForeground).spwndActive;
-                        }
-                        UserPostMessage(UserHMGetHandle(pWnd), WM_SYSCOMMAND,
-                                        SC_HOTKEY as WPARAM,
-                                        UserHMGetHandle((*pHotKey).pWnd) as LPARAM);
-                    }
-                } else {
-                    UserPostMessage(UserHMGetHandle(pWnd), WM_HOTKEY, (*pHotKey).id as WPARAM,
-                                    MAKELONG(fModifiers, wVk as UINT) as LPARAM);
-                }
-                return TRUE;
-            }
-        }
-    }
-    FALSE
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn co_UserProcessHotKeys(wVk: WORD, bIsDown: BOOL) -> BOOL {
+pub unsafe extern "system" fn co_UserProcessHotKeys(wVk: WORD, bIsDown: BOOL) -> BOOL {
     let fModifiers: UINT;
     let mut pHotKey: PHOT_KEY = core::ptr::null_mut();
     let mut pWnd: PWND;
@@ -711,9 +609,8 @@ unsafe fn UserUnregisterHotKey_impl(pWnd: PWND, id: i32) -> BOOL {
 
     bRet
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterHotKey(
+pub unsafe extern "system" fn NtUserRegisterHotKey(
     hWnd: HWND,
     id: core::ffi::c_int,
     fsModifiers: UINT,
@@ -750,72 +647,8 @@ pub unsafe extern "stdcall" fn NtUserRegisterHotKey(
     UserLeave();
     bRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterHotKey(
-    hWnd: HWND,
-    id: core::ffi::c_int,
-    fsModifiers: UINT,
-    vk: UINT,
-) -> BOOL {
-    let mut pWnd: PWND = core::ptr::null_mut();
-    let mut bRet: BOOL = 0;
-
-    if (fsModifiers & !(MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN)) != 0 {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return 0;
-    }
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        if hWnd.is_null() {
-            pWnd = core::ptr::null_mut();
-        } else {
-            pWnd = UserGetWindowObject(hWnd);
-            if pWnd.is_null() {
-                break 'cleanup;
-            }
-
-            if head_pti(pWnd) != gptiCurrent {
-                EngSetLastError(ERROR_WINDOW_OF_OTHER_THREAD);
-                break 'cleanup;
-            }
-        }
-
-        bRet = UserRegisterHotKey(pWnd, id, fsModifiers, vk);
-    }
-
-    UserLeave();
-    bRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnregisterHotKey(hWnd: HWND, id: i32) -> BOOL {
-    let mut bRet: BOOL = 0;
-    let mut pWnd: PWND = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'cleanup: {
-        if !hWnd.is_null() {
-            pWnd = UserGetWindowObject(hWnd);
-            if pWnd.is_null() {
-                break 'cleanup;
-            }
-        }
-
-        bRet = UserUnregisterHotKey(pWnd, id);
-    }
-
-    UserLeave();
-    bRet
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUnregisterHotKey(hWnd: HWND, id: i32) -> BOOL {
+pub unsafe extern "system" fn NtUserUnregisterHotKey(hWnd: HWND, id: i32) -> BOOL {
     let mut bRet: BOOL = 0;
     let mut pWnd: PWND = core::ptr::null_mut();
 

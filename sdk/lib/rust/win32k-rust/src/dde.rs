@@ -269,9 +269,8 @@ pub unsafe extern "system" fn IntDDEGetCallback(
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntDdePostMessageHook(
+pub unsafe extern "system" fn IntDdePostMessageHook(
     pWnd: PWND,
     Msg: UINT,
     wParam: WPARAM,
@@ -392,180 +391,8 @@ pub unsafe extern "stdcall" fn IntDdePostMessageHook(
     }
     TRUE as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntDdePostMessageHook(
-    pWnd: PWND,
-    Msg: UINT,
-    wParam: WPARAM,
-    lParam: *mut LPARAM,
-    ExtraInfo: *mut LONG_PTR,
-) -> BOOL {
-    let pWndClient: PWND;
-    let pddeData: PDDE_DATA;
-    let mut size: core::ffi::c_int;
-    let mut Object: HGDIOBJ = core::ptr::null_mut();
-    let mut userBuf: PVOID = core::ptr::null_mut();
-    let mut Buffer: PVOID = core::ptr::null_mut();
-    let mut lp: LPARAM = *lParam;
-
-    if (*head_pti(pWnd)).ppi != (*gptiCurrent).ppi {
-        TRACE!(b"Posting long DDE 0x%x\n\0".as_ptr() as *const core::ffi::c_char, Msg);
-        if Msg == WM_DDE_INITIATE {
-            return FALSE as BOOL;
-        }
-
-        pWndClient = UserGetWindowObject(wParam as HWND);
-        if pWndClient.is_null() {
-            if Msg == WM_DDE_TERMINATE {
-                TRACE!(b"DDE Posted WM_DDE_TERMINATE\n\0".as_ptr() as *const core::ffi::c_char);
-                return TRUE as BOOL;
-            }
-            TRACE!(b"Invalid DDE Client Window handle\n\0".as_ptr() as *const core::ffi::c_char);
-            return FALSE as BOOL;
-        }
-
-        if Msg == WM_DDE_REQUEST || Msg == WM_DDE_UNADVISE {
-            return TRUE as BOOL;
-        }
-
-        if Msg == WM_DDE_TERMINATE {
-            return TRUE as BOOL;
-        }
-
-        if Msg == WM_DDE_EXECUTE && *lParam == 0 {
-            TRACE!(b"DDE Post EXECUTE lParam 0\n\0".as_ptr() as *const core::ffi::c_char);
-            return FALSE as BOOL;
-        }
-
-        size = IntDDEPostCallback(pWnd, Msg, wParam, &mut lp, &mut userBuf);
-        if size == 0 {
-            ERR!(b"DDE Post Callback return 0 0x%x\n\0".as_ptr() as *const core::ffi::c_char, Msg);
-            return FALSE as BOOL;
-        }
-
-        if size == -1 {
-            size = 0;
-        } else {
-            Buffer = ExAllocatePoolWithTag(PagedPool, size as _, USERTAG_DDE);
-            if Buffer.is_null() {
-                ERR!(b"Failed to allocate %i bytes.\n\0".as_ptr() as *const core::ffi::c_char, size);
-                return FALSE as BOOL;
-            }
-            RtlCopyMemory(Buffer, userBuf, size as usize);
-        }
-
-        TRACE!(b"DDE Post size %d 0x%x\n\0".as_ptr() as *const core::ffi::c_char, size, Msg);
-
-        match Msg {
-            WM_DDE_POKE => {
-                let pddePoke = Buffer as *mut DDEPOKE;
-                NT_ASSERT!(!pddePoke.is_null());
-                match (*pddePoke).cfFormat as core::ffi::c_uint {
-                    CF_BITMAP | CF_DIB | CF_PALETTE => {
-                        RtlCopyMemory(
-                            core::ptr::addr_of_mut!(Object) as PVOID,
-                            core::ptr::addr_of!((*pddePoke).Value) as PVOID,
-                            core::mem::size_of::<HGDIOBJ>() as usize,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-            WM_DDE_DATA => {
-                let pddeData2 = Buffer as *mut DDEDATA;
-                NT_ASSERT!(!pddeData2.is_null());
-                match (*pddeData2).cfFormat as core::ffi::c_uint {
-                    CF_BITMAP | CF_DIB | CF_PALETTE => {
-                        RtlCopyMemory(
-                            core::ptr::addr_of_mut!(Object) as PVOID,
-                            core::ptr::addr_of!((*pddeData2).Value) as PVOID,
-                            core::mem::size_of::<HGDIOBJ>() as usize,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-
-        if !Object.is_null() {
-            GreSetObjectOwner(Object, ppi_W32Pid((*head_pti(pWnd)).ppi));
-        }
-
-        pddeData = ExAllocatePoolWithTag(
-            PagedPool,
-            core::mem::size_of::<DDE_DATA>() as _,
-            USERTAG_DDE5,
-        ) as PDDE_DATA;
-        if pddeData.is_null() {
-            ERR!(b"Failed to allocate DDE_DATA\n\0".as_ptr() as *const core::ffi::c_char);
-            ExFreePoolWithTag(Buffer, USERTAG_DDE);
-            return FALSE as BOOL;
-        }
-
-        (*pddeData).cbSize = size;
-        (*pddeData).pvBuffer = Buffer;
-        (*pddeData).lParam = lp;
-
-        TRACE!(b"DDE Post lParam c=%08lx\n\0".as_ptr() as *const core::ffi::c_char, lp);
-        core::ptr::write_volatile(lParam, lp);
-
-        core::ptr::write_volatile(ExtraInfo, pddeData as LONG_PTR);
-    }
-    TRUE as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntDdeGetMessageHook(pMsg: PMSG, ExtraInfo: LONG_PTR) -> BOOL {
-    let pWnd: PWND;
-    let pWndClient: PWND;
-    let pddeData: PDDE_DATA;
-    let pddeProp: PDDE_PROP;
-    let Ret: BOOL;
-
-    pWnd = UserGetWindowObject((*pMsg).hwnd);
-    if pWnd.is_null() {
-        return 1;
-    }
-
-    if (*pMsg).message == WM_DDE_TERMINATE {
-        pddeProp = UserGetProp(pWnd, AtomDDETrack, 1) as PDDE_PROP;
-        if !pddeProp.is_null() {
-            pWndClient = UserGetWindowObject((*pMsg).wParam as HWND);
-            if pWndClient.is_null() {
-                // ERR
-            }
-
-            UserRemoveProp(pWnd, AtomDDETrack, 1);
-            ExFreePoolWithTag(pddeProp as *mut core::ffi::c_void, USERTAG_DDE1);
-        }
-        return 1;
-    }
-
-    pddeData = ExtraInfo as PDDE_DATA;
-
-    if !pddeData.is_null() {
-        Ret = IntDDEGetCallback(pWnd, pMsg, (*pddeData).pvBuffer, (*pddeData).cbSize);
-        if Ret == 0 {
-            // ERR
-        }
-
-        if !(*pddeData).pvBuffer.is_null() {
-            ExFreePoolWithTag((*pddeData).pvBuffer, USERTAG_DDE);
-        }
-
-        ExFreePoolWithTag(pddeData as *mut core::ffi::c_void, USERTAG_DDE5);
-
-        return Ret;
-    }
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntDdeGetMessageHook(pMsg: PMSG, ExtraInfo: LONG_PTR) -> BOOL {
+pub unsafe extern "system" fn IntDdeGetMessageHook(pMsg: PMSG, ExtraInfo: LONG_PTR) -> BOOL {
     let pWnd: PWND;
     let pWndClient: PWND;
     let pddeData: PDDE_DATA;
@@ -654,76 +481,31 @@ unsafe fn IntDdeSendMessageHook_impl(pWnd: PWND, Msg: UINT, wParam: WPARAM, lPar
     }
     TRUE as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDdeGetQualityOfService(
+pub unsafe extern "system" fn NtUserDdeGetQualityOfService(
     hwndClient: HWND,
     hWndServer: HWND,
     pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDdeGetQualityOfService(
-    hwndClient: HWND,
-    hWndServer: HWND,
-    pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDdeSetQualityOfService(
+pub unsafe extern "system" fn NtUserDdeSetQualityOfService(
     hwndClient: HWND,
     pqosNew: PSECURITY_QUALITY_OF_SERVICE,
     pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDdeSetQualityOfService(
-    hwndClient: HWND,
-    pqosNew: PSECURITY_QUALITY_OF_SERVICE,
-    pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserImpersonateDdeClientWindow(
+pub unsafe extern "system" fn NtUserImpersonateDdeClientWindow(
     hWndClient: HWND,
     hWndServer: HWND,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserImpersonateDdeClientWindow(
-    hWndClient: HWND,
-    hWndServer: HWND,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDdeInitialize(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-    Unknown2: DWORD,
-    Unknown3: DWORD,
-    Unknown4: DWORD,
-) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDdeInitialize(
+pub unsafe extern "system" fn NtUserDdeInitialize(
     Unknown0: DWORD,
     Unknown1: DWORD,
     Unknown2: DWORD,

@@ -123,6 +123,41 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### A `#[cfg(target_arch)]` pair is not automatically an ABI fork
+
+**Symptom.** Folding cfg-gated twins into one `extern "system"` item (`collapse_abi_twins.py`)
+builds clean on the arch you are testing, then: `undefined _PATH_RoundRect` at link — or an
+unexpected `ud2` in a driver — or, in two of four cases, *nothing at all*.
+
+**Cause.** Two definitions under complementary cfgs are only an ABI fork when they carry
+DIFFERENT conventions — `stdcall` on x86 against `C` on the 64-bit pair. That pair means one
+NTAPI callback spelled per arch, and `system` is exactly its portable name. But a pair spelled
+`extern "C"` on BOTH sides is a different thing entirely: one function with two per-arch
+IMPLEMENTATIONS, gated for a reason that has nothing to do with ABI (kdbg's `KdbpCmdTss` is
+real on i386 and a stub elsewhere). Rewriting that to `system` makes it **stdcall on i386**,
+which changes the symbol decoration (`_PATH_RoundRect` → `_PATH_RoundRect@28`) and mismatches
+the caller's stack cleanup.
+
+**How each one surfaced, worst last** — four in one pass, and the ordering is the lesson:
+
+- `PATH_RoundRect` — link error. C callers reference the cdecl name. The easy case.
+- `GetW32ThreadInfo` — `scan_ud2`: `win32k.sys: @UserGetDCEx@12 *** BUG ***`. The decl/def
+  convention split let LLVM fold the *caller* to `unreachable` (the §9.99 fold), which is a
+  BUGCHECK 0x1E at boot, not a compile error.
+- `KdbpCmdTss`, `MiDecrementPageTableReferences` — **nothing.** No link error, no ud2, no
+  warning. Found only by diffing every collapsed pair against its pre-collapse ABI in git.
+
+**Fix.** Fold only `x86 stdcall` + `not(x86) C` → `system`. A pair whose two sides already
+agree still collapses when the bodies are identical, but KEEPS its convention. Both
+`collapse_abi_twins.py` (`_target_abi`) and its `--abi-only` mode refuse anything else and say
+so. `cargo check` cannot see any of this — it type-checks one arch and has no opinion on
+decoration, so the gate's `scan_ud2` + `scan_cc_mismatch` are the real detectors.
+
+**Corollary — a reconciled pair is still a pair.** Once `--abi-only` spells both twins
+`system`, a matcher keyed on `stdcall|C` stops recognizing them, and the tool goes blind to the
+drift it exists to report: the repo-wide DRIFTED count fell 102 → 2 with nothing fixed. Keep
+`system` in the match.
+
 ### Same convention, different `@N`: stdcall decoration is a free ABI *width* checker
 
 Not every `undefined _Foo@N` is a convention mismatch. When BOTH sides are `extern "system"`
@@ -370,7 +405,10 @@ invisible on i386, from `dialogs/dialogs.rs`:
   as the RESOLVED convention for the target**, so the same pointer is `stdcall` on i686 and `C`
   on amd64/arm64, while our definitions say `extern "system"` — which IS that convention on each
   target, but Rust keeps the spellings as distinct nominal types on fn pointers. Hardcoding one
-  compiles on i386 and fails everywhere else; use a `cfg`'d alias.
+  compiles on i386 and fails everywhere else. The old answer was a `cfg`'d alias; the answer now
+  is that there is nothing to bridge — `normalize_island_abi.py` spells those slots `system`, so
+  assign the fn directly. **Delete the transmute rather than cfg-ing it**: it erased the whole
+  fn type, signature included, so a real argument drift underneath it compiled silently.
 
 The habit that avoids all of it: **cast at the call site using the NAMED type** (`as WPARAM`,
 `as SIZE_T`, `as INT_PTR`), never a concrete width. That is arch-neutral by construction —

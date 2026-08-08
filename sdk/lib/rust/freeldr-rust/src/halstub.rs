@@ -43,12 +43,13 @@ unsafe extern "fastcall" fn x_hal_io_read_partition_table(
     )
 }
 
-// NTAPI = stdcall on i386.
-unsafe extern "stdcall" fn x_hal_vector_to_idt_entry(vector: ULONG) -> UCHAR {
+// NTAPI — `system` IS that convention per arch (stdcall on i386, C on the 64-bit pair), and
+// it is what the HALSTUB slots are spelled now, so these unify without an arch fork.
+unsafe extern "system" fn x_hal_vector_to_idt_entry(vector: ULONG) -> UCHAR {
     vector as UCHAR
 }
 
-unsafe extern "stdcall" fn x_hal_halt_system() {
+unsafe extern "system" fn x_hal_halt_system() {
     /* Halt execution */
     loop {}
 }

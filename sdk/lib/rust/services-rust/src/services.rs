@@ -277,12 +277,7 @@ unsafe fn ShutdownHandlerRoutine_impl(dwCtrlType: DWORD) -> BOOL {
     1 // TRUE
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ShutdownHandlerRoutine(dwCtrlType: DWORD) -> BOOL {
-    ShutdownHandlerRoutine_impl(dwCtrlType)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ShutdownHandlerRoutine(dwCtrlType: DWORD) -> BOOL {
+unsafe extern "system" fn ShutdownHandlerRoutine(dwCtrlType: DWORD) -> BOOL {
     ShutdownHandlerRoutine_impl(dwCtrlType)
 }
 

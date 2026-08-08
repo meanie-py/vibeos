@@ -144,7 +144,7 @@ extern "system" {
 }
 
 #[cfg(target_arch = "x86")]
-extern "stdcall" {
+extern "system" {
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,
@@ -152,7 +152,7 @@ extern "stdcall" {
 }
 
 #[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     // NOTE: must stay extern "C" (not "system") — the fn is passed as a value to
     // IoRegisterPlugPlayNotification, whose bindgen callback type is `extern "C" fn`
     // on non-x86; extern "system" is ABI-identical there but a distinct Rust type.
@@ -237,14 +237,7 @@ pub static mut PopShutdownWorkItem: ntkrnl_sys::ddk::WORK_QUEUE_ITEM = unsafe { 
 pub static mut PopCapabilities: SYSTEM_POWER_CAPABILITIES = unsafe { core::mem::zeroed() };
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopPassivePowerCall(Parameter: PVOID) {
-    let Parameter = opaque_ptr(Parameter);
-    PopPassivePowerCallInner(Parameter)
-}
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn PopPassivePowerCall(Parameter: PVOID) {
+pub unsafe extern "system" fn PopPassivePowerCall(Parameter: PVOID) {
     let Parameter = opaque_ptr(Parameter);
     PopPassivePowerCallInner(Parameter)
 }
@@ -307,18 +300,7 @@ pub unsafe extern "system" fn PopPresentIrp(NextStack: PIO_STACK_LOCATION, Irp: 
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopRequestPowerIrpCompletion(
-    DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
-) -> NTSTATUS {
-    let DeviceObject = opaque_ptr(DeviceObject);
-    let Irp = opaque_ptr(Irp);
-    let Context = opaque_ptr(Context);
-    PopRequestPowerIrpCompletionInner(DeviceObject, Irp, Context)
-}
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn PopRequestPowerIrpCompletion(
+pub unsafe extern "system" fn PopRequestPowerIrpCompletion(
     DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID,
 ) -> NTSTATUS {
     let DeviceObject = opaque_ptr(DeviceObject);
@@ -703,20 +685,8 @@ pub unsafe extern "system" fn PoInitSystem(BootPhase: ULONG) -> BOOLEAN {
 pub unsafe extern "system" fn PopPerfIdle(PowerState: PPROCESSOR_POWER_STATE) {
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PopPerfIdleDpc(
-    Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
-) {
-    let Dpc = opaque_ptr(Dpc);
-    let DeferredContext = opaque_ptr(DeferredContext);
-    let SystemArgument1 = opaque_ptr(SystemArgument1);
-    let SystemArgument2 = opaque_ptr(SystemArgument2);
-    PopPerfIdle(core::ptr::addr_of_mut!((*(DeferredContext as *mut _KPRCB)).PowerState));
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PopPerfIdleDpc(
+pub unsafe extern "system" fn PopPerfIdleDpc(
     Dpc: PKDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID,
 ) {
     let Dpc = opaque_ptr(Dpc);

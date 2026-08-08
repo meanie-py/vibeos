@@ -859,21 +859,6 @@ unsafe fn PATH_Rectangle_impl(
     1
 }
 
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "C" fn PATH_RoundRect(
-    dc: *mut DC,
-    x1: INT,
-    y1: INT,
-    x2: INT,
-    y2: INT,
-    ell_width: INT,
-    ell_height: INT,
-) -> BOOL {
-    PATH_RoundRect_impl(dc, x1, y1, x2, y2, ell_width, ell_height)
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn PATH_RoundRect(
     dc: *mut DC,
@@ -2983,7 +2968,7 @@ unsafe fn PATH_ExtTextOut_impl(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
     let dc: PDC = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE as u32);
@@ -3009,7 +2994,7 @@ pub unsafe extern "stdcall" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
     let dc: PDC = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE as u32);
@@ -3034,7 +3019,7 @@ pub unsafe extern "C" fn NtGdiAbortPath(hDC: HDC) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
     let pPath: PPATH;
     let dc: PDC;
 
@@ -3079,7 +3064,7 @@ pub unsafe extern "stdcall" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
     let pPath: PPATH;
     let dc: PDC;
 
@@ -3121,9 +3106,8 @@ pub unsafe extern "C" fn NtGdiBeginPath(hDC: HDC) -> BOOL {
     }
     TRUE as _
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCloseFigure(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiCloseFigure(hDC: HDC) -> BOOL {
     let mut Ret: BOOL = 0;
     let pDc: PDC;
     let pPath: PPATH;
@@ -3151,72 +3135,8 @@ pub unsafe extern "stdcall" fn NtGdiCloseFigure(hDC: HDC) -> BOOL {
     DC_UnlockDc(pDc);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCloseFigure(hDC: HDC) -> BOOL {
-    let mut Ret: BOOL = 0;
-    let pDc: PDC;
-    let pPath: PPATH;
-
-    pDc = DC_LockDc(hDC);
-    if pDc.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    pPath = PATH_LockPath((*pDc).dclevel.hPath);
-    if pPath.is_null() {
-        DC_UnlockDc(pDc);
-        return 0;
-    }
-
-    if (*pPath).state == PATH_Open {
-        IntGdiCloseFigure(pPath);
-        Ret = 1;
-    } else {
-        EngSetLastError(ERROR_CAN_NOT_COMPLETE);
-    }
-
-    PATH_UnlockPath(pPath);
-    DC_UnlockDc(pDc);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEndPath(hDC: HDC) -> BOOL {
-    let mut ret: BOOL = 1;
-    let pPath: PPATH;
-    let dc: PDC;
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    pPath = PATH_LockPath((*dc).dclevel.hPath as *mut core::ffi::c_void);
-    if pPath.is_null() {
-        DC_UnlockDc(dc);
-        return 0;
-    }
-
-    if (*pPath).state != PATH_Open || ((*dc).dclevel.flPath & DCPATH_ACTIVE) == 0 {
-        EngSetLastError(ERROR_CAN_NOT_COMPLETE);
-        ret = 0;
-    } else {
-        (*pPath).state = PATH_Closed;
-        (*dc).dclevel.flPath &= !DCPATH_ACTIVE;
-    }
-
-    PATH_UnlockPath(pPath);
-    DC_UnlockDc(dc);
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEndPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiEndPath(hDC: HDC) -> BOOL {
     let mut ret: BOOL = 1;
     let pPath: PPATH;
     let dc: PDC;
@@ -3247,7 +3167,7 @@ pub unsafe extern "C" fn NtGdiEndPath(hDC: HDC) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFillPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiFillPath(hDC: HDC) -> BOOL {
     let mut ret: BOOL = (FALSE as _);
     let pPath: PPATH;
     let pNewPath: PPATH;
@@ -3303,7 +3223,7 @@ pub unsafe extern "stdcall" fn NtGdiFillPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFillPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiFillPath(hDC: HDC) -> BOOL {
     let mut ret: BOOL = FALSE as _;
     let pPath: PPATH;
     let pNewPath: PPATH;
@@ -3358,7 +3278,7 @@ pub unsafe extern "C" fn NtGdiFillPath(hDC: HDC) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
     let mut Ret: BOOL = (FALSE as _);
     let pDc: *mut DC;
     let pPath: PPATH;
@@ -3396,7 +3316,7 @@ pub unsafe extern "stdcall" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
     let mut Ret: BOOL = FALSE as _;
     let pDc: *mut DC;
     let pPath: PPATH;
@@ -3431,39 +3351,8 @@ pub unsafe extern "C" fn NtGdiFlattenPath(hDC: HDC) -> BOOL {
     DC_UnlockDc(pDc);
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i32 {
-
-    let pDc: *mut DC;
-    let mut bResult: i32 = 1;
-    let Status: i32;
-
-    pDc = DC_LockDc(hdc);
-    if pDc.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER as _);
-        return 0;
-    }
-
-    Status = w32r_SafeProbeForWrite(
-        pdwOut as *mut core::ffi::c_void,
-        core::mem::size_of::<u32>() as u32,
-        1,
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        bResult = 0;
-    } else {
-        *pdwOut = (*pDc).dclevel.laPath.eMiterLimit as u32;
-    }
-
-    DC_UnlockDc(pDc);
-    bResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i32 {
+pub unsafe extern "system" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i32 {
 
     let pDc: *mut DC;
     let mut bResult: i32 = 1;
@@ -3492,7 +3381,7 @@ pub unsafe extern "C" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i32 {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetPath(
+pub unsafe extern "system" fn NtGdiGetPath(
     hDC: HDC,
     Points: LPPOINT,
     Types: LPBYTE,
@@ -3570,7 +3459,7 @@ pub unsafe extern "stdcall" fn NtGdiGetPath(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetPath(
+pub unsafe extern "system" fn NtGdiGetPath(
     hDC: HDC,
     Points: LPPOINT,
     Types: LPBYTE,
@@ -3645,75 +3534,8 @@ pub unsafe extern "C" fn NtGdiGetPath(
     DC_UnlockDc(dc);
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPathToRegion(hDC: HDC) -> HRGN {
-    let pPath: PPATH;
-    let pNewPath: PPATH;
-    let mut hrgnRval: HRGN = core::ptr::null_mut();
-    let Ret: INT;
-    let Rgn: PREGION;
-    let pDc: *mut DC;
-    let pdcattr: PDC_ATTR;
-
-    pDc = DC_LockDc(hDC);
-    if pDc.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return core::ptr::null_mut();
-    }
-
-    pdcattr = (*pDc).pdcattr;
-
-    pPath = PATH_LockPath((*pDc).dclevel.hPath);
-    if pPath.is_null() {
-        DC_UnlockDc(pDc);
-        return core::ptr::null_mut();
-    }
-
-    if (*pPath).state != PATH_Closed {
-        EngSetLastError(ERROR_CAN_NOT_COMPLETE);
-    } else {
-        Rgn = REGION_AllocUserRgnWithHandle(1);
-        if Rgn.is_null() {
-            PATH_UnlockPath(pPath);
-            DC_UnlockDc(pDc);
-            return core::ptr::null_mut();
-        }
-        hrgnRval = (*Rgn).BaseObject.hHmgr as HRGN;
-
-        pNewPath = PATH_FlattenPath(pPath);
-        if pNewPath.is_null() {
-            REGION_Delete(Rgn);
-            PATH_UnlockPath(pPath);
-            DC_UnlockDc(pDc);
-            return core::ptr::null_mut();
-        }
-
-        Ret = PATH_PathToRegion(pNewPath, (*pdcattr).jFillMode as INT, Rgn);
-
-        PATH_UnlockPath(pNewPath);
-        PATH_Delete((*pNewPath).BaseObject.hHmgr as HPATH);
-
-        if Ret == 0 {
-            REGION_Delete(Rgn);
-            hrgnRval = core::ptr::null_mut();
-        } else {
-            REGION_UnlockRgn(Rgn);
-        }
-    }
-
-    PATH_UnlockPath(pPath);
-    PATH_Delete((*pDc).dclevel.hPath as HPATH);
-    (*pDc).dclevel.hPath = core::ptr::null_mut();
-    (*pDc).dclevel.flPath &= !DCPATH_ACTIVE;
-
-    DC_UnlockDc(pDc);
-    hrgnRval
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiPathToRegion(hDC: HDC) -> HRGN {
+pub unsafe extern "system" fn NtGdiPathToRegion(hDC: HDC) -> HRGN {
     let pPath: PPATH;
     let pNewPath: PPATH;
     let mut hrgnRval: HRGN = core::ptr::null_mut();
@@ -3778,7 +3600,7 @@ pub unsafe extern "C" fn NtGdiPathToRegion(hDC: HDC) -> HRGN {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetMiterLimit(
+pub unsafe extern "system" fn NtGdiSetMiterLimit(
     hdc: HDC,
     dwNew: u32,
     pdwOut: PDWORD,
@@ -3819,7 +3641,7 @@ pub unsafe extern "stdcall" fn NtGdiSetMiterLimit(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetMiterLimit(
+pub unsafe extern "system" fn NtGdiSetMiterLimit(
     hdc: HDC,
     dwNew: u32,
     pdwOut: PDWORD,
@@ -3859,7 +3681,7 @@ pub unsafe extern "C" fn NtGdiSetMiterLimit(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
     let pDc: *mut DC;
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
@@ -3917,7 +3739,7 @@ pub unsafe extern "stdcall" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
     let pDc: *mut DC;
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
@@ -3974,7 +3796,7 @@ pub unsafe extern "C" fn NtGdiStrokeAndFillPath(hDC: HDC) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
     let pDc: *mut DC;
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
@@ -4025,7 +3847,7 @@ pub unsafe extern "stdcall" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
     let pDc: *mut DC;
     let pdcattr: PDC_ATTR;
     let pPath: PPATH;
@@ -4075,7 +3897,7 @@ pub unsafe extern "C" fn NtGdiStrokePath(hDC: HDC) -> BOOL {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
     let pPath: PPATH;
     let mut Ret: BOOL = (FALSE as _);
     let pdc: PDC = DC_LockDc(hDC);
@@ -4096,7 +3918,7 @@ pub unsafe extern "stdcall" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
+pub unsafe extern "system" fn NtGdiWidenPath(hDC: HDC) -> BOOL {
     let pPath: PPATH;
     let mut Ret: BOOL = FALSE as _;
     let pdc: PDC = DC_LockDc(hDC);

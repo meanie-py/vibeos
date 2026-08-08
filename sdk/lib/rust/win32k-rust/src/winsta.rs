@@ -254,9 +254,8 @@ pub unsafe extern "system" fn InitWindowStationImpl() -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserCreateWinstaDirectory() -> NTSTATUS {
+pub unsafe extern "system" fn UserCreateWinstaDirectory() -> NTSTATUS {
     let mut Status: NTSTATUS;
     let Peb: PPEB;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -312,68 +311,8 @@ pub unsafe extern "stdcall" fn UserCreateWinstaDirectory() -> NTSTATUS {
 
     Status
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserCreateWinstaDirectory() -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let Peb: PPEB;
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut hWinstaDir: HANDLE = core::ptr::null_mut();
-    let mut wstrWindowStationsDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-
-    Peb = NtCurrentPeb();
-    if (*Peb).SessionId == 0 {
-        if RtlCreateUnicodeString(
-            core::ptr::addr_of_mut!(gustrWindowStationsDir) as _,
-            WINSTA_OBJ_DIR_W.as_ptr(),
-        ) == 0
-        {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-    } else {
-        Status = snwprintf_status(_snwprintf(
-            wstrWindowStationsDir.as_mut_ptr(),
-            core::mem::size_of_val(&wstrWindowStationsDir) / core::mem::size_of::<u16>(),
-            w!("%ws\\%lu%ws").as_ptr() as *const u16,
-            SESSION_DIR_W.as_ptr(),
-            (*Peb).SessionId,
-            WINSTA_OBJ_DIR_W.as_ptr(),
-        ));
-        if !NT_SUCCESS(Status) {
-            return Status;
-        }
-
-        if RtlCreateUnicodeString(
-            core::ptr::addr_of_mut!(gustrWindowStationsDir) as _,
-            wstrWindowStationsDir.as_ptr(),
-        ) == 0
-        {
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-    }
-
-    ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
-    ObjectAttributes.RootDirectory = core::ptr::null_mut();
-    ObjectAttributes.Attributes = OBJ_KERNEL_HANDLE;
-    ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(gustrWindowStationsDir);
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
-
-    Status = ZwCreateDirectoryObject(
-        &mut hWinstaDir,
-        DIRECTORY_CREATE_OBJECT,
-        &mut ObjectAttributes as *mut _ as _,
-    );
-    if !NT_SUCCESS(Status) {
-        return Status;
-    }
-
-    Status
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntWinStaObjectDelete(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntWinStaObjectDelete(Parameters: PVOID) -> NTSTATUS {
     let DeleteParameters: PWIN32_DELETEMETHOD_PARAMETERS = Parameters as PWIN32_DELETEMETHOD_PARAMETERS;
     let WinSta: PWINSTATION_OBJECT = (*DeleteParameters).Object as PWINSTATION_OBJECT;
 
@@ -391,30 +330,8 @@ pub unsafe extern "stdcall" fn IntWinStaObjectDelete(Parameters: PVOID) -> NTSTA
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntWinStaObjectDelete(Parameters: PVOID) -> NTSTATUS {
-    let DeleteParameters: PWIN32_DELETEMETHOD_PARAMETERS = Parameters as PWIN32_DELETEMETHOD_PARAMETERS;
-    let WinSta: PWINSTATION_OBJECT = (*DeleteParameters).Object as PWINSTATION_OBJECT;
-
-    if WinSta == InputWindowStation {
-        InputWindowStation = core::ptr::null_mut();
-    }
-
-    (*WinSta).Flags |= WSS_DYING;
-
-    UserEmptyClipboardData(WinSta);
-
-    RtlDestroyAtomTable((*WinSta).AtomTable as _);
-
-    UserAssignmentUnlock(core::ptr::addr_of_mut!((*WinSta).spklList) as *mut PVOID);
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntWinStaObjectParse(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntWinStaObjectParse(Parameters: PVOID) -> NTSTATUS {
     let ParseParameters: PWIN32_PARSEMETHOD_PARAMETERS = Parameters as PWIN32_PARSEMETHOD_PARAMETERS;
     let RemainingName: PUNICODE_STRING = (*ParseParameters).RemainingName;
 
@@ -471,82 +388,8 @@ pub unsafe extern "stdcall" fn IntWinStaObjectParse(Parameters: PVOID) -> NTSTAT
     /* Should hopefully never get here */
     STATUS_OBJECT_TYPE_MISMATCH
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntWinStaObjectParse(Parameters: PVOID) -> NTSTATUS {
-    let ParseParameters: PWIN32_PARSEMETHOD_PARAMETERS = Parameters as PWIN32_PARSEMETHOD_PARAMETERS;
-    let RemainingName: PUNICODE_STRING = (*ParseParameters).RemainingName;
-
-    /* Assume we don't find anything */
-    *(*ParseParameters).Object = core::ptr::null_mut();
-
-    /* Check for an empty name */
-    if (*RemainingName).Length == 0 {
-        /* Make sure this is a window station, can't parse a desktop now */
-        if (*ParseParameters).ObjectType != ex_windowstation_object_type() as PVOID {
-            /* Fail */
-            return STATUS_OBJECT_TYPE_MISMATCH;
-        }
-
-        /* Reference the window station and return */
-        ObReferenceObject((*ParseParameters).ParseObject);
-        *(*ParseParameters).Object = (*ParseParameters).ParseObject;
-        return STATUS_SUCCESS;
-    }
-
-    /* Check for leading slash */
-    if *(*RemainingName).Buffer == OBJ_NAME_PATH_SEPARATOR {
-        /* Skip it */
-        (*RemainingName).Buffer = (*RemainingName).Buffer.add(1);
-        (*RemainingName).Length -= core::mem::size_of::<u16>() as u16;
-        (*RemainingName).MaximumLength -= core::mem::size_of::<u16>() as u16;
-    }
-
-    /* Check if there is still a slash */
-    if !wcschr((*RemainingName).Buffer, OBJ_NAME_PATH_SEPARATOR).is_null() {
-        /* In this case, fail */
-        return STATUS_OBJECT_PATH_INVALID;
-    }
-
-    /*
-     * Check if we are parsing a desktop.
-     */
-    if (*ParseParameters).ObjectType == ex_desktop_object_type() as PVOID {
-        /* Then call the desktop parse routine */
-        return IntDesktopObjectParse(
-            (*ParseParameters).ParseObject,
-            (*ParseParameters).ObjectType,
-            (*ParseParameters).AccessState,
-            (*ParseParameters).AccessMode,
-            (*ParseParameters).Attributes,
-            (*ParseParameters).CompleteName,
-            RemainingName,
-            (*ParseParameters).Context,
-            (*ParseParameters).SecurityQos,
-            (*ParseParameters).Object,
-        );
-    }
-
-    /* Should hopefully never get here */
-    STATUS_OBJECT_TYPE_MISMATCH
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntWinStaOkToClose(Parameters: PVOID) -> NTSTATUS {
-    let OkToCloseParameters = Parameters as PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS;
-    let ppi: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
-
-    if !ppi.is_null() && ((*OkToCloseParameters).Handle == (*ppi).hwinsta as *mut c_void) {
-        return STATUS_ACCESS_DENIED;
-    }
-
-    STATUS_SUCCESS
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntWinStaOkToClose(Parameters: PVOID) -> NTSTATUS {
+pub unsafe extern "system" fn IntWinStaOkToClose(Parameters: PVOID) -> NTSTATUS {
     let OkToCloseParameters = Parameters as PWIN32_OKAYTOCLOSEMETHOD_PARAMETERS;
     let ppi: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
 
@@ -1220,9 +1063,8 @@ unsafe fn BuildUserModeWindowStationName(
 
     Status
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateWindowStation(
+pub unsafe extern "system" fn NtUserCreateWindowStation(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     dwDesiredAccess: ACCESS_MASK,
     Unknown2: u32,
@@ -1312,102 +1154,8 @@ pub unsafe extern "stdcall" fn NtUserCreateWindowStation(
 
     hWinSta
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCreateWindowStation(
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    dwDesiredAccess: ACCESS_MASK,
-    Unknown2: u32,
-    Unknown3: u32,
-    Unknown4: u32,
-    Unknown5: u32,
-    Unknown6: u32,
-) -> HWINSTA {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut hWinSta: HWINSTA = core::ptr::null_mut();
-    let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut WindowStationName: PUNICODE_STRING = core::ptr::null_mut();
-    let mut TebStaticUnicodeString: PUNICODE_STRING = core::ptr::null_mut();
-    let mut OwnerMode: KPROCESSOR_MODE = 1i8;
-
-    'CaptureDone: {
-        /* Capture the object attributes and the window station name */
-        Status = SafeProbeForRead(
-            ObjectAttributes as *mut core::ffi::c_void,
-            core::mem::size_of::<_OBJECT_ATTRIBUTES>() as SIZE_T,
-            core::mem::size_of::<u32>() as ULONG,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'CaptureDone;
-        }
-        LocalObjectAttributes = *ObjectAttributes;
-        if LocalObjectAttributes.Length as usize != core::mem::size_of::<_OBJECT_ATTRIBUTES>() {
-            Status = STATUS_INVALID_PARAMETER;
-            break 'CaptureDone;
-        }
-
-        if LocalObjectAttributes.ObjectName.is_null()
-            || (*LocalObjectAttributes.ObjectName).Buffer.is_null()
-            || (*LocalObjectAttributes.ObjectName).Length == 0
-            || *(*LocalObjectAttributes.ObjectName).Buffer == 0
-        {
-            Status = BuildUserModeWindowStationName(
-                ObjectAttributes,
-                &mut LocalObjectAttributes,
-                &mut WindowStationName,
-                &mut TebStaticUnicodeString,
-            );
-            if !NT_SUCCESS(Status) {
-                break 'CaptureDone;
-            }
-            OwnerMode = 0i8;
-        }
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    UserEnterExclusive();
-
-    /* Create the window station */
-    Status = IntCreateWindowStation(
-        &mut hWinSta,
-        ObjectAttributes,
-        1i8,
-        OwnerMode,
-        dwDesiredAccess,
-        Unknown2,
-        Unknown3,
-        Unknown4,
-        Unknown5,
-        Unknown6,
-    );
-    UserLeave();
-
-    /* Try to restore the user's ObjectAttributes and release the window station name */
-    FreeUserModeWindowStationName(
-        WindowStationName,
-        TebStaticUnicodeString,
-        if OwnerMode == 0i8 {
-            ObjectAttributes
-        } else {
-            core::ptr::null_mut()
-        },
-        &mut LocalObjectAttributes,
-    );
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-    }
-
-    hWinSta
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserOpenWindowStation(
+pub unsafe extern "system" fn NtUserOpenWindowStation(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     dwDesiredAccess: ACCESS_MASK,
 ) -> HWINSTA {
@@ -1509,114 +1257,8 @@ pub unsafe extern "stdcall" fn NtUserOpenWindowStation(
 
     hWinSta
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserOpenWindowStation(
-    ObjectAttributes: POBJECT_ATTRIBUTES,
-    dwDesiredAccess: ACCESS_MASK,
-) -> HWINSTA {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut hWinSta: HWINSTA = core::ptr::null_mut();
-    let mut LocalObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let mut WindowStationName: PUNICODE_STRING = core::ptr::null_mut();
-    let mut TebStaticUnicodeString: PUNICODE_STRING = core::ptr::null_mut();
-    let mut OwnerMode: KPROCESSOR_MODE = 1i32 as KPROCESSOR_MODE;
-
-    'CaptureDone: {
-        Status = SafeProbeForRead(
-            ObjectAttributes as *mut core::ffi::c_void,
-            core::mem::size_of::<_OBJECT_ATTRIBUTES>() as SIZE_T,
-            core::mem::size_of::<u32>() as ULONG,
-        );
-        if !NT_SUCCESS(Status) {
-            break 'CaptureDone;
-        }
-
-        LocalObjectAttributes = *ObjectAttributes;
-        if LocalObjectAttributes.Length as usize != core::mem::size_of::<_OBJECT_ATTRIBUTES>() {
-            Status = STATUS_INVALID_PARAMETER;
-            break 'CaptureDone;
-        }
-
-        if LocalObjectAttributes.ObjectName.is_null()
-            || (*LocalObjectAttributes.ObjectName).Buffer.is_null()
-            || (*LocalObjectAttributes.ObjectName).Length == 0
-            || *(*LocalObjectAttributes.ObjectName).Buffer == 0
-        {
-            LocalObjectAttributes.ObjectName = core::ptr::null_mut();
-        }
-
-        const SERVICE_NAME: &[u16; 29] = &[
-            b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16, b'i' as u16, b'c' as u16,
-            b'e' as u16, b'-' as u16, b'0' as u16, b'x' as u16, b'0' as u16, b'0' as u16,
-            b'0' as u16, b'0' as u16, b'0' as u16, b'0' as u16, b'0' as u16, b'0' as u16,
-            b'-' as u16, b'0' as u16, b'0' as u16, b'0' as u16, b'0' as u16, b'0' as u16,
-            b'0' as u16, b'0' as u16, b'0' as u16, b'$' as u16, 0u16,
-        ];
-        let service_len = (core::mem::size_of_val(SERVICE_NAME) - core::mem::size_of::<u16>()) as u16;
-
-        if !LocalObjectAttributes.ObjectName.is_null()
-            && (*LocalObjectAttributes.ObjectName).Length == service_len
-            && _wcsnicmp(
-                (*LocalObjectAttributes.ObjectName).Buffer,
-                SERVICE_NAME.as_ptr(),
-                ((*LocalObjectAttributes.ObjectName).Length as usize)
-                    / core::mem::size_of::<u16>(),
-            ) == 0
-        {
-            LocalObjectAttributes.ObjectName = core::ptr::null_mut();
-        }
-
-        if LocalObjectAttributes.ObjectName.is_null() {
-            Status = BuildUserModeWindowStationName(
-                ObjectAttributes,
-                &mut LocalObjectAttributes,
-                &mut WindowStationName,
-                &mut TebStaticUnicodeString,
-            );
-            if !NT_SUCCESS(Status) {
-                break 'CaptureDone;
-            }
-            OwnerMode = 0i32 as KPROCESSOR_MODE;
-        }
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    Status = ObOpenObjectByName(
-        ObjectAttributes as _,
-        ex_windowstation_object_type() as _,
-        1i32 as KPROCESSOR_MODE,
-        core::ptr::null_mut(),
-        dwDesiredAccess,
-        core::ptr::null_mut(),
-        &mut hWinSta as *mut HWINSTA as *mut *mut core::ffi::c_void,
-    );
-
-    FreeUserModeWindowStationName(
-        WindowStationName,
-        TebStaticUnicodeString,
-        if OwnerMode == 0i32 as KPROCESSOR_MODE {
-            ObjectAttributes
-        } else {
-            core::ptr::null_mut()
-        },
-        &mut LocalObjectAttributes,
-    );
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-    }
-
-    hWinSta
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCloseWindowStation(hWinSta: HWINSTA) -> BOOL {
+pub unsafe extern "system" fn NtUserCloseWindowStation(hWinSta: HWINSTA) -> BOOL {
     let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
@@ -1645,41 +1287,8 @@ pub unsafe extern "stdcall" fn NtUserCloseWindowStation(hWinSta: HWINSTA) -> BOO
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCloseWindowStation(hWinSta: HWINSTA) -> BOOL {
-    let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS;
-
-    if hWinSta == UserGetProcessWindowStation() {
-        return 0;
-    }
-
-    Status = IntValidateWindowStationHandle(
-        hWinSta,
-        1i32 as KPROCESSOR_MODE,
-        0,
-        &mut Object,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        return 0;
-    }
-
-    ObDereferenceObject(Object as *mut _);
-
-    Status = ObCloseHandle(hWinSta as HANDLE, 1i32 as KPROCESSOR_MODE);
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetObjectInformation(
+pub unsafe extern "system" fn NtUserGetObjectInformation(
     hObject: HANDLE,
     nIndex: DWORD,
     pvInformation: PVOID,
@@ -1852,197 +1461,8 @@ pub unsafe extern "stdcall" fn NtUserGetObjectInformation(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetObjectInformation(
-    hObject: HANDLE,
-    nIndex: DWORD,
-    pvInformation: PVOID,
-    nLength: DWORD,
-    nLengthNeeded: PDWORD,
-) -> BOOL {
-    let mut Status: NTSTATUS;
-    let mut WinStaObject: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let mut DesktopObject: PDESKTOP = core::ptr::null_mut();
-    let mut ObjectHeader: POBJECT_HEADER;
-    let NameInfo: POBJECT_HEADER_NAME_INFO;
-    let mut HandleInfo: _OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
-    let mut ObjectFlags: USEROBJECTFLAGS = core::mem::zeroed();
-    let mut pStrNameU: PUNICODE_STRING = core::ptr::null_mut();
-    let mut pvData: PVOID = core::ptr::null_mut();
-    let mut nDataSize: SIZE_T = 0;
-
-    if !nLengthNeeded.is_null() {
-        Status = SafeProbeForWrite(
-            nLengthNeeded as PVOID,
-            core::mem::size_of::<DWORD>() as SIZE_T,
-            1,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            return 0;
-        }
-    }
-    Status = SafeProbeForWrite(pvInformation, nLength as SIZE_T, 1);
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    Status = ObReferenceObjectByHandle(
-        hObject,
-        0,
-        ex_windowstation_object_type() as _,
-        1i32 as i8,
-        &mut WinStaObject as *mut _ as *mut PVOID,
-        &mut HandleInfo as *mut _ as _,
-    );
-
-    if Status == STATUS_OBJECT_TYPE_MISMATCH {
-        WinStaObject = core::ptr::null_mut();
-        Status = IntValidateDesktopHandle(hObject as HDESK, 1i32 as i8, 0, &mut DesktopObject);
-    }
-
-    'exit: {
-        if !NT_SUCCESS(Status) {
-            break 'exit;
-        }
-
-        match nIndex {
-            x if x == UOI_FLAGS => {
-                ObjectFlags.fReserved = 0;
-                ObjectFlags.fInherit =
-                    if (HandleInfo.HandleAttributes & OBJ_INHERIT as u32) != 0 { 1 } else { 0 };
-
-                ObjectFlags.dwFlags = 0;
-                if !WinStaObject.is_null() {
-                    if ((*WinStaObject).Flags & WSS_NOIO as u32) == 0 {
-                        ObjectFlags.dwFlags |= WSF_VISIBLE as u32;
-                    }
-                } else if !DesktopObject.is_null() {
-                    FIXME!(b"Setting DF_ALLOWOTHERACCOUNTHOOK is unimplemented.\n\0".as_ptr());
-                } else {
-                    ERR!(b"No associated WinStaObject nor DesktopObject!\n\0".as_ptr());
-                }
-
-                pvData = &mut ObjectFlags as *mut _ as PVOID;
-                nDataSize = core::mem::size_of::<USEROBJECTFLAGS>() as SIZE_T;
-                Status = STATUS_SUCCESS;
-            }
-
-            x if x == UOI_NAME => {
-                if !WinStaObject.is_null() {
-                    ObjectHeader = ((WinStaObject as usize)
-                        - core::mem::offset_of!(_OBJECT_HEADER, Body))
-                        as POBJECT_HEADER;
-                    NameInfo = OBJECT_HEADER_TO_NAME_INFO(ObjectHeader);
-
-                    if !NameInfo.is_null() && (*NameInfo).Name.Length > 0 {
-                        pStrNameU = core::ptr::addr_of_mut!((*NameInfo).Name);
-                        nDataSize =
-                            (*pStrNameU).Length as SIZE_T + core::mem::size_of::<u16>() as SIZE_T;
-                    } else {
-                        pStrNameU = core::ptr::null_mut();
-                        nDataSize = core::mem::size_of::<u16>() as SIZE_T;
-                    }
-                    Status = STATUS_SUCCESS;
-                } else if !DesktopObject.is_null() {
-                    pvData = (*(*DesktopObject).pDeskInfo).szDesktopName.as_mut_ptr() as PVOID;
-                    nDataSize = ((wcslen((*(*DesktopObject).pDeskInfo).szDesktopName.as_ptr()) + 1)
-                        * core::mem::size_of::<u16>()) as SIZE_T;
-                    Status = STATUS_SUCCESS;
-                } else {
-                    Status = STATUS_INVALID_PARAMETER;
-                }
-            }
-
-            x if x == UOI_TYPE => {
-                if !WinStaObject.is_null() {
-                    ObjectHeader = ((WinStaObject as usize)
-                        - core::mem::offset_of!(_OBJECT_HEADER, Body))
-                        as POBJECT_HEADER;
-                    pStrNameU = core::ptr::addr_of_mut!((*(*ObjectHeader).Type).Name);
-                    nDataSize =
-                        (*pStrNameU).Length as SIZE_T + core::mem::size_of::<u16>() as SIZE_T;
-                    Status = STATUS_SUCCESS;
-                } else if !DesktopObject.is_null() {
-                    ObjectHeader = ((DesktopObject as usize)
-                        - core::mem::offset_of!(_OBJECT_HEADER, Body))
-                        as POBJECT_HEADER;
-                    pStrNameU = core::ptr::addr_of_mut!((*(*ObjectHeader).Type).Name);
-                    nDataSize =
-                        (*pStrNameU).Length as SIZE_T + core::mem::size_of::<u16>() as SIZE_T;
-                    Status = STATUS_SUCCESS;
-                } else {
-                    Status = STATUS_INVALID_PARAMETER;
-                }
-            }
-
-            x if x == UOI_USER_SID => {
-                Status = STATUS_NOT_IMPLEMENTED;
-                ERR!(b"UOI_USER_SID unimplemented!\n\0".as_ptr());
-            }
-
-            _ => {
-                Status = STATUS_INVALID_PARAMETER;
-            }
-        }
-    }
-
-    if Status == STATUS_SUCCESS && (nLength as SIZE_T) < nDataSize {
-        Status = STATUS_BUFFER_TOO_SMALL;
-    }
-
-    if !nLengthNeeded.is_null() {
-        core::ptr::write_volatile(nLengthNeeded, nDataSize as DWORD);
-    }
-
-    if Status == STATUS_SUCCESS && nDataSize > 0 {
-        if !pvData.is_null() {
-            RtlCopyMemory(pvInformation, pvData, nDataSize as _);
-        } else if !pStrNameU.is_null() {
-            RtlCopyMemory(
-                pvInformation,
-                (*pStrNameU).Buffer as PVOID,
-                (*pStrNameU).Length as _,
-            );
-            *(pvInformation as PWCHAR)
-                .add((*pStrNameU).Length as usize / core::mem::size_of::<u16>()) = 0;
-        } else {
-            RtlZeroMemory(pvInformation, nDataSize as _);
-        }
-    }
-
-    if !DesktopObject.is_null() {
-        ObDereferenceObject(DesktopObject as PVOID);
-    }
-    if !WinStaObject.is_null() {
-        ObDereferenceObject(WinStaObject as PVOID);
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetObjectInformation(
-    hObject: HANDLE,
-    nIndex: DWORD,
-    pvInformation: PVOID,
-    nLength: DWORD,
-) -> BOOL {
-    SetLastNtError(STATUS_UNSUCCESSFUL);
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetObjectInformation(
+pub unsafe extern "system" fn NtUserSetObjectInformation(
     hObject: HANDLE,
     nIndex: DWORD,
     pvInformation: PVOID,
@@ -2065,15 +1485,8 @@ pub unsafe extern "C" fn UserGetProcessWindowStation() -> HWINSTA {
     let ppi: PPROCESSINFO = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
     (*ppi).hwinsta
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetProcessWindowStation() -> HWINSTA {
-    UserGetProcessWindowStation()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetProcessWindowStation() -> HWINSTA {
+pub unsafe extern "system" fn NtUserGetProcessWindowStation() -> HWINSTA {
     UserGetProcessWindowStation()
 }
 
@@ -2185,9 +1598,8 @@ unsafe fn UserSetProcessWindowStationImpl(hWindowStation: HWINSTA) -> BOOL {
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL {
+pub unsafe extern "system" fn NtUserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL {
     let ret: BOOL;
 
     UserEnterExclusive();
@@ -2198,23 +1610,8 @@ pub unsafe extern "stdcall" fn NtUserSetProcessWindowStation(hWindowStation: HWI
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL {
-    let ret: BOOL;
-
-    UserEnterExclusive();
-
-    ret = UserSetProcessWindowStation(hWindowStation);
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserLockWindowStation(hWindowStation: HWINSTA) -> BOOL {
+pub unsafe extern "system" fn NtUserLockWindowStation(hWindowStation: HWINSTA) -> BOOL {
     let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
     let Status: NTSTATUS;
 
@@ -2240,69 +1637,8 @@ pub unsafe extern "stdcall" fn NtUserLockWindowStation(hWindowStation: HWINSTA) 
     ObDereferenceObject(Object as *mut core::ffi::c_void);
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserLockWindowStation(hWindowStation: HWINSTA) -> BOOL {
-    let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let Status: NTSTATUS;
-
-    if gpidLogon != PsGetCurrentProcessId() {
-        EngSetLastError(ERROR_ACCESS_DENIED);
-        return 0;
-    }
-
-    Status = IntValidateWindowStationHandle(
-        hWindowStation,
-        1i32 as KPROCESSOR_MODE,
-        0,
-        &mut Object,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    (*Object).Flags |= WSS_LOCKED;
-
-    ObDereferenceObject(Object as *mut core::ffi::c_void);
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnlockWindowStation(hWindowStation: HWINSTA) -> BOOL {
-    let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let Status: NTSTATUS;
-    let Ret: BOOL;
-
-    if gpidLogon != PsGetCurrentProcessId() {
-        EngSetLastError(ERROR_ACCESS_DENIED);
-        return 0;
-    }
-
-    Status = IntValidateWindowStationHandle(
-        hWindowStation,
-        1i32 as KPROCESSOR_MODE,
-        0,
-        &mut Object,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    Ret = (((*Object).Flags & WSS_LOCKED) == WSS_LOCKED) as BOOL;
-    (*Object).Flags &= !WSS_LOCKED;
-
-    ObDereferenceObject(Object as *mut _);
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUnlockWindowStation(hWindowStation: HWINSTA) -> BOOL {
+pub unsafe extern "system" fn NtUserUnlockWindowStation(hWindowStation: HWINSTA) -> BOOL {
     let mut Object: PWINSTATION_OBJECT = core::ptr::null_mut();
     let Status: NTSTATUS;
     let Ret: BOOL;
@@ -2659,9 +1995,8 @@ unsafe fn BuildDesktopNameListImpl(
     ObDereferenceObject(WindowStation as PVOID);
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBuildNameList(
+pub unsafe extern "system" fn NtUserBuildNameList(
     hWindowStation: HWINSTA,
     dwSize: ULONG,
     lpBuffer: PVOID,
@@ -2673,24 +2008,8 @@ pub unsafe extern "stdcall" fn NtUserBuildNameList(
         BuildDesktopNameList(hWindowStation, dwSize, lpBuffer, pRequiredSize)
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserBuildNameList(
-    hWindowStation: HWINSTA,
-    dwSize: ULONG,
-    lpBuffer: PVOID,
-    pRequiredSize: PULONG,
-) -> NTSTATUS {
-    if hWindowStation.is_null() {
-        BuildWindowStationNameList(dwSize, lpBuffer, pRequiredSize)
-    } else {
-        BuildDesktopNameList(hWindowStation, dwSize, lpBuffer, pRequiredSize)
-    }
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetLogonNotifyWindow(hWnd: HWND) -> BOOL {
+pub unsafe extern "system" fn NtUserSetLogonNotifyWindow(hWnd: HWND) -> BOOL {
     let mut Ret: BOOL = 0;
 
     UserEnterExclusive();
@@ -2712,34 +2031,8 @@ pub unsafe extern "stdcall" fn NtUserSetLogonNotifyWindow(hWnd: HWND) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetLogonNotifyWindow(hWnd: HWND) -> BOOL {
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'leave: {
-        if IntIsWindow(hWnd) == 0 {
-            break 'leave;
-        }
-
-        if gpidLogon != PsGetCurrentProcessId() {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'leave;
-        }
-
-        hwndSAS = hWnd;
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserLockWorkStation() -> BOOL {
+pub unsafe extern "system" fn NtUserLockWorkStation() -> BOOL {
     let ret: BOOL;
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
@@ -2760,115 +2053,8 @@ pub unsafe extern "stdcall" fn NtUserLockWorkStation() -> BOOL {
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserLockWorkStation() -> BOOL {
-    let ret: BOOL;
-    let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    UserEnterExclusive();
-
-    if (*pti).rpdesk == IntGetActiveDesktop() {
-        ret = UserPostMessage(
-            hwndSAS,
-            WM_LOGONNOTIFY,
-            LN_LOCK_WORKSTATION as _,
-            0,
-        );
-    } else {
-        ret = 0;
-    }
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetWindowStationUser(
-    hWindowStation: HWINSTA,
-    pluid: PLUID,
-    psid: PSID,
-    size: DWORD,
-) -> BOOL {
-    let mut Ret: BOOL = 0;
-    let mut Status: NTSTATUS;
-    let mut WindowStation: PWINSTATION_OBJECT = core::ptr::null_mut();
-    let mut luidUser: LUID = core::mem::zeroed();
-
-    UserEnterExclusive();
-
-    'leave: {
-        if gpidLogon != PsGetCurrentProcessId() {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'leave;
-        }
-
-        Status = IntValidateWindowStationHandle(
-            hWindowStation,
-            1i32 as KPROCESSOR_MODE,
-            0,
-            core::ptr::addr_of_mut!(WindowStation),
-            core::ptr::null_mut(),
-        );
-        if !NT_SUCCESS(Status) {
-            break 'leave;
-        }
-
-        Status = SafeProbeForRead(pluid as *mut _, core::mem::size_of::<LUID>() as SIZE_T, 1);
-        if !NT_SUCCESS(Status) {
-            break 'leave;
-        }
-        luidUser = *pluid;
-
-        RtlZeroMemory(
-            core::ptr::addr_of_mut!((*WindowStation).luidUser) as *mut _,
-            core::mem::size_of::<LUID>(),
-        );
-
-        if !(*WindowStation).psidUser.is_null() {
-            ExFreePoolWithTag((*WindowStation).psidUser, USERTAG_SECURITY);
-            (*WindowStation).psidUser = core::ptr::null_mut();
-        }
-
-        if !psid.is_null() {
-            (*WindowStation).psidUser =
-                ExAllocatePoolWithTag(PagedPool, size as _, USERTAG_SECURITY);
-            if (*WindowStation).psidUser.is_null() {
-                EngSetLastError(ERROR_OUTOFMEMORY);
-                break 'leave;
-            }
-
-            Status = STATUS_SUCCESS;
-            Status = SafeProbeForRead(psid as *mut _, size as SIZE_T, 1);
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory((*WindowStation).psidUser, psid, size as usize);
-            }
-
-            if !NT_SUCCESS(Status) {
-                ExFreePoolWithTag((*WindowStation).psidUser, USERTAG_SECURITY);
-                (*WindowStation).psidUser = core::ptr::null_mut();
-                break 'leave;
-            }
-        }
-
-        (*WindowStation).luidUser = luidUser;
-
-        Ret = 1;
-    }
-
-    if !WindowStation.is_null() {
-        ObDereferenceObject(WindowStation as *mut _);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetWindowStationUser(
+pub unsafe extern "system" fn NtUserSetWindowStationUser(
     hWindowStation: HWINSTA,
     pluid: PLUID,
     psid: PSID,

@@ -1397,7 +1397,7 @@ pub struct _KDEVICE_QUEUE_ENTRY {
 pub type KDEVICE_QUEUE_ENTRY = _KDEVICE_QUEUE_ENTRY;
 pub type KSPIN_LOCK = ULONG_PTR;
 pub type PKDEFERRED_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _KDPC, arg2: PVOID, arg3: PVOID, arg4: PVOID),
+    unsafe extern "system" fn(arg1: *mut _KDPC, arg2: PVOID, arg3: PVOID, arg4: PVOID),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -2494,7 +2494,7 @@ pub const _IO_ALLOCATION_ACTION_DeallocateObjectKeepRegisters: _IO_ALLOCATION_AC
 pub type _IO_ALLOCATION_ACTION = ::core::ffi::c_uint;
 pub use self::_IO_ALLOCATION_ACTION as IO_ALLOCATION_ACTION;
 pub type PDRIVER_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _DEVICE_OBJECT,
         arg2: *mut _IRP,
         arg3: PVOID,
@@ -2565,11 +2565,11 @@ pub union _IO_STATUS_BLOCK__bindgen_ty_1 {
 pub type IO_STATUS_BLOCK = _IO_STATUS_BLOCK;
 pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
 pub type PIO_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+    unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
 >;
-pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "stdcall" fn(Context: PVOID)>;
+pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PINTERFACE_DEREFERENCE =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DEVICE_CAPABILITIES {
@@ -3636,7 +3636,7 @@ pub const _FSINFOCLASS_FileFsMaximumInformation: _FSINFOCLASS = 11;
 pub type _FSINFOCLASS = ::core::ffi::c_uint;
 pub use self::_FSINFOCLASS as FS_INFORMATION_CLASS;
 pub type PFAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3648,7 +3648,7 @@ pub type PFAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_READ = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3660,7 +3660,7 @@ pub type PFAST_IO_READ = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_WRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3672,7 +3672,7 @@ pub type PFAST_IO_WRITE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
         arg3: PFILE_BASIC_INFORMATION,
@@ -3681,7 +3681,7 @@ pub type PFAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
         arg3: PFILE_STANDARD_INFORMATION,
@@ -3690,7 +3690,7 @@ pub type PFAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_LOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: PLARGE_INTEGER,
@@ -3703,7 +3703,7 @@ pub type PFAST_IO_LOCK = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_UNLOCK_SINGLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: PLARGE_INTEGER,
@@ -3714,7 +3714,7 @@ pub type PFAST_IO_UNLOCK_SINGLE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_UNLOCK_ALL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PEPROCESS,
         arg3: PIO_STATUS_BLOCK,
@@ -3722,7 +3722,7 @@ pub type PFAST_IO_UNLOCK_ALL = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PVOID,
         arg3: ULONG,
@@ -3731,7 +3731,7 @@ pub type PFAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
         arg3: PVOID,
@@ -3744,14 +3744,14 @@ pub type PFAST_IO_DEVICE_CONTROL = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_ACQUIRE_FILE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_RELEASE_FILE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_DETACH_DEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _DEVICE_OBJECT),
+    unsafe extern "system" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _DEVICE_OBJECT),
 >;
 pub type PFAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: BOOLEAN,
         arg3: *mut _FILE_NETWORK_OPEN_INFORMATION,
@@ -3760,7 +3760,7 @@ pub type PFAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: *mut *mut _ERESOURCE,
@@ -3768,7 +3768,7 @@ pub type PFAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFAST_IO_MDL_READ = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3779,14 +3779,14 @@ pub type PFAST_IO_MDL_READ = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PMDL,
         arg3: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3797,7 +3797,7 @@ pub type PFAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: PMDL,
@@ -3805,7 +3805,7 @@ pub type PFAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_READ_COMPRESSED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3819,7 +3819,7 @@ pub type PFAST_IO_READ_COMPRESSED = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_WRITE_COMPRESSED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: ULONG,
@@ -3833,14 +3833,14 @@ pub type PFAST_IO_WRITE_COMPRESSED = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PMDL,
         arg3: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: PLARGE_INTEGER,
         arg3: PMDL,
@@ -3848,24 +3848,24 @@ pub type PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_QUERY_OPEN = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _IRP,
         arg2: PFILE_NETWORK_OPEN_INFORMATION,
         arg3: *mut _DEVICE_OBJECT,
     ) -> BOOLEAN,
 >;
 pub type PFAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut _FILE_OBJECT,
         arg2: *mut _ERESOURCE,
         arg3: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFAST_IO_ACQUIRE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _FILE_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _FILE_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
 >;
 pub type PFAST_IO_RELEASE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _FILE_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _FILE_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -3966,7 +3966,7 @@ pub struct _DEVOBJ_EXTENSION {
     pub DeviceObject: PDEVICE_OBJECT,
 }
 pub type PDRIVER_ADD_DEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -3978,14 +3978,14 @@ pub struct _DRIVER_EXTENSION {
 }
 pub type PDRIVER_EXTENSION = *mut _DRIVER_EXTENSION;
 pub type PDRIVER_INITIALIZE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _DRIVER_OBJECT, arg2: PUNICODE_STRING) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _DRIVER_OBJECT, arg2: PUNICODE_STRING) -> NTSTATUS,
 >;
 pub type PDRIVER_STARTIO =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP)>;
 pub type PDRIVER_UNLOAD =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _DRIVER_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _DRIVER_OBJECT)>;
 pub type PDRIVER_DISPATCH = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -4111,7 +4111,7 @@ pub struct _IO_RESOURCE_REQUIREMENTS_LIST {
 }
 pub type PIO_RESOURCE_REQUIREMENTS_LIST = *mut _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type PDRIVER_CANCEL =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _IRP {
@@ -4202,7 +4202,7 @@ pub union _IRP__bindgen_ty_3__bindgen_ty_1__bindgen_ty_2__bindgen_ty_1 {
     pub PacketType: ULONG,
 }
 pub type PIO_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP, arg3: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP, arg3: PVOID) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4226,9 +4226,9 @@ pub const _DEVICE_TEXT_TYPE_DeviceTextLocationInformation: _DEVICE_TEXT_TYPE = 1
 pub type _DEVICE_TEXT_TYPE = ::core::ffi::c_uint;
 pub use self::_DEVICE_TEXT_TYPE as DEVICE_TEXT_TYPE;
 pub type PGPE_SERVICE_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
 pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: ULONG,
         arg3: KINTERRUPT_MODE,
@@ -4239,27 +4239,27 @@ pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> NTSTATUS>;
 pub type PGPE_ENABLE_EVENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
 >;
 pub type PGPE_DISABLE_EVENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
 >;
 pub type PGPE_CLEAR_STATUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS,
 >;
 pub type PDEVICE_NOTIFY_CALLBACK =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PVOID, arg2: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: ULONG)>;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: PDEVICE_NOTIFY_CALLBACK,
         arg3: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -4279,7 +4279,7 @@ pub struct _ACPI_INTERFACE_STANDARD {
 }
 pub type ACPI_INTERFACE_STANDARD = _ACPI_INTERFACE_STANDARD;
 pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         GpeNumber: ULONG,
         Mode: KINTERRUPT_MODE,
@@ -4290,29 +4290,29 @@ pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
 >;
 pub type PGPE_ENABLE_EVENT2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
 >;
 pub type PGPE_DISABLE_EVENT2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
 >;
 pub type PGPE_CLEAR_STATUS2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS,
 >;
 pub type PDEVICE_NOTIFY_CALLBACK2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(NotificationContext: PVOID, NotifyCode: ULONG),
+    unsafe extern "system" fn(NotificationContext: PVOID, NotifyCode: ULONG),
 >;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS2 = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         NotificationHandler: PDEVICE_NOTIFY_CALLBACK2,
         NotificationContext: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS2 =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _ACPI_INTERFACE_STANDARD2 {

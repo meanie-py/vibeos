@@ -315,9 +315,8 @@ unsafe fn GreGetTextExtentExW_impl(
     DC_UnlockDc(pdc);
     Result
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreGetTextMetricsW(
+pub unsafe extern "system" fn GreGetTextMetricsW(
     hdc: HDC,
     lptm: LPTEXTMETRICW,
 ) -> BOOL {
@@ -329,24 +328,8 @@ pub unsafe extern "stdcall" fn GreGetTextMetricsW(
     *lptm = tmwi.TextMetric;
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetTextMetricsW(
-    hdc: HDC,
-    lptm: LPTEXTMETRICW,
-) -> BOOL {
-    let mut tmwi: TMW_INTERNAL = core::mem::zeroed();
-    if ftGdiGetTextMetricsW(hdc, &mut tmwi) == 0 {
-        return 0;
-    }
-    IntTMWFixUp(hdc, &mut tmwi);
-    *lptm = tmwi.TextMetric;
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetCharSet(hDC: HDC) -> DWORD {
+pub unsafe extern "system" fn NtGdiGetCharSet(hDC: HDC) -> DWORD {
     let Dc: PDC;
     let pdcattr: PDC_ATTR;
     let cscp: DWORD;
@@ -363,29 +346,8 @@ pub unsafe extern "stdcall" fn NtGdiGetCharSet(hDC: HDC) -> DWORD {
     DC_UnlockDc(Dc);
     cscp
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetCharSet(hDC: HDC) -> DWORD {
-    let Dc: PDC;
-    let pdcattr: PDC_ATTR;
-    let cscp: DWORD;
-
-    Dc = DC_LockDc(hDC);
-    if Dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    cscp = ftGdiGetTextCharsetInfo(Dc, core::ptr::null_mut(), 0);
-    pdcattr = (*Dc).pdcattr;
-    (*pdcattr).iCS_CP = cscp;
-    (*pdcattr).ulDirty_ &= !DIRTY_CHARSET;
-    DC_UnlockDc(Dc);
-    cscp
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetRasterizerCaps(
+pub unsafe extern "system" fn NtGdiGetRasterizerCaps(
     praststat: LPRASTERIZER_STATUS,
     mut cjBytes: ULONG,
 ) -> BOOL {
@@ -421,48 +383,8 @@ pub unsafe extern "stdcall" fn NtGdiGetRasterizerCaps(
     }
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetRasterizerCaps(
-    praststat: LPRASTERIZER_STATUS,
-    mut cjBytes: ULONG,
-) -> BOOL {
-
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut rsSafe: RASTERIZER_STATUS = core::mem::zeroed();
-
-    if !praststat.is_null() && cjBytes != 0 {
-        if cjBytes as usize >= core::mem::size_of::<RASTERIZER_STATUS>() {
-            cjBytes = core::mem::size_of::<RASTERIZER_STATUS>() as ULONG;
-        }
-        if ftGdiGetRasterizerCaps(&mut rsSafe) != 0 {
-            Status = SafeProbeForWrite(
-                praststat as *mut core::ffi::c_void,
-                core::mem::size_of::<RASTERIZER_STATUS>() as _,
-                1,
-            );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    praststat as *mut core::ffi::c_void,
-                    &rsSafe as *const _ as *const core::ffi::c_void,
-                    cjBytes as usize,
-                );
-            }
-
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                return 0;
-            }
-
-            return 1;
-        }
-    }
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetTextCharsetInfo(
+pub unsafe extern "system" fn NtGdiGetTextCharsetInfo(
     hdc: HDC,
     lpSig: LPFONTSIGNATURE,
     dwFlags: u32,
@@ -515,65 +437,8 @@ pub unsafe extern "stdcall" fn NtGdiGetTextCharsetInfo(
     DC_UnlockDc(Dc);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetTextCharsetInfo(
-    hdc: HDC,
-    lpSig: LPFONTSIGNATURE,
-    dwFlags: u32,
-) -> i32 {
-
-    let Dc: PDC;
-    let Ret: i32;
-    let mut fsSafe: FONTSIGNATURE = core::mem::zeroed();
-    let mut pfsSafe: PFONTSIGNATURE = &mut fsSafe;
-    let mut Status: i32 = STATUS_SUCCESS as i32;
-
-    Dc = DC_LockDc(hdc);
-    if Dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return DEFAULT_CHARSET as i32;
-    }
-
-    if lpSig.is_null() {
-        pfsSafe = core::ptr::null_mut();
-    }
-
-    Ret = HIWORD(ftGdiGetTextCharsetInfo(Dc, pfsSafe, dwFlags)) as i32;
-
-    if !lpSig.is_null() {
-        if Ret == DEFAULT_CHARSET as i32 {
-            RtlZeroMemory(
-                pfsSafe as *mut core::ffi::c_void,
-                core::mem::size_of::<FONTSIGNATURE>() as _,
-            );
-        }
-
-        Status = SafeProbeForWrite(
-            lpSig as *mut core::ffi::c_void,
-            core::mem::size_of::<FONTSIGNATURE>() as _,
-            1,
-        );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                lpSig as *mut core::ffi::c_void,
-                pfsSafe as *const core::ffi::c_void,
-                core::mem::size_of::<FONTSIGNATURE>() as _,
-            );
-        }
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            return DEFAULT_CHARSET as i32;
-        }
-    }
-    DC_UnlockDc(Dc);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetTextExtentExW(
+pub unsafe extern "system" fn NtGdiGetTextExtentExW(
     hDC: HDC,
     UnsafeString: PCWCH,
     Count: u32,
@@ -740,179 +605,8 @@ pub unsafe extern "stdcall" fn NtGdiGetTextExtentExW(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetTextExtentExW(
-    hDC: HDC,
-    UnsafeString: PCWCH,
-    Count: u32,
-    MaxExtent: u32,
-    UnsafeFit: *mut u32,
-    UnsafeDx: *mut u32,
-    UnsafeSize: PSIZE,
-    fl: FLONG,
-) -> i32 {
-    let dc: PDC;
-    let pdcattr: PDC_ATTR;
-    let String: LPWSTR;
-    let mut Size: SIZE = core::mem::zeroed();
-    let mut Status: i32;
-    let Result: BOOL;
-    let mut Fit: i32 = 0;
-    let Dx: PINT;
-    let TextObj: PTEXTOBJ;
-
-    const GDITAG_TEXT: u32 = 0x74786554;
-
-    if (Count as i32) < 0 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    if Count == 0 {
-        Size.cx = 0;
-        Size.cy = 0;
-        Status = _MmCopyToCaller(
-            UnsafeSize as *mut core::ffi::c_void,
-            core::ptr::addr_of!(Size) as *const core::ffi::c_void,
-            core::mem::size_of::<SIZE>() as _,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            return 0;
-        }
-        return 1;
-    }
-
-    String = ExAllocatePoolWithTag(
-        PagedPool,
-        (Count as usize * core::mem::size_of::<u16>()) as _,
-        GDITAG_TEXT,
-    ) as LPWSTR;
-    if String.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return 0;
-    }
-
-    if !UnsafeDx.is_null() {
-        Dx = ExAllocatePoolWithTag(
-            PagedPool,
-            (Count as usize * core::mem::size_of::<i32>()) as _,
-            GDITAG_TEXT,
-        ) as PINT;
-        if Dx.is_null() {
-            ExFreePoolWithTag(String as *mut core::ffi::c_void, GDITAG_TEXT);
-            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            return 0;
-        }
-    } else {
-        Dx = core::ptr::null_mut();
-    }
-
-    Status = _MmCopyFromCaller(
-        String as *mut core::ffi::c_void,
-        UnsafeString as *const core::ffi::c_void,
-        (Count as usize * core::mem::size_of::<u16>()) as _,
-    );
-    if !NT_SUCCESS(Status) {
-        if !Dx.is_null() {
-            ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-        }
-        ExFreePoolWithTag(String as *mut core::ffi::c_void, GDITAG_TEXT);
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        if !Dx.is_null() {
-            ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-        }
-        ExFreePoolWithTag(String as *mut core::ffi::c_void, GDITAG_TEXT);
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    pdcattr = (*dc).pdcattr;
-    TextObj = RealizeFontInit((*pdcattr).hlfntNew as HFONT);
-    if !TextObj.is_null() {
-        Result = TextIntGetTextExtentPoint(
-            dc,
-            TextObj,
-            String,
-            Count as INT,
-            MaxExtent,
-            if UnsafeFit.is_null() {
-                core::ptr::null_mut()
-            } else {
-                core::ptr::addr_of_mut!(Fit)
-            },
-            Dx,
-            core::ptr::addr_of_mut!(Size),
-            fl,
-        );
-        TEXTOBJ_UnlockText(TextObj);
-    } else {
-        Result = 0;
-    }
-    DC_UnlockDc(dc);
-
-    ExFreePoolWithTag(String as *mut core::ffi::c_void, GDITAG_TEXT);
-    if Result == 0 {
-        if !Dx.is_null() {
-            ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-        }
-        return 0;
-    }
-
-    if !UnsafeFit.is_null() {
-        Status = _MmCopyToCaller(
-            UnsafeFit as *mut core::ffi::c_void,
-            core::ptr::addr_of!(Fit) as *const core::ffi::c_void,
-            core::mem::size_of::<i32>() as _,
-        );
-        if !NT_SUCCESS(Status) {
-            if !Dx.is_null() {
-                ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-            }
-            SetLastNtError(Status);
-            return 0;
-        }
-    }
-
-    if !UnsafeDx.is_null() {
-        Status = _MmCopyToCaller(
-            UnsafeDx as *mut core::ffi::c_void,
-            Dx as *const core::ffi::c_void,
-            (Count as usize * core::mem::size_of::<i32>()) as _,
-        );
-        if !NT_SUCCESS(Status) {
-            if !Dx.is_null() {
-                ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-            }
-            SetLastNtError(Status);
-            return 0;
-        }
-    }
-    if !Dx.is_null() {
-        ExFreePoolWithTag(Dx as *mut core::ffi::c_void, GDITAG_TEXT);
-    }
-
-    Status = _MmCopyToCaller(
-        UnsafeSize as *mut core::ffi::c_void,
-        core::ptr::addr_of!(Size) as *const core::ffi::c_void,
-        core::mem::size_of::<SIZE>() as _,
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetTextExtent(
+pub unsafe extern "system" fn NtGdiGetTextExtent(
     hdc: HDC,
     lpwsz: PCWCH,
     cwc: i32,
@@ -930,30 +624,8 @@ pub unsafe extern "stdcall" fn NtGdiGetTextExtent(
         flOpts,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetTextExtent(
-    hdc: HDC,
-    lpwsz: PCWCH,
-    cwc: i32,
-    psize: PSIZE,
-    flOpts: u32,
-) -> i32 {
-    NtGdiGetTextExtentExW(
-        hdc,
-        lpwsz,
-        cwc as u32,
-        0,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-        psize,
-        flOpts,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetTextJustification(
+pub unsafe extern "system" fn NtGdiSetTextJustification(
     hDC: HDC,
     BreakExtra: INT,
     BreakCount: INT,
@@ -975,86 +647,8 @@ pub unsafe extern "stdcall" fn NtGdiSetTextJustification(
     DC_UnlockDc(pDc);
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetTextJustification(
-    hDC: HDC,
-    BreakExtra: INT,
-    BreakCount: INT,
-) -> BOOL {
-    let pDc: PDC;
-    let pdcattr: PDC_ATTR;
-
-    pDc = DC_LockDc(hDC);
-    if pDc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    pdcattr = (*pDc).pdcattr;
-
-    (*pdcattr).lBreakExtra = BreakExtra;
-    (*pdcattr).cBreak = BreakCount;
-
-    DC_UnlockDc(pDc);
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetTextFaceW(
-    hDC: HDC,
-    mut Count: INT,
-    FaceName: PWSTR,
-    bAliasName: BOOL,
-) -> INT {
-    let Dc: PDC;
-    let pdcattr: PDC_ATTR;
-    let hFont: HFONT;
-    let TextObj: PTEXTOBJ;
-    let Status: NTSTATUS;
-    let fLen: SIZE_T;
-    let ret: INT;
-
-    Dc = DC_LockDc(hDC);
-    if Dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    pdcattr = (*Dc).pdcattr;
-    hFont = (*pdcattr).hlfntNew as HFONT;
-    DC_UnlockDc(Dc);
-
-    TextObj = RealizeFontInit(hFont);
-    fLen = wcslen(core::ptr::addr_of!((*TextObj).TextFace) as *const u16) as SIZE_T + 1;
-
-    if !FaceName.is_null() {
-        Count = min(Count as SIZE_T, fLen) as INT;
-        Status = _MmCopyToCaller(
-            FaceName as *mut core::ffi::c_void,
-            core::ptr::addr_of!((*TextObj).TextFace) as *const core::ffi::c_void,
-            (Count as usize * core::mem::size_of::<u16>()) as _,
-        );
-        if !NT_SUCCESS(Status) {
-            TEXTOBJ_UnlockText(TextObj);
-            SetLastNtError(Status);
-            return 0;
-        }
-        if Count > 0 && (Count as SIZE_T) < fLen {
-            *FaceName.offset((Count - 1) as isize) = 0;
-        }
-        ret = Count;
-    } else {
-        ret = fLen as INT;
-    }
-
-    TEXTOBJ_UnlockText(TextObj);
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetTextFaceW(
+pub unsafe extern "system" fn NtGdiGetTextFaceW(
     hDC: HDC,
     mut Count: INT,
     FaceName: PWSTR,

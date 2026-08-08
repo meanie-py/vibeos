@@ -171,15 +171,8 @@ pub unsafe extern "C" fn InitializeGreCSRSS() -> BOOL {
     1
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiInit() -> BOOL {
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiInit() -> BOOL {
+pub unsafe extern "system" fn NtGdiInit() -> BOOL {
     1
 }
 

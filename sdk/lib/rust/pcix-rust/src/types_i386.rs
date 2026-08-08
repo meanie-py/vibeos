@@ -269,7 +269,7 @@ pub struct _WATCHDOG_TABLE {
     pub Units: UCHAR,
 }
 pub type PWATCHDOG_TABLE = *mut _WATCHDOG_TABLE;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ArbInitializeArbiterInstance(
         Arbiter: PARBITER_INSTANCE,
         BusDeviceObject: PDEVICE_OBJECT,
@@ -688,7 +688,7 @@ pub struct _PCI_PDO_EXTENSION {
 pub type PCI_PDO_EXTENSION = _PCI_PDO_EXTENSION;
 pub type PPCI_PDO_EXTENSION = *mut _PCI_PDO_EXTENSION;
 pub type PCI_DISPATCH_FUNCTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PVOID,
@@ -716,7 +716,7 @@ pub struct _PCI_MJ_DISPATCH_TABLE {
 pub type PCI_MJ_DISPATCH_TABLE = _PCI_MJ_DISPATCH_TABLE;
 pub type PPCI_MJ_DISPATCH_TABLE = *mut _PCI_MJ_DISPATCH_TABLE;
 pub type PCI_INTERFACE_CONSTRUCTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         Instance: PVOID,
         InterfaceData: PVOID,
@@ -726,7 +726,7 @@ pub type PCI_INTERFACE_CONSTRUCTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCI_INTERFACE_INITIALIZER =
-    ::core::option::Option<unsafe extern "stdcall" fn(Instance: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Instance: PVOID) -> NTSTATUS>;
 #[repr(C)]
 pub struct _PCI_INTERFACE {
     pub InterfaceType: *const GUID,
@@ -778,25 +778,25 @@ pub struct _PCI_ID_BUFFER {
 pub type PCI_ID_BUFFER = _PCI_ID_BUFFER;
 pub type PPCI_ID_BUFFER = *mut _PCI_ID_BUFFER;
 pub type PCI_CONFIGURATOR_INITIALIZE =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
 pub type PCI_CONFIGURATOR_RESTORE_CURRENT =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
 pub type PCI_CONFIGURATOR_SAVE_LIMITS =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
 pub type PCI_CONFIGURATOR_SAVE_CURRENT_SETTINGS =
-    ::core::option::Option<unsafe extern "stdcall" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: *mut _PCI_CONFIGURATOR_CONTEXT)>;
 pub type PCI_CONFIGURATOR_CHANGE_RESOURCE_SETTINGS = ::core::option::Option<
-    unsafe extern "stdcall" fn(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER),
+    unsafe extern "system" fn(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER),
 >;
 pub type PCI_CONFIGURATOR_GET_ADDITIONAL_RESOURCE_DESCRIPTORS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         Context: *mut _PCI_CONFIGURATOR_CONTEXT,
         PciData: PPCI_COMMON_HEADER,
         IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     ),
 >;
 pub type PCI_CONFIGURATOR_RESET_DEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER),
+    unsafe extern "system" fn(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -824,7 +824,7 @@ pub struct _PCI_CONFIGURATOR_CONTEXT {
 pub type PCI_CONFIGURATOR_CONTEXT = _PCI_CONFIGURATOR_CONTEXT;
 pub type PPCI_CONFIGURATOR_CONTEXT = *mut _PCI_CONFIGURATOR_CONTEXT;
 pub type PCI_IPI_FUNCTION =
-    ::core::option::Option<unsafe extern "stdcall" fn(Reserved: PVOID, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Reserved: PVOID, Context: PVOID)>;
 #[repr(C)]
 pub struct _PCI_IPI_CONTEXT {
     pub RunCount: LONG,
@@ -851,352 +851,352 @@ pub struct _PCI_LEGACY_DEVICE {
 }
 pub type PCI_LEGACY_DEVICE = _PCI_LEGACY_DEVICE;
 pub type PPCI_LEGACY_DEVICE = *mut _PCI_LEGACY_DEVICE;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDispatchIrp(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIrpNotSupported(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPassIrpFromFdoToPdo(DeviceExtension: PPCI_FDO_EXTENSION, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCallDownIrpStack(DeviceExtension: PPCI_FDO_EXTENSION, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIrpInvalidDeviceRequest(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoWaitWake(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoSetPowerState(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryPower(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciSetPowerManagedDevicePowerState(
         DeviceExtension: PPCI_PDO_EXTENSION,
         DeviceState: DEVICE_POWER_STATE,
         IrpSet: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciAddDevice(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpStartDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpCancelRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpCancelStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryDeviceRelations(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryInterface(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryCapabilities(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpDeviceUsageNotification(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpSurpriseRemoval(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFdoIrpQueryLegacyBusInformation(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoCreate(
         DeviceExtension: PPCI_FDO_EXTENSION,
         Slot: PCI_SLOT_NUMBER,
         PdoDeviceObject: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoWaitWake(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoSetPowerState(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryPower(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpStartDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpCancelRemoveDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpCancelStopDevice(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryDeviceRelations(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryInterface(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryCapabilities(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryResources(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryResourceRequirements(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryDeviceText(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpReadConfig(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpWriteConfig(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryId(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryDeviceState(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryBusInformation(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpDeviceUsageNotification(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpSurpriseRemoval(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPdoIrpQueryLegacyBusInformation(
         Irp: PIRP,
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_PDO_EXTENSION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciHookHal();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciVerifierInit(DriverObject: PDRIVER_OBJECT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciVerifierRetrieveFailureData(FailureCode: ULONG) -> PPCI_VERIFIER_DATA;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciStringToUSHORT(String: PWCHAR, Value: PUSHORT) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIsDatacenter() -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciBuildDefaultExclusionLists() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciUnicodeStringStrStr(
         InputString: PUNICODE_STRING,
         EqualString: PCUNICODE_STRING,
         CaseInSensitive: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciOpenKey(
         KeyName: PWCHAR,
         RootKey: HANDLE,
@@ -1205,7 +1205,7 @@ unsafe extern "stdcall" {
         KeyStatus: PNTSTATUS,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetRegistryValue(
         ValueName: PWCHAR,
         KeyName: PWCHAR,
@@ -1215,27 +1215,27 @@ unsafe extern "stdcall" {
         OutputLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFindParentPciFdoExtension(
         DeviceObject: PDEVICE_OBJECT,
         Lock: PKEVENT,
     ) -> PPCI_FDO_EXTENSION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciInsertEntryAtTail(
         ListHead: PSINGLE_LIST_ENTRY,
         DeviceExtension: PPCI_FDO_EXTENSION,
         Lock: PKEVENT,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetDeviceProperty(
         DeviceObject: PDEVICE_OBJECT,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
         OutputBuffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciSendIoctl(
         DeviceObject: PDEVICE_OBJECT,
         IoControlCode: ULONG,
@@ -1245,7 +1245,7 @@ unsafe extern "stdcall" {
         OutputBufferLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PcipLinkSecondaryExtension(
         List: PSINGLE_LIST_ENTRY,
         Lock: PVOID,
@@ -1254,13 +1254,13 @@ unsafe extern "stdcall" {
         Destructor: PVOID,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFindNextSecondaryExtension(
         ListHead: PSINGLE_LIST_ENTRY,
         ExtensionType: PCI_SIGNATURE,
     ) -> PPCI_SECONDARY_EXTENSION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetHackFlags(
         VendorId: USHORT,
         DeviceId: USHORT,
@@ -1269,32 +1269,32 @@ unsafe extern "stdcall" {
         RevisionId: UCHAR,
     ) -> ULONGLONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciFindPdoByFunction(
         DeviceExtension: PPCI_FDO_EXTENSION,
         FunctionNumber: ULONG,
         PciData: PPCI_COMMON_HEADER,
     ) -> PPCI_PDO_EXTENSION;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIsCriticalDeviceClass(BaseClass: UCHAR, SubClass: UCHAR) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIsDeviceOnDebugPath(DeviceExtension: PPCI_PDO_EXTENSION) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetBiosConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciSaveBiosConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciReadDeviceCapability(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Offset: UCHAR,
@@ -1303,7 +1303,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCanDisableDecodes(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Config: PPCI_COMMON_HEADER,
@@ -1311,44 +1311,44 @@ unsafe extern "stdcall" {
         ForPowerDown: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciClassifyDeviceType(PdoExtension: PPCI_PDO_EXTENSION) -> PCI_DEVICE_TYPES;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciExecuteCriticalSystemRoutine(arg1: ULONG_PTR) -> ULONG_PTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCreateIoDescriptorFromBarLimit(
         ResourceDescriptor: PIO_RESOURCE_DESCRIPTOR,
         BarArray: PULONG,
         Rom: BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciIsSlotPresentInParentMethod(
         PdoExtension: PPCI_PDO_EXTENSION,
         Method: ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDecodeEnable(PdoExtension: PPCI_PDO_EXTENSION, Enable: BOOLEAN, Command: PUSHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryBusInformation(
         PdoExtension: PPCI_PDO_EXTENSION,
         Buffer: *mut PPNP_BUS_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryCapabilities(
         PdoExtension: PPCI_PDO_EXTENSION,
         DeviceCapability: PDEVICE_CAPABILITIES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciReadSlotConfig(
         DeviceExtension: PPCI_FDO_EXTENSION,
         Slot: PCI_SLOT_NUMBER,
@@ -1357,7 +1357,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciWriteDeviceConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Buffer: PVOID,
@@ -1365,7 +1365,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciReadDeviceConfig(
         DeviceExtension: PPCI_PDO_EXTENSION,
         Buffer: PVOID,
@@ -1373,59 +1373,59 @@ unsafe extern "stdcall" {
         Length: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetAdjustedInterruptLine(PdoExtension: PPCI_PDO_EXTENSION) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciInitializeState(DeviceExtension: PPCI_FDO_EXTENSION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciBeginStateTransition(
         DeviceExtension: PPCI_FDO_EXTENSION,
         NewState: PCI_STATE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCancelStateTransition(
         DeviceExtension: PPCI_FDO_EXTENSION,
         NewState: PCI_STATE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCommitStateTransition(DeviceExtension: PPCI_FDO_EXTENSION, NewState: PCI_STATE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciInitializeArbiters(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciInitializeArbiterRanges(
         DeviceExtension: PPCI_FDO_EXTENSION,
         Resources: PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugIrpDispatchDisplay(
         IoStackLocation: PIO_STACK_LOCATION,
         DeviceExtension: PPCI_FDO_EXTENSION,
         MaxMinor: USHORT,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugDumpCommonConfig(PciData: PPCI_COMMON_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugDumpQueryCapabilities(DeviceCaps: PDEVICE_CAPABILITIES);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugPrintIoResReqList(Requirements: PIO_RESOURCE_REQUIREMENTS_LIST);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugPrintCmResList(ResourceList: PCM_RESOURCE_LIST);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciDebugPrintPartialResource(PartialResource: PCM_PARTIAL_RESOURCE_DESCRIPTOR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryInterface(
         DeviceExtension: PPCI_FDO_EXTENSION,
         InterfaceType: *const GUID,
@@ -1436,43 +1436,43 @@ unsafe extern "stdcall" {
         LastChance: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPmeInterfaceInitializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn routeintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn arbusno_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn agpintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn tranirq_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn busintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn armem_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ario_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn locintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn pcicbintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lddintrf_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn devpresent_Initializer(Instance: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn agpintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1482,7 +1482,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn arbusno_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1492,7 +1492,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn tranirq_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1502,7 +1502,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn armem_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1512,7 +1512,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn busintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1522,7 +1522,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ario_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1532,10 +1532,10 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ario_ApplyBrokenVideoHack(FdoExtension: PPCI_FDO_EXTENSION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn pcicbintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1545,7 +1545,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lddintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1555,7 +1555,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn locintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1565,7 +1565,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciPmeInterfaceConstructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1575,7 +1575,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn routeintrf_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1585,7 +1585,7 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn devpresent_Constructor(
         DeviceExtension: PVOID,
         Instance: PVOID,
@@ -1595,60 +1595,60 @@ unsafe extern "stdcall" {
         Interface: PINTERFACE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryDeviceRelations(
         DeviceExtension: PPCI_FDO_EXTENSION,
         pDeviceRelations: *mut PDEVICE_RELATIONS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryResources(
         PdoExtension: PPCI_PDO_EXTENSION,
         Buffer: *mut PCM_RESOURCE_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryTargetDeviceRelations(
         PdoExtension: PPCI_PDO_EXTENSION,
         pDeviceRelations: *mut PDEVICE_RELATIONS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryEjectionRelations(
         PdoExtension: PPCI_PDO_EXTENSION,
         pDeviceRelations: *mut PDEVICE_RELATIONS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryRequirements(
         PdoExtension: PPCI_PDO_EXTENSION,
         RequirementsList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciComputeNewCurrentSettings(
         PdoExtension: PPCI_PDO_EXTENSION,
         ResourceList: PCM_RESOURCE_LIST,
     ) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciSetResources(
         PdoExtension: PPCI_PDO_EXTENSION,
         DoReset: BOOLEAN,
         SomethingSomethingDarkSide: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciBuildRequirementsList(
         PdoExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
         Buffer: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciGetDeviceDescriptionMessage(BaseClass: UCHAR, SubClass: UCHAR) -> PWCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryDeviceText(
         PdoExtension: PPCI_PDO_EXTENSION,
         QueryType: DEVICE_TEXT_TYPE,
@@ -1656,101 +1656,101 @@ unsafe extern "stdcall" {
         Buffer: *mut PWCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciQueryId(
         DeviceExtension: PPCI_PDO_EXTENSION,
         QueryType: BUS_QUERY_ID_TYPE,
         Buffer: *mut PWCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_MassageHeaderForLimitsDetermination(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_SaveCurrentSettings(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_SaveLimits(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_RestoreCurrent(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_GetAdditionalResourceDescriptors(
         Context: PPCI_CONFIGURATOR_CONTEXT,
         PciData: PPCI_COMMON_HEADER,
         IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_ResetDevice(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Cardbus_ChangeResourceSettings(
         PdoExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_MassageHeaderForLimitsDetermination(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_SaveCurrentSettings(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_RestoreCurrent(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_GetAdditionalResourceDescriptors(
         Context: PPCI_CONFIGURATOR_CONTEXT,
         PciData: PPCI_COMMON_HEADER,
         IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_ResetDevice(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Device_ChangeResourceSettings(
         PdoExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_MassageHeaderForLimitsDetermination(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_SaveCurrentSettings(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_RestoreCurrent(Context: PPCI_CONFIGURATOR_CONTEXT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_GetAdditionalResourceDescriptors(
         Context: PPCI_CONFIGURATOR_CONTEXT,
         PciData: PPCI_COMMON_HEADER,
         IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_ResetDevice(PdoExtension: PPCI_PDO_EXTENSION, PciData: PPCI_COMMON_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PPBridge_ChangeResourceSettings(
         PdoExtension: PPCI_PDO_EXTENSION,
         PciData: PPCI_COMMON_HEADER,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciAreBusNumbersConfigured(PdoExtension: PPCI_PDO_EXTENSION) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PciCacheLegacyDeviceRouting(
         DeviceObject: PDEVICE_OBJECT,
         BusNumber: ULONG,

@@ -257,7 +257,7 @@ unsafe extern "C" fn IsValidDomainName(
     return (TRUE) as u8;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -341,7 +341,7 @@ unsafe extern "stdcall" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WP
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn DNSSuffixPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -623,7 +623,7 @@ unsafe extern "C" fn NetworkDlg_OnOK(
     return (TRUE) as i32;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -690,7 +690,7 @@ unsafe extern "stdcall" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPAR
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn NetworkPropDlgProc(hDlg: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let pNetIdData: *mut NETIDDATA;
 
     pNetIdData = GetWindowLongPtr(hDlg, DWLP_USER) as *mut NETIDDATA;
@@ -867,7 +867,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
     lError
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NetIDPageProc(
+unsafe extern "system" fn NetIDPageProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,
@@ -947,7 +947,7 @@ unsafe extern "stdcall" fn NetIDPageProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NetIDPageProc(
+unsafe extern "system" fn NetIDPageProc(
     hwndDlg: HWND,
     uMsg: u32,
     wParam: WPARAM,

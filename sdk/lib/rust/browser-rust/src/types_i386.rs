@@ -12,19 +12,19 @@ pub type RPC_IF_HANDLE = *mut ::core::ffi::c_void;
 pub type RPC_BINDING_HANDLE = I_RPC_HANDLE;
 pub type handle_t = RPC_BINDING_HANDLE;
 pub type PSTART_RPC_SERVER = ::core::option::Option<
-    unsafe extern "stdcall" fn(IfName: PCWSTR, IfSpec: RPC_IF_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(IfName: PCWSTR, IfSpec: RPC_IF_HANDLE) -> NTSTATUS,
 >;
 pub type PSTOP_RPC_SERVER =
-    ::core::option::Option<unsafe extern "stdcall" fn(IfSpec: RPC_IF_HANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(IfSpec: RPC_IF_HANDLE) -> NTSTATUS>;
 pub type PSTOP_RPC_SERVER_EX =
-    ::core::option::Option<unsafe extern "stdcall" fn(IfSpec: RPC_IF_HANDLE) -> NTSTATUS>;
-pub type PNET_BIOS_OPEN = ::core::option::Option<unsafe extern "stdcall" fn()>;
-pub type PNET_BIOS_CLOSE = ::core::option::Option<unsafe extern "stdcall" fn()>;
+    ::core::option::Option<unsafe extern "system" fn(IfSpec: RPC_IF_HANDLE) -> NTSTATUS>;
+pub type PNET_BIOS_OPEN = ::core::option::Option<unsafe extern "system" fn()>;
+pub type PNET_BIOS_CLOSE = ::core::option::Option<unsafe extern "system" fn()>;
 pub type PNET_BIOS_RESET =
-    ::core::option::Option<unsafe extern "stdcall" fn(LanaNum: UCHAR) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(LanaNum: UCHAR) -> DWORD>;
 pub type PSVCHOST_STOP_CALLBACK = WAITORTIMERCALLBACK;
 pub type PREGISTER_STOP_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         phNewWaitObject: PHANDLE,
         pszServiceName: PCWSTR,
         hObject: HANDLE,

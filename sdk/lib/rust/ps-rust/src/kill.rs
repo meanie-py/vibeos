@@ -293,13 +293,7 @@ unsafe fn PspShutdownProcessManager() {
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PspExitApcRundown(apc: PKAPC) {
-    ExFreePool(apc as PVOID);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PspExitApcRundown(apc: PKAPC) {
+unsafe extern "system" fn PspExitApcRundown(apc: PKAPC) {
     ExFreePool(apc as PVOID);
 }
 
@@ -891,20 +885,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PsExitSpecialApc(
-    apc: PKAPC,
-    _normal_routine: *mut PKNORMAL_ROUTINE,
-    normal_context: *mut PVOID,
-    _system_argument1: *mut PVOID,
-    system_argument2: *mut PVOID,
-) {
-    PsExitSpecialApcInner(apc, normal_context, system_argument2);
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PsExitSpecialApc(
+unsafe extern "system" fn PsExitSpecialApc(
     apc: PKAPC,
     _normal_routine: *mut PKNORMAL_ROUTINE,
     normal_context: *mut PVOID,
@@ -927,17 +908,7 @@ unsafe fn PsExitSpecialApcInner(
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn PspExitNormalApc(
-    normal_context: PVOID,
-    system_argument1: PVOID,
-    system_argument2: PVOID,
-) {
-    PspExitNormalApcInner(normal_context, system_argument1, system_argument2);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn PspExitNormalApc(
+unsafe extern "system" fn PspExitNormalApc(
     normal_context: PVOID,
     system_argument1: PVOID,
     system_argument2: PVOID,

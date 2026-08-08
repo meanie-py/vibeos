@@ -60,7 +60,7 @@ pub unsafe extern "C" fn IntEnumHDev() -> PPDEVOBJ {
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiDrawEscape(
+pub unsafe extern "system" fn NtGdiDrawEscape(
     hdc: HDC,
     iEsc: INT,
     cjIn: INT,
@@ -71,7 +71,7 @@ pub unsafe extern "stdcall" fn NtGdiDrawEscape(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiDrawEscape(
+pub unsafe extern "system" fn NtGdiDrawEscape(
     hdc: HDC,
     iEsc: INT,
     cjIn: INT,

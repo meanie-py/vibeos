@@ -2555,12 +2555,7 @@ pub unsafe extern "system" fn GetNextDlgTabItem(
 
 // EnumChildWindows callback — ABI must match WNDENUMPROC: stdcall on i386, cdecl
 // on amd64/arm64.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn DIALOG_FixOneChildOnChangeFocus(hwndChild: HWND, lParam: LPARAM) -> BOOL {
-    DIALOG_FixOneChildOnChangeFocus_impl(hwndChild, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn DIALOG_FixOneChildOnChangeFocus(hwndChild: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn DIALOG_FixOneChildOnChangeFocus(hwndChild: HWND, lParam: LPARAM) -> BOOL {
     DIALOG_FixOneChildOnChangeFocus_impl(hwndChild, lParam)
 }
 #[inline]
@@ -2931,12 +2926,7 @@ pub unsafe extern "system" fn CheckDlgButton(
 
 // EnumChildWindows callback — ABI must match WNDENUMPROC: stdcall on i386, cdecl
 // on amd64/arm64.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CheckRB(hwnd: HWND, lParam: LPARAM) -> BOOL {
-    CheckRB_impl(hwnd, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CheckRB(hwnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn CheckRB(hwnd: HWND, lParam: LPARAM) -> BOOL {
     CheckRB_impl(hwnd, lParam)
 }
 #[inline]

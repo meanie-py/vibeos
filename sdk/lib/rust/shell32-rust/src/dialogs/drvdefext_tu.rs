@@ -207,44 +207,7 @@ unsafe extern "C" fn ChkDskNow(hwndDlg: HWND, pwszDrive: PCWSTR) {
     hChkdskDrvDialog = core::ptr::null_mut();
     bChkdskSuccess = FALSE as BOOLEAN;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ChkDskDlg(
-    hwndDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            SetWindowLongPtr(hwndDlg, DWLP_USER, lParam as LONG_PTR);
-            InitializeChkDskDialog(hwndDlg, lParam as LPCWSTR);
-            return TRUE as INT_PTR;
-        }
-        WM_COMMAND => {
-            // LOWORD's island helper takes a DWORD; WPARAM is pointer-width (u64 on
-            // amd64/arm64), so truncate to DWORD first -- truncation before-or-after
-            // masking to the low 16 bits gives the same low word either way. The match
-            // scrutinee is then cast to UINT to meet IDCANCEL/IDOK, which -- like every
-            // resource ID here -- are untyped-int constants (u32), not u16.
-            match LOWORD(wParam as DWORD) as UINT {
-                IDCANCEL => {
-                    EndDialog(hwndDlg, 0);
-                }
-                IDOK => {
-                    let pwszDrive = GetWindowLongPtrW(hwndDlg, DWLP_USER) as LPCWSTR;
-                    ChkDskNow(hwndDlg, pwszDrive);
-                }
-                _ => {}
-            }
-        }
-        _ => {}
-    }
-
-    FALSE as INT_PTR
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ChkDskDlg(
+unsafe extern "system" fn ChkDskDlg(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,

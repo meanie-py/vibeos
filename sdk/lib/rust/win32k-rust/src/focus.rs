@@ -1942,27 +1942,8 @@ pub unsafe extern "C" fn UserGetActiveWindow() -> HWND {
         core::ptr::null_mut()
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGetCapture() -> HWND {
-    let pti: PTHREADINFO;
-    let ThreadQueue: PUSER_MESSAGE_QUEUE;
-    let Ret: HWND;
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-    ThreadQueue = (*pti).MessageQueue;
-    Ret = if !ThreadQueue.is_null() && !(*ThreadQueue).spwndCapture.is_null() {
-        UserHMGetHandle((*ThreadQueue).spwndCapture)
-    } else {
-        core::ptr::null_mut()
-    };
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntGetCapture() -> HWND {
+pub unsafe extern "system" fn IntGetCapture() -> HWND {
     let pti: PTHREADINFO;
     let ThreadQueue: PUSER_MESSAGE_QUEUE;
     let Ret: HWND;
@@ -2203,9 +2184,8 @@ unsafe fn IntAllowSetForegroundWindow_impl(dwProcessId: DWORD) -> BOOL {
     }
     TRUE as BOOL
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetForegroundWindow() -> HWND {
+pub unsafe extern "system" fn NtUserGetForegroundWindow() -> HWND {
     UserEnterExclusive();
 
     let Ret = UserGetForegroundWindow();
@@ -2213,20 +2193,8 @@ pub unsafe extern "stdcall" fn NtUserGetForegroundWindow() -> HWND {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetForegroundWindow() -> HWND {
-    UserEnterExclusive();
-
-    let Ret = UserGetForegroundWindow();
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetActiveWindow(hWnd: HWND) -> HWND {
+pub unsafe extern "system" fn NtUserSetActiveWindow(hWnd: HWND) -> HWND {
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
     let hWndPrev: HWND;
     let mut Window: PWND;
@@ -2271,57 +2239,8 @@ pub unsafe extern "stdcall" fn NtUserSetActiveWindow(hWnd: HWND) -> HWND {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetActiveWindow(hWnd: HWND) -> HWND {
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let hWndPrev: HWND;
-    let mut Window: PWND;
-    let pwndPrev: PWND;
-    let mut Ret: HWND = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = core::ptr::null_mut();
-        if !hWnd.is_null() {
-            Window = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                break 'exit;
-            }
-        }
-
-        if Window.is_null()
-            || (*head_pti(core::ptr::addr_of!((*Window).head))).MessageQueue == (*gptiCurrent).MessageQueue
-        {
-            pwndPrev = (*(*gptiCurrent).MessageQueue).spwndActive;
-            hWndPrev = if !pwndPrev.is_null() {
-                UserHMGetHandle(pwndPrev)
-            } else {
-                core::ptr::null_mut()
-            };
-            if !Window.is_null() {
-                UserRefObjectCo(Window, core::ptr::addr_of_mut!(Ref));
-            }
-            UserSetActiveWindow(Window);
-            if !Window.is_null() {
-                UserDerefObjectCo(Window);
-            }
-            Ret = if !hWndPrev.is_null() && IntIsWindow(hWndPrev) != 0 {
-                hWndPrev
-            } else {
-                core::ptr::null_mut()
-            };
-        }
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetCapture(hWnd: HWND) -> HWND {
+pub unsafe extern "system" fn NtUserSetCapture(hWnd: HWND) -> HWND {
     let Ret: HWND;
 
     UserEnterExclusive();
@@ -2331,50 +2250,8 @@ pub unsafe extern "stdcall" fn NtUserSetCapture(hWnd: HWND) -> HWND {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetCapture(hWnd: HWND) -> HWND {
-    let Ret: HWND;
-
-    UserEnterExclusive();
-
-    Ret = co_UserSetCapture(hWnd);
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetFocus(hWnd: HWND) -> HWND {
-    let mut Window: PWND;
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut ret: HWND = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'exit: {
-        if !hWnd.is_null() {
-            Window = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                break 'exit;
-            }
-
-            UserRefObjectCo(Window, &mut Ref);
-            ret = co_UserSetFocus(Window);
-            UserDerefObjectCo(Window);
-        } else {
-            ret = co_UserSetFocus(core::ptr::null_mut());
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetFocus(hWnd: HWND) -> HWND {
+pub unsafe extern "system" fn NtUserSetFocus(hWnd: HWND) -> HWND {
     let mut Window: PWND;
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
     let mut ret: HWND = core::ptr::null_mut();

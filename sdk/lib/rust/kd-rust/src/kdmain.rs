@@ -43,19 +43,11 @@ pub type KD_DISPATCH_TABLE = _KD_DISPATCH_TABLE;
 pub type PKD_DISPATCH_TABLE = *mut _KD_DISPATCH_TABLE;
 
 // PKDP_INIT_ROUTINE / PKDP_PRINT_ROUTINE — NTAPI on the C side; per-arch ABI.
-#[cfg(not(target_arch = "x86"))]
 pub type PKDP_INIT_ROUTINE = Option<
-    unsafe extern "C" fn(DispatchTable: PKD_DISPATCH_TABLE, BootPhase: ULONG) -> NTSTATUS,
->;
-#[cfg(target_arch = "x86")]
-pub type PKDP_INIT_ROUTINE = Option<
-    unsafe extern "stdcall" fn(DispatchTable: PKD_DISPATCH_TABLE, BootPhase: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(DispatchTable: PKD_DISPATCH_TABLE, BootPhase: ULONG) -> NTSTATUS,
 >;
 
-#[cfg(not(target_arch = "x86"))]
-pub type PKDP_PRINT_ROUTINE = Option<unsafe extern "C" fn(String: *const i8, Length: ULONG)>;
-#[cfg(target_arch = "x86")]
-pub type PKDP_PRINT_ROUTINE = Option<unsafe extern "stdcall" fn(String: *const i8, Length: ULONG)>;
+pub type PKDP_PRINT_ROUTINE = Option<unsafe extern "system" fn(String: *const i8, Length: ULONG)>;
 
 // ============================================================================
 // kd globals (kdio.c excluded; canonical definitions live here)
@@ -249,17 +241,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 
 // NTAPI on i386 = stdcall, on amd64/arm64 = cdecl/AAPCS64 (extern "C").
 // We must match the bindgen function-pointer types exactly per arch.
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpDriverReinit(
-    DriverObject: PDRIVER_OBJECT,
-    _Context: PVOID,
-    Count: ULONG,
-) {
-    KdpDriverReinit_impl(DriverObject, _Context, Count)
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpDriverReinit(
+unsafe extern "system" fn KdpDriverReinit(
     DriverObject: PDRIVER_OBJECT,
     _Context: PVOID,
     Count: ULONG,
@@ -321,16 +303,7 @@ unsafe fn KdpDriverReinit_impl(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpDriverEntry(
-    DriverObject: PDRIVER_OBJECT,
-    RegistryPath: PUNICODE_STRING,
-) -> NTSTATUS {
-    KdpDriverEntry_impl(DriverObject, RegistryPath)
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpDriverEntry(
+unsafe extern "system" fn KdpDriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
@@ -465,13 +438,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize1(
 // Wrapper: convert KdpInitDriver (Rust ABI, internal) to the per-arch C ABI
 // for the pHalInitPnpDriver function-pointer slot. NTAPI = stdcall on i386,
 // cdecl/AAPCS64 (extern "C") on amd64/arm64.
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpInitDriver_extern_c() -> NTSTATUS {
-    KdpInitDriver()
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpInitDriver_extern_c() -> NTSTATUS {
+unsafe extern "system" fn KdpInitDriver_extern_c() -> NTSTATUS {
     KdpInitDriver()
 }
 

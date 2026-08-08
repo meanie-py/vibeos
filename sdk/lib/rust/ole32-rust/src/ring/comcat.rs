@@ -59,17 +59,13 @@ const TRACE_ON_OLE: bool = false;
 // comcat.idl interface declarations (see module docs)
 // ---------------------------------------------------------------------------
 
-/// Spell a COM vtbl slot's fn-pointer type the way STDMETHODCALLTYPE compiles per
-/// target — the type-level twin of `stdmethod!`. (`extern "system"` would lower to the
-/// same ABI but is a *nominally distinct* fn type to rustc, so it would not unify with
-/// a `stdmethod!`-defined method.)
-#[cfg(target_arch = "x86")]
+/// Spell a COM vtbl slot's fn-pointer type the way STDMETHODCALLTYPE compiles — the
+/// type-level twin of `stdmethod!`, and it must stay in lockstep with it. Both are `system`
+/// now: that lowers to stdcall on i386 and C on the 64-bit pair, which is what this used to
+/// spell per arch, and it is the spelling `stdmethod!` and the com-sys slots now use, so the
+/// three unify nominally instead of only lowering the same.
 macro_rules! stdmethod_ty {
-    ($($sig:tt)*) => { Option<unsafe extern "stdcall" $($sig)*> };
-}
-#[cfg(not(target_arch = "x86"))]
-macro_rules! stdmethod_ty {
-    ($($sig:tt)*) => { Option<unsafe extern "C" $($sig)*> };
+    ($($sig:tt)*) => { Option<unsafe extern "system" $($sig)*> };
 }
 
 /// comcat.idl: `typedef GUID CATID;` / `typedef REFGUID REFCATID;`

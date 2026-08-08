@@ -16981,7 +16981,7 @@ pub struct _PROCESSOR_NUMBER {
 pub type PROCESSOR_NUMBER = _PROCESSOR_NUMBER;
 pub type PPROCESSOR_NUMBER = *mut _PROCESSOR_NUMBER;
 pub type EXCEPTION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ExceptionRecord: *mut _EXCEPTION_RECORD,
         EstablisherFrame: PVOID,
         ContextRecord: *mut _CONTEXT,
@@ -17437,7 +17437,7 @@ pub struct _RTL_BITMAP_RUN {
 pub type RTL_BITMAP_RUN = _RTL_BITMAP_RUN;
 pub type PRTL_BITMAP_RUN = *mut _RTL_BITMAP_RUN;
 pub type RTL_QUERY_REGISTRY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ValueName: PWSTR,
         ValueType: ULONG,
         ValueData: PVOID,
@@ -18783,7 +18783,7 @@ pub const _KBUGCHECK_CALLBACK_REASON_KbCallbackAddPages: _KBUGCHECK_CALLBACK_REA
 pub type _KBUGCHECK_CALLBACK_REASON = ::core::ffi::c_uint;
 pub use self::_KBUGCHECK_CALLBACK_REASON as KBUGCHECK_CALLBACK_REASON;
 pub type KBUGCHECK_REASON_CALLBACK_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Reason: KBUGCHECK_CALLBACK_REASON,
         Record: *mut _KBUGCHECK_REASON_CALLBACK_RECORD,
         ReasonSpecificData: PVOID,
@@ -18851,7 +18851,7 @@ pub const _KBUGCHECK_BUFFER_DUMP_STATE_BufferIncomplete: _KBUGCHECK_BUFFER_DUMP_
 pub type _KBUGCHECK_BUFFER_DUMP_STATE = ::core::ffi::c_uint;
 pub use self::_KBUGCHECK_BUFFER_DUMP_STATE as KBUGCHECK_BUFFER_DUMP_STATE;
 pub type KBUGCHECK_CALLBACK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID, Length: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID, Length: ULONG)>;
 pub type PKBUGCHECK_CALLBACK_ROUTINE = KBUGCHECK_CALLBACK_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -18867,7 +18867,7 @@ pub struct _KBUGCHECK_CALLBACK_RECORD {
 pub type KBUGCHECK_CALLBACK_RECORD = _KBUGCHECK_CALLBACK_RECORD;
 pub type PKBUGCHECK_CALLBACK_RECORD = *mut _KBUGCHECK_CALLBACK_RECORD;
 pub type NMI_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Handled: BOOLEAN) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Handled: BOOLEAN) -> BOOLEAN>;
 pub type PNMI_CALLBACK = NMI_CALLBACK;
 pub const _KE_PROCESSOR_CHANGE_NOTIFY_STATE_KeProcessorAddStartNotify:
     _KE_PROCESSOR_CHANGE_NOTIFY_STATE = 0;
@@ -18887,7 +18887,7 @@ pub struct _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT {
 pub type KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT = _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT;
 pub type PKE_PROCESSOR_CHANGE_NOTIFY_CONTEXT = *mut _KE_PROCESSOR_CHANGE_NOTIFY_CONTEXT;
 pub type PROCESSOR_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         CallbackContext: PVOID,
         ChangeContext: PKE_PROCESSOR_CHANGE_NOTIFY_CONTEXT,
         OperationStatus: PNTSTATUS,
@@ -18986,15 +18986,15 @@ pub const _KINTERRUPT_MODE_LevelSensitive: _KINTERRUPT_MODE = 0;
 pub const _KINTERRUPT_MODE_Latched: _KINTERRUPT_MODE = 1;
 pub type _KINTERRUPT_MODE = ::core::ffi::c_uint;
 pub use self::_KINTERRUPT_MODE as KINTERRUPT_MODE;
-pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "C" fn(StartContext: PVOID)>;
+pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "system" fn(StartContext: PVOID)>;
 pub type PKSTART_ROUTINE = KSTART_ROUTINE;
-pub type PKINTERRUPT_ROUTINE = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PKINTERRUPT_ROUTINE = ::core::option::Option<unsafe extern "system" fn()>;
 pub type KSERVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN,
 >;
 pub type PKSERVICE_ROUTINE = KSERVICE_ROUTINE;
 pub type KMESSAGE_SERVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Interrupt: *mut _KINTERRUPT,
         ServiceContext: PVOID,
         MessageID: ULONG,
@@ -19037,7 +19037,7 @@ pub type PKDEVICE_QUEUE_ENTRY = *mut _KDEVICE_QUEUE_ENTRY;
 pub type PRKDEVICE_QUEUE_ENTRY = *mut _KDEVICE_QUEUE_ENTRY;
 pub type PKIPI_CONTEXT = PVOID;
 pub type PKIPI_WORKER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PacketContext: PKIPI_CONTEXT,
         Parameter1: PVOID,
         Parameter2: PVOID,
@@ -19065,7 +19065,7 @@ pub struct _KIPI_COUNTS {
 pub type KIPI_COUNTS = _KIPI_COUNTS;
 pub type PKIPI_COUNTS = *mut _KIPI_COUNTS;
 pub type KIPI_BROADCAST_WORKER =
-    ::core::option::Option<unsafe extern "C" fn(Argument: ULONG_PTR) -> ULONG_PTR>;
+    ::core::option::Option<unsafe extern "system" fn(Argument: ULONG_PTR) -> ULONG_PTR>;
 pub type PKIPI_BROADCAST_WORKER = KIPI_BROADCAST_WORKER;
 pub type KSPIN_LOCK = ULONG_PTR;
 pub type PKSPIN_LOCK = *mut ULONG_PTR;
@@ -19108,7 +19108,7 @@ pub type _KSPIN_LOCK_QUEUE_NUMBER = ::core::ffi::c_uint;
 pub use self::_KSPIN_LOCK_QUEUE_NUMBER as KSPIN_LOCK_QUEUE_NUMBER;
 pub type PKSPIN_LOCK_QUEUE_NUMBER = *mut _KSPIN_LOCK_QUEUE_NUMBER;
 pub type KDEFERRED_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Dpc: *mut _KDPC,
         DeferredContext: PVOID,
         SystemArgument1: PVOID,
@@ -19851,7 +19851,7 @@ pub const _LOCK_OPERATION_IoModifyAccess: _LOCK_OPERATION = 2;
 pub type _LOCK_OPERATION = ::core::ffi::c_uint;
 pub use self::_LOCK_OPERATION as LOCK_OPERATION;
 pub type KSYNCHRONIZE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(SynchronizeContext: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(SynchronizeContext: PVOID) -> BOOLEAN>;
 pub type PKSYNCHRONIZE_ROUTINE = KSYNCHRONIZE_ROUTINE;
 pub const _POOL_TYPE_NonPagedPool: _POOL_TYPE = 0;
 pub const _POOL_TYPE_PagedPool: _POOL_TYPE = 1;
@@ -20075,21 +20075,21 @@ pub type _EX_POOL_PRIORITY = ::core::ffi::c_uint;
 pub use self::_EX_POOL_PRIORITY as EX_POOL_PRIORITY;
 pub type PLOOKASIDE_LIST_EX = *mut _LOOKASIDE_LIST_EX;
 pub type PALLOCATE_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID,
+    unsafe extern "system" fn(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG) -> PVOID,
 >;
 pub type PALLOCATE_FUNCTION_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PoolType: POOL_TYPE,
         NumberOfBytes: SIZE_T,
         Tag: ULONG,
         Lookaside: PLOOKASIDE_LIST_EX,
     ) -> PVOID,
 >;
-pub type PFREE_FUNCTION = ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID)>;
+pub type PFREE_FUNCTION = ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID)>;
 pub type PFREE_FUNCTION_EX =
-    ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID, Lookaside: PLOOKASIDE_LIST_EX)>;
+    ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID, Lookaside: PLOOKASIDE_LIST_EX)>;
 pub type CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID),
+    unsafe extern "system" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID),
 >;
 pub type PCALLBACK_FUNCTION = CALLBACK_FUNCTION;
 #[repr(C)]
@@ -20257,7 +20257,7 @@ pub const _WORK_QUEUE_TYPE_HyperCriticalWorkQueue: _WORK_QUEUE_TYPE = 2;
 pub const _WORK_QUEUE_TYPE_MaximumWorkQueue: _WORK_QUEUE_TYPE = 3;
 pub type _WORK_QUEUE_TYPE = ::core::ffi::c_uint;
 pub use self::_WORK_QUEUE_TYPE as WORK_QUEUE_TYPE;
-pub type WORKER_THREAD_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID)>;
+pub type WORKER_THREAD_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID)>;
 pub type PWORKER_THREAD_ROUTINE = WORKER_THREAD_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -20596,7 +20596,7 @@ pub union _ACCESS_STATE__bindgen_ty_1 {
 pub type ACCESS_STATE = _ACCESS_STATE;
 pub type PACCESS_STATE = *mut _ACCESS_STATE;
 pub type PNTFS_DEREF_EXPORTED_SECURITY_DESCRIPTOR = ::core::option::Option<
-    unsafe extern "C" fn(Vcb: PVOID, SecurityDescriptor: PSECURITY_DESCRIPTOR),
+    unsafe extern "system" fn(Vcb: PVOID, SecurityDescriptor: PSECURITY_DESCRIPTOR),
 >;
 pub const _SE_ADT_PARAMETER_TYPE_SeAdtParmTypeNone: _SE_ADT_PARAMETER_TYPE = 0;
 pub const _SE_ADT_PARAMETER_TYPE_SeAdtParmTypeString: _SE_ADT_PARAMETER_TYPE = 1;
@@ -21240,7 +21240,7 @@ unsafe extern "C" {
     pub static GUID_ENABLE_SWITCH_FORCED_SHUTDOWN: GUID;
 }
 pub type REQUEST_POWER_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         MinorFunction: UCHAR,
         PowerState: POWER_STATE,
@@ -21250,7 +21250,7 @@ pub type REQUEST_POWER_COMPLETE = ::core::option::Option<
 >;
 pub type PREQUEST_POWER_COMPLETE = REQUEST_POWER_COMPLETE;
 pub type POWER_SETTING_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         SettingGuid: LPCGUID,
         Value: PVOID,
         ValueLength: ULONG,
@@ -22251,7 +22251,7 @@ pub type _REG_NOTIFY_CLASS = ::core::ffi::c_uint;
 pub use self::_REG_NOTIFY_CLASS as REG_NOTIFY_CLASS;
 pub type PREG_NOTIFY_CLASS = *mut _REG_NOTIFY_CLASS;
 pub type EX_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(CallbackContext: PVOID, Argument1: PVOID, Argument2: PVOID) -> NTSTATUS,
 >;
 pub type PEX_CALLBACK_FUNCTION = EX_CALLBACK_FUNCTION;
 #[repr(C)]
@@ -22561,7 +22561,7 @@ pub type _IO_ALLOCATION_ACTION = ::core::ffi::c_uint;
 pub use self::_IO_ALLOCATION_ACTION as IO_ALLOCATION_ACTION;
 pub type PIO_ALLOCATION_ACTION = *mut _IO_ALLOCATION_ACTION;
 pub type DRIVER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         MapRegisterBase: PVOID,
@@ -22850,10 +22850,10 @@ pub struct _IO_WORKITEM {
 }
 pub type PIO_WORKITEM = *mut _IO_WORKITEM;
 pub type IO_WORKITEM_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Context: PVOID)>;
 pub type PIO_WORKITEM_ROUTINE = IO_WORKITEM_ROUTINE;
 pub type IO_WORKITEM_ROUTINE_EX = ::core::option::Option<
-    unsafe extern "C" fn(IoObject: PVOID, Context: PVOID, IoWorkItem: PIO_WORKITEM),
+    unsafe extern "system" fn(IoObject: PVOID, Context: PVOID, IoWorkItem: PIO_WORKITEM),
 >;
 pub type PIO_WORKITEM_ROUTINE_EX = IO_WORKITEM_ROUTINE_EX;
 #[repr(C)]
@@ -22897,7 +22897,7 @@ pub struct _IO_STATUS_BLOCK32 {
 pub type IO_STATUS_BLOCK32 = _IO_STATUS_BLOCK32;
 pub type PIO_STATUS_BLOCK32 = *mut _IO_STATUS_BLOCK32;
 pub type PIO_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+    unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
 >;
 pub const _IO_SESSION_EVENT_IoSessionEventIgnore: _IO_SESSION_EVENT = 0;
 pub const _IO_SESSION_EVENT_IoSessionEventCreated: _IO_SESSION_EVENT = 1;
@@ -24000,10 +24000,10 @@ pub struct _CM_EISA_FUNCTION_INFORMATION {
 }
 pub type CM_EISA_FUNCTION_INFORMATION = _CM_EISA_FUNCTION_INFORMATION;
 pub type PCM_EISA_FUNCTION_INFORMATION = *mut _CM_EISA_FUNCTION_INFORMATION;
-pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
-pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
+pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type TRANSLATE_BUS_ADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         BusAddress: PHYSICAL_ADDRESS,
         Length: ULONG,
@@ -24013,7 +24013,7 @@ pub type TRANSLATE_BUS_ADDRESS = ::core::option::Option<
 >;
 pub type PTRANSLATE_BUS_ADDRESS = TRANSLATE_BUS_ADDRESS;
 pub type GET_DMA_ADAPTER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DeviceDescriptor: *mut _DEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
@@ -24021,7 +24021,7 @@ pub type GET_DMA_ADAPTER = ::core::option::Option<
 >;
 pub type PGET_DMA_ADAPTER = GET_DMA_ADAPTER;
 pub type GET_SET_DEVICE_DATA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DataType: ULONG,
         Buffer: PVOID,
@@ -24052,7 +24052,7 @@ pub const _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval: _DEVICE_REM
 pub type _DEVICE_REMOVAL_POLICY = ::core::ffi::c_uint;
 pub use self::_DEVICE_REMOVAL_POLICY as DEVICE_REMOVAL_POLICY;
 pub type PDEVICE_REMOVAL_POLICY = *mut _DEVICE_REMOVAL_POLICY;
-pub type PREENUMERATE_SELF = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PREENUMERATE_SELF = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _REENUMERATE_SELF_INTERFACE_STANDARD {
@@ -24066,7 +24066,7 @@ pub struct _REENUMERATE_SELF_INTERFACE_STANDARD {
 pub type REENUMERATE_SELF_INTERFACE_STANDARD = _REENUMERATE_SELF_INTERFACE_STANDARD;
 pub type PREENUMERATE_SELF_INTERFACE_STANDARD = *mut _REENUMERATE_SELF_INTERFACE_STANDARD;
 pub type PIO_DEVICE_EJECT_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Status: NTSTATUS, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Status: NTSTATUS, Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PCI_DEVICE_PRESENCE_PARAMETERS {
@@ -24084,7 +24084,7 @@ pub struct _PCI_DEVICE_PRESENCE_PARAMETERS {
 pub type PCI_DEVICE_PRESENCE_PARAMETERS = _PCI_DEVICE_PRESENCE_PARAMETERS;
 pub type PPCI_DEVICE_PRESENCE_PARAMETERS = *mut _PCI_DEVICE_PRESENCE_PARAMETERS;
 pub type PCI_IS_DEVICE_PRESENT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         VendorID: USHORT,
         DeviceID: USHORT,
         RevisionID: UCHAR,
@@ -24095,7 +24095,7 @@ pub type PCI_IS_DEVICE_PRESENT = ::core::option::Option<
 >;
 pub type PPCI_IS_DEVICE_PRESENT = PCI_IS_DEVICE_PRESENT;
 pub type PCI_IS_DEVICE_PRESENT_EX = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Parameters: PPCI_DEVICE_PRESENCE_PARAMETERS) -> BOOLEAN,
+    unsafe extern "system" fn(Context: PVOID, Parameters: PPCI_DEVICE_PRESENCE_PARAMETERS) -> BOOLEAN,
 >;
 pub type PPCI_IS_DEVICE_PRESENT_EX = PCI_IS_DEVICE_PRESENT_EX;
 #[repr(C)]
@@ -25130,7 +25130,7 @@ pub struct _TARGET_DEVICE_REMOVAL_NOTIFICATION {
 pub type TARGET_DEVICE_REMOVAL_NOTIFICATION = _TARGET_DEVICE_REMOVAL_NOTIFICATION;
 pub type PTARGET_DEVICE_REMOVAL_NOTIFICATION = *mut _TARGET_DEVICE_REMOVAL_NOTIFICATION;
 pub type PREPLACE_MAP_MEMORY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TargetPhysicalAddress: PHYSICAL_ADDRESS,
         SparePhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: PLARGE_INTEGER,
@@ -25190,35 +25190,35 @@ pub struct _PNP_REPLACE_PARAMETERS {
 }
 pub type PNP_REPLACE_PARAMETERS = _PNP_REPLACE_PARAMETERS;
 pub type PPNP_REPLACE_PARAMETERS = *mut _PNP_REPLACE_PARAMETERS;
-pub type PREPLACE_UNLOAD = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PREPLACE_UNLOAD = ::core::option::Option<unsafe extern "system" fn()>;
 pub type PREPLACE_BEGIN = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: PPNP_REPLACE_PARAMETERS, Context: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: PPNP_REPLACE_PARAMETERS, Context: *mut PVOID) -> NTSTATUS,
 >;
-pub type PREPLACE_END = ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+pub type PREPLACE_END = ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_MIRROR_PHYSICAL_MEMORY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PhysicalAddress: PHYSICAL_ADDRESS,
         ByteCount: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type PREPLACE_SET_PROCESSOR_ID = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, ApicId: ULONG, Target: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, ApicId: ULONG, Target: BOOLEAN) -> NTSTATUS,
 >;
-pub type PREPLACE_SWAP = ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+pub type PREPLACE_SWAP = ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_INITIATE_HARDWARE_MIRROR =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_MIRROR_PLATFORM_MEMORY =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PREPLACE_GET_MEMORY_DESTINATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SourceAddress: PHYSICAL_ADDRESS,
         DestinationAddress: PPHYSICAL_ADDRESS,
     ) -> NTSTATUS,
 >;
 pub type PREPLACE_ENABLE_DISABLE_HARDWARE_QUIESCE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PNP_REPLACE_DRIVER_INTERFACE {
@@ -25239,7 +25239,7 @@ pub struct _PNP_REPLACE_DRIVER_INTERFACE {
 pub type PNP_REPLACE_DRIVER_INTERFACE = _PNP_REPLACE_DRIVER_INTERFACE;
 pub type PPNP_REPLACE_DRIVER_INTERFACE = *mut _PNP_REPLACE_DRIVER_INTERFACE;
 pub type PREPLACE_DRIVER_INIT = ::core::option::Option<
-    unsafe extern "C" fn(Interface: PPNP_REPLACE_DRIVER_INTERFACE, Unused: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Interface: PPNP_REPLACE_DRIVER_INTERFACE, Unused: PVOID) -> NTSTATUS,
 >;
 pub const _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeUndefined:
     _DEVICE_USAGE_NOTIFICATION_TYPE = 0;
@@ -25311,11 +25311,11 @@ pub const _IO_PRIORITY_HINT_MaxIoPriorityTypes: _IO_PRIORITY_HINT = 5;
 pub type _IO_PRIORITY_HINT = ::core::ffi::c_uint;
 pub use self::_IO_PRIORITY_HINT as IO_PRIORITY_HINT;
 pub type DRIVER_NOTIFICATION_CALLBACK_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(NotificationStructure: PVOID, Context: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(NotificationStructure: PVOID, Context: PVOID) -> NTSTATUS,
 >;
 pub type PDRIVER_NOTIFICATION_CALLBACK_ROUTINE = DRIVER_NOTIFICATION_CALLBACK_ROUTINE;
 pub type DEVICE_CHANGE_COMPLETE_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PDEVICE_CHANGE_COMPLETE_CALLBACK = DEVICE_CHANGE_COMPLETE_CALLBACK;
 pub const _FILE_INFORMATION_CLASS_FileDirectoryInformation: _FILE_INFORMATION_CLASS = 1;
 pub const _FILE_INFORMATION_CLASS_FileFullDirectoryInformation: _FILE_INFORMATION_CLASS = 2;
@@ -25510,7 +25510,7 @@ pub struct _FILE_SFIO_VOLUME_INFORMATION {
 pub type FILE_SFIO_VOLUME_INFORMATION = _FILE_SFIO_VOLUME_INFORMATION;
 pub type PFILE_SFIO_VOLUME_INFORMATION = *mut _FILE_SFIO_VOLUME_INFORMATION;
 pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25523,7 +25523,7 @@ pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
 >;
 pub type PFAST_IO_CHECK_IF_POSSIBLE = FAST_IO_CHECK_IF_POSSIBLE;
 pub type FAST_IO_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25536,7 +25536,7 @@ pub type FAST_IO_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_READ = FAST_IO_READ;
 pub type FAST_IO_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25549,7 +25549,7 @@ pub type FAST_IO_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE = FAST_IO_WRITE;
 pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_BASIC_INFORMATION,
@@ -25559,7 +25559,7 @@ pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_BASIC_INFO = FAST_IO_QUERY_BASIC_INFO;
 pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_STANDARD_INFORMATION,
@@ -25569,7 +25569,7 @@ pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_STANDARD_INFO = FAST_IO_QUERY_STANDARD_INFO;
 pub type FAST_IO_LOCK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -25583,7 +25583,7 @@ pub type FAST_IO_LOCK = ::core::option::Option<
 >;
 pub type PFAST_IO_LOCK = FAST_IO_LOCK;
 pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -25595,7 +25595,7 @@ pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_SINGLE = FAST_IO_UNLOCK_SINGLE;
 pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PEPROCESS,
         IoStatus: PIO_STATUS_BLOCK,
@@ -25604,7 +25604,7 @@ pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL = FAST_IO_UNLOCK_ALL;
 pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PVOID,
         Key: ULONG,
@@ -25614,7 +25614,7 @@ pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL_BY_KEY = FAST_IO_UNLOCK_ALL_BY_KEY;
 pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         InputBuffer: PVOID,
@@ -25628,17 +25628,17 @@ pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
 >;
 pub type PFAST_IO_DEVICE_CONTROL = FAST_IO_DEVICE_CONTROL;
 pub type FAST_IO_ACQUIRE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_ACQUIRE_FILE = FAST_IO_ACQUIRE_FILE;
 pub type FAST_IO_RELEASE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_RELEASE_FILE = FAST_IO_RELEASE_FILE;
 pub type FAST_IO_DETACH_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
+    unsafe extern "system" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
 >;
 pub type PFAST_IO_DETACH_DEVICE = FAST_IO_DETACH_DEVICE;
 pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: *mut _FILE_NETWORK_OPEN_INFORMATION,
@@ -25648,7 +25648,7 @@ pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_NETWORK_OPEN_INFO = FAST_IO_QUERY_NETWORK_OPEN_INFO;
 pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         EndingOffset: PLARGE_INTEGER,
         ResourceToRelease: *mut *mut _ERESOURCE,
@@ -25657,7 +25657,7 @@ pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_ACQUIRE_FOR_MOD_WRITE = FAST_IO_ACQUIRE_FOR_MOD_WRITE;
 pub type FAST_IO_MDL_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25669,7 +25669,7 @@ pub type FAST_IO_MDL_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ = FAST_IO_MDL_READ;
 pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -25677,7 +25677,7 @@ pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE = FAST_IO_MDL_READ_COMPLETE;
 pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25689,7 +25689,7 @@ pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_PREPARE_MDL_WRITE = FAST_IO_PREPARE_MDL_WRITE;
 pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -25698,7 +25698,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE = FAST_IO_MDL_WRITE_COMPLETE;
 pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25713,7 +25713,7 @@ pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_READ_COMPRESSED = FAST_IO_READ_COMPRESSED;
 pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -25728,7 +25728,7 @@ pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE_COMPRESSED = FAST_IO_WRITE_COMPRESSED;
 pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -25736,7 +25736,7 @@ pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE_COMPRESSED = FAST_IO_MDL_READ_COMPLETE_COMPRESSED;
 pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -25745,7 +25745,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED;
 pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Irp: *mut _IRP,
         NetworkInformation: PFILE_NETWORK_OPEN_INFORMATION,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -25753,7 +25753,7 @@ pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_OPEN = FAST_IO_QUERY_OPEN;
 pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ResourceToRelease: *mut _ERESOURCE,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -25761,14 +25761,14 @@ pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_RELEASE_FOR_MOD_WRITE = FAST_IO_RELEASE_FOR_MOD_WRITE;
 pub type FAST_IO_ACQUIRE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFAST_IO_ACQUIRE_FOR_CCFLUSH = FAST_IO_ACQUIRE_FOR_CCFLUSH;
 pub type FAST_IO_RELEASE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -26033,7 +26033,7 @@ pub struct _SCATTER_GATHER_LIST {
 pub type SCATTER_GATHER_LIST = _SCATTER_GATHER_LIST;
 pub type PSCATTER_GATHER_LIST = *mut _SCATTER_GATHER_LIST;
 pub type DRIVER_ADD_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -26050,25 +26050,25 @@ pub struct _DRIVER_EXTENSION {
 pub type DRIVER_EXTENSION = _DRIVER_EXTENSION;
 pub type PDRIVER_EXTENSION = *mut _DRIVER_EXTENSION;
 pub type DRIVER_INITIALIZE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PDRIVER_INITIALIZE = DRIVER_INITIALIZE;
 pub type DRIVER_STARTIO =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_STARTIO = DRIVER_STARTIO;
 pub type DRIVER_UNLOAD =
-    ::core::option::Option<unsafe extern "C" fn(DriverObject: *mut _DRIVER_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(DriverObject: *mut _DRIVER_OBJECT)>;
 pub type PDRIVER_UNLOAD = DRIVER_UNLOAD;
 pub type DRIVER_DISPATCH = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
 >;
 pub type PDRIVER_DISPATCH = DRIVER_DISPATCH;
 pub type DRIVER_DISPATCH_RAISED = DRIVER_DISPATCH;
 pub type DRIVER_DISPATCH_PAGED = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
 >;
 pub type PDRIVER_DISPATCH_PAGED = DRIVER_DISPATCH_PAGED;
 #[repr(C)]
@@ -26106,9 +26106,9 @@ pub const DMA_COMPLETION_STATUS_DmaAborted: DMA_COMPLETION_STATUS = 1;
 pub const DMA_COMPLETION_STATUS_DmaError: DMA_COMPLETION_STATUS = 2;
 pub const DMA_COMPLETION_STATUS_DmaCancelled: DMA_COMPLETION_STATUS = 3;
 pub type DMA_COMPLETION_STATUS = ::core::ffi::c_uint;
-pub type PPUT_DMA_ADAPTER = ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER)>;
+pub type PPUT_DMA_ADAPTER = ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER)>;
 pub type PALLOCATE_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Length: ULONG,
         LogicalAddress: PPHYSICAL_ADDRESS,
@@ -26116,7 +26116,7 @@ pub type PALLOCATE_COMMON_BUFFER = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PFREE_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Length: ULONG,
         LogicalAddress: PHYSICAL_ADDRESS,
@@ -26125,7 +26125,7 @@ pub type PFREE_COMMON_BUFFER = ::core::option::Option<
     ),
 >;
 pub type PALLOCATE_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         NumberOfMapRegisters: ULONG,
@@ -26134,7 +26134,7 @@ pub type PALLOCATE_ADAPTER_CHANNEL = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_ADAPTER_BUFFERS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -26144,16 +26144,16 @@ pub type PFLUSH_ADAPTER_BUFFERS = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFREE_ADAPTER_CHANNEL =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER)>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER)>;
 pub type PFREE_MAP_REGISTERS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MapRegisterBase: PVOID,
         NumberOfMapRegisters: ULONG,
     ),
 >;
 pub type PMAP_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -26163,11 +26163,11 @@ pub type PMAP_TRANSFER = ::core::option::Option<
     ) -> PHYSICAL_ADDRESS,
 >;
 pub type PGET_DMA_ALIGNMENT =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
 pub type PREAD_DMA_COUNTER =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> ULONG>;
 pub type DRIVER_LIST_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         ScatterGather: *mut _SCATTER_GATHER_LIST,
@@ -26176,7 +26176,7 @@ pub type DRIVER_LIST_CONTROL = ::core::option::Option<
 >;
 pub type PDRIVER_LIST_CONTROL = DRIVER_LIST_CONTROL;
 pub type PGET_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         Mdl: PMDL,
@@ -26188,14 +26188,14 @@ pub type PGET_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PPUT_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         ScatterGather: PSCATTER_GATHER_LIST,
         WriteToDevice: BOOLEAN,
     ),
 >;
 pub type PCALCULATE_SCATTER_GATHER_LIST_SIZE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         CurrentVa: PVOID,
@@ -26205,7 +26205,7 @@ pub type PCALCULATE_SCATTER_GATHER_LIST_SIZE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         Mdl: PMDL,
@@ -26219,7 +26219,7 @@ pub type PBUILD_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_MDL_FROM_SCATTER_GATHER_LIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         ScatterGather: PSCATTER_GATHER_LIST,
         OriginalMdl: PMDL,
@@ -26227,10 +26227,10 @@ pub type PBUILD_MDL_FROM_SCATTER_GATHER_LIST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_DMA_ADAPTER_INFO = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, AdapterInfo: PDMA_ADAPTER_INFO) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, AdapterInfo: PDMA_ADAPTER_INFO) -> NTSTATUS,
 >;
 pub type PGET_DMA_TRANSFER_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         Offset: ULONGLONG,
@@ -26240,10 +26240,10 @@ pub type PGET_DMA_TRANSFER_INFO = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PINITIALIZE_DMA_TRANSFER_CONTEXT = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
 >;
 pub type PALLOCATE_COMMON_BUFFER_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MaximumAddress: PPHYSICAL_ADDRESS,
         Length: ULONG,
@@ -26253,7 +26253,7 @@ pub type PALLOCATE_COMMON_BUFFER_EX = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PALLOCATE_ADAPTER_CHANNEL_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -26265,21 +26265,21 @@ pub type PALLOCATE_ADAPTER_CHANNEL_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCONFIGURE_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         FunctionNumber: ULONG,
         Context: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PCANCEL_ADAPTER_CHANNEL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
     ) -> BOOLEAN,
 >;
 pub type DMA_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         CompletionContext: PVOID,
@@ -26288,7 +26288,7 @@ pub type DMA_COMPLETION_ROUTINE = ::core::option::Option<
 >;
 pub type PDMA_COMPLETION_ROUTINE = DMA_COMPLETION_ROUTINE;
 pub type PMAP_TRANSFER_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -26303,7 +26303,7 @@ pub type PMAP_TRANSFER_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_SCATTER_GATHER_LIST_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -26320,7 +26320,7 @@ pub type PGET_SCATTER_GATHER_LIST_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PBUILD_SCATTER_GATHER_LIST_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DeviceObject: PDEVICE_OBJECT,
         DmaTransferContext: PVOID,
@@ -26339,7 +26339,7 @@ pub type PBUILD_SCATTER_GATHER_LIST_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_ADAPTER_BUFFERS_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Mdl: PMDL,
         MapRegisterBase: PVOID,
@@ -26349,13 +26349,13 @@ pub type PFLUSH_ADAPTER_BUFFERS_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFREE_ADAPTER_OBJECT = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, AllocationAction: IO_ALLOCATION_ACTION),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, AllocationAction: IO_ALLOCATION_ACTION),
 >;
 pub type PCANCEL_MAPPED_TRANSFER = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DmaTransferContext: PVOID) -> NTSTATUS,
 >;
 pub type PALLOCATE_DOMAIN_COMMON_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         DomainHandle: HANDLE,
         MaximumAddress: PPHYSICAL_ADDRESS,
@@ -26368,17 +26368,17 @@ pub type PALLOCATE_DOMAIN_COMMON_BUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFLUSH_DMA_BUFFER = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Mdl: PMDL, ReadOperation: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Mdl: PMDL, ReadOperation: BOOLEAN) -> NTSTATUS,
 >;
 pub type PJOIN_DMA_DOMAIN = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, DomainHandle: HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, DomainHandle: HANDLE) -> NTSTATUS,
 >;
 pub type PLEAVE_DMA_DOMAIN =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> NTSTATUS>;
 pub type PGET_DMA_DOMAIN =
-    ::core::option::Option<unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER) -> HANDLE>;
 pub type PALLOCATE_COMMON_BUFFER_WITH_BOUNDS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         MinimumAddress: PPHYSICAL_ADDRESS,
         MaximumAddress: PPHYSICAL_ADDRESS,
@@ -26397,7 +26397,7 @@ pub struct _DMA_COMMON_BUFFER_VECTOR {
 pub type DMA_COMMON_BUFFER_VECTOR = _DMA_COMMON_BUFFER_VECTOR;
 pub type PDMA_COMMON_BUFFER_VECTOR = *mut _DMA_COMMON_BUFFER_VECTOR;
 pub type PALLOCATE_COMMON_BUFFER_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         LowAddress: PHYSICAL_ADDRESS,
         HighAddress: PHYSICAL_ADDRESS,
@@ -26410,7 +26410,7 @@ pub type PALLOCATE_COMMON_BUFFER_VECTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGET_COMMON_BUFFER_FROM_VECTOR_BY_INDEX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DmaAdapter: PDMA_ADAPTER,
         Vector: PDMA_COMMON_BUFFER_VECTOR,
         Index: ULONG,
@@ -26419,10 +26419,10 @@ pub type PGET_COMMON_BUFFER_FROM_VECTOR_BY_INDEX = ::core::option::Option<
     ),
 >;
 pub type PFREE_COMMON_BUFFER_FROM_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR, Index: ULONG),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR, Index: ULONG),
 >;
 pub type PFREE_COMMON_BUFFER_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR),
+    unsafe extern "system" fn(DmaAdapter: PDMA_ADAPTER, Vector: PDMA_COMMON_BUFFER_VECTOR),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -26577,7 +26577,7 @@ pub struct _IO_RESOURCE_REQUIREMENTS_LIST {
 pub type IO_RESOURCE_REQUIREMENTS_LIST = _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type PIO_RESOURCE_REQUIREMENTS_LIST = *mut _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type DRIVER_CANCEL =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_CANCEL = DRIVER_CANCEL;
 #[repr(C)]
 #[repr(align(16))]
@@ -26679,7 +26679,7 @@ pub const _IO_PAGING_PRIORITY_IoPagingPriorityReserved2: _IO_PAGING_PRIORITY = 4
 pub type _IO_PAGING_PRIORITY = ::core::ffi::c_uint;
 pub use self::_IO_PAGING_PRIORITY as IO_PAGING_PRIORITY;
 pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         Context: PVOID,
@@ -26687,7 +26687,7 @@ pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
 >;
 pub type PIO_COMPLETION_ROUTINE = IO_COMPLETION_ROUTINE;
 pub type IO_DPC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Dpc: *mut _KDPC,
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
@@ -26696,10 +26696,10 @@ pub type IO_DPC_ROUTINE = ::core::option::Option<
 >;
 pub type PIO_DPC_ROUTINE = IO_DPC_ROUTINE;
 pub type PMM_DLL_INITIALIZE =
-    ::core::option::Option<unsafe extern "C" fn(RegistryPath: PUNICODE_STRING) -> NTSTATUS>;
-pub type PMM_DLL_UNLOAD = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(RegistryPath: PUNICODE_STRING) -> NTSTATUS>;
+pub type PMM_DLL_UNLOAD = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type IO_TIMER_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
 pub type PIO_TIMER_ROUTINE = IO_TIMER_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -26721,27 +26721,27 @@ pub struct _IO_CSQ_IRP_CONTEXT {
 pub type IO_CSQ_IRP_CONTEXT = _IO_CSQ_IRP_CONTEXT;
 pub type PIO_CSQ_IRP_CONTEXT = *mut _IO_CSQ_IRP_CONTEXT;
 pub type IO_CSQ_INSERT_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_INSERT_IRP = IO_CSQ_INSERT_IRP;
 pub type IO_CSQ_INSERT_IRP_EX = ::core::option::Option<
-    unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP, InsertContext: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP, InsertContext: PVOID) -> NTSTATUS,
 >;
 pub type PIO_CSQ_INSERT_IRP_EX = IO_CSQ_INSERT_IRP_EX;
 pub type IO_CSQ_REMOVE_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_REMOVE_IRP = IO_CSQ_REMOVE_IRP;
 pub type IO_CSQ_PEEK_NEXT_IRP = ::core::option::Option<
-    unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP, PeekContext: PVOID) -> PIRP,
+    unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP, PeekContext: PVOID) -> PIRP,
 >;
 pub type PIO_CSQ_PEEK_NEXT_IRP = IO_CSQ_PEEK_NEXT_IRP;
 pub type IO_CSQ_ACQUIRE_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irql: PKIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irql: PKIRQL)>;
 pub type PIO_CSQ_ACQUIRE_LOCK = IO_CSQ_ACQUIRE_LOCK;
 pub type IO_CSQ_RELEASE_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irql: KIRQL)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irql: KIRQL)>;
 pub type PIO_CSQ_RELEASE_LOCK = IO_CSQ_RELEASE_LOCK;
 pub type IO_CSQ_COMPLETE_CANCELED_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Csq: *mut _IO_CSQ, Irp: PIRP)>;
 pub type PIO_CSQ_COMPLETE_CANCELED_IRP = IO_CSQ_COMPLETE_CANCELED_IRP;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -26772,9 +26772,9 @@ pub type _DEVICE_TEXT_TYPE = ::core::ffi::c_uint;
 pub use self::_DEVICE_TEXT_TYPE as DEVICE_TEXT_TYPE;
 pub type PDEVICE_TEXT_TYPE = *mut _DEVICE_TEXT_TYPE;
 pub type PGPE_SERVICE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PVOID) -> BOOLEAN>;
 pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: ULONG,
         arg3: KINTERRUPT_MODE,
@@ -26785,24 +26785,24 @@ pub type PGPE_CONNECT_VECTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> NTSTATUS>;
 pub type PGPE_ENABLE_EVENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PGPE_DISABLE_EVENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PGPE_CLEAR_STATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PVOID) -> NTSTATUS>;
 pub type PDEVICE_NOTIFY_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: ULONG)>;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PDEVICE_OBJECT,
         arg2: PDEVICE_NOTIFY_CALLBACK,
         arg3: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
+    unsafe extern "system" fn(arg1: PDEVICE_OBJECT, arg2: PDEVICE_NOTIFY_CALLBACK),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -26823,10 +26823,10 @@ pub struct _ACPI_INTERFACE_STANDARD {
 pub type ACPI_INTERFACE_STANDARD = _ACPI_INTERFACE_STANDARD;
 pub type PACPI_INTERFACE_STANDARD = *mut _ACPI_INTERFACE_STANDARD;
 pub type PGPE_SERVICE_ROUTINE2 = ::core::option::Option<
-    unsafe extern "C" fn(ObjectContext: PVOID, ServiceContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(ObjectContext: PVOID, ServiceContext: PVOID) -> BOOLEAN,
 >;
 pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         GpeNumber: ULONG,
         Mode: KINTERRUPT_MODE,
@@ -26837,24 +26837,24 @@ pub type PGPE_CONNECT_VECTOR2 = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGPE_DISCONNECT_VECTOR2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_ENABLE_EVENT2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_DISABLE_EVENT2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PGPE_CLEAR_STATUS2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, ObjectContext: PVOID) -> NTSTATUS>;
 pub type PDEVICE_NOTIFY_CALLBACK2 =
-    ::core::option::Option<unsafe extern "C" fn(NotificationContext: PVOID, NotifyCode: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(NotificationContext: PVOID, NotifyCode: ULONG)>;
 pub type PREGISTER_FOR_DEVICE_NOTIFICATIONS2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         NotificationHandler: PDEVICE_NOTIFY_CALLBACK2,
         NotificationContext: PVOID,
     ) -> NTSTATUS,
 >;
 pub type PUNREGISTER_FOR_DEVICE_NOTIFICATIONS2 =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ACPI_INTERFACE_STANDARD2 {
@@ -27212,7 +27212,7 @@ pub struct _IO_STACK_LOCATION__bindgen_ty_1__bindgen_ty_39 {
 pub type IO_STACK_LOCATION = _IO_STACK_LOCATION;
 pub type PIO_STACK_LOCATION = *mut _IO_STACK_LOCATION;
 pub type FWMI_NOTIFICATION_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Wnode: PVOID, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Wnode: PVOID, Context: PVOID)>;
 pub type WMI_NOTIFICATION_CALLBACK = FWMI_NOTIFICATION_CALLBACK;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -35415,10 +35415,10 @@ pub struct _PCI_EXPRESS_SRIOV_CAPABILITY {
 pub type PCI_EXPRESS_SRIOV_CAPABILITY = _PCI_EXPRESS_SRIOV_CAPABILITY;
 pub type PPCI_EXPRESS_SRIOV_CAPABILITY = *mut _PCI_EXPRESS_SRIOV_CAPABILITY;
 pub type PCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PPCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE = PCI_EXPRESS_ENTER_LINK_QUIESCENT_MODE;
 pub type PCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> NTSTATUS>;
 pub type PPCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE = PCI_EXPRESS_EXIT_LINK_QUIESCENT_MODE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -35434,10 +35434,10 @@ pub struct _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE {
 pub type PCI_EXPRESS_LINK_QUIESCENT_INTERFACE = _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE;
 pub type PPCI_EXPRESS_LINK_QUIESCENT_INTERFACE = *mut _PCI_EXPRESS_LINK_QUIESCENT_INTERFACE;
 pub type PPCI_EXPRESS_ROOT_PORT_READ_CONFIG_SPACE = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
+    unsafe extern "system" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
 >;
 pub type PPCI_EXPRESS_ROOT_PORT_WRITE_CONFIG_SPACE = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
+    unsafe extern "system" fn(Context: PVOID, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -35453,14 +35453,14 @@ pub struct _PCI_EXPRESS_ROOT_PORT_INTERFACE {
 pub type PCI_EXPRESS_ROOT_PORT_INTERFACE = _PCI_EXPRESS_ROOT_PORT_INTERFACE;
 pub type PPCI_EXPRESS_ROOT_PORT_INTERFACE = *mut _PCI_EXPRESS_ROOT_PORT_INTERFACE;
 pub type PCI_MSIX_SET_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, TableEntry: ULONG, MessageNumber: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, TableEntry: ULONG, MessageNumber: ULONG) -> NTSTATUS,
 >;
 pub type PPCI_MSIX_SET_ENTRY = PCI_MSIX_SET_ENTRY;
 pub type PCI_MSIX_MASKUNMASK_ENTRY =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, TableEntry: ULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, TableEntry: ULONG) -> NTSTATUS>;
 pub type PPCI_MSIX_MASKUNMASK_ENTRY = PCI_MSIX_MASKUNMASK_ENTRY;
 pub type PCI_MSIX_GET_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         TableEntry: ULONG,
         MessageNumber: PULONG,
@@ -35469,7 +35469,7 @@ pub type PCI_MSIX_GET_ENTRY = ::core::option::Option<
 >;
 pub type PPCI_MSIX_GET_ENTRY = PCI_MSIX_GET_ENTRY;
 pub type PCI_MSIX_GET_TABLE_SIZE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, TableSize: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, TableSize: PULONG) -> NTSTATUS>;
 pub type PPCI_MSIX_GET_TABLE_SIZE = PCI_MSIX_GET_TABLE_SIZE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -35488,7 +35488,7 @@ pub struct _PCI_MSIX_TABLE_CONFIG_INTERFACE {
 pub type PCI_MSIX_TABLE_CONFIG_INTERFACE = _PCI_MSIX_TABLE_CONFIG_INTERFACE;
 pub type PPCI_MSIX_TABLE_CONFIG_INTERFACE = *mut _PCI_MSIX_TABLE_CONFIG_INTERFACE;
 pub type SET_D3COLD_SUPPORT =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, D3ColdSupport: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, D3ColdSupport: BOOLEAN)>;
 pub type PSET_D3COLD_SUPPORT = SET_D3COLD_SUPPORT;
 pub const _DEVICE_WAKE_DEPTH_DeviceWakeDepthNotWakeable: _DEVICE_WAKE_DEPTH = 0;
 pub const _DEVICE_WAKE_DEPTH_DeviceWakeDepthD0: _DEVICE_WAKE_DEPTH = 1;
@@ -35501,7 +35501,7 @@ pub type _DEVICE_WAKE_DEPTH = ::core::ffi::c_uint;
 pub use self::_DEVICE_WAKE_DEPTH as DEVICE_WAKE_DEPTH;
 pub type PDEVICE_WAKE_DEPTH = *mut _DEVICE_WAKE_DEPTH;
 pub type GET_IDLE_WAKE_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SystemPowerState: SYSTEM_POWER_STATE,
         DeepestWakeableDstate: PDEVICE_WAKE_DEPTH,
@@ -35509,7 +35509,7 @@ pub type GET_IDLE_WAKE_INFO = ::core::option::Option<
 >;
 pub type PGET_IDLE_WAKE_INFO = GET_IDLE_WAKE_INFO;
 pub type GET_D3COLD_CAPABILITY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, D3ColdSupported: PBOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, D3ColdSupported: PBOOLEAN) -> NTSTATUS,
 >;
 pub type PGET_D3COLD_CAPABILITY = GET_D3COLD_CAPABILITY;
 pub const _D3COLD_LAST_TRANSITION_STATUS_LastDStateTransitionStatusUnknown:
@@ -35522,7 +35522,7 @@ pub type _D3COLD_LAST_TRANSITION_STATUS = ::core::ffi::c_uint;
 pub use self::_D3COLD_LAST_TRANSITION_STATUS as D3COLD_LAST_TRANSITION_STATUS;
 pub type PD3COLD_LAST_TRANSITION_STATUS = *mut _D3COLD_LAST_TRANSITION_STATUS;
 pub type GET_D3COLD_LAST_TRANSITION_STATUS = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, LastTransitionStatus: PD3COLD_LAST_TRANSITION_STATUS),
+    unsafe extern "system" fn(Context: PVOID, LastTransitionStatus: PD3COLD_LAST_TRANSITION_STATUS),
 >;
 pub type PGET_D3COLD_LAST_TRANSITION_STATUS = GET_D3COLD_LAST_TRANSITION_STATUS;
 #[repr(C)]
@@ -35542,10 +35542,10 @@ pub struct _D3COLD_SUPPORT_INTERFACE {
 pub type D3COLD_SUPPORT_INTERFACE = _D3COLD_SUPPORT_INTERFACE;
 pub type PD3COLD_SUPPORT_INTERFACE = *mut _D3COLD_SUPPORT_INTERFACE;
 pub type D3COLD_REQUEST_CORE_POWER_RAIL =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, CorePowerRailNeeded: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, CorePowerRailNeeded: BOOLEAN)>;
 pub type PD3COLD_REQUEST_CORE_POWER_RAIL = D3COLD_REQUEST_CORE_POWER_RAIL;
 pub type D3COLD_REQUEST_AUX_POWER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         AuxPowerInMilliWatts: ULONG,
         RetryInSeconds: PULONG,
@@ -35553,7 +35553,7 @@ pub type D3COLD_REQUEST_AUX_POWER = ::core::option::Option<
 >;
 pub type PD3COLD_REQUEST_AUX_POWER = D3COLD_REQUEST_AUX_POWER;
 pub type D3COLD_REQUEST_PERST_DELAY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, DelayInMicroSeconds: ULONG) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, DelayInMicroSeconds: ULONG) -> NTSTATUS,
 >;
 pub type PD3COLD_REQUEST_PERST_DELAY = D3COLD_REQUEST_PERST_DELAY;
 #[repr(C)]
@@ -35841,13 +35841,13 @@ pub type _OB_PREOP_CALLBACK_STATUS = ::core::ffi::c_uint;
 pub use self::_OB_PREOP_CALLBACK_STATUS as OB_PREOP_CALLBACK_STATUS;
 pub type POB_PREOP_CALLBACK_STATUS = *mut _OB_PREOP_CALLBACK_STATUS;
 pub type POB_PRE_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistrationContext: PVOID,
         OperationInformation: POB_PRE_OPERATION_INFORMATION,
     ) -> OB_PREOP_CALLBACK_STATUS,
 >;
 pub type POB_POST_OPERATION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistrationContext: PVOID,
         OperationInformation: POB_POST_OPERATION_INFORMATION,
     ),
@@ -36001,7 +36001,7 @@ pub struct _EVENT_FILTER_HEADER {
 pub type EVENT_FILTER_HEADER = _EVENT_FILTER_HEADER;
 pub type PEVENT_FILTER_HEADER = *mut _EVENT_FILTER_HEADER;
 pub type PETWENABLECALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         SourceId: LPCGUID,
         ControlCode: ULONG,
         Level: UCHAR,
@@ -36312,7 +36312,7 @@ pub struct _TRANSACTION_LIST_INFORMATION {
 pub type TRANSACTION_LIST_INFORMATION = _TRANSACTION_LIST_INFORMATION;
 pub type PTRANSACTION_LIST_INFORMATION = *mut _TRANSACTION_LIST_INFORMATION;
 pub type PFN_NT_CREATE_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -36326,7 +36326,7 @@ pub type PFN_NT_CREATE_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_OPEN_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: PHANDLE,
         DesiredAccess: ACCESS_MASK,
         ObjectAttributes: POBJECT_ATTRIBUTES,
@@ -36335,7 +36335,7 @@ pub type PFN_NT_OPEN_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_QUERY_INFORMATION_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: HANDLE,
         TransactionInformationClass: TRANSACTION_INFORMATION_CLASS,
         TransactionInformation: PVOID,
@@ -36344,7 +36344,7 @@ pub type PFN_NT_QUERY_INFORMATION_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_SET_INFORMATION_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         TransactionHandle: HANDLE,
         TransactionInformationClass: TRANSACTION_INFORMATION_CLASS,
         TransactionInformation: PVOID,
@@ -36352,10 +36352,10 @@ pub type PFN_NT_SET_INFORMATION_TRANSACTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_NT_COMMIT_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
 >;
 pub type PFN_NT_ROLLBACK_TRANSACTION = ::core::option::Option<
-    unsafe extern "C" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(TransactionHandle: HANDLE, Wait: BOOLEAN) -> NTSTATUS,
 >;
 pub type error_status_t = ::core::ffi::c_ulong;
 pub type UUID = GUID;
@@ -36740,7 +36740,7 @@ pub type _CONFIGURATION_TYPE = ::core::ffi::c_uint;
 pub use self::_CONFIGURATION_TYPE as CONFIGURATION_TYPE;
 pub type PCONFIGURATION_TYPE = *mut _CONFIGURATION_TYPE;
 pub type PIO_QUERY_DEVICE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PathName: PUNICODE_STRING,
         BusType: INTERFACE_TYPE,
@@ -36764,7 +36764,7 @@ pub type _IO_QUERY_DEVICE_DATA_FORMAT = ::core::ffi::c_uint;
 pub use self::_IO_QUERY_DEVICE_DATA_FORMAT as IO_QUERY_DEVICE_DATA_FORMAT;
 pub type PIO_QUERY_DEVICE_DATA_FORMAT = *mut _IO_QUERY_DEVICE_DATA_FORMAT;
 pub type PDRIVER_REINITIALIZE = ::core::option::Option<
-    unsafe extern "C" fn(DriverObject: *mut _DRIVER_OBJECT, Context: PVOID, Count: ULONG),
+    unsafe extern "system" fn(DriverObject: *mut _DRIVER_OBJECT, Context: PVOID, Count: ULONG),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -36854,7 +36854,7 @@ pub struct _AGP_TARGET_BUS_INTERFACE_STANDARD {
 pub type AGP_TARGET_BUS_INTERFACE_STANDARD = _AGP_TARGET_BUS_INTERFACE_STANDARD;
 pub type PAGP_TARGET_BUS_INTERFACE_STANDARD = *mut _AGP_TARGET_BUS_INTERFACE_STANDARD;
 pub type PGET_LOCATION_STRING = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, LocationStrings: *mut PZZWSTR) -> NTSTATUS,
+    unsafe extern "system" fn(Context: PVOID, LocationStrings: *mut PZZWSTR) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -37000,7 +37000,7 @@ pub struct _ARBITER_LIST_ENTRY {
 pub type ARBITER_LIST_ENTRY = _ARBITER_LIST_ENTRY;
 pub type PARBITER_LIST_ENTRY = *mut _ARBITER_LIST_ENTRY;
 pub type PARBITER_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Action: ARBITER_ACTION,
         Parameters: PARBITER_PARAMETERS,
@@ -37026,7 +37026,7 @@ pub const _RESOURCE_TRANSLATION_DIRECTION_TranslateParentToChild: _RESOURCE_TRAN
 pub type _RESOURCE_TRANSLATION_DIRECTION = ::core::ffi::c_uint;
 pub use self::_RESOURCE_TRANSLATION_DIRECTION as RESOURCE_TRANSLATION_DIRECTION;
 pub type PTRANSLATE_RESOURCE_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Source: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
         Direction: RESOURCE_TRANSLATION_DIRECTION,
@@ -37037,7 +37037,7 @@ pub type PTRANSLATE_RESOURCE_HANDLER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PTRANSLATE_RESOURCE_REQUIREMENTS_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         Source: PIO_RESOURCE_DESCRIPTOR,
         PhysicalDeviceObject: PDEVICE_OBJECT,
@@ -45730,7 +45730,7 @@ pub struct _PHYSICAL_COUNTER_RESOURCE_LIST {
 pub type PHYSICAL_COUNTER_RESOURCE_LIST = _PHYSICAL_COUNTER_RESOURCE_LIST;
 pub type PPHYSICAL_COUNTER_RESOURCE_LIST = *mut _PHYSICAL_COUNTER_RESOURCE_LIST;
 pub type PciPin2Line = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         RootHandler: *mut _BUS_HANDLER,
         SlotNumber: PCI_SLOT_NUMBER,
@@ -45738,7 +45738,7 @@ pub type PciPin2Line = ::core::option::Option<
     ),
 >;
 pub type PciLine2Pin = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         RootHandler: *mut _BUS_HANDLER,
         SlotNumber: PCI_SLOT_NUMBER,
@@ -45747,7 +45747,7 @@ pub type PciLine2Pin = ::core::option::Option<
     ),
 >;
 pub type PciReadWriteConfig = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: *mut _BUS_HANDLER,
         Slot: PCI_SLOT_NUMBER,
         Buffer: PVOID,
@@ -45770,7 +45770,7 @@ pub struct _PCIBUSDATA {
 pub type PCIBUSDATA = _PCIBUSDATA;
 pub type PPCIBUSDATA = *mut _PCIBUSDATA;
 pub type PCI_READ_WRITE_CONFIG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         BusOffset: ULONG,
         Slot: ULONG,
@@ -45780,19 +45780,19 @@ pub type PCI_READ_WRITE_CONFIG = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PCI_PIN_TO_LINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, PciData: PPCI_COMMON_CONFIG)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, PciData: PPCI_COMMON_CONFIG)>;
 pub type PCI_LINE_TO_PIN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         PciNewData: PPCI_COMMON_CONFIG,
         PciOldData: PPCI_COMMON_CONFIG,
     ),
 >;
 pub type PCI_ROOT_BUS_CAPABILITY = ::core::option::Option<
-    unsafe extern "C" fn(Context: PVOID, HardwareCapability: PPCI_ROOT_BUS_HARDWARE_CAPABILITY),
+    unsafe extern "system" fn(Context: PVOID, HardwareCapability: PPCI_ROOT_BUS_HARDWARE_CAPABILITY),
 >;
 pub type PCI_EXPRESS_WAKE_CONTROL =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, EnableWake: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, EnableWake: BOOLEAN)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PCI_BUS_INTERFACE_STANDARD {
@@ -45928,7 +45928,7 @@ pub type _BUS_DATA_TYPE = ::core::ffi::c_int;
 pub use self::_BUS_DATA_TYPE as BUS_DATA_TYPE;
 pub type PBUS_DATA_TYPE = *mut _BUS_DATA_TYPE;
 pub type PLEGACY_DEVICE_DETECTION_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         LegacyBusType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -45946,7 +45946,7 @@ pub struct _ROUTING_TOKEN {
 pub type ROUTING_TOKEN = _ROUTING_TOKEN;
 pub type PROUTING_TOKEN = *mut _ROUTING_TOKEN;
 pub type PGET_INTERRUPT_ROUTING = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pdo: PDEVICE_OBJECT,
         Bus: *mut ULONG,
         PciSlot: *mut ULONG,
@@ -45960,10 +45960,10 @@ pub type PGET_INTERRUPT_ROUTING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PSET_INTERRUPT_ROUTING_TOKEN = ::core::option::Option<
-    unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, RoutingToken: PROUTING_TOKEN) -> NTSTATUS,
+    unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, RoutingToken: PROUTING_TOKEN) -> NTSTATUS,
 >;
 pub type PUPDATE_INTERRUPT_LINE =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, LineRegister: UCHAR)>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, LineRegister: UCHAR)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _INT_ROUTE_INTERFACE_STANDARD {
@@ -45997,17 +45997,17 @@ unsafe extern "C" {
     pub static GUID_PCI_PME_INTERFACE: GUID;
 }
 pub type PCARDBUSADD = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, DeviceContext: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, DeviceContext: *mut PVOID) -> NTSTATUS,
 >;
 pub type PCARDBUSDELETE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceContext: PVOID) -> NTSTATUS>;
 pub type PCARDBUSPCIDISPATCH =
-    ::core::option::Option<unsafe extern "C" fn(DeviceContext: PVOID, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceContext: PVOID, Irp: PIRP) -> NTSTATUS>;
 pub type PPME_SET_PME_ENABLE =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT, PmeEnable: BOOLEAN)>;
-pub type PPME_CLEAR_PME_STATUS = ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT, PmeEnable: BOOLEAN)>;
+pub type PPME_CLEAR_PME_STATUS = ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT)>;
 pub type PPME_GET_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Pdo: PDEVICE_OBJECT,
         PmeCapable: PBOOLEAN,
         PmeStatus: PBOOLEAN,
@@ -46044,7 +46044,7 @@ pub struct _PCI_PME_INTERFACE {
 pub type PCI_PME_INTERFACE = _PCI_PME_INTERFACE;
 pub type PPCI_PME_INTERFACE = *mut _PCI_PME_INTERFACE;
 pub type PHAL_RESET_DISPLAY_PARAMETERS =
-    ::core::option::Option<unsafe extern "C" fn(Columns: ULONG, Rows: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Columns: ULONG, Rows: ULONG) -> BOOLEAN>;
 pub type pHalHandlerForBus = ::core::option::Option<
     unsafe extern "C" fn(InterfaceType: INTERFACE_TYPE, BusNumber: ULONG) -> PBUS_HANDLER,
 >;
@@ -46106,7 +46106,7 @@ pub type _HAL_SET_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_HAL_SET_INFORMATION_CLASS as HAL_SET_INFORMATION_CLASS;
 pub type PHAL_SET_INFORMATION_CLASS = *mut _HAL_SET_INFORMATION_CLASS;
 pub type pHalQuerySystemInformation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InformationClass: HAL_QUERY_INFORMATION_CLASS,
         BufferSize: ULONG,
         Buffer: PVOID,
@@ -46114,7 +46114,7 @@ pub type pHalQuerySystemInformation = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type pHalSetSystemInformation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InformationClass: HAL_SET_INFORMATION_CLASS,
         BufferSize: ULONG,
         Buffer: PVOID,
@@ -46154,14 +46154,14 @@ pub type pHalIoWritePartitionTable = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type pHalQueryBusSlots = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         BufferSize: ULONG,
         SlotNumbers: PULONG,
         ReturnedLength: PULONG,
     ) -> NTSTATUS,
 >;
-pub type pHalInitPnpDriver = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type pHalInitPnpDriver = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PM_DISPATCH_TABLE {
@@ -46172,20 +46172,20 @@ pub struct _PM_DISPATCH_TABLE {
 pub type PM_DISPATCH_TABLE = _PM_DISPATCH_TABLE;
 pub type PPM_DISPATCH_TABLE = *mut _PM_DISPATCH_TABLE;
 pub type pHalInitPowerManagement = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PmDriverDispatchTable: PPM_DISPATCH_TABLE,
         PmHalDispatchTable: *mut PPM_DISPATCH_TABLE,
     ) -> NTSTATUS,
 >;
 pub type pHalGetDmaAdapter = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         DeviceDescriptor: *mut _DEVICE_DESCRIPTION,
         NumberOfMapRegisters: PULONG,
     ) -> *mut _DMA_ADAPTER,
 >;
 pub type pHalGetInterruptTranslator = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ParentInterfaceType: INTERFACE_TYPE,
         ParentBusNumber: ULONG,
         BridgeInterfaceType: INTERFACE_TYPE,
@@ -46195,23 +46195,23 @@ pub type pHalGetInterruptTranslator = ::core::option::Option<
         BridgeBusNumber: PULONG,
     ) -> NTSTATUS,
 >;
-pub type pHalStartMirroring = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type pHalStartMirroring = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type pHalEndMirroring =
-    ::core::option::Option<unsafe extern "C" fn(PassNumber: ULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(PassNumber: ULONG) -> NTSTATUS>;
 pub type pHalMirrorPhysicalMemory = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type pHalMirrorVerify = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PhysicalAddress: PHYSICAL_ADDRESS,
         NumberOfBytes: LARGE_INTEGER,
     ) -> NTSTATUS,
 >;
 pub type pHalTranslateBusAddress = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
         BusAddress: PHYSICAL_ADDRESS,
@@ -46220,7 +46220,7 @@ pub type pHalTranslateBusAddress = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type pHalAssignSlotResources = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         RegistryPath: PUNICODE_STRING,
         DriverClassName: PUNICODE_STRING,
         DriverObject: PDRIVER_OBJECT,
@@ -46231,8 +46231,8 @@ pub type pHalAssignSlotResources = ::core::option::Option<
         AllocatedResources: *mut PCM_RESOURCE_LIST,
     ) -> NTSTATUS,
 >;
-pub type pHalHaltSystem = ::core::option::Option<unsafe extern "C" fn()>;
-pub type pHalResetDisplay = ::core::option::Option<unsafe extern "C" fn() -> BOOLEAN>;
+pub type pHalHaltSystem = ::core::option::Option<unsafe extern "system" fn()>;
+pub type pHalResetDisplay = ::core::option::Option<unsafe extern "system" fn() -> BOOLEAN>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _MAP_REGISTER_ENTRY {
@@ -46242,9 +46242,9 @@ pub struct _MAP_REGISTER_ENTRY {
 pub type MAP_REGISTER_ENTRY = _MAP_REGISTER_ENTRY;
 pub type PMAP_REGISTER_ENTRY = *mut _MAP_REGISTER_ENTRY;
 pub type pHalVectorToIDTEntry =
-    ::core::option::Option<unsafe extern "C" fn(Vector: ULONG) -> UCHAR>;
+    ::core::option::Option<unsafe extern "system" fn(Vector: ULONG) -> UCHAR>;
 pub type pHalFindBusAddressTranslation = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusAddress: PHYSICAL_ADDRESS,
         AddressSpace: PULONG,
         TranslatedAddress: PPHYSICAL_ADDRESS,
@@ -46252,13 +46252,13 @@ pub type pHalFindBusAddressTranslation = ::core::option::Option<
         NextBus: BOOLEAN,
     ) -> BOOLEAN,
 >;
-pub type pHalEndOfBoot = ::core::option::Option<unsafe extern "C" fn()>;
+pub type pHalEndOfBoot = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pHalGetAcpiTable = ::core::option::Option<
-    unsafe extern "C" fn(Signature: ULONG, OemId: PCSTR, OemTableId: PCSTR) -> PVOID,
+    unsafe extern "system" fn(Signature: ULONG, OemId: PCSTR, OemTableId: PCSTR) -> PVOID,
 >;
-pub type PCI_ERROR_HANDLER_CALLBACK = ::core::option::Option<unsafe extern "C" fn()>;
+pub type PCI_ERROR_HANDLER_CALLBACK = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pHalSetPciErrorHandlerCallback =
-    ::core::option::Option<unsafe extern "C" fn(Callback: PCI_ERROR_HANDLER_CALLBACK)>;
+    ::core::option::Option<unsafe extern "system" fn(Callback: PCI_ERROR_HANDLER_CALLBACK)>;
 pub type pHalIoAssignDriveLetters = ::core::option::Option<
     unsafe extern "C" fn(
         LoaderBlock: *mut _LOADER_PARAMETER_BLOCK,
@@ -46381,7 +46381,7 @@ pub struct _HAL_PROCESSOR_FEATURE {
 }
 pub type HAL_PROCESSOR_FEATURE = _HAL_PROCESSOR_FEATURE;
 pub type PHALIOREADWRITEHANDLER = ::core::option::Option<
-    unsafe extern "C" fn(fRead: BOOLEAN, dwAddr: ULONG, dwSize: ULONG, pdwData: PULONG) -> NTSTATUS,
+    unsafe extern "system" fn(fRead: BOOLEAN, dwAddr: ULONG, dwSize: ULONG, pdwData: PULONG) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -46465,10 +46465,10 @@ pub union _NT_TIB64__bindgen_ty_1 {
 }
 pub type NT_TIB64 = _NT_TIB64;
 pub type PNT_TIB64 = *mut _NT_TIB64;
-pub type EXPAND_STACK_CALLOUT = ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID)>;
+pub type EXPAND_STACK_CALLOUT = ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID)>;
 pub type PEXPAND_STACK_CALLOUT = EXPAND_STACK_CALLOUT;
 pub type PTIMER_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
+    unsafe extern "system" fn(TimerContext: PVOID, TimerLowValue: ULONG, TimerHighValue: LONG),
 >;
 pub const _TIMER_SET_INFORMATION_CLASS_TimerSetCoalescableTimer: _TIMER_SET_INFORMATION_CLASS = 0;
 pub const _TIMER_SET_INFORMATION_CLASS_MaxTimerInfoClass: _TIMER_SET_INFORMATION_CLASS = 1;
@@ -46993,21 +46993,21 @@ pub struct _DEBUG_DEVICE_DESCRIPTOR {
 pub type DEBUG_DEVICE_DESCRIPTOR = _DEBUG_DEVICE_DESCRIPTOR;
 pub type PDEBUG_DEVICE_DESCRIPTOR = *mut _DEBUG_DEVICE_DESCRIPTOR;
 pub type pKdSetupPciDeviceForDebugging = ::core::option::Option<
-    unsafe extern "C" fn(LoaderBlock: PVOID, PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS,
+    unsafe extern "system" fn(LoaderBlock: PVOID, PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS,
 >;
 pub type pKdReleasePciDeviceForDebugging =
-    ::core::option::Option<unsafe extern "C" fn(PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(PciDevice: PDEBUG_DEVICE_DESCRIPTOR) -> NTSTATUS>;
 pub type pKdGetAcpiTablePhase0 = ::core::option::Option<
-    unsafe extern "C" fn(LoaderBlock: *mut _LOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID,
+    unsafe extern "system" fn(LoaderBlock: *mut _LOADER_PARAMETER_BLOCK, Signature: ULONG) -> PVOID,
 >;
-pub type pKdCheckPowerButton = ::core::option::Option<unsafe extern "C" fn()>;
+pub type pKdCheckPowerButton = ::core::option::Option<unsafe extern "system" fn()>;
 pub type pKdMapPhysicalMemory64 = ::core::option::Option<
-    unsafe extern "C" fn(PhysicalAddress: PHYSICAL_ADDRESS, NumberPages: ULONG) -> PVOID,
+    unsafe extern "system" fn(PhysicalAddress: PHYSICAL_ADDRESS, NumberPages: ULONG) -> PVOID,
 >;
 pub type pKdUnmapVirtualAddress =
-    ::core::option::Option<unsafe extern "C" fn(VirtualAddress: PVOID, NumberPages: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(VirtualAddress: PVOID, NumberPages: ULONG)>;
 pub type pKdGetPciDataByOffset = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusNumber: ULONG,
         SlotNumber: ULONG,
         Buffer: PVOID,
@@ -47016,7 +47016,7 @@ pub type pKdGetPciDataByOffset = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type pKdSetPciDataByOffset = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusNumber: ULONG,
         SlotNumber: ULONG,
         Buffer: PVOID,
@@ -47033,7 +47033,7 @@ pub struct _PHYSICAL_MEMORY_RANGE {
 pub type PHYSICAL_MEMORY_RANGE = _PHYSICAL_MEMORY_RANGE;
 pub type PPHYSICAL_MEMORY_RANGE = *mut _PHYSICAL_MEMORY_RANGE;
 pub type PMM_ROTATE_COPY_CALLBACK_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(DestinationMdl: PMDL, SourceMdl: PMDL, Context: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DestinationMdl: PMDL, SourceMdl: PMDL, Context: PVOID) -> NTSTATUS,
 >;
 pub const _MM_ROTATE_DIRECTION_MmToFrameBuffer: _MM_ROTATE_DIRECTION = 0;
 pub const _MM_ROTATE_DIRECTION_MmToFrameBufferNoCopy: _MM_ROTATE_DIRECTION = 1;
@@ -47264,7 +47264,7 @@ pub struct _PROCESS_EXCEPTION_PORT {
 pub type PROCESS_EXCEPTION_PORT = _PROCESS_EXCEPTION_PORT;
 pub type PPROCESS_EXCEPTION_PORT = *mut _PROCESS_EXCEPTION_PORT;
 pub type PCREATE_PROCESS_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ParentId: HANDLE, ProcessId: HANDLE, Create: BOOLEAN),
+    unsafe extern "system" fn(ParentId: HANDLE, ProcessId: HANDLE, Create: BOOLEAN),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -47378,10 +47378,10 @@ impl _PS_CREATE_NOTIFY_INFO__bindgen_ty_1__bindgen_ty_1 {
 pub type PS_CREATE_NOTIFY_INFO = _PS_CREATE_NOTIFY_INFO;
 pub type PPS_CREATE_NOTIFY_INFO = *mut _PS_CREATE_NOTIFY_INFO;
 pub type PCREATE_PROCESS_NOTIFY_ROUTINE_EX = ::core::option::Option<
-    unsafe extern "C" fn(Process: PEPROCESS, ProcessId: HANDLE, CreateInfo: PPS_CREATE_NOTIFY_INFO),
+    unsafe extern "system" fn(Process: PEPROCESS, ProcessId: HANDLE, CreateInfo: PPS_CREATE_NOTIFY_INFO),
 >;
 pub type PCREATE_THREAD_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ProcessId: HANDLE, ThreadId: HANDLE, Create: BOOLEAN),
+    unsafe extern "system" fn(ProcessId: HANDLE, ThreadId: HANDLE, Create: BOOLEAN),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -47614,7 +47614,7 @@ pub struct _IMAGE_INFO_EX {
 pub type IMAGE_INFO_EX = _IMAGE_INFO_EX;
 pub type PIMAGE_INFO_EX = *mut _IMAGE_INFO_EX;
 pub type PLOAD_IMAGE_NOTIFY_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(FullImageName: PUNICODE_STRING, ProcessId: HANDLE, ImageInfo: PIMAGE_INFO),
+    unsafe extern "system" fn(FullImageName: PUNICODE_STRING, ProcessId: HANDLE, ImageInfo: PIMAGE_INFO),
 >;
 pub const _PROCESSINFOCLASS_ProcessBasicInformation: _PROCESSINFOCLASS = 0;
 pub const _PROCESSINFOCLASS_ProcessQuotaLimits: _PROCESSINFOCLASS = 1;
@@ -48076,7 +48076,7 @@ pub union _RTL_RUN_ONCE {
 pub type RTL_RUN_ONCE = _RTL_RUN_ONCE;
 pub type PRTL_RUN_ONCE = *mut _RTL_RUN_ONCE;
 pub type RTL_RUN_ONCE_INIT_FN = ::core::option::Option<
-    unsafe extern "C" fn(RunOnce: PRTL_RUN_ONCE, Parameter: PVOID, Context: *mut PVOID) -> ULONG,
+    unsafe extern "system" fn(RunOnce: PRTL_RUN_ONCE, Parameter: PVOID, Context: *mut PVOID) -> ULONG,
 >;
 pub type PRTL_RUN_ONCE_INIT_FN = RTL_RUN_ONCE_INIT_FN;
 pub const _TABLE_SEARCH_RESULT_TableEmptyTree: _TABLE_SEARCH_RESULT = 0;
@@ -48091,7 +48091,7 @@ pub const _RTL_GENERIC_COMPARE_RESULTS_GenericEqual: _RTL_GENERIC_COMPARE_RESULT
 pub type _RTL_GENERIC_COMPARE_RESULTS = ::core::ffi::c_uint;
 pub use self::_RTL_GENERIC_COMPARE_RESULTS as RTL_GENERIC_COMPARE_RESULTS;
 pub type RTL_AVL_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Table: *mut _RTL_AVL_TABLE,
         FirstStruct: PVOID,
         SecondStruct: PVOID,
@@ -48099,14 +48099,14 @@ pub type RTL_AVL_COMPARE_ROUTINE = ::core::option::Option<
 >;
 pub type PRTL_AVL_COMPARE_ROUTINE = RTL_AVL_COMPARE_ROUTINE;
 pub type RTL_AVL_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, ByteSize: CLONG) -> PVOID,
+    unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, ByteSize: CLONG) -> PVOID,
 >;
 pub type PRTL_AVL_ALLOCATE_ROUTINE = RTL_AVL_ALLOCATE_ROUTINE;
 pub type RTL_AVL_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, Buffer: PVOID)>;
 pub type PRTL_AVL_FREE_ROUTINE = RTL_AVL_FREE_ROUTINE;
 pub type RTL_AVL_MATCH_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_AVL_TABLE, UserData: PVOID, MatchData: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Table: *mut _RTL_AVL_TABLE, UserData: PVOID, MatchData: PVOID) -> NTSTATUS,
 >;
 pub type PRTL_AVL_MATCH_FUNCTION = RTL_AVL_MATCH_FUNCTION;
 #[repr(C)]
@@ -48147,7 +48147,7 @@ pub struct _RTL_SPLAY_LINKS {
 pub type RTL_SPLAY_LINKS = _RTL_SPLAY_LINKS;
 pub type PRTL_SPLAY_LINKS = *mut _RTL_SPLAY_LINKS;
 pub type RTL_GENERIC_COMPARE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Table: *mut _RTL_GENERIC_TABLE,
         FirstStruct: PVOID,
         SecondStruct: PVOID,
@@ -48155,11 +48155,11 @@ pub type RTL_GENERIC_COMPARE_ROUTINE = ::core::option::Option<
 >;
 pub type PRTL_GENERIC_COMPARE_ROUTINE = RTL_GENERIC_COMPARE_ROUTINE;
 pub type RTL_GENERIC_ALLOCATE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Table: *mut _RTL_GENERIC_TABLE, ByteSize: CLONG) -> PVOID,
+    unsafe extern "system" fn(Table: *mut _RTL_GENERIC_TABLE, ByteSize: CLONG) -> PVOID,
 >;
 pub type PRTL_GENERIC_ALLOCATE_ROUTINE = RTL_GENERIC_ALLOCATE_ROUTINE;
 pub type RTL_GENERIC_FREE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Table: *mut _RTL_GENERIC_TABLE, Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Table: *mut _RTL_GENERIC_TABLE, Buffer: PVOID)>;
 pub type PRTL_GENERIC_FREE_ROUTINE = RTL_GENERIC_FREE_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -48515,7 +48515,7 @@ pub struct _SYSTEM_FIRMWARE_TABLE_HANDLER {
 pub type SYSTEM_FIRMWARE_TABLE_HANDLER = _SYSTEM_FIRMWARE_TABLE_HANDLER;
 pub type PSYSTEM_FIRMWARE_TABLE_HANDLER = *mut _SYSTEM_FIRMWARE_TABLE_HANDLER;
 pub type PDRIVER_VERIFIER_THUNK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID) -> ULONG_PTR>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID) -> ULONG_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DRIVER_VERIFIER_THUNK_PAIRS {
@@ -49109,7 +49109,7 @@ pub struct _SE_EXPORTS {
 pub type SE_EXPORTS = _SE_EXPORTS;
 pub type PSE_EXPORTS = *mut _SE_EXPORTS;
 pub type PSE_LOGON_SESSION_TERMINATED_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(LogonId: PLUID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(LogonId: PLUID) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _SECURITY_CLIENT_CONTEXT {
@@ -49132,8 +49132,8 @@ pub const _OBJECT_INFORMATION_CLASS_MaxObjectInfoClass: _OBJECT_INFORMATION_CLAS
 pub type _OBJECT_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_OBJECT_INFORMATION_CLASS as OBJECT_INFORMATION_CLASS;
 pub type PRTL_ALLOCATE_STRING_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(NumberOfBytes: SIZE_T) -> PVOID>;
-pub type PRTL_FREE_STRING_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Buffer: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(NumberOfBytes: SIZE_T) -> PVOID>;
+pub type PRTL_FREE_STRING_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Buffer: PVOID)>;
 unsafe extern "C" {
     pub static RtlAllocateStringRoutine: PRTL_ALLOCATE_STRING_ROUTINE;
 }
@@ -49141,7 +49141,7 @@ unsafe extern "C" {
     pub static RtlFreeStringRoutine: PRTL_FREE_STRING_ROUTINE;
 }
 pub type PRTL_HEAP_COMMIT_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T) -> NTSTATUS,
+    unsafe extern "system" fn(Base: PVOID, CommitAddress: *mut PVOID, CommitSize: PSIZE_T) -> NTSTATUS,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -50614,7 +50614,7 @@ pub struct _REMOTE_LINK_TRACKING_INFORMATION {
 pub type REMOTE_LINK_TRACKING_INFORMATION = _REMOTE_LINK_TRACKING_INFORMATION;
 pub type PREMOTE_LINK_TRACKING_INFORMATION = *mut _REMOTE_LINK_TRACKING_INFORMATION;
 pub type DRIVER_FS_NOTIFICATION =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, FsActive: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, FsActive: BOOLEAN)>;
 pub type PDRIVER_FS_NOTIFICATION = DRIVER_FS_NOTIFICATION;
 pub const _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeOther: _FS_FILTER_SECTION_SYNC_TYPE = 0;
 pub const _FS_FILTER_SECTION_SYNC_TYPE_SyncTypeCreateSection: _FS_FILTER_SECTION_SYNC_TYPE = 1;
@@ -50686,10 +50686,10 @@ pub struct _FS_FILTER_CALLBACK_DATA {
 pub type FS_FILTER_CALLBACK_DATA = _FS_FILTER_CALLBACK_DATA;
 pub type PFS_FILTER_CALLBACK_DATA = *mut _FS_FILTER_CALLBACK_DATA;
 pub type PFS_FILTER_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(Data: PFS_FILTER_CALLBACK_DATA, CompletionContext: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(Data: PFS_FILTER_CALLBACK_DATA, CompletionContext: *mut PVOID) -> NTSTATUS,
 >;
 pub type PFS_FILTER_COMPLETION_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Data: PFS_FILTER_CALLBACK_DATA,
         OperationStatus: NTSTATUS,
         CompletionContext: PVOID,
@@ -51116,7 +51116,7 @@ pub const _FSRTL_COMPARISON_RESULT_GreaterThan: _FSRTL_COMPARISON_RESULT = 1;
 pub type _FSRTL_COMPARISON_RESULT = ::core::ffi::c_int;
 pub use self::_FSRTL_COMPARISON_RESULT as FSRTL_COMPARISON_RESULT;
 pub type PFSRTL_STACK_OVERFLOW_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Event: PKEVENT)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Event: PKEVENT)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _FSRTL_PER_FILE_CONTEXT {
@@ -51149,7 +51149,7 @@ pub struct _FSRTL_PER_FILEOBJECT_CONTEXT {
 pub type FSRTL_PER_FILEOBJECT_CONTEXT = _FSRTL_PER_FILEOBJECT_CONTEXT;
 pub type PFSRTL_PER_FILEOBJECT_CONTEXT = *mut _FSRTL_PER_FILEOBJECT_CONTEXT;
 pub type PCOMPLETE_LOCK_IRP_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP) -> NTSTATUS>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _FILE_LOCK_INFO {
@@ -51164,7 +51164,7 @@ pub struct _FILE_LOCK_INFO {
 pub type FILE_LOCK_INFO = _FILE_LOCK_INFO;
 pub type PFILE_LOCK_INFO = *mut _FILE_LOCK_INFO;
 pub type PUNLOCK_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, FileLockInfo: PFILE_LOCK_INFO)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, FileLockInfo: PFILE_LOCK_INFO)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _FILE_LOCK {
@@ -51231,19 +51231,19 @@ pub type PEOF_WAIT_BLOCK = *mut _EOF_WAIT_BLOCK;
 pub type OPLOCK = PVOID;
 pub type POPLOCK = *mut PVOID;
 pub type POPLOCK_WAIT_COMPLETE_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP)>;
 pub type POPLOCK_FS_PREPOST_IRP =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Irp: PIRP)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Irp: PIRP)>;
 pub type PNOTIFY_SYNC = PVOID;
 pub type PCHECK_FOR_TRAVERSE_ACCESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         NotifyContext: PVOID,
         TargetContext: PVOID,
         SubjectContext: PSECURITY_SUBJECT_CONTEXT,
     ) -> BOOLEAN,
 >;
 pub type PFILTER_REPORT_CHANGE = ::core::option::Option<
-    unsafe extern "C" fn(NotifyContext: PVOID, FilterContext: PVOID) -> BOOLEAN,
+    unsafe extern "system" fn(NotifyContext: PVOID, FilterContext: PVOID) -> BOOLEAN,
 >;
 unsafe extern "C" {
     pub static FsRtlLegalAnsiCharacterArray: *const UCHAR;
@@ -51268,11 +51268,11 @@ pub struct _CC_FILE_SIZES {
 pub type CC_FILE_SIZES = _CC_FILE_SIZES;
 pub type PCC_FILE_SIZES = *mut _CC_FILE_SIZES;
 pub type PACQUIRE_FOR_LAZY_WRITE =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
-pub type PRELEASE_FROM_LAZY_WRITE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
+pub type PRELEASE_FROM_LAZY_WRITE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type PACQUIRE_FOR_READ_AHEAD =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
-pub type PRELEASE_FROM_READ_AHEAD = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Wait: BOOLEAN) -> BOOLEAN>;
+pub type PRELEASE_FROM_READ_AHEAD = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _CACHE_MANAGER_CALLBACKS {
@@ -51292,7 +51292,7 @@ pub struct _CACHE_UNINITIALIZE_EVENT {
 pub type CACHE_UNINITIALIZE_EVENT = _CACHE_UNINITIALIZE_EVENT;
 pub type PCACHE_UNINITIALIZE_EVENT = *mut _CACHE_UNINITIALIZE_EVENT;
 pub type PDIRTY_PAGE_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: PFILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -51303,9 +51303,9 @@ pub type PDIRTY_PAGE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type PFLUSH_TO_LSN =
-    ::core::option::Option<unsafe extern "C" fn(LogHandle: PVOID, Lsn: LARGE_INTEGER)>;
+    ::core::option::Option<unsafe extern "system" fn(LogHandle: PVOID, Lsn: LARGE_INTEGER)>;
 pub type PCC_POST_DEFERRED_WRITE =
-    ::core::option::Option<unsafe extern "C" fn(Context1: PVOID, Context2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Context1: PVOID, Context2: PVOID)>;
 unsafe extern "C" {
     pub static mut CcFastMdlReadWait: ULONG;
 }
@@ -51631,7 +51631,7 @@ pub type PSecPkgContext_LogoffTime = *mut _SecPkgContext_LogoffTime;
 pub type SecurityFunctionTableW = _SECURITY_FUNCTION_TABLE_W;
 pub type PSecurityFunctionTableW = *mut _SECURITY_FUNCTION_TABLE_W;
 pub type SEC_GET_KEY_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Arg: PVOID,
         Principal: PVOID,
         KeyVer: ULONG,
@@ -51640,7 +51640,7 @@ pub type SEC_GET_KEY_FN = ::core::option::Option<
     ),
 >;
 pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: PSecBufferDesc,
@@ -51653,7 +51653,7 @@ pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PSECURITY_STRING,
         arg2: PSECURITY_STRING,
         arg3: ULONG,
@@ -51666,7 +51666,7 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: *mut SEC_CHAR,
         arg3: *mut SEC_CHAR,
@@ -51678,7 +51678,7 @@ pub type ADD_CREDENTIALS_FN_A = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PSECURITY_STRING,
         arg3: PSECURITY_STRING,
@@ -51690,13 +51690,13 @@ pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type APPLY_CONTROL_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type COMPLETE_AUTH_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
 pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -51704,9 +51704,9 @@ pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type DELETE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -51714,10 +51714,10 @@ pub type ENCRYPT_MESSAGE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type ENUMERATE_SECURITY_PACKAGES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBuffer,
@@ -51725,13 +51725,13 @@ pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type FREE_CONTEXT_BUFFER_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> SECURITY_STATUS>;
 pub type FREE_CREDENTIALS_HANDLE_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
 pub type IMPERSONATE_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PSECURITY_STRING,
         arg2: PSecBuffer,
         arg3: PVOID,
@@ -51739,7 +51739,7 @@ pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: PCtxtHandle,
         arg3: PSECURITY_STRING,
@@ -51755,9 +51755,9 @@ pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type INIT_SECURITY_INTERFACE_W =
-    ::core::option::Option<unsafe extern "C" fn() -> PSecurityFunctionTableW>;
+    ::core::option::Option<unsafe extern "system" fn() -> PSecurityFunctionTableW>;
 pub type MAKE_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PSecBufferDesc,
@@ -51765,21 +51765,21 @@ pub type MAKE_SIGNATURE_FN = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type QUERY_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCredHandle, arg2: ULONG, arg3: PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_CONTEXT_TOKEN_FN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PCtxtHandle, arg2: *mut PVOID) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PCtxtHandle, arg2: *mut PVOID) -> SECURITY_STATUS,
 >;
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PSECURITY_STRING, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
+    unsafe extern "system" fn(arg1: PSECURITY_STRING, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
 pub type REVERT_SECURITY_CONTEXT_FN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
 pub type SET_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: ULONG,
         arg3: PVOID,
@@ -51787,7 +51787,7 @@ pub type SET_CONTEXT_ATTRIBUTES_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type SET_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCredHandle,
         arg2: ULONG,
         arg3: PVOID,
@@ -51795,7 +51795,7 @@ pub type SET_CREDENTIALS_ATTRIBUTES_FN_W = ::core::option::Option<
     ) -> SECURITY_STATUS,
 >;
 pub type VERIFY_SIGNATURE_FN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PCtxtHandle,
         arg2: PSecBufferDesc,
         arg3: ULONG,
@@ -52408,7 +52408,7 @@ pub struct _VIDEO_WIN32K_CALLBACKS_PARAMS {
 }
 pub type VIDEO_WIN32K_CALLBACKS_PARAMS = _VIDEO_WIN32K_CALLBACKS_PARAMS;
 pub type PVIDEO_WIN32K_CALLBACKS_PARAMS = *mut _VIDEO_WIN32K_CALLBACKS_PARAMS;
-pub type PVIDEO_WIN32K_CALLOUT = ::core::option::Option<unsafe extern "C" fn(Params: PVOID)>;
+pub type PVIDEO_WIN32K_CALLOUT = ::core::option::Option<unsafe extern "system" fn(Params: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _VIDEO_WIN32K_CALLBACKS {
@@ -52812,9 +52812,9 @@ pub type HGLOBAL = HANDLE;
 pub type HLOCAL = HANDLE;
 pub type GLOBALHANDLE = HANDLE;
 pub type LOCALHANDLE = HANDLE;
-pub type FARPROC = ::core::option::Option<unsafe extern "C" fn() -> INT_PTR>;
-pub type NEARPROC = ::core::option::Option<unsafe extern "C" fn() -> INT_PTR>;
-pub type PROC = ::core::option::Option<unsafe extern "C" fn() -> INT_PTR>;
+pub type FARPROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
+pub type NEARPROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
+pub type PROC = ::core::option::Option<unsafe extern "system" fn() -> INT_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct HKEY__ {
@@ -66437,7 +66437,7 @@ pub type ENUMTEXTMETRICW = _ENUMTEXTMETRICW;
 pub type PENUMTEXTMETRICW = *mut _ENUMTEXTMETRICW;
 pub type LPENUMTEXTMETRICW = *mut _ENUMTEXTMETRICW;
 pub type OLDFONTENUMPROCA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *const LOGFONTA,
         arg2: *const TEXTMETRICA,
         arg3: DWORD,
@@ -66445,7 +66445,7 @@ pub type OLDFONTENUMPROCA = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type OLDFONTENUMPROCW = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: *const LOGFONTW,
         arg2: *const TEXTMETRICW,
         arg3: DWORD,
@@ -66456,13 +66456,13 @@ pub type FONTENUMPROCA = OLDFONTENUMPROCA;
 pub type FONTENUMPROCW = OLDFONTENUMPROCW;
 pub type FONTENUMPROC = FONTENUMPROCA;
 pub type GOBJENUMPROC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID, arg2: LPARAM) -> INT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID, arg2: LPARAM) -> INT>;
 pub type LINEDDAPROC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: INT, arg2: INT, arg3: LPARAM)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: INT, arg2: INT, arg3: LPARAM)>;
 pub type ABORTPROC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL>;
 pub type MFENUMPROC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hdc: HDC,
         lpht: *mut HANDLETABLE,
         lpMR: *mut METARECORD,
@@ -66471,7 +66471,7 @@ pub type MFENUMPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type ENHMFENUMPROC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hdc: HDC,
         lpht: *mut HANDLETABLE,
         lpmr: *const ENHMETARECORD,
@@ -66480,11 +66480,11 @@ pub type ENHMFENUMPROC = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type ICMENUMPROCA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
 pub type ICMENUMPROCW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPWSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> ::core::ffi::c_int>;
 pub type LPFNDEVMODE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: HMODULE,
         arg3: LPDEVMODEA,
@@ -66496,7 +66496,7 @@ pub type LPFNDEVMODE = ::core::option::Option<
     ) -> UINT,
 >;
 pub type LPFNDEVCAPS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPSTR,
         arg2: LPSTR,
         arg3: UINT,
@@ -66504,7 +66504,7 @@ pub type LPFNDEVCAPS = ::core::option::Option<
         arg5: LPDEVMODEA,
     ) -> DWORD,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiAlphaBlend(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -66519,28 +66519,28 @@ unsafe extern "C" {
         arg11: BLENDFUNCTION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiComment(hdc: HDC, nSize: UINT, lpData: *const BYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiConvertToDevmodeW(arg1: *const DEVMODEA) -> *mut DEVMODEW;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiFlush() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetCharDimensions(arg1: HDC, arg2: LPTEXTMETRICW, arg3: *mut LONG) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetCodePage(arg1: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetBatchLimit() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiSetBatchLimit(arg1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGradientFill(
         hdc: HDC,
         pVertex: PTRIVERTEX,
@@ -66550,7 +66550,7 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiTransparentBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -66565,7 +66565,7 @@ unsafe extern "C" {
         arg11: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiIsMetaFileDC(arg1: HDC) -> BOOL;
 }
 #[repr(C)]
@@ -67327,21 +67327,21 @@ pub struct _DDRGBA {
 pub type DDRGBA = _DDRGBA;
 pub type LPDDRGBA = *mut _DDRGBA;
 pub type LPDDENUMMODESCALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDSURFACEDESC, arg2: LPVOID) -> HRESULT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDSURFACEDESC, arg2: LPVOID) -> HRESULT>;
 pub type LPDDENUMMODESCALLBACK2 =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDSURFACEDESC2, arg2: LPVOID) -> HRESULT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDSURFACEDESC2, arg2: LPVOID) -> HRESULT>;
 pub type LPDDENUMSURFACESCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPDIRECTDRAWSURFACE, arg2: LPDDSURFACEDESC, arg3: LPVOID) -> HRESULT,
+    unsafe extern "system" fn(arg1: LPDIRECTDRAWSURFACE, arg2: LPDDSURFACEDESC, arg3: LPVOID) -> HRESULT,
 >;
 pub type LPDDENUMSURFACESCALLBACK2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPDIRECTDRAWSURFACE4,
         arg2: LPDDSURFACEDESC2,
         arg3: LPVOID,
     ) -> HRESULT,
 >;
 pub type LPDDENUMSURFACESCALLBACK7 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPDIRECTDRAWSURFACE7,
         arg2: LPDDSURFACEDESC2,
         arg3: LPVOID,
@@ -67848,7 +67848,7 @@ pub struct _DD_LOCKDATA {
 pub type DD_LOCKDATA = _DD_LOCKDATA;
 pub type PDD_LOCKDATA = *mut _DD_LOCKDATA;
 pub type PDD_SURFCB_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_LOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_LOCKDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_UNLOCKDATA {
@@ -67860,7 +67860,7 @@ pub struct _DD_UNLOCKDATA {
 pub type DD_UNLOCKDATA = _DD_UNLOCKDATA;
 pub type PDD_UNLOCKDATA = *mut _DD_UNLOCKDATA;
 pub type PDD_SURFCB_UNLOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_UNLOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_UNLOCKDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DD_BLTDATA {
@@ -67884,7 +67884,7 @@ pub struct _DD_BLTDATA {
 }
 pub type DD_BLTDATA = _DD_BLTDATA;
 pub type PDD_BLTDATA = *mut _DD_BLTDATA;
-pub type PDD_SURFCB_BLT = ::core::option::Option<unsafe extern "C" fn(arg1: PDD_BLTDATA) -> DWORD>;
+pub type PDD_SURFCB_BLT = ::core::option::Option<unsafe extern "system" fn(arg1: PDD_BLTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DD_UPDATEOVERLAYDATA {
@@ -67901,7 +67901,7 @@ pub struct _DD_UPDATEOVERLAYDATA {
 pub type DD_UPDATEOVERLAYDATA = _DD_UPDATEOVERLAYDATA;
 pub type PDD_UPDATEOVERLAYDATA = *mut _DD_UPDATEOVERLAYDATA;
 pub type PDD_SURFCB_UPDATEOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_UPDATEOVERLAYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_UPDATEOVERLAYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETOVERLAYPOSITIONDATA {
@@ -67916,7 +67916,7 @@ pub struct _DD_SETOVERLAYPOSITIONDATA {
 pub type DD_SETOVERLAYPOSITIONDATA = _DD_SETOVERLAYPOSITIONDATA;
 pub type PDD_SETOVERLAYPOSITIONDATA = *mut _DD_SETOVERLAYPOSITIONDATA;
 pub type PDD_SURFCB_SETOVERLAYPOSITION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETOVERLAYPOSITIONDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETOVERLAYPOSITIONDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETPALETTEDATA {
@@ -67930,7 +67930,7 @@ pub struct _DD_SETPALETTEDATA {
 pub type DD_SETPALETTEDATA = _DD_SETPALETTEDATA;
 pub type PDD_SETPALETTEDATA = *mut _DD_SETPALETTEDATA;
 pub type PDD_SURFCB_SETPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETPALETTEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_FLIPDATA {
@@ -67946,7 +67946,7 @@ pub struct _DD_FLIPDATA {
 pub type DD_FLIPDATA = _DD_FLIPDATA;
 pub type PDD_FLIPDATA = *mut _DD_FLIPDATA;
 pub type PDD_SURFCB_FLIP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_FLIPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_FLIPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DESTROYSURFACEDATA {
@@ -67958,7 +67958,7 @@ pub struct _DD_DESTROYSURFACEDATA {
 pub type DD_DESTROYSURFACEDATA = _DD_DESTROYSURFACEDATA;
 pub type PDD_DESTROYSURFACEDATA = *mut _DD_DESTROYSURFACEDATA;
 pub type PDD_SURFCB_DESTROYSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYSURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETCLIPLISTDATA {
@@ -67970,7 +67970,7 @@ pub struct _DD_SETCLIPLISTDATA {
 pub type DD_SETCLIPLISTDATA = _DD_SETCLIPLISTDATA;
 pub type PDD_SETCLIPLISTDATA = *mut _DD_SETCLIPLISTDATA;
 pub type PDD_SURFCB_SETCLIPLIST =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETCLIPLISTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETCLIPLISTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_ADDATTACHEDSURFACEDATA {
@@ -67983,7 +67983,7 @@ pub struct _DD_ADDATTACHEDSURFACEDATA {
 pub type DD_ADDATTACHEDSURFACEDATA = _DD_ADDATTACHEDSURFACEDATA;
 pub type PDD_ADDATTACHEDSURFACEDATA = *mut _DD_ADDATTACHEDSURFACEDATA;
 pub type PDD_SURFCB_ADDATTACHEDSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_ADDATTACHEDSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_ADDATTACHEDSURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETCOLORKEYDATA {
@@ -67997,7 +67997,7 @@ pub struct _DD_SETCOLORKEYDATA {
 pub type DD_SETCOLORKEYDATA = _DD_SETCOLORKEYDATA;
 pub type PDD_SETCOLORKEYDATA = *mut _DD_SETCOLORKEYDATA;
 pub type PDD_SURFCB_SETCOLORKEY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETCOLORKEYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETCOLORKEYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETBLTSTATUSDATA {
@@ -68010,7 +68010,7 @@ pub struct _DD_GETBLTSTATUSDATA {
 pub type DD_GETBLTSTATUSDATA = _DD_GETBLTSTATUSDATA;
 pub type PDD_GETBLTSTATUSDATA = *mut _DD_GETBLTSTATUSDATA;
 pub type PDD_SURFCB_GETBLTSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETBLTSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETBLTSTATUSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETFLIPSTATUSDATA {
@@ -68023,7 +68023,7 @@ pub struct _DD_GETFLIPSTATUSDATA {
 pub type DD_GETFLIPSTATUSDATA = _DD_GETFLIPSTATUSDATA;
 pub type PDD_GETFLIPSTATUSDATA = *mut _DD_GETFLIPSTATUSDATA;
 pub type PDD_SURFCB_GETFLIPSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETFLIPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETFLIPSTATUSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_SURFACECALLBACKS {
@@ -68058,7 +68058,7 @@ pub struct _DD_CREATESURFACEDATA {
 pub type DD_CREATESURFACEDATA = _DD_CREATESURFACEDATA;
 pub type PDD_CREATESURFACEDATA = *mut _DD_CREATESURFACEDATA;
 pub type PDD_CREATESURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CREATESURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DRVSETCOLORKEYDATA {
@@ -68071,7 +68071,7 @@ pub struct _DD_DRVSETCOLORKEYDATA {
 pub type DD_DRVSETCOLORKEYDATA = _DD_DRVSETCOLORKEYDATA;
 pub type PDD_DRVSETCOLORKEYDATA = *mut _DD_DRVSETCOLORKEYDATA;
 pub type PDD_SETCOLORKEY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DRVSETCOLORKEYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DRVSETCOLORKEYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_WAITFORVERTICALBLANKDATA {
@@ -68085,7 +68085,7 @@ pub struct _DD_WAITFORVERTICALBLANKDATA {
 pub type DD_WAITFORVERTICALBLANKDATA = _DD_WAITFORVERTICALBLANKDATA;
 pub type PDD_WAITFORVERTICALBLANKDATA = *mut _DD_WAITFORVERTICALBLANKDATA;
 pub type PDD_WAITFORVERTICALBLANK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_WAITFORVERTICALBLANKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_WAITFORVERTICALBLANKDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_CANCREATESURFACEDATA {
@@ -68098,7 +68098,7 @@ pub struct _DD_CANCREATESURFACEDATA {
 pub type DD_CANCREATESURFACEDATA = _DD_CANCREATESURFACEDATA;
 pub type PDD_CANCREATESURFACEDATA = *mut _DD_CANCREATESURFACEDATA;
 pub type PDD_CANCREATESURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CANCREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CANCREATESURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_CREATEPALETTEDATA {
@@ -68112,7 +68112,7 @@ pub struct _DD_CREATEPALETTEDATA {
 pub type DD_CREATEPALETTEDATA = _DD_CREATEPALETTEDATA;
 pub type PDD_CREATEPALETTEDATA = *mut _DD_CREATEPALETTEDATA;
 pub type PDD_CREATEPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CREATEPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CREATEPALETTEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETSCANLINEDATA {
@@ -68124,7 +68124,7 @@ pub struct _DD_GETSCANLINEDATA {
 pub type DD_GETSCANLINEDATA = _DD_GETSCANLINEDATA;
 pub type PDD_GETSCANLINEDATA = *mut _DD_GETSCANLINEDATA;
 pub type PDD_GETSCANLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETSCANLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETSCANLINEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_MAPMEMORYDATA {
@@ -68137,7 +68137,7 @@ pub struct _DD_MAPMEMORYDATA {
 pub type DD_MAPMEMORYDATA = _DD_MAPMEMORYDATA;
 pub type PDD_MAPMEMORYDATA = *mut _DD_MAPMEMORYDATA;
 pub type PDD_MAPMEMORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_MAPMEMORYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_MAPMEMORYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DESTROYDRIVERDATA {
@@ -68151,8 +68151,8 @@ pub struct _DD_SETMODEDATA {
 }
 pub type PDD_SETMODEDATA = *mut _DD_SETMODEDATA;
 pub type PDD_DESTROYDRIVER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYDRIVERDATA) -> DWORD>;
-pub type PDD_SETMODE = ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETMODEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYDRIVERDATA) -> DWORD>;
+pub type PDD_SETMODE = ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETMODEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_CALLBACKS {
@@ -68182,7 +68182,7 @@ pub struct _DD_GETAVAILDRIVERMEMORYDATA {
 pub type DD_GETAVAILDRIVERMEMORYDATA = _DD_GETAVAILDRIVERMEMORYDATA;
 pub type PDD_GETAVAILDRIVERMEMORYDATA = *mut _DD_GETAVAILDRIVERMEMORYDATA;
 pub type PDD_GETAVAILDRIVERMEMORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETAVAILDRIVERMEMORYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETAVAILDRIVERMEMORYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_MISCELLANEOUSCALLBACKS {
@@ -68192,7 +68192,7 @@ pub struct _DD_MISCELLANEOUSCALLBACKS {
 }
 pub type DD_MISCELLANEOUSCALLBACKS = _DD_MISCELLANEOUSCALLBACKS;
 pub type PDD_MISCELLANEOUSCALLBACKS = *mut _DD_MISCELLANEOUSCALLBACKS;
-pub type PDD_ALPHABLT = ::core::option::Option<unsafe extern "C" fn(arg1: PDD_BLTDATA) -> DWORD>;
+pub type PDD_ALPHABLT = ::core::option::Option<unsafe extern "system" fn(arg1: PDD_BLTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_CREATESURFACEEXDATA {
@@ -68204,7 +68204,7 @@ pub struct _DD_CREATESURFACEEXDATA {
 pub type DD_CREATESURFACEEXDATA = _DD_CREATESURFACEEXDATA;
 pub type PDD_CREATESURFACEEXDATA = *mut _DD_CREATESURFACEEXDATA;
 pub type PDD_CREATESURFACEEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CREATESURFACEEXDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CREATESURFACEEXDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DD_GETDRIVERSTATEDATA {
@@ -68223,7 +68223,7 @@ pub union _DD_GETDRIVERSTATEDATA__bindgen_ty_1 {
 pub type DD_GETDRIVERSTATEDATA = _DD_GETDRIVERSTATEDATA;
 pub type PDD_GETDRIVERSTATEDATA = *mut _DD_GETDRIVERSTATEDATA;
 pub type PDD_GETDRIVERSTATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETDRIVERSTATEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETDRIVERSTATEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DESTROYDDLOCALDATA {
@@ -68234,7 +68234,7 @@ pub struct _DD_DESTROYDDLOCALDATA {
 pub type DD_DESTROYDDLOCALDATA = _DD_DESTROYDDLOCALDATA;
 pub type PDD_DESTROYDDLOCALDATA = *mut _DD_DESTROYDDLOCALDATA;
 pub type PDD_DESTROYDDLOCAL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYDDLOCALDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYDDLOCALDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_MISCELLANEOUS2CALLBACKS {
@@ -68258,7 +68258,7 @@ pub struct _DD_FREEDRIVERMEMORYDATA {
 pub type DD_FREEDRIVERMEMORYDATA = _DD_FREEDRIVERMEMORYDATA;
 pub type PDD_FREEDRIVERMEMORYDATA = *mut _DD_FREEDRIVERMEMORYDATA;
 pub type PDD_FREEDRIVERMEMORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_FREEDRIVERMEMORYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_FREEDRIVERMEMORYDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETEXCLUSIVEMODEDATA {
@@ -68271,7 +68271,7 @@ pub struct _DD_SETEXCLUSIVEMODEDATA {
 pub type DD_SETEXCLUSIVEMODEDATA = _DD_SETEXCLUSIVEMODEDATA;
 pub type PDD_SETEXCLUSIVEMODEDATA = *mut _DD_SETEXCLUSIVEMODEDATA;
 pub type PDD_SETEXCLUSIVEMODE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETEXCLUSIVEMODEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETEXCLUSIVEMODEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_FLIPTOGDISURFACEDATA {
@@ -68284,7 +68284,7 @@ pub struct _DD_FLIPTOGDISURFACEDATA {
 pub type DD_FLIPTOGDISURFACEDATA = _DD_FLIPTOGDISURFACEDATA;
 pub type PDD_FLIPTOGDISURFACEDATA = *mut _DD_FLIPTOGDISURFACEDATA;
 pub type PDD_FLIPTOGDISURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_FLIPTOGDISURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_FLIPTOGDISURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_NTCALLBACKS {
@@ -68307,7 +68307,7 @@ pub struct _DD_DESTROYPALETTEDATA {
 pub type DD_DESTROYPALETTEDATA = _DD_DESTROYPALETTEDATA;
 pub type PDD_DESTROYPALETTEDATA = *mut _DD_DESTROYPALETTEDATA;
 pub type PDD_PALCB_DESTROYPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYPALETTEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SETENTRIESDATA {
@@ -68322,7 +68322,7 @@ pub struct _DD_SETENTRIESDATA {
 pub type DD_SETENTRIESDATA = _DD_SETENTRIESDATA;
 pub type PDD_SETENTRIESDATA = *mut _DD_SETENTRIESDATA;
 pub type PDD_PALCB_SETENTRIES =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SETENTRIESDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SETENTRIESDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_PALETTECALLBACKS {
@@ -68343,7 +68343,7 @@ pub struct _DD_CANCREATEVPORTDATA {
 pub type DD_CANCREATEVPORTDATA = _DD_CANCREATEVPORTDATA;
 pub type PDD_CANCREATEVPORTDATA = *mut _DD_CANCREATEVPORTDATA;
 pub type PDD_VPORTCB_CANCREATEVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CANCREATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CANCREATEVPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_CREATEVPORTDATA {
@@ -68356,7 +68356,7 @@ pub struct _DD_CREATEVPORTDATA {
 pub type DD_CREATEVPORTDATA = _DD_CREATEVPORTDATA;
 pub type PDD_CREATEVPORTDATA = *mut _DD_CREATEVPORTDATA;
 pub type PDD_VPORTCB_CREATEVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CREATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CREATEVPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_FLIPVPORTDATA {
@@ -68370,7 +68370,7 @@ pub struct _DD_FLIPVPORTDATA {
 pub type DD_FLIPVPORTDATA = _DD_FLIPVPORTDATA;
 pub type PDD_FLIPVPORTDATA = *mut _DD_FLIPVPORTDATA;
 pub type PDD_VPORTCB_FLIP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_FLIPVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_FLIPVPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTBANDWIDTHDATA {
@@ -68387,7 +68387,7 @@ pub struct _DD_GETVPORTBANDWIDTHDATA {
 pub type DD_GETVPORTBANDWIDTHDATA = _DD_GETVPORTBANDWIDTHDATA;
 pub type PDD_GETVPORTBANDWIDTHDATA = *mut _DD_GETVPORTBANDWIDTHDATA;
 pub type PDD_VPORTCB_GETBANDWIDTH =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTBANDWIDTHDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTBANDWIDTHDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTINPUTFORMATDATA {
@@ -68402,7 +68402,7 @@ pub struct _DD_GETVPORTINPUTFORMATDATA {
 pub type DD_GETVPORTINPUTFORMATDATA = _DD_GETVPORTINPUTFORMATDATA;
 pub type PDD_GETVPORTINPUTFORMATDATA = *mut _DD_GETVPORTINPUTFORMATDATA;
 pub type PDD_VPORTCB_GETINPUTFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTINPUTFORMATDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTINPUTFORMATDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTOUTPUTFORMATDATA {
@@ -68418,7 +68418,7 @@ pub struct _DD_GETVPORTOUTPUTFORMATDATA {
 pub type DD_GETVPORTOUTPUTFORMATDATA = _DD_GETVPORTOUTPUTFORMATDATA;
 pub type PDD_GETVPORTOUTPUTFORMATDATA = *mut _DD_GETVPORTOUTPUTFORMATDATA;
 pub type PDD_VPORTCB_GETOUTPUTFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTOUTPUTFORMATDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTOUTPUTFORMATDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTFIELDDATA {
@@ -68431,7 +68431,7 @@ pub struct _DD_GETVPORTFIELDDATA {
 pub type DD_GETVPORTFIELDDATA = _DD_GETVPORTFIELDDATA;
 pub type PDD_GETVPORTFIELDDATA = *mut _DD_GETVPORTFIELDDATA;
 pub type PDD_VPORTCB_GETFIELD =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTFIELDDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTFIELDDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTLINEDATA {
@@ -68444,7 +68444,7 @@ pub struct _DD_GETVPORTLINEDATA {
 pub type DD_GETVPORTLINEDATA = _DD_GETVPORTLINEDATA;
 pub type PDD_GETVPORTLINEDATA = *mut _DD_GETVPORTLINEDATA;
 pub type PDD_VPORTCB_GETLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTLINEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTCONNECTDATA {
@@ -68458,7 +68458,7 @@ pub struct _DD_GETVPORTCONNECTDATA {
 pub type DD_GETVPORTCONNECTDATA = _DD_GETVPORTCONNECTDATA;
 pub type PDD_GETVPORTCONNECTDATA = *mut _DD_GETVPORTCONNECTDATA;
 pub type PDD_VPORTCB_GETVPORTCONNECT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTCONNECTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTCONNECTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DESTROYVPORTDATA {
@@ -68470,7 +68470,7 @@ pub struct _DD_DESTROYVPORTDATA {
 pub type DD_DESTROYVPORTDATA = _DD_DESTROYVPORTDATA;
 pub type PDD_DESTROYVPORTDATA = *mut _DD_DESTROYVPORTDATA;
 pub type PDD_VPORTCB_DESTROYVPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYVPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTFLIPSTATUSDATA {
@@ -68482,7 +68482,7 @@ pub struct _DD_GETVPORTFLIPSTATUSDATA {
 pub type DD_GETVPORTFLIPSTATUSDATA = _DD_GETVPORTFLIPSTATUSDATA;
 pub type PDD_GETVPORTFLIPSTATUSDATA = *mut _DD_GETVPORTFLIPSTATUSDATA;
 pub type PDD_VPORTCB_GETFLIPSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTFLIPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTFLIPSTATUSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_UPDATEVPORTDATA {
@@ -68500,7 +68500,7 @@ pub struct _DD_UPDATEVPORTDATA {
 pub type DD_UPDATEVPORTDATA = _DD_UPDATEVPORTDATA;
 pub type PDD_UPDATEVPORTDATA = *mut _DD_UPDATEVPORTDATA;
 pub type PDD_VPORTCB_UPDATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_UPDATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_UPDATEVPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_WAITFORVPORTSYNCDATA {
@@ -68515,7 +68515,7 @@ pub struct _DD_WAITFORVPORTSYNCDATA {
 pub type DD_WAITFORVPORTSYNCDATA = _DD_WAITFORVPORTSYNCDATA;
 pub type PDD_WAITFORVPORTSYNCDATA = *mut _DD_WAITFORVPORTSYNCDATA;
 pub type PDD_VPORTCB_WAITFORSYNC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_WAITFORVPORTSYNCDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_WAITFORVPORTSYNCDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETVPORTSIGNALDATA {
@@ -68528,7 +68528,7 @@ pub struct _DD_GETVPORTSIGNALDATA {
 pub type DD_GETVPORTSIGNALDATA = _DD_GETVPORTSIGNALDATA;
 pub type PDD_GETVPORTSIGNALDATA = *mut _DD_GETVPORTSIGNALDATA;
 pub type PDD_VPORTCB_GETSIGNALSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETVPORTSIGNALDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETVPORTSIGNALDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_VPORTCOLORDATA {
@@ -68542,7 +68542,7 @@ pub struct _DD_VPORTCOLORDATA {
 pub type DD_VPORTCOLORDATA = _DD_VPORTCOLORDATA;
 pub type PDD_VPORTCOLORDATA = *mut _DD_VPORTCOLORDATA;
 pub type PDD_VPORTCB_COLORCONTROL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_VPORTCOLORDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_VPORTCOLORDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_VIDEOPORTCALLBACKS {
@@ -68579,7 +68579,7 @@ pub struct _DD_COLORCONTROLDATA {
 pub type DD_COLORCONTROLDATA = _DD_COLORCONTROLDATA;
 pub type PDD_COLORCONTROLDATA = *mut _DD_COLORCONTROLDATA;
 pub type PDD_COLORCB_COLORCONTROL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_COLORCONTROLDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_COLORCONTROLDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_COLORCONTROLCALLBACKS {
@@ -68600,7 +68600,7 @@ pub struct _DD_GETMOCOMPGUIDSDATA {
 pub type DD_GETMOCOMPGUIDSDATA = _DD_GETMOCOMPGUIDSDATA;
 pub type PDD_GETMOCOMPGUIDSDATA = *mut _DD_GETMOCOMPGUIDSDATA;
 pub type PDD_MOCOMPCB_GETGUIDS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETMOCOMPGUIDSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETMOCOMPGUIDSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_GETMOCOMPFORMATSDATA {
@@ -68613,7 +68613,7 @@ pub struct _DD_GETMOCOMPFORMATSDATA {
 pub type DD_GETMOCOMPFORMATSDATA = _DD_GETMOCOMPFORMATSDATA;
 pub type PDD_GETMOCOMPFORMATSDATA = *mut _DD_GETMOCOMPFORMATSDATA;
 pub type PDD_MOCOMPCB_GETFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETMOCOMPFORMATSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETMOCOMPFORMATSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DD_CREATEMOCOMPDATA {
@@ -68630,7 +68630,7 @@ pub struct _DD_CREATEMOCOMPDATA {
 pub type DD_CREATEMOCOMPDATA = _DD_CREATEMOCOMPDATA;
 pub type PDD_CREATEMOCOMPDATA = *mut _DD_CREATEMOCOMPDATA;
 pub type PDD_MOCOMPCB_CREATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_CREATEMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_CREATEMOCOMPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DDCOMPBUFFERINFO {
@@ -68659,7 +68659,7 @@ pub struct _DD_GETMOCOMPCOMPBUFFDATA {
 pub type DD_GETMOCOMPCOMPBUFFDATA = _DD_GETMOCOMPCOMPBUFFDATA;
 pub type PDD_GETMOCOMPCOMPBUFFDATA = *mut _DD_GETMOCOMPCOMPBUFFDATA;
 pub type PDD_MOCOMPCB_GETCOMPBUFFINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETMOCOMPCOMPBUFFDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETMOCOMPCOMPBUFFDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _DD_GETINTERNALMOCOMPDATA {
@@ -68674,7 +68674,7 @@ pub struct _DD_GETINTERNALMOCOMPDATA {
 pub type DD_GETINTERNALMOCOMPDATA = _DD_GETINTERNALMOCOMPDATA;
 pub type PDD_GETINTERNALMOCOMPDATA = *mut _DD_GETINTERNALMOCOMPDATA;
 pub type PDD_MOCOMPCB_GETINTERNALINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETINTERNALMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETINTERNALMOCOMPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_BEGINMOCOMPFRAMEDATA {
@@ -68690,7 +68690,7 @@ pub struct _DD_BEGINMOCOMPFRAMEDATA {
 pub type DD_BEGINMOCOMPFRAMEDATA = _DD_BEGINMOCOMPFRAMEDATA;
 pub type PDD_BEGINMOCOMPFRAMEDATA = *mut _DD_BEGINMOCOMPFRAMEDATA;
 pub type PDD_MOCOMPCB_BEGINFRAME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_BEGINMOCOMPFRAMEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_BEGINMOCOMPFRAMEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_ENDMOCOMPFRAMEDATA {
@@ -68703,7 +68703,7 @@ pub struct _DD_ENDMOCOMPFRAMEDATA {
 pub type DD_ENDMOCOMPFRAMEDATA = _DD_ENDMOCOMPFRAMEDATA;
 pub type PDD_ENDMOCOMPFRAMEDATA = *mut _DD_ENDMOCOMPFRAMEDATA;
 pub type PDD_MOCOMPCB_ENDFRAME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_ENDMOCOMPFRAMEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_ENDMOCOMPFRAMEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDMOCOMPBUFFERINFO {
@@ -68732,7 +68732,7 @@ pub struct _DD_RENDERMOCOMPDATA {
 pub type DD_RENDERMOCOMPDATA = _DD_RENDERMOCOMPDATA;
 pub type PDD_RENDERMOCOMPDATA = *mut _DD_RENDERMOCOMPDATA;
 pub type PDD_MOCOMPCB_RENDER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_RENDERMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_RENDERMOCOMPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_QUERYMOCOMPSTATUSDATA {
@@ -68745,7 +68745,7 @@ pub struct _DD_QUERYMOCOMPSTATUSDATA {
 pub type DD_QUERYMOCOMPSTATUSDATA = _DD_QUERYMOCOMPSTATUSDATA;
 pub type PDD_QUERYMOCOMPSTATUSDATA = *mut _DD_QUERYMOCOMPSTATUSDATA;
 pub type PDD_MOCOMPCB_QUERYSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_QUERYMOCOMPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_QUERYMOCOMPSTATUSDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_DESTROYMOCOMPDATA {
@@ -68756,7 +68756,7 @@ pub struct _DD_DESTROYMOCOMPDATA {
 pub type DD_DESTROYMOCOMPDATA = _DD_DESTROYMOCOMPDATA;
 pub type PDD_DESTROYMOCOMPDATA = *mut _DD_DESTROYMOCOMPDATA;
 pub type PDD_MOCOMPCB_DESTROY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_DESTROYMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_DESTROYMOCOMPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_MOTIONCOMPCALLBACKS {
@@ -68802,7 +68802,7 @@ pub struct _DD_GETDRIVERINFODATA {
 pub type DD_GETDRIVERINFODATA = _DD_GETDRIVERINFODATA;
 pub type PDD_GETDRIVERINFODATA = *mut _DD_GETDRIVERINFODATA;
 pub type PDD_GETDRIVERINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETDRIVERINFODATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETDRIVERINFODATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDNTCORECAPS {
@@ -68930,7 +68930,7 @@ pub struct _DD_SYNCSURFACEDATA {
 pub type DD_SYNCSURFACEDATA = _DD_SYNCSURFACEDATA;
 pub type PDD_SYNCSURFACEDATA = *mut _DD_SYNCSURFACEDATA;
 pub type PDD_KERNELCB_SYNCSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SYNCSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SYNCSURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DD_SYNCVIDEOPORTDATA {
@@ -68947,7 +68947,7 @@ pub struct _DD_SYNCVIDEOPORTDATA {
 pub type DD_SYNCVIDEOPORTDATA = _DD_SYNCVIDEOPORTDATA;
 pub type PDD_SYNCVIDEOPORTDATA = *mut _DD_SYNCVIDEOPORTDATA;
 pub type PDD_KERNELCB_SYNCVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SYNCVIDEOPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SYNCVIDEOPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DD_NTPRIVATEDRIVERCAPS {
@@ -69024,16 +69024,16 @@ pub struct DD_KERNELCALLBACKS {
 pub type PDD_KERNELCALLBACKS = *mut DD_KERNELCALLBACKS;
 pub type D3DFIXED = LONG;
 pub type LPD3DVALIDATECALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(ctx: *mut ::core::ffi::c_void, offset: DWORD) -> HRESULT,
+    unsafe extern "system" fn(ctx: *mut ::core::ffi::c_void, offset: DWORD) -> HRESULT,
 >;
 pub type LPD3DENUMTEXTUREFORMATSCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         surface_desc: *mut DDSURFACEDESC,
         ctx: *mut ::core::ffi::c_void,
     ) -> HRESULT,
 >;
 pub type LPD3DENUMPIXELFORMATSCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(format: *mut DDPIXELFORMAT, ctx: *mut ::core::ffi::c_void) -> HRESULT,
+    unsafe extern "system" fn(format: *mut DDPIXELFORMAT, ctx: *mut ::core::ffi::c_void) -> HRESULT,
 >;
 pub type D3DVALUE = f32;
 pub type LPD3DVALUE = *mut f32;
@@ -70454,7 +70454,7 @@ pub struct _D3DDEVINFO_TEXTURING {
 pub type D3DDEVINFO_TEXTURING = _D3DDEVINFO_TEXTURING;
 pub type LPD3DDEVINFO_TEXTURING = *mut _D3DDEVINFO_TEXTURING;
 pub type LPD3DENUMDEVICESCALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpGuid: *mut GUID,
         lpDeviceDescription: LPSTR,
         lpDeviceName: LPSTR,
@@ -70464,7 +70464,7 @@ pub type LPD3DENUMDEVICESCALLBACK = ::core::option::Option<
     ) -> HRESULT,
 >;
 pub type LPD3DENUMDEVICESCALLBACK7 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpDeviceDescription: LPSTR,
         lpDeviceName: LPSTR,
         arg1: LPD3DDEVICEDESC7,
@@ -76753,181 +76753,181 @@ pub struct _D3DKMT_RESETTRACKEDWORKLOADSTATISTICS {
 }
 pub type D3DKMT_RESETTRACKEDWORKLOADSTATISTICS = _D3DKMT_RESETTRACKEDWORKLOADSTATISTICS;
 pub type PFND3DKMT_CREATEALLOCATION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEALLOCATION) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEALLOCATION) -> NTSTATUS>;
 pub type PFND3DKMT_CREATEALLOCATION2 =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEALLOCATION) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEALLOCATION) -> NTSTATUS>;
 pub type PFND3DKMT_QUERYRESOURCEINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_QUERYRESOURCEINFO) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_QUERYRESOURCEINFO) -> NTSTATUS>;
 pub type PFND3DKMT_OPENRESOURCE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_OPENRESOURCE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_OPENRESOURCE) -> NTSTATUS>;
 pub type PFND3DKMT_OPENRESOURCE2 =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_OPENRESOURCE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_OPENRESOURCE) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYALLOCATION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYALLOCATION) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYALLOCATION) -> NTSTATUS>;
 pub type PFND3DKMT_SETALLOCATIONPRIORITY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SETALLOCATIONPRIORITY) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SETALLOCATIONPRIORITY) -> NTSTATUS,
 >;
 pub type PFND3DKMT_QUERYALLOCATIONRESIDENCY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_QUERYALLOCATIONRESIDENCY) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_QUERYALLOCATIONRESIDENCY) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CREATEDEVICE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEDEVICE) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYDEVICE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYDEVICE) -> NTSTATUS>;
 pub type PFND3DKMT_CREATECONTEXT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATECONTEXT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATECONTEXT) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYCONTEXT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYCONTEXT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYCONTEXT) -> NTSTATUS>;
 pub type PFND3DKMT_CREATESYNCHRONIZATIONOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_CREATESYNCHRONIZATIONOBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_CREATESYNCHRONIZATIONOBJECT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CREATESYNCHRONIZATIONOBJECT2 = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_CREATESYNCHRONIZATIONOBJECT2) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_CREATESYNCHRONIZATIONOBJECT2) -> NTSTATUS,
 >;
 pub type PFND3DKMT_OPENSYNCHRONIZATIONOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_OPENSYNCHRONIZATIONOBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_OPENSYNCHRONIZATIONOBJECT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_DESTROYSYNCHRONIZATIONOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYSYNCHRONIZATIONOBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYSYNCHRONIZATIONOBJECT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_WAITFORSYNCHRONIZATIONOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_WAITFORSYNCHRONIZATIONOBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_WAITFORSYNCHRONIZATIONOBJECT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_WAITFORSYNCHRONIZATIONOBJECT2 = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_WAITFORSYNCHRONIZATIONOBJECT2) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_WAITFORSYNCHRONIZATIONOBJECT2) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SIGNALSYNCHRONIZATIONOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SIGNALSYNCHRONIZATIONOBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SIGNALSYNCHRONIZATIONOBJECT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SIGNALSYNCHRONIZATIONOBJECT2 = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SIGNALSYNCHRONIZATIONOBJECT2) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SIGNALSYNCHRONIZATIONOBJECT2) -> NTSTATUS,
 >;
 pub type PFND3DKMT_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_LOCK) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_LOCK) -> NTSTATUS>;
 pub type PFND3DKMT_UNLOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_UNLOCK) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_UNLOCK) -> NTSTATUS>;
 pub type PFND3DKMT_GETDISPLAYMODELIST =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_GETDISPLAYMODELIST) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_GETDISPLAYMODELIST) -> NTSTATUS>;
 pub type PFND3DKMT_SETDISPLAYMODE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_SETDISPLAYMODE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_SETDISPLAYMODE) -> NTSTATUS>;
 pub type PFND3DKMT_GETMULTISAMPLEMETHODLIST = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_GETMULTISAMPLEMETHODLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_GETMULTISAMPLEMETHODLIST) -> NTSTATUS,
 >;
 pub type PFND3DKMT_PRESENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_PRESENT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_PRESENT) -> NTSTATUS>;
 pub type PFND3DKMT_RENDER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_RENDER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_RENDER) -> NTSTATUS>;
 pub type PFND3DKMT_GETRUNTIMEDATA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_GETRUNTIMEDATA) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_GETRUNTIMEDATA) -> NTSTATUS>;
 pub type PFND3DKMT_QUERYADAPTERINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_QUERYADAPTERINFO) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_QUERYADAPTERINFO) -> NTSTATUS>;
 pub type PFND3DKMT_OPENADAPTERFROMHDC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_OPENADAPTERFROMHDC) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_OPENADAPTERFROMHDC) -> NTSTATUS>;
 pub type PFND3DKMT_OPENADAPTERFROMGDIDISPLAYNAME = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME) -> NTSTATUS,
 >;
 pub type PFND3DKMT_OPENADAPTERFROMDEVICENAME = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_OPENADAPTERFROMDEVICENAME) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_OPENADAPTERFROMDEVICENAME) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CLOSEADAPTER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_CLOSEADAPTER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_CLOSEADAPTER) -> NTSTATUS>;
 pub type PFND3DKMT_GETSHAREDPRIMARYHANDLE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_GETSHAREDPRIMARYHANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_GETSHAREDPRIMARYHANDLE) -> NTSTATUS,
 >;
 pub type PFND3DKMT_ESCAPE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_ESCAPE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_ESCAPE) -> NTSTATUS>;
 pub type PFND3DKMT_QUERYSTATISTICS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_QUERYSTATISTICS) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_QUERYSTATISTICS) -> NTSTATUS>;
 pub type PFND3DKMT_SETVIDPNSOURCEOWNER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SETVIDPNSOURCEOWNER) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SETVIDPNSOURCEOWNER) -> NTSTATUS,
 >;
 pub type PFND3DKMT_GETPRESENTHISTORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_GETPRESENTHISTORY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_GETPRESENTHISTORY) -> NTSTATUS>;
 pub type PFND3DKMT_CREATEOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEOVERLAY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEOVERLAY) -> NTSTATUS>;
 pub type PFND3DKMT_UPDATEOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_UPDATEOVERLAY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_UPDATEOVERLAY) -> NTSTATUS>;
 pub type PFND3DKMT_FLIPOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_FLIPOVERLAY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_FLIPOVERLAY) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYOVERLAY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYOVERLAY) -> NTSTATUS>;
 pub type PFND3DKMT_WAITFORVERTICALBLANKEVENT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_WAITFORVERTICALBLANKEVENT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_WAITFORVERTICALBLANKEVENT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SETGAMMARAMP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_SETGAMMARAMP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_SETGAMMARAMP) -> NTSTATUS>;
 pub type PFND3DKMT_GETDEVICESTATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_GETDEVICESTATE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_GETDEVICESTATE) -> NTSTATUS>;
 pub type PFND3DKMT_CREATEDCFROMMEMORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEDCFROMMEMORY) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEDCFROMMEMORY) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYDCFROMMEMORY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYDCFROMMEMORY) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYDCFROMMEMORY) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SETCONTEXTSCHEDULINGPRIORITY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SETCONTEXTSCHEDULINGPRIORITY) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SETCONTEXTSCHEDULINGPRIORITY) -> NTSTATUS,
 >;
 pub type PFND3DKMT_GETCONTEXTSCHEDULINGPRIORITY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *mut D3DKMT_GETCONTEXTSCHEDULINGPRIORITY) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *mut D3DKMT_GETCONTEXTSCHEDULINGPRIORITY) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SETPROCESSSCHEDULINGPRIORITYCLASS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: D3DKMT_SCHEDULINGPRIORITYCLASS) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: D3DKMT_SCHEDULINGPRIORITYCLASS) -> NTSTATUS,
 >;
 pub type PFND3DKMT_GETPROCESSSCHEDULINGPRIORITYCLASS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: *mut D3DKMT_SCHEDULINGPRIORITYCLASS) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: *mut D3DKMT_SCHEDULINGPRIORITYCLASS) -> NTSTATUS,
 >;
 pub type PFND3DKMT_RELEASEPROCESSVIDPNSOURCEOWNERS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> NTSTATUS>;
 pub type PFND3DKMT_GETSCANLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_GETSCANLINE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_GETSCANLINE) -> NTSTATUS>;
 pub type PFND3DKMT_CHANGESURFACEPOINTER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_CHANGESURFACEPOINTER) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_CHANGESURFACEPOINTER) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SETQUEUEDLIMIT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_SETQUEUEDLIMIT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_SETQUEUEDLIMIT) -> NTSTATUS>;
 pub type PFND3DKMT_POLLDISPLAYCHILDREN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_POLLDISPLAYCHILDREN) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_POLLDISPLAYCHILDREN) -> NTSTATUS,
 >;
 pub type PFND3DKMT_INVALIDATEACTIVEVIDPN = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_INVALIDATEACTIVEVIDPN) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_INVALIDATEACTIVEVIDPN) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CHECKOCCLUSION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_CHECKOCCLUSION) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_CHECKOCCLUSION) -> NTSTATUS>;
 pub type PFND3DKMT_WAITFORIDLE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_WAITFORIDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_WAITFORIDLE) -> NTSTATUS>;
 pub type PFND3DKMT_CHECKMONITORPOWERSTATE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_CHECKMONITORPOWERSTATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_CHECKMONITORPOWERSTATE) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CHECKEXCLUSIVEOWNERSHIP =
-    ::core::option::Option<unsafe extern "C" fn() -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn() -> BOOLEAN>;
 pub type PFND3DKMT_CHECKVIDPNEXCLUSIVEOWNERSHIP = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_CHECKVIDPNEXCLUSIVEOWNERSHIP) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_CHECKVIDPNEXCLUSIVEOWNERSHIP) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SETDISPLAYPRIVATEDRIVERFORMAT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SETDISPLAYPRIVATEDRIVERFORMAT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SETDISPLAYPRIVATEDRIVERFORMAT) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SHAREDPRIMARYLOCKNOTIFICATION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SHAREDPRIMARYLOCKNOTIFICATION) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SHAREDPRIMARYLOCKNOTIFICATION) -> NTSTATUS,
 >;
 pub type PFND3DKMT_SHAREDPRIMARYUNLOCKNOTIFICATION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_SHAREDPRIMARYUNLOCKNOTIFICATION) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_SHAREDPRIMARYUNLOCKNOTIFICATION) -> NTSTATUS,
 >;
 pub type PFND3DKMT_CREATEKEYEDMUTEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_CREATEKEYEDMUTEX) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_CREATEKEYEDMUTEX) -> NTSTATUS>;
 pub type PFND3DKMT_OPENKEYEDMUTEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_OPENKEYEDMUTEX) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_OPENKEYEDMUTEX) -> NTSTATUS>;
 pub type PFND3DKMT_DESTROYKEYEDMUTEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *const D3DKMT_DESTROYKEYEDMUTEX) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *const D3DKMT_DESTROYKEYEDMUTEX) -> NTSTATUS>;
 pub type PFND3DKMT_ACQUIREKEYEDMUTEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_ACQUIREKEYEDMUTEX) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_ACQUIREKEYEDMUTEX) -> NTSTATUS>;
 pub type PFND3DKMT_RELEASEKEYEDMUTEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_RELEASEKEYEDMUTEX) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_RELEASEKEYEDMUTEX) -> NTSTATUS>;
 pub type PFND3DKMT_CONFIGURESHAREDRESOURCE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_CONFIGURESHAREDRESOURCE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_CONFIGURESHAREDRESOURCE) -> NTSTATUS,
 >;
 pub type PFND3DKMT_GETOVERLAYSTATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: *mut D3DKMT_GETOVERLAYSTATE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut D3DKMT_GETOVERLAYSTATE) -> NTSTATUS>;
 pub type PFND3DKMT_CHECKSHAREDRESOURCEACCESS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: *const D3DKMT_CHECKSHAREDRESOURCEACCESS) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: *const D3DKMT_CHECKSHAREDRESOURCEACCESS) -> NTSTATUS,
 >;
 unsafe extern "C" {
     pub static GUID_DEVINTERFACE_GRAPHICSPOWER: GUID;
@@ -77095,21 +77095,21 @@ pub struct _D3DNTHAL_TEXTUREGETSURFDATA {
 pub type D3DNTHAL_TEXTUREGETSURFDATA = _D3DNTHAL_TEXTUREGETSURFDATA;
 pub type LPD3DNTHAL_TEXTUREGETSURFDATA = *mut _D3DNTHAL_TEXTUREGETSURFDATA;
 pub type LPD3DNTHAL_CONTEXTCREATECB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CONTEXTCREATEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CONTEXTCREATEDATA) -> DWORD>;
 pub type LPD3DNTHAL_CONTEXTDESTROYCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYDATA) -> DWORD>;
 pub type LPD3DNTHAL_CONTEXTDESTROYALLCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYALLDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYALLDATA) -> DWORD>;
 pub type LPD3DNTHAL_SCENECAPTURECB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_SCENECAPTUREDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_SCENECAPTUREDATA) -> DWORD>;
 pub type LPD3DNTHAL_TEXTURECREATECB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_TEXTURECREATEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_TEXTURECREATEDATA) -> DWORD>;
 pub type LPD3DNTHAL_TEXTUREDESTROYCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_TEXTUREDESTROYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_TEXTUREDESTROYDATA) -> DWORD>;
 pub type LPD3DNTHAL_TEXTURESWAPCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_TEXTURESWAPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_TEXTURESWAPDATA) -> DWORD>;
 pub type LPD3DNTHAL_TEXTUREGETSURFCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_TEXTUREGETSURFDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_TEXTUREGETSURFDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DNTHALDeviceDesc_V1 {
@@ -77193,7 +77193,7 @@ pub struct _D3DNTHAL_SETRENDERTARGETDATA {
 pub type D3DNTHAL_SETRENDERTARGETDATA = _D3DNTHAL_SETRENDERTARGETDATA;
 pub type LPD3DNTHAL_SETRENDERTARGETDATA = *mut _D3DNTHAL_SETRENDERTARGETDATA;
 pub type LPD3DNTHAL_SETRENDERTARGETCB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_SETRENDERTARGETDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_SETRENDERTARGETDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DNTHAL_CALLBACKS2 {
@@ -77265,12 +77265,12 @@ pub union _D3DNTHAL_DRAWPRIMITIVES2DATA__bindgen_ty_2 {
 pub type D3DNTHAL_DRAWPRIMITIVES2DATA = _D3DNTHAL_DRAWPRIMITIVES2DATA;
 pub type LPD3DNTHAL_DRAWPRIMITIVES2DATA = *mut _D3DNTHAL_DRAWPRIMITIVES2DATA;
 pub type LPD3DNTHAL_CLEAR2CB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CLEAR2DATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CLEAR2DATA) -> DWORD>;
 pub type LPD3DNTHAL_VALIDATETEXTURESTAGESTATECB = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPD3DNTHAL_VALIDATETEXTURESTAGESTATEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: LPD3DNTHAL_VALIDATETEXTURESTAGESTATEDATA) -> DWORD,
 >;
 pub type LPD3DNTHAL_DRAWPRIMITIVES2CB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_DRAWPRIMITIVES2DATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_DRAWPRIMITIVES2DATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DNTHAL_CALLBACKS3 {
@@ -77297,7 +77297,7 @@ pub type ROP4 = ULONG;
 pub type MIX = ULONG;
 pub type HGLYPH = ULONG;
 pub type PHGLYPH = *mut HGLYPH;
-pub type PFN = ::core::option::Option<unsafe extern "C" fn() -> LONG_PTR>;
+pub type PFN = ::core::option::Option<unsafe extern "system" fn() -> LONG_PTR>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct HBM__ {
@@ -77495,7 +77495,7 @@ pub struct _DEVINFO {
 pub type DEVINFO = _DEVINFO;
 pub type PDEVINFO = *mut _DEVINFO;
 pub type FREEOBJPROC =
-    ::core::option::Option<unsafe extern "C" fn(pDriverObj: *mut _DRIVEROBJ) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pDriverObj: *mut _DRIVEROBJ) -> BOOL>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DRIVEROBJ {
@@ -78019,21 +78019,21 @@ pub struct _XLATEOBJ {
 }
 pub type XLATEOBJ = _XLATEOBJ;
 pub type WNDOBJCHANGEPROC =
-    ::core::option::Option<unsafe extern "C" fn(pwo: *mut WNDOBJ, fl: FLONG)>;
-unsafe extern "C" {
+    ::core::option::Option<unsafe extern "system" fn(pwo: *mut WNDOBJ, fl: FLONG)>;
+unsafe extern "system" {
     pub fn EngAcquireSemaphore(hsem: HSEMAPHORE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAllocMem(fl: ULONG, cjMemSize: ULONG, ulTag: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAllocPrivateUserMem(psl: PDD_SURFACE_LOCAL, cjMemSize: SIZE_T, ulTag: ULONG)
         -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAllocUserMem(cjMemSize: SIZE_T, ulTag: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAlphaBlend(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78044,10 +78044,10 @@ unsafe extern "C" {
         pBlendObj: *mut BLENDOBJ,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAssociateSurface(hsurf: HSURF, hdev: HDEV, flHooks: FLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngBitBlt(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78062,19 +78062,19 @@ unsafe extern "C" {
         rop4: ROP4,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCheckAbort(pso: *mut SURFOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngClearEvent(pEvent: PEVENT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngComputeGlyphSet(nCodePage: INT, nFirstChar: INT, cChars: INT) -> *mut FD_GLYPHSET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngControlSprites(pwo: *mut WNDOBJ, fl: FLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCopyBits(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78084,7 +78084,7 @@ unsafe extern "C" {
         pptlSrc: *mut POINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateBitmap(
         sizl: SIZEL,
         lWidth: LONG,
@@ -78093,22 +78093,22 @@ unsafe extern "C" {
         pvBits: PVOID,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateClip() -> *mut CLIPOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateDeviceBitmap(dhsurf: DHSURF, sizl: SIZEL, iFormatCompat: ULONG) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateDeviceSurface(dhsurf: DHSURF, sizl: SIZEL, iFormatCompat: ULONG) -> HSURF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateDriverObj(pvObj: PVOID, pFreeObjProc: FREEOBJPROC, hdev: HDEV) -> HDRVOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateEvent(ppEvent: *mut PEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreatePalette(
         iMode: ULONG,
         cColors: ULONG,
@@ -78118,13 +78118,13 @@ unsafe extern "C" {
         flBlue: FLONG,
     ) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreatePath() -> *mut PATHOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateSemaphore() -> HSEMAPHORE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateWnd(
         pso: *mut SURFOBJ,
         hwnd: HWND,
@@ -78133,43 +78133,43 @@ unsafe extern "C" {
         iPixelFormat: INT,
     ) -> *mut WNDOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDebugBreak();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDebugPrint(StandardPrefix: PCHAR, DebugMessage: PCHAR, ap: va_list);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteClip(pco: *mut CLIPOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteDriverObj(hdo: HDRVOBJ, bCallBack: BOOL, bLocked: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteEvent(pEvent: PEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteFile(pwszFileName: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeletePalette(hpal: HPALETTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeletePath(ppo: *mut PATHOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteSemaphore(hsem: HSEMAPHORE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteSurface(hsurf: HSURF) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeleteWnd(pwo: *mut WNDOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDeviceIoControl(
         hDevice: HANDLE,
         dwIoControlCode: DWORD,
@@ -78180,13 +78180,13 @@ unsafe extern "C" {
         lpBytesReturned: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDitherColor(hdev: HDEV, iMode: ULONG, rgb: ULONG, pul: *mut ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngDxIoctl(ulIoctl: ULONG, pBuffer: PVOID, ulBufferSize: ULONG) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngEnumForms(
         hPrinter: HANDLE,
         Level: DWORD,
@@ -78196,10 +78196,10 @@ unsafe extern "C" {
         pcReturned: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngEraseSurface(pso: *mut SURFOBJ, prcl: *mut RECTL, iColor: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFillPath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -78210,52 +78210,52 @@ unsafe extern "C" {
         flOptions: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFindImageProcAddress(hModule: HANDLE, lpProcName: LPSTR) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFindResource(h: HANDLE, iName: INT, iType: INT, pulSize: PULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFntCacheAlloc(ulFastCheckSum: ULONG, cjSize: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFntCacheFault(ulFastCheckSum: ULONG, iFaultMode: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFntCacheLookUp(FastCheckSum: ULONG, pulSize: *mut ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFreeMem(pv: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFreePrivateUserMem(psl: PDD_SURFACE_LOCAL, pv: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFreeUserMem(pv: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFreeModule(h: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetCurrentCodePage(OemCodePage: PUSHORT, AnsiCodePage: PUSHORT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetCurrentProcessId() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetCurrentThreadId() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetDriverName(hdev: HDEV) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetFileChangeTime(h: HANDLE, pChangeTime: *mut LARGE_INTEGER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetFilePath(h: HANDLE, pDest: *mut [WCHAR; 261usize]) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetForm(
         hPrinter: HANDLE,
         pFormName: LPWSTR,
@@ -78265,10 +78265,10 @@ unsafe extern "C" {
         pcbNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetLastError() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetPrinter(
         hPrinter: HANDLE,
         dwLevel: DWORD,
@@ -78277,7 +78277,7 @@ unsafe extern "C" {
         pcbNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetPrinterData(
         hPrinter: HANDLE,
         pValueName: LPWSTR,
@@ -78287,10 +78287,10 @@ unsafe extern "C" {
         pcjNeeded: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetPrinterDataFileName(hdev: HDEV) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetPrinterDriver(
         hPrinter: HANDLE,
         pEnvironment: LPWSTR,
@@ -78300,10 +78300,10 @@ unsafe extern "C" {
         pcjNeeded: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetProcessHandle() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetType1FontList(
         hdev: HDEV,
         pType1Buffer: *mut TYPE1_FONT,
@@ -78313,7 +78313,7 @@ unsafe extern "C" {
         pLastModified: *mut LARGE_INTEGER,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGradientFill(
         psoDest: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -78327,19 +78327,19 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngHangNotification(hDev: HDEV, Reserved: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngInitializeSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLineTo(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -78352,28 +78352,28 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLoadImage(pwszDriver: LPWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLoadModule(pwsz: LPWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLoadModuleForWrite(pwsz: LPWSTR, cjSizeOfModule: ULONG) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLockDirectDrawSurface(hSurface: HANDLE) -> PDD_SURFACE_LOCAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLockDriverObj(hdo: HDRVOBJ) -> *mut DRIVEROBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLpkInstalled() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapEvent(
         hDev: HDEV,
         hUserObject: HANDLE,
@@ -78382,22 +78382,22 @@ unsafe extern "C" {
         Reserved3: PVOID,
     ) -> PEVENT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapFile(pwsz: LPWSTR, cjSize: ULONG, piFile: *mut ULONG_PTR) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapFontFile(iFile: ULONG_PTR, ppjBuf: *mut PULONG, pcjBuf: *mut ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapFontFileFD(iFile: ULONG_PTR, ppjBuf: *mut PULONG, pcjBuf: *mut ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapModule(h: HANDLE, pulSize: PULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMarkBandingSurface(hsurf: HSURF) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngModifySurface(
         hsurf: HSURF,
         hdev: HDEV,
@@ -78409,13 +78409,13 @@ unsafe extern "C" {
         pvReserved: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMovePointer(pso: *mut SURFOBJ, x: LONG, y: LONG, prcl: *mut RECTL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMulDiv(a: INT, b: INT, c: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMultiByteToUnicodeN(
         UnicodeString: LPWSTR,
         MaxBytesInUnicodeString: ULONG,
@@ -78424,7 +78424,7 @@ unsafe extern "C" {
         BytesInMultiByteString: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMultiByteToWideChar(
         CodePage: UINT,
         WideCharString: LPWSTR,
@@ -78433,7 +78433,7 @@ unsafe extern "C" {
         cjMultiByteString: INT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngPaint(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -78442,7 +78442,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngPlgBlt(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78457,17 +78457,17 @@ unsafe extern "C" {
         iMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngProbeForReadAndWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
 }
 pub const _ENG_DEVICE_ATTRIBUTE_QDA_RESERVED: _ENG_DEVICE_ATTRIBUTE = 0;
 pub const _ENG_DEVICE_ATTRIBUTE_QDA_ACCELERATION_LEVEL: _ENG_DEVICE_ATTRIBUTE = 1;
 pub type _ENG_DEVICE_ATTRIBUTE = ::core::ffi::c_uint;
 pub use self::_ENG_DEVICE_ATTRIBUTE as ENG_DEVICE_ATTRIBUTE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryDeviceAttribute(
         hdev: HDEV,
         devAttr: ENG_DEVICE_ATTRIBUTE,
@@ -78477,16 +78477,16 @@ unsafe extern "C" {
         cjOutSize: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryEMFInfo(hdev: HDEV, pEMFInfo: *mut EMFINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryFileTimeStamp(pwsz: LPWSTR) -> LARGE_INTEGER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryLocalTime(ptf: PENG_TIME_FIELDS);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryPalette(
         hPal: HPALETTE,
         piMode: *mut ULONG,
@@ -78494,10 +78494,10 @@ unsafe extern "C" {
         pulColors: *mut ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryPerformanceCounter(pPerformanceCount: *mut LONGLONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQueryPerformanceFrequency(pFrequency: *mut LONGLONG);
 }
 pub const _ENG_SYSTEM_ATTRIBUTE_EngProcessorFeature: _ENG_SYSTEM_ATTRIBUTE = 1;
@@ -78506,31 +78506,31 @@ pub const _ENG_SYSTEM_ATTRIBUTE_EngOptimumAvailableUserMemory: _ENG_SYSTEM_ATTRI
 pub const _ENG_SYSTEM_ATTRIBUTE_EngOptimumAvailableSystemMemory: _ENG_SYSTEM_ATTRIBUTE = 4;
 pub type _ENG_SYSTEM_ATTRIBUTE = ::core::ffi::c_uint;
 pub use self::_ENG_SYSTEM_ATTRIBUTE as ENG_SYSTEM_ATTRIBUTE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngQuerySystemAttribute(CapNum: ENG_SYSTEM_ATTRIBUTE, pCapability: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngReadStateEvent(pEvent: PEVENT) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngReleaseSemaphore(hsem: HSEMAPHORE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngRestoreFloatingPointState(pBuffer: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSaveFloatingPointState(pBuffer: PVOID, cjBufferSize: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSecureMem(Address: PVOID, cjLength: ULONG) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSetEvent(pEvent: PEVENT) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSetLastError(iError: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSetPointerShape(
         pso: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -78544,7 +78544,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSetPointerTag(
         hdev: HDEV,
         psoMask: *mut SURFOBJ,
@@ -78553,7 +78553,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSetPrinterData(
         hPrinter: HANDLE,
         pType: LPWSTR,
@@ -78568,10 +78568,10 @@ pub type SORTCOMP = ::core::option::Option<
         pv2: *const ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSort(pjBuf: PBYTE, c: ULONG, cjElem: ULONG, pfnComp: SORTCOMP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngStretchBlt(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78586,7 +78586,7 @@ unsafe extern "C" {
         iMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngStretchBltROP(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78603,7 +78603,7 @@ unsafe extern "C" {
         rop4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngStrokeAndFillPath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -78617,7 +78617,7 @@ unsafe extern "C" {
         flOptions: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngStrokePath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -78629,7 +78629,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngTextOut(
         pso: *mut SURFOBJ,
         pstro: *mut STROBJ,
@@ -78643,7 +78643,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngTransparentBlt(
         psoDst: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -78655,7 +78655,7 @@ unsafe extern "C" {
         ulReserved: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnicodeToMultiByteN(
         pchMultiByteString: PCHAR,
         cjMultiByteBuf: ULONG,
@@ -78664,37 +78664,37 @@ unsafe extern "C" {
         cjUnicodeString: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnloadImage(hModule: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnlockDirectDrawSurface(pSurface: PDD_SURFACE_LOCAL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnlockDriverObj(hdo: HDRVOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnlockSurface(pso: *mut SURFOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnmapEvent(pEvent: PEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnmapFile(iFile: ULONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnmapFontFile(iFile: ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnmapFontFileFD(iFile: ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnsecureMem(hSecure: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngWaitForSingleObject(pEvent: PEVENT, pTimeOut: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngWideCharToMultiByte(
         CodePage: UINT,
         pwszWideCharString: LPWSTR,
@@ -78703,7 +78703,7 @@ unsafe extern "C" {
         cjMultiByteString: INT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngWritePrinter(
         hPrinter: HANDLE,
         pvBuf: LPVOID,
@@ -78711,7 +78711,7 @@ unsafe extern "C" {
         pcWritten: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn XLATEOBJ_cGetPalette(
         pxlo: *mut XLATEOBJ,
         iPal: ULONG,
@@ -78719,16 +78719,16 @@ unsafe extern "C" {
         pPal: *mut ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn XLATEOBJ_hGetColorTransform(pxlo: *mut XLATEOBJ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn XLATEOBJ_iXlate(pxlo: *mut XLATEOBJ, iColor: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn XLATEOBJ_piVector(pxlo: *mut XLATEOBJ) -> *mut ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngBugCheckEx(
         BugCheckCode: ULONG,
         P1: ULONG_PTR,
@@ -78738,7 +78738,7 @@ unsafe extern "C" {
     );
 }
 pub type FN_DrvAlphaBlend = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -78750,10 +78750,10 @@ pub type FN_DrvAlphaBlend = ::core::option::Option<
 >;
 pub type PFN_DrvAlphaBlend = FN_DrvAlphaBlend;
 pub type FN_DrvAssertMode =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, bEnable: BOOL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, bEnable: BOOL) -> BOOL>;
 pub type PFN_DrvAssertMode = FN_DrvAssertMode;
 pub type FN_DrvBitBlt = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -78769,10 +78769,10 @@ pub type FN_DrvBitBlt = ::core::option::Option<
 >;
 pub type PFN_DrvBitBlt = FN_DrvBitBlt;
 pub type FN_DrvCompletePDEV =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, hdev: HDEV)>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, hdev: HDEV)>;
 pub type PFN_DrvCompletePDEV = FN_DrvCompletePDEV;
 pub type FN_DrvCopyBits = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -78783,20 +78783,20 @@ pub type FN_DrvCopyBits = ::core::option::Option<
 >;
 pub type PFN_DrvCopyBits = FN_DrvCopyBits;
 pub type FN_DrvCreateDeviceBitmap = ::core::option::Option<
-    unsafe extern "C" fn(dhpdev: DHPDEV, sizl: SIZEL, iFormat: ULONG) -> HBITMAP,
+    unsafe extern "system" fn(dhpdev: DHPDEV, sizl: SIZEL, iFormat: ULONG) -> HBITMAP,
 >;
 pub type PFN_DrvCreateDeviceBitmap = FN_DrvCreateDeviceBitmap;
-pub type FN_DrvDeleteDeviceBitmap = ::core::option::Option<unsafe extern "C" fn(dhsurf: DHSURF)>;
+pub type FN_DrvDeleteDeviceBitmap = ::core::option::Option<unsafe extern "system" fn(dhsurf: DHSURF)>;
 pub type PFN_DrvDeleteDeviceBitmap = FN_DrvDeleteDeviceBitmap;
 pub type FN_DrvDeriveSurface = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pDirectDraw: *mut DD_DIRECTDRAW_GLOBAL,
         pSurface: *mut DD_SURFACE_LOCAL,
     ) -> HBITMAP,
 >;
 pub type PFN_DrvDeriveSurface = FN_DrvDeriveSurface;
 pub type FN_DrvDescribePixelFormat = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         iPixelFormat: LONG,
         cjpfd: ULONG,
@@ -78804,20 +78804,20 @@ pub type FN_DrvDescribePixelFormat = ::core::option::Option<
     ) -> LONG,
 >;
 pub type PFN_DrvDescribePixelFormat = FN_DrvDescribePixelFormat;
-pub type FN_DrvDestroyFont = ::core::option::Option<unsafe extern "C" fn(pfo: *mut FONTOBJ)>;
+pub type FN_DrvDestroyFont = ::core::option::Option<unsafe extern "system" fn(pfo: *mut FONTOBJ)>;
 pub type PFN_DrvDestroyFont = FN_DrvDestroyFont;
-pub type FN_DrvDisableDriver = ::core::option::Option<unsafe extern "C" fn()>;
+pub type FN_DrvDisableDriver = ::core::option::Option<unsafe extern "system" fn()>;
 pub type PFN_DrvDisableDriver = FN_DrvDisableDriver;
-pub type FN_DrvDisablePDEV = ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV)>;
+pub type FN_DrvDisablePDEV = ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV)>;
 pub type PFN_DrvDisablePDEV = FN_DrvDisablePDEV;
-pub type FN_DrvDisableSurface = ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV)>;
+pub type FN_DrvDisableSurface = ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV)>;
 pub type PFN_DrvDisableSurface = FN_DrvDisableSurface;
 pub type FN_DrvDitherColor = ::core::option::Option<
-    unsafe extern "C" fn(dhpdev: DHPDEV, iMode: ULONG, rgb: ULONG, pul: *mut ULONG) -> ULONG,
+    unsafe extern "system" fn(dhpdev: DHPDEV, iMode: ULONG, rgb: ULONG, pul: *mut ULONG) -> ULONG,
 >;
 pub type PFN_DrvDitherColor = FN_DrvDitherColor;
 pub type FN_DrvDrawEscape = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         iEsc: ULONG,
         pco: *mut CLIPOBJ,
@@ -78828,11 +78828,11 @@ pub type FN_DrvDrawEscape = ::core::option::Option<
 >;
 pub type PFN_DrvDrawEscape = FN_DrvDrawEscape;
 pub type FN_DrvEnableDriver = ::core::option::Option<
-    unsafe extern "C" fn(iEngineVersion: ULONG, cj: ULONG, pded: *mut DRVENABLEDATA) -> BOOL,
+    unsafe extern "system" fn(iEngineVersion: ULONG, cj: ULONG, pded: *mut DRVENABLEDATA) -> BOOL,
 >;
 pub type PFN_DrvEnableDriver = FN_DrvEnableDriver;
 pub type FN_DrvEnablePDEV = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pdm: *mut DEVMODEW,
         pwszLogAddress: LPWSTR,
         cPat: ULONG,
@@ -78848,13 +78848,13 @@ pub type FN_DrvEnablePDEV = ::core::option::Option<
 >;
 pub type PFN_DrvEnablePDEV = FN_DrvEnablePDEV;
 pub type FN_DrvEnableSurface =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV) -> HSURF>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV) -> HSURF>;
 pub type PFN_DrvEnableSurface = FN_DrvEnableSurface;
 pub type FN_DrvEndDoc =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, fl: FLONG) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, fl: FLONG) -> BOOL>;
 pub type PFN_DrvEndDoc = FN_DrvEndDoc;
 pub type FN_DrvEscape = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         iEsc: ULONG,
         cjIn: ULONG,
@@ -78865,7 +78865,7 @@ pub type FN_DrvEscape = ::core::option::Option<
 >;
 pub type PFN_DrvEscape = FN_DrvEscape;
 pub type FN_DrvFillPath = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
         pco: *mut CLIPOBJ,
@@ -78877,7 +78877,7 @@ pub type FN_DrvFillPath = ::core::option::Option<
 >;
 pub type PFN_DrvFillPath = FN_DrvFillPath;
 pub type FN_DrvFontManagement = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         pfo: *mut FONTOBJ,
         iMode: ULONG,
@@ -78888,20 +78888,20 @@ pub type FN_DrvFontManagement = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PFN_DrvFontManagement = FN_DrvFontManagement;
-pub type FN_DrvFree = ::core::option::Option<unsafe extern "C" fn(pv: PVOID, id: ULONG_PTR)>;
+pub type FN_DrvFree = ::core::option::Option<unsafe extern "system" fn(pv: PVOID, id: ULONG_PTR)>;
 pub type PFN_DrvFree = FN_DrvFree;
 pub type FN_DrvGetGlyphMode =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, pfo: *mut FONTOBJ) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, pfo: *mut FONTOBJ) -> ULONG>;
 pub type PFN_DrvGetGlyphMode = FN_DrvGetGlyphMode;
 pub type FN_DrvGetModes = ::core::option::Option<
-    unsafe extern "C" fn(hDriver: HANDLE, cjSize: ULONG, pdm: *mut DEVMODEW) -> ULONG,
+    unsafe extern "system" fn(hDriver: HANDLE, cjSize: ULONG, pdm: *mut DEVMODEW) -> ULONG,
 >;
 pub type PFN_DrvGetModes = FN_DrvGetModes;
 pub type FN_DrvGetTrueTypeFile =
-    ::core::option::Option<unsafe extern "C" fn(iFile: ULONG_PTR, pcj: *mut ULONG) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(iFile: ULONG_PTR, pcj: *mut ULONG) -> PVOID>;
 pub type PFN_DrvGetTrueTypeFile = FN_DrvGetTrueTypeFile;
 pub type FN_DrvGradientFill = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDest: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
         pxlo: *mut XLATEOBJ,
@@ -78916,7 +78916,7 @@ pub type FN_DrvGradientFill = ::core::option::Option<
 >;
 pub type PFN_DrvGradientFill = FN_DrvGradientFill;
 pub type FN_DrvIcmCheckBitmapBits = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         hColorTransform: HANDLE,
         pso: *mut SURFOBJ,
@@ -78925,7 +78925,7 @@ pub type FN_DrvIcmCheckBitmapBits = ::core::option::Option<
 >;
 pub type PFN_DrvIcmCheckBitmapBits = FN_DrvIcmCheckBitmapBits;
 pub type FN_DrvIcmCreateColorTransform = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pLogColorSpace: LPLOGCOLORSPACEW,
         pvSourceProfile: PVOID,
@@ -78939,14 +78939,14 @@ pub type FN_DrvIcmCreateColorTransform = ::core::option::Option<
 >;
 pub type PFN_DrvIcmCreateColorTransform = FN_DrvIcmCreateColorTransform;
 pub type FN_DrvIcmDeleteColorTransform =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, hcmXform: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, hcmXform: HANDLE) -> BOOL>;
 pub type PFN_DrvIcmDeleteColorTransform = FN_DrvIcmDeleteColorTransform;
 pub type FN_DrvIcmSetDeviceGammaRamp = ::core::option::Option<
-    unsafe extern "C" fn(dhpdev: DHPDEV, iFormat: ULONG, lpRamp: LPVOID) -> BOOL,
+    unsafe extern "system" fn(dhpdev: DHPDEV, iFormat: ULONG, lpRamp: LPVOID) -> BOOL,
 >;
 pub type PFN_DrvIcmSetDeviceGammaRamp = FN_DrvIcmSetDeviceGammaRamp;
 pub type FN_DrvLineTo = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
         pbo: *mut BRUSHOBJ,
@@ -78960,7 +78960,7 @@ pub type FN_DrvLineTo = ::core::option::Option<
 >;
 pub type PFN_DrvLineTo = FN_DrvLineTo;
 pub type FN_DrvLoadFontFile = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         cFiles: ULONG,
         piFile: *mut ULONG_PTR,
         ppvView: *mut PVOID,
@@ -78972,21 +78972,21 @@ pub type FN_DrvLoadFontFile = ::core::option::Option<
 >;
 pub type PFN_DrvLoadFontFile = FN_DrvLoadFontFile;
 pub type FN_DrvMovePointer = ::core::option::Option<
-    unsafe extern "C" fn(pso: *mut SURFOBJ, x: LONG, y: LONG, prcl: *mut RECTL),
+    unsafe extern "system" fn(pso: *mut SURFOBJ, x: LONG, y: LONG, prcl: *mut RECTL),
 >;
 pub type PFN_DrvMovePointer = FN_DrvMovePointer;
 pub type FN_DrvNextBand =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, pptl: *mut POINTL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, pptl: *mut POINTL) -> BOOL>;
 pub type PFN_DrvNextBand = FN_DrvNextBand;
 pub type FN_DrvNotify =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, iType: ULONG, pvData: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, iType: ULONG, pvData: PVOID)>;
 pub type PFN_DrvNotify = FN_DrvNotify;
 pub type FN_DrvOffset = ::core::option::Option<
-    unsafe extern "C" fn(pso: *mut SURFOBJ, x: LONG, y: LONG, flReserved: FLONG) -> BOOL,
+    unsafe extern "system" fn(pso: *mut SURFOBJ, x: LONG, y: LONG, flReserved: FLONG) -> BOOL,
 >;
 pub type PFN_DrvOffset = FN_DrvOffset;
 pub type FN_DrvPaint = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
         pbo: *mut BRUSHOBJ,
@@ -78996,7 +78996,7 @@ pub type FN_DrvPaint = ::core::option::Option<
 >;
 pub type PFN_DrvPaint = FN_DrvPaint;
 pub type FN_DrvPlgBlt = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         psoMsk: *mut SURFOBJ,
@@ -79012,7 +79012,7 @@ pub type FN_DrvPlgBlt = ::core::option::Option<
 >;
 pub type PFN_DrvPlgBlt = FN_DrvPlgBlt;
 pub type FN_DrvQueryAdvanceWidths = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pfo: *mut FONTOBJ,
         iMode: ULONG,
@@ -79023,7 +79023,7 @@ pub type FN_DrvQueryAdvanceWidths = ::core::option::Option<
 >;
 pub type PFN_DrvQueryAdvanceWidths = FN_DrvQueryAdvanceWidths;
 pub type FN_DrvQueryDeviceSupport = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         pxlo: *mut XLATEOBJ,
         pxo: *mut XFORMOBJ,
@@ -79036,11 +79036,11 @@ pub type FN_DrvQueryDeviceSupport = ::core::option::Option<
 >;
 pub type PFN_DrvQueryDeviceSupport = FN_DrvQueryDeviceSupport;
 pub type FN_DrvQueryDriverInfo = ::core::option::Option<
-    unsafe extern "C" fn(dwMode: DWORD, pBuffer: PVOID, cjBuf: DWORD, pcbNeeded: PDWORD) -> BOOL,
+    unsafe extern "system" fn(dwMode: DWORD, pBuffer: PVOID, cjBuf: DWORD, pcbNeeded: PDWORD) -> BOOL,
 >;
 pub type PFN_DrvQueryDriverInfo = FN_DrvQueryDriverInfo;
 pub type FN_DrvQueryFont = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         iFile: ULONG_PTR,
         iFace: ULONG,
@@ -79049,10 +79049,10 @@ pub type FN_DrvQueryFont = ::core::option::Option<
 >;
 pub type PFN_DrvQueryFont = FN_DrvQueryFont;
 pub type FN_DrvQueryFontCaps =
-    ::core::option::Option<unsafe extern "C" fn(culCaps: ULONG, pulCaps: *mut ULONG) -> LONG>;
+    ::core::option::Option<unsafe extern "system" fn(culCaps: ULONG, pulCaps: *mut ULONG) -> LONG>;
 pub type PFN_DrvQueryFontCaps = FN_DrvQueryFontCaps;
 pub type FN_DrvQueryFontData = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pfo: *mut FONTOBJ,
         iMode: ULONG,
@@ -79064,11 +79064,11 @@ pub type FN_DrvQueryFontData = ::core::option::Option<
 >;
 pub type PFN_DrvQueryFontData = FN_DrvQueryFontData;
 pub type FN_DrvQueryFontFile = ::core::option::Option<
-    unsafe extern "C" fn(iFile: ULONG_PTR, ulMode: ULONG, cjBuf: ULONG, pulBuf: *mut ULONG) -> LONG,
+    unsafe extern "system" fn(iFile: ULONG_PTR, ulMode: ULONG, cjBuf: ULONG, pulBuf: *mut ULONG) -> LONG,
 >;
 pub type PFN_DrvQueryFontFile = FN_DrvQueryFontFile;
 pub type FN_DrvQueryFontTree = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         iFile: ULONG_PTR,
         iFace: ULONG,
@@ -79078,13 +79078,13 @@ pub type FN_DrvQueryFontTree = ::core::option::Option<
 >;
 pub type PFN_DrvQueryFontTree = FN_DrvQueryFontTree;
 pub type FN_DrvQueryGlyphAttrs =
-    ::core::option::Option<unsafe extern "C" fn(pfo: *mut FONTOBJ, iMode: ULONG) -> PFD_GLYPHATTR>;
+    ::core::option::Option<unsafe extern "system" fn(pfo: *mut FONTOBJ, iMode: ULONG) -> PFD_GLYPHATTR>;
 pub type PFN_DrvQueryGlyphAttrs = FN_DrvQueryGlyphAttrs;
 pub type FN_DrvQueryPerBandInfo =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, pbi: *mut PERBANDINFO) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, pbi: *mut PERBANDINFO) -> ULONG>;
 pub type PFN_DrvQueryPerBandInfo = FN_DrvQueryPerBandInfo;
 pub type FN_DrvQueryTrueTypeOutline = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pfo: *mut FONTOBJ,
         hglyph: HGLYPH,
@@ -79096,7 +79096,7 @@ pub type FN_DrvQueryTrueTypeOutline = ::core::option::Option<
 >;
 pub type PFN_DrvQueryTrueTypeOutline = FN_DrvQueryTrueTypeOutline;
 pub type FN_DrvQueryTrueTypeTable = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         iFile: ULONG_PTR,
         ulFont: ULONG,
         ulTag: ULONG,
@@ -79109,7 +79109,7 @@ pub type FN_DrvQueryTrueTypeTable = ::core::option::Option<
 >;
 pub type PFN_DrvQueryTrueTypeTable = FN_DrvQueryTrueTypeTable;
 pub type FN_DrvRealizeBrush = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pbo: *mut BRUSHOBJ,
         psoTarget: *mut SURFOBJ,
         psoPattern: *mut SURFOBJ,
@@ -79120,13 +79120,13 @@ pub type FN_DrvRealizeBrush = ::core::option::Option<
 >;
 pub type PFN_DrvRealizeBrush = FN_DrvRealizeBrush;
 pub type FN_DrvResetDevice =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, Reserved: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, Reserved: PVOID) -> ULONG>;
 pub type PFN_DrvResetDevice = FN_DrvResetDevice;
 pub type FN_DrvResetPDEV =
-    ::core::option::Option<unsafe extern "C" fn(dhpdevOld: DHPDEV, dhpdevNew: DHPDEV) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdevOld: DHPDEV, dhpdevNew: DHPDEV) -> BOOL>;
 pub type PFN_DrvResetPDEV = FN_DrvResetPDEV;
 pub type FN_DrvSaveScreenBits = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         iMode: ULONG,
         ident: ULONG_PTR,
@@ -79134,10 +79134,10 @@ pub type FN_DrvSaveScreenBits = ::core::option::Option<
     ) -> ULONG_PTR,
 >;
 pub type PFN_DrvSaveScreenBits = FN_DrvSaveScreenBits;
-pub type FN_DrvSendPage = ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ) -> BOOL>;
+pub type FN_DrvSendPage = ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ) -> BOOL>;
 pub type PFN_DrvSendPage = FN_DrvSendPage;
 pub type FN_DrvSetPalette = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         ppalo: *mut PALOBJ,
         fl: FLONG,
@@ -79147,11 +79147,11 @@ pub type FN_DrvSetPalette = ::core::option::Option<
 >;
 pub type PFN_DrvSetPalette = FN_DrvSetPalette;
 pub type FN_DrvSetPixelFormat = ::core::option::Option<
-    unsafe extern "C" fn(pso: *mut SURFOBJ, iPixelFormat: LONG, hwnd: HWND) -> BOOL,
+    unsafe extern "system" fn(pso: *mut SURFOBJ, iPixelFormat: LONG, hwnd: HWND) -> BOOL,
 >;
 pub type PFN_DrvSetPixelFormat = FN_DrvSetPixelFormat;
 pub type FN_DrvSetPointerShape = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
         psoColor: *mut SURFOBJ,
@@ -79166,16 +79166,16 @@ pub type FN_DrvSetPointerShape = ::core::option::Option<
 >;
 pub type PFN_DrvSetPointerShape = FN_DrvSetPointerShape;
 pub type FN_DrvStartBanding =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, pptl: *mut POINTL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, pptl: *mut POINTL) -> BOOL>;
 pub type PFN_DrvStartBanding = FN_DrvStartBanding;
 pub type FN_DrvStartDoc = ::core::option::Option<
-    unsafe extern "C" fn(pso: *mut SURFOBJ, pwszDocName: LPWSTR, dwJobId: DWORD) -> BOOL,
+    unsafe extern "system" fn(pso: *mut SURFOBJ, pwszDocName: LPWSTR, dwJobId: DWORD) -> BOOL,
 >;
 pub type PFN_DrvStartDoc = FN_DrvStartDoc;
-pub type FN_DrvStartPage = ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ) -> BOOL>;
+pub type FN_DrvStartPage = ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ) -> BOOL>;
 pub type PFN_DrvStartPage = FN_DrvStartPage;
 pub type FN_DrvStretchBlt = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -79191,7 +79191,7 @@ pub type FN_DrvStretchBlt = ::core::option::Option<
 >;
 pub type PFN_DrvStretchBlt = FN_DrvStretchBlt;
 pub type FN_DrvStretchBltROP = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -79209,7 +79209,7 @@ pub type FN_DrvStretchBltROP = ::core::option::Option<
 >;
 pub type PFN_DrvStretchBltROP = FN_DrvStretchBltROP;
 pub type FN_DrvStrokeAndFillPath = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
         pco: *mut CLIPOBJ,
@@ -79224,7 +79224,7 @@ pub type FN_DrvStrokeAndFillPath = ::core::option::Option<
 >;
 pub type PFN_DrvStrokeAndFillPath = FN_DrvStrokeAndFillPath;
 pub type FN_DrvStrokePath = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
         pco: *mut CLIPOBJ,
@@ -79237,16 +79237,16 @@ pub type FN_DrvStrokePath = ::core::option::Option<
 >;
 pub type PFN_DrvStrokePath = FN_DrvStrokePath;
 pub type FN_DrvSwapBuffers =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, pwo: *mut WNDOBJ) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, pwo: *mut WNDOBJ) -> BOOL>;
 pub type PFN_DrvSwapBuffers = FN_DrvSwapBuffers;
 pub type FN_DrvSynchronize =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, prcl: *mut RECTL)>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, prcl: *mut RECTL)>;
 pub type PFN_DrvSynchronize = FN_DrvSynchronize;
 pub type FN_DrvSynchronizeSurface =
-    ::core::option::Option<unsafe extern "C" fn(pso: *mut SURFOBJ, prcl: *mut RECTL, fl: FLONG)>;
+    ::core::option::Option<unsafe extern "system" fn(pso: *mut SURFOBJ, prcl: *mut RECTL, fl: FLONG)>;
 pub type PFN_DrvSynchronizeSurface = FN_DrvSynchronizeSurface;
 pub type FN_DrvTextOut = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pso: *mut SURFOBJ,
         pstro: *mut STROBJ,
         pfo: *mut FONTOBJ,
@@ -79261,7 +79261,7 @@ pub type FN_DrvTextOut = ::core::option::Option<
 >;
 pub type PFN_DrvTextOut = FN_DrvTextOut;
 pub type FN_DrvTransparentBlt = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         psoDst: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -79274,12 +79274,12 @@ pub type FN_DrvTransparentBlt = ::core::option::Option<
 >;
 pub type PFN_DrvTransparentBlt = FN_DrvTransparentBlt;
 pub type FN_DrvUnloadFontFile =
-    ::core::option::Option<unsafe extern "C" fn(iFile: ULONG_PTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(iFile: ULONG_PTR) -> BOOL>;
 pub type PFN_DrvUnloadFontFile = FN_DrvUnloadFontFile;
-pub type FN_DrvDisableDirectDraw = ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV)>;
+pub type FN_DrvDisableDirectDraw = ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV)>;
 pub type PFN_DrvDisableDirectDraw = FN_DrvDisableDirectDraw;
 pub type FN_DrvEnableDirectDraw = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pCallBacks: *mut DD_CALLBACKS,
         pSurfaceCallBacks: *mut DD_SURFACECALLBACKS,
@@ -79288,7 +79288,7 @@ pub type FN_DrvEnableDirectDraw = ::core::option::Option<
 >;
 pub type PFN_DrvEnableDirectDraw = FN_DrvEnableDirectDraw;
 pub type FN_DrvGetDirectDrawInfo = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         dhpdev: DHPDEV,
         pHalInfo: *mut DD_HALINFO,
         pdwNumHeaps: *mut DWORD,
@@ -79299,10 +79299,10 @@ pub type FN_DrvGetDirectDrawInfo = ::core::option::Option<
 >;
 pub type PFN_DrvGetDirectDrawInfo = FN_DrvGetDirectDrawInfo;
 pub type FN_DrvQuerySpoolType =
-    ::core::option::Option<unsafe extern "C" fn(dhpdev: DHPDEV, pwchType: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(dhpdev: DHPDEV, pwchType: LPWSTR) -> BOOL>;
 pub type PFN_DrvQuerySpoolType = FN_DrvQuerySpoolType;
 pub type FN_DrvQueryTrueTypeSection = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: ULONG,
         arg2: ULONG,
         arg3: ULONG,
@@ -79312,32 +79312,32 @@ pub type FN_DrvQueryTrueTypeSection = ::core::option::Option<
 >;
 pub type PFN_DrvQueryTrueTypeSection = FN_DrvQueryTrueTypeSection;
 pub type FN_DrvMovePanning =
-    ::core::option::Option<unsafe extern "C" fn(x: LONG, y: LONG, fl: FLONG)>;
+    ::core::option::Option<unsafe extern "system" fn(x: LONG, y: LONG, fl: FLONG)>;
 pub type PFN_DrvMovePanning = FN_DrvMovePanning;
 pub type DLGPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> INT_PTR,
 >;
 pub type TIMERPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: UINT_PTR, arg4: DWORD),
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: UINT_PTR, arg4: DWORD),
 >;
 pub type GRAYSTRINGPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HDC, arg2: LPARAM, arg3: ::core::ffi::c_int) -> BOOL,
+    unsafe extern "system" fn(arg1: HDC, arg2: LPARAM, arg3: ::core::ffi::c_int) -> BOOL,
 >;
 pub type HOOKPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: ::core::ffi::c_int, arg2: WPARAM, arg3: LPARAM) -> LRESULT,
+    unsafe extern "system" fn(arg1: ::core::ffi::c_int, arg2: WPARAM, arg3: LPARAM) -> LRESULT,
 >;
 pub type PROPENUMPROCA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL>;
 pub type PROPENUMPROCW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL>;
 pub type PROPENUMPROCEXA = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: LPSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
 >;
 pub type PROPENUMPROCEXW = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: LPWSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: LPWSTR, arg3: HANDLE, arg4: ULONG_PTR) -> BOOL,
 >;
 pub type EDITWORDBREAKPROCA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPSTR,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
@@ -79345,7 +79345,7 @@ pub type EDITWORDBREAKPROCA = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type EDITWORDBREAKPROCW = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPWSTR,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
@@ -79353,10 +79353,10 @@ pub type EDITWORDBREAKPROCW = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 pub type WNDPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT,
 >;
 pub type DRAWSTATEPROC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HDC,
         arg2: LPARAM,
         arg3: WPARAM,
@@ -79365,20 +79365,20 @@ pub type DRAWSTATEPROC = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type WNDENUMPROC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: LPARAM) -> BOOL>;
 pub type MONITORENUMPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HMONITOR, arg2: HDC, arg3: LPRECTL, arg4: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: HMONITOR, arg2: HDC, arg3: LPRECTL, arg4: LPARAM) -> BOOL,
 >;
 pub type NAMEENUMPROCA =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LPARAM) -> BOOL>;
 pub type NAMEENUMPROCW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
 pub type DESKTOPENUMPROCA = NAMEENUMPROCA;
 pub type DESKTOPENUMPROCW = NAMEENUMPROCW;
 pub type WINSTAENUMPROCA = NAMEENUMPROCA;
 pub type WINSTAENUMPROCW = NAMEENUMPROCW;
 pub type SENDASYNCPROC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: ULONG_PTR, arg4: LRESULT),
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: ULONG_PTR, arg4: LRESULT),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -79906,7 +79906,7 @@ pub struct tagHELPINFO {
 }
 pub type HELPINFO = tagHELPINFO;
 pub type LPHELPINFO = *mut tagHELPINFO;
-pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "C" fn(arg1: LPHELPINFO)>;
+pub type MSGBOXCALLBACK = ::core::option::Option<unsafe extern "system" fn(arg1: LPHELPINFO)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MSGBOXPARAMSA {
@@ -80719,7 +80719,7 @@ pub type GUITHREADINFO = tagGUITHREADINFO;
 pub type PGUITHREADINFO = *mut tagGUITHREADINFO;
 pub type LPGUITHREADINFO = *mut tagGUITHREADINFO;
 pub type WINEVENTPROC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HWINEVENTHOOK,
         arg2: DWORD,
         arg3: HWND,
@@ -80896,8 +80896,8 @@ pub struct NEWHEADER {
     pub ResCount: WORD,
 }
 pub type PREGISTERCLASSNAMEW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPCWSTR) -> BOOLEAN>;
-unsafe extern "C" {
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPCWSTR) -> BOOLEAN>;
+unsafe extern "system" {
     pub fn UserHandleGrantAccess(arg1: HANDLE, arg2: HANDLE, arg3: BOOL) -> BOOL;
 }
 #[repr(C)]
@@ -84508,7 +84508,7 @@ pub union _IMAGE_THUNK_DATA32__bindgen_ty_1 {
 pub type IMAGE_THUNK_DATA32 = _IMAGE_THUNK_DATA32;
 pub type PIMAGE_THUNK_DATA32 = *mut _IMAGE_THUNK_DATA32;
 pub type PIMAGE_TLS_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(DllHandle: PVOID, Reason: ULONG, Reserved: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DllHandle: PVOID, Reason: ULONG, Reserved: PVOID)>;
 #[repr(C, packed(4))]
 #[derive(Debug, Copy, Clone)]
 pub struct _IMAGE_TLS_DIRECTORY64 {
@@ -84600,9 +84600,9 @@ pub type _POWER_STATE_HANDLER_TYPE = ::core::ffi::c_uint;
 pub use self::_POWER_STATE_HANDLER_TYPE as POWER_STATE_HANDLER_TYPE;
 pub type PPOWER_STATE_HANDLER_TYPE = *mut _POWER_STATE_HANDLER_TYPE;
 pub type PENTER_STATE_SYSTEM_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(SystemContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(SystemContext: PVOID) -> NTSTATUS>;
 pub type PENTER_STATE_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         SystemHandler: PENTER_STATE_SYSTEM_HANDLER,
         SystemContext: PVOID,
@@ -84622,7 +84622,7 @@ pub struct _POWER_STATE_HANDLER {
 pub type POWER_STATE_HANDLER = _POWER_STATE_HANDLER;
 pub type PPOWER_STATE_HANDLER = *mut _POWER_STATE_HANDLER;
 pub type PENTER_STATE_NOTIFY_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         State: POWER_STATE_HANDLER_TYPE,
         Context: PVOID,
         Entering: BOOLEAN,
@@ -85393,9 +85393,9 @@ pub type pHalHandlerForConfigSpace = ::core::option::Option<
     unsafe extern "C" fn(ConfigSpace: BUS_DATA_TYPE, BusNumber: ULONG) -> PBUS_HANDLER,
 >;
 pub type PINSTALL_BUS_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(Bus: PBUS_HANDLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Bus: PBUS_HANDLER) -> NTSTATUS>;
 pub type pHalRegisterBusHandler = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         InterfaceType: INTERFACE_TYPE,
         ConfigSpace: BUS_DATA_TYPE,
         BusNumber: ULONG,
@@ -85406,12 +85406,12 @@ pub type pHalRegisterBusHandler = ::core::option::Option<
         BusHandler: *mut PBUS_HANDLER,
     ) -> NTSTATUS,
 >;
-pub type pHalSetWakeEnable = ::core::option::Option<unsafe extern "C" fn(Enable: BOOLEAN)>;
+pub type pHalSetWakeEnable = ::core::option::Option<unsafe extern "system" fn(Enable: BOOLEAN)>;
 pub type pHalSetWakeAlarm =
-    ::core::option::Option<unsafe extern "C" fn(AlartTime: ULONGLONG, TimeFields: PTIME_FIELDS)>;
-pub type pHalLocateHiberRanges = ::core::option::Option<unsafe extern "C" fn(MemoryMap: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(AlartTime: ULONGLONG, TimeFields: PTIME_FIELDS)>;
+pub type pHalLocateHiberRanges = ::core::option::Option<unsafe extern "system" fn(MemoryMap: PVOID)>;
 pub type pHalAllocateMapRegisters = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         AdapterObject: PADAPTER_OBJECT,
         Unknown: ULONG,
         Unknown2: ULONG,
@@ -85419,14 +85419,14 @@ pub type pHalAllocateMapRegisters = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PADJUSTRESOURCELIST = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
     ) -> NTSTATUS,
 >;
 pub type PASSIGNSLOTRESOURCES = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         RegistryPath: PUNICODE_STRING,
@@ -85438,7 +85438,7 @@ pub type PASSIGNSLOTRESOURCES = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PGETSETBUSDATA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         SlotNumber: ULONG,
@@ -85448,7 +85448,7 @@ pub type PGETSETBUSDATA = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PGETINTERRUPTVECTOR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         BusInterruptLevel: ULONG,
@@ -85458,7 +85458,7 @@ pub type PGETINTERRUPTVECTOR = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PTRANSLATEBUSADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusHandler: PBUS_HANDLER,
         RootHandler: PBUS_HANDLER,
         BusAddress: PHYSICAL_ADDRESS,
@@ -85662,14 +85662,14 @@ pub const _VDMSERVICECLASS_VdmQueryVdmProcess: _VDMSERVICECLASS = 14;
 pub type _VDMSERVICECLASS = ::core::ffi::c_uint;
 pub use self::_VDMSERVICECLASS as VDMSERVICECLASS;
 pub type PKSYSTEM_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID),
+    unsafe extern "system" fn(StartRoutine: PKSTART_ROUTINE, StartContext: PVOID),
 >;
 pub type PKNORMAL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
+    unsafe extern "system" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
 >;
-pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Apc: *mut _KAPC)>;
+pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Apc: *mut _KAPC)>;
 pub type PKKERNEL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Apc: *mut _KAPC,
         NormalRoutine: *mut PKNORMAL_ROUTINE,
         NormalContext: *mut PVOID,
@@ -88334,7 +88334,7 @@ pub const _EVENT_INFORMATION_CLASS_EventBasicInformation: _EVENT_INFORMATION_CLA
 pub type _EVENT_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_EVENT_INFORMATION_CLASS as EVENT_INFORMATION_CLASS;
 pub type PEX_ENUM_HANDLE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         HandleTableEntry: *mut _HANDLE_TABLE_ENTRY,
         Handle: HANDLE,
         Context: PVOID,
@@ -95030,7 +95030,7 @@ pub type LDR_DLL_NOTIFICATION_DATA = _LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_DATA = *mut _LDR_DLL_NOTIFICATION_DATA;
 pub type PCLDR_DLL_NOTIFICATION_DATA = *const LDR_DLL_NOTIFICATION_DATA;
 pub type PLDR_DLL_NOTIFICATION_FUNCTION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         NotificationReason: ULONG,
         NotificationData: PCLDR_DLL_NOTIFICATION_DATA,
         Context: PVOID,
@@ -95046,7 +95046,7 @@ pub struct _ALT_RESOURCE_MODULE {
 pub type ALT_RESOURCE_MODULE = _ALT_RESOURCE_MODULE;
 pub type PALT_RESOURCE_MODULE = *mut _ALT_RESOURCE_MODULE;
 pub type LDR_ENUM_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ModuleInformation: PLDR_DATA_TABLE_ENTRY,
         Context: PVOID,
         Stop: *mut BOOLEAN,
@@ -95054,11 +95054,11 @@ pub type LDR_ENUM_CALLBACK = ::core::option::Option<
 >;
 pub type PLDR_ENUM_CALLBACK = LDR_ENUM_CALLBACK;
 pub type LDR_MANIFEST_PROBER_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(DllHandle: PVOID, FullDllName: PCWSTR, ActCtx: *mut PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(DllHandle: PVOID, FullDllName: PCWSTR, ActCtx: *mut PVOID) -> NTSTATUS,
 >;
 pub type PLDR_MANIFEST_PROBER_ROUTINE = LDR_MANIFEST_PROBER_ROUTINE;
 pub type PDLL_INIT_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
+    unsafe extern "system" fn(DllHandle: PVOID, Reason: ULONG, Context: PCONTEXT) -> BOOLEAN,
 >;
 pub const _RTL_BSD_ITEM_TYPE_RtlBsdItemVersionNumber: _RTL_BSD_ITEM_TYPE = 0;
 pub const _RTL_BSD_ITEM_TYPE_RtlBsdItemProductType: _RTL_BSD_ITEM_TYPE = 1;
@@ -95095,31 +95095,31 @@ pub const _HEAP_INFORMATION_CLASS_HeapEnableTerminationOnCorruption: _HEAP_INFOR
 pub type _HEAP_INFORMATION_CLASS = ::core::ffi::c_uint;
 pub use self::_HEAP_INFORMATION_CLASS as HEAP_INFORMATION_CLASS;
 pub type WAITORTIMERCALLBACKFUNC =
-    ::core::option::Option<unsafe extern "C" fn(pvContext: PVOID, fTimerOrWaitFired: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(pvContext: PVOID, fTimerOrWaitFired: BOOLEAN)>;
 pub type PVECTORED_EXCEPTION_HANDLER =
-    ::core::option::Option<unsafe extern "C" fn(ExceptionPointers: PEXCEPTION_POINTERS) -> LONG>;
-pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(ExceptionPointers: PEXCEPTION_POINTERS) -> LONG>;
+pub type WORKERCALLBACKFUNC = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 pub type RTLP_UNHANDLED_EXCEPTION_FILTER =
-    ::core::option::Option<unsafe extern "C" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(ExceptionInfo: *mut _EXCEPTION_POINTERS) -> ULONG>;
 pub type PRTLP_UNHANDLED_EXCEPTION_FILTER = RTLP_UNHANDLED_EXCEPTION_FILTER;
 pub type PHEAP_ENUMERATION_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(HeapHandle: PVOID, UserParam: PVOID) -> NTSTATUS>;
 pub type PTHREAD_START_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID) -> ULONG>;
 pub type PRTL_BASE_PROCESS_START_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
+    unsafe extern "system" fn(StartAddress: PTHREAD_START_ROUTINE, Parameter: PVOID),
 >;
 pub type PRTL_START_POOL_THREAD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Function: PTHREAD_START_ROUTINE,
         Parameter: PVOID,
         ThreadHandle: PHANDLE,
     ) -> NTSTATUS,
 >;
 pub type PRTL_EXIT_POOL_THREAD =
-    ::core::option::Option<unsafe extern "C" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(ExitStatus: NTSTATUS) -> NTSTATUS>;
 pub type PRTL_CONFLICT_RANGE_CALLBACK =
-    ::core::option::Option<unsafe extern "C" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(Context: PVOID, Range: *mut _RTL_RANGE) -> BOOLEAN>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ACTIVATION_CONTEXT_STACK {
@@ -96177,7 +96177,7 @@ pub union _STACK_TRACE_DATABASE__bindgen_ty_1 {
 pub type STACK_TRACE_DATABASE = _STACK_TRACE_DATABASE;
 pub type PSTACK_TRACE_DATABASE = *mut _STACK_TRACE_DATABASE;
 pub type RTL_TRACE_HASH_FUNCTION =
-    ::core::option::Option<unsafe extern "C" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
+    ::core::option::Option<unsafe extern "system" fn(Count: ULONG, Trace: *mut PVOID) -> ULONG>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _RTL_TRACE_BLOCK {
@@ -97022,9 +97022,9 @@ pub struct _DCISURFACEINFO {
     pub dwReserved2: DWORD,
     pub dwReserved3: DWORD,
     pub BeginAccess:
-        ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID, arg2: LPRECTL) -> DCIRVAL>,
-    pub EndAccess: ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID)>,
-    pub DestroySurface: ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID, arg2: LPRECTL) -> DCIRVAL>,
+    pub EndAccess: ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID)>,
+    pub DestroySurface: ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID)>,
 }
 pub type DCISURFACEINFO = _DCISURFACEINFO;
 pub type LPDCISURFACEINFO = *mut _DCISURFACEINFO;
@@ -97038,7 +97038,7 @@ pub struct _DCIENUMINPUT {
     pub rSrc: RECTL,
     pub rDst: RECTL,
     pub EnumCallback:
-        ::core::option::Option<unsafe extern "C" fn(arg1: LPDCISURFACEINFO, arg2: LPVOID)>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPDCISURFACEINFO, arg2: LPVOID)>,
     pub lpContext: LPVOID,
 }
 pub type DCIENUMINPUT = _DCIENUMINPUT;
@@ -97049,11 +97049,11 @@ pub type LPDCIPRIMARY = *mut DCISURFACEINFO;
 #[derive(Debug, Copy, Clone)]
 pub struct _DCIOFFSCREEN {
     pub dciInfo: DCISURFACEINFO,
-    pub Draw: ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID) -> DCIRVAL>,
+    pub Draw: ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID) -> DCIRVAL>,
     pub SetClipList:
-        ::core::option::Option<unsafe extern "C" fn(arg1: LPVOID, arg2: LPRGNDATA) -> DCIRVAL>,
+        ::core::option::Option<unsafe extern "system" fn(arg1: LPVOID, arg2: LPRGNDATA) -> DCIRVAL>,
     pub SetDestination: ::core::option::Option<
-        unsafe extern "C" fn(arg1: LPVOID, arg2: LPRECTL, arg3: LPRECTL) -> DCIRVAL,
+        unsafe extern "system" fn(arg1: LPVOID, arg2: LPRECTL, arg3: LPRECTL) -> DCIRVAL,
     >,
 }
 pub type DCIOFFSCREEN = _DCIOFFSCREEN;
@@ -97096,7 +97096,7 @@ pub struct DDVERSIONDATA {
 }
 pub type LPDDVERSIONDATA = *mut DDVERSIONDATA;
 pub type LPDD32BITDRIVERINIT =
-    ::core::option::Option<unsafe extern "C" fn(dwContext: DWORD) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(dwContext: DWORD) -> DWORD>;
 pub type LPDDHALINFO = *mut _DDHALINFO;
 pub type LPDDRAWI_DIRECTDRAW_INT = *mut _DDRAWI_DIRECTDRAW_INT;
 pub type LPDDRAWI_DIRECTDRAW_LCL = *mut _DDRAWI_DIRECTDRAW_LCL;
@@ -97117,9 +97117,9 @@ pub type LPDDRAWI_DDVIDEOPORT_LCL = *mut _DDRAWI_DDVIDEOPORT_LCL;
 pub type LPDDRAWI_DDMOTIONCOMP_INT = *mut _DDRAWI_DDMOTIONCOMP_INT;
 pub type LPDDRAWI_DDMOTIONCOMP_LCL = *mut _DDRAWI_DDMOTIONCOMP_LCL;
 pub type LPDDHAL_SETINFO =
-    ::core::option::Option<unsafe extern "C" fn(lpDDHalInfo: LPDDHALINFO, reset: BOOL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(lpDDHalInfo: LPDDHALINFO, reset: BOOL) -> BOOL>;
 pub type LPDDHAL_VIDMEMALLOC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpDD: LPDDRAWI_DIRECTDRAW_GBL,
         heap: ::core::ffi::c_int,
         dwWidth: DWORD,
@@ -97127,7 +97127,7 @@ pub type LPDDHAL_VIDMEMALLOC = ::core::option::Option<
     ) -> FLATPTR,
 >;
 pub type LPDDHAL_VIDMEMFREE = ::core::option::Option<
-    unsafe extern "C" fn(lpDD: LPDDRAWI_DIRECTDRAW_GBL, heap: ::core::ffi::c_int, fpMem: FLATPTR),
+    unsafe extern "system" fn(lpDD: LPDDRAWI_DIRECTDRAW_GBL, heap: ::core::ffi::c_int, fpMem: FLATPTR),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -97295,25 +97295,25 @@ pub type LPDDHAL_GETSCANLINEDATA = *mut _DDHAL_GETSCANLINEDATA;
 pub type LPDDHAL_SETEXCLUSIVEMODEDATA = *mut _DDHAL_SETEXCLUSIVEMODEDATA;
 pub type LPDDHAL_FLIPTOGDISURFACEDATA = *mut _DDHAL_FLIPTOGDISURFACEDATA;
 pub type LPDDHAL_DESTROYDRIVER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYDRIVERDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYDRIVERDATA) -> DWORD>;
 pub type LPDDHAL_CREATESURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATESURFACEDATA) -> DWORD>;
 pub type LPDDHAL_SETCOLORKEY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DRVSETCOLORKEYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DRVSETCOLORKEYDATA) -> DWORD>;
 pub type LPDDHAL_SETMODE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETMODEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETMODEDATA) -> DWORD>;
 pub type LPDDHAL_WAITFORVERTICALBLANK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_WAITFORVERTICALBLANKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_WAITFORVERTICALBLANKDATA) -> DWORD>;
 pub type LPDDHAL_CANCREATESURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CANCREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CANCREATESURFACEDATA) -> DWORD>;
 pub type LPDDHAL_CREATEPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATEPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATEPALETTEDATA) -> DWORD>;
 pub type LPDDHAL_GETSCANLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETSCANLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETSCANLINEDATA) -> DWORD>;
 pub type LPDDHAL_SETEXCLUSIVEMODE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETEXCLUSIVEMODEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETEXCLUSIVEMODEDATA) -> DWORD>;
 pub type LPDDHAL_FLIPTOGDISURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_FLIPTOGDISURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_FLIPTOGDISURFACEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDCALLBACKS {
@@ -97346,31 +97346,31 @@ pub type LPDDHAL_UPDATEOVERLAYDATA = *mut _DDHAL_UPDATEOVERLAYDATA;
 pub type LPDDHAL_SETOVERLAYPOSITIONDATA = *mut _DDHAL_SETOVERLAYPOSITIONDATA;
 pub type LPDDHAL_SETPALETTEDATA = *mut _DDHAL_SETPALETTEDATA;
 pub type LPDDHALSURFCB_DESTROYSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYSURFACEDATA) -> DWORD>;
 pub type LPDDHALSURFCB_FLIP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_FLIPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_FLIPDATA) -> DWORD>;
 pub type LPDDHALSURFCB_SETCLIPLIST =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETCLIPLISTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETCLIPLISTDATA) -> DWORD>;
 pub type LPDDHALSURFCB_LOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_LOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_LOCKDATA) -> DWORD>;
 pub type LPDDHALSURFCB_UNLOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_UNLOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_UNLOCKDATA) -> DWORD>;
 pub type LPDDHALSURFCB_BLT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_BLTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_BLTDATA) -> DWORD>;
 pub type LPDDHALSURFCB_SETCOLORKEY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETCOLORKEYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETCOLORKEYDATA) -> DWORD>;
 pub type LPDDHALSURFCB_ADDATTACHEDSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_ADDATTACHEDSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_ADDATTACHEDSURFACEDATA) -> DWORD>;
 pub type LPDDHALSURFCB_GETBLTSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETBLTSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETBLTSTATUSDATA) -> DWORD>;
 pub type LPDDHALSURFCB_GETFLIPSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETFLIPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETFLIPSTATUSDATA) -> DWORD>;
 pub type LPDDHALSURFCB_UPDATEOVERLAY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_UPDATEOVERLAYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_UPDATEOVERLAYDATA) -> DWORD>;
 pub type LPDDHALSURFCB_SETOVERLAYPOSITION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETOVERLAYPOSITIONDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETOVERLAYPOSITIONDATA) -> DWORD>;
 pub type LPDDHALSURFCB_SETPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETPALETTEDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDSURFACECALLBACKS {
@@ -97396,9 +97396,9 @@ pub type LPDDHAL_DDSURFACECALLBACKS = *mut _DDHAL_DDSURFACECALLBACKS;
 pub type LPDDHAL_DESTROYPALETTEDATA = *mut _DDHAL_DESTROYPALETTEDATA;
 pub type LPDDHAL_SETENTRIESDATA = *mut _DDHAL_SETENTRIESDATA;
 pub type LPDDHALPALCB_DESTROYPALETTE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYPALETTEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYPALETTEDATA) -> DWORD>;
 pub type LPDDHALPALCB_SETENTRIES =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SETENTRIESDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SETENTRIESDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDPALETTECALLBACKS {
@@ -97410,15 +97410,15 @@ pub struct _DDHAL_DDPALETTECALLBACKS {
 pub type DDHAL_DDPALETTECALLBACKS = _DDHAL_DDPALETTECALLBACKS;
 pub type LPDDHAL_DDPALETTECALLBACKS = *mut _DDHAL_DDPALETTECALLBACKS;
 pub type LPDDHALEXEBUFCB_CANCREATEEXEBUF =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CANCREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CANCREATESURFACEDATA) -> DWORD>;
 pub type LPDDHALEXEBUFCB_CREATEEXEBUF =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATESURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATESURFACEDATA) -> DWORD>;
 pub type LPDDHALEXEBUFCB_DESTROYEXEBUF =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYSURFACEDATA) -> DWORD>;
 pub type LPDDHALEXEBUFCB_LOCKEXEBUF =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_LOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_LOCKDATA) -> DWORD>;
 pub type LPDDHALEXEBUFCB_UNLOCKEXEBUF =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_UNLOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_UNLOCKDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDEXEBUFCALLBACKS {
@@ -97436,11 +97436,11 @@ pub type LPDDHAL_GETAVAILDRIVERMEMORYDATA = *mut _DDHAL_GETAVAILDRIVERMEMORYDATA
 pub type LPDDHAL_UPDATENONLOCALHEAPDATA = *mut _DDHAL_UPDATENONLOCALHEAPDATA;
 pub type LPDDHAL_GETHEAPALIGNMENTDATA = *mut _DDHAL_GETHEAPALIGNMENTDATA;
 pub type LPDDHAL_GETAVAILDRIVERMEMORY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETAVAILDRIVERMEMORYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETAVAILDRIVERMEMORYDATA) -> DWORD>;
 pub type LPDDHAL_UPDATENONLOCALHEAP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_UPDATENONLOCALHEAPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_UPDATENONLOCALHEAPDATA) -> DWORD>;
 pub type LPDDHAL_GETHEAPALIGNMENT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETHEAPALIGNMENTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETHEAPALIGNMENTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDMISCELLANEOUSCALLBACKS {
@@ -97457,11 +97457,11 @@ pub type LPDDHAL_CREATESURFACEEXDATA = *mut _DDHAL_CREATESURFACEEXDATA;
 pub type LPDDHAL_GETDRIVERSTATEDATA = *mut _DDHAL_GETDRIVERSTATEDATA;
 pub type LPDDHAL_DESTROYDDLOCALDATA = *mut _DDHAL_DESTROYDDLOCALDATA;
 pub type LPDDHAL_CREATESURFACEEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATESURFACEEXDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATESURFACEEXDATA) -> DWORD>;
 pub type LPDDHAL_GETDRIVERSTATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETDRIVERSTATEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETDRIVERSTATEDATA) -> DWORD>;
 pub type LPDDHAL_DESTROYDDLOCAL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYDDLOCALDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYDDLOCALDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDMISCELLANEOUS2CALLBACKS {
@@ -97490,35 +97490,35 @@ pub type LPDDHAL_WAITFORVPORTSYNCDATA = *mut _DDHAL_WAITFORVPORTSYNCDATA;
 pub type LPDDHAL_GETVPORTSIGNALDATA = *mut _DDHAL_GETVPORTSIGNALDATA;
 pub type LPDDHAL_VPORTCOLORDATA = *mut _DDHAL_VPORTCOLORDATA;
 pub type LPDDHALVPORTCB_CANCREATEVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CANCREATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CANCREATEVPORTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_CREATEVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATEVPORTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_FLIP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_FLIPVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_FLIPVPORTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETBANDWIDTH =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTBANDWIDTHDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTBANDWIDTHDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETINPUTFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTINPUTFORMATDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTINPUTFORMATDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETOUTPUTFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTOUTPUTFORMATDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTOUTPUTFORMATDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETFIELD =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTFIELDDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTFIELDDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTLINEDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETVPORTCONNECT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTCONNECTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTCONNECTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_DESTROYVPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYVPORTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETFLIPSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTFLIPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTFLIPSTATUSDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_UPDATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_UPDATEVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_UPDATEVPORTDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_WAITFORSYNC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_WAITFORVPORTSYNCDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_WAITFORVPORTSYNCDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_GETSIGNALSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETVPORTSIGNALDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETVPORTSIGNALDATA) -> DWORD>;
 pub type LPDDHALVPORTCB_COLORCONTROL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_VPORTCOLORDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_VPORTCOLORDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDVIDEOPORTCALLBACKS {
@@ -97544,7 +97544,7 @@ pub struct _DDHAL_DDVIDEOPORTCALLBACKS {
 pub type DDHAL_DDVIDEOPORTCALLBACKS = _DDHAL_DDVIDEOPORTCALLBACKS;
 pub type LPDDHAL_COLORCONTROLDATA = *mut _DDHAL_COLORCONTROLDATA;
 pub type LPDDHALCOLORCB_COLORCONTROL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_COLORCONTROLDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_COLORCONTROLDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDCOLORCONTROLCALLBACKS {
@@ -97556,9 +97556,9 @@ pub type DDHAL_DDCOLORCONTROLCALLBACKS = _DDHAL_DDCOLORCONTROLCALLBACKS;
 pub type LPDDHAL_SYNCSURFACEDATA = *mut _DDHAL_SYNCSURFACEDATA;
 pub type LPDDHAL_SYNCVIDEOPORTDATA = *mut _DDHAL_SYNCVIDEOPORTDATA;
 pub type LPDDHALKERNELCB_SYNCSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SYNCSURFACEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SYNCSURFACEDATA) -> DWORD>;
 pub type LPDDHALKERNELCB_SYNCVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_SYNCVIDEOPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_SYNCVIDEOPORTDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDKERNELCALLBACKS {
@@ -97580,25 +97580,25 @@ pub type LPDDHAL_RENDERMOCOMPDATA = *mut _DDHAL_RENDERMOCOMPDATA;
 pub type LPDDHAL_QUERYMOCOMPSTATUSDATA = *mut _DDHAL_QUERYMOCOMPSTATUSDATA;
 pub type LPDDHAL_DESTROYMOCOMPDATA = *mut _DDHAL_DESTROYMOCOMPDATA;
 pub type LPDDHALMOCOMPCB_GETGUIDS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETMOCOMPGUIDSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETMOCOMPGUIDSDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_GETFORMATS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETMOCOMPFORMATSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETMOCOMPFORMATSDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_CREATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_CREATEMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_CREATEMOCOMPDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_GETCOMPBUFFINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETMOCOMPCOMPBUFFDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETMOCOMPCOMPBUFFDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_GETINTERNALINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETINTERNALMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETINTERNALMOCOMPDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_BEGINFRAME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_BEGINMOCOMPFRAMEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_BEGINMOCOMPFRAMEDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_ENDFRAME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_ENDMOCOMPFRAMEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_ENDMOCOMPFRAMEDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_RENDER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_RENDERMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_RENDERMOCOMPDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_QUERYSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_QUERYMOCOMPSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_QUERYMOCOMPSTATUSDATA) -> DWORD>;
 pub type LPDDHALMOCOMPCB_DESTROY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_DESTROYMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_DESTROYMOCOMPDATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_DDMOTIONCOMPCALLBACKS {
@@ -97618,10 +97618,10 @@ pub struct _DDHAL_DDMOTIONCOMPCALLBACKS {
 pub type DDHAL_DDMOTIONCOMPCALLBACKS = _DDHAL_DDMOTIONCOMPCALLBACKS;
 pub type LPDDHAL_DDMOTIONCOMPCALLBACKS = *mut _DDHAL_DDMOTIONCOMPCALLBACKS;
 pub type LPDDGAMMACALIBRATORPROC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDGAMMARAMP, arg2: LPBYTE) -> HRESULT>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDGAMMARAMP, arg2: LPBYTE) -> HRESULT>;
 pub type LPDDHAL_GETDRIVERINFODATA = *mut _DDHAL_GETDRIVERINFODATA;
 pub type LPDDHAL_GETDRIVERINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDHAL_GETDRIVERINFODATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDHAL_GETDRIVERINFODATA) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DDHAL_GETDRIVERINFODATA {
@@ -98916,7 +98916,7 @@ pub struct _DDRAWI_DDRAWCLIPPER_GBL {
 }
 pub type DDRAWI_DDRAWCLIPPER_GBL = _DDRAWI_DDRAWCLIPPER_GBL;
 pub type LPDDHEL_INIT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPDDRAWI_DIRECTDRAW_GBL, arg2: BOOL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPDDRAWI_DIRECTDRAW_GBL, arg2: BOOL) -> BOOL>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IDirectDrawClipperVtbl {
@@ -99045,7 +99045,7 @@ pub type PREGISTERWORDW = *mut tagREGISTERWORDW;
 pub type NPREGISTERWORDW = *mut tagREGISTERWORDW;
 pub type LPREGISTERWORDW = *mut tagREGISTERWORDW;
 pub type REGISTERWORDENUMPROCA = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpszReading: LPCSTR,
         dwStyle: DWORD,
         lpszRegister: LPCSTR,
@@ -99053,7 +99053,7 @@ pub type REGISTERWORDENUMPROCA = ::core::option::Option<
     ) -> INT,
 >;
 pub type REGISTERWORDENUMPROCW = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpszReading: LPCWSTR,
         dwStyle: DWORD,
         lpszRegister: LPCWSTR,
@@ -99175,7 +99175,7 @@ pub type PIMECHARPOSITION = *mut tagIMECHARPOSITION;
 pub type NPIMECHARPOSITION = *mut tagIMECHARPOSITION;
 pub type LPIMECHARPOSITION = *mut tagIMECHARPOSITION;
 pub type IMCENUMPROC =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC, lParam: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC, lParam: LPARAM) -> BOOL>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _tagCOMPOSITIONFORM {
@@ -99490,14 +99490,14 @@ pub const IMEINFOEXCLASS_ImeInfoExImeWindow: IMEINFOEXCLASS = 2;
 pub const IMEINFOEXCLASS_ImeInfoExImeFileName: IMEINFOEXCLASS = 3;
 pub type IMEINFOEXCLASS = ::core::ffi::c_uint;
 pub type FN_ImeInquire = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpIMEInfo: LPIMEINFO,
         lpszWndClass: LPVOID,
         dwSystemInfoFlags: DWORD,
     ) -> BOOL,
 >;
 pub type FN_ImeConversionList = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hIMC: HIMC,
         lpSrc: LPCVOID,
         lpDst: LPCANDIDATELIST,
@@ -99506,15 +99506,15 @@ pub type FN_ImeConversionList = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type FN_ImeRegisterWord = ::core::option::Option<
-    unsafe extern "C" fn(lpszReading: LPCVOID, dwStyle: DWORD, lpszString: LPCVOID) -> BOOL,
+    unsafe extern "system" fn(lpszReading: LPCVOID, dwStyle: DWORD, lpszString: LPCVOID) -> BOOL,
 >;
 pub type FN_ImeUnregisterWord = ::core::option::Option<
-    unsafe extern "C" fn(lpszReading: LPCVOID, dwStyle: DWORD, lpszString: LPCVOID) -> BOOL,
+    unsafe extern "system" fn(lpszReading: LPCVOID, dwStyle: DWORD, lpszString: LPCVOID) -> BOOL,
 >;
 pub type FN_ImeGetRegisterWordStyle =
-    ::core::option::Option<unsafe extern "C" fn(nItem: UINT, lpStyleBuf: LPVOID) -> UINT>;
+    ::core::option::Option<unsafe extern "system" fn(nItem: UINT, lpStyleBuf: LPVOID) -> UINT>;
 pub type FN_ImeEnumRegisterWord = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpfnEnumProc: LPVOID,
         lpszReading: LPCVOID,
         dwStyle: DWORD,
@@ -99523,21 +99523,21 @@ pub type FN_ImeEnumRegisterWord = ::core::option::Option<
     ) -> UINT,
 >;
 pub type FN_ImeConfigure = ::core::option::Option<
-    unsafe extern "C" fn(hKL: HKL, hWnd: HWND, dwMode: DWORD, lpData: LPVOID) -> BOOL,
+    unsafe extern "system" fn(hKL: HKL, hWnd: HWND, dwMode: DWORD, lpData: LPVOID) -> BOOL,
 >;
-pub type FN_ImeDestroy = ::core::option::Option<unsafe extern "C" fn(uReserved: UINT) -> BOOL>;
+pub type FN_ImeDestroy = ::core::option::Option<unsafe extern "system" fn(uReserved: UINT) -> BOOL>;
 pub type FN_ImeEscape = ::core::option::Option<
-    unsafe extern "C" fn(hIMC: HIMC, uEscape: UINT, lpData: LPVOID) -> LRESULT,
+    unsafe extern "system" fn(hIMC: HIMC, uEscape: UINT, lpData: LPVOID) -> LRESULT,
 >;
 pub type FN_ImeProcessKey = ::core::option::Option<
-    unsafe extern "C" fn(hIMC: HIMC, uVirKey: UINT, lParam: LPARAM, lpbKeyState: LPBYTE) -> BOOL,
+    unsafe extern "system" fn(hIMC: HIMC, uVirKey: UINT, lParam: LPARAM, lpbKeyState: LPBYTE) -> BOOL,
 >;
 pub type FN_ImeSelect =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC, fSelect: BOOL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC, fSelect: BOOL) -> BOOL>;
 pub type FN_ImeSetActiveContext =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC, fFlag: BOOL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC, fFlag: BOOL) -> BOOL>;
 pub type FN_ImeToAsciiEx = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         uVirKey: UINT,
         uScanCode: UINT,
         lpbKeyState: LPBYTE,
@@ -99547,10 +99547,10 @@ pub type FN_ImeToAsciiEx = ::core::option::Option<
     ) -> UINT,
 >;
 pub type FN_NotifyIME = ::core::option::Option<
-    unsafe extern "C" fn(hIMC: HIMC, dwAction: DWORD, dwIndex: DWORD, dwValue: DWORD_PTR) -> BOOL,
+    unsafe extern "system" fn(hIMC: HIMC, dwAction: DWORD, dwIndex: DWORD, dwValue: DWORD_PTR) -> BOOL,
 >;
 pub type FN_ImeSetCompositionString = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hIMC: HIMC,
         dwIndex: DWORD,
         lpComp: LPCVOID,
@@ -99560,7 +99560,7 @@ pub type FN_ImeSetCompositionString = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type FN_ImeGetImeMenuItems = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hIMC: HIMC,
         dwFlags: DWORD,
         dwType: DWORD,
@@ -99570,7 +99570,7 @@ pub type FN_ImeGetImeMenuItems = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type FN_CtfImeInquireExW = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         lpIMEInfo: LPIMEINFO,
         lpszWndClass: LPVOID,
         dwSystemInfoFlags: DWORD,
@@ -99578,15 +99578,15 @@ pub type FN_CtfImeInquireExW = ::core::option::Option<
     ) -> HRESULT,
 >;
 pub type FN_CtfImeSelectEx =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC, fSelect: BOOL, hKL: HKL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC, fSelect: BOOL, hKL: HKL) -> BOOL>;
 pub type FN_CtfImeEscapeEx = ::core::option::Option<
-    unsafe extern "C" fn(hIMC: HIMC, uSubFunc: UINT, lpData: LPVOID, hKL: HKL) -> LRESULT,
+    unsafe extern "system" fn(hIMC: HIMC, uSubFunc: UINT, lpData: LPVOID, hKL: HKL) -> LRESULT,
 >;
 pub type FN_CtfImeGetGuidAtom = ::core::option::Option<
-    unsafe extern "C" fn(hIMC: HIMC, dwUnknown: DWORD, pdwGuidAtom: LPDWORD) -> HRESULT,
+    unsafe extern "system" fn(hIMC: HIMC, dwUnknown: DWORD, pdwGuidAtom: LPDWORD) -> HRESULT,
 >;
 pub type FN_CtfImeIsGuidMapEnable =
-    ::core::option::Option<unsafe extern "C" fn(hIMC: HIMC) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hIMC: HIMC) -> BOOL>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IMEDPI {
@@ -99813,9 +99813,9 @@ pub struct _OB_DUMP_CONTROL {
 pub type OB_DUMP_CONTROL = _OB_DUMP_CONTROL;
 pub type POB_DUMP_CONTROL = *mut _OB_DUMP_CONTROL;
 pub type OB_DUMP_METHOD =
-    ::core::option::Option<unsafe extern "C" fn(Object: PVOID, Control: POB_DUMP_CONTROL)>;
+    ::core::option::Option<unsafe extern "system" fn(Object: PVOID, Control: POB_DUMP_CONTROL)>;
 pub type OB_OPEN_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Reason: OB_OPEN_REASON,
         Process: PEPROCESS,
         ObjectBody: PVOID,
@@ -99824,7 +99824,7 @@ pub type OB_OPEN_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_CLOSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Process: PEPROCESS,
         Object: PVOID,
         GrantedAccess: ACCESS_MASK,
@@ -99832,9 +99832,9 @@ pub type OB_CLOSE_METHOD = ::core::option::Option<
         SystemHandleCount: ULONG,
     ),
 >;
-pub type OB_DELETE_METHOD = ::core::option::Option<unsafe extern "C" fn(Object: PVOID)>;
+pub type OB_DELETE_METHOD = ::core::option::Option<unsafe extern "system" fn(Object: PVOID)>;
 pub type OB_PARSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ParseObject: PVOID,
         ObjectType: PVOID,
         AccessState: PACCESS_STATE,
@@ -99848,7 +99848,7 @@ pub type OB_PARSE_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_SECURITY_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Object: PVOID,
         OperationType: SECURITY_OPERATION_CODE,
         SecurityInformation: PSECURITY_INFORMATION,
@@ -99860,7 +99860,7 @@ pub type OB_SECURITY_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_QUERYNAME_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Object: PVOID,
         HasObjectName: BOOLEAN,
         ObjectNameInfo: POBJECT_NAME_INFORMATION,
@@ -99870,7 +99870,7 @@ pub type OB_QUERYNAME_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type OB_OKAYTOCLOSE_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Process: PEPROCESS,
         Object: PVOID,
         Handle: HANDLE,
@@ -100763,43 +100763,43 @@ pub const _PSW32THREADCALLOUTTYPE_PsW32ThreadCalloutExit: _PSW32THREADCALLOUTTYP
 pub type _PSW32THREADCALLOUTTYPE = ::core::ffi::c_uint;
 pub use self::_PSW32THREADCALLOUTTYPE as PSW32THREADCALLOUTTYPE;
 pub type PKWIN32_PROCESS_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Process: *mut _EPROCESS, Create: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(Process: *mut _EPROCESS, Create: BOOLEAN) -> NTSTATUS,
 >;
 pub type PKWIN32_THREAD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Thread: *mut _ETHREAD, Type: PSW32THREADCALLOUTTYPE) -> NTSTATUS,
+    unsafe extern "system" fn(Thread: *mut _ETHREAD, Type: PSW32THREADCALLOUTTYPE) -> NTSTATUS,
 >;
 pub type PKWIN32_GLOBALATOMTABLE_CALLOUT =
-    ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type PKWIN32_POWEREVENT_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_POWEREVENT_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_POWEREVENT_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_POWERSTATE_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_POWERSTATE_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_POWERSTATE_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_JOB_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_JOBCALLOUT_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_JOBCALLOUT_PARAMETERS) -> NTSTATUS,
 >;
-pub type PGDI_BATCHFLUSH_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type PGDI_BATCHFLUSH_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type PKWIN32_OPENMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_OPENMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_OPENMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_OKTOCLOSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_OKAYTOCLOSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_OKAYTOCLOSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_CLOSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_CLOSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_CLOSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_DELETEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_DELETEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_DELETEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_PARSEMETHOD_CALLOUT = ::core::option::Option<
-    unsafe extern "C" fn(Parameters: *mut _WIN32_PARSEMETHOD_PARAMETERS) -> NTSTATUS,
+    unsafe extern "system" fn(Parameters: *mut _WIN32_PARSEMETHOD_PARAMETERS) -> NTSTATUS,
 >;
 pub type PKWIN32_SESSION_CALLOUT =
-    ::core::option::Option<unsafe extern "C" fn(Parameter: PVOID) -> NTSTATUS>;
-pub type PLEGO_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Thread: PKTHREAD)>;
-pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
-pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "C" fn(PebLock: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(Parameter: PVOID) -> NTSTATUS>;
+pub type PLEGO_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Thread: PKTHREAD)>;
+pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
+pub type PPEBLOCKROUTINE = ::core::option::Option<unsafe extern "system" fn(PebLock: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PEB_FREE_BLOCK {
@@ -105332,10 +105332,10 @@ pub struct _DRIVER_INFO_2W {
     _unused: [u8; 0],
 }
 pub type DRIVER_INFO_2W = _DRIVER_INFO_2W;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiInit() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetDIBitsToDeviceInternal(
         hdcDest: HDC,
         xDst: INT,
@@ -105355,7 +105355,7 @@ unsafe extern "C" {
         hcmXform: HANDLE,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetFontResourceInfoInternalW(
         pwszFiles: PCWCH,
         cwc: ULONG,
@@ -105366,11 +105366,11 @@ unsafe extern "C" {
         iType: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetGlyphIndicesW(hdc: HDC, pwc: PCWCH, cwc: INT, pgi: PWORD, iMode: DWORD)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetGlyphIndicesWInternal(
         hdc: HDC,
         pwc: PCWCH,
@@ -105380,10 +105380,10 @@ unsafe extern "C" {
         bSubset: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreatePaletteInternal(pLogPal: LPLOGPALETTE, cEntries: UINT) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiArcInternal(
         arctype: ARCTYPE,
         hdc: HDC,
@@ -105397,7 +105397,7 @@ unsafe extern "C" {
         y4: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStretchDIBitsInternal(
         hdc: HDC,
         xDst: INT,
@@ -105417,7 +105417,7 @@ unsafe extern "C" {
         hcmXform: HANDLE,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetOutlineTextMetricsInternalW(
         hdc: HDC,
         cjotm: ULONG,
@@ -105425,29 +105425,29 @@ unsafe extern "C" {
         ptmd: PTMDIFF,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetAndSetDCDword(hdc: HDC, u: UINT, dwIn: DWORD, pdwResult: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDCObject(hdc: HDC, itype: INT) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDCforBitmap(hsurf: HBITMAP) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetMonitorID(hdc: HDC, cjSize: DWORD, pszMonitorID: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetLinkedUFIs(
         hdc: HDC,
         pufiLinkedUFIs: PUNIVERSAL_FONT_ID,
         cBufferSize: INT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetLinkedUFIs(hdc: HDC, pufiLinks: PUNIVERSAL_FONT_ID, uNumUFIs: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetUFI(
         hdc: HDC,
         pufi: PUNIVERSAL_FONT_ID,
@@ -105457,10 +105457,10 @@ unsafe extern "C" {
         pfl: *mut FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiForceUFIMapping(hdc: HDC, pufi: PUNIVERSAL_FONT_ID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetUFIPathname(
         pufi: PUNIVERSAL_FONT_ID,
         pcwc: *mut ULONG,
@@ -105474,7 +105474,7 @@ unsafe extern "C" {
         piTTC: *mut ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAddRemoteFontToDC(
         hdc: HDC,
         pvBuffer: PVOID,
@@ -105482,7 +105482,7 @@ unsafe extern "C" {
         pufi: PUNIVERSAL_FONT_ID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAddFontMemResourceEx(
         pvBuffer: *const ::core::ffi::c_void,
         cjBuffer: DWORD,
@@ -105491,19 +105491,19 @@ unsafe extern "C" {
         pNumFonts: PDWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUnmapMemFont(pvView: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRemoveMergeFont(hdc: HDC, pufi: *mut UNIVERSAL_FONT_ID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAnyLinkedFonts() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetEmbUFI(
         hdc: HDC,
         pufi: PUNIVERSAL_FONT_ID,
@@ -105514,19 +105514,19 @@ unsafe extern "C" {
         embFontID: *mut KERNEL_PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetEmbedFonts() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiChangeGhostFont(pfontID: *mut KERNEL_PVOID, bLoad: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAddEmbFontToDC(hdc: HDC, pFontID: *mut PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFontIsLinked(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPolyPolyDraw(
         hdc: HDC,
         ppt: PPOINTL,
@@ -105535,7 +105535,7 @@ unsafe extern "C" {
         iFunc: INT,
     ) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDoPalette(
         hObj: HGDIOBJ,
         iStart: WORD,
@@ -105545,10 +105545,10 @@ unsafe extern "C" {
         bInbound: BOOL,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiComputeXformCoefficients(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetWidthTable(
         hdc: HDC,
         cSpecial: ULONG,
@@ -105559,7 +105559,7 @@ unsafe extern "C" {
         pflInfo: *mut FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDescribePixelFormat(
         hdc: HDC,
         ipfd: INT,
@@ -105567,16 +105567,16 @@ unsafe extern "C" {
         ppfd: PPIXELFORMATDESCRIPTOR,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetPixelFormat(hdc: HDC, ipfd: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSwapBuffers(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetupPublicCFONT(hdc: HDC, hf: HFONT, ulAve: ULONG) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDxgGenericThunk(
         ulIndex: ULONG_PTR,
         ulHandle: ULONG_PTR,
@@ -105586,33 +105586,33 @@ unsafe extern "C" {
         pvPtr2: PVOID,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdAddAttachedSurface(
         hSurface: HANDLE,
         hSurfaceAttached: HANDLE,
         puAddAttachedSurfaceData: PDD_ADDATTACHEDSURFACEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdAttachSurface(hSurfaceFrom: HANDLE, hSurfaceTo: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdBlt(hSurfaceDest: HANDLE, hSurfaceSrc: HANDLE, puBltData: PDD_BLTDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCanCreateSurface(
         hDirectDraw: HANDLE,
         puCanCreateSurfaceData: PDD_CANCREATESURFACEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdColorControl(hSurface: HANDLE, puColorControlData: PDD_COLORCONTROLDATA)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateDirectDrawObject(hdc: HDC) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateSurface(
         hDirectDraw: HANDLE,
         hSurface: *mut HANDLE,
@@ -105624,7 +105624,7 @@ unsafe extern "C" {
         puhSurface: *mut HANDLE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateSurfaceObject(
         hDirectDrawLocal: HANDLE,
         hSurface: HANDLE,
@@ -105634,16 +105634,16 @@ unsafe extern "C" {
         bComplete: BOOL,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDeleteSurfaceObject(hSurface: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDeleteDirectDrawObject(hDirectDrawLocal: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDestroySurface(hSurface: HANDLE, bRealDestroy: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdFlip(
         hSurfaceCurrent: HANDLE,
         hSurfaceTarget: HANDLE,
@@ -105652,51 +105652,51 @@ unsafe extern "C" {
         puFlipData: PDD_FLIPDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetAvailDriverMemory(
         hDirectDraw: HANDLE,
         puGetAvailDriverMemoryData: PDD_GETAVAILDRIVERMEMORYDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetBltStatus(hSurface: HANDLE, puGetBltStatusData: PDD_GETBLTSTATUSDATA)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetDC(hSurface: HANDLE, puColorTable: *mut PALETTEENTRY) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetDriverInfo(
         hDirectDraw: HANDLE,
         puGetDriverInfoData: PDD_GETDRIVERINFODATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetFlipStatus(
         hSurface: HANDLE,
         puGetFlipStatusData: PDD_GETFLIPSTATUSDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetScanLine(hDirectDraw: HANDLE, puGetScanLineData: PDD_GETSCANLINEDATA)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdSetExclusiveMode(
         hDirectDraw: HANDLE,
         puSetExclusiveModeData: PDD_SETEXCLUSIVEMODEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdFlipToGDISurface(
         hDirectDraw: HANDLE,
         puFlipToGDISurfaceData: PDD_FLIPTOGDISURFACEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdLock(hSurface: HANDLE, puLockData: PDD_LOCKDATA, hdcClip: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdQueryDirectDrawObject(
         hDirectDrawLocal: HANDLE,
         pHalInfo: PDD_HALINFO,
@@ -105711,58 +105711,58 @@ unsafe extern "C" {
         puFourCC: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdReenableDirectDrawObject(hDirectDrawLocal: HANDLE, pubNewMode: *mut BOOL)
         -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdReleaseDC(hSurface: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdResetVisrgn(hSurface: HANDLE, hwnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdSetColorKey(hSurface: HANDLE, puSetColorKeyData: PDD_SETCOLORKEYDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdSetOverlayPosition(
         hSurfaceSource: HANDLE,
         hSurfaceDestination: HANDLE,
         puSetOverlayPositionData: PDD_SETOVERLAYPOSITIONDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdUnattachSurface(hSurface: HANDLE, hSurfaceAttached: HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdUnlock(hSurface: HANDLE, puUnlockData: PDD_UNLOCKDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdUpdateOverlay(
         hSurfaceDestination: HANDLE,
         hSurfaceSource: HANDLE,
         puUpdateOverlayData: PDD_UPDATEOVERLAYDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdWaitForVerticalBlank(
         hDirectDraw: HANDLE,
         puWaitForVerticalBlankData: PDD_WAITFORVERTICALBLANKDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetDxHandle(hDirectDraw: HANDLE, hSurface: HANDLE, bRelease: BOOL) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdSetGammaRamp(hDirectDraw: HANDLE, hdc: HDC, lpGammaRamp: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdLockD3D(hSurface: HANDLE, puLockData: PDD_LOCKDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdUnlockD3D(hSurface: HANDLE, puUnlockData: PDD_UNLOCKDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateD3DBuffer(
         hDirectDraw: HANDLE,
         hSurface: *mut HANDLE,
@@ -105774,16 +105774,16 @@ unsafe extern "C" {
         puhSurface: *mut HANDLE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCanCreateD3DBuffer(
         hDirectDraw: HANDLE,
         puCanCreateSurfaceData: PDD_CANCREATESURFACEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDestroyD3DBuffer(hSurface: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiD3dContextCreate(
         hDirectDrawLocal: HANDLE,
         hSurfColor: HANDLE,
@@ -105791,18 +105791,18 @@ unsafe extern "C" {
         pdcci: *mut D3DNTHAL_CONTEXTCREATEI,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiD3dContextDestroy(pdcdd: LPD3DNTHAL_CONTEXTDESTROYDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiD3dContextDestroyAll(pdcdad: LPD3DNTHAL_CONTEXTDESTROYALLDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiD3dValidateTextureStageState(
         pData: LPD3DNTHAL_VALIDATETEXTURESTAGESTATEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiD3dDrawPrimitives2(
         hCmdBuf: HANDLE,
         hVBuf: HANDLE,
@@ -105813,44 +105813,44 @@ unsafe extern "C" {
         pdwSizeVtx: *mut DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetDriverState(pdata: PDD_GETDRIVERSTATEDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateSurfaceEx(
         hDirectDraw: HANDLE,
         hSurface: HANDLE,
         dwSurfaceHandle: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CREATEDCFROMMEMORY) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroyDCFromMemory(desc: *const D3DKMT_DESTROYDCFROMMEMORY) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpCanCreateVideoPort(
         hDirectDraw: HANDLE,
         puCanCreateVPortData: PDD_CANCREATEVPORTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpColorControl(hVideoPort: HANDLE, puVPortColorData: PDD_VPORTCOLORDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpCreateVideoPort(
         hDirectDraw: HANDLE,
         puCreateVPortData: PDD_CREATEVPORTDATA,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpDestroyVideoPort(
         hVideoPort: HANDLE,
         puDestroyVPortData: PDD_DESTROYVPORTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpFlipVideoPort(
         hVideoPort: HANDLE,
         hDDSurfaceCurrent: HANDLE,
@@ -105858,55 +105858,55 @@ unsafe extern "C" {
         puFlipVPortData: PDD_FLIPVPORTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortBandwidth(
         hVideoPort: HANDLE,
         puGetVPortBandwidthData: PDD_GETVPORTBANDWIDTHDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortField(
         hVideoPort: HANDLE,
         puGetVPortFieldData: PDD_GETVPORTFIELDDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortFlipStatus(
         hDirectDraw: HANDLE,
         puGetVPortFlipStatusData: PDD_GETVPORTFLIPSTATUSDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortInputFormats(
         hVideoPort: HANDLE,
         puGetVPortInputFormatData: PDD_GETVPORTINPUTFORMATDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortLine(
         hVideoPort: HANDLE,
         puGetVPortLineData: PDD_GETVPORTLINEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortOutputFormats(
         hVideoPort: HANDLE,
         puGetVPortOutputFormatData: PDD_GETVPORTOUTPUTFORMATDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoPortConnectInfo(
         hDirectDraw: HANDLE,
         puGetVPortConnectData: PDD_GETVPORTCONNECTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpGetVideoSignalStatus(
         hVideoPort: HANDLE,
         puGetVPortSignalData: PDD_GETVPORTSIGNALDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpUpdateVideoPort(
         hVideoPort: HANDLE,
         phSurfaceVideo: *mut HANDLE,
@@ -105914,84 +105914,84 @@ unsafe extern "C" {
         puUpdateVPortData: PDD_UPDATEVPORTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpWaitForVideoPortSync(
         hVideoPort: HANDLE,
         puWaitForVPortSyncData: PDD_WAITFORVPORTSYNCDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpAcquireNotification(
         hVideoPort: HANDLE,
         hEvent: *mut HANDLE,
         pNotify: LPDDVIDEOPORTNOTIFY,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDvpReleaseNotification(hVideoPort: HANDLE, hEvent: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetMoCompGuids(
         hDirectDraw: HANDLE,
         puGetMoCompGuidsData: PDD_GETMOCOMPGUIDSDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetMoCompFormats(
         hDirectDraw: HANDLE,
         puGetMoCompFormatsData: PDD_GETMOCOMPFORMATSDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetMoCompBuffInfo(
         hDirectDraw: HANDLE,
         puGetBuffData: PDD_GETMOCOMPCOMPBUFFDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdGetInternalMoCompInfo(
         hDirectDraw: HANDLE,
         puGetInternalData: PDD_GETINTERNALMOCOMPDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdCreateMoComp(
         hDirectDraw: HANDLE,
         puCreateMoCompData: PDD_CREATEMOCOMPDATA,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDestroyMoComp(
         hMoComp: HANDLE,
         puDestroyMoCompData: PDD_DESTROYMOCOMPDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdBeginMoCompFrame(
         hMoComp: HANDLE,
         puBeginFrameData: PDD_BEGINMOCOMPFRAMEDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdEndMoCompFrame(hMoComp: HANDLE, puEndFrameData: PDD_ENDMOCOMPFRAMEDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdRenderMoComp(hMoComp: HANDLE, puRenderMoCompData: PDD_RENDERMOCOMPDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdQueryMoCompStatus(
         hMoComp: HANDLE,
         puQueryMoCompStatusData: PDD_QUERYMOCOMPSTATUSDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdAlphaBlt(
         hSurfaceDest: HANDLE,
         hSurfaceSrc: HANDLE,
         puBltData: PDD_BLTDATA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAlphaBlend(
         hdcDst: HDC,
         DstX: LONG,
@@ -106007,7 +106007,7 @@ unsafe extern "C" {
         hcmXform: HANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGradientFill(
         hdc: HDC,
         pVertex: PTRIVERTEX,
@@ -106017,19 +106017,19 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetIcmMode(hdc: HDC, nCommand: ULONG, ulMode: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateColorSpace(pLogColorSpace: PLOGCOLORSPACEEXW) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDeleteColorSpace(hColorSpace: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetColorSpace(hdc: HDC, hColorSpace: HCOLORSPACE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateColorTransform(
         hdc: HDC,
         pLogColorSpaceW: LPLOGCOLORSPACEW,
@@ -106041,10 +106041,10 @@ unsafe extern "C" {
         cjTargetProfile: ULONG,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDeleteColorTransform(hdc: HDC, hColorTransform: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCheckBitmapBits(
         hdc: HDC,
         hColorTransform: HANDLE,
@@ -106056,7 +106056,7 @@ unsafe extern "C" {
         paResults: PBYTE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiColorCorrectPalette(
         hdc: HDC,
         hpal: HPALETTE,
@@ -106066,16 +106066,16 @@ unsafe extern "C" {
         uCommand: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetColorSpaceforBitmap(hsurf: HBITMAP) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDeviceGammaRamp(hdc: HDC, lpGammaRamp: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetDeviceGammaRamp(hdc: HDC, lpGammaRamp: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiIcmBrushInfo(
         hdc: HDC,
         hbrush: HBRUSH,
@@ -106087,34 +106087,34 @@ unsafe extern "C" {
         Command: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFlush() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateMetafileDC(hdc: HDC) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMakeInfoDC(hdc: HDC, bSet: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateClientObj(ulType: ULONG) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDeleteClientObj(h: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetBitmapBits(hbm: HBITMAP, cjMax: ULONG, pjOut: PBYTE) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDeleteObjectApp(hobj: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetPath(hdc: HDC, pptlBuf: PPOINTL, pjTypes: LPBYTE, cptBuf: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateCompatibleDC(hdc: HDC) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateDIBitmapInternal(
         hdc: HDC,
         cx: INT,
@@ -106129,7 +106129,7 @@ unsafe extern "C" {
         hcmXform: HANDLE,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateDIBSection(
         hdc: HDC,
         hSectionApp: HANDLE,
@@ -106142,10 +106142,10 @@ unsafe extern "C" {
         ppvBits: *mut PVOID,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateSolidBrush(cr: COLORREF, hbr: HBRUSH) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateDIBBrush(
         pv: PVOID,
         fl: FLONG,
@@ -106155,13 +106155,13 @@ unsafe extern "C" {
         pClient: PVOID,
     ) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreatePatternBrushInternal(hbm: HBITMAP, bPen: BOOL, b8X8: BOOL) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateHatchBrushInternal(ulStyle: ULONG, clrr: COLORREF, bPen: BOOL) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtCreatePen(
         flPenStyle: ULONG,
         ulWidth: ULONG,
@@ -106176,10 +106176,10 @@ unsafe extern "C" {
         hbrush: HBRUSH,
     ) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateEllipticRgn(xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateRoundRectRgn(
         xLeft: INT,
         yTop: INT,
@@ -106189,7 +106189,7 @@ unsafe extern "C" {
         yHeight: INT,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateServerMetaFile(
         iType: DWORD,
         cjData: ULONG,
@@ -106199,10 +106199,10 @@ unsafe extern "C" {
         yExt: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtCreateRegion(px: LPXFORM, cj: DWORD, prgndata: LPRGNDATA) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMakeFontDir(
         flEmbed: FLONG,
         pjFontDir: PBYTE,
@@ -106211,14 +106211,14 @@ unsafe extern "C" {
         cjPathname: UINT,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPolyDraw(hdc: HDC, ppt: PPOINTL, pjAttr: LPBYTE, cpt: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPolyTextOutW(hdc: HDC, pptw: *mut POLYTEXTW, cStr: UINT, dwCodePage: DWORD)
         -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetServerMetaFileBits(
         hmo: HANDLE,
         cjData: ULONG,
@@ -106229,22 +106229,22 @@ unsafe extern "C" {
         pyExt: PDWORD,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEqualRgn(hrgn1: HRGN, hrgn2: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetBitmapDimension(hbm: HBITMAP, psize: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetNearestPaletteIndex(hpal: HPALETTE, crColor: COLORREF) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPtVisible(hdc: HDC, x: INT, y: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRectVisible(hdc: HDC, prc: LPRECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRemoveFontResourceW(
         pwszFiles: PCWCH,
         cwc: ULONG,
@@ -106254,25 +106254,25 @@ unsafe extern "C" {
         pdv: *const DESIGNVECTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiResizePalette(hpal: HPALETTE, cEntry: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBitmapDimension(hbm: HBITMAP, cx: INT, cy: INT, psizeOut: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiOffsetClipRgn(hdc: HDC, x: INT, y: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetMetaRgn(hdc: HDC) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetTextJustification(hdc: HDC, lBreakExtra: INT, cBreak: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECTL) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTextExtentExW(
         hdc: HDC,
         pwsz: PCWCH,
@@ -106284,7 +106284,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetCharABCWidthsW(
         hdc: HDC,
         wchFirst: UINT,
@@ -106294,7 +106294,7 @@ unsafe extern "C" {
         pvBuf: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetCharacterPlacementW(
         hdc: HDC,
         pwsz: PCWCH,
@@ -106304,7 +106304,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAngleArc(
         hdc: HDC,
         x: INT,
@@ -106314,58 +106314,58 @@ unsafe extern "C" {
         dwSweepAngle: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBeginPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSelectClipPath(hdc: HDC, iMode: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCloseFigure(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEndPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAbortPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFillPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStrokeAndFillPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStrokePath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiWidenPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFlattenPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPathToRegion(hdc: HDC) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetMiterLimit(hdc: HDC, dwNew: DWORD, pdwOut: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetFontXform(hdc: HDC, dwxScale: DWORD, dwyScale: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEllipse(hdc: HDC, xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRectangle(hdc: HDC, xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRoundRect(hdc: HDC, x1: INT, y1: INT, x2: INT, y2: INT, x3: INT, y3: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPlgBlt(
         hdcTrg: HDC,
         pptlTrg: PPOINTL,
@@ -106380,7 +106380,7 @@ unsafe extern "C" {
         crBackColor: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMaskBlt(
         hdc: HDC,
         xDst: INT,
@@ -106397,40 +106397,40 @@ unsafe extern "C" {
         crBackColor: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtFloodFill(hdc: HDC, x: INT, y: INT, crColor: COLORREF, iFillType: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFillRgn(hdc: HDC, hrgn: HRGN, hbrush: HBRUSH) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFrameRgn(hdc: HDC, hrgn: HRGN, hbrush: HBRUSH, xWidth: INT, yHeight: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetPixel(hdcDst: HDC, x: INT, y: INT, crColor: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStartPage(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEndPage(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStartDoc(hdc: HDC, pdi: *mut DOCINFOW, pbBanding: *mut BOOL, iJob: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEndDoc(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAbortDoc(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUpdateColors(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetCharWidthW(
         hdc: HDC,
         wcFirst: UINT,
@@ -106440,13 +106440,13 @@ unsafe extern "C" {
         pvBuf: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetCharWidthInfo(hdc: HDC, pChWidthInfo: PCHWIDTHINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDrawEscape(hdc: HDC, iEsc: INT, cjIn: INT, pjIn: LPSTR) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtEscape(
         hdc: HDC,
         pDriver: PWCHAR,
@@ -106458,7 +106458,7 @@ unsafe extern "C" {
         pjOut: LPSTR,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetFontData(
         hdc: HDC,
         dwTable: DWORD,
@@ -106467,7 +106467,7 @@ unsafe extern "C" {
         cjBuf: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetFontFileData(
         uFileCollectionID: UINT,
         uFileIndex: UINT,
@@ -106476,7 +106476,7 @@ unsafe extern "C" {
         cjBuf: SIZE_T,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetGlyphOutline(
         hdc: HDC,
         wch: WCHAR,
@@ -106488,25 +106488,25 @@ unsafe extern "C" {
         bIgnoreRotation: BOOL,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetETM(hdc: HDC, petm: *mut EXTTEXTMETRIC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetRasterizerCaps(praststat: LPRASTERIZER_STATUS, cjBytes: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetKerningPairs(hdc: HDC, cPairs: ULONG, pkpDst: *mut KERNINGPAIR) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMonoBitmap(hbm: HBITMAP) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetObjectBitmapHandle(hbr: HBRUSH, piUsage: *mut UINT) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnumObjects(hdc: HDC, iObjectType: INT, cjBuf: ULONG, pvBuf: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiResetDC(
         hdc: HDC,
         pdm: LPDEVMODEW,
@@ -106515,19 +106515,19 @@ unsafe extern "C" {
         ppUMdhpdev: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBoundsRect(hdc: HDC, prc: LPRECTL, f: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetColorAdjustment(hdc: HDC, pcaOut: PCOLORADJUSTMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetColorAdjustment(hdc: HDC, pca: PCOLORADJUSTMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCancelDC(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiOpenDCW(
         pustrDevice: PUNICODE_STRING,
         pdm: *mut DEVMODEW,
@@ -106538,13 +106538,13 @@ unsafe extern "C" {
         pUMdhpdev: PVOID,
     ) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDCDword(hdc: HDC, u: UINT, Result: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDCPoint(hdc: HDC, iPoint: UINT, pptOut: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiScaleViewportExtEx(
         hdc: HDC,
         xNum: INT,
@@ -106554,7 +106554,7 @@ unsafe extern "C" {
         pszOut: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiScaleWindowExtEx(
         hdc: HDC,
         xNum: INT,
@@ -106564,7 +106564,7 @@ unsafe extern "C" {
         pszOut: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetVirtualResolution(
         hdc: HDC,
         cxVirtualDevicePixel: INT,
@@ -106573,19 +106573,19 @@ unsafe extern "C" {
         cyVirtualDeviceMm: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetSizeDevice(hdc: HDC, cxVirtualDevice: INT, cyVirtualDevice: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTransform(hdc: HDC, iXform: DWORD, pxf: LPXFORM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiModifyWorldTransform(hdc: HDC, pxf: LPXFORM, iXform: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCombineTransform(pxfDst: LPXFORM, pxfSrc1: LPXFORM, pxfSrc2: LPXFORM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiTransformPoints(
         hdc: HDC,
         pptIn: PPOINTL,
@@ -106594,19 +106594,19 @@ unsafe extern "C" {
         iMode: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiConvertMetafileRect(hdc: HDC, prect: PRECTL) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTextCharsetInfo(hdc: HDC, lpSig: LPFONTSIGNATURE, dwFlags: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDoBanding(hdc: HDC, bStart: BOOL, pptl: *mut POINTL, pSize: PSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetPerBandInfo(hdc: HDC, ppbi: *mut PERBANDINFO) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetStats(
         hProcess: HANDLE,
         iIndex: INT,
@@ -106615,28 +106615,28 @@ unsafe extern "C" {
         cjResultSize: UINT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetMagicColors(hdc: HDC, peMagic: PALETTEENTRY, Index: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSelectBrush(hdc: HDC, hbrush: HBRUSH) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSelectPen(hdc: HDC, hpen: HPEN) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSelectBitmap(hdc: HDC, hbm: HBITMAP) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSelectFont(hdc: HDC, hf: HFONT) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreatePen(iPenStyle: INT, iPenWidth: INT, cr: COLORREF, hbr: HBRUSH) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBitBlt(
         hdcDst: HDC,
         x: INT,
@@ -106651,7 +106651,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiTileBitBlt(
         hdcDst: HDC,
         prectDst: *mut RECTL,
@@ -106662,7 +106662,7 @@ unsafe extern "C" {
         crBackColor: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiTransparentBlt(
         hdcDst: HDC,
         xDst: INT,
@@ -106677,20 +106677,20 @@ unsafe extern "C" {
         TransColor: COLORREF,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTextExtent(hdc: HDC, lpwsz: PCWCH, cwc: INT, psize: PSIZE, flOpts: UINT)
         -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTextMetricsW(hdc: HDC, ptm: PTMW_INTERNAL, cj: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetTextFaceW(hDC: HDC, Count: INT, FaceName: PWSTR, bAliasName: BOOL) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetRandomRgn(hdc: HDC, hrgn: HRGN, iRgn: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtTextOutW(
         hdc: HDC,
         x: INT,
@@ -106703,7 +106703,7 @@ unsafe extern "C" {
         dwCodePage: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiIntersectClipRect(
         hdc: HDC,
         xLeft: INT,
@@ -106712,13 +106712,13 @@ unsafe extern "C" {
         yBottom: INT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateRectRgn(xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPatBlt(hdcDest: HDC, x: INT, y: INT, cx: INT, cy: INT, dwRop: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPolyPatBlt(
         hdc: HDC,
         rop4: DWORD,
@@ -106727,16 +106727,16 @@ unsafe extern "C" {
         dwMode: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUnrealizeObject(h: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetStockObject(iObject: INT) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateCompatibleBitmap(hdc: HDC, cx: INT, cy: INT) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateBitmapFromDxSurface(
         hdc: HDC,
         uiWidth: UINT,
@@ -106745,7 +106745,7 @@ unsafe extern "C" {
         hDxSharedSurface: HANDLE,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateBitmapFromDxSurface2(
         hdc: HDC,
         uiWidth: UINT,
@@ -106756,14 +106756,14 @@ unsafe extern "C" {
         hDxSharedSurface: HANDLE,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBeginGdiRendering(
         hbm: HBITMAP,
         bDiscard: BOOL,
         KernelModeDeviceHandle: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEndGdiRendering(
         hbm: HBITMAP,
         bDiscard: BOOL,
@@ -106771,22 +106771,22 @@ unsafe extern "C" {
         KernelModeDeviceHandle: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiLineTo(hdc: HDC, x: INT, y: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMoveTo(hdc: HDC, x: INT, y: INT, pptOut: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExtGetObjectW(h: HANDLE, cj: INT, pvOut: LPVOID) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDeviceCaps(hdc: HDC, i: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDeviceCapsAll(hdc: HDC, pDevCaps: PDEVCAPS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiStretchBlt(
         hdcDst: HDC,
         xDst: INT,
@@ -106802,10 +106802,10 @@ unsafe extern "C" {
         dwBackColor: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBrushOrg(hdc: HDC, x: INT, y: INT, pptOut: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateBitmap(
         cx: INT,
         cy: INT,
@@ -106814,28 +106814,28 @@ unsafe extern "C" {
         pjInit: LPBYTE,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCreateHalftonePalette(hdc: HDC) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRestoreDC(hdc: HDC, iLevel: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiExcludeClipRect(hdc: HDC, xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSaveDC(hdc: HDC) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCombineRgn(hrgnDst: HRGN, hrgnSrc1: HRGN, hrgnSrc2: HRGN, iMode: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetRectRgn(hrgn: HRGN, xLeft: INT, yTop: INT, xRight: INT, yBottom: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBitmapBits(hbm: HBITMAP, cj: ULONG, pjInit: PBYTE) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDIBitsInternal(
         hdc: HDC,
         hbm: HBITMAP,
@@ -106848,37 +106848,37 @@ unsafe extern "C" {
         cjMaxInfo: UINT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiOffsetRgn(hrgn: HRGN, cx: INT, cy: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetRgnBox(hrgn: HRGN, prcOut: LPRECTL) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiRectInRegion(hrgn: HRGN, prcl: LPRECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetBoundsRect(hdc: HDC, prc: LPRECTL, f: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPtInRegion(hrgn: HRGN, x: INT, y: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetNearestColor(hdc: HDC, cr: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetSystemPaletteUse(hdc: HDC) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetSystemPaletteUse(hdc: HDC, ui: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetRegionData(hrgn: HRGN, cjBuffer: ULONG, lpRgnData: LPRGNDATA) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiInvertRgn(hdc: HDC, hrgn: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAddFontResourceW(
         pwszFiles: PCWCH,
         cwc: ULONG,
@@ -106888,7 +106888,7 @@ unsafe extern "C" {
         pdv: *const DESIGNVECTOR,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiHfontCreate(
         pelfw: *const ENUMLOGFONTEXDVW,
         cjElfw: ULONG,
@@ -106897,10 +106897,10 @@ unsafe extern "C" {
         pvCliData: PVOID,
     ) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetFontEnumeration(ulType: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnumFonts(
         hdc: HDC,
         iEnumType: ULONG,
@@ -106912,10 +106912,10 @@ unsafe extern "C" {
         pvUserModeBuffer: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnumFontClose(idEnum: ULONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnumFontChunk(
         hdc: HDC,
         idEnum: ULONG_PTR,
@@ -106924,7 +106924,7 @@ unsafe extern "C" {
         pefdw: PENUMFONTDATAW,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnumFontOpen(
         hdc: HDC,
         iEnumType: ULONG,
@@ -106935,14 +106935,14 @@ unsafe extern "C" {
         pulCount: *mut ULONG,
     ) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiQueryFonts(
         pufiFontList: PUNIVERSAL_FONT_ID,
         nBufferSize: ULONG,
         pTimeStamp: PLARGE_INTEGER,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiConsoleTextOut(
         hdc: HDC,
         lpto: *mut POLYTEXTW,
@@ -106950,7 +106950,7 @@ unsafe extern "C" {
         prclBounds: *mut RECTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFullscreenControl(
         FullscreenCommand: FULLSCREENCONTROL,
         FullscreenInput: PVOID,
@@ -106959,13 +106959,13 @@ unsafe extern "C" {
         FullscreenOutputLength: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetCharSet(hdc: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEnableEudc(b: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEudcLoadUnloadLink(
         pBaseFaceName: LPCWSTR,
         cwcBaseFaceName: UINT,
@@ -106976,7 +106976,7 @@ unsafe extern "C" {
         bLoadLin: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetStringBitmapW(
         hdc: HDC,
         pwsz: LPWSTR,
@@ -106985,45 +106985,45 @@ unsafe extern "C" {
         cj: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetEudcTimeStampEx(
         lpBaseFaceName: LPWSTR,
         cwcBaseFaceName: ULONG,
         bSystemTimeStamp: BOOL,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiQueryFontAssocInfo(hdc: HDC) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetRealizationInfo(hdc: HDC, pri: PREALIZATION_INFO, hf: HFONT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiAddRemoteMMInstanceToDC(
         hdc: HDC,
         pddv: *mut DOWNLOADDESIGNVECTOR,
         cjDDV: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUnloadPrinterDriver(pDriverName: LPWSTR, cbDriverName: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiInitSpool() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetSpoolMessage(u1: DWORD, u2: DWORD, u3: DWORD, u4: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngAssociateSurface(hsurf: HSURF, hdev: HDEV, flHooks: FLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngEraseSurface(pso: *mut SURFOBJ, prcl: *mut RECTL, iColor: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCreateBitmap(
         sizl: SIZEL,
         lWidth: LONG,
@@ -107032,26 +107032,26 @@ unsafe extern "C" {
         pvBits: PVOID,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngDeleteSurface(hsurf: HSURF) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngLockSurface(hsurf: HSURF) -> *mut SURFOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngUnlockSurface(pso: *mut SURFOBJ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngMarkBandingSurface(hsurf: HSURF) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCreateDeviceSurface(dhsurf: DHSURF, sizl: SIZEL, iFormatCompat: ULONG) -> HSURF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCreateDeviceBitmap(dhsurf: DHSURF, sizl: SIZEL, iFormatCompat: ULONG)
         -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCopyBits(
         psoDst: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107061,7 +107061,7 @@ unsafe extern "C" {
         pptlSrc: *mut POINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngStretchBlt(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107076,7 +107076,7 @@ unsafe extern "C" {
         iMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngBitBlt(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107091,7 +107091,7 @@ unsafe extern "C" {
         rop4: ROP4,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngPlgBlt(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107106,7 +107106,7 @@ unsafe extern "C" {
         iMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCreatePalette(
         iMode: ULONG,
         cColors: ULONG,
@@ -107116,10 +107116,10 @@ unsafe extern "C" {
         flBlue: FLONG,
     ) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngDeletePalette(hPal: HPALETTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngStrokePath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -107131,7 +107131,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngFillPath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -107142,7 +107142,7 @@ unsafe extern "C" {
         flOptions: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngStrokeAndFillPath(
         pso: *mut SURFOBJ,
         ppo: *mut PATHOBJ,
@@ -107156,7 +107156,7 @@ unsafe extern "C" {
         flOptions: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngPaint(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -107165,7 +107165,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngLineTo(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -107178,7 +107178,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngAlphaBlend(
         psoDest: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107189,7 +107189,7 @@ unsafe extern "C" {
         pBlendObj: *mut BLENDOBJ,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngGradientFill(
         psoDest: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -107203,7 +107203,7 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngTransparentBlt(
         psoDst: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107215,7 +107215,7 @@ unsafe extern "C" {
         ulReserved: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngTextOut(
         pso: *mut SURFOBJ,
         pstro: *mut STROBJ,
@@ -107229,7 +107229,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngStretchBltROP(
         psoTrg: *mut SURFOBJ,
         psoSrc: *mut SURFOBJ,
@@ -107246,7 +107246,7 @@ unsafe extern "C" {
         rop4: ROP4,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiXLATEOBJ_cGetPalette(
         pxlo: *mut XLATEOBJ,
         iPal: ULONG,
@@ -107254,7 +107254,7 @@ unsafe extern "C" {
         pPal: *mut ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCLIPOBJ_cEnumStart(
         pco: *mut CLIPOBJ,
         bAll: BOOL,
@@ -107263,31 +107263,31 @@ unsafe extern "C" {
         cLimit: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pul: *mut ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiCLIPOBJ_ppoGetPath(pco: *mut CLIPOBJ) -> *mut PATHOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCreateClip() -> *mut CLIPOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngDeleteClip(pco: *mut CLIPOBJ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBRUSHOBJ_pvAllocRbrush(pbo: *mut BRUSHOBJ, cj: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBRUSHOBJ_pvGetRbrush(pbo: *mut BRUSHOBJ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBRUSHOBJ_ulGetBrushColor(pbo: *mut BRUSHOBJ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBRUSHOBJ_hGetColorTransform(pbo: *mut BRUSHOBJ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiXFORMOBJ_bApplyXform(
         pxo: *mut XFORMOBJ,
         iMode: ULONG,
@@ -107296,13 +107296,13 @@ unsafe extern "C" {
         pptOut: PPOINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiXFORMOBJ_iGetXform(pxo: *mut XFORMOBJ, pxform: *mut XFORML) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_vGetInfo(pfo: *mut FONTOBJ, cjSize: ULONG, pfi: *mut FONTINFO) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_cGetGlyphs(
         pfo: *mut FONTOBJ,
         iMode: ULONG,
@@ -107311,41 +107311,41 @@ unsafe extern "C" {
         ppvGlyph: *mut PVOID,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_pxoGetXform(pfo: *mut FONTOBJ) -> *mut XFORMOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_pifi(pfo: *mut FONTOBJ) -> *mut IFIMETRICS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_pfdg(pfo: *mut FONTOBJ) -> *mut FD_GLYPHSET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_cGetAllGlyphHandles(pfo: *mut FONTOBJ, phg: *mut HGLYPH) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_pvTrueTypeFontFile(pfo: *mut FONTOBJ, pcjFile: *mut ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFONTOBJ_pQueryGlyphAttrs(pfo: *mut FONTOBJ, iMode: ULONG) -> PFD_GLYPHATTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSTROBJ_bEnum(pstro: *mut STROBJ, pc: *mut ULONG, ppgpos: *mut PGLYPHPOS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSTROBJ_bEnumPositionsOnly(
         pstro: *mut STROBJ,
         pc: *mut ULONG,
         ppgpos: *mut PGLYPHPOS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSTROBJ_vEnumStart(pstro: *mut STROBJ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSTROBJ_dwGetCodePage(pstro: *mut STROBJ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSTROBJ_bGetAdvanceWidths(
         pstro: *mut STROBJ,
         iFirst: ULONG,
@@ -107353,32 +107353,32 @@ unsafe extern "C" {
         pptqD: *mut POINTQF,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngComputeGlyphSet(
         nCodePage: INT,
         nFirstChar: INT,
         cChars: INT,
     ) -> *mut FD_GLYPHSET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiXLATEOBJ_iXlate(pxlo: *mut XLATEOBJ, iColor: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiXLATEOBJ_hGetColorTransform(pxlo: *mut XLATEOBJ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPATHOBJ_vGetBounds(ppo: *mut PATHOBJ, prectfx: PRECTFX) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPATHOBJ_bEnum(ppo: *mut PATHOBJ, ppd: *mut PATHDATA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPATHOBJ_vEnumStart(ppo: *mut PATHOBJ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngDeletePath(ppo: *mut PATHOBJ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPATHOBJ_vEnumStartClipLines(
         ppo: *mut PATHOBJ,
         pco: *mut CLIPOBJ,
@@ -107386,16 +107386,16 @@ unsafe extern "C" {
         pla: *mut LINEATTRS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiPATHOBJ_bEnumClipLines(ppo: *mut PATHOBJ, cb: ULONG, pcl: *mut CLIPLINE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiEngCheckAbort(pso: *mut SURFOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDhpdev(hdev: HDEV) -> DHPDEV;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiHT_Get8BPPFormatPalette(
         pPaletteEntry: LPPALETTEENTRY,
         RedGamma: USHORT,
@@ -107403,7 +107403,7 @@ unsafe extern "C" {
         BlueGamma: USHORT,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiHT_Get8BPPMaskPalette(
         pPaletteEntry: LPPALETTEENTRY,
         Use8BPPMaskPal: BOOL,
@@ -107413,22 +107413,22 @@ unsafe extern "C" {
         BlueGamma: USHORT,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUpdateTransform(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetLayout(hdc: HDC, wox: LONG, dwLayout: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMirrorWindowOrg(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetUMPDSandboxState(bEnabled: BOOL) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetPUMPDOBJ(
         humpd: HUMPD,
         bStoreID: BOOL,
@@ -107436,240 +107436,240 @@ unsafe extern "C" {
         pbWOW64: *mut BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiBRUSHOBJ_DeleteRbrush(pbo: *mut BRUSHOBJ, pboB: *mut BRUSHOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiUMPDEngFreeUserMem(ppv: *mut KERNEL_PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBitmapAttributes(hbm: HBITMAP, dwFlags: DWORD) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiClearBitmapAttributes(hbm: HBITMAP, dwFlags: DWORD) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetBrushAttributes(hbm: HBRUSH, dwFlags: DWORD) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiClearBrushAttributes(hbm: HBRUSH, dwFlags: DWORD) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDrawStream(hdcDst: HDC, cjIn: ULONG, pvIn: *mut ::core::ffi::c_void) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMakeObjectXferable(h: HANDLE, dwProcessId: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiMakeObjectUnXferable(h: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICheckExclusiveOwnership() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateAllocation(unnamedParam1: *mut D3DKMT_CREATEALLOCATION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICheckMonitorPowerState(
         unnamedParam1: *const D3DKMT_CHECKMONITORPOWERSTATE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICheckOcclusion(unnamedParam1: *const D3DKMT_CHECKOCCLUSION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICloseAdapter(unnamedParam1: *const D3DKMT_CLOSEADAPTER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateContext(unnamedParam1: *mut D3DKMT_CREATECONTEXT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateDevice(unnamedParam1: *mut D3DKMT_CREATEDEVICE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateOverlay(unnamedParam1: *mut D3DKMT_CREATEOVERLAY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDICreateSynchronizationObject(
         unnamedParam1: *mut D3DKMT_CREATESYNCHRONIZATIONOBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIWaitForVerticalBlankEvent(
         unnamedParam1: *const D3DKMT_WAITFORVERTICALBLANKEVENT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIWaitForIdle(unnamedParam1: *const D3DKMT_WAITFORIDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIUpdateOverlay(unnamedParam1: *const D3DKMT_UPDATEOVERLAY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIUnlock(unnamedParam1: *const D3DKMT_UNLOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroyAllocation(unnamedParam1: *const D3DKMT_DESTROYALLOCATION) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroyContext(unnamedParam1: *const D3DKMT_DESTROYCONTEXT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroyDevice(unnamedParam1: *const D3DKMT_DESTROYDEVICE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroyOverlay(unnamedParam1: *const D3DKMT_DESTROYOVERLAY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIDestroySynchronizationObject(
         unnamedParam1: *const D3DKMT_DESTROYSYNCHRONIZATIONOBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIEscape(unnamedParam1: *const D3DKMT_ESCAPE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIFlipOverlay(unnamedParam1: *const D3DKMT_FLIPOVERLAY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetContextSchedulingPriority(
         unnamedParam1: *mut D3DKMT_GETCONTEXTSCHEDULINGPRIORITY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetDeviceState(unnamedParam1: *mut D3DKMT_GETDEVICESTATE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetDisplayModeList(unnamedParam1: *mut D3DKMT_GETDISPLAYMODELIST) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetMultisampleMethodList(
         unnamedParam1: *mut D3DKMT_GETMULTISAMPLEMETHODLIST,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetPresentHistory(unnamedParam1: *mut D3DKMT_GETPRESENTHISTORY) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetProcessSchedulingPriorityClass(
         unnamedParam1: HANDLE,
         unnamedParam2: *mut D3DKMT_SCHEDULINGPRIORITYCLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetRuntimeData(unnamedParam1: *const D3DKMT_GETRUNTIMEDATA) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetScanLine(unnamedParam1: *mut D3DKMT_GETSCANLINE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIGetSharedPrimaryHandle(
         unnamedParam1: *mut D3DKMT_GETSHAREDPRIMARYHANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIInvalidateActiveVidPn(
         unnamedParam1: *const D3DKMT_INVALIDATEACTIVEVIDPN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDILock(unnamedParam1: *mut D3DKMT_LOCK) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIOpenAdapterFromDeviceName(
         unnamedParam1: *mut D3DKMT_OPENADAPTERFROMDEVICENAME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIOpenAdapterFromGdiDisplayName(
         unnamedParam1: *mut D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIOpenAdapterFromHdc(unnamedParam1: *mut D3DKMT_OPENADAPTERFROMHDC) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIOpenResource(unnamedParam1: *mut D3DKMT_OPENRESOURCE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIPollDisplayChildren(
         unnamedParam1: *const D3DKMT_POLLDISPLAYCHILDREN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIPresent(unnamedParam1: *mut D3DKMT_PRESENT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIQueryAdapterInfo(unnamedParam1: *const D3DKMT_QUERYADAPTERINFO) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIQueryAllocationResidency(
         unnamedParam1: *const D3DKMT_QUERYALLOCATIONRESIDENCY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIQueryResourceInfo(unnamedParam1: *mut D3DKMT_QUERYRESOURCEINFO) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIQueryStatistics(unnamedParam1: *const D3DKMT_QUERYSTATISTICS) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIReleaseProcessVidPnSourceOwners(unnamedParam1: HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIRender(unnamedParam1: *mut D3DKMT_RENDER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetAllocationPriority(
         unnamedParam1: *const D3DKMT_SETALLOCATIONPRIORITY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetContextSchedulingPriority(
         unnamedParam1: *const D3DKMT_SETCONTEXTSCHEDULINGPRIORITY,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetDisplayMode(unnamedParam1: *const D3DKMT_SETDISPLAYMODE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetDisplayPrivateDriverFormat(
         unnamedParam1: *const D3DKMT_SETDISPLAYPRIVATEDRIVERFORMAT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetGammaRamp(unnamedParam1: *const D3DKMT_SETGAMMARAMP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetProcessSchedulingPriorityClass(
         unnamedParam1: HANDLE,
         unnamedParam2: D3DKMT_SCHEDULINGPRIORITYCLASS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetQueuedLimit(unnamedParam1: *const D3DKMT_SETQUEUEDLIMIT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISetVidPnSourceOwner(
         unnamedParam1: *const D3DKMT_SETVIDPNSOURCEOWNER,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISharedPrimaryLockNotification(
         unnamedParam1: *const D3DKMT_SHAREDPRIMARYLOCKNOTIFICATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISharedPrimaryUnLockNotification(
         unnamedParam1: *const D3DKMT_SHAREDPRIMARYUNLOCKNOTIFICATION,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDISignalSynchronizationObject(
         unnamedParam1: *const D3DKMT_SIGNALSYNCHRONIZATIONOBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiDdDDIWaitForSynchronizationObject(
         unnamedParam1: *const D3DKMT_WAITFORSYNCHRONIZATIONOBJECT,
     ) -> NTSTATUS;
@@ -107947,7 +107947,7 @@ pub struct tagFONTFAMILYINFO {
 }
 pub type FONTFAMILYINFO = tagFONTFAMILYINFO;
 pub type PFONTFAMILYINFO = *mut tagFONTFAMILYINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetFontFamilyInfo(
         Dc: HDC,
         LogFont: *const LOGFONTW,
@@ -107955,19 +107955,19 @@ unsafe extern "C" {
         UnsafeInfoCount: LPLONG,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetViewportExtEx(hDC: HDC, viewportExt: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetViewportOrgEx(hDC: HDC, viewportOrg: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetWindowExtEx(hDC: HDC, windowExt: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiGetWindowOrgEx(hDC: HDC, windowOrg: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiOffsetViewportOrgEx(
         hDC: HDC,
         XOffset: ::core::ffi::c_int,
@@ -107975,7 +107975,7 @@ unsafe extern "C" {
         Point: PPOINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiOffsetWindowOrgEx(
         hDC: HDC,
         XOffset: ::core::ffi::c_int,
@@ -107983,7 +107983,7 @@ unsafe extern "C" {
         Point: PPOINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetViewportOrgEx(
         hDC: HDC,
         X: ::core::ffi::c_int,
@@ -107991,7 +107991,7 @@ unsafe extern "C" {
         Point: PPOINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiSetWindowOrgEx(
         hDC: HDC,
         X: ::core::ffi::c_int,
@@ -110936,7 +110936,7 @@ pub struct _PFNCLIENT {
 pub type PFNCLIENT = _PFNCLIENT;
 pub type PPFNCLIENT = *mut _PFNCLIENT;
 pub type WNDPROC_EX = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM, arg5: BOOL) -> LRESULT,
+    unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM, arg5: BOOL) -> LRESULT,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -110956,7 +110956,7 @@ pub struct _PFNCLIENTWORKER {
 pub type PFNCLIENTWORKER = _PFNCLIENTWORKER;
 pub type PPFNCLIENTWORKER = *mut _PFNCLIENTWORKER;
 pub type PFN_FNID = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PWND,
         arg2: UINT,
         arg3: WPARAM,
@@ -111490,10 +111490,10 @@ pub struct tagIMEWND {
 }
 pub type IMEWND = tagIMEWND;
 pub type PIMEWND = *mut tagIMEWND;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserAssociateInputContext(hWnd: HWND, hIMC: HIMC, dwFlags: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBuildHimcList(
         dwThreadId: DWORD,
         dwCount: DWORD,
@@ -111501,28 +111501,28 @@ unsafe extern "C" {
         pdwCount: PDWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCalcMenuBar(hwnd: HWND, x: DWORD, width: DWORD, y: DWORD, prc: LPRECTL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCheckMenuItem(hmenu: HMENU, uIDCheckItem: UINT, uCheck: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCtxDisplayIOCtl(dwUnknown1: DWORD, dwUnknown2: DWORD, dwUnknown3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDbgWin32HeapFail(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDbgWin32HeapStat(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDeleteMenu(hMenu: HMENU, uPosition: UINT, uFlags: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDestroyMenu(hMenu: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDrawMenuBarTemp(
         hWnd: HWND,
         hDC: HDC,
@@ -111531,13 +111531,13 @@ unsafe extern "C" {
         hFont: HFONT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEnableMenuItem(hMenu: HMENU, uIDEnableItem: UINT, uEnable: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEndMenu() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMenuBarInfo(
         hwnd: HWND,
         idObject: LONG,
@@ -111545,20 +111545,20 @@ unsafe extern "C" {
         pmbi: PMENUBARINFO,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMenuIndex(hMenu: HMENU, hSubMenu: HMENU) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMenuItemRect(hWnd: HWND, hMenu: HMENU, uItem: UINT, lprcItem: LPRECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetSystemMenu(hWnd: HWND, bRevert: BOOL) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserHiliteMenuItem(hWnd: HWND, hMenu: HMENU, uItemHilite: UINT, uHilite: UINT)
         -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMenuItemFromPoint(
         hWnd: HWND,
         hMenu: HMENU,
@@ -111566,28 +111566,28 @@ unsafe extern "C" {
         Y: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoveMenu(hMenu: HMENU, uPosition: UINT, uFlags: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetMenu(hWnd: HWND, hMenu: HMENU, bRepaint: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetMenuContextHelpId(hmenu: HMENU, dwContextHelpId: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetMenuDefaultItem(hMenu: HMENU, uItem: UINT, fByPos: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetMenuFlagRtoL(hMenu: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetSystemMenu(hWnd: HWND, hMenu: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserThunkedMenuInfo(hMenu: HMENU, lpcmi: LPCMENUINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserThunkedMenuItemInfo(
         hMenu: HMENU,
         uItem: UINT,
@@ -111597,7 +111597,7 @@ unsafe extern "C" {
         lpszCaption: PUNICODE_STRING,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserTrackPopupMenuEx(
         hMenu: HMENU,
         fuFlags: UINT,
@@ -111607,19 +111607,19 @@ unsafe extern "C" {
         lptpm: LPTPMPARAMS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserActivateKeyboardLayout(hKL: HKL, Flags: ULONG) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserAlterWindowStyle(hWnd: HWND, Index: DWORD, NewValue: LONG) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserAttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBeginPaint(hWnd: HWND, lPs: *mut PAINTSTRUCT) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBitBltSysBmp(
         hdc: HDC,
         nXDest: INT,
@@ -111631,10 +111631,10 @@ unsafe extern "C" {
         dwRop: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBlockInput(BlockIt: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBuildHwndList(
         hDesktop: HDESK,
         hwndParent: HWND,
@@ -111645,7 +111645,7 @@ unsafe extern "C" {
         pcHwndNeeded: *mut ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBuildNameList(
         hWinSta: HWINSTA,
         dwSize: ULONG,
@@ -111653,7 +111653,7 @@ unsafe extern "C" {
         pRequiredSize: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserBuildPropList(
         hWnd: HWND,
         Buffer: LPVOID,
@@ -111776,25 +111776,25 @@ pub const SimpleCallRoutines_TWOPARAM_ROUTINE_SETCURSORPOS: SimpleCallRoutines =
 pub const SimpleCallRoutines_TWOPARAM_ROUTINE_UNHOOKWINDOWSHOOK: SimpleCallRoutines = 112;
 pub const SimpleCallRoutines_TWOPARAM_ROUTINE_WOWCLEANUP: SimpleCallRoutines = 113;
 pub type SimpleCallRoutines = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallHwnd(hWnd: HWND, Routine: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallHwndOpt(hWnd: HWND, Routine: DWORD) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallHwndParam(hWnd: HWND, Param: DWORD_PTR, Routine: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallHwndParamLock(hWnd: HWND, Param: DWORD_PTR, Routine: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallMsgFilter(msg: LPMSG, code: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallNextHookEx(
         Code: ::core::ffi::c_int,
         wParam: WPARAM,
@@ -111802,19 +111802,19 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallNoParam(Routine: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallOneParam(Param: DWORD_PTR, Routine: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCallTwoParam(Param1: DWORD_PTR, Param2: DWORD_PTR, Routine: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserChangeClipboardChain(hWndRemove: HWND, hWndNewNext: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserChangeDisplaySettings(
         lpszDeviceName: PUNICODE_STRING,
         lpDevMode: LPDEVMODEW,
@@ -111822,32 +111822,32 @@ unsafe extern "C" {
         lParam: LPVOID,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCheckDesktopByThreadId(dwThreadId: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCheckWindowThreadDesktop(
         hwnd: HWND,
         dwThreadId: DWORD,
         ReturnValue: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCheckImeHotKey(uVirtualKey: UINT, lParam: LPARAM) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserChildWindowFromPointEx(Parent: HWND, x: LONG, y: LONG, Flags: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserClipCursor(lpRect: *mut RECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCloseClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCloseDesktop(hDesktop: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCloseWindowStation(hWinSta: HWINSTA) -> BOOL;
 }
 pub const _CONSOLECONTROL_ConsoleCtrlDesktopConsoleThread: _CONSOLECONTROL = 0;
@@ -111865,30 +111865,30 @@ pub struct _DESKTOP_CONSOLE_THREAD {
 }
 pub type DESKTOP_CONSOLE_THREAD = _DESKTOP_CONSOLE_THREAD;
 pub type PDESKTOP_CONSOLE_THREAD = *mut _DESKTOP_CONSOLE_THREAD;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserConsoleControl(
         ConsoleCtrl: CONSOLECONTROL,
         ConsoleCtrlInfo: PVOID,
         ConsoleCtrlInfoLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserConvertMemHandle(pData: PVOID, cbData: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCopyAcceleratorTable(
         Table: HACCEL,
         Entries: LPACCEL,
         EntriesCount: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCountClipboardFormats() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateAcceleratorTable(Entries: LPACCEL, EntriesCount: ULONG) -> HACCEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateCaret(
         hWnd: HWND,
         hBitmap: HBITMAP,
@@ -111896,7 +111896,7 @@ unsafe extern "C" {
         nHeight: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateDesktop(
         poa: POBJECT_ATTRIBUTES,
         lpszDesktopDevice: PUNICODE_STRING,
@@ -111905,10 +111905,10 @@ unsafe extern "C" {
         dwDesiredAccess: ACCESS_MASK,
     ) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateInputContext(dwClientImcData: ULONG_PTR) -> HIMC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateLocalMemHandle(
         hMem: HANDLE,
         pData: PVOID,
@@ -111916,7 +111916,7 @@ unsafe extern "C" {
         pcbData: *mut DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateWindowEx(
         dwExStyle: DWORD,
         plstrClassName: PLARGE_STRING,
@@ -111935,7 +111935,7 @@ unsafe extern "C" {
         acbiBuffer: PVOID,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserCreateWindowStation(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         dwDesiredAccess: ACCESS_MASK,
@@ -111946,14 +111946,14 @@ unsafe extern "C" {
         Unknown6: DWORD,
     ) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDdeGetQualityOfService(
         hwndClient: HWND,
         hWndServer: HWND,
         pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDdeInitialize(
         Unknown0: DWORD,
         Unknown1: DWORD,
@@ -111962,14 +111962,14 @@ unsafe extern "C" {
         Unknown4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDdeSetQualityOfService(
         hwndClient: HWND,
         pqosNew: PSECURITY_QUALITY_OF_SERVICE,
         pqosPrev: PSECURITY_QUALITY_OF_SERVICE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDeferWindowPos(
         WinPosInfo: HDWP,
         Wnd: HWND,
@@ -111981,34 +111981,34 @@ unsafe extern "C" {
         Flags: UINT,
     ) -> HDWP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDefSetText(WindowHandle: HWND, WindowText: PLARGE_STRING) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDestroyAcceleratorTable(Table: HACCEL) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDestroyCursor(Handle: HANDLE, bForce: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDestroyInputContext(hIMC: HIMC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDestroyWindow(Wnd: HWND) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDisableThreadIme(dwThreadID: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDispatchMessage(pMsg: PMSG) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDragDetect(hWnd: HWND, pt: POINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDragObject(hwnd1: HWND, hwnd2: HWND, u1: UINT, dw1: DWORD, hc1: HCURSOR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDrawAnimatedRects(
         hwnd: HWND,
         idAni: INT,
@@ -112016,10 +112016,10 @@ unsafe extern "C" {
         lprcTo: *mut RECTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDrawCaption(hWnd: HWND, hDc: HDC, lpRc: LPCRECTL, uFlags: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDrawCaptionTemp(
         hWnd: HWND,
         hDC: HDC,
@@ -112040,7 +112040,7 @@ pub struct _DRAWICONEXDATA {
 }
 pub type DRAWICONEXDATA = _DRAWICONEXDATA;
 pub type PDRAWICONEXDATA = *mut _DRAWICONEXDATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserDrawIconEx(
         hdc: HDC,
         xLeft: ::core::ffi::c_int,
@@ -112055,19 +112055,19 @@ unsafe extern "C" {
         pDIXData: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEmptyClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEnableScrollBar(hWnd: HWND, wSBflags: UINT, wArrows: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEndDeferWindowPosEx(WinPosInfo: HDWP, bAsync: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEndPaint(hWnd: HWND, lPs: *const PAINTSTRUCT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEnumDisplayDevices(
         lpDevice: PUNICODE_STRING,
         iDevNum: DWORD,
@@ -112075,7 +112075,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEnumDisplayMonitors(
         hDC: HDC,
         pRect: LPCRECTL,
@@ -112084,7 +112084,7 @@ unsafe extern "C" {
         listSize: DWORD,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEnumDisplaySettings(
         lpszDeviceName: PUNICODE_STRING,
         iModeNum: DWORD,
@@ -112092,16 +112092,16 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserEvent(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserExcludeUpdateRgn(hDC: HDC, hWnd: HWND) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserFillWindow(hWndPaint: HWND, hWndPaint1: HWND, hDC: HDC, hBrush: HBRUSH) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserFindWindowEx(
         hwndParent: HWND,
         hwndChildAfter: HWND,
@@ -112110,10 +112110,10 @@ unsafe extern "C" {
         dwUnknown: DWORD,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetAltTabInfo(
         hwnd: HWND,
         iItem: INT,
@@ -112123,25 +112123,25 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetAncestor(hWnd: HWND, uType: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetAppImeLevel(hWnd: HWND) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetAsyncKeyState(Key: INT) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetAtomName(atom: ATOM, pustrName: PUNICODE_STRING) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetCaretBlinkTime() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetCaretPos(lpPoint: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClassInfo(
         hInstance: HINSTANCE,
         ClassName: PUNICODE_STRING,
@@ -112150,44 +112150,44 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClassName(hWnd: HWND, Real: BOOL, ClassName: PUNICODE_STRING) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipboardData(fmt: UINT, pgcd: PGETCLIPBDATA) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipboardFormatName(
         uFormat: UINT,
         lpszFormatName: LPWSTR,
         cchMaxCount: INT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipboardOwner() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipboardSequenceNumber() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipboardViewer() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetClipCursor(lpRect: *mut RECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetComboBoxInfo(hWnd: HWND, pcbi: PCOMBOBOXINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetControlBrush(hwnd: HWND, hdc: HDC, ctlType: UINT) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetControlColor(hwndParent: HWND, hwnd: HWND, hdc: HDC, CtlMsg: UINT) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetCPD(hWnd: HWND, Flags: GETCPD, Proc: ULONG_PTR) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetCursorFrameInfo(
         hCursor: HCURSOR,
         istep: DWORD,
@@ -112195,28 +112195,28 @@ unsafe extern "C" {
         num_steps: *mut DWORD,
     ) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetDC(hWnd: HWND) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetDCEx(hWnd: HWND, hRegion: HANDLE, Flags: ULONG) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetDoubleClickTime() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetForegroundWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetGuiResources(hProcess: HANDLE, uiFlags: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetGUIThreadInfo(idThread: DWORD, lpgui: LPGUITHREADINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetIconInfo(
         hCurIcon: HANDLE,
         IconInfo: PICONINFO,
@@ -112226,7 +112226,7 @@ unsafe extern "C" {
         bInternal: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetIconSize(
         Handle: HANDLE,
         istepIfAniCur: UINT,
@@ -112234,7 +112234,7 @@ unsafe extern "C" {
         plcy: *mut LONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetImeHotKey(
         dwHotKeyId: DWORD,
         lpuModifiers: PUINT,
@@ -112242,35 +112242,35 @@ unsafe extern "C" {
         lphKL: LPHKL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetImeInfoEx(pImeInfoEx: PIMEINFOEX, SearchType: IMEINFOEXCLASS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetInternalWindowPos(hwnd: HWND, rectWnd: LPRECTL, ptIcon: PPOINTL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyboardLayout(dwThreadid: DWORD) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyboardLayoutList(nItems: ULONG, pHklBuff: *mut HKL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyboardLayoutName(pustrName: PUNICODE_STRING) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyboardState(Unknown0: LPBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyboardType(TypeFlag: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyNameText(lParam: LONG, lpString: LPWSTR, nSize: ::core::ffi::c_int)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetKeyState(VirtKey: INT) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetLayeredWindowAttributes(
         hwnd: HWND,
         pcrKey: *mut COLORREF,
@@ -112278,14 +112278,14 @@ unsafe extern "C" {
         pdwFlags: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMessage(pMsg: PMSG, hWnd: HWND, MsgFilterMin: UINT, MsgFilterMax: UINT)
         -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMouseMovePointsEx(
         cbSize: UINT,
         lppt: LPMOUSEMOVEPOINT,
@@ -112294,7 +112294,7 @@ unsafe extern "C" {
         resolution: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetObjectInformation(
         hObject: HANDLE,
         nIndex: DWORD,
@@ -112303,19 +112303,19 @@ unsafe extern "C" {
         nLengthNeeded: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetOpenClipboardWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetPriorityClipboardFormat(paFormatPriorityList: *mut UINT, cFormats: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetProcessWindowStation() -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetRawInputBuffer(pData: PRAWINPUT, pcbSize: PUINT, cbSizeHeader: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetRawInputData(
         hRawInput: HRAWINPUT,
         uiCommand: UINT,
@@ -112324,7 +112324,7 @@ unsafe extern "C" {
         cbSizeHeader: UINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetRawInputDeviceInfo(
         hDevice: HANDLE,
         uiCommand: UINT,
@@ -112332,24 +112332,24 @@ unsafe extern "C" {
         pcbSize: PUINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetRawInputDeviceList(
         pRawInputDeviceList: PRAWINPUTDEVICELIST,
         puiNumDevices: PUINT,
         cbSize: UINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetRegisteredRawInputDevices(
         pRawInputDevices: PRAWINPUTDEVICE,
         puiNumDevices: PUINT,
         cbSize: UINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetScrollBarInfo(hWnd: HWND, idObject: LONG, psbi: PSCROLLBARINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetThreadDesktop(dwThreadId: DWORD, hConsoleDesktop: HDESK) -> HDESK;
 }
 pub const ThreadStateRoutines_THREADSTATE_FOCUSWINDOW: ThreadStateRoutines = 0;
@@ -112374,42 +112374,42 @@ pub const ThreadStateRoutines_THREADSTATE_GETTHREADINFO: ThreadStateRoutines = 1
 pub const ThreadStateRoutines_THREADSTATE_PROGMANWINDOW: ThreadStateRoutines = 19;
 pub const ThreadStateRoutines_THREADSTATE_TASKMANWINDOW: ThreadStateRoutines = 20;
 pub type ThreadStateRoutines = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetTitleBarInfo(hwnd: HWND, pti: PTITLEBARINFO) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetUpdateRect(hWnd: HWND, lpRect: LPRECTL, fErase: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetUpdateRgn(hWnd: HWND, hRgn: HRGN, bErase: BOOL) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetWindowDC(hWnd: HWND) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetWOWClass(hInstance: HINSTANCE, ClassName: PUNICODE_STRING) -> PCLS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserHardErrorControl(dwUnknown1: DWORD, dwUnknown2: DWORD, dwUnknown3: DWORD)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserImpersonateDdeClientWindow(hWndClient: HWND, hWndServer: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInitialize(
         dwWinVersion: DWORD,
         hPowerRequestEvent: HANDLE,
         hMediaRequestEvent: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInitializeClientPfnArrays(
         pfnClientA: PPFNCLIENT,
         pfnClientW: PPFNCLIENT,
@@ -112417,7 +112417,7 @@ unsafe extern "C" {
         hmodUser: HINSTANCE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInitTask(
         Unknown0: DWORD,
         Unknown1: DWORD,
@@ -112433,22 +112433,22 @@ unsafe extern "C" {
         Unknown11: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInternalGetWindowText(hWnd: HWND, lpString: LPWSTR, nMaxCount: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInvalidateRect(hWnd: HWND, lpRect: *const RECTL, bErase: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserInvalidateRgn(hWnd: HWND, hRgn: HRGN, bErase: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserIsClipboardFormatAvailable(format: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserKillTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserLoadKeyboardLayoutEx(
         hFile: HANDLE,
         offTable: DWORD,
@@ -112459,16 +112459,16 @@ unsafe extern "C" {
         Flags: UINT,
     ) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserLockWindowStation(hWindowStation: HWINSTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserLockWorkStation() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMapVirtualKeyEx(
         keyCode: UINT,
         transType: UINT,
@@ -112485,7 +112485,7 @@ pub struct tagDOSENDMESSAGE {
 }
 pub type DOSENDMESSAGE = tagDOSENDMESSAGE;
 pub type PDOSENDMESSAGE = *mut tagDOSENDMESSAGE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMessageCall(
         hWnd: HWND,
         Msg: UINT,
@@ -112496,19 +112496,19 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMinMaximize(hWnd: HWND, cmd: UINT, Hide: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMNDragLeave() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMNDragOver(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserModifyUserStartupInfoFlags(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMoveWindow(
         hWnd: HWND,
         X: ::core::ffi::c_int,
@@ -112518,10 +112518,10 @@ unsafe extern "C" {
         bRepaint: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserNotifyIMEStatus(hwnd: HWND, fOpen: BOOL, dwConversion: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserNotifyProcessCreate(
         NewProcessId: HANDLE,
         ParentThreadId: HANDLE,
@@ -112529,36 +112529,36 @@ unsafe extern "C" {
         CreateFlags: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserNotifyWinEvent(Event: DWORD, hWnd: HWND, idObject: LONG, idChild: LONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserOpenClipboard(hWnd: HWND, Unknown1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserOpenDesktop(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         dwFlags: DWORD,
         dwDesiredAccess: ACCESS_MASK,
     ) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserOpenInputDesktop(
         dwFlags: DWORD,
         fInherit: BOOL,
         dwDesiredAccess: ACCESS_MASK,
     ) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserOpenWindowStation(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         dwDesiredAccess: ACCESS_MASK,
     ) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPaintDesktop(hDC: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPaintMenuBar(
         hWnd: HWND,
         hDC: HDC,
@@ -112568,7 +112568,7 @@ unsafe extern "C" {
         bActive: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPeekMessage(
         pMsg: PMSG,
         hWnd: HWND,
@@ -112577,10 +112577,10 @@ unsafe extern "C" {
         RemoveMsg: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPostMessage(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPostThreadMessage(
         idThread: DWORD,
         Msg: UINT,
@@ -112588,17 +112588,17 @@ unsafe extern "C" {
         lParam: LPARAM,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserPrintWindow(hwnd: HWND, hdcBlt: HDC, nFlags: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserProcessConnect(
         ProcessHandle: HANDLE,
         pUserConnect: PUSERCONNECT,
         Size: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserQueryInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: USERTHREADINFOCLASS,
@@ -112606,13 +112606,13 @@ unsafe extern "C" {
         ThreadInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserQueryInputContext(hIMC: HIMC, dwType: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserQueryUserCounters(
         Unknown0: DWORD,
         Unknown1: DWORD,
@@ -112621,10 +112621,10 @@ unsafe extern "C" {
         Unknown4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserQueryWindow(hWnd: HWND, Index: DWORD) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRealInternalGetMessage(
         lpMsg: LPMSG,
         hWnd: HWND,
@@ -112634,13 +112634,13 @@ unsafe extern "C" {
         bGMSG: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRealChildWindowFromPoint(Parent: HWND, x: LONG, y: LONG) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRealWaitMessageEx(dwWakeMask: DWORD, uTimeout: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRedrawWindow(
         hWnd: HWND,
         lprcUpdate: *const RECTL,
@@ -112648,7 +112648,7 @@ unsafe extern "C" {
         flags: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterClassExWOW(
         lpwcx: *mut WNDCLASSEXW,
         pustrClassName: PUNICODE_STRING,
@@ -112659,14 +112659,14 @@ unsafe extern "C" {
         pWow: LPDWORD,
     ) -> RTL_ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterRawInputDevices(
         pRawInputDevices: PCRAWINPUTDEVICE,
         uiNumDevices: UINT,
         cbSize: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterUserApiHook(
         m_dllname1: PUNICODE_STRING,
         m_funname1: PUNICODE_STRING,
@@ -112674,7 +112674,7 @@ unsafe extern "C" {
         dwUnknown4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterHotKey(
         hWnd: HWND,
         id: ::core::ffi::c_int,
@@ -112682,16 +112682,16 @@ unsafe extern "C" {
         vk: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterTasklist(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRegisterWindowMessage(MessageName: PUNICODE_STRING) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoteConnect(dwUnknown1: DWORD, dwUnknown2: DWORD, dwUnknown3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoteRedrawRectangle(
         dwUnknown1: DWORD,
         dwUnknown2: DWORD,
@@ -112699,16 +112699,16 @@ unsafe extern "C" {
         dwUnknown4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoteRedrawScreen() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoteStopScreenUpdates() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserRemoveProp(hWnd: HWND, Atom: ATOM) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserResolveDesktop(
         ProcessHandle: HANDLE,
         DesktopPath: PUNICODE_STRING,
@@ -112716,10 +112716,10 @@ unsafe extern "C" {
         phWinSta: *mut HWINSTA,
     ) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserResolveDesktopForWOW(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSBGetParms(
         hwnd: HWND,
         fnBar: ::core::ffi::c_int,
@@ -112727,7 +112727,7 @@ unsafe extern "C" {
         lpsi: LPSCROLLINFO,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserScrollDC(
         hDC: HDC,
         dx: ::core::ffi::c_int,
@@ -112738,7 +112738,7 @@ unsafe extern "C" {
         lprcUpdate: LPRECTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserScrollWindowEx(
         hWnd: HWND,
         dx: INT,
@@ -112750,19 +112750,19 @@ unsafe extern "C" {
         flags: UINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSendInput(nInputs: UINT, pInput: LPINPUT, cbSize: INT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetActiveWindow(Wnd: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetAppImeLevel(hWnd: HWND, dwLevel: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetCapture(Wnd: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetClassLong(hWnd: HWND, Offset: INT, dwNewLong: ULONG, Ansi: BOOL) -> ULONG_PTR;
 }
 unsafe extern "C" {
@@ -112773,28 +112773,28 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetClassWord(hWnd: HWND, nIndex: INT, wNewWord: WORD) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetClipboardData(fmt: UINT, hMem: HANDLE, scd: PSETCLIPBDATA) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetClipboardViewer(hWndNewViewer: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSelectPalette(hDC: HDC, hpal: HPALETTE, ForceBackground: BOOL) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetConsoleReserveKeys(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetCursor(hCursor: HCURSOR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetCursorContents(Handle: HANDLE, IconInfo: PICONINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetCursorIconData(
         hCursor: HCURSOR,
         pustrModule: PUNICODE_STRING,
@@ -112810,23 +112810,23 @@ pub struct _tagFINDEXISTINGCURICONPARAM {
     pub cy: LONG,
 }
 pub type FINDEXISTINGCURICONPARAM = _tagFINDEXISTINGCURICONPARAM;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserFindExistingCursorIcon(
         pustrModule: PUNICODE_STRING,
         pustrRsrc: PUNICODE_STRING,
         param: *mut FINDEXISTINGCURICONPARAM,
     ) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetDbgTag(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetDbgTagCount(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetFocus(hWnd: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetImeHotKey(
         dwHotKeyId: DWORD,
         uModifiers: UINT,
@@ -112835,13 +112835,13 @@ unsafe extern "C" {
         dwAction: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetImeOwnerWindow(hImeWnd: HWND, hwndFocus: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetInformationProcess(
         dwUnknown1: DWORD,
         dwUnknown2: DWORD,
@@ -112849,7 +112849,7 @@ unsafe extern "C" {
         dwUnknown4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetInformationThread(
         ThreadHandle: HANDLE,
         ThreadInformationClass: USERTHREADINFOCLASS,
@@ -112857,7 +112857,7 @@ unsafe extern "C" {
         ThreadInformationLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetInternalWindowPos(
         hwnd: HWND,
         showCmd: UINT,
@@ -112865,10 +112865,10 @@ unsafe extern "C" {
         pt: PPOINTL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetKeyboardState(lpKeyState: LPBYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetLayeredWindowAttributes(
         hwnd: HWND,
         crKey: COLORREF,
@@ -112876,10 +112876,10 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetLogonNotifyWindow(hWnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetObjectInformation(
         hObject: HANDLE,
         nIndex: DWORD,
@@ -112887,19 +112887,19 @@ unsafe extern "C" {
         nLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetParent(hWndChild: HWND, hWndNewParent: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetProcessWindowStation(hWindowStation: HWINSTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetProp(hWnd: HWND, Atom: ATOM, Data: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetRipFlags(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetScrollInfo(
         hwnd: HWND,
         fnBar: ::core::ffi::c_int,
@@ -112907,10 +112907,10 @@ unsafe extern "C" {
         bRedraw: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetShellWindowEx(hwndShell: HWND, hwndShellListView: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetSysColors(
         cElements: ::core::ffi::c_int,
         lpaElements: *const INT,
@@ -112918,16 +112918,16 @@ unsafe extern "C" {
         Flags: FLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetSystemCursor(hcur: HCURSOR, id: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetThreadDesktop(hDesktop: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetThreadState(Unknown0: DWORD, Unknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetSystemTimer(
         hWnd: HWND,
         nIDEvent: UINT_PTR,
@@ -112935,10 +112935,10 @@ unsafe extern "C" {
         lpTimerFunc: TIMERPROC,
     ) -> UINT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetThreadLayoutHandles(hNewKL: HKL, hOldKL: HKL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetTimer(
         hWnd: HWND,
         nIDEvent: UINT_PTR,
@@ -112946,10 +112946,10 @@ unsafe extern "C" {
         lpTimerFunc: TIMERPROC,
     ) -> UINT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowFNID(hWnd: HWND, fnID: WORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowLong(hWnd: HWND, Index: DWORD, NewValue: LONG, Ansi: BOOL) -> LONG;
 }
 unsafe extern "C" {
@@ -112960,10 +112960,10 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> LONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowPos(
         hWnd: HWND,
         hWndInsertAfter: HWND,
@@ -112974,13 +112974,13 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowRgn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowsHookAW(idHook: ::core::ffi::c_int, lpfn: HOOKPROC, Ansi: BOOL) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowsHookEx(
         Mod: HINSTANCE,
         ModuleName: PUNICODE_STRING,
@@ -112990,7 +112990,7 @@ unsafe extern "C" {
         Ansi: BOOL,
     ) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowStationUser(
         hWindowStation: HWINSTA,
         pluid: PLUID,
@@ -112998,10 +112998,10 @@ unsafe extern "C" {
         size: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWindowWord(hWnd: HWND, Index: INT, NewVal: WORD) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetWinEventHook(
         eventMin: UINT,
         eventMax: UINT,
@@ -113013,28 +113013,28 @@ unsafe extern "C" {
         dwflags: UINT,
     ) -> HWINEVENTHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserShowCaret(hWnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserHideCaret(hWnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserShowScrollBar(hWnd: HWND, wBar: ::core::ffi::c_int, bShow: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserShowWindow(hWnd: HWND, nCmdShow: LONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserShowWindowAsync(hWnd: HWND, nCmdShow: LONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSoundSentry() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSwitchDesktop(hDesktop: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSystemParametersInfo(
         uiAction: UINT,
         uiParam: UINT,
@@ -113042,10 +113042,10 @@ unsafe extern "C" {
         fWinIni: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserTestForInteractiveUser(dwUnknown1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserToUnicodeEx(
         wVirtKey: UINT,
         wScanCode: UINT,
@@ -113056,51 +113056,51 @@ unsafe extern "C" {
         dwhkl: HKL,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserTrackMouseEvent(lpEventTrack: LPTRACKMOUSEEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserTranslateAccelerator(
         Window: HWND,
         Table: HACCEL,
         Message: LPMSG,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnhookWindowsHookEx(Hook: HHOOK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnhookWinEvent(hWinEventHook: HWINEVENTHOOK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnloadKeyboardLayout(hKl: HKL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnlockWindowStation(hWindowStation: HWINSTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnregisterClass(
         ClassNameOrAtom: PUNICODE_STRING,
         hInstance: HINSTANCE,
         pClassMenuName: PCLSMENUNAME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnregisterHotKey(hWnd: HWND, id: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUnregisterUserApiHook() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUpdateInputContext(hIMC: HIMC, dwType: DWORD, dwValue: DWORD_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUpdateInstance(Unknown0: DWORD, Unknown1: DWORD, Unknown2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUpdateLayeredWindow(
         hwnd: HWND,
         hdcDst: HDC,
@@ -113114,38 +113114,38 @@ unsafe extern "C" {
         prcDirty: *mut RECTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUpdatePerUserSystemParameters(dwReserved: DWORD, bEnable: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserUserHandleGrantAccess(hUserHandle: HANDLE, hJob: HANDLE, bGrant: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserValidateHandleSecure(hHdl: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserValidateRect(hWnd: HWND, lpRect: *const RECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserValidateTimerCallback(lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserVkKeyScanEx(wChar: WCHAR, KeyboardLayout: HKL, bUsehHK: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserWaitForInputIdle(
         hProcess: HANDLE,
         dwMilliseconds: DWORD,
         bSharedWow: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserWaitMessage() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserWin32PoolAllocationStats(
         Unknown0: DWORD,
         Unknown1: DWORD,
@@ -113155,22 +113155,22 @@ unsafe extern "C" {
         Unknown5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserWindowFromPoint(X: LONG, Y: LONG) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserYieldTask() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserGetMonitorInfo(hMonitor: HMONITOR, pMonitorInfo: LPMONITORINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMonitorFromPoint(point: POINTL, dwFlags: DWORD) -> HMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMonitorFromRect(pRect: LPCRECTL, dwFlags: DWORD) -> HMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserMonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR;
 }
 #[repr(C)]
@@ -113182,7 +113182,7 @@ pub struct _SETSCROLLBARINFO {
 }
 pub type SETSCROLLBARINFO = _SETSCROLLBARINFO;
 pub type PSETSCROLLBARINFO = *mut _SETSCROLLBARINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtUserSetScrollBarInfo(hwnd: HWND, idObject: LONG, info: *mut SETSCROLLBARINFO) -> BOOL;
 }
 pub const _USER32_CALLBACK_USER32_CALLBACK_WINDOWPROC: _USER32_CALLBACK = 0;
@@ -113409,73 +113409,73 @@ pub struct _IMMLOADLAYOUT_CALLBACK_OUTPUT {
 }
 pub type IMMLOADLAYOUT_CALLBACK_OUTPUT = _IMMLOADLAYOUT_CALLBACK_OUTPUT;
 pub type PIMMLOADLAYOUT_CALLBACK_OUTPUT = *mut _IMMLOADLAYOUT_CALLBACK_OUTPUT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallCopyImageFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallSetWndIconsFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallWindowProcFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallSendAsyncProcForKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32LoadSysMenuTemplateForKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32SetupDefaultCursors(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallHookProcFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallEventProcFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallLoadMenuFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallClientThreadSetupFromKernel(
         Arguments: PVOID,
         ArgumentLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallClientLoadLibraryFromKernel(
         Arguments: PVOID,
         ArgumentLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallGetCharsetInfo(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32DeliverUserAPC(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallDDEPostFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallDDEGetFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallOBMFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallLPKFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallUMPDFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallImmProcessKeyFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32CallImmLoadLayoutFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn User32InitializeImmEntryTable(arg1: DWORD) -> BOOL;
 }
 #[repr(C)]
@@ -113511,7 +113511,7 @@ pub const _UPDATE_INPUT_CONTEXT_UIC_IMEWINDOW: _UPDATE_INPUT_CONTEXT = 1;
 pub type _UPDATE_INPUT_CONTEXT = ::core::ffi::c_uint;
 pub use self::_UPDATE_INPUT_CONTEXT as UPDATE_INPUT_CONTEXT;
 pub type WNDPROC_OWP = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: UINT,
         arg3: WPARAM,
@@ -113521,12 +113521,12 @@ pub type WNDPROC_OWP = ::core::option::Option<
     ) -> LRESULT,
 >;
 pub type SETWINDOWRGN = ::core::option::Option<
-    unsafe extern "C" fn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL) -> ::core::ffi::c_int,
+    unsafe extern "system" fn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL) -> ::core::ffi::c_int,
 >;
 pub type GETSCROLLINFO =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: INT, arg3: LPSCROLLINFO) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: INT, arg3: LPSCROLLINFO) -> BOOL>;
 pub type SETSCROLLINFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
         arg3: LPCSCROLLINFO,
@@ -113534,29 +113534,29 @@ pub type SETSCROLLINFO = ::core::option::Option<
     ) -> INT,
 >;
 pub type ENABLESCROLLBAR =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: UINT, arg3: UINT) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: UINT, arg3: UINT) -> BOOL>;
 pub type ADJUSTWINDOWRECTEX = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPRECTL, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> BOOL,
+    unsafe extern "system" fn(arg1: LPRECTL, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> BOOL,
 >;
 pub type GETSYSTEMMETRICS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int>;
 pub type SYSTEMPARAMETERSINFOA = ::core::option::Option<
-    unsafe extern "C" fn(arg1: UINT, arg2: UINT, arg3: PVOID, arg4: UINT) -> BOOL,
+    unsafe extern "system" fn(arg1: UINT, arg2: UINT, arg3: PVOID, arg4: UINT) -> BOOL,
 >;
 pub type SYSTEMPARAMETERSINFOW = ::core::option::Option<
-    unsafe extern "C" fn(arg1: UINT, arg2: UINT, arg3: PVOID, arg4: UINT) -> BOOL,
+    unsafe extern "system" fn(arg1: UINT, arg2: UINT, arg3: PVOID, arg4: UINT) -> BOOL,
 >;
 pub type FORCERESETUSERAPIHOOK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HINSTANCE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HINSTANCE) -> BOOL>;
 pub type DRAWFRAMECONTROL = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HDC, arg2: LPRECTL, arg3: UINT, arg4: UINT) -> BOOL,
+    unsafe extern "system" fn(arg1: HDC, arg2: LPRECTL, arg3: UINT, arg4: UINT) -> BOOL,
 >;
 pub type DRAWCAPTION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HWND, arg2: HDC, arg3: LPCRECTL, arg4: UINT) -> BOOL,
+    unsafe extern "system" fn(arg1: HWND, arg2: HDC, arg3: LPCRECTL, arg4: UINT) -> BOOL,
 >;
 pub type MDIREDRAWFRAME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HWND, arg2: DWORD) -> BOOL>;
-pub type GETREALWINDOWOWNER = ::core::option::Option<unsafe extern "C" fn(arg1: HWND) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HWND, arg2: DWORD) -> BOOL>;
+pub type GETREALWINDOWOWNER = ::core::option::Option<unsafe extern "system" fn(arg1: HWND) -> DWORD>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _UAHOWP {
@@ -113601,7 +113601,7 @@ pub type _UAPIHK = ::core::ffi::c_uint;
 pub use self::_UAPIHK as UAPIHK;
 pub type PUAPIHK = *mut _UAPIHK;
 pub type USERAPIHOOKPROC =
-    ::core::option::Option<unsafe extern "C" fn(State: UAPIHK, puah: PUSERAPIHOOK) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(State: UAPIHK, puah: PUSERAPIHOOK) -> BOOL>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _USERAPIHOOKINFO {
@@ -114642,7 +114642,7 @@ pub struct INTENG_ENTER_LEAVE_TAG {
 }
 pub type INTENG_ENTER_LEAVE = INTENG_ENTER_LEAVE_TAG;
 pub type PINTENG_ENTER_LEAVE = *mut INTENG_ENTER_LEAVE_TAG;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngEnter(
         EnterLeave: PINTENG_ENTER_LEAVE,
         DestObj: *mut SURFOBJ,
@@ -114652,7 +114652,7 @@ unsafe extern "C" {
         OutputObj: *mut *mut SURFOBJ,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngLeave(EnterLeave: PINTENG_ENTER_LEAVE) -> BOOL;
 }
 unsafe extern "C" {
@@ -114670,16 +114670,16 @@ pub struct _GDI_POOL {
     _unused: [u8; 0],
 }
 pub type PGDI_POOL = *mut _GDI_POOL;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiPoolCreate(cjAllocSize: ULONG, ulTag: ULONG) -> PGDI_POOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiPoolDestroy(pPool: PGDI_POOL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiPoolAllocate(pPool: PGDI_POOL) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID);
 }
 unsafe extern "C" {
@@ -114691,7 +114691,7 @@ unsafe extern "C" {
         Source: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserLoadImage(arg1: PCWSTR) -> HBITMAP;
 }
 pub const RESERVE_ENTRIES_COUNT: ::core::ffi::c_uint = 10;
@@ -114711,8 +114711,8 @@ unsafe extern "C" {
     pub static mut GdiHandleTable: PGDI_HANDLE_TABLE;
 }
 pub type PGDIOBJ = PVOID;
-pub type GDICLEANUPPROC = ::core::option::Option<unsafe extern "C" fn(ObjectBody: PVOID)>;
-pub type GDIOBJDELETEPROC = ::core::option::Option<unsafe extern "C" fn(ObjectBody: PVOID)>;
+pub type GDICLEANUPPROC = ::core::option::Option<unsafe extern "system" fn(ObjectBody: PVOID)>;
+pub type GDIOBJDELETEPROC = ::core::option::Option<unsafe extern "system" fn(ObjectBody: PVOID)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _BASEOBJECT {
@@ -114744,52 +114744,52 @@ pub const _GDIOBJLAGS_GDIOBJFLAG_DEFAULT: _GDIOBJLAGS = 0;
 pub const _GDIOBJLAGS_GDIOBJFLAG_IGNOREPID: _GDIOBJLAGS = 1;
 pub const _GDIOBJLAGS_GDIOBJFLAG_IGNORELOCK: _GDIOBJLAGS = 2;
 pub type _GDIOBJLAGS = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreIsHandleValid(hobj: HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreDeleteObject(hObject: HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetObjectOwner(hobj: HGDIOBJ, ulOwner: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetObjectOwnerEx(hobj: HGDIOBJ, ulOwner: ULONG, Flags: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetObject(hobj: HGDIOBJ, cbCount: INT, pvBuffer: PVOID) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_AllocateObject(objt: UCHAR, cjSize: ULONG, fl: FLONG) -> POBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vDeleteObject(pobj: POBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_ReferenceObjectByHandle(hobj: HGDIOBJ, objt: UCHAR) -> POBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vReferenceObjectByPointer(pobj: POBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vDereferenceObject(pobj: POBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_LockObject(hobj: HGDIOBJ, objt: UCHAR) -> PGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_TryLockObject(hobj: HGDIOBJ, objt: UCHAR) -> PGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vUnlockObject(pobj: POBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vSetObjectOwner(pobj: POBJ, ulOwner: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_bLockMultipleObjects(
         ulCount: ULONG,
         ahObj: *mut HGDIOBJ,
@@ -114797,28 +114797,28 @@ unsafe extern "C" {
         objt: UCHAR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_hInsertObject(pobj: POBJ, ulOwner: ULONG) -> HGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vFreeObject(pobj: POBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_vSetObjectAttr(pobj: POBJ, pvObjAttr: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_pvGetObjectAttr(pobj: POBJ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_ConvertToStockObj(hObj: *mut HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_ConvertFromStockObj(phObj: *mut HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_AllocObjWithHandle(ObjectType: ULONG, cjSize: ULONG) -> POBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GDIOBJ_ShareLockObj(hObj: HGDIOBJ, ObjectType: DWORD) -> PGDIOBJ;
 }
 pub const _PALFLAGS_PAL_DC: _PALFLAGS = 256;
@@ -114875,7 +114875,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut appalSurfaceDefault: [PPALETTE; 0usize];
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_AllocPalette(
         iMode: ULONG,
         cColors: ULONG,
@@ -114885,7 +114885,7 @@ unsafe extern "C" {
         flBlue: FLONG,
     ) -> PPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_AllocPalWithHandle(
         iMode: ULONG,
         cColors: ULONG,
@@ -114901,19 +114901,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PALETTE_GetObject(pGdiObject: PPALETTE, cbCount: INT, lpBuffer: LPLOGBRUSH) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_ulGetNearestPaletteIndex(ppal: PPALETTE, iColor: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_ulGetNearestIndex(ppal: PPALETTE, iColor: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_ulGetNearestBitFieldsIndex(ppal: PPALETTE, ulColor: ULONG) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_vGetBitMasks(ppal: PPALETTE, pulColors: PULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PALETTE_vCleanup(ObjectBody: PVOID);
 }
 unsafe extern "C" {
@@ -114922,7 +114922,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PALETTE_vSetRGBColorForIndex(ppal: PPALETTE, ulIndex: ULONG, crColor: COLORREF);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreatePaletteInternal(pLogPal: LPLOGPALETTE, cEntries: UINT) -> HPALETTE;
 }
 #[repr(C)]
@@ -114974,10 +114974,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut gajBitsPerFormat: [UCHAR; 0usize];
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SURFACE_vCleanup(ObjectBody: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SURFACE_AllocSurface(
         iType: USHORT,
         cx: ULONG,
@@ -115132,22 +115132,22 @@ pub type PDEVOBJ = _PDEVOBJ;
 unsafe extern "C" {
     pub fn PDEVOBJ_vReference(ppdev: PPDEVOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_vRelease(ppdev: PPDEVOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_pSurface(ppdev: PPDEVOBJ) -> PSURFACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_vGetDeviceCaps(ppdev: PPDEVOBJ, pDevCaps: PDEVCAPS);
 }
 unsafe extern "C" {
     pub fn PDEVOBJ_sizl(ppdev: PPDEVOBJ, psizl: PSIZEL) -> PSIZEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_bSwitchMode(ppdev: PPDEVOBJ, pdm: PDEVMODEW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_bDynamicModeChange(ppdev: PPDEVOBJ, ppdev2: PPDEVOBJ) -> BOOL;
 }
 unsafe extern "C" {
@@ -115202,10 +115202,10 @@ pub union _LDEVOBJ__bindgen_ty_1 {
 }
 pub type LDEVOBJ = _LDEVOBJ;
 pub type PLDEVOBJ = *mut _LDEVOBJ;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PDEVOBJ_vRefreshModeList(ppdev: PPDEVOBJ);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFileWrite(
         pFileObject: PFILE_OBJECT,
         lpBuffer: PVOID,
@@ -115355,10 +115355,10 @@ pub type XFORMGDI = _XFORMGDI;
 unsafe extern "C" {
     pub static gajRop2ToRop3: [BYTE; 16usize];
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngMaskBlt(
         psoDest: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -115374,10 +115374,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntEngWindowChanged(Window: *mut _WND, flChanged: FLONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngGetTickCount() -> ULONGLONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE;
 }
 pub const _EVENTFLAGS_ENG_EVENT_USERMAPPED: _EVENTFLAGS = 1;
@@ -115416,7 +115416,7 @@ pub const _R3_ROPCODES_R3_OPINDEX_PATCOPY: _R3_ROPCODES = 240;
 pub const _R3_ROPCODES_R3_OPINDEX_PATPAINT: _R3_ROPCODES = 251;
 pub const _R3_ROPCODES_R3_OPINDEX_WHITENESS: _R3_ROPCODES = 255;
 pub type _R3_ROPCODES = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngLineTo(
         Surface: *mut SURFOBJ,
         Clip: *mut CLIPOBJ,
@@ -115429,7 +115429,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngBitBlt(
         DestObj: *mut SURFOBJ,
         SourceObj: *mut SURFOBJ,
@@ -115444,7 +115444,7 @@ unsafe extern "C" {
         Rop4: ROP4,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngStretchBlt(
         DestObj: *mut SURFOBJ,
         SourceObj: *mut SURFOBJ,
@@ -115460,7 +115460,7 @@ unsafe extern "C" {
         Mode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngGradientFill(
         psoDest: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -115474,7 +115474,7 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngPolyline(
         DestSurf: *mut SURFOBJ,
         Clip: *mut CLIPOBJ,
@@ -115510,7 +115510,7 @@ unsafe extern "C" {
         Reserved: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngPaint(
         pso: *mut SURFOBJ,
         pco: *mut CLIPOBJ,
@@ -115519,7 +115519,7 @@ unsafe extern "C" {
         mix: MIX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngAlphaBlend(
         psoDest: *mut SURFOBJ,
         psoSource: *mut SURFOBJ,
@@ -115530,7 +115530,7 @@ unsafe extern "C" {
         pBlendObj: *mut BLENDOBJ,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngCopyBits(
         psoDest: *mut SURFOBJ,
         psoSource: *mut SURFOBJ,
@@ -115590,7 +115590,7 @@ pub const gef0: FLOATOBJ = 0.0;
 pub const gef1: FLOATOBJ = 1.0;
 pub const gef2: FLOATOBJ = 2.0;
 pub const gef16: FLOATOBJ = 16.0;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntEngSetPointerShape(
         pso: *mut SURFOBJ,
         psoMask: *mut SURFOBJ,
@@ -115604,7 +115604,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetPointerShape(
         hdc: HDC,
         hbmMask: HBITMAP,
@@ -115616,7 +115616,7 @@ unsafe extern "C" {
         fl: FLONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreMovePointer(hdc: HDC, x: LONG, y: LONG);
 }
 #[repr(C)]
@@ -115658,7 +115658,7 @@ pub const FVF_SYSTEMROOT: _bindgen_ty_5 = 1;
 pub const FVF_READONLY: _bindgen_ty_5 = 2;
 pub const FVF_FONTFILE: _bindgen_ty_5 = 4;
 pub type _bindgen_ty_5 = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapSectionView(
         hSection: HANDLE,
         cjSize: SIZE_T,
@@ -115666,13 +115666,13 @@ unsafe extern "C" {
         phSecure: PHANDLE,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngUnmapSectionView(pvBits: PVOID, cjOffset: ULONG, hSecure: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngCreateSection(fl: ULONG, cjSize: SIZE_T, ulTag: ULONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngMapSection(
         pvSection: PVOID,
         bMap: BOOL,
@@ -115680,7 +115680,7 @@ unsafe extern "C" {
         pvBaseAddress: *mut PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngAllocSectionMem(
         ppvSection: *mut PVOID,
         fl: ULONG,
@@ -115688,10 +115688,10 @@ unsafe extern "C" {
         ulTag: ULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngFreeSectionMem(pvSection: PVOID, pvMappedBase: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EngLoadModuleEx(pwsz: LPWSTR, cjSizeOfModule: ULONG, fl: FLONG) -> PFILEVIEW;
 }
 #[repr(C)]
@@ -115764,7 +115764,7 @@ pub type PEBRUSHOBJ = *mut _EBRUSHOBJ;
 unsafe extern "C" {
     pub fn BRUSH_GetObject(GdiObject: PBRUSH, Count: INT, Buffer: LPLOGBRUSH) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BRUSH_vDeleteObject(pvObject: PVOID);
 }
 unsafe extern "C" {
@@ -115776,16 +115776,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GreSetBrushOwner(arg1: HBRUSH, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiCreatePatternBrush(hBitmap: HBITMAP) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiCreateSolidBrush(Color: COLORREF) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiCreateNullBrush() -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiSetSolidBrushColor(hbr: HBRUSH, crColor: COLORREF);
 }
 #[repr(C)]
@@ -115812,16 +115812,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntGdiRealizePalette(arg1: HDC) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BITMAP_GetObject(bmp: *mut SURFACE, count: INT, buffer: LPVOID) -> INT;
 }
 unsafe extern "C" {
     pub fn BITMAP_CopyBitmap(hBitmap: HBITMAP) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetBitmapOwner(hbmp: HBITMAP, ulOwner: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreateBitmap(
         nWidth: ULONG,
         nHeight: ULONG,
@@ -115830,7 +115830,7 @@ unsafe extern "C" {
         pvBits: PVOID,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreateBitmapEx(
         nWidth: ULONG,
         nHeight: ULONG,
@@ -115842,7 +115842,7 @@ unsafe extern "C" {
         flags: FLONG,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreateDIBitmapInternal(
         hDc: HDC,
         cx: INT,
@@ -115856,7 +115856,7 @@ unsafe extern "C" {
         hcmXform: HANDLE,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetBitmapDimension(hBitmap: HBITMAP, psizDim: LPSIZE) -> BOOL;
 }
 #[repr(C)]
@@ -115913,13 +115913,13 @@ unsafe extern "C" {
         BottomRect: INT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn REGION_vCleanup(ObjectBody: PVOID);
 }
 unsafe extern "C" {
     pub fn REGION_Delete(arg1: PREGION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiGetRgnBox(arg1: HRGN, arg2: *mut RECTL) -> INT;
 }
 unsafe extern "C" {
@@ -115940,7 +115940,7 @@ unsafe extern "C" {
         iMode: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreatePolyPolygonRgn(
         ppt: *const POINTL,
         pcPoints: *const ULONG,
@@ -116097,10 +116097,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DC_vUpdateBackgroundBrush(pdc: PDC);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_hSelectFont(pdc: PDC, hlfntNew: HFONT) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiSelectPalette(hDC: HDC, hpal: HPALETTE, ForceBackground: BOOL) -> HPALETTE;
 }
 unsafe extern "C" {
@@ -116148,13 +116148,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntEnumHDev() -> PPDEVOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_AllocDcWithHandle(eDcObjType: GDILOOBJTYPE) -> PDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_bAllocDcAttr(pdc: PDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_vCleanup(ObjectBody: PVOID);
 }
 unsafe extern "C" {
@@ -116180,13 +116180,13 @@ unsafe extern "C" {
         rcSrc: *const RECTL,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_vRestoreDC(pdc: PDC, iSaveLevel: INT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_vFreeDcAttr(pdc: PDC);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_vInitDc(pdc: PDC, dctype: DCTYPE, ppdev: PPDEVOBJ);
 }
 unsafe extern "C" {
@@ -116198,13 +116198,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntUpdateBoundsRect(arg1: PDC, arg2: PRECTL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetDCOwner(hdc: HDC, ulOwner: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreateCompatibleDC(hdc: HDC, bAltDc: BOOL) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DC_vSetBrushOrigin(pdc: PDC, x: LONG, y: LONG);
 }
 unsafe extern "C" {
@@ -116231,7 +116231,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut psurfDefaultBitmap: PSURFACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetDIBitsInternal(
         hDC: HDC,
         hBitmap: HBITMAP,
@@ -116244,7 +116244,7 @@ unsafe extern "C" {
         MaxInfo: UINT,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreCreateDIBitmapFromPackedDIB(
         pvPackedDIB: PVOID,
         cjPackedDIB: UINT,
@@ -116314,7 +116314,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GreMoveTo(hdc: HDC, x: INT, y: INT, pptOut: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGradientFill(
         hdc: HDC,
         pVertex: PTRIVERTEX,
@@ -116342,7 +116342,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntGetSysColor(nIndex: INT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NtGdiFlushUserBatch() -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -116354,10 +116354,10 @@ unsafe extern "C" {
         Planes: UINT,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiSetHookFlags(hDC: HDC, Flags: WORD) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntSetDIBColorTable(
         hDC: HDC,
         StartIndex: UINT,
@@ -116365,7 +116365,7 @@ unsafe extern "C" {
         Colors: *const RGBQUAD,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetDIBColorTable(
         hDC: HDC,
         StartIndex: UINT,
@@ -116373,7 +116373,7 @@ unsafe extern "C" {
         Colors: *mut RGBQUAD,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetPaletteEntries(
         hpal: HPALETTE,
         StartIndex: UINT,
@@ -116381,7 +116381,7 @@ unsafe extern "C" {
         pe: LPPALETTEENTRY,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetSystemPaletteEntries(
         hDC: HDC,
         StartIndex: UINT,
@@ -116587,7 +116587,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreExtTextOutW(
         hDC: HDC,
         XStart: INT,
@@ -116624,7 +116624,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GreCreateFontIndirectW(lplf: *const LOGFONTW) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetTextMetricsW(hdc: HDC, lptm: LPTEXTMETRICW) -> BOOL;
 }
 pub type PEN = BRUSH;
@@ -116650,13 +116650,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DC_pmxDeviceToWorld(pdc: PDC) -> PMATRIX;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreModifyWorldTransform(pdc: PDC, pXForm: *const XFORML, dwMode: DWORD) -> BOOL;
 }
 unsafe extern "C" {
     pub fn IntMirrorWindowOrg(arg1: PDC);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGdiSetMapMode(arg1: PDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -116665,13 +116665,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GreDPtoLP(arg1: HDC, arg2: PPOINTL, arg3: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetDCPoint(arg1: HDC, arg2: UINT, arg3: PPOINTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetWindowExtEx(hdc: HDC, lpSize: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetViewportExtEx(hdc: HDC, lpSize: LPSIZE) -> BOOL;
 }
 unsafe extern "C" {
@@ -116682,10 +116682,10 @@ unsafe extern "C" {
         arg4: PPOINTL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreGetDCOrgEx(arg1: HDC, arg2: PPOINTL, arg3: PRECTL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GreSetDCOrg(arg1: HDC, arg2: LONG, arg3: LONG, arg4: PRECTL) -> BOOL;
 }
 pub const _DCPATHFLAGS_DCPATH_ACTIVE: _DCPATHFLAGS = 1;
@@ -117086,7 +117086,7 @@ pub struct _EDD_DIRECTDRAW_GLOBAL {
 pub type EDD_DIRECTDRAW_GLOBAL = _EDD_DIRECTDRAW_GLOBAL;
 pub type PEDD_DIRECTDRAW_GLOBAL = *mut _EDD_DIRECTDRAW_GLOBAL;
 pub type PGD_DXGENERICTRUNK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: ULONG_PTR,
         arg2: ULONG_PTR,
         arg3: *mut SIZE_T,
@@ -117096,15 +117096,15 @@ pub type PGD_DXGENERICTRUNK = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DXDDENABLEDIRECTDRAW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: BOOLEAN) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: BOOLEAN) -> BOOLEAN>;
 pub type PGD_DXDDDISABLEDIRECTDRAW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: BOOLEAN)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: BOOLEAN)>;
 pub type PGD_DxDdLockDirectDrawSurface =
-    ::core::option::Option<unsafe extern "C" fn(hDdSurface: HANDLE) -> PDD_SURFACE_LOCAL>;
+    ::core::option::Option<unsafe extern "system" fn(hDdSurface: HANDLE) -> PDD_SURFACE_LOCAL>;
 pub type PGD_DxDdUnlockDirectDrawSurface =
-    ::core::option::Option<unsafe extern "C" fn(hDdSurface: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(hDdSurface: HANDLE) -> BOOL>;
 pub type PGD_ENGDXIOCTL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: ULONG, arg2: PVOID, arg3: ULONG) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: ULONG, arg2: PVOID, arg3: ULONG) -> DWORD>;
 pub const _DXEGSHDEVDATA_DxEGShDevData_Surface: _DXEGSHDEVDATA = 0;
 pub const _DXEGSHDEVDATA_DxEGShDevData_hSpooler: _DXEGSHDEVDATA = 1;
 pub const _DXEGSHDEVDATA_DxEGShDevData_DitherFmt: _DXEGSHDEVDATA = 2;
@@ -117131,24 +117131,24 @@ unsafe extern "C" {
     pub static mut gpDxFuncs: [DRVFN; 0usize];
 }
 pub type PGD_DDSETGAMMARAMP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HDC, arg3: LPVOID) -> BOOL>;
-pub type PGD_DDRELEASEDC = ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HDC, arg3: LPVOID) -> BOOL>;
+pub type PGD_DDRELEASEDC = ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> BOOL>;
 pub type PGD_DDRESTVISRGN =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HWND) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HWND) -> BOOL>;
 pub type PGD_DDGETDXHANDLE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: BOOL) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: BOOL) -> HANDLE>;
 pub type PGD_DDGETDC =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: *mut PALETTEENTRY) -> HDC>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: *mut PALETTEENTRY) -> HDC>;
 pub type PGD_DXDDREENABLEDIRECTDRAWOBJECT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: *mut BOOL) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: *mut BOOL) -> DWORD>;
 pub type PGD_DXDDGETDRIVERINFO = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETDRIVERINFODATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETDRIVERINFODATA) -> DWORD,
 >;
 pub type PGD_DXDDSETEXCLUSIVEMODE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_SETEXCLUSIVEMODEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_SETEXCLUSIVEMODEDATA) -> DWORD,
 >;
 pub type PGD_DXDDSTARTUPDXGRAPHICS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: ULONG,
         arg2: PDRVENABLEDATA,
         arg3: ULONG,
@@ -117157,16 +117157,16 @@ pub type PGD_DXDDSTARTUPDXGRAPHICS = ::core::option::Option<
         arg6: PEPROCESS,
     ) -> NTSTATUS,
 >;
-pub type PGD_DXDDCLEANUPDXGRAPHICS = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type PGD_DXDDCLEANUPDXGRAPHICS = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 pub type PGD_DDCREATEDIRECTDRAWOBJECT =
-    ::core::option::Option<unsafe extern "C" fn(hdc: HDC) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(hdc: HDC) -> HANDLE>;
 pub type PGD_DDGETDRIVERSTATE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_GETDRIVERSTATEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_GETDRIVERSTATEDATA) -> DWORD>;
 pub type PGD_DDCOLORCONTROL = ::core::option::Option<
-    unsafe extern "C" fn(hSurface: HANDLE, puColorControlData: PDD_COLORCONTROLDATA) -> DWORD,
+    unsafe extern "system" fn(hSurface: HANDLE, puColorControlData: PDD_COLORCONTROLDATA) -> DWORD,
 >;
 pub type PGD_DXDDCREATESURFACEOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: HANDLE,
         arg3: PDD_SURFACE_LOCAL,
@@ -117176,17 +117176,17 @@ pub type PGD_DXDDCREATESURFACEOBJECT = ::core::option::Option<
     ) -> HANDLE,
 >;
 pub type PGD_DXDDDELETEDIRECTDRAWOBJECT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> BOOL>;
 pub type PGD_DXDDDELETESURFACEOBJECT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> BOOL>;
 pub type PGD_DXDDFLIPTOGDISURFACE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_FLIPTOGDISURFACEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_FLIPTOGDISURFACEDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETAVAILDRIVERMEMORY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETAVAILDRIVERMEMORYDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETAVAILDRIVERMEMORYDATA) -> DWORD,
 >;
 pub type PGD_DXDDQUERYDIRECTDRAWOBJECT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: *mut DD_HALINFO,
         arg3: *mut DWORD,
@@ -117201,19 +117201,19 @@ pub type PGD_DXDDQUERYDIRECTDRAWOBJECT = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PGD_DXDDDESTROYD3DBUFFER =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> DWORD>;
 pub type PGD_DDCANCREATED3DBUFFER = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_CANCREATESURFACEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_CANCREATESURFACEDATA) -> DWORD,
 >;
 pub type PGD_DXDDUNLOCKD3D =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_UNLOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_UNLOCKDATA) -> DWORD>;
 pub type PGD_DXDDLOCKD3D =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_LOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_LOCKDATA) -> DWORD>;
 pub type PGD_D3DVALIDATETEXTURESTAGESTATE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: LPD3DNTHAL_VALIDATETEXTURESTAGESTATEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: LPD3DNTHAL_VALIDATETEXTURESTAGESTATEDATA) -> DWORD,
 >;
 pub type PGD_D3DDRAWPRIMITIVES2 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: HANDLE,
         arg3: LPD3DNTHAL_DRAWPRIMITIVES2DATA,
@@ -117224,7 +117224,7 @@ pub type PGD_D3DDRAWPRIMITIVES2 = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DDCREATED3DBUFFER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: *mut HANDLE,
         arg3: *mut DDSURFACEDESC,
@@ -117236,7 +117236,7 @@ pub type PGD_DDCREATED3DBUFFER = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_D3DCONTEXTCREATE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: HANDLE,
         arg3: HANDLE,
@@ -117244,20 +117244,20 @@ pub type PGD_D3DCONTEXTCREATE = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type PGD_D3DCONTEXTDESTROY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYDATA) -> DWORD>;
 pub type PGD_D3DCONTEXTDESTROYALL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYALLDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPD3DNTHAL_CONTEXTDESTROYALLDATA) -> DWORD>;
 pub type PGD_DVPCANCREATEVIDEOPORT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_CANCREATEVPORTDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_CANCREATEVPORTDATA) -> DWORD,
 >;
 pub type PGD_DVPCOLORCONTROL =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_VPORTCOLORDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_VPORTCOLORDATA) -> DWORD>;
 pub type PGD_DVPCREATEVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_CREATEVPORTDATA) -> HANDLE>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_CREATEVPORTDATA) -> HANDLE>;
 pub type PGD_DVPDESTROYVIDEOPORT =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_DESTROYVPORTDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_DESTROYVPORTDATA) -> DWORD>;
 pub type PGD_DVPFLIPVIDEOPORT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: HANDLE,
         arg3: HANDLE,
@@ -117265,27 +117265,27 @@ pub type PGD_DVPFLIPVIDEOPORT = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DVPGETVIDEOPORTBANDWITH = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTBANDWIDTHDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTBANDWIDTHDATA) -> DWORD,
 >;
 pub type PGD_DXDVPGETVIDEOPORTFLIPSTATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTFLIPSTATUSDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTFLIPSTATUSDATA) -> DWORD,
 >;
 pub type PGD_DXDVPGETVIDEOPORTINPUTFORMATS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTINPUTFORMATDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTINPUTFORMATDATA) -> DWORD,
 >;
 pub type PGD_DXDVPGETVIDEOPORTLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTLINEDATA) -> DWORD>;
 pub type PGD_DXDVPGETVIDEOPORTOUTPUTFORMATS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTOUTPUTFORMATDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTOUTPUTFORMATDATA) -> DWORD,
 >;
 pub type PGD_DXDVPGETVIDEOPORTCONNECTINFO = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTCONNECTDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTCONNECTDATA) -> DWORD,
 >;
 pub type PGD_DXDVPGETVIDEOSIGNALSTATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTSIGNALDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTSIGNALDATA) -> DWORD,
 >;
 pub type PGD_DXDVPUPDATEVIDEOPORT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: *mut HANDLE,
         arg3: *mut HANDLE,
@@ -117293,47 +117293,47 @@ pub type PGD_DXDVPUPDATEVIDEOPORT = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DXDVPWAITFORVIDEOPORTSYNC = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_WAITFORVPORTSYNCDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_WAITFORVPORTSYNCDATA) -> DWORD,
 >;
 pub type PGD_DXDVPACQUIRENOTIFICATION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: *mut HANDLE, arg3: LPDDVIDEOPORTNOTIFY) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: *mut HANDLE, arg3: LPDDVIDEOPORTNOTIFY) -> DWORD,
 >;
 pub type PGD_DXDVPRELEASENOTIFICATION =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE) -> DWORD>;
 pub type PGD_DXDVPGETVIDEOPORTFIELD = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETVPORTFIELDDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETVPORTFIELDDATA) -> DWORD,
 >;
 pub type PGD_DDBEGINMOCOMPFRAME = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_BEGINMOCOMPFRAMEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_BEGINMOCOMPFRAMEDATA) -> DWORD,
 >;
 pub type PGD_DXDDCREATEMOCOMP = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_CREATEMOCOMPDATA) -> HANDLE,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_CREATEMOCOMPDATA) -> HANDLE,
 >;
 pub type PGD_DXDDDESTROYMOCOMP = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_DESTROYMOCOMPDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_DESTROYMOCOMPDATA) -> DWORD,
 >;
 pub type PGD_DXDDENDMOCOMPFRAME = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_ENDMOCOMPFRAMEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_ENDMOCOMPFRAMEDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETINTERNALMOCOMPINFO = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETINTERNALMOCOMPDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETINTERNALMOCOMPDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETMOCOMPBUFFINFO = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPCOMPBUFFDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPCOMPBUFFDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETMOCOMPGUIDS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPGUIDSDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPGUIDSDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETMOCOMPFORMATS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPFORMATSDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETMOCOMPFORMATSDATA) -> DWORD,
 >;
 pub type PGD_DXDDQUERYMOCOMPSTATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_QUERYMOCOMPSTATUSDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_QUERYMOCOMPSTATUSDATA) -> DWORD,
 >;
 pub type PGD_DXDDRENDERMOCOMP =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_RENDERMOCOMPDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_RENDERMOCOMPDATA) -> DWORD>;
 pub type PGD_DDCREATESURFACE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: *mut HANDLE,
         arg3: *mut DDSURFACEDESC,
@@ -117345,29 +117345,29 @@ pub type PGD_DDCREATESURFACE = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DXDDWAITFORVERTICALBLANK = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_WAITFORVERTICALBLANKDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_WAITFORVERTICALBLANKDATA) -> DWORD,
 >;
 pub type PGD_DDCANCREATESURFACE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         hDirectDrawLocal: HANDLE,
         puCanCreateSurfaceData: PDD_CANCREATESURFACEDATA,
     ) -> DWORD,
 >;
 pub type PGD_DXDDGETSCANLINE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETSCANLINEDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETSCANLINEDATA) -> DWORD>;
 pub type PGD_DXDDCREATESURFACEEX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: DWORD) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: DWORD) -> DWORD>;
 pub type PGD_DDALPHABLT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_BLTDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_BLTDATA) -> DWORD,
 >;
 pub type PGD_DDATTACHSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE) -> BOOL>;
 pub type PGD_DXDDUNATTACHSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE) -> DWORD>;
 pub type PGD_DXDDDESTROYSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: BOOL) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: BOOL) -> DWORD>;
 pub type PGD_DXDDFLIP = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: HANDLE,
         arg2: HANDLE,
         arg3: HANDLE,
@@ -117376,31 +117376,31 @@ pub type PGD_DXDDFLIP = ::core::option::Option<
     ) -> DWORD,
 >;
 pub type PGD_DXDDLOCK = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_LOCKDATA, arg3: HDC) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_LOCKDATA, arg3: HDC) -> DWORD,
 >;
 pub type PGD_DXDDUNLOCK =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_UNLOCKDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_UNLOCKDATA) -> DWORD>;
 pub type PGD_DDBLT = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_BLTDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_BLTDATA) -> DWORD,
 >;
 pub type PGD_DXDDSETCOLORKEY =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_SETCOLORKEYDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_SETCOLORKEYDATA) -> DWORD>;
 pub type PGD_DDADDATTACHEDSURFACE = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_ADDATTACHEDSURFACEDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_ADDATTACHEDSURFACEDATA) -> DWORD,
 >;
 pub type PGD_DXDDGETBLTSTATUS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETBLTSTATUSDATA) -> DWORD>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETBLTSTATUSDATA) -> DWORD>;
 pub type PGD_DXDDGETFLIPSTATUS = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: PDD_GETFLIPSTATUSDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: PDD_GETFLIPSTATUSDATA) -> DWORD,
 >;
 pub type PGD_DXDDUPDATEOVERLAY = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_UPDATEOVERLAYDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_UPDATEOVERLAYDATA) -> DWORD,
 >;
 pub type PGD_DXDDSETOVERLAYPOSITION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_SETOVERLAYPOSITIONDATA) -> DWORD,
+    unsafe extern "system" fn(arg1: HANDLE, arg2: HANDLE, arg3: PDD_SETOVERLAYPOSITIONDATA) -> DWORD,
 >;
 pub type PGD_HEAPVIDMEMALLOCALIGNED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: LPVIDMEM,
         arg2: DWORD,
         arg3: DWORD,
@@ -117409,22 +117409,22 @@ pub type PGD_HEAPVIDMEMALLOCALIGNED = ::core::option::Option<
     ) -> FLATPTR,
 >;
 pub type PGD_VIDMEMFREE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: LPVMEMHEAP, arg2: FLATPTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPVMEMHEAP, arg2: FLATPTR)>;
 pub type PGD_ENGALLOCPRIVATEUSERMEM = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PDD_SURFACE_LOCAL, arg2: SIZE_T, arg3: ULONG) -> PVOID,
+    unsafe extern "system" fn(arg1: PDD_SURFACE_LOCAL, arg2: SIZE_T, arg3: ULONG) -> PVOID,
 >;
 pub type PGD_ENGFREEPRIVATEUSERMEM =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SURFACE_LOCAL, arg2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SURFACE_LOCAL, arg2: PVOID)>;
 pub type PGD_ENGLOCKDIRECTDRAWSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HANDLE) -> PDD_SURFACE_LOCAL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> PDD_SURFACE_LOCAL>;
 pub type PGD_ENGUNLOCKDIRECTDRAWSURFACE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PDD_SURFACE_LOCAL) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PDD_SURFACE_LOCAL) -> BOOL>;
 pub type PGD_DXDDDYNAMICMODECHANGE =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HDEV, arg2: HDEV, arg3: ULONG_PTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HDEV, arg2: HDEV, arg3: ULONG_PTR)>;
 pub type PGD_DXDDRESUMEDIRECTDRAW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HDEV, arg2: ULONG_PTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HDEV, arg2: ULONG_PTR)>;
 pub type PGD_DXDDSUSPENDDIRECTDRAW =
-    ::core::option::Option<unsafe extern "C" fn(arg1: HDEV, arg2: ULONG_PTR)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: HDEV, arg2: ULONG_PTR)>;
 unsafe extern "C" {
     pub fn IntGetDeviceGammaRamp(hPDev: HDEV, Ramp: PGAMMARAMP) -> BOOL;
 }
@@ -117711,10 +117711,10 @@ pub struct _PROCESSINFO {
     pub DbgHandleCount: [DWORD; 22usize],
 }
 pub type PROCESSINFO = _PROCESSINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserDbgPreServiceHook(ulSyscallId: ULONG, pulArguments: PULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserDbgPostServiceHook(ulSyscallId: ULONG, ulResult: ULONG_PTR) -> ULONG_PTR;
 }
 pub type TL_FN_FREE = ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
@@ -117980,7 +117980,7 @@ unsafe extern "C" {
         Hook: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserClipCursor(prcl: *mut RECTL) -> BOOL;
 }
 unsafe extern "C" {
@@ -118038,13 +118038,13 @@ pub struct _NOTIFYEVENT {
 }
 pub type NOTIFYEVENT = _NOTIFYEVENT;
 pub type PNOTIFYEVENT = *mut _NOTIFYEVENT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_CallHook(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_HOOK_CallHooks(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_EVENT_CallEvents(arg1: DWORD, arg2: HWND, arg3: UINT_PTR, arg4: LONG_PTR) -> LRESULT;
 }
 unsafe extern "C" {
@@ -118053,7 +118053,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntGetNextHook(Hook: PHOOK) -> PHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserCallNextHookEx(
         pHook: PHOOK,
         Code: ::core::ffi::c_int,
@@ -118092,7 +118092,7 @@ pub struct _CLIP {
 }
 pub type CLIP = _CLIP;
 pub type PCLIP = *mut _CLIP;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserEnumClipboardFormats(uFormat: UINT) -> UINT;
 }
 unsafe extern "C" {
@@ -118101,19 +118101,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserClipboardFreeWindow(pWindow: PWND);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserOpenClipboard(hWnd: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserCloseClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserEmptyClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserEmptyClipboardData(pWinSta: *mut _WINSTATION_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserSetClipboardData(fmt: UINT, hData: HANDLE, scd: PSETCLIPBDATA) -> HANDLE;
 }
 unsafe extern "C" {
@@ -118244,16 +118244,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut gustrWindowStationsDir: UNICODE_STRING;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserCreateWinstaDirectory() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntWinStaObjectDelete(Parameters: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntWinStaObjectParse(Parameters: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntWinStaOkToClose(Parameters: PVOID) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -118377,7 +118377,7 @@ unsafe extern "C" {
         uResult: *mut ULONG_PTR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_MsqPeekHardwareMessage(
         pti: PTHREADINFO,
         Remove: BOOL,
@@ -118473,10 +118473,10 @@ unsafe extern "C" {
         Hook: BOOL,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntInitMessagePumpHook() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntUninitMessagePumpHook() -> BOOL;
 }
 unsafe extern "C" {
@@ -118497,10 +118497,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserSetCursor(NewCursor: PCURICON_OBJECT, ForceChange: BOOL) -> PCURICON_OBJECT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetQueueStatus(arg1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntGetPeekMessage(
         pMsg: PMSG,
         hWnd: HWND,
@@ -118580,7 +118580,7 @@ pub struct _SHELL_HOOK_WINDOW {
 }
 pub type SHELL_HOOK_WINDOW = _SHELL_HOOK_WINDOW;
 pub type PSHELL_HOOK_WINDOW = *mut _SHELL_HOOK_WINDOW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDesktopObjectParse(
         ParseObject: PVOID,
         ObjectType: PVOID,
@@ -118594,16 +118594,16 @@ unsafe extern "C" {
         Object: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDesktopObjectDelete(Parameters: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDesktopOkToClose(Parameters: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDesktopObjectOpen(Parameters: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDesktopObjectClose(Parameters: PVOID) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -118669,7 +118669,7 @@ unsafe extern "C" {
         dwDesiredAccess: ACCESS_MASK,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserRedrawDesktop();
 }
 unsafe extern "C" {
@@ -118766,7 +118766,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntGetThreadFocusWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetCapture() -> HWND;
 }
 unsafe extern "C" {
@@ -118825,7 +118825,7 @@ pub struct _HOT_KEY {
 }
 pub type HOT_KEY = _HOT_KEY;
 pub type PHOT_KEY = *mut _HOT_KEY;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_UserProcessHotKeys(wVk: WORD, bIsDown: BOOL) -> BOOL;
 }
 unsafe extern "C" {
@@ -119106,19 +119106,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserAttachThreadInput(arg1: PTHREADINFO, arg2: PTHREADINFO, arg3: BOOL) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserInitKeyboard(hKeyboardDevice: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserProcessKeyboardInput(pKeyInput: PKEYBOARD_INPUT_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserHklToKbl(hKl: HKL) -> PKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserSetDefaultInputLang(hKl: HKL) -> BOOL;
 }
 unsafe extern "C" {
@@ -119136,10 +119136,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserGetMouseButtonsState() -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserProcessMouseInput(pMouseInputData: PMOUSE_INPUT_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserSendMouseInput(pMouseInput: *mut MOUSEINPUT, bInjected: BOOL) -> BOOL;
 }
 unsafe extern "C" {
@@ -120317,22 +120317,22 @@ impl _MONITOR__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type MONITOR = _MONITOR;
 pub type PMONITOR = *mut _MONITOR;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserAttachMonitor(hDev: HDEV) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserDetachMonitor(hDev: HDEV) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserUpdateMonitorSize(hDev: HDEV) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserGetMonitorObject(arg1: HMONITOR) -> PMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserGetPrimaryMonitor() -> PMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserMonitorFromRect(arg1: PRECTL, arg2: DWORD) -> PMONITOR;
 }
 unsafe extern "C" {
@@ -120490,7 +120490,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserAddCallProcToClass(Class: PCLS, CallProc: PCALLPROCDATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntGetAtomFromStringOrAtom(ClassName: PUNICODE_STRING, Atom: *mut RTL_ATOM) -> BOOL;
 }
 unsafe extern "C" {
@@ -120688,14 +120688,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntQueryUserSecurityIdentification(User: *mut PTOKEN_USER) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntAssignDesktopSecurityOnParse(
         WinSta: PWINSTATION_OBJECT,
         Desktop: PDESKTOP,
         AccessState: PACCESS_STATE,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntCreateServiceSecurity(ServiceSd: *mut PSECURITY_DESCRIPTOR) -> NTSTATUS;
 }
 pub const _USERPREFMASKS_UPM_ACTIVEWINDOWTRACKING: _USERPREFMASKS = 1;
@@ -120855,16 +120855,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut gpPowerCalloutMutexOwnerThread: PKTHREAD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntInitWin32PowerManagement(hPowerRequestEvent: HANDLE) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntWin32PowerManagementCleanup() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntHandlePowerEvent(pWin32PwrEventParams: PWIN32_POWEREVENT_PARAMETERS) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntHandlePowerState(pWin32PwrStateParams: PWIN32_POWERSTATE_PARAMETERS) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -120921,7 +120921,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntDdeSendMessageHook(arg1: PWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDdePostMessageHook(
         arg1: PWND,
         arg2: UINT,
@@ -120930,7 +120930,7 @@ unsafe extern "C" {
         arg5: *mut LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntDdeGetMessageHook(arg1: PMSG, arg2: LONG_PTR) -> BOOL;
 }
 unsafe extern "C" {
@@ -120954,7 +120954,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut gAtomTable: PRTL_ATOM_TABLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserGetSystemMetrics(Index: ULONG) -> LONG;
 }
 unsafe extern "C" {
@@ -121041,7 +121041,7 @@ unsafe extern "C" {
     pub fn UserDestroyInputContext(Object: PVOID) -> BOOLEAN;
 }
 pub type PFN_SCROLLBAR = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM, arg5: PSBCALC),
+    unsafe extern "system" fn(arg1: PWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM, arg5: PSBCALC),
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -121431,7 +121431,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn co_WinPosSendSizeMove(Window: PWND);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_WinPosWindowFromPoint(
         ScopeWin: PWND,
         WinPoint: *mut POINTL,
@@ -121484,7 +121484,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntIsSnapAllowedForWindow(Wnd: PWND) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntCallWindowProc(
         Proc: WNDPROC,
         IsAnsiProc: BOOLEAN,
@@ -121495,7 +121495,7 @@ unsafe extern "C" {
         lParamBufferSize: INT,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntCallSentMessageCallback(
         CompletionCallback: SENDASYNCPROC,
         hWnd: HWND,
@@ -121504,13 +121504,13 @@ unsafe extern "C" {
         Result: LRESULT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntLoadSysMenuTemplate() -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntLoadDefaultCursors() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntCallHookProc(
         HookId: INT,
         Code: INT,
@@ -121523,7 +121523,7 @@ unsafe extern "C" {
         ModuleName: PUNICODE_STRING,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntCallEventProc(
         hook: HWINEVENTHOOK,
         event: DWORD,
@@ -121546,13 +121546,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn IntCbFreeMemory(Data: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntCallLoadMenu(arg1: HINSTANCE, arg2: PUNICODE_STRING) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntClientThreadSetup() -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntClientLoadLibrary(
         strLibName: PUNICODE_STRING,
         strInitFunc: PUNICODE_STRING,
@@ -121560,7 +121560,7 @@ unsafe extern "C" {
         ApiHook: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntGetCharsetInfo(Locale: LCID, pCs: PCHARSETINFO) -> BOOL;
 }
 unsafe extern "C" {
@@ -121584,7 +121584,7 @@ unsafe extern "C" {
         arg5: *mut PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_IntImmProcessKey(
         hWnd: HWND,
         hKL: HKL,
@@ -121593,13 +121593,13 @@ unsafe extern "C" {
         dwHotKeyID: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn co_ClientImmLoadLayout(hKL: HKL, pImeInfoEx: PIMEINFOEX) -> BOOL;
 }
 unsafe extern "C" {
     pub fn IntMakeHungWindowGhosted(hwndHung: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserGhostThreadEntry();
 }
 pub const _CSRSRV_API_NUMBER_CsrpClientConnect: _CSRSRV_API_NUMBER = 0;
@@ -121793,10 +121793,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn UserCreateSystemThread(Type: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiDbgPreServiceHook(ulSyscallId: ULONG, pulArguments: PULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiDbgPostServiceHook(ulSyscallId: ULONG, ulResult: ULONG_PTR) -> ULONG_PTR;
 }
 unsafe extern "C" {

@@ -78,13 +78,7 @@ pub unsafe extern "C" fn _endthreadex(retval: u32) {
     ExitThread(retval);
 }
 // `DWORD CALLBACK` — CALLBACK is WINAPI, which is a real convention only on i386.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn _beginthread_trampoline(arg: LPVOID) -> DWORD {
-    _beginthread_trampoline_body(arg)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn _beginthread_trampoline(arg: LPVOID) -> DWORD {
+unsafe extern "system" fn _beginthread_trampoline(arg: LPVOID) -> DWORD {
     _beginthread_trampoline_body(arg)
 }
 
@@ -160,13 +154,7 @@ pub unsafe extern "C" fn _beginthread(
 
     thread as usize
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn _beginthreadex_trampoline(arg: LPVOID) -> DWORD {
-    _beginthreadex_trampoline_body(arg)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn _beginthreadex_trampoline(arg: LPVOID) -> DWORD {
+unsafe extern "system" fn _beginthreadex_trampoline(arg: LPVOID) -> DWORD {
     _beginthreadex_trampoline_body(arg)
 }
 

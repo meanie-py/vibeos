@@ -188,13 +188,8 @@ macro_rules! stdmethod {
         $(#[$attr:meta])*
         unsafe fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block
     )*) => {$(
-        #[cfg(target_arch = "x86")]
         $(#[$attr])*
-        unsafe extern "stdcall" fn $name($($arg: $ty),*) -> $ret $body
-
-        #[cfg(not(target_arch = "x86"))]
-        $(#[$attr])*
-        unsafe extern "C" fn $name($($arg: $ty),*) -> $ret $body
+        unsafe extern "system" fn $name($($arg: $ty),*) -> $ret $body
     )*};
 }
 

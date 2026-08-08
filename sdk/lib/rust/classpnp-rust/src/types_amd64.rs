@@ -2754,16 +2754,16 @@ pub struct _STORAGE_REQUEST_BLOCK {
 pub type STORAGE_REQUEST_BLOCK = _STORAGE_REQUEST_BLOCK;
 pub type PSTORAGE_REQUEST_BLOCK = *mut _STORAGE_REQUEST_BLOCK;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
-pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
+pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -2773,12 +2773,12 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -2839,7 +2839,7 @@ pub struct _HW_INITIALIZATION_DATA__bindgen_ty_1 {
 }
 pub type HW_INITIALIZATION_DATA = _HW_INITIALIZATION_DATA;
 pub type PHW_INITIALIZATION_DATA = *mut _HW_INITIALIZATION_DATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortCompleteRequest(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2848,19 +2848,19 @@ unsafe extern "C" {
         SrbStatus: UCHAR,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertPhysicalAddressToUlong(Address: SCSI_PHYSICAL_ADDRESS) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertUlongToPhysicalAddress(UlongAddress: ULONG_PTR) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFlushDma(DeviceExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFreeDeviceBase(HwDeviceExtension: PVOID, MappedAddress: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetBusData(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -2870,7 +2870,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetDeviceBase(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -2880,7 +2880,7 @@ unsafe extern "C" {
         InIoSpace: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetLogicalUnit(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2888,7 +2888,7 @@ unsafe extern "C" {
         Lun: UCHAR,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetPhysicalAddress(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2896,7 +2896,7 @@ unsafe extern "C" {
         Length: *mut ULONG,
     ) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetSrb(
         DeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2905,20 +2905,20 @@ unsafe extern "C" {
         QueueTag: LONG,
     ) -> PSCSI_REQUEST_BLOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetUncachedExtension(
         HwDeviceExtension: PVOID,
         ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
         NumberOfBytes: ULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetVirtualAddress(
         HwDeviceExtension: PVOID,
         PhysicalAddress: SCSI_PHYSICAL_ADDRESS,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -2926,7 +2926,7 @@ unsafe extern "C" {
         HwContext: PVOID,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortIoMapTransfer(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2934,7 +2934,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortLogError(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2952,10 +2952,10 @@ unsafe extern "C" {
         ...
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortSetBusDataByOffset(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -2966,10 +2966,10 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortStallExecution(Delay: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortValidateRange(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -39434,7 +39434,7 @@ pub struct _CLASSPNP_SCAN_FOR_SPECIAL_INFO {
 pub type CLASSPNP_SCAN_FOR_SPECIAL_INFO = _CLASSPNP_SCAN_FOR_SPECIAL_INFO;
 pub type PCLASSPNP_SCAN_FOR_SPECIAL_INFO = *mut _CLASSPNP_SCAN_FOR_SPECIAL_INFO;
 pub type PCLASS_ERROR = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Srb: PSCSI_REQUEST_BLOCK,
         Status: *mut NTSTATUS,
@@ -39442,52 +39442,52 @@ pub type PCLASS_ERROR = ::core::option::Option<
     ),
 >;
 pub type PCLASS_ADD_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT) -> NTSTATUS,
+    unsafe extern "system" fn(DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT) -> NTSTATUS,
 >;
 pub type PCLASS_POWER_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
 >;
 pub type PCLASS_START_DEVICE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
 pub type PCLASS_STOP_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Type: UCHAR) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Type: UCHAR) -> NTSTATUS,
 >;
 pub type PCLASS_INIT_DEVICE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
 pub type PCLASS_ENUM_DEVICE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS>;
 pub type PCLASS_READ_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
 >;
 pub type PCLASS_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
 >;
 pub type PCLASS_SHUTDOWN_FLUSH = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
 >;
 pub type PCLASS_CREATE_CLOSE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS,
 >;
 pub type PCLASS_QUERY_ID = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         IdType: BUS_QUERY_ID_TYPE,
         IdString: PUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PCLASS_REMOVE_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, Type: UCHAR) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, Type: UCHAR) -> NTSTATUS,
 >;
-pub type PCLASS_UNLOAD = ::core::option::Option<unsafe extern "C" fn(DriverObject: PDRIVER_OBJECT)>;
+pub type PCLASS_UNLOAD = ::core::option::Option<unsafe extern "system" fn(DriverObject: PDRIVER_OBJECT)>;
 pub type PCLASS_QUERY_PNP_CAPABILITIES = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         PhysicalDeviceObject: PDEVICE_OBJECT,
         Capabilities: PDEVICE_CAPABILITIES,
     ) -> NTSTATUS,
 >;
-pub type PCLASS_TICK = ::core::option::Option<unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT)>;
+pub type PCLASS_TICK = ::core::option::Option<unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT)>;
 pub type PCLASS_QUERY_WMI_REGINFO_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         RegFlags: *mut ULONG,
         Name: PUNICODE_STRING,
@@ -39495,14 +39495,14 @@ pub type PCLASS_QUERY_WMI_REGINFO_EX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCLASS_QUERY_WMI_REGINFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         RegFlags: *mut ULONG,
         Name: PUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PCLASS_QUERY_WMI_DATABLOCK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         GuidIndex: ULONG,
@@ -39511,7 +39511,7 @@ pub type PCLASS_QUERY_WMI_DATABLOCK = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCLASS_SET_WMI_DATABLOCK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         GuidIndex: ULONG,
@@ -39520,7 +39520,7 @@ pub type PCLASS_SET_WMI_DATABLOCK = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCLASS_SET_WMI_DATAITEM = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         GuidIndex: ULONG,
@@ -39530,7 +39530,7 @@ pub type PCLASS_SET_WMI_DATAITEM = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCLASS_EXECUTE_WMI_METHOD = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         GuidIndex: ULONG,
@@ -39541,7 +39541,7 @@ pub type PCLASS_EXECUTE_WMI_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PCLASS_WMI_FUNCTION_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         GuidIndex: ULONG,
@@ -39570,7 +39570,7 @@ pub struct _SRB_HISTORY {
 pub type SRB_HISTORY = _SRB_HISTORY;
 pub type PSRB_HISTORY = *mut _SRB_HISTORY;
 pub type PCLASS_INTERPRET_SENSE_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Fdo: PDEVICE_OBJECT,
         OriginalRequest: PIRP,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -39583,7 +39583,7 @@ pub type PCLASS_INTERPRET_SENSE_INFO = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PCLASS_COMPRESS_RETRY_HISTORY_DATA = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: PDEVICE_OBJECT, RequestHistory: PSRB_HISTORY),
+    unsafe extern "system" fn(DeviceObject: PDEVICE_OBJECT, RequestHistory: PSRB_HISTORY),
 >;
 #[repr(C)]
 pub struct GUIDREGINFO {
@@ -40112,7 +40112,7 @@ pub struct _COMPLETION_CONTEXT__bindgen_ty_1 {
 }
 pub type COMPLETION_CONTEXT = _COMPLETION_CONTEXT;
 pub type PCOMPLETION_CONTEXT = *mut _COMPLETION_CONTEXT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -41165,10 +41165,10 @@ pub struct _FUNCTIONAL_DEVICE_EXTENSION__bindgen_ty_1__bindgen_ty_1 {
 }
 pub type FUNCTIONAL_DEVICE_EXTENSION = _FUNCTIONAL_DEVICE_EXTENSION;
 pub type PFUNCTIONAL_DEVICE_EXTENSION = *mut _FUNCTIONAL_DEVICE_EXTENSION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInitializeEx(DriverObject: PDRIVER_OBJECT, Guid: LPGUID, Data: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCreateDeviceObject(
         DriverObject: PDRIVER_OBJECT,
         ObjectNameBuffer: PCCHAR,
@@ -41177,29 +41177,29 @@ unsafe extern "C" {
         DeviceObject: *mut PDEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReadDriveCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "system" {
     pub fn ClassReleaseQueue(DeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSplitRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, MaximumBytes: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassIoComplete(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassIoCompleteAssociated(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInterpretSenseInfo(
         DeviceObject: PDEVICE_OBJECT,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -41210,7 +41210,7 @@ unsafe extern "C" {
         RetryInterval: *mut ULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendDeviceIoControlSynchronous(
         IoControlCode: ULONG,
         TargetDeviceObject: PDEVICE_OBJECT,
@@ -41221,16 +41221,16 @@ unsafe extern "C" {
         IoStatus: PIO_STATUS_BLOCK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendIrpSynchronous(TargetDeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassForwardIrpSynchronous(
         CommonExtension: PCOMMON_DEVICE_EXTENSION,
         Irp: PIRP,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendSrbSynchronous(
         DeviceObject: PDEVICE_OBJECT,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -41239,7 +41239,7 @@ unsafe extern "C" {
         WriteToDevice: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendSrbAsynchronous(
         DeviceObject: PDEVICE_OBJECT,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -41249,10 +41249,10 @@ unsafe extern "C" {
         WriteToDevice: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassBuildRequest(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassModeSense(
         DeviceObject: PDEVICE_OBJECT,
         ModeSenseBuffer: PCHAR,
@@ -41260,7 +41260,7 @@ unsafe extern "C" {
         PageMode: UCHAR,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassFindModePage(
         ModeSenseBuffer: PCHAR,
         Length: ULONG,
@@ -41268,38 +41268,38 @@ unsafe extern "C" {
         Use6Byte: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassClaimDevice(LowerDeviceObject: PDEVICE_OBJECT, Release: BOOLEAN) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInternalIoControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInitializeSrbLookasideList(
         CommonExtension: PCOMMON_DEVICE_EXTENSION,
         NumberElements: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDeleteSrbLookasideList(CommonExtension: PCOMMON_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassQueryTimeOutRegistryValue(DeviceObject: PDEVICE_OBJECT) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGetDescriptor(
         DeviceObject: PDEVICE_OBJECT,
         PropertyId: PSTORAGE_PROPERTY_ID,
         Descriptor: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInvalidateBusRelations(Fdo: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassMarkChildrenMissing(Fdo: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassMarkChildMissing(
         PdoExtension: PPHYSICAL_DEVICE_EXTENSION,
         AcquireChildLock: BOOLEAN,
@@ -41308,7 +41308,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClassDebugPrint(DebugPrintLevel: CLASS_DEBUG_LEVEL, DebugMessage: PCCHAR, ...);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGetDriverExtension(DriverObject: PDRIVER_OBJECT) -> PCLASS_DRIVER_EXTENSION;
 }
 unsafe extern "system" {
@@ -41325,7 +41325,7 @@ unsafe extern "system" {
         Line: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassUpdateInformationInRegistry(
         Fdo: PDEVICE_OBJECT,
         DeviceName: PCHAR,
@@ -41334,7 +41334,7 @@ unsafe extern "C" {
         InquiryDataLength: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassWmiCompleteRequest(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -41343,7 +41343,7 @@ unsafe extern "C" {
         PriorityBoost: CCHAR,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassWmiFireEvent(
         DeviceObject: PDEVICE_OBJECT,
         Guid: LPGUID,
@@ -41352,38 +41352,38 @@ unsafe extern "C" {
         EventData: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassResetMediaChangeTimer(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInitializeMediaChangeDetection(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         EventPrefix: PUCHAR,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassInitializeTestUnitPolling(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         AllowDriveToSleep: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGetVpb(DeviceObject: PDEVICE_OBJECT) -> PVPB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSpinDownPowerHandler(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassStopUnitPowerHandler(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSetFailurePredictionPoll(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         FailurePredictionMethod: FAILURE_PREDICTION_METHOD,
         PollingPeriod: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassNotifyFailurePredicted(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         Buffer: PUCHAR,
@@ -41401,53 +41401,53 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn ClassReleaseChildLock(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSignalCompletion(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendStartUnit(DeviceObject: PDEVICE_OBJECT);
 }
 unsafe extern "system" {
     pub fn ClassRemoveDevice(DeviceObject: PDEVICE_OBJECT, RemoveType: UCHAR) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassAsynchronousCompletion(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         Event: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCheckMediaState(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCheckVerifyComplete(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         Context: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSetMediaChangeState(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         State: MEDIA_CHANGE_DETECTION_STATE,
         Wait: BOOLEAN,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassEnableMediaChangeDetection(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDisableMediaChangeDetection(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCleanupMediaChangeDetection(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGetDeviceParameter(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         SubkeyName: PWSTR,
@@ -41455,7 +41455,7 @@ unsafe extern "C" {
         ParameterValue: PULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSetDeviceParameter(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         SubkeyName: PWSTR,
@@ -41463,13 +41463,13 @@ unsafe extern "C" {
         ParameterValue: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGetFsContext(
         CommonExtension: PCOMMON_DEVICE_EXTENSION,
         FileObject: PFILE_OBJECT,
     ) -> PFILE_OBJECT_EXTENSION;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSendNotification(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         Guid: *const GUID,
@@ -41478,9 +41478,9 @@ unsafe extern "C" {
     );
 }
 pub type PCLASS_SCAN_FOR_SPECIAL_HANDLER = ::core::option::Option<
-    unsafe extern "C" fn(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Data: ULONG_PTR),
+    unsafe extern "system" fn(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Data: ULONG_PTR),
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassScanForSpecial(
         FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
         DeviceList: *mut CLASSPNP_SCAN_FOR_SPECIAL_INFO,
@@ -42217,16 +42217,16 @@ unsafe extern "C" {
         BytesPerBlockInBigEndian: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DriverEntry(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassUnload(DriverObject: *mut _DRIVER_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassCreateClose(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -42243,28 +42243,28 @@ unsafe extern "C" {
         Lock: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDeviceControlDispatch(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDispatchPnp(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn ClassPnpStartDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassShutdownFlush(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassSystemControl(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassAddDevice(
         DriverObject: *mut _DRIVER_OBJECT,
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
@@ -42312,7 +42312,7 @@ unsafe extern "C" {
         Capabilities: PDEVICE_CAPABILITIES,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspStartIo(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP);
 }
 unsafe extern "C" {
@@ -42354,7 +42354,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspDuidQueryProperty(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassGlobalDispatch(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -42394,7 +42394,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspFreeReleaseRequest(Fdo: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassReleaseQueueCompletion(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
@@ -42407,16 +42407,16 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspDisablePowerNotification(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassDispatchPower(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassMinimalPowerHandler(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
     pub fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspPowerSettingCallback(
         SettingGuid: LPCGUID,
         Value: PVOID,
@@ -42441,7 +42441,7 @@ unsafe extern "system" {
 unsafe extern "C" {
     pub fn ClasspRetryDpcTimer(FdoData: PCLASS_PRIVATE_FDO_DATA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspRetryRequestDpc(
         Dpc: *mut _KDPC,
         DeferredContext: PVOID,
@@ -42483,7 +42483,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspScanForSpecialInRegistry(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspScanForClassHacks(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, Data: ULONG_PTR);
 }
 unsafe extern "C" {
@@ -42495,7 +42495,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspPerfIncrementSuccessfulIo(FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspUpdateDiskProperties(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
 unsafe extern "C" {
@@ -42532,7 +42532,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn SubmitTransferPacket(Pkt: PTRANSFER_PACKET) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TransferPktComplete(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
@@ -42545,7 +42545,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn TransferPacketQueueRetryDpc(Pkt: PTRANSFER_PACKET);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TransferPacketRetryTimerDpc(
         Dpc: *mut _KDPC,
         DeferredContext: PVOID,
@@ -42637,7 +42637,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn InterpretCapacityData(Fdo: PDEVICE_OBJECT, ReadCapacityData: PREAD_CAPACITY_DATA_EX);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CleanupTransferPacketToWorkingSetSizeWorker(
         IoObject: PVOID,
         Context: PVOID,
@@ -42804,7 +42804,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClassQueueProvisioningTypeChangedEventWorker(DeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspLogIOEventWithContext(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
 unsafe extern "C" {
@@ -43033,7 +43033,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspPowerIdleDevice(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassLogThresholdEvent(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
 unsafe extern "C" {
@@ -43042,7 +43042,7 @@ unsafe extern "C" {
         IoErrorCode: NTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClassLogResourceExhaustionEvent(DeviceObject: PDEVICE_OBJECT, Context: PVOID);
 }
 unsafe extern "C" {
@@ -43084,17 +43084,17 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ClasspUninitializeRemoveTracking(DeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveTrackingCompareRoutine(
         Table: *mut _RTL_AVL_TABLE,
         FirstStruct: PVOID,
         SecondStruct: PVOID,
     ) -> RTL_GENERIC_COMPARE_RESULTS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveTrackingAllocateRoutine(Table: *mut _RTL_AVL_TABLE, ByteSize: CLONG) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveTrackingFreeRoutine(Table: *mut _RTL_AVL_TABLE, Buffer: PVOID);
 }
 pub type PSRB_ALLOCATE_ROUTINE =

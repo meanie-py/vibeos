@@ -733,30 +733,7 @@ pub unsafe extern "C" fn __CxxFrameHandler(
         rtti_rva(*((*dispatch).HandlerData as *const UINT), ((*dispatch).ImageBase) as usize),
     )
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
-    let mut ret: BOOL = FALSE as BOOL;
-
-    match ctrlType as DWORD {
-        CTRL_C_EVENT => {
-            // The C tests `sighandlers[SIGINT] != SIG_DFL`, and SIG_DFL is the null handler
-            // — so this is that test, through the address rather than the pointer itself.
-            if sig_addr(sighandlers[SIGINT as usize]) != 0 {
-                if sig_addr(sighandlers[SIGINT as usize]) != SIG_IGN_ADDR {
-                    if let Some(h) = sighandlers[SIGINT as usize] {
-                        h(SIGINT as c_int);
-                    }
-                }
-                ret = TRUE as BOOL;
-            }
-        }
-        _ => {}
-    }
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
+unsafe extern "system" fn msvcrt_console_handler(ctrlType: DWORD) -> BOOL {
     let mut ret: BOOL = FALSE as BOOL;
 
     match ctrlType as DWORD {

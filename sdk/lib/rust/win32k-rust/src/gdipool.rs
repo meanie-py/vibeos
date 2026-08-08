@@ -121,9 +121,8 @@ unsafe fn GdiPoolDeleteSection(pPool: PGDI_POOL, pSection: PGDI_POOL_SECTION) {
 
     EngFreeMem(pSection as *mut core::ffi::c_void);
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GdiPoolAllocate(pPool: PGDI_POOL) -> PVOID {
+pub unsafe extern "system" fn GdiPoolAllocate(pPool: PGDI_POOL) -> PVOID {
     let mut pSection: PGDI_POOL_SECTION;
     let ulIndex: ULONG;
     let cjOffset: ULONG;
@@ -222,111 +221,8 @@ pub unsafe extern "stdcall" fn GdiPoolAllocate(pPool: PGDI_POOL) -> PVOID {
 
     pvAlloc
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GdiPoolAllocate(pPool: PGDI_POOL) -> PVOID {
-    let mut pSection: PGDI_POOL_SECTION;
-    let ulIndex: ULONG;
-    let cjOffset: ULONG;
-    let mut ulPageBit: ULONG;
-    let ple: PLIST_ENTRY;
-    let mut pvAlloc: PVOID;
-    let mut pvBaseAddress: PVOID;
-    let mut cjSize: SIZE_T;
-    let status: NTSTATUS;
-
-    /* Disable APCs and acquire the pool lock */
-    KeEnterCriticalRegion();
-    ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock));
-
-    'done: {
-        /* Check if we have a ready section */
-        if IsListEmpty(core::ptr::addr_of_mut!((*pPool).leReadyList)) == 0 {
-            /* Get a free section */
-            ple = (*pPool).leReadyList.Flink;
-            pSection = (ple as *mut u8)
-                .sub(core::mem::offset_of!(_GDI_POOL_SECTION, leReadyLink))
-                as PGDI_POOL_SECTION;
-        } else {
-            /* No, check if we have something on the empty list */
-            if IsListEmpty(core::ptr::addr_of_mut!((*pPool).leEmptyList)) == 0 {
-                /* Yes, remove it from the empty list */
-                ple = RemoveHeadList(core::ptr::addr_of_mut!((*pPool).leEmptyList));
-                pSection = (ple as *mut u8)
-                    .sub(core::mem::offset_of!(_GDI_POOL_SECTION, leInUseLink))
-                    as PGDI_POOL_SECTION;
-                (*pPool).cEmptySections -= 1;
-            } else {
-                /* No, allocate a new section */
-                pSection = GdiPoolAllocateSection(pPool);
-                if pSection.is_null() {
-                    pvAlloc = core::ptr::null_mut();
-                    break 'done;
-                }
-            }
-
-            /* Insert it into the in-use and ready list */
-            InsertHeadList(
-                core::ptr::addr_of_mut!((*pPool).leInUseList),
-                core::ptr::addr_of_mut!((*pSection).leInUseLink),
-            );
-            InsertHeadList(
-                core::ptr::addr_of_mut!((*pPool).leReadyList),
-                core::ptr::addr_of_mut!((*pSection).leReadyLink),
-            );
-        }
-
-        /* Find and set a single bit */
-        ulIndex = RtlFindClearBitsAndSet(core::ptr::addr_of_mut!((*pSection).bitmap) as *mut _, 1, 0);
-
-        /* Calculate the allocation address */
-        cjOffset = ulIndex * (*pPool).cjAllocSize;
-        pvAlloc = ((*pSection).pvBaseAddress as ULONG_PTR + cjOffset as ULONG_PTR) as PVOID;
-
-        /* Check if memory is committed */
-        ulPageBit = 1 << (cjOffset / PAGE_SIZE);
-        ulPageBit |= 1 << ((cjOffset + (*pPool).cjAllocSize - 1) / PAGE_SIZE);
-        if ((*pSection).ulCommitBitmap & ulPageBit) != ulPageBit {
-            /* Commit the pages */
-            pvBaseAddress = PAGE_ALIGN(pvAlloc);
-            cjSize = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(pvAlloc, (*pPool).cjAllocSize as SIZE_T)
-                * PAGE_SIZE) as SIZE_T;
-            status = ZwAllocateVirtualMemory(
-                NtCurrentProcess(),
-                core::ptr::addr_of_mut!(pvBaseAddress),
-                0,
-                core::ptr::addr_of_mut!(cjSize),
-                MEM_COMMIT,
-                PAGE_READWRITE,
-            );
-            if !NT_SUCCESS(status) {
-                pvAlloc = core::ptr::null_mut();
-                break 'done;
-            }
-
-            (*pSection).ulCommitBitmap |= ulPageBit;
-        }
-
-        /* Increase alloc count */
-        (*pSection).cAllocCount += 1;
-
-        /* Check if section is now busy */
-        if (*pSection).cAllocCount == (*pPool).cSlotsPerSection {
-            /* Remove the section from the ready list */
-            RemoveEntryList(core::ptr::addr_of_mut!((*pSection).leReadyLink));
-        }
-    }
-
-    /* Release the pool lock and enable APCs */
-    ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock));
-    KeLeaveCriticalRegion();
-
-    pvAlloc
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID) {
+pub unsafe extern "system" fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID) {
     let mut ple: PLIST_ENTRY;
     let mut pSection: PGDI_POOL_SECTION = core::ptr::null_mut();
     let mut cjOffset: ULONG_PTR;
@@ -405,91 +301,8 @@ pub unsafe extern "stdcall" fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID) {
     ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock) as *mut _);
     KeLeaveCriticalRegion();
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID) {
-    let mut ple: PLIST_ENTRY;
-    let mut pSection: PGDI_POOL_SECTION = core::ptr::null_mut();
-    let mut cjOffset: ULONG_PTR;
-    let mut ulIndex: ULONG;
-
-    /* Disable APCs and acquire the pool lock */
-    KeEnterCriticalRegion();
-    ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock) as *mut _);
-
-    'done: {
-        ple = (*pPool).leInUseList.Flink;
-        while ple != core::ptr::addr_of_mut!((*pPool).leInUseList) {
-            /* Get the pointer to the section */
-            pSection = (ple as usize
-                - core::mem::offset_of!(_GDI_POOL_SECTION, leInUseLink))
-                as PGDI_POOL_SECTION;
-
-            /* Calculate offset */
-            cjOffset = (pvAlloc as ULONG_PTR) - ((*pSection).pvBaseAddress as ULONG_PTR);
-
-            /* Check if the allocation is from this section */
-            if cjOffset < (*pPool).cjSectionSize as ULONG_PTR {
-                /* Calculate the index of the allocation */
-                ulIndex = (cjOffset / (*pPool).cjAllocSize as ULONG_PTR) as ULONG;
-
-                /* Mark it as free */
-                RtlClearBit(core::ptr::addr_of_mut!((*pSection).bitmap) as *mut _, ulIndex);
-
-                /* Decrease allocation count */
-                (*pSection).cAllocCount -= 1;
-
-                /* Check if the section got valid now */
-                if (*pSection).cAllocCount == (*pPool).cSlotsPerSection - 1 {
-                    /* Insert it into the ready list */
-                    InsertTailList(
-                        core::ptr::addr_of_mut!((*pPool).leReadyList),
-                        core::ptr::addr_of_mut!((*pSection).leReadyLink),
-                    );
-                } else if (*pSection).cAllocCount == 0 {
-                    /* Remove the section from the lists */
-                    RemoveEntryList(core::ptr::addr_of_mut!((*pSection).leInUseLink));
-                    RemoveEntryList(core::ptr::addr_of_mut!((*pSection).leReadyLink));
-
-                    if (*pPool).cEmptySections >= 1 {
-                        /* Delete the section */
-                        GdiPoolDeleteSection(pPool, pSection);
-                    } else {
-                        /* Insert it into the empty list */
-                        InsertHeadList(
-                            core::ptr::addr_of_mut!((*pPool).leEmptyList),
-                            core::ptr::addr_of_mut!((*pSection).leInUseLink),
-                        );
-                        (*pPool).cEmptySections += 1;
-                    }
-                }
-
-                break 'done;
-            }
-
-            ple = (*ple).Flink;
-        }
-
-        DbgPrint(
-            b"failed to free. pvAlloc=%p, base=%p, size=%lx\n\0".as_ptr() as *const i8,
-            pvAlloc,
-            if !pSection.is_null() {
-                (*pSection).pvBaseAddress
-            } else {
-                core::ptr::null_mut()
-            },
-            (*pPool).cjSectionSize,
-        );
-    }
-
-    /* Release the pool lock and enable APCs */
-    ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock) as *mut _);
-    KeLeaveCriticalRegion();
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GdiPoolCreate(
+pub unsafe extern "system" fn GdiPoolCreate(
     cjAllocSize: ULONG,
     ulTag: ULONG,
 ) -> PGDI_POOL {
@@ -510,58 +323,8 @@ pub unsafe extern "stdcall" fn GdiPoolCreate(
 
     pPool
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GdiPoolCreate(
-    cjAllocSize: ULONG,
-    ulTag: ULONG,
-) -> PGDI_POOL {
-    let pPool = EngAllocMem(0, core::mem::size_of::<GDI_POOL>() as ULONG, u32::from_le_bytes(*b"Gpol")) as PGDI_POOL;
-    if pPool.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    ExInitializePushLock(core::ptr::addr_of_mut!((*pPool).pushlock) as *mut _);
-    InitializeListHead(core::ptr::addr_of_mut!((*pPool).leInUseList));
-    InitializeListHead(core::ptr::addr_of_mut!((*pPool).leReadyList));
-    InitializeListHead(core::ptr::addr_of_mut!((*pPool).leEmptyList));
-    (*pPool).cEmptySections = 0;
-    (*pPool).cjAllocSize = cjAllocSize;
-    (*pPool).ulTag = ulTag;
-    (*pPool).cjSectionSize = (64 * 1024) as ULONG;
-    (*pPool).cSlotsPerSection = (*pPool).cjSectionSize / cjAllocSize;
-
-    pPool
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GdiPoolDestroy(pPool: PGDI_POOL) {
-    let mut pSection: PGDI_POOL_SECTION;
-    let mut ple: PLIST_ENTRY;
-
-    while IsListEmpty(core::ptr::addr_of_mut!((*pPool).leEmptyList)) == 0 {
-        ple = RemoveHeadList(core::ptr::addr_of_mut!((*pPool).leEmptyList));
-        pSection = (ple as *mut u8).offset(
-            -(core::mem::offset_of!(_GDI_POOL_SECTION, leInUseLink) as isize),
-        ) as PGDI_POOL_SECTION;
-        GdiPoolDeleteSection(pPool, pSection);
-    }
-
-    while IsListEmpty(core::ptr::addr_of_mut!((*pPool).leInUseList)) == 0 {
-        ple = RemoveHeadList(core::ptr::addr_of_mut!((*pPool).leInUseList));
-        pSection = (ple as *mut u8).offset(
-            -(core::mem::offset_of!(_GDI_POOL_SECTION, leInUseLink) as isize),
-        ) as PGDI_POOL_SECTION;
-        GdiPoolDeleteSection(pPool, pSection);
-    }
-
-    EngFreeMem(pPool as *mut core::ffi::c_void);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GdiPoolDestroy(pPool: PGDI_POOL) {
+pub unsafe extern "system" fn GdiPoolDestroy(pPool: PGDI_POOL) {
     let mut pSection: PGDI_POOL_SECTION;
     let mut ple: PLIST_ENTRY;
 

@@ -1577,12 +1577,7 @@ unsafe fn ScmStopThread_impl(pParam: *mut core::ffi::c_void) -> DWORD {
 // CreateThread's LPTHREAD_START_ROUTINE is `extern "stdcall"` on i386 but
 // `extern "C"` on amd64/arm64. Rust treats these as distinct fn-item types, so
 // the trampoline's ABI must match the platform's thread-routine type exactly.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ScmStopThread(pParam: *mut core::ffi::c_void) -> DWORD {
-    ScmStopThread_impl(pParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ScmStopThread(pParam: *mut core::ffi::c_void) -> DWORD {
+unsafe extern "system" fn ScmStopThread(pParam: *mut core::ffi::c_void) -> DWORD {
     ScmStopThread_impl(pParam)
 }
 

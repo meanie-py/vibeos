@@ -350,18 +350,7 @@ pub unsafe extern "system" fn SerialRead(
                 IoMarkIrpPending(Irp);
                 IoQueueWorkItem(
                     WorkItem,
-                    {
-        #[cfg(target_arch = "x86")]
-        { unsafe { Some(core::mem::transmute::<
-            unsafe extern "system" fn(PDEVICE_OBJECT, PVOID),
-            unsafe extern "stdcall" fn(PDEVICE_OBJECT, PVOID),
-        >(SerialReadWorkItem)) } }
-        #[cfg(not(target_arch = "x86"))]
-        { unsafe { Some(core::mem::transmute::<
-            unsafe extern "system" fn(PDEVICE_OBJECT, PVOID),
-            unsafe extern "C" fn(PDEVICE_OBJECT, PVOID),
-        >(SerialReadWorkItem)) } }
-    },
+                    Some(SerialReadWorkItem),
                     DelayedWorkQueue,
                     WorkItemData as PVOID,
                 );

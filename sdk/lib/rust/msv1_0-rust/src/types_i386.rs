@@ -1152,7 +1152,7 @@ pub const SECURITY_ACCESS_REMOTE_INTERACTIVE_LOGON: u32 = 1024;
 pub const SECURITY_ACCESS_DENY_REMOTE_INTERACTIVE_LOGON: u32 = 2048;
 pub const USER_LOGON_BAD_PASSWORD: u32 = 134217728;
 pub const USER_LOGON_SUCCESS: u32 = 268435456;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WinMain(
         arg1: HINSTANCE,
         arg2: HINSTANCE,
@@ -1160,7 +1160,7 @@ unsafe extern "stdcall" {
         arg4: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn wWinMain(
         arg1: HINSTANCE,
         arg2: HINSTANCE,
@@ -1168,39 +1168,39 @@ unsafe extern "stdcall" {
         arg4: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _hread(
         hFile: HFILE,
         lpBuffer: LPVOID,
         lBytes: ::core::ffi::c_long,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _hwrite(
         hFile: HFILE,
         lpBuffer: LPCCH,
         lBytes: ::core::ffi::c_long,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _lclose(arg1: HFILE) -> HFILE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _lcreat(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _llseek(arg1: HFILE, arg2: LONG, arg3: ::core::ffi::c_int) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _lopen(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _lread(hFile: HFILE, lpBuffer: LPVOID, uBytes: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn _lwrite(hFile: HFILE, lpBuffer: LPCCH, uBytes: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AccessCheck(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: HANDLE,
@@ -1212,7 +1212,7 @@ unsafe extern "stdcall" {
         arg8: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AccessCheckAndAuditAlarmA(
         SubsystemName: LPCSTR,
         HandleId: LPVOID,
@@ -1227,7 +1227,7 @@ unsafe extern "stdcall" {
         pfGenerateOnClose: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AccessCheckAndAuditAlarmW(
         arg1: LPCWSTR,
         arg2: LPVOID,
@@ -1242,16 +1242,16 @@ unsafe extern "stdcall" {
         arg11: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ActivateActCtx(arg1: HANDLE, arg2: *mut ULONG_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessAllowedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessDeniedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessAllowedAceEx(
         arg1: PACL,
         arg2: DWORD,
@@ -1260,7 +1260,7 @@ unsafe extern "stdcall" {
         arg5: PSID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessDeniedAceEx(
         arg1: PACL,
         arg2: DWORD,
@@ -1269,7 +1269,7 @@ unsafe extern "stdcall" {
         arg5: PSID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessAllowedObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -1280,7 +1280,7 @@ unsafe extern "stdcall" {
         arg7: PSID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAccessDeniedObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -1291,16 +1291,16 @@ unsafe extern "stdcall" {
         arg7: PSID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PVOID, arg5: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAuditAccessAce(
         arg1: PACL,
         arg2: DWORD,
@@ -1310,7 +1310,7 @@ unsafe extern "stdcall" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddAuditAccessObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -1323,16 +1323,16 @@ unsafe extern "stdcall" {
         arg9: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddRefActCtx(arg1: HANDLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddVectoredExceptionHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddVectoredContinueHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AccessCheckByType(
         pSecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -1347,7 +1347,7 @@ unsafe extern "stdcall" {
         AccessStatus: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AccessCheckByTypeResultList(
         pSecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -1362,7 +1362,7 @@ unsafe extern "stdcall" {
         AccessStatus: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AdjustTokenGroups(
         arg1: HANDLE,
         arg2: BOOL,
@@ -1372,7 +1372,7 @@ unsafe extern "stdcall" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AdjustTokenPrivileges(
         arg1: HANDLE,
         arg2: BOOL,
@@ -1382,7 +1382,7 @@ unsafe extern "stdcall" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AllocateAndInitializeSid(
         arg1: PSID_IDENTIFIER_AUTHORITY,
         arg2: BYTE,
@@ -1397,28 +1397,28 @@ unsafe extern "stdcall" {
         arg11: *mut PSID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CheckTokenMembership(arg1: HANDLE, arg2: PSID, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AllocateLocallyUniqueId(arg1: PLUID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AreAllAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AreAnyAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AreFileApisANSI() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BackupEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BackupEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BackupRead(
         hFile: HANDLE,
         lpBuffer: LPBYTE,
@@ -1429,7 +1429,7 @@ unsafe extern "stdcall" {
         lpContext: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BackupSeek(
         arg1: HANDLE,
         arg2: DWORD,
@@ -1439,7 +1439,7 @@ unsafe extern "stdcall" {
         arg6: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BackupWrite(
         hFile: HANDLE,
         lpBuffer: LPBYTE,
@@ -1450,35 +1450,35 @@ unsafe extern "stdcall" {
         lpContext: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BeginUpdateResourceA(arg1: LPCSTR, arg2: BOOL) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BeginUpdateResourceW(arg1: LPCWSTR, arg2: BOOL) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BindIoCompletionCallback(
         arg1: HANDLE,
         arg2: LPOVERLAPPED_COMPLETION_ROUTINE,
         arg3: ULONG,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BuildCommDCBA(arg1: LPCSTR, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BuildCommDCBW(arg1: LPCWSTR, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BuildCommDCBAndTimeoutsA(arg1: LPCSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn BuildCommDCBAndTimeoutsW(arg1: LPCWSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CallNamedPipeA(
         lpNamedPipeName: LPCSTR,
         lpInBuffer: LPVOID,
@@ -1489,7 +1489,7 @@ unsafe extern "stdcall" {
         nTimeOut: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CallNamedPipeW(
         lpNamedPipeName: LPCWSTR,
         lpInBuffer: LPVOID,
@@ -1500,13 +1500,13 @@ unsafe extern "stdcall" {
         nTimeOut: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CancelDeviceWakeupRequest(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CancelWaitableTimer(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CheckNameLegalDOS8Dot3A(
         lpName: LPCSTR,
         lpOemName: LPSTR,
@@ -1515,7 +1515,7 @@ unsafe extern "stdcall" {
         pbNameLegal: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CheckNameLegalDOS8Dot3W(
         lpName: LPCWSTR,
         lpOemName: LPSTR,
@@ -1524,59 +1524,59 @@ unsafe extern "stdcall" {
         pbNameLegal: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CheckRemoteDebuggerPresent(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ClearCommBreak(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ClearCommError(arg1: HANDLE, arg2: PDWORD, arg3: LPCOMSTAT) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ClearEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ClearEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CloseEventLog(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CommConfigDialogA(arg1: LPCSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CommConfigDialogW(arg1: LPCWSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CompareFileTime(arg1: *const FILETIME, arg2: *const FILETIME) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ConnectNamedPipe(arg1: HANDLE, arg2: LPOVERLAPPED) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ContinueDebugEvent(arg1: DWORD, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ConvertFiberToThread() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ConvertThreadToFiber(arg1: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CopyFileA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CopyFileW(
         lpExistingFileName: LPCWSTR,
         lpNewFileName: LPCWSTR,
         bFailIfExists: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CopyFileExA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -1586,7 +1586,7 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CopyFileExW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -1596,34 +1596,34 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CopySid(arg1: DWORD, arg2: PSID, arg3: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateActCtxA(arg1: PCACTCTXA) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateActCtxW(arg1: PCACTCTXW) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateDirectoryA(
         lpPathName: LPCSTR,
         lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateDirectoryW(
         lpPathName: LPCWSTR,
         lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateDirectoryExA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateDirectoryExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateEventA(
         lpEventAttributes: LPSECURITY_ATTRIBUTES,
         bManualReset: BOOL,
@@ -1631,7 +1631,7 @@ unsafe extern "stdcall" {
         lpName: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateEventW(
         arg1: LPSECURITY_ATTRIBUTES,
         bManualReset: BOOL,
@@ -1639,10 +1639,10 @@ unsafe extern "stdcall" {
         lpName: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFiber(arg1: SIZE_T, arg2: LPFIBER_START_ROUTINE, arg3: LPVOID) -> LPVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFiberEx(
         arg1: SIZE_T,
         arg2: SIZE_T,
@@ -1651,7 +1651,7 @@ unsafe extern "stdcall" {
         arg5: LPVOID,
     ) -> LPVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFileA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -1662,7 +1662,7 @@ unsafe extern "stdcall" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFileW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -1673,7 +1673,7 @@ unsafe extern "stdcall" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFileMappingA(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -1683,7 +1683,7 @@ unsafe extern "stdcall" {
         arg6: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateFileMappingW(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -1693,25 +1693,25 @@ unsafe extern "stdcall" {
         arg6: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateHardLinkA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateHardLinkW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateJobObjectA(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateJobObjectW(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TerminateJobObject(arg1: HANDLE, arg2: UINT) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AssignProcessToJobObject(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateMailslotA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -1719,7 +1719,7 @@ unsafe extern "stdcall" {
         arg4: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateMailslotW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -1727,16 +1727,16 @@ unsafe extern "stdcall" {
         arg4: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateMemoryResourceNotification(arg1: MEMORY_RESOURCE_NOTIFICATION_TYPE) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateMutexA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateMutexW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateNamedPipeA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -1748,7 +1748,7 @@ unsafe extern "stdcall" {
         arg8: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateNamedPipeW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -1760,7 +1760,7 @@ unsafe extern "stdcall" {
         arg8: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreatePipe(
         arg1: PHANDLE,
         arg2: PHANDLE,
@@ -1768,7 +1768,7 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreatePrivateObjectSecurity(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
@@ -1778,7 +1778,7 @@ unsafe extern "stdcall" {
         arg6: PGENERIC_MAPPING,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessA(
         arg1: LPCSTR,
         arg2: LPSTR,
@@ -1792,7 +1792,7 @@ unsafe extern "stdcall" {
         arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -1806,7 +1806,7 @@ unsafe extern "stdcall" {
         arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessAsUserA(
         arg1: HANDLE,
         arg2: LPCSTR,
@@ -1821,7 +1821,7 @@ unsafe extern "stdcall" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessAsUserW(
         arg1: HANDLE,
         arg2: LPCWSTR,
@@ -1836,7 +1836,7 @@ unsafe extern "stdcall" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessWithLogonW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -1851,7 +1851,7 @@ unsafe extern "stdcall" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateProcessWithTokenW(
         arg1: HANDLE,
         arg2: DWORD,
@@ -1864,7 +1864,7 @@ unsafe extern "stdcall" {
         arg9: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateRemoteThread(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -1875,7 +1875,7 @@ unsafe extern "stdcall" {
         arg7: LPDWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateRestrictedToken(
         ExistingTokenHandle: HANDLE,
         Flags: DWORD,
@@ -1888,7 +1888,7 @@ unsafe extern "stdcall" {
         NewTokenHandle: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateSemaphoreA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -1896,7 +1896,7 @@ unsafe extern "stdcall" {
         arg4: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateSemaphoreW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -1904,13 +1904,13 @@ unsafe extern "stdcall" {
         arg4: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateTapePartition(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateTimerQueue() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateTimerQueueTimer(
         arg1: PHANDLE,
         arg2: HANDLE,
@@ -1921,7 +1921,7 @@ unsafe extern "stdcall" {
         arg7: ULONG,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ChangeTimerQueueTimer(
         TimerQueue: HANDLE,
         Timer: HANDLE,
@@ -1929,7 +1929,7 @@ unsafe extern "stdcall" {
         Period: ULONG,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateThread(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: DWORD,
@@ -1939,13 +1939,13 @@ unsafe extern "stdcall" {
         arg6: PDWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CreateWellKnownSid(
         arg1: WELL_KNOWN_SID_TYPE,
         arg2: PSID,
@@ -1953,105 +1953,105 @@ unsafe extern "stdcall" {
         arg4: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeactivateActCtx(arg1: DWORD, arg2: ULONG_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DebugActiveProcess(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DebugActiveProcessStop(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DebugBreak();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DebugBreakProcess(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DebugSetProcessKillOnExit(arg1: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DecodePointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DecodeSystemPointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DecryptFileA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DecryptFileW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DefineDosDeviceA(arg1: DWORD, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DefineDosDeviceW(arg1: DWORD, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteAce(arg1: PACL, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteAtom(arg1: ATOM) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteCriticalSection(arg1: PCRITICAL_SECTION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteFiber(arg1: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteFileA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteFileW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteTimerQueue(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteTimerQueueEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteTimerQueueTimer(arg1: HANDLE, arg2: HANDLE, arg3: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteVolumeMountPointA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteVolumeMountPointW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeregisterEventSource(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DestroyPrivateObjectSecurity(arg1: *mut PSECURITY_DESCRIPTOR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DisableThreadLibraryCalls(arg1: HMODULE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DnsHostnameToComputerNameA(
         Hostname: LPCSTR,
         ComputerName: LPSTR,
         nSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DnsHostnameToComputerNameW(
         Hostname: LPCWSTR,
         ComputerName: LPWSTR,
         nSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DisconnectNamedPipe(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DosDateTimeToFileTime(arg1: WORD, arg2: WORD, arg3: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DuplicateHandle(
         arg1: HANDLE,
         arg2: HANDLE,
@@ -2062,10 +2062,10 @@ unsafe extern "stdcall" {
         arg7: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DuplicateToken(arg1: HANDLE, arg2: SECURITY_IMPERSONATION_LEVEL, arg3: PHANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DuplicateTokenEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -2075,28 +2075,28 @@ unsafe extern "stdcall" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EncodePointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EncodeSystemPointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EncryptFileA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EncryptFileW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EndUpdateResourceW(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceLanguagesA(
         arg1: HMODULE,
         arg2: LPCSTR,
@@ -2105,7 +2105,7 @@ unsafe extern "stdcall" {
         arg5: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceLanguagesW(
         arg1: HMODULE,
         arg2: LPCWSTR,
@@ -2114,7 +2114,7 @@ unsafe extern "stdcall" {
         arg5: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceNamesA(
         arg1: HMODULE,
         arg2: LPCSTR,
@@ -2122,7 +2122,7 @@ unsafe extern "stdcall" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceNamesW(
         arg1: HMODULE,
         arg2: LPCWSTR,
@@ -2130,61 +2130,61 @@ unsafe extern "stdcall" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceTypesA(arg1: HMODULE, arg2: ENUMRESTYPEPROCA, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumResourceTypesW(arg1: HMODULE, arg2: ENUMRESTYPEPROCW, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EqualPrefixSid(arg1: PSID, arg2: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EqualSid(arg1: PSID, arg2: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EraseTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EscapeCommFunction(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ExitProcess(arg1: UINT) -> !;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FatalAppExitA(arg1: UINT, arg2: LPCSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FatalAppExitW(arg1: UINT, arg2: LPCWSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FatalExit(arg1: ::core::ffi::c_int);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FileEncryptionStatusA(arg1: LPCSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FileEncryptionStatusW(arg1: LPCWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FileTimeToDosDateTime(arg1: *const FILETIME, arg2: LPWORD, arg3: LPWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FileTimeToLocalFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindActCtxSectionGuid(
         arg1: DWORD,
         arg2: *const GUID,
@@ -2193,7 +2193,7 @@ unsafe extern "stdcall" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindActCtxSectionStringA(
         arg1: DWORD,
         arg2: *const GUID,
@@ -2202,7 +2202,7 @@ unsafe extern "stdcall" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindActCtxSectionStringW(
         arg1: DWORD,
         arg2: *const GUID,
@@ -2211,31 +2211,31 @@ unsafe extern "stdcall" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindCloseChangeNotification(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstChangeNotificationA(arg1: LPCSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstChangeNotificationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstFileExA(
         arg1: LPCSTR,
         arg2: FINDEX_INFO_LEVELS,
@@ -2245,7 +2245,7 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstFileExW(
         arg1: LPCWSTR,
         arg2: FINDEX_INFO_LEVELS,
@@ -2255,7 +2255,7 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstStreamW(
         arg1: LPCWSTR,
         arg2: STREAM_INFO_LEVELS,
@@ -2263,105 +2263,105 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstFreeAce(arg1: PACL, arg2: *mut PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstVolumeA(lpszVolumeName: LPSTR, cchBufferLength: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstVolumeW(arg1: LPWSTR, arg2: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstVolumeMountPointA(
         lpszRootPathName: LPCSTR,
         lpszVolumeMountPoint: LPSTR,
         cchBufferLength: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindFirstVolumeMountPointW(
         lpszRootPathName: LPCWSTR,
         lpszVolumeMountPoint: LPWSTR,
         cchBufferLength: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextChangeNotification(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextStreamW(arg1: HANDLE, arg2: LPVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextVolumeA(
         hFindVolume: HANDLE,
         lpszVolumeName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextVolumeW(arg1: HANDLE, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextVolumeMountPointA(
         hFindVolumeMountPoint: HANDLE,
         lpszVolumeMountPoint: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindNextVolumeMountPointW(
         hFindVolumeMountPoint: HANDLE,
         lpszVolumeMountPoint: LPWSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindVolumeClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindVolumeMountPointClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindResourceA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR) -> HRSRC;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindResourceW(arg1: HMODULE, arg2: LPCWSTR, arg3: LPCWSTR) -> HRSRC;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindResourceExA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR, arg4: WORD) -> HRSRC;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FindResourceExW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPCWSTR, arg4: WORD) -> HRSRC;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlushInstructionCache(arg1: HANDLE, arg2: LPCVOID, arg3: SIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlushViewOfFile(arg1: LPCVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlsAlloc(arg1: PFLS_CALLBACK_FUNCTION) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlsGetValue(arg1: DWORD) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FlsFree(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FormatMessageA(
         dwFlags: DWORD,
         lpSource: LPCVOID,
@@ -2372,7 +2372,7 @@ unsafe extern "stdcall" {
         Arguments: *mut va_list,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FormatMessageW(
         dwFlags: DWORD,
         lpSource: LPCVOID,
@@ -2383,28 +2383,28 @@ unsafe extern "stdcall" {
         Arguments: *mut va_list,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeLibraryAndExitThread(arg1: HMODULE, arg2: DWORD) -> !;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeResource(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeSid(arg1: PSID) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetAce(arg1: PACL, arg2: DWORD, arg3: *mut LPVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetAclInformation(
         arg1: PACL,
         arg2: PVOID,
@@ -2412,94 +2412,94 @@ unsafe extern "stdcall" {
         arg4: ACL_INFORMATION_CLASS,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetBinaryTypeA(arg1: LPCSTR, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetBinaryTypeW(arg1: LPCWSTR, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommandLineA() -> LPSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommandLineW() -> LPWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommMask(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommModemStatus(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommProperties(arg1: HANDLE, arg2: LPCOMMPROP) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCompressedFileSizeA(arg1: LPCSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCompressedFileSizeW(arg1: LPCWSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetComputerNameA(lpBuffer: LPSTR, nSize: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetComputerNameW(lpBuffer: LPWSTR, nSize: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPWSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentActCtx(arg1: *mut HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentDirectoryA(arg1: DWORD, arg2: LPSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentHwProfileA(arg1: LPHW_PROFILE_INFOA) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentHwProfileW(arg1: LPHW_PROFILE_INFOW) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentProcess() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentProcessId() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentThread() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetCurrentThreadId() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceA(
         arg1: LPCSTR,
         arg2: PDWORD,
@@ -2508,7 +2508,7 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceW(
         arg1: LPCWSTR,
         arg2: PDWORD,
@@ -2517,7 +2517,7 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceExA(
         arg1: LPCSTR,
         arg2: PULARGE_INTEGER,
@@ -2525,7 +2525,7 @@ unsafe extern "stdcall" {
         arg4: PULARGE_INTEGER,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceExW(
         arg1: LPCWSTR,
         arg2: PULARGE_INTEGER,
@@ -2533,60 +2533,60 @@ unsafe extern "stdcall" {
         arg4: PULARGE_INTEGER,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDllDirectoryA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDllDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDriveTypeA(arg1: LPCSTR) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetEnvironmentStrings() -> LPSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetEnvironmentStringsW() -> LPWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetEnvironmentVariableA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileAttributesExA(
         lpFileName: LPCSTR,
         fInfoLevelId: GET_FILEEX_INFO_LEVELS,
         lpFileInformation: PVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileAttributesExW(
         lpFileName: LPCWSTR,
         fInfoLevelId: GET_FILEEX_INFO_LEVELS,
         lpFileInformation: PVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileInformationByHandle(arg1: HANDLE, arg2: LPBY_HANDLE_FILE_INFORMATION) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileSecurityA(
         lpFileName: LPCSTR,
         RequestedInformation: SECURITY_INFORMATION,
@@ -2595,7 +2595,7 @@ unsafe extern "stdcall" {
         lpnLengthNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileSecurityW(
         arg1: LPCWSTR,
         arg2: SECURITY_INFORMATION,
@@ -2604,28 +2604,28 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileSize(arg1: HANDLE, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileSizeEx(arg1: HANDLE, arg2: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileTime(arg1: HANDLE, arg2: LPFILETIME, arg3: LPFILETIME, arg4: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFullPathNameA(arg1: LPCSTR, arg2: DWORD, arg3: LPSTR, arg4: *mut LPSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetHandleInformation(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetKernelObjectSecurity(
         arg1: HANDLE,
         arg2: SECURITY_INFORMATION,
@@ -2634,31 +2634,31 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLastError() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLengthSid(arg1: PSID) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLocalTime(arg1: LPSYSTEMTIME);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLogicalDrives() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLogicalDriveStringsA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLogicalDriveStringsW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLongPathNameA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetLongPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetMailslotInfo(
         arg1: HANDLE,
         arg2: PDWORD,
@@ -2667,34 +2667,34 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleFileNameA(hModule: HINSTANCE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleHandleA(arg1: LPCSTR) -> HMODULE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleHandleW(arg1: LPCWSTR) -> HMODULE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleHandleExA(arg1: DWORD, arg2: LPCSTR, arg3: *mut HMODULE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetModuleHandleExW(arg1: DWORD, arg2: LPCWSTR, arg3: *mut HMODULE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NeedCurrentDirectoryForExePathA(ExeName: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NeedCurrentDirectoryForExePathW(ExeName: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNamedPipeClientProcessId(Pipe: HANDLE, ClientProcessId: PULONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNamedPipeHandleStateA(
         hNamedPipe: HANDLE,
         lpState: LPDWORD,
@@ -2705,7 +2705,7 @@ unsafe extern "stdcall" {
         nMaxUserNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNamedPipeHandleStateW(
         hNamedPipe: HANDLE,
         lpState: LPDWORD,
@@ -2716,7 +2716,7 @@ unsafe extern "stdcall" {
         nMaxUserNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNamedPipeInfo(
         arg1: HANDLE,
         arg2: PDWORD,
@@ -2725,10 +2725,10 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNativeSystemInfo(arg1: LPSYSTEM_INFO);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetEventLogInformation(
         hEventLog: HANDLE,
         dwInfoLevel: DWORD,
@@ -2737,16 +2737,16 @@ unsafe extern "stdcall" {
         pcbBytesNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetNumberOfEventLogRecords(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetOldestEventLogRecord(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPriorityClass(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateObjectSecurity(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: SECURITY_INFORMATION,
@@ -2755,13 +2755,13 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT, arg4: LPCSTR) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT, arg4: LPCWSTR) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionA(
         lpAppName: LPCSTR,
         lpReturnedString: LPSTR,
@@ -2769,7 +2769,7 @@ unsafe extern "stdcall" {
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionW(
         lpAppName: LPCWSTR,
         lpReturnedString: LPWSTR,
@@ -2777,21 +2777,21 @@ unsafe extern "stdcall" {
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionNamesA(
         lpszReturnBuffer: LPSTR,
         nSize: DWORD,
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionNamesW(
         lpszReturnBuffer: LPWSTR,
         nSize: DWORD,
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStringA(
         lpAppName: LPCSTR,
         lpKeyName: LPCSTR,
@@ -2801,7 +2801,7 @@ unsafe extern "stdcall" {
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStringW(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -2811,7 +2811,7 @@ unsafe extern "stdcall" {
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStructA(
         lpszSection: LPCSTR,
         lpszKey: LPCSTR,
@@ -2820,7 +2820,7 @@ unsafe extern "stdcall" {
         szFile: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStructW(
         lpszSection: LPCWSTR,
         lpszKey: LPCWSTR,
@@ -2829,37 +2829,37 @@ unsafe extern "stdcall" {
         szFile: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcAddress(arg1: HINSTANCE, arg2: LPCSTR) -> FARPROC;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessAffinityMask(arg1: HANDLE, arg2: PDWORD_PTR, arg3: PDWORD_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessHandleCount(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessHeaps(arg1: DWORD, arg2: PHANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessId(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessIdOfThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessIoCounters(arg1: HANDLE, arg2: PIO_COUNTERS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessShutdownParameters(arg1: PDWORD, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessTimes(
         arg1: HANDLE,
         arg2: LPFILETIME,
@@ -2868,28 +2868,28 @@ unsafe extern "stdcall" {
         arg5: LPFILETIME,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessVersion(arg1: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessWindowStation() -> HWINSTA;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProcessWorkingSetSize(arg1: HANDLE, arg2: PSIZE_T, arg3: PSIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileSectionA(lpAppName: LPCSTR, lpReturnedString: LPSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileSectionW(lpAppName: LPCWSTR, lpReturnedString: LPWSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileStringA(
         lpAppName: LPCSTR,
         lpKeyName: LPCSTR,
@@ -2898,7 +2898,7 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetProfileStringW(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -2907,14 +2907,14 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorControl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR_CONTROL,
         arg3: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorDacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: LPBOOL,
@@ -2922,27 +2922,27 @@ unsafe extern "stdcall" {
         arg4: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorGroup(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: *mut PSID,
         arg3: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorLength(arg1: PSECURITY_DESCRIPTOR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorOwner(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: *mut PSID,
         arg3: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorSacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: LPBOOL,
@@ -2950,74 +2950,74 @@ unsafe extern "stdcall" {
         arg4: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetShortPathNameA(lpszLongPath: LPCSTR, lpszShortPath: LPSTR, cchBuffer: DWORD)
         -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetShortPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSidIdentifierAuthority(arg1: PSID) -> PSID_IDENTIFIER_AUTHORITY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSidLengthRequired(arg1: UCHAR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSidSubAuthority(arg1: PSID, arg2: DWORD) -> PDWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSidSubAuthorityCount(arg1: PSID) -> PUCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetStartupInfoW(arg1: LPSTARTUPINFOW);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemInfo(arg1: LPSYSTEM_INFO);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemPowerStatus(arg1: LPSYSTEM_POWER_STATUS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemRegistryQuota(arg1: PDWORD, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemTime(lpSystemTime: LPSYSTEMTIME);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemTimes(arg1: LPFILETIME, arg2: LPFILETIME, arg3: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemTimeAdjustment(arg1: PDWORD, arg2: PDWORD, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemTimeAsFileTime(arg1: LPFILETIME);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemWow64DirectoryA(lpBuffer: LPSTR, uSize: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemWow64DirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTapeParameters(
         hDevice: HANDLE,
         dwOperation: DWORD,
@@ -3025,7 +3025,7 @@ unsafe extern "stdcall" {
         lpTapeInformation: LPVOID,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTapePosition(
         arg1: HANDLE,
         arg2: DWORD,
@@ -3034,10 +3034,10 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTapeStatus(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTempFileNameA(
         lpPathName: LPCSTR,
         lpPrefixString: LPCSTR,
@@ -3045,31 +3045,31 @@ unsafe extern "stdcall" {
         lpTempFileName: LPSTR,
     ) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTempPathA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTempPathW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadContext(arg1: HANDLE, arg2: LPCONTEXT) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadIOPendingFlag(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadPriority(arg1: HANDLE) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadSelectorEntry(arg1: HANDLE, arg2: DWORD, arg3: LPLDT_ENTRY) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadTimes(
         arg1: HANDLE,
         arg2: LPFILETIME,
@@ -3078,16 +3078,16 @@ unsafe extern "stdcall" {
         arg5: LPFILETIME,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTickCount() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetThreadId(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetTokenInformation(
         arg1: HANDLE,
         arg2: TOKEN_INFORMATION_CLASS,
@@ -3096,22 +3096,22 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetUserNameA(lpBuffer: LPSTR, pcbBuffer: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetUserNameW(lpBuffer: LPWSTR, pcbBuffer: LPDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVersion() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVersionExA(arg1: LPOSVERSIONINFOA) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumeInformationA(
         lpRootPathName: LPCSTR,
         lpVolumeNameBuffer: LPSTR,
@@ -3123,7 +3123,7 @@ unsafe extern "stdcall" {
         nFileSystemNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumeInformationW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -3135,27 +3135,27 @@ unsafe extern "stdcall" {
         arg8: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumeNameForVolumeMountPointA(
         lpszVolumeMountPoint: LPCSTR,
         lpszVolumeName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumeNameForVolumeMountPointW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumePathNameA(
         lpszFileName: LPCSTR,
         lpszVolumePathName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumePathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumePathNamesForVolumeNameA(
         lpszVolumeName: LPCSTR,
         lpszVolumePathNames: LPCH,
@@ -3163,7 +3163,7 @@ unsafe extern "stdcall" {
         lpcchReturnLength: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetVolumePathNamesForVolumeNameW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -3171,16 +3171,16 @@ unsafe extern "stdcall" {
         arg4: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: PDWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetWriteWatch(
         arg1: DWORD,
         arg2: PVOID,
@@ -3190,91 +3190,91 @@ unsafe extern "stdcall" {
         arg6: PULONG,
     ) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalAddAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalAddAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalAlloc(arg1: UINT, arg2: SIZE_T) -> HGLOBAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalCompact(arg1: DWORD) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalDeleteAtom(arg1: ATOM) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalFindAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalFindAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalFix(arg1: HGLOBAL);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalFlags(arg1: HGLOBAL) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalFree(arg1: HGLOBAL) -> HGLOBAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalGetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalGetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalHandle(arg1: LPCVOID) -> HGLOBAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalLock(arg1: HGLOBAL) -> LPVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalMemoryStatus(arg1: LPMEMORYSTATUS);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalMemoryStatusEx(arg1: LPMEMORYSTATUSEX) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalReAlloc(arg1: HGLOBAL, arg2: SIZE_T, arg3: UINT) -> HGLOBAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalSize(arg1: HGLOBAL) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalUnfix(arg1: HGLOBAL);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalUnlock(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalUnWire(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GlobalWire(arg1: HGLOBAL) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapCompact(arg1: HANDLE, arg2: DWORD) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapCreate(arg1: DWORD, arg2: SIZE_T, arg3: SIZE_T) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapDestroy(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapLock(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapQueryInformation(
         arg1: HANDLE,
         arg2: HEAP_INFORMATION_CLASS,
@@ -3283,10 +3283,10 @@ unsafe extern "stdcall" {
         arg5: PSIZE_T,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapSetInformation(
         arg1: HANDLE,
         arg2: HEAP_INFORMATION_CLASS,
@@ -3294,164 +3294,164 @@ unsafe extern "stdcall" {
         arg4: SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapSize(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapUnlock(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapValidate(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn HeapWalk(arg1: HANDLE, arg2: LPPROCESS_HEAP_ENTRY) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImpersonateAnonymousToken(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImpersonateLoggedOnUser(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImpersonateNamedPipeClient(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImpersonateSelf(arg1: SECURITY_IMPERSONATION_LEVEL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitAtomTable(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeAcl(arg1: PACL, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeCriticalSectionAndSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCriticalSectionSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeSid(arg1: PSID, arg2: PSID_IDENTIFIER_AUTHORITY, arg3: BYTE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadCodePtr(arg1: FARPROC) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadHugeReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadHugeWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadStringPtrA(arg1: LPCSTR, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadStringPtrW(arg1: LPCWSTR, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsBadWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsDebuggerPresent() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsProcessInJob(arg1: HANDLE, arg2: HANDLE, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsProcessorFeaturePresent(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsSystemResumeAutomatic() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsTextUnicode(
         lpv: *const ::core::ffi::c_void,
         iSize: ::core::ffi::c_int,
         lpiResult: LPINT,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsValidAcl(arg1: PACL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsValidSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsValidSid(arg1: PSID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsWellKnownSid(arg1: PSID, arg2: WELL_KNOWN_SID_TYPE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn IsWow64Process(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadLibraryA(arg1: LPCSTR) -> HINSTANCE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadLibraryExA(arg1: LPCSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadLibraryExW(arg1: LPCWSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadModule(arg1: LPCSTR, arg2: PVOID) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LoadResource(arg1: HINSTANCE, arg2: HRSRC) -> HGLOBAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalAlloc(arg1: UINT, arg2: SIZE_T) -> HLOCAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalCompact(arg1: UINT) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalFileTimeToFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalFlags(arg1: HLOCAL) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalFree(arg1: HLOCAL) -> HLOCAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalHandle(arg1: LPCVOID) -> HLOCAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalLock(arg1: HLOCAL) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalReAlloc(arg1: HLOCAL, arg2: SIZE_T, arg3: UINT) -> HLOCAL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalShrink(arg1: HLOCAL, arg2: UINT) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalSize(arg1: HLOCAL) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LocalUnlock(arg1: HLOCAL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LockFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -3461,10 +3461,10 @@ unsafe extern "stdcall" {
         arg6: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LockResource(arg1: HGLOBAL) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LogonUserA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -3474,7 +3474,7 @@ unsafe extern "stdcall" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LogonUserW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -3484,7 +3484,7 @@ unsafe extern "stdcall" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LogonUserExA(
         lpszUsername: LPSTR,
         lpszDomain: LPSTR,
@@ -3498,7 +3498,7 @@ unsafe extern "stdcall" {
         pQuotaLimits: PQUOTA_LIMITS,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LogonUserExW(
         lpszUsername: LPWSTR,
         lpszDomain: LPWSTR,
@@ -3512,7 +3512,7 @@ unsafe extern "stdcall" {
         pQuotaLimits: PQUOTA_LIMITS,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupAccountNameA(
         lpSystemName: LPCSTR,
         lpAccountName: LPCSTR,
@@ -3523,7 +3523,7 @@ unsafe extern "stdcall" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupAccountNameW(
         lpSystemName: LPCWSTR,
         lpAccountName: LPCWSTR,
@@ -3534,7 +3534,7 @@ unsafe extern "stdcall" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupAccountSidA(
         lpSystemName: LPCSTR,
         Sid: PSID,
@@ -3545,7 +3545,7 @@ unsafe extern "stdcall" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupAccountSidW(
         lpSystemName: LPCWSTR,
         Sid: PSID,
@@ -3556,7 +3556,7 @@ unsafe extern "stdcall" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeDisplayNameA(
         lpSystemName: LPCSTR,
         lpName: LPCSTR,
@@ -3565,7 +3565,7 @@ unsafe extern "stdcall" {
         lpLanguageId: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeDisplayNameW(
         lpSystemName: LPCWSTR,
         lpName: LPCWSTR,
@@ -3574,7 +3574,7 @@ unsafe extern "stdcall" {
         lpLanguageId: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeNameA(
         lpSystemName: LPCSTR,
         lpLuid: PLUID,
@@ -3582,7 +3582,7 @@ unsafe extern "stdcall" {
         cchName: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeNameW(
         lpSystemName: LPCWSTR,
         lpLuid: PLUID,
@@ -3590,49 +3590,49 @@ unsafe extern "stdcall" {
         cchName: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeValueA(arg1: LPCSTR, arg2: LPCSTR, arg3: PLUID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LookupPrivilegeValueW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PLUID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcatA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcmpA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcmpiA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcmpiW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcmpW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcpyA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcpynA(arg1: LPSTR, arg2: LPCSTR, arg3: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrcpynW(arg1: LPWSTR, arg2: LPCWSTR, arg3: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrlenA(arg1: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn lstrlenW(arg1: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MakeAbsoluteSD(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
@@ -3647,17 +3647,17 @@ unsafe extern "stdcall" {
         arg11: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MakeSelfRelativeSD(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
         arg3: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MapGenericMask(arg1: PDWORD, arg2: PGENERIC_MAPPING);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MapViewOfFile(
         arg1: HANDLE,
         arg2: DWORD,
@@ -3666,7 +3666,7 @@ unsafe extern "stdcall" {
         arg5: SIZE_T,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MapViewOfFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -3676,19 +3676,19 @@ unsafe extern "stdcall" {
         arg6: PVOID,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileExA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileWithProgressA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -3697,7 +3697,7 @@ unsafe extern "stdcall" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MoveFileWithProgressW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3706,29 +3706,29 @@ unsafe extern "stdcall" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MulDiv(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn NotifyChangeEventLog(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectCloseAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectCloseAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectDeleteAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectDeleteAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectOpenAuditAlarmA(
         arg1: LPCSTR,
         arg2: PVOID,
@@ -3744,7 +3744,7 @@ unsafe extern "stdcall" {
         arg12: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectOpenAuditAlarmW(
         arg1: LPCWSTR,
         arg2: PVOID,
@@ -3760,7 +3760,7 @@ unsafe extern "stdcall" {
         arg12: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectPrivilegeAuditAlarmA(
         arg1: LPCSTR,
         arg2: PVOID,
@@ -3770,7 +3770,7 @@ unsafe extern "stdcall" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ObjectPrivilegeAuditAlarmW(
         arg1: LPCWSTR,
         arg2: PVOID,
@@ -3780,70 +3780,70 @@ unsafe extern "stdcall" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenBackupEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenBackupEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenEventA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenEventW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenFile(arg1: LPCSTR, arg2: LPOFSTRUCT, arg3: UINT) -> HFILE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenFileMappingA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenFileMappingW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenMutexA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenMutexW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenProcess(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenProcessToken(arg1: HANDLE, arg2: DWORD, arg3: PHANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenSemaphoreA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenSemaphoreW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenThread(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenThreadToken(arg1: HANDLE, arg2: DWORD, arg3: BOOL, arg4: PHANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenWaitableTimerA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OpenWaitableTimerW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OutputDebugStringA(arg1: LPCSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn OutputDebugStringW(arg1: LPCWSTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PeekNamedPipe(
         arg1: HANDLE,
         arg2: PVOID,
@@ -3853,13 +3853,13 @@ unsafe extern "stdcall" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PrepareTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PrivilegeCheck(arg1: HANDLE, arg2: PPRIVILEGE_SET, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PrivilegedServiceAuditAlarmA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -3868,7 +3868,7 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PrivilegedServiceAuditAlarmW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -3877,16 +3877,16 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ProcessIdToSessionId(arg1: DWORD, arg2: *mut DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PulseEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PurgeComm(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryActCtxW(
         dwFlags: DWORD,
         hActCtx: HANDLE,
@@ -3897,31 +3897,31 @@ unsafe extern "stdcall" {
         pcbWrittenOrRequired: *mut SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryDosDeviceA(lpDeviceName: LPCSTR, lpTargetPath: LPSTR, ucchMax: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryDosDeviceW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryMemoryResourceNotification(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryPerformanceCounter(arg1: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryPerformanceFrequency(arg1: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueueUserAPC(arg1: PAPCFUNC, arg2: HANDLE, arg3: ULONG_PTR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueueUserWorkItem(arg1: LPTHREAD_START_ROUTINE, arg2: PVOID, arg3: ULONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryInformationJobObject(
         hJob: HANDLE,
         JobObjectInformationClass: JOBOBJECTINFOCLASS,
@@ -3930,7 +3930,7 @@ unsafe extern "stdcall" {
         lpReturnLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadDirectoryChangesW(
         hDirectory: HANDLE,
         lpBuffer: LPVOID,
@@ -3942,7 +3942,7 @@ unsafe extern "stdcall" {
         lpCompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadEventLogA(
         hEventLog: HANDLE,
         dwReadFlags: DWORD,
@@ -3953,7 +3953,7 @@ unsafe extern "stdcall" {
         pnMinNumberOfBytesNeeded: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadEventLogW(
         hEventLog: HANDLE,
         dwReadFlags: DWORD,
@@ -3964,7 +3964,7 @@ unsafe extern "stdcall" {
         pnMinNumberOfBytesNeeded: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadFile(
         arg1: HANDLE,
         arg2: PVOID,
@@ -3973,7 +3973,7 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadFileEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -3982,7 +3982,7 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadFileScatter(
         arg1: HANDLE,
         arg2: *mut FILE_SEGMENT_ELEMENT,
@@ -3991,7 +3991,7 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReadProcessMemory(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -4000,13 +4000,13 @@ unsafe extern "stdcall" {
         arg5: PSIZE_T,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegisterEventSourceA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegisterEventSourceW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegisterWaitForSingleObject(
         arg1: PHANDLE,
         arg2: HANDLE,
@@ -4016,7 +4016,7 @@ unsafe extern "stdcall" {
         arg6: ULONG,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegisterWaitForSingleObjectEx(
         arg1: HANDLE,
         arg2: WAITORTIMERCALLBACK,
@@ -4025,28 +4025,28 @@ unsafe extern "stdcall" {
         arg5: ULONG,
     ) -> HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReleaseActCtx(arg1: HANDLE);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReleaseMutex(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReleaseSemaphore(arg1: HANDLE, arg2: LONG, arg3: LPLONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RemoveDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RemoveVectoredExceptionHandler(arg1: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RemoveVectoredContinueHandler(arg1: PVOID) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReplaceFileA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -4056,7 +4056,7 @@ unsafe extern "stdcall" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReplaceFileW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4066,7 +4066,7 @@ unsafe extern "stdcall" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReportEventA(
         hEventLog: HANDLE,
         wType: WORD,
@@ -4079,7 +4079,7 @@ unsafe extern "stdcall" {
         lpRawData: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReportEventW(
         hEventLog: HANDLE,
         wType: WORD,
@@ -4092,19 +4092,19 @@ unsafe extern "stdcall" {
         lpRawData: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ResetEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ResetWriteWatch(arg1: LPVOID, arg2: SIZE_T) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ResumeThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RevertToSelf() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SearchPathA(
         lpPath: LPCSTR,
         lpFileName: LPCSTR,
@@ -4114,7 +4114,7 @@ unsafe extern "stdcall" {
         lpFilePart: *mut LPSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SearchPathW(
         lpPath: LPCWSTR,
         lpFileName: LPCWSTR,
@@ -4124,7 +4124,7 @@ unsafe extern "stdcall" {
         lpFilePart: *mut LPWSTR,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetAclInformation(
         arg1: PACL,
         arg2: PVOID,
@@ -4132,82 +4132,82 @@ unsafe extern "stdcall" {
         arg4: ACL_INFORMATION_CLASS,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCommBreak(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCommMask(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetComputerNameA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetComputerNameW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCurrentDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetDllDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetDllDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetEnvironmentVariableA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetErrorMode(arg1: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileApisToANSI();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileApisToOEM();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileAttributesA(lpFileName: LPCSTR, dwFileAttributes: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFilePointer(arg1: HANDLE, arg2: LONG, arg3: PLONG, arg4: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFilePointerEx(
         arg1: HANDLE,
         arg2: LARGE_INTEGER,
@@ -4215,27 +4215,27 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileSecurityA(
         arg1: LPCSTR,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileSecurityW(
         arg1: LPCWSTR,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileShortNameA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileShortNameW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileTime(
         arg1: HANDLE,
         arg2: *const FILETIME,
@@ -4243,17 +4243,17 @@ unsafe extern "stdcall" {
         arg4: *const FILETIME,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFileValidData(arg1: HANDLE, arg2: LONGLONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumSystemFirmwareTables(
         FirmwareTableProviderSignature: DWORD,
         pFirmwareTableEnumBuffer: PVOID,
         BufferSize: DWORD,
     ) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetSystemFirmwareTable(
         FirmwareTableProviderSignature: DWORD,
         FirmwareTableID: DWORD,
@@ -4261,7 +4261,7 @@ unsafe extern "stdcall" {
         BufferSize: DWORD,
     ) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFirmwareEnvironmentVariableA(
         lpName: LPCSTR,
         lpGuid: LPCSTR,
@@ -4269,7 +4269,7 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn GetFirmwareEnvironmentVariableW(
         lpName: LPCWSTR,
         lpGuid: LPCWSTR,
@@ -4277,7 +4277,7 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFirmwareEnvironmentVariableA(
         lpName: LPCSTR,
         lpGuid: LPCSTR,
@@ -4285,7 +4285,7 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetFirmwareEnvironmentVariableW(
         lpName: LPCWSTR,
         lpGuid: LPCWSTR,
@@ -4293,13 +4293,13 @@ unsafe extern "stdcall" {
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetHandleCount(arg1: UINT) -> UINT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetHandleInformation(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetInformationJobObject(
         hJob: HANDLE,
         JobObjectInformationClass: JOBOBJECTINFOCLASS,
@@ -4307,32 +4307,32 @@ unsafe extern "stdcall" {
         cbJobObjectInformationLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetKernelObjectSecurity(
         arg1: HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetLastError(arg1: DWORD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetLastErrorEx(arg1: DWORD, arg2: DWORD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetLocalTime(arg1: *const SYSTEMTIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetMailslotInfo(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetNamedPipeHandleState(arg1: HANDLE, arg2: PDWORD, arg3: PDWORD, arg4: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetPriorityClass(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetPrivateObjectSecurity(
         arg1: SECURITY_INFORMATION,
         arg2: PSECURITY_DESCRIPTOR,
@@ -4341,26 +4341,26 @@ unsafe extern "stdcall" {
         arg5: HANDLE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetProcessAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetProcessPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetProcessShutdownParameters(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetProcessWorkingSetSize(arg1: HANDLE, arg2: SIZE_T, arg3: SIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorControl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: SECURITY_DESCRIPTOR_CONTROL,
         arg3: SECURITY_DESCRIPTOR_CONTROL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorDacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: BOOL,
@@ -4368,16 +4368,16 @@ unsafe extern "stdcall" {
         arg4: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorGroup(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorOwner(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorSacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: BOOL,
@@ -4385,22 +4385,22 @@ unsafe extern "stdcall" {
         arg4: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSystemPowerState(arg1: BOOL, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSystemTime(arg1: *const SYSTEMTIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetSystemTimeAdjustment(arg1: DWORD, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetTapeParameters(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetTapePosition(
         arg1: HANDLE,
         arg2: DWORD,
@@ -4410,28 +4410,28 @@ unsafe extern "stdcall" {
         arg6: BOOL,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> DWORD_PTR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadContext(arg1: HANDLE, arg2: *const CONTEXT) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadIdealProcessor(arg1: HANDLE, arg2: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadPriority(arg1: HANDLE, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetThreadToken(arg1: PHANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetTimeZoneInformation(arg1: *const TIME_ZONE_INFORMATION) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetTokenInformation(
         arg1: HANDLE,
         arg2: TOKEN_INFORMATION_CLASS,
@@ -4439,27 +4439,27 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetUnhandledExceptionFilter(
         arg1: LPTOP_LEVEL_EXCEPTION_FILTER,
     ) -> LPTOP_LEVEL_EXCEPTION_FILTER;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetupComm(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetVolumeLabelA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetVolumeLabelW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetVolumeMountPointA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetVolumeMountPointW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetWaitableTimer(
         arg1: HANDLE,
         arg2: *const LARGE_INTEGER,
@@ -4469,56 +4469,56 @@ unsafe extern "stdcall" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SignalObjectAndWait(arg1: HANDLE, arg2: HANDLE, arg3: DWORD, arg4: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SizeofResource(arg1: HINSTANCE, arg2: HRSRC) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Sleep(arg1: DWORD);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SuspendThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SwitchToFiber(arg1: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SwitchToThread() -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemTimeToTzSpecificLocalTime(
         arg1: *const TIME_ZONE_INFORMATION,
         arg2: *const SYSTEMTIME,
         arg3: LPSYSTEMTIME,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TerminateThread(hThread: HANDLE, dwExitCode: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TlsAlloc() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TlsFree(arg1: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TlsGetValue(arg1: DWORD) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TransactNamedPipe(
         arg1: HANDLE,
         arg2: PVOID,
@@ -4529,26 +4529,26 @@ unsafe extern "stdcall" {
         arg7: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TransmitCommChar(arg1: HANDLE, arg2: ::core::ffi::c_char) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn TzSpecificLocalTimeToSystemTime(
         arg1: LPTIME_ZONE_INFORMATION,
         arg2: LPSYSTEMTIME,
         arg3: LPSYSTEMTIME,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnhandledExceptionFilter(arg1: LPEXCEPTION_POINTERS) -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnlockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnlockFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -4557,16 +4557,16 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnmapViewOfFile(arg1: LPCVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnregisterWait(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnregisterWaitEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UpdateResourceA(
         hUpdate: HANDLE,
         lpType: LPCSTR,
@@ -4576,7 +4576,7 @@ unsafe extern "stdcall" {
         cb: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UpdateResourceW(
         hUpdate: HANDLE,
         lpType: LPCWSTR,
@@ -4586,16 +4586,16 @@ unsafe extern "stdcall" {
         cb: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VerifyVersionInfoA(arg1: LPOSVERSIONINFOEXA, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VerifyVersionInfoW(arg1: LPOSVERSIONINFOEXW, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualAlloc(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: DWORD) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualAllocEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -4604,19 +4604,19 @@ unsafe extern "stdcall" {
         arg5: DWORD,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualFree(arg1: PVOID, arg2: SIZE_T, arg3: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualFreeEx(arg1: HANDLE, arg2: PVOID, arg3: SIZE_T, arg4: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualLock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualProtect(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: PDWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualProtectEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -4625,10 +4625,10 @@ unsafe extern "stdcall" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualQuery(arg1: LPCVOID, arg2: PMEMORY_BASIC_INFORMATION, arg3: SIZE_T) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualQueryEx(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -4636,16 +4636,16 @@ unsafe extern "stdcall" {
         arg4: SIZE_T,
     ) -> SIZE_T;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VirtualUnlock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitCommEvent(arg1: HANDLE, arg2: PDWORD, arg3: LPOVERLAPPED) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitForDebugEvent(arg1: LPDEBUG_EVENT, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitForMultipleObjects(
         nCount: DWORD,
         lpHandles: *const HANDLE,
@@ -4653,7 +4653,7 @@ unsafe extern "stdcall" {
         dwMilliseconds: DWORD,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitForMultipleObjectsEx(
         arg1: DWORD,
         arg2: *const HANDLE,
@@ -4662,34 +4662,34 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitForSingleObjectEx(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitNamedPipeA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WaitNamedPipeW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WinLoadTrustProvider(arg1: *mut GUID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Wow64DisableWow64FsRedirection(arg1: *mut PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Wow64EnableWow64FsRedirection(arg1: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn Wow64RevertWow64FsRedirection(arg1: PVOID) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteEncryptedFileRaw(arg1: PFE_IMPORT_FUNC, arg2: PVOID, arg3: PVOID) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteFile(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -4698,7 +4698,7 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteFileEx(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -4707,7 +4707,7 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteFileGather(
         arg1: HANDLE,
         arg2: *mut FILE_SEGMENT_ELEMENT,
@@ -4716,13 +4716,13 @@ unsafe extern "stdcall" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileSectionA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStringA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -4730,7 +4730,7 @@ unsafe extern "stdcall" {
         arg4: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStringW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -4738,7 +4738,7 @@ unsafe extern "stdcall" {
         arg4: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStructA(
         lpszSection: LPCSTR,
         lpszKey: LPCSTR,
@@ -4747,7 +4747,7 @@ unsafe extern "stdcall" {
         szFile: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStructW(
         lpszSection: LPCWSTR,
         lpszKey: LPCWSTR,
@@ -4756,7 +4756,7 @@ unsafe extern "stdcall" {
         szFile: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteProcessMemory(
         arg1: HANDLE,
         arg2: LPVOID,
@@ -4765,56 +4765,56 @@ unsafe extern "stdcall" {
         arg5: *mut SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteProfileSectionA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteProfileStringA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteProfileStringW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WriteTapemark(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: BOOL) -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn WTSGetActiveConsoleSessionId() -> DWORD;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ZombifyActCtx(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AllocateUserPhysicalPages(
         hProcess: HANDLE,
         NumberOfPages: PULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeUserPhysicalPages(
         hProcess: HANDLE,
         NumberOfPages: PULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MapUserPhysicalPages(
         VirtualAddress: PVOID,
         NumberOfPages: ULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MapUserPhysicalPagesScatter(
         VirtualAddresses: *mut PVOID,
         NumberOfPages: ULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitOnceExecuteOnce(
         InitOnce: PINIT_ONCE,
         InitFn: PINIT_ONCE_FN,
@@ -4822,31 +4822,31 @@ unsafe extern "stdcall" {
         Context: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeSListHead(ListHead: PSLIST_HEADER);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InterlockedPopEntrySList(ListHead: PSLIST_HEADER) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InterlockedPushEntrySList(
         ListHead: PSLIST_HEADER,
         ListEntry: PSINGLE_LIST_ENTRY,
     ) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InterlockedFlushSList(ListHead: PSLIST_HEADER) -> PSINGLE_LIST_ENTRY;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryDepthSList(ListHead: PSLIST_HEADER) -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AbortSystemShutdownA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AbortSystemShutdownW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -4855,7 +4855,7 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4864,7 +4864,7 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownExA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -4874,7 +4874,7 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownExW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -4884,22 +4884,22 @@ unsafe extern "stdcall" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegCloseKey(hKey: HKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegConnectRegistryA(arg1: LPCSTR, arg2: HKEY, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegConnectRegistryW(arg1: LPCWSTR, arg2: HKEY, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegCreateKeyA(hKey: HKEY, lpSubKey: LPCSTR, phkResult: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegCreateKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegCreateKeyExA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -4912,7 +4912,7 @@ unsafe extern "stdcall" {
         lpdwDisposition: PDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegCreateKeyExW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -4925,13 +4925,13 @@ unsafe extern "stdcall" {
         lpdwDisposition: PDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteKeyA(hKey: HKEY, lpSubKey: LPCSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteKeyW(hKey: HKEY, lpSubKey: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteKeyExA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -4939,7 +4939,7 @@ unsafe extern "stdcall" {
         Reserved: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteKeyExW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -4947,16 +4947,16 @@ unsafe extern "stdcall" {
         Reserved: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteValueA(arg1: HKEY, arg2: LPCSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDeleteValueW(arg1: HKEY, arg2: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegDisablePredefinedCache() -> LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSaveKeyExA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -4964,7 +4964,7 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSaveKeyExW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -4972,13 +4972,13 @@ unsafe extern "stdcall" {
         arg4: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumKeyA(hKey: HKEY, dwIndex: DWORD, lpName: LPSTR, cchName: DWORD) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumKeyExA(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -4990,7 +4990,7 @@ unsafe extern "stdcall" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumKeyExW(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -5002,7 +5002,7 @@ unsafe extern "stdcall" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumValueA(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -5014,7 +5014,7 @@ unsafe extern "stdcall" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegEnumValueW(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -5026,10 +5026,10 @@ unsafe extern "stdcall" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegFlushKey(arg1: HKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegGetKeySecurity(
         hKey: HKEY,
         SecurityInformation: SECURITY_INFORMATION,
@@ -5037,13 +5037,13 @@ unsafe extern "stdcall" {
         lpcbSecurityDescriptor: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegLoadKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegLoadKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegNotifyChangeKeyValue(
         arg1: HKEY,
         arg2: BOOL,
@@ -5052,16 +5052,16 @@ unsafe extern "stdcall" {
         arg5: BOOL,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegOpenCurrentUser(arg1: REGSAM, arg2: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegOpenKeyA(arg1: HKEY, arg2: LPCSTR, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegOpenKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegOpenKeyExA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -5070,7 +5070,7 @@ unsafe extern "stdcall" {
         arg5: PHKEY,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegOpenKeyExW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -5079,7 +5079,7 @@ unsafe extern "stdcall" {
         arg5: PHKEY,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryInfoKeyA(
         hKey: HKEY,
         lpClass: LPSTR,
@@ -5095,7 +5095,7 @@ unsafe extern "stdcall" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryInfoKeyW(
         hKey: HKEY,
         lpClass: LPWSTR,
@@ -5111,7 +5111,7 @@ unsafe extern "stdcall" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryMultipleValuesA(
         hKey: HKEY,
         val_list: PVALENTA,
@@ -5120,7 +5120,7 @@ unsafe extern "stdcall" {
         ldwTotsize: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryMultipleValuesW(
         hKey: HKEY,
         val_list: PVALENTW,
@@ -5129,10 +5129,10 @@ unsafe extern "stdcall" {
         ldwTotsize: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryValueA(hKey: HKEY, lpSubKey: LPCSTR, lpData: LPSTR, lpcbData: PLONG) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryValueW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -5140,7 +5140,7 @@ unsafe extern "stdcall" {
         lpcbData: PLONG,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryValueExA(
         hKey: HKEY,
         lpValueName: LPCSTR,
@@ -5150,7 +5150,7 @@ unsafe extern "stdcall" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegQueryValueExW(
         hKey: HKEY,
         lpValueName: LPCWSTR,
@@ -5160,32 +5160,32 @@ unsafe extern "stdcall" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegReplaceKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR, arg4: LPCSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegReplaceKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR, arg4: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegRestoreKeyA(arg1: HKEY, arg2: LPCSTR, arg3: DWORD) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegRestoreKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: DWORD) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSaveKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSaveKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSetKeySecurity(
         arg1: HKEY,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSetValueA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -5194,7 +5194,7 @@ unsafe extern "stdcall" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSetValueW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -5203,7 +5203,7 @@ unsafe extern "stdcall" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSetValueExA(
         hKey: HKEY,
         lpValueName: LPCSTR,
@@ -5213,7 +5213,7 @@ unsafe extern "stdcall" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegSetValueExW(
         hKey: HKEY,
         lpValueName: LPCWSTR,
@@ -5223,10 +5223,10 @@ unsafe extern "stdcall" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegUnLoadKeyA(arg1: HKEY, arg2: LPCSTR) -> LSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RegUnLoadKeyW(arg1: HKEY, arg2: LPCWSTR) -> LSTATUS;
 }
 unsafe extern "C" {
@@ -5260,7 +5260,7 @@ pub type PTimeStamp = *mut SECURITY_INTEGER;
 pub type SECURITY_STRING = UNICODE_STRING;
 pub type PSECURITY_STRING = *mut UNICODE_STRING;
 pub type PSEC_WINNT_AUTH_IDENTITY_OPAQUE = *mut ::core::ffi::c_void;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SspiPromptForCredentialsW(
         arg1: PCWSTR,
         arg2: *mut ::core::ffi::c_void,
@@ -5319,13 +5319,13 @@ pub type SEC_GET_KEY_FN = ::core::option::Option<
         Status: *mut SECURITY_STATUS,
     ),
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumerateSecurityPackagesA(
         pcPackages: PULONG,
         ppPackageInfo: *mut PSecPkgInfoA,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EnumerateSecurityPackagesW(
         pcPackages: PULONG,
         ppPackageInfo: *mut PSecPkgInfoW,
@@ -5337,14 +5337,14 @@ pub type ENUMERATE_SECURITY_PACKAGES_FN_A = ::core::option::Option<
 pub type ENUMERATE_SECURITY_PACKAGES_FN_W = ::core::option::Option<
     unsafe extern "system" fn(arg1: PULONG, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryCredentialsAttributesA(
         phCredential: PCredHandle,
         ulAttribute: ULONG,
         pBuffer: *mut ::core::ffi::c_void,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryCredentialsAttributesW(
         phCredential: PCredHandle,
         ulAttribute: ULONG,
@@ -5384,7 +5384,7 @@ pub struct _SecPkgCredentials_NamesW {
 }
 pub type SecPkgCredentials_NamesW = _SecPkgCredentials_NamesW;
 pub type PSecPkgCredentials_NamesW = *mut _SecPkgCredentials_NamesW;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AcquireCredentialsHandleA(
         pszPrincipal: *mut SEC_CHAR,
         pszPackage: *mut SEC_CHAR,
@@ -5397,7 +5397,7 @@ unsafe extern "stdcall" {
         ptsExpiry: PTimeStamp,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AcquireCredentialsHandleW(
         pszPrincipal: *mut SEC_WCHAR,
         pszPackage: *mut SEC_WCHAR,
@@ -5436,17 +5436,17 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = ::core::option::Option<
         arg9: PTimeStamp,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeContextBuffer(pv: PVOID) -> SECURITY_STATUS;
 }
 pub type FREE_CONTEXT_BUFFER_FN =
     ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> SECURITY_STATUS>;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn FreeCredentialsHandle(phCredential: PCredHandle) -> SECURITY_STATUS;
 }
 pub type FREE_CREDENTIALS_HANDLE_FN =
     ::core::option::Option<unsafe extern "system" fn(arg1: PCredHandle) -> SECURITY_STATUS>;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeSecurityContextA(
         phCredential: PCredHandle,
         phContext: PCtxtHandle,
@@ -5462,7 +5462,7 @@ unsafe extern "stdcall" {
         ptsExpiry: PTimeStamp,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitializeSecurityContextW(
         phCredential: PCredHandle,
         phContext: PCtxtHandle,
@@ -5510,7 +5510,7 @@ pub type INITIALIZE_SECURITY_CONTEXT_FN_W = ::core::option::Option<
         arg12: PTimeStamp,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AcceptSecurityContext(
         phCredential: PCredHandle,
         phContext: PCtxtHandle,
@@ -5536,31 +5536,31 @@ pub type ACCEPT_SECURITY_CONTEXT_FN = ::core::option::Option<
         arg9: PTimeStamp,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn CompleteAuthToken(phContext: PCtxtHandle, pToken: PSecBufferDesc) -> SECURITY_STATUS;
 }
 pub type COMPLETE_AUTH_TOKEN_FN = ::core::option::Option<
     unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DeleteSecurityContext(phContext: PCtxtHandle) -> SECURITY_STATUS;
 }
 pub type DELETE_SECURITY_CONTEXT_FN =
     ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ApplyControlToken(phContext: PCtxtHandle, pInput: PSecBufferDesc) -> SECURITY_STATUS;
 }
 pub type APPLY_CONTROL_TOKEN_FN = ::core::option::Option<
     unsafe extern "system" fn(arg1: PCtxtHandle, arg2: PSecBufferDesc) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryContextAttributesA(
         phContext: PCtxtHandle,
         ulAttribute: ULONG,
         pBuffer: *mut ::core::ffi::c_void,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QueryContextAttributesW(
         phContext: PCtxtHandle,
         ulAttribute: ULONG,
@@ -5796,17 +5796,17 @@ pub struct _SecPkgContext_Bindings {
 }
 pub type SecPkgContext_Bindings = _SecPkgContext_Bindings;
 pub type PSecPkgContext_Bindings = *mut _SecPkgContext_Bindings;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImpersonateSecurityContext(phContext: PCtxtHandle) -> SECURITY_STATUS;
 }
 pub type IMPERSONATE_SECURITY_CONTEXT_FN =
     ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RevertSecurityContext(phContext: PCtxtHandle) -> SECURITY_STATUS;
 }
 pub type REVERT_SECURITY_CONTEXT_FN =
     ::core::option::Option<unsafe extern "system" fn(arg1: PCtxtHandle) -> SECURITY_STATUS>;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MakeSignature(
         phContext: PCtxtHandle,
         fQOP: ULONG,
@@ -5822,7 +5822,7 @@ pub type MAKE_SIGNATURE_FN = ::core::option::Option<
         arg4: ULONG,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn VerifySignature(
         phContext: PCtxtHandle,
         pMessage: PSecBufferDesc,
@@ -5838,13 +5838,13 @@ pub type VERIFY_SIGNATURE_FN = ::core::option::Option<
         arg4: PULONG,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QuerySecurityPackageInfoA(
         pszPackageName: *mut SEC_CHAR,
         ppPackageInfo: *mut PSecPkgInfoA,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QuerySecurityPackageInfoW(
         pszPackageName: *mut SEC_WCHAR,
         ppPackageInfo: *mut PSecPkgInfoW,
@@ -5856,7 +5856,7 @@ pub type QUERY_SECURITY_PACKAGE_INFO_FN_A = ::core::option::Option<
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_W = ::core::option::Option<
     unsafe extern "system" fn(arg1: *mut SEC_WCHAR, arg2: *mut PSecPkgInfoW) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ExportSecurityContext(
         phContext: PCtxtHandle,
         fFlags: ULONG,
@@ -5872,7 +5872,7 @@ pub type EXPORT_SECURITY_CONTEXT_FN = ::core::option::Option<
         arg4: *mut *mut ::core::ffi::c_void,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImportSecurityContextA(
         pszPackage: *mut SEC_CHAR,
         pPackedContext: PSecBuffer,
@@ -5880,7 +5880,7 @@ unsafe extern "stdcall" {
         phContext: PCtxtHandle,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ImportSecurityContextW(
         pszPackage: *mut SEC_WCHAR,
         pPackedContext: PSecBuffer,
@@ -5904,7 +5904,7 @@ pub type IMPORT_SECURITY_CONTEXT_FN_W = ::core::option::Option<
         arg4: PCtxtHandle,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddCredentialsA(
         hCredentials: PCredHandle,
         pszPrincipal: *mut SEC_CHAR,
@@ -5916,7 +5916,7 @@ unsafe extern "stdcall" {
         ptsExpiry: PTimeStamp,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AddCredentialsW(
         hCredentials: PCredHandle,
         pszPrincipal: *mut SEC_WCHAR,
@@ -5952,7 +5952,7 @@ pub type ADD_CREDENTIALS_FN_W = ::core::option::Option<
         arg8: PTimeStamp,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn QuerySecurityContextToken(
         phContext: PCtxtHandle,
         phToken: *mut HANDLE,
@@ -5961,7 +5961,7 @@ unsafe extern "stdcall" {
 pub type QUERY_SECURITY_CONTEXT_TOKEN_FN = ::core::option::Option<
     unsafe extern "system" fn(arg1: PCtxtHandle, arg2: *mut HANDLE) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn EncryptMessage(
         phContext: PCtxtHandle,
         fQOP: ULONG,
@@ -5969,7 +5969,7 @@ unsafe extern "stdcall" {
         MessageSeqNo: ULONG,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DecryptMessage(
         phContext: PCtxtHandle,
         pMessage: PSecBufferDesc,
@@ -5993,7 +5993,7 @@ pub type DECRYPT_MESSAGE_FN = ::core::option::Option<
         arg4: PULONG,
     ) -> SECURITY_STATUS,
 >;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetContextAttributesA(
         phContext: PCtxtHandle,
         ulAttribute: ULONG,
@@ -6001,7 +6001,7 @@ unsafe extern "stdcall" {
         cbBuffer: ULONG,
     ) -> SECURITY_STATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SetContextAttributesW(
         phContext: PCtxtHandle,
         ulAttribute: ULONG,
@@ -6091,10 +6091,10 @@ pub struct _SECURITY_FUNCTION_TABLE_W {
 }
 pub type SecurityFunctionTableW = _SECURITY_FUNCTION_TABLE_W;
 pub type PSecurityFunctionTableW = *mut _SECURITY_FUNCTION_TABLE_W;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitSecurityInterfaceA() -> PSecurityFunctionTableA;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn InitSecurityInterfaceW() -> PSecurityFunctionTableW;
 }
 pub type INIT_SECURITY_INTERFACE_A =
@@ -6799,16 +6799,16 @@ pub struct _TRUSTED_DOMAIN_FULL_INFORMATION {
 }
 pub type TRUSTED_DOMAIN_FULL_INFORMATION = _TRUSTED_DOMAIN_FULL_INFORMATION;
 pub type PTRUSTED_DOMAIN_FULL_INFORMATION = *mut _TRUSTED_DOMAIN_FULL_INFORMATION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction036(arg1: PVOID, arg2: ULONG) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction040(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction041(Memory: PVOID, MemorySize: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaAddAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -6816,10 +6816,10 @@ unsafe extern "stdcall" {
         arg4: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaAddPrivilegesToAccount(arg1: LSA_HANDLE, arg2: PPRIVILEGE_SET) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaCallAuthenticationPackage(
         arg1: HANDLE,
         arg2: ULONG,
@@ -6830,16 +6830,16 @@ unsafe extern "stdcall" {
         arg7: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaClearAuditLog(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaClose(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaConnectUntrusted(arg1: PHANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaCreateAccount(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -6847,7 +6847,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaCreateSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -6855,7 +6855,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaCreateTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: PLSA_TRUST_INFORMATION,
@@ -6863,7 +6863,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaCreateTrustedDomainEx(
         arg1: LSA_HANDLE,
         arg2: PTRUSTED_DOMAIN_INFORMATION_EX,
@@ -6872,16 +6872,16 @@ unsafe extern "stdcall" {
         arg5: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaDelete(arg1: LSA_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaDeleteTrustedDomain(arg1: LSA_HANDLE, arg2: PSID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaDeregisterLogonProcess(arg1: HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -6889,7 +6889,7 @@ unsafe extern "stdcall" {
         arg4: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccounts(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -6898,7 +6898,7 @@ unsafe extern "stdcall" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateAccountsWithUserRight(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -6906,10 +6906,10 @@ unsafe extern "stdcall" {
         arg4: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateLogonSessions(arg1: PULONG, arg2: *mut PLUID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumeratePrivileges(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -6918,11 +6918,11 @@ unsafe extern "stdcall" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumeratePrivilegesOfAccount(arg1: LSA_HANDLE, arg2: *mut PPRIVILEGE_SET)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateTrustedDomains(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -6931,7 +6931,7 @@ unsafe extern "stdcall" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaEnumerateTrustedDomainsEx(
         arg1: LSA_HANDLE,
         arg2: PLSA_ENUMERATION_HANDLE,
@@ -6940,33 +6940,33 @@ unsafe extern "stdcall" {
         arg5: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaFreeMemory(arg1: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaFreeReturnBuffer(arg1: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaGetLogonSessionData(arg1: PLUID, arg2: *mut PSECURITY_LOGON_SESSION_DATA)
         -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaGetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaGetRemoteUserName(
         arg1: PLSA_UNICODE_STRING,
         arg2: *mut PLSA_UNICODE_STRING,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaGetSystemAccessAccount(arg1: LSA_HANDLE, arg2: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaGetUserName(arg1: *mut PUNICODE_STRING, arg2: *mut PUNICODE_STRING) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLogonUser(
         arg1: HANDLE,
         arg2: PLSA_STRING,
@@ -6984,14 +6984,14 @@ unsafe extern "stdcall" {
         arg14: PNTSTATUS,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupAuthenticationPackage(
         arg1: HANDLE,
         arg2: PLSA_STRING,
         arg3: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupNames(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -7000,7 +7000,7 @@ unsafe extern "stdcall" {
         arg5: *mut PLSA_TRANSLATED_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupNames2(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -7010,7 +7010,7 @@ unsafe extern "stdcall" {
         arg6: *mut PLSA_TRANSLATED_SID2,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeDisplayName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -7018,21 +7018,21 @@ unsafe extern "stdcall" {
         arg4: PUSHORT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeName(
         arg1: LSA_HANDLE,
         arg2: PLUID,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupPrivilegeValue(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLUID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaLookupSids(
         arg1: LSA_HANDLE,
         arg2: ULONG,
@@ -7041,10 +7041,10 @@ unsafe extern "stdcall" {
         arg5: *mut PLSA_TRANSLATED_NAME,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaNtStatusToWinError(arg1: NTSTATUS) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenAccount(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -7052,7 +7052,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenPolicy(
         arg1: PLSA_UNICODE_STRING,
         arg2: PLSA_OBJECT_ATTRIBUTES,
@@ -7060,7 +7060,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenPolicySce(
         arg1: PLSA_UNICODE_STRING,
         arg2: PLSA_OBJECT_ATTRIBUTES,
@@ -7068,7 +7068,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -7076,14 +7076,14 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQuerySecurityObject(
         arg1: LSA_HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: *mut PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -7091,7 +7091,7 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaOpenTrustedDomainByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -7099,21 +7099,21 @@ unsafe extern "stdcall" {
         arg4: PLSA_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQueryDomainInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_DOMAIN_INFORMATION_CLASS,
         arg3: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQueryInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_INFORMATION_CLASS,
         arg3: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQuerySecret(
         arg1: LSA_HANDLE,
         arg2: *mut PLSA_UNICODE_STRING,
@@ -7122,7 +7122,7 @@ unsafe extern "stdcall" {
         arg5: PLARGE_INTEGER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQueryTrustedDomainInfo(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -7130,7 +7130,7 @@ unsafe extern "stdcall" {
         arg4: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaQueryTrustedDomainInfoByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -7138,20 +7138,20 @@ unsafe extern "stdcall" {
         arg4: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaRegisterLogonProcess(
         arg1: PLSA_STRING,
         arg2: PHANDLE,
         arg3: PLSA_OPERATIONAL_MODE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaRegisterPolicyChangeNotification(
         arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
         arg2: HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaRemoveAccountRights(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -7160,62 +7160,62 @@ unsafe extern "stdcall" {
         arg5: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaRemovePrivilegesFromAccount(
         arg1: LSA_HANDLE,
         arg2: BOOLEAN,
         arg3: PPRIVILEGE_SET,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaRetrievePrivateData(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: *mut PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetDomainInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_DOMAIN_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetInformationPolicy(
         arg1: LSA_HANDLE,
         arg2: POLICY_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetInformationTrustedDomain(
         arg1: LSA_HANDLE,
         arg2: TRUSTED_INFORMATION_CLASS,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetQuotasForAccount(arg1: LSA_HANDLE, arg2: PQUOTA_LIMITS) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetSecret(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetSecurityObject(
         arg1: LSA_HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetSystemAccessAccount(arg1: LSA_HANDLE, arg2: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetTrustedDomainInformation(
         arg1: LSA_HANDLE,
         arg2: PSID,
@@ -7223,7 +7223,7 @@ unsafe extern "stdcall" {
         arg4: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaSetTrustedDomainInfoByName(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
@@ -7231,14 +7231,14 @@ unsafe extern "stdcall" {
         arg4: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaStorePrivateData(
         arg1: LSA_HANDLE,
         arg2: PLSA_UNICODE_STRING,
         arg3: PLSA_UNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaUnregisterPolicyChangeNotification(
         arg1: POLICY_NOTIFICATION_INFORMATION_CLASS,
         arg2: HANDLE,
@@ -8695,31 +8695,31 @@ pub struct _USER_PWD_CHANGE_FAILURE_INFORMATION {
 }
 pub type USER_PWD_CHANGE_FAILURE_INFORMATION = _USER_PWD_CHANGE_FAILURE_INFORMATION;
 pub type PUSER_PWD_CHANGE_FAILURE_INFORMATION = *mut _USER_PWD_CHANGE_FAILURE_INFORMATION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamAddMemberToAlias(AliasHandle: SAM_HANDLE, MemberId: PSID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamAddMemberToGroup(
         GroupHandle: SAM_HANDLE,
         MemberId: ULONG,
         Attributes: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamAddMultipleMembersToAlias(
         AliasHandle: SAM_HANDLE,
         MemberIds: *mut PSID,
         MemberCount: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamChangePasswordUser(
         UserHandle: SAM_HANDLE,
         OldPassword: PUNICODE_STRING,
         NewPassword: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamChangePasswordUser2(
         ServerName: PUNICODE_STRING,
         UserName: PUNICODE_STRING,
@@ -8727,7 +8727,7 @@ unsafe extern "stdcall" {
         NewPassword: PUNICODE_STRING,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamChangePasswordUser3(
         ServerName: PUNICODE_STRING,
         UserName: PUNICODE_STRING,
@@ -8737,10 +8737,10 @@ unsafe extern "stdcall" {
         PasswordChangeFailureInfo: *mut PUSER_PWD_CHANGE_FAILURE_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamCloseHandle(SamHandle: SAM_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamConnect(
         ServerName: PUNICODE_STRING,
         ServerHandle: PSAM_HANDLE,
@@ -8748,7 +8748,7 @@ unsafe extern "stdcall" {
         ObjectAttributes: POBJECT_ATTRIBUTES,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamCreateAliasInDomain(
         DomainHandle: SAM_HANDLE,
         AccountName: PUNICODE_STRING,
@@ -8757,7 +8757,7 @@ unsafe extern "stdcall" {
         RelativeId: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamCreateGroupInDomain(
         DomainHandle: SAM_HANDLE,
         AccountName: PUNICODE_STRING,
@@ -8766,7 +8766,7 @@ unsafe extern "stdcall" {
         RelativeId: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamCreateUser2InDomain(
         DomainHandle: SAM_HANDLE,
         AccountName: PUNICODE_STRING,
@@ -8777,7 +8777,7 @@ unsafe extern "stdcall" {
         RelativeId: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamCreateUserInDomain(
         DomainHandle: SAM_HANDLE,
         AccountName: PUNICODE_STRING,
@@ -8786,16 +8786,16 @@ unsafe extern "stdcall" {
         RelativeId: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamDeleteAlias(AliasHandle: SAM_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamDeleteGroup(GroupHandle: SAM_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamDeleteUser(UserHandle: SAM_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamEnumerateAliasesInDomain(
         DomainHandle: SAM_HANDLE,
         EnumerationContext: PSAM_ENUMERATE_HANDLE,
@@ -8804,7 +8804,7 @@ unsafe extern "stdcall" {
         CountReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamEnumerateDomainsInSamServer(
         ServerHandle: SAM_HANDLE,
         EnumerationContext: PSAM_ENUMERATE_HANDLE,
@@ -8813,7 +8813,7 @@ unsafe extern "stdcall" {
         CountReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamEnumerateGroupsInDomain(
         DomainHandle: SAM_HANDLE,
         EnumerationContext: PSAM_ENUMERATE_HANDLE,
@@ -8822,7 +8822,7 @@ unsafe extern "stdcall" {
         CountReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamEnumerateUsersInDomain(
         DomainHandle: SAM_HANDLE,
         EnumerationContext: PSAM_ENUMERATE_HANDLE,
@@ -8832,10 +8832,10 @@ unsafe extern "stdcall" {
         CountReturned: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamFreeMemory(Buffer: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetAliasMembership(
         DomainHandle: SAM_HANDLE,
         PassedCount: ULONG,
@@ -8844,10 +8844,10 @@ unsafe extern "stdcall" {
         Aliases: *mut PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetCompatibilityMode(ObjectHandle: SAM_HANDLE, Mode: PULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetDisplayEnumerationIndex(
         DomainHandle: SAM_HANDLE,
         DisplayInformation: DOMAIN_DISPLAY_INFORMATION,
@@ -8855,21 +8855,21 @@ unsafe extern "stdcall" {
         Index: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetGroupsForUser(
         UserHandle: SAM_HANDLE,
         Groups: *mut PGROUP_MEMBERSHIP,
         MembershipCount: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetMembersInAlias(
         AliasHandle: SAM_HANDLE,
         MemberIds: *mut *mut PSID,
         MemberCount: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamGetMembersInGroup(
         GroupHandle: SAM_HANDLE,
         MemberIds: *mut PULONG,
@@ -8877,14 +8877,14 @@ unsafe extern "stdcall" {
         MemberCount: PULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamLookupDomainInSamServer(
         ServerHandle: SAM_HANDLE,
         Name: PUNICODE_STRING,
         DomainId: *mut PSID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamLookupIdsInDomain(
         DomainHandle: SAM_HANDLE,
         Count: ULONG,
@@ -8893,7 +8893,7 @@ unsafe extern "stdcall" {
         Use: *mut PSID_NAME_USE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamLookupNamesInDomain(
         DomainHandle: SAM_HANDLE,
         Count: ULONG,
@@ -8902,7 +8902,7 @@ unsafe extern "stdcall" {
         Use: *mut PSID_NAME_USE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamOpenAlias(
         DomainHandle: SAM_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -8910,7 +8910,7 @@ unsafe extern "stdcall" {
         AliasHandle: PSAM_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamOpenDomain(
         ServerHandle: SAM_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -8918,7 +8918,7 @@ unsafe extern "stdcall" {
         DomainHandle: PSAM_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamOpenGroup(
         DomainHandle: SAM_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -8926,7 +8926,7 @@ unsafe extern "stdcall" {
         GroupHandle: PSAM_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamOpenUser(
         DomainHandle: SAM_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -8934,7 +8934,7 @@ unsafe extern "stdcall" {
         UserHandle: PSAM_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQueryDisplayInformation(
         DomainHandle: SAM_HANDLE,
         DisplayInformation: DOMAIN_DISPLAY_INFORMATION,
@@ -8947,103 +8947,103 @@ unsafe extern "stdcall" {
         SortedBuffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQueryInformationAlias(
         AliasHandle: SAM_HANDLE,
         AliasInformationClass: ALIAS_INFORMATION_CLASS,
         Buffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQueryInformationDomain(
         DomainHandle: SAM_HANDLE,
         DomainInformationClass: DOMAIN_INFORMATION_CLASS,
         Buffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQueryInformationGroup(
         GroupHandle: SAM_HANDLE,
         GroupInformationClass: GROUP_INFORMATION_CLASS,
         Buffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQueryInformationUser(
         UserHandle: SAM_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: *mut PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamQuerySecurityObject(
         ObjectHandle: SAM_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamRemoveMemberFromAlias(AliasHandle: SAM_HANDLE, MemberId: PSID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamRemoveMemberFromForeignDomain(DomainHandle: SAM_HANDLE, MemberId: PSID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamRemoveMemberFromGroup(GroupHandle: SAM_HANDLE, MemberId: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamRemoveMultipleMembersFromAlias(
         AliasHandle: SAM_HANDLE,
         MemberIds: *mut PSID,
         MemberCount: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamRidToSid(ObjectHandle: SAM_HANDLE, Rid: ULONG, Sid: *mut PSID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetInformationAlias(
         AliasHandle: SAM_HANDLE,
         AliasInformationClass: ALIAS_INFORMATION_CLASS,
         Buffer: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetInformationDomain(
         DomainHandle: SAM_HANDLE,
         DomainInformationClass: DOMAIN_INFORMATION_CLASS,
         Buffer: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetInformationGroup(
         GroupHandle: SAM_HANDLE,
         GroupInformationClass: GROUP_INFORMATION_CLASS,
         Buffer: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetInformationUser(
         UserHandle: SAM_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetMemberAttributesOfGroup(
         GroupHandle: SAM_HANDLE,
         MemberId: ULONG,
         Attributes: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamSetSecurityObject(
         ObjectHandle: SAM_HANDLE,
         SecurityInformation: SECURITY_INFORMATION,
         SecurityDescriptor: PSECURITY_DESCRIPTOR,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamShutdownSamServer(ServerHandle: SAM_HANDLE) -> NTSTATUS;
 }
 #[repr(C)]
@@ -9087,10 +9087,10 @@ pub struct _MSV1_0_RELOGON_REQUEST {
 }
 pub type MSV1_0_RELOGON_REQUEST = _MSV1_0_RELOGON_REQUEST;
 pub type PMSV1_0_RELOGON_REQUEST = *mut _MSV1_0_RELOGON_REQUEST;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamIInitialize() -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SampInitializeRegistry() -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -9268,7 +9268,7 @@ pub union _SAMPR_USER_INFO_BUFFER {
 }
 pub type SAMPR_USER_INFO_BUFFER = _SAMPR_USER_INFO_BUFFER;
 pub type PSAMPR_USER_INFO_BUFFER = *mut _SAMPR_USER_INFO_BUFFER;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamIConnect(
         ServerName: PSAMPR_SERVER_NAME,
         ServerHandle: *mut SAMPR_HANDLE,
@@ -9276,19 +9276,19 @@ unsafe extern "stdcall" {
         Trusted: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamIFreeVoid(Ptr: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamIFree_SAMPR_ULONG_ARRAY(Ptr: PSAMPR_ULONG_ARRAY);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamIFree_SAMPR_USER_INFO_BUFFER(
         Ptr: PSAMPR_USER_INFO_BUFFER,
         InformationClass: USER_INFORMATION_CLASS,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrChangePasswordUser(
         UserHandle: SAMPR_HANDLE,
         LmPresent: ::core::ffi::c_uchar,
@@ -9303,17 +9303,17 @@ unsafe extern "stdcall" {
         NewLmEncryptedWithNewNt: PENCRYPTED_LM_OWF_PASSWORD,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrCloseHandle(SamHandle: *mut SAMPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrLookupDomainInSamServer(
         ServerHandle: SAMPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
         DomainId: *mut PRPC_SID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrLookupNamesInDomain(
         DomainHandle: SAMPR_HANDLE,
         Count: ULONG,
@@ -9322,7 +9322,7 @@ unsafe extern "stdcall" {
         Use: PSAMPR_ULONG_ARRAY,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenDomain(
         ServerHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -9330,7 +9330,7 @@ unsafe extern "stdcall" {
         DomainHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrOpenUser(
         DomainHandle: SAMPR_HANDLE,
         DesiredAccess: ACCESS_MASK,
@@ -9338,14 +9338,14 @@ unsafe extern "stdcall" {
         UserHandle: *mut SAMPR_HANDLE,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrQueryInformationUser(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
         Buffer: *mut PSAMPR_USER_INFO_BUFFER,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SamrSetInformationUser(
         UserHandle: SAMPR_HANDLE,
         UserInformationClass: USER_INFORMATION_CLASS,
@@ -9422,39 +9422,39 @@ pub struct _LSAPR_POLICY_INFORMATION {
 }
 pub type LSAPR_POLICY_INFORMATION = _LSAPR_POLICY_INFORMATION;
 pub type PLSAPR_POLICY_INFORMATION = *mut _LSAPR_POLICY_INFORMATION;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaIFree_LSAPR_POLICY_INFORMATION(
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: PLSAPR_POLICY_INFORMATION,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsaIOpenPolicyTrusted(PolicyHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarClose(ObjectHandle: *mut LSAPR_HANDLE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarLookupPrivilegeValue(
         PolicyHandle: LSAPR_HANDLE,
         Name: PRPC_UNICODE_STRING,
         Value: PLUID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn LsarQueryInformationPolicy(
         PolicyHandle: LSAPR_HANDLE,
         InformationClass: POLICY_INFORMATION_CLASS,
         PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction006(password: LPCSTR, hash: LPSTR) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction007(string: PUNICODE_STRING, hash: LPBYTE) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn SystemFunction012(in_: *const BYTE, key: *const BYTE, out: LPBYTE) -> NTSTATUS;
 }
 pub const _LSA_SAM_NETLOGON_TYPE_NetLogonAnonymous: _LSA_SAM_NETLOGON_TYPE = 0;

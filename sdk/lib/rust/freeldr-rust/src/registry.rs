@@ -180,19 +180,8 @@ unsafe fn RTL_CONSTANT_STRING(s: *const u16) -> _UNICODE_STRING {
 // with `extern "C" fn` even where ABI-identical, so the declared ABI must
 // match the ddk type *literally* per-arch (was hardcoded "stdcall", wrong
 // on amd64 where the ddk callback is cdecl).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CmpAllocate(
-    Size: ntkrnl_sys::ddk::SIZE_T,
-    Paged: ntkrnl_sys::ddk::BOOLEAN,
-    Tag: ntkrnl_sys::ddk::ULONG,
-) -> ntkrnl_sys::ddk::PVOID {
-    let _ = Paged;
-    FrLdrHeapAlloc(Size as usize, Tag)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CmpAllocate(
+pub unsafe extern "system" fn CmpAllocate(
     Size: ntkrnl_sys::ddk::SIZE_T,
     Paged: ntkrnl_sys::ddk::BOOLEAN,
     Tag: ntkrnl_sys::ddk::ULONG,
@@ -201,18 +190,8 @@ pub unsafe extern "C" fn CmpAllocate(
     FrLdrHeapAlloc(Size as usize, Tag)
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CmpFree(
-    Ptr: ntkrnl_sys::ddk::PVOID,
-    Quota: ntkrnl_sys::ddk::ULONG,
-) {
-    let _ = Quota;
-    FrLdrHeapFree(Ptr, 0);
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CmpFree(
+pub unsafe extern "system" fn CmpFree(
     Ptr: ntkrnl_sys::ddk::PVOID,
     Quota: ntkrnl_sys::ddk::ULONG,
 ) {

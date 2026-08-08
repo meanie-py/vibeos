@@ -35,7 +35,7 @@ const GDITAG_SEMAPHORE: u32 = 0x6d655347u32;
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateSemaphore() -> HSEMAPHORE {
+pub unsafe extern "system" fn EngCreateSemaphore() -> HSEMAPHORE {
     // www.osr.com/ddk/graphics/gdifncs_95lz.htm
     let psem: DdkPERESOURCE = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -56,7 +56,7 @@ pub unsafe extern "stdcall" fn EngCreateSemaphore() -> HSEMAPHORE {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateSemaphore() -> HSEMAPHORE {
+pub unsafe extern "system" fn EngCreateSemaphore() -> HSEMAPHORE {
     let psem: DdkPERESOURCE = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<ntkrnl_sys::ddk::_ERESOURCE>() as SIZE_T,
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn EngCreateSemaphore() -> HSEMAPHORE {
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
+pub unsafe extern "system" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
     // www.osr.com/ddk/graphics/gdifncs_14br.htm
     // On Windows a NULL hsem is ignored
     if hsem.is_null() {
@@ -95,7 +95,7 @@ pub unsafe extern "stdcall" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
+pub unsafe extern "system" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
     if hsem.is_null() {
         return;
     }
@@ -107,9 +107,8 @@ pub unsafe extern "C" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
+pub unsafe extern "system" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
     if hsem.is_null() {
         return;
     }
@@ -121,23 +120,8 @@ pub unsafe extern "stdcall" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
     ExReleaseResourceAndLeaveCriticalRegion(hsem as DdkPERESOURCE);
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngReleaseSemaphore(hsem: HSEMAPHORE) {
-    if hsem.is_null() {
-        return;
-    }
-
-    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
-    if !w32thread.is_null() {
-        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_sub(1);
-    }
-    ExReleaseResourceAndLeaveCriticalRegion(hsem as DdkPERESOURCE);
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
+pub unsafe extern "system" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
     ExEnterCriticalRegionAndAcquireResourceShared(hsem as DdkPERESOURCE);
     let pti = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
     if !pti.is_null() {
@@ -145,57 +129,24 @@ pub unsafe extern "stdcall" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAcquireSemaphoreShared(hsem: HSEMAPHORE) {
-    ExEnterCriticalRegionAndAcquireResourceShared(hsem as DdkPERESOURCE);
-    let pti = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
-    if !pti.is_null() {
-        (*pti).dwEngAcquireCount = (*pti).dwEngAcquireCount.wrapping_add(1);
-    }
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteSemaphore(hsem: HSEMAPHORE) {
+pub unsafe extern "system" fn EngDeleteSemaphore(hsem: HSEMAPHORE) {
     ExDeleteResourceLite(hsem as DdkPERESOURCE);
     ExFreePoolWithTag(hsem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteSemaphore(hsem: HSEMAPHORE) {
-    ExDeleteResourceLite(hsem as DdkPERESOURCE);
-    ExFreePoolWithTag(hsem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL {
+pub unsafe extern "system" fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL {
     ((*(hsem as DdkPERESOURCE)).ActiveCount > 0) as BOOL
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngIsSemaphoreOwned(hsem: HSEMAPHORE) -> BOOL {
-    ((*(hsem as DdkPERESOURCE)).ActiveCount > 0) as BOOL
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL {
+pub unsafe extern "system" fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL {
     ExIsResourceAcquiredExclusiveLite(hsem as DdkPERESOURCE) as BOOL
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngIsSemaphoreOwnedByCurrentThread(hsem: HSEMAPHORE) -> BOOL {
-    ExIsResourceAcquiredExclusiveLite(hsem as DdkPERESOURCE) as BOOL
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngInitializeSafeSemaphore(
+pub unsafe extern "system" fn EngInitializeSafeSemaphore(
     Semaphore: *mut ENGSAFESEMAPHORE,
 ) -> BOOL {
     if InterlockedIncrement(&mut (*Semaphore).lCount) == 1 {
@@ -220,48 +171,8 @@ pub unsafe extern "stdcall" fn EngInitializeSafeSemaphore(
     1
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngInitializeSafeSemaphore(
-    Semaphore: *mut ENGSAFESEMAPHORE,
-) -> BOOL {
-    if InterlockedIncrement(&mut (*Semaphore).lCount) == 1 {
-        let hSem = EngCreateSemaphore();
-        if hSem.is_null() {
-            InterlockedDecrement(&mut (*Semaphore).lCount);
-            return 0;
-        }
-        InterlockedExchangePointer(
-            &mut (*Semaphore).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
-            hSem as *mut core::ffi::c_void,
-        );
-    } else {
-        // Volatile wait: a plain load is hoisted out of the loop by LLVM,
-        // leaving an unconditional spin (`b .` on arm64) if the creator
-        // thread hasn't published hsem yet.
-        while core::ptr::read_volatile(core::ptr::addr_of!((*Semaphore).hsem)).is_null() {
-            core::hint::spin_loop();
-        }
-    }
-
-    1
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) {
-    if InterlockedDecrement(&mut (*pssem).lCount) == 0 {
-        EngDeleteSemaphore((*pssem).hsem);
-        InterlockedExchangePointer(
-            &mut (*pssem).hsem as *mut HSEMAPHORE as *mut *mut core::ffi::c_void,
-            core::ptr::null_mut(),
-        );
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) {
+pub unsafe extern "system" fn EngDeleteSafeSemaphore(pssem: *mut ENGSAFESEMAPHORE) {
     if InterlockedDecrement(&mut (*pssem).lCount) == 0 {
         EngDeleteSemaphore((*pssem).hsem);
         InterlockedExchangePointer(

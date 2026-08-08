@@ -40,7 +40,39 @@ X86 = '#[cfg(target_arch = "x86")]'
 NOT_X86 = '#[cfg(not(target_arch = "x86"))]'
 
 # `unsafe extern "stdcall" fn Name(`, `pub unsafe extern "C" fn Name(`, `extern "C" fn Name(` …
-_FN = re.compile(r'^(?P<pre>(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?)extern\s+"(?P<abi>stdcall|C)"\s+fn\s+(?P<name>\w+)\s*[(<]')
+# `system` is in the alternation because a pair that has ALREADY had its ABI reconciled
+# (by --abi-only, or by hand) is still a forked pair, and dropping it from the match makes the
+# tool blind to exactly the drift it exists to report: after one --abi-only run the repo-wide
+# drift count fell 102 -> 2 with nothing fixed, because both sides now said `system`.
+_FN = re.compile(r'^(?P<pre>(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?)extern\s+"(?P<abi>stdcall|C|system)"\s+fn\s+(?P<name>\w+)\s*[(<]')
+
+# `extern "stdcall" {` — a DECLARATION block, whose twin declares the same imports under the
+# other arch's convention. Same fork, same reason, different syntax; the tool read only the
+# `fn` form and so left every one of these standing (po's PopAddRemoveSysCapsCallback, kd's
+# screen/serial entry points, classpnp's dispatch imports).
+#
+# Pairing IS the safety property here. An `extern "C" {` block on its own may be a genuinely
+# cdecl import (the CRT), and promoting it to `system` would be a real ABI break on i386 —
+# but a block that is the `not(x86)` TWIN of a `stdcall` block is by construction the same
+# NTAPI surface spelled per arch, so `system` is what both mean.
+_EXTERN_BLOCK = re.compile(r'^(?:unsafe\s+)?extern\s+"(?P<abi>stdcall|C|system)"\s*\{\s*$')
+_BLOCK_FIRST_FN = re.compile(r"^\s*(?:pub\s+)?fn\s+(?P<name>\w+)")
+
+# `pub type PKDP_INIT_ROUTINE = Option<unsafe extern "stdcall" fn(..)>;` — the fn-POINTER
+# alias a crate writes by hand when it is not taking the type from an island. Same fork
+# again; kd, ex, classpnp, kdbg and ntoskrnl all carry these. Unlike the other two shapes an
+# alias has no braces, so its extent is the `;`, and the ABI routinely lands on a later line
+# than the `type` keyword.
+_TYPE_ALIAS = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?type\s+(?P<name>\w+)\s*=")
+_ABI_ANYWHERE = re.compile(r'extern\s+"(?:stdcall|C)"')
+
+
+def _alias_end(lines: list[str], start: int) -> int:
+    """Index one past the `;` ending the type alias that starts at `lines[start]`."""
+    for i in range(start, min(start + 12, len(lines))):
+        if lines[i].rstrip().endswith(";"):
+            return i + 1
+    return -1
 
 
 def _item_end(lines: list[str], start: int) -> int:
@@ -98,15 +130,43 @@ def _item_end(lines: list[str], start: int) -> int:
     return -1
 
 
-def _attrs_and_sig(lines: list[str], cfg_at: int) -> tuple[int, re.Match[str]] | None:
-    """From the cfg attribute line, skip further attributes and return (sig_index, match)."""
+def _attrs_and_sig(lines: list[str], cfg_at: int) -> tuple[int, dict[str, str]] | None:
+    """From the cfg attribute line, skip further attributes and return (sig_index, info).
+
+    `info["name"]` identifies the item so the two twins can be matched. For a declaration
+    block that is the name of its FIRST import, which is enough: bindgen and the translator
+    both emit one block per logical surface, and a mismatch just declines the collapse.
+    """
     i = cfg_at + 1
-    while i < len(lines) and (lines[i].lstrip().startswith("#[") or not lines[i].strip()):
+    # Doc comments count as part of the item's header, not as the item — a `///` between the
+    # cfg and the signature (ex-rust writes its allocator wrappers that way) used to end the
+    # scan and lose the pair.
+    while i < len(lines) and (
+        lines[i].lstrip().startswith(("#[", "///", "//!")) or not lines[i].strip()
+    ):
         i += 1
     if i >= len(lines):
         return None
     m = _FN.match(lines[i])
-    return (i, m) if m else None
+    if m:
+        return i, {"name": m["name"], "abi": m["abi"]}
+    b = _EXTERN_BLOCK.match(lines[i])
+    if b:
+        for k in range(i + 1, min(i + 8, len(lines))):
+            f = _BLOCK_FIRST_FN.match(lines[k])
+            if f:
+                return i, {"name": f"extern {{{f['name']}}}", "abi": b["abi"]}
+        return None
+    t = _TYPE_ALIAS.match(lines[i])
+    if t:
+        # Only an alias that actually carries a per-arch ABI is ours; a plain `type X = Y;`
+        # under a cfg is arch-specific for some other reason and must be left alone.
+        for k in range(i, min(i + 6, len(lines))):
+            if _ABI_ANYWHERE.search(lines[k]):
+                return i, {"name": f"type {t['name']}", "abi": "alias"}
+            if lines[k].rstrip().endswith(";"):
+                break
+    return None
 
 
 _INT = r"(?:[ui](?:8|16|32|64|128|size))"
@@ -141,15 +201,47 @@ def strip_cast_decoration(text: str) -> str:
             return text  # unbalanced; stop rather than corrupt
 
 
-def _normalize(block: list[str], sig_rel: int) -> list[str]:
-    """The block with its ABI string rewritten to `system`, for comparison and for output."""
+def _target_abi(x86_abi: str | None, other_abi: str | None) -> str | None:
+    """What the collapsed item should be spelled, or None if the pair must not be collapsed.
+
+    `stdcall` against `C` is the ABI FORK this tool exists to fold: one convention written
+    per arch, which is exactly what `system` means. Collapse it to `system`.
+
+    A pair spelled the SAME on both sides is not an ABI fork — it is one function with two
+    per-arch implementations, gated for some unrelated reason. Those still collapse when the
+    bodies are identical, but they must KEEP their convention: promoting a cdecl `C` pair to
+    `system` makes it stdcall ON i386, which changes the symbol decoration (`_PATH_RoundRect`
+    becomes `_PATH_RoundRect@28`) and breaks the link against C callers — and where it does
+    NOT break the link it silently mismatches the caller's stack cleanup instead.
+    """
+    if x86_abi == "stdcall" and other_abi == "C":
+        return "system"
+    if x86_abi == other_abi and x86_abi in ("C", "stdcall", "system"):
+        return x86_abi
+    return None
+
+
+def _normalize(block: list[str], sig_rel: int, abi: str = "system") -> list[str]:
+    """The block with its ABI string rewritten to `abi`, for comparison and for output.
+
+    Rewrites the FIRST line carrying an ABI rather than the signature line: a type alias
+    routinely wraps, putting `unsafe extern "C" fn` a line or two below the `type` keyword.
+    For a fn or an extern block that first line IS the signature, so this is the same edit.
+    """
     out = list(block)
-    out[sig_rel] = re.sub(r'extern\s+"(?:stdcall|C)"', 'extern "system"', out[sig_rel], count=1)
+    for k in range(sig_rel, len(out)):
+        if _ABI_ANYWHERE.search(out[k]):
+            out[k] = _ABI_ANYWHERE.sub(f'extern "{abi}"', out[k], count=1)
+            break
     return out
 
 
 def collapse_file(
-    path: pathlib.Path, apply: bool, full_drift: bool = False, survivor: str | None = None
+    path: pathlib.Path,
+    apply: bool,
+    full_drift: bool = False,
+    survivor: str | None = None,
+    abi_only: bool = False,
 ) -> tuple[int, list[str]]:
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     notes: list[str] = []
@@ -157,26 +249,68 @@ def collapse_file(
 
     i = 0
     while i < len(lines):
-        if lines[i].strip() != X86:
+        # Either order. The translator emits x86-first, but hand-written pairs are as often
+        # `not(x86)` first (explorer's window procs are), and reading only one order reported
+        # those as "no twin follows" and left them forked.
+        if lines[i].strip() not in (X86, NOT_X86):
             i += 1
             continue
+        a_is_x86 = lines[i].strip() == X86
+        want = NOT_X86 if a_is_x86 else X86
         a = _attrs_and_sig(lines, i)
         if not a:
             i += 1
             continue
         a_sig, a_m = a
-        a_end = _item_end(lines, a_sig)
+        _end = _alias_end if a_m['abi'] == 'alias' else _item_end
+        a_end = _end(lines, a_sig)
         if a_end < 0:
             notes.append(f"  ! {path.name}:{i + 1} {a_m['name']}: unbalanced braces, skipped")
             i += 1
             continue
 
-        # The twin follows, possibly after blank lines.
+        # The twin follows, possibly after blank lines — and possibly behind its own attributes.
+        # `#[no_mangle]` ABOVE `#[cfg(..)]` is what the translator emits for an exported
+        # callback, and reading only the cfg line missed every one of them: 71 pairs repo-wide
+        # sat uncollapsed for no reason but attribute order, including the afd TDI completions
+        # whose `stdcall` spelling then failed to unify with their own normalized island slot.
         j = a_end
         while j < len(lines) and not lines[j].strip():
             j += 1
-        if j >= len(lines) or lines[j].strip() != NOT_X86:
-            notes.append(f"  ! {path.name}:{i + 1} {a_m['name']}: no `not(x86)` twin follows, skipped")
+        b_pre_at = j
+        while (
+            j < len(lines)
+            and lines[j].lstrip().startswith("#[")
+            and "]" in lines[j]
+            and lines[j].strip() not in (NOT_X86, X86)
+        ):
+            j += 1
+        if j >= len(lines) or lines[j].strip() != want:
+            notes.append(
+                f"  ! {path.name}:{i + 1} {a_m['name']}: no `{want}` twin follows, skipped"
+            )
+            i = a_end
+            continue
+        # Attributes above the X86 cfg sit OUTSIDE the replaced range, so they survive the
+        # collapse untouched. The twin's sit inside it and are dropped — which is only correct
+        # if they are the same set. A difference is a per-arch attribute, never a formatting
+        # artifact, so it is reported rather than guessed at.
+        a_pre_at = i
+        while (
+            a_pre_at > 0
+            and lines[a_pre_at - 1].lstrip().startswith("#[")
+            and "]" in lines[a_pre_at - 1]
+        ):
+            a_pre_at -= 1
+        a_pre = [ln.strip() for ln in lines[a_pre_at:i]]
+        b_pre = [ln.strip() for ln in lines[b_pre_at:j]]
+        if a_pre != b_pre:
+            notes.append(
+                f"  ! {path.name}:{i + 1} {a_m['name']}: the twins carry DIFFERENT attributes "
+                f"({'x86' if a_is_x86 else 'not(x86)'} {a_pre or '[]'} vs "
+                f"{'not(x86)' if a_is_x86 else 'x86'} {b_pre or '[]'}) — collapsing would drop "
+                f"one arch's. Reconcile by hand."
+            )
             i = a_end
             continue
         b = _attrs_and_sig(lines, j)
@@ -186,15 +320,62 @@ def collapse_file(
             i = a_end
             continue
         b_sig, _ = b
-        b_end = _item_end(lines, b_sig)
+        b_end = _end(lines, b_sig)
         if b_end < 0:
             notes.append(f"  ! {path.name}:{j + 1} {a_m['name']}: unbalanced braces in twin, skipped")
             i = a_end
             continue
 
-        x86 = _normalize(lines[a_sig:a_end], 0)
-        other = _normalize(lines[b_sig:b_end], 0)
+        a_abi, b_abi = a_m.get("abi"), (b[1] if b else {}).get("abi")
+        x86_abi, other_abi = (a_abi, b_abi) if a_is_x86 else (b_abi, a_abi)
+        target = "system" if a_abi == "alias" else _target_abi(x86_abi, other_abi)
+        if target is None:
+            notes.append(
+                f"  ! {path.name}:{i + 1} {a_m['name']}: the twins disagree on convention in a "
+                f"way this tool will not reconcile (x86 {x86_abi}, not(x86) {other_abi}) — "
+                f"skipped"
+            )
+            i = b_end
+            continue
+        side_a = _normalize(lines[a_sig:a_end], 0, target)
+        side_b = _normalize(lines[b_sig:b_end], 0, target)
+        # `x86`/`other` name the ARCH, not the source order — the pair may be written either way.
+        x86, other = (side_a, side_b) if a_is_x86 else (side_b, side_a)
         drifted = x86 != other
+
+        if abi_only:
+            # ONLY a genuine ABI fork — x86 `stdcall` against not-x86 `C`. A cfg-gated pair
+            # whose two sides carry the SAME convention is not an ABI twin at all: it is one
+            # function with two per-arch IMPLEMENTATIONS (kdbg's KdbpCmdTss is `extern "C"`
+            # both sides, real on i386 and a stub elsewhere), and respelling it `system` would
+            # promote a genuinely-cdecl function to stdcall ON i386 — a live ABI break, the
+            # exact direction normalize_island_abi.py refuses to guess in. Checked here rather
+            # than trusted: this pass shipped that break before the check existed.
+            a_abi = a_m.get("abi")
+            b_abi = (b[1] if b else {}).get("abi")
+            x86_abi, other_abi = (a_abi, b_abi) if a_is_x86 else (b_abi, a_abi)
+            if not (x86_abi == "stdcall" and other_abi == "C"):
+                notes.append(
+                    f"  ! {path.name}:{i + 1} {a_m['name']}: cfg pair is not an ABI fork "
+                    f"(x86 {x86_abi}, not(x86) {other_abi}) — left alone"
+                )
+                i = b_end
+                continue
+            # Re-spell BOTH twins `system` and leave the fork and the two bodies exactly as
+            # they are. For a pair whose bodies have genuinely drifted, merging is refused (and
+            # should be) — but the ABI half is still mechanical, and until both twins agree the
+            # pair cannot be assigned into a normalized island slot at all. This separates the
+            # two questions: spelling is fixed here, the drift stays a reported finding.
+            for sig in (a_sig, b_sig):
+                fixed = _normalize(lines[sig : sig + 1], 0)
+                if fixed != lines[sig : sig + 1]:
+                    edits.append((sig, sig + 1, fixed))
+            notes.append(
+                f"  {path.name}:{i + 1} {a_m['name']}: both twins spelled `system`"
+                + (" (bodies still drifted — left forked)" if drifted else "")
+            )
+            i = b_end
+            continue
         if drifted and survivor:
             # Only cast decoration may differ; anything else is a hand-fix we refuse to drop.
             if strip_cast_decoration("".join(x86)) == strip_cast_decoration("".join(other)):
@@ -249,6 +430,14 @@ def main(argv: list[str]) -> int:
         help="also collapse pairs whose ONLY drift is `(x) as <int>` decoration, keeping "
              "this side. Refused if any non-cast difference remains.",
     )
+    ap.add_argument(
+        "--abi-only",
+        action="store_true",
+        help="do not merge anything: just spell BOTH twins `extern \"system\"`, leaving the "
+             "cfg fork and both bodies alone. For pairs whose bodies have genuinely drifted, "
+             "which must not be collapsed but still have to agree on ABI to be assignable "
+             "into a normalized island slot.",
+    )
     args = ap.parse_args(argv)
 
     repo = pathlib.Path(__file__).resolve().parents[2]
@@ -264,15 +453,20 @@ def main(argv: list[str]) -> int:
         for f in sorted(src.rglob("*.rs")):
             if f.name.startswith("types_") or f.name.startswith("bindgen"):
                 continue  # islands are normalize_island_abi.py's job
-            k, notes = collapse_file(f, args.apply, args.full_drift, args.survivor)
+            k, notes = collapse_file(
+                f, args.apply, args.full_drift, args.survivor, args.abi_only
+            )
             n += k
             total += notes
         if total:
             print(f"{c.name}: {n}")
             print("\n".join(total))
         grand += n
-    verb = "collapsed" if args.apply else "would collapse"
-    print(f"\n{verb} {grand} twin pair(s)")
+    # --abi-only edits one signature LINE at a time, so the tally counts those, not pairs.
+    # --abi-only edits one signature LINE at a time, so the tally counts those, not pairs.
+    unit = "twin signature(s)" if args.abi_only else "twin pair(s)"
+    verb = ("respelled" if args.abi_only else "collapsed") if args.apply else "would fix"
+    print(f"\n{verb} {grand} {unit}")
     return 0
 
 

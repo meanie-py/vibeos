@@ -452,7 +452,7 @@ pub struct _SINGLE_LIST_ENTRY {
 }
 pub type SINGLE_LIST_ENTRY = _SINGLE_LIST_ENTRY;
 pub type EXCEPTION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         ExceptionRecord: *mut _EXCEPTION_RECORD,
         EstablisherFrame: PVOID,
         ContextRecord: *mut _CONTEXT,
@@ -501,14 +501,14 @@ pub struct _KWAIT_BLOCK {
 }
 pub type KWAIT_BLOCK = _KWAIT_BLOCK;
 pub type PKWAIT_BLOCK = *mut _KWAIT_BLOCK;
-pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "C" fn(StartContext: PVOID)>;
+pub type KSTART_ROUTINE = ::core::option::Option<unsafe extern "system" fn(StartContext: PVOID)>;
 pub type PKSTART_ROUTINE = KSTART_ROUTINE;
 pub type PKNORMAL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
+    unsafe extern "system" fn(NormalContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID),
 >;
-pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "C" fn(Apc: *mut _KAPC)>;
+pub type PKRUNDOWN_ROUTINE = ::core::option::Option<unsafe extern "system" fn(Apc: *mut _KAPC)>;
 pub type PKKERNEL_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Apc: *mut _KAPC,
         NormalRoutine: *mut PKNORMAL_ROUTINE,
         NormalContext: *mut PVOID,
@@ -547,7 +547,7 @@ pub struct _KDEVICE_QUEUE_ENTRY {
 pub type KDEVICE_QUEUE_ENTRY = _KDEVICE_QUEUE_ENTRY;
 pub type KSPIN_LOCK = ULONG_PTR;
 pub type KDEFERRED_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Dpc: *mut _KDPC,
         DeferredContext: PVOID,
         SystemArgument1: PVOID,
@@ -1847,7 +1847,7 @@ pub const _IO_ALLOCATION_ACTION_DeallocateObjectKeepRegisters: _IO_ALLOCATION_AC
 pub type _IO_ALLOCATION_ACTION = ::core::ffi::c_uint;
 pub use self::_IO_ALLOCATION_ACTION as IO_ALLOCATION_ACTION;
 pub type DRIVER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         MapRegisterBase: PVOID,
@@ -1919,10 +1919,10 @@ pub union _IO_STATUS_BLOCK__bindgen_ty_1 {
 pub type IO_STATUS_BLOCK = _IO_STATUS_BLOCK;
 pub type PIO_STATUS_BLOCK = *mut _IO_STATUS_BLOCK;
 pub type PIO_APC_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
+    unsafe extern "system" fn(ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, Reserved: ULONG),
 >;
-pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
-pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type PINTERFACE_REFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
+pub type PINTERFACE_DEREFERENCE = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DEVICE_CAPABILITIES {
@@ -2989,7 +2989,7 @@ pub const _FSINFOCLASS_FileFsMaximumInformation: _FSINFOCLASS = 11;
 pub type _FSINFOCLASS = ::core::ffi::c_uint;
 pub use self::_FSINFOCLASS as FS_INFORMATION_CLASS;
 pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3002,7 +3002,7 @@ pub type FAST_IO_CHECK_IF_POSSIBLE = ::core::option::Option<
 >;
 pub type PFAST_IO_CHECK_IF_POSSIBLE = FAST_IO_CHECK_IF_POSSIBLE;
 pub type FAST_IO_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3015,7 +3015,7 @@ pub type FAST_IO_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_READ = FAST_IO_READ;
 pub type FAST_IO_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3028,7 +3028,7 @@ pub type FAST_IO_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE = FAST_IO_WRITE;
 pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_BASIC_INFORMATION,
@@ -3038,7 +3038,7 @@ pub type FAST_IO_QUERY_BASIC_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_BASIC_INFO = FAST_IO_QUERY_BASIC_INFO;
 pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: PFILE_STANDARD_INFORMATION,
@@ -3048,7 +3048,7 @@ pub type FAST_IO_QUERY_STANDARD_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_STANDARD_INFO = FAST_IO_QUERY_STANDARD_INFO;
 pub type FAST_IO_LOCK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -3062,7 +3062,7 @@ pub type FAST_IO_LOCK = ::core::option::Option<
 >;
 pub type PFAST_IO_LOCK = FAST_IO_LOCK;
 pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: PLARGE_INTEGER,
@@ -3074,7 +3074,7 @@ pub type FAST_IO_UNLOCK_SINGLE = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_SINGLE = FAST_IO_UNLOCK_SINGLE;
 pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PEPROCESS,
         IoStatus: PIO_STATUS_BLOCK,
@@ -3083,7 +3083,7 @@ pub type FAST_IO_UNLOCK_ALL = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL = FAST_IO_UNLOCK_ALL;
 pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ProcessId: PVOID,
         Key: ULONG,
@@ -3093,7 +3093,7 @@ pub type FAST_IO_UNLOCK_ALL_BY_KEY = ::core::option::Option<
 >;
 pub type PFAST_IO_UNLOCK_ALL_BY_KEY = FAST_IO_UNLOCK_ALL_BY_KEY;
 pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         InputBuffer: PVOID,
@@ -3107,17 +3107,17 @@ pub type FAST_IO_DEVICE_CONTROL = ::core::option::Option<
 >;
 pub type PFAST_IO_DEVICE_CONTROL = FAST_IO_DEVICE_CONTROL;
 pub type FAST_IO_ACQUIRE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_ACQUIRE_FILE = FAST_IO_ACQUIRE_FILE;
 pub type FAST_IO_RELEASE_FILE =
-    ::core::option::Option<unsafe extern "C" fn(FileObject: *mut _FILE_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(FileObject: *mut _FILE_OBJECT)>;
 pub type PFAST_IO_RELEASE_FILE = FAST_IO_RELEASE_FILE;
 pub type FAST_IO_DETACH_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
+    unsafe extern "system" fn(SourceDevice: *mut _DEVICE_OBJECT, TargetDevice: *mut _DEVICE_OBJECT),
 >;
 pub type PFAST_IO_DETACH_DEVICE = FAST_IO_DETACH_DEVICE;
 pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         Wait: BOOLEAN,
         Buffer: *mut _FILE_NETWORK_OPEN_INFORMATION,
@@ -3127,7 +3127,7 @@ pub type FAST_IO_QUERY_NETWORK_OPEN_INFO = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_NETWORK_OPEN_INFO = FAST_IO_QUERY_NETWORK_OPEN_INFO;
 pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         EndingOffset: PLARGE_INTEGER,
         ResourceToRelease: *mut *mut _ERESOURCE,
@@ -3136,7 +3136,7 @@ pub type FAST_IO_ACQUIRE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_ACQUIRE_FOR_MOD_WRITE = FAST_IO_ACQUIRE_FOR_MOD_WRITE;
 pub type FAST_IO_MDL_READ = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3148,7 +3148,7 @@ pub type FAST_IO_MDL_READ = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ = FAST_IO_MDL_READ;
 pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -3156,7 +3156,7 @@ pub type FAST_IO_MDL_READ_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE = FAST_IO_MDL_READ_COMPLETE;
 pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3168,7 +3168,7 @@ pub type FAST_IO_PREPARE_MDL_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_PREPARE_MDL_WRITE = FAST_IO_PREPARE_MDL_WRITE;
 pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -3177,7 +3177,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE = FAST_IO_MDL_WRITE_COMPLETE;
 pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3192,7 +3192,7 @@ pub type FAST_IO_READ_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_READ_COMPRESSED = FAST_IO_READ_COMPRESSED;
 pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         Length: ULONG,
@@ -3207,7 +3207,7 @@ pub type FAST_IO_WRITE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_WRITE_COMPRESSED = FAST_IO_WRITE_COMPRESSED;
 pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         MdlChain: PMDL,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -3215,7 +3215,7 @@ pub type FAST_IO_MDL_READ_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_READ_COMPLETE_COMPRESSED = FAST_IO_MDL_READ_COMPLETE_COMPRESSED;
 pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         FileOffset: PLARGE_INTEGER,
         MdlChain: PMDL,
@@ -3224,7 +3224,7 @@ pub type FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = ::core::option::Option<
 >;
 pub type PFAST_IO_MDL_WRITE_COMPLETE_COMPRESSED = FAST_IO_MDL_WRITE_COMPLETE_COMPRESSED;
 pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Irp: *mut _IRP,
         NetworkInformation: PFILE_NETWORK_OPEN_INFORMATION,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -3232,7 +3232,7 @@ pub type FAST_IO_QUERY_OPEN = ::core::option::Option<
 >;
 pub type PFAST_IO_QUERY_OPEN = FAST_IO_QUERY_OPEN;
 pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         ResourceToRelease: *mut _ERESOURCE,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -3240,14 +3240,14 @@ pub type FAST_IO_RELEASE_FOR_MOD_WRITE = ::core::option::Option<
 >;
 pub type PFAST_IO_RELEASE_FOR_MOD_WRITE = FAST_IO_RELEASE_FOR_MOD_WRITE;
 pub type FAST_IO_ACQUIRE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFAST_IO_ACQUIRE_FOR_CCFLUSH = FAST_IO_ACQUIRE_FOR_CCFLUSH;
 pub type FAST_IO_RELEASE_FOR_CCFLUSH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         FileObject: *mut _FILE_OBJECT,
         DeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -3352,7 +3352,7 @@ pub struct _DEVOBJ_EXTENSION {
     pub DeviceObject: PDEVICE_OBJECT,
 }
 pub type DRIVER_ADD_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS,
@@ -3368,20 +3368,20 @@ pub struct _DRIVER_EXTENSION {
 }
 pub type PDRIVER_EXTENSION = *mut _DRIVER_EXTENSION;
 pub type DRIVER_INITIALIZE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DriverObject: *mut _DRIVER_OBJECT,
         RegistryPath: PUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PDRIVER_INITIALIZE = DRIVER_INITIALIZE;
 pub type DRIVER_STARTIO =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_STARTIO = DRIVER_STARTIO;
 pub type DRIVER_UNLOAD =
-    ::core::option::Option<unsafe extern "C" fn(DriverObject: *mut _DRIVER_OBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(DriverObject: *mut _DRIVER_OBJECT)>;
 pub type PDRIVER_UNLOAD = DRIVER_UNLOAD;
 pub type DRIVER_DISPATCH = ::core::option::Option<
-    unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
+    unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS,
 >;
 pub type PDRIVER_DISPATCH = DRIVER_DISPATCH;
 #[repr(C)]
@@ -3508,7 +3508,7 @@ pub struct _IO_RESOURCE_REQUIREMENTS_LIST {
 }
 pub type PIO_RESOURCE_REQUIREMENTS_LIST = *mut _IO_RESOURCE_REQUIREMENTS_LIST;
 pub type DRIVER_CANCEL =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP)>;
 pub type PDRIVER_CANCEL = DRIVER_CANCEL;
 #[repr(C)]
 #[repr(align(16))]
@@ -3601,7 +3601,7 @@ pub union _IRP__bindgen_ty_3__bindgen_ty_1__bindgen_ty_2__bindgen_ty_1 {
     pub PacketType: ULONG,
 }
 pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
         Context: PVOID,
@@ -3609,7 +3609,7 @@ pub type IO_COMPLETION_ROUTINE = ::core::option::Option<
 >;
 pub type PIO_COMPLETION_ROUTINE = IO_COMPLETION_ROUTINE;
 pub type IO_TIMER_ROUTINE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceObject: *mut _DEVICE_OBJECT, Context: PVOID)>;
 pub type PIO_TIMER_ROUTINE = IO_TIMER_ROUTINE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -7448,7 +7448,7 @@ pub struct _SE_AUDIT_PROCESS_CREATION_INFO {
     pub ImageFileName: POBJECT_NAME_INFORMATION,
 }
 pub type SE_AUDIT_PROCESS_CREATION_INFO = _SE_AUDIT_PROCESS_CREATION_INFO;
-pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "C" fn() -> NTSTATUS>;
+pub type PPOST_PROCESS_INIT_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> NTSTATUS>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _PEB_FREE_BLOCK {
@@ -12792,7 +12792,7 @@ pub union _URB__bindgen_ty_1 {
     pub UrbOSFeatureDescriptorRequest: _URB_OS_FEATURE_DESCRIPTOR_REQUEST,
 }
 pub type URB = _URB;
-pub type USB_IDLE_CALLBACK = ::core::option::Option<unsafe extern "C" fn(Context: PVOID)>;
+pub type USB_IDLE_CALLBACK = ::core::option::Option<unsafe extern "system" fn(Context: PVOID)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _USB_IDLE_CALLBACK_INFO {
