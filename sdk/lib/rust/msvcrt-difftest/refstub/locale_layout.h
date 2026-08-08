@@ -34,7 +34,56 @@
 typedef unsigned short rl_wchar;
 
 struct lconv;
-struct __lc_time_data;
+
+/* `__lc_time_data` (dll/win32/msvcrt/msvcrt.h:90-131, `_MSVCR_VER=0` resolved) — the
+ * per-locale calendar vocabulary that `strftime`/`wcsftime`/`_Strftime` read for every
+ * `%a %A %b %B %p %c %x %X`.  It was a bare forward declaration here until time.c became
+ * a reference TU: nothing dereferenced it, so a name was enough.
+ *
+ * Both arms of the union are spelled even though only `str` is ever read at this
+ * version (`STRFTIME_CHAR` is `char` for `_MSVCR_VER <= 90`, so `STRFTIME_TD` resolves to
+ * `td->str.names.*`), because the WIDE arm is what sits between `str` and `data` — drop
+ * it and every offset past `refcount` is wrong for the shipping Rust, which reads this
+ * struct through msvcrt-sys's bindgen of the real thing.  ref_integrity asserts the
+ * equality field by field, exactly as it does for threadlocinfo above.
+ *
+ * `refcount` is `LONG` in the source; `int` is exact on every target we build, and the
+ * value that matters is -1 — locale.c's "statically allocated, never free me" sentinel
+ * for the C locale's copy. */
+typedef struct __lc_time_data {
+    union {
+        const char *str[43];
+        struct {
+            const char *short_wday[7];
+            const char *wday[7];
+            const char *short_mon[12];
+            const char *mon[12];
+            const char *am;
+            const char *pm;
+            const char *short_date;
+            const char *date;
+            const char *time;
+        } names;
+    } str;
+    unsigned int lcid;                  /* LCID; `#if _MSVCR_VER < 110` — present here */
+    int          unk;
+    int          refcount;              /* LONG */
+    union {
+        const rl_wchar *wstr[43];
+        struct {
+            const rl_wchar *short_wday[7];
+            const rl_wchar *wday[7];
+            const rl_wchar *short_mon[12];
+            const rl_wchar *mon[12];
+            const rl_wchar *am;
+            const rl_wchar *pm;
+            const rl_wchar *short_date;
+            const rl_wchar *date;
+            const rl_wchar *time;
+        } names;
+    } wstr;
+    char data[1];
+} __lc_time_data;
 
 typedef struct tagLC_ID {
     unsigned short wLanguage;

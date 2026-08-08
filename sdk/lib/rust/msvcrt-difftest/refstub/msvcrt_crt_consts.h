@@ -74,6 +74,10 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+/* time (msvcrt's own time.h) */
+#undef  CLOCKS_PER_SEC
+#define CLOCKS_PER_SEC 0x000003E8
+
 /* Win32 file API (psdk) */
 #define CREATE_ALWAYS                              2
 #define CREATE_NEW                                 1
@@ -110,6 +114,22 @@
 #define STD_OUTPUT_HANDLE                          0xFFFFFFF5u
 #define RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO 0x10000000
 
+/* spawn modes (msvcrt's own process.h) */
+#define _P_WAIT    0
+#define _P_NOWAIT  1
+#define _P_OVERLAY 2
+#define _P_NOWAITO 3
+#define _P_DETACH  4
+
+/* Win32 process API (psdk) */
+#define CREATE_UNICODE_ENVIRONMENT 0x00000400
+#define DETACHED_PROCESS           8
+#define STARTF_USESTDHANDLES       0x00000100
+#define INFINITE                   0xFFFFFFFFu
+#define WAIT_OBJECT_0              0
+#define WAIT_TIMEOUT               0x00000102
+#define WAIT_FAILED                0xFFFFFFFFu
+
 /* codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines */
 #define CP_ACP         0
 #define MB_PRECOMPOSED 1
@@ -123,6 +143,8 @@
 #define ERROR_INVALID_HANDLE      6
 #define ERROR_INVALID_PARAMETER   0x00000057
 #define ERROR_INSUFFICIENT_BUFFER 0x0000007A
+#define ERROR_ENVVAR_NOT_FOUND    0x000000CB
+#define ERROR_PROC_NOT_FOUND      0x0000007F
 
 /* Win32 error codes — errno.c's msvcrt_set_errno case labels */
 #define ERROR_ALREADY_EXISTS        0x000000B7

@@ -235,3 +235,18 @@ def test_a_lifetime_is_not_a_char_literal():
     rust = 'static t: [&\'static str; 2] = ["a", "b"];'
     tables, _ = parse_rust_tables(rust)
     assert len(tables["t"][0]) == 2
+
+
+def test_a_rust_width_suffix_does_not_make_an_element_symbolic():
+    """`rstrip("uUlL")` cannot take `u16` — it ends in a DIGIT — so `0x0043u16` fell through
+    to `int(e, 0)`, failed, and was reported as symbolic: exempted from the very check this
+    module exists to perform. `--seal-wide` types its restored arrays by suffixing the first
+    element, so every sealed table had one unverified slot. The lookbehind keeps `0x16` and
+    plain `16` intact; third sighting of this class after crate_repair and scan_wide_literals.
+    """
+    assert normalize_element("0x0043u16") == 0x43
+    assert normalize_element("1usize") == 1
+    assert normalize_element("0xdeadu32") == 0xDEAD
+    assert normalize_element("0x16") == 0x16
+    assert normalize_element("16") == 16
+    assert normalize_element("SYMBOL") is None

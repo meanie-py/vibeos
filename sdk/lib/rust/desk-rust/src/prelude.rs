@@ -250,20 +250,18 @@ pub const FALSE: BOOL = 0;
 // to Rust's own `Result::Ok` — which is a CONSTRUCTOR, so `!= Ok` compiles as far as a type
 // error rather than a name error, and on a less lucky day would compile outright.
 pub use crate::types::Status_Ok as Ok;
-pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE; // winbase.h:294 `(HANDLE)(-1)`
 pub const ENUM_CURRENT_SETTINGS: DWORD = 0xFFFFFFFF; // winuser.h:179 `((DWORD)-1)`
-pub const HWND_BROADCAST: HWND = 0xffffusize as HWND; // winuser.h:1215 `((HWND)0xffff)`
+// winuser.h:1215 `((HWND)0xffff)`. Stays here: HWND is `*mut HWND__`, a nominal opaque struct
+// this island emits for itself, so it cannot come from a shared crate.
+pub const HWND_BROADCAST: HWND = 0xffffusize as HWND;
+// INVALID_HANDLE_VALUE and the DWLP_* offsets are shared — HANDLE really is `*mut c_void` in
+// every island, and win32macros-rust records why DWLP_* must stay computed per target.
+pub use win32macros_rust::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, INVALID_HANDLE_VALUE};
 // winuser.h `#define IDC_ARROW MAKEINTRESOURCE(32512)` / `#define RT_STRING MAKEINTRESOURCE(6)`
 // — a resource ORDINAL smuggled through a pointer, which is why the type is LPCWSTR and not an
 // integer: every call site hands it straight to LoadCursorW / FindResourceW.
 pub const IDC_ARROW: LPCWSTR = 32512usize as LPCWSTR; // winuser.h:695
 pub const RT_STRING: LPCWSTR = 6usize as LPCWSTR; // winuser.h:605
-// winuser.h:881-883, a THREE-macro chain: `DWLP_MSGRESULT 0`, `DWLP_DLGPROC (DWLP_MSGRESULT +
-// sizeof(LRESULT))`, `DWLP_USER (DWLP_DLGPROC + sizeof(DLGPROC))`. Both addends are pointer-
-// sized on every target we build, so this is 2 * the pointer width — computed here rather than
-// pasted so it cannot be right on i386 and wrong on the 64-bit pair.
-pub const DWLP_MSGRESULT: c_int = 0;
-pub const DWLP_USER: c_int = (core::mem::size_of::<LRESULT>() + core::mem::size_of::<DLGPROC>()) as c_int;
 // winreg.h:10-12 `#define HKEY_LOCAL_MACHINE ((HKEY)(LONG_PTR)(LONG)0x80000002)`. The LONG cast
 // SIGN-EXTENDS on the 64-bit targets, which is why this goes through `as i32 as isize` and not
 // a bare `as usize`: 0x80000002 widened unsigned is a different key handle.
@@ -358,56 +356,28 @@ pub use crate::REGSTR_PATH_CONTROLSFOLDER;
 // ================= header macros ==============================================================
 // C macros never reach the island. All stay `macro_rules!` and never become out-of-line fns: an
 // out-of-line forwarder is an optimization barrier that uncloaks latent ABI mismatches (§9.65).
+//
+// The word/byte/colour/locale family lives in `win32macros-rust`, ported once from the headers
+// and known-answer tested there. Re-exported through this prelude under the same names, so no
+// call site changed.
+pub use win32macros_rust::{
+    ARRAYSIZE, GetBValue, GetGValue, GetRValue, HIWORD, LOWORD, MAKEINTRESOURCEW, MAKELONG, RGB,
+    _countof,
+};
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because desk compiles -DUNICODE. That is
+// this module's property, not the shared crate's, so the alias stays here.
 #[macro_export]
-macro_rules! _countof { ($a:expr $(,)?) => { ($a).len() as u32 }; }
-pub use crate::_countof;
+macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::prelude::MAKEINTRESOURCEW!($i) }; }
+pub use crate::MAKEINTRESOURCE;
+// winuser.h:4110-4111. These stay module-local because LPARAM/WPARAM are pointer-width island
+// aliases (c_long/c_uint on i386, c_longlong/c_ulonglong on the 64-bit pair) — NOT isize/usize,
+// which are distinct primitives and would not unify. Only the MAKELONG inside them is shared.
 #[macro_export]
-macro_rules! ARRAYSIZE { ($a:expr $(,)?) => { ($a).len() as u32 }; }
-pub use crate::ARRAYSIZE;
-#[macro_export]
-macro_rules! LOWORD { ($l:expr $(,)?) => { (($l as DWORD_PTR) & 0xffff) as WORD }; }
-pub use crate::LOWORD;
-#[macro_export]
-macro_rules! HIWORD { ($l:expr $(,)?) => { ((($l as DWORD_PTR) >> 16) & 0xffff) as WORD }; }
-pub use crate::HIWORD;
-// minwindef.h:188 — note both halves mask to 16 bits BEFORE the shift.
-#[macro_export]
-macro_rules! MAKELONG {
-    ($lo:expr, $hi:expr $(,)?) => {
-        (((($lo as DWORD_PTR) & 0xffff) as DWORD) | (((($hi as DWORD_PTR) & 0xffff) as DWORD) << 16)) as LONG
-    };
-}
-pub use crate::MAKELONG;
-#[macro_export]
-macro_rules! MAKELPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::MAKELONG!($lo, $hi) as LPARAM }; }
+macro_rules! MAKELPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::prelude::MAKELONG!($lo, $hi) as LPARAM }; }
 pub use crate::MAKELPARAM;
 #[macro_export]
-macro_rules! MAKEWPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::MAKELONG!($lo, $hi) as WPARAM }; }
+macro_rules! MAKEWPARAM { ($lo:expr, $hi:expr $(,)?) => { $crate::prelude::MAKELONG!($lo, $hi) as WPARAM }; }
 pub use crate::MAKEWPARAM;
-// winuser.h:582 `#define MAKEINTRESOURCEW(i) ((LPWSTR)(ULONG_PTR)LOWORD(i))`
-#[macro_export]
-macro_rules! MAKEINTRESOURCEW { ($i:expr $(,)?) => { (($i as usize) & 0xffff) as LPWSTR }; }
-pub use crate::MAKEINTRESOURCEW;
-#[macro_export]
-macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::MAKEINTRESOURCEW!($i) }; }
-pub use crate::MAKEINTRESOURCE;
-// wingdi.h:3381-3383. Each yields a BYTE; the shifts are on the unsigned COLORREF.
-#[macro_export]
-macro_rules! GetRValue { ($rgb:expr $(,)?) => { ($rgb as COLORREF) as BYTE }; }
-pub use crate::GetRValue;
-#[macro_export]
-macro_rules! GetGValue { ($rgb:expr $(,)?) => { ((($rgb as COLORREF) >> 8) & 0xff) as BYTE }; }
-pub use crate::GetGValue;
-#[macro_export]
-macro_rules! GetBValue { ($rgb:expr $(,)?) => { ((($rgb as COLORREF) >> 16) & 0xff) as BYTE }; }
-pub use crate::GetBValue;
-#[macro_export]
-macro_rules! RGB {
-    ($r:expr, $g:expr, $b:expr $(,)?) => {
-        (($r as COLORREF) | (($g as COLORREF) << 8) | (($b as COLORREF) << 16)) as COLORREF
-    };
-}
-pub use crate::RGB;
 // basetsd.h:83 `#define IntToPtr(i) ((VOID*)(INT_PTR)((int)i))` — the `(int)` cast is load-
 // bearing: it TRUNCATES to 32 bits and then sign-extends, which is what the SystemParametersInfo
 // callers depend on. Kept as a macro because the C macro is untyped and the call sites pass both
@@ -431,17 +401,9 @@ macro_rules! IsEqualGUID {
 pub use crate::IsEqualGUID;
 // winbase.h `#define ZeroMemory RtlZeroMemory` / `#define CopyMemory RtlCopyMemory`. NEVER a
 // hand-rolled byte loop: LLVM folds one back into a call to memset/memcpy itself → infinite
-// self-recursion → silent hang (AGENTS.md).
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut _ as *mut core::ffi::c_void, 0, $l as usize); } };
-}
-pub use crate::ZeroMemory;
-#[macro_export]
-macro_rules! RtlZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut _ as *mut core::ffi::c_void, 0, $l as usize); } };
-}
-pub use crate::RtlZeroMemory;
+// self-recursion → silent hang (AGENTS.md). The zeroing pair is shared; CopyMemory below stays
+// here because it reaches this crate's `memcpy` declaration.
+pub use win32macros_rust::{RtlZeroMemory, ZeroMemory};
 #[macro_export]
 macro_rules! CopyMemory {
     ($d:expr, $s:expr, $l:expr $(,)?) => { { $crate::prelude::memcpy($d as *mut _ as *mut core::ffi::c_void, $s as *const _ as *const core::ffi::c_void, $l as usize); } };

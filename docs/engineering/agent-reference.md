@@ -417,6 +417,34 @@ Sonnet is considered only after substrate closure leaves a genuine semantic/stru
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.
 
+### Which C is NOT ours — `vendor.yaml`
+
+```bash
+python3 tools/vendored.py --emit           # the table: 23 trees, ~1.77M lines
+python3 tools/vendored.py                  # --check (a `vibeos-cli check` stage)
+python3 tools/vendored.py --write-stamps   # regenerate the VENDORED markers
+python3 tools/vendored.py --suspects       # uncatalogued foreign-copyright dirs
+```
+
+`vendor.yaml` (repo root) is the **only** list of vendored third-party trees — ACPICA,
+FreeType, FEX, Microsoft's ucrt, and the `sdk/lib/3rdparty` + `dll/3rdparty` sets. It is
+what makes "how much of *our* C is translated" a computable question, and it is the
+answer to "should I translate this?" for anything under those paths.
+
+Adding a vendored library: add an entry, then `--write-stamps`. `--check` refuses an
+unregistered directory inside a vendor container, a version probe that no longer matches,
+and a stale stamp. Versions are stored as a probe (file + regex), never as a copied
+literal — that is how 78K lines of Microsoft ucrt ended up here with no version stamp at
+all. Do not add a second list of vendored paths anywhere; import `tools/vendored.py`.
+
+`--suspects` is the discovery half: the container ratchet only watches the three vendor
+containers, so a foreign tree living anywhere else (ACPICA under `drivers/`, ucrt under
+`sdk/lib/`) is invisible to it. It reports directories of foreign-copyright source the
+registry does not cover — **~400K lines today, WDF's 290K the bulk of it**. Those are
+QUESTIONS, deliberately not gate findings: whether a driver framework this OS ships is a
+translation target is a judgement call, and auto-excluding on a copyright grep would
+shrink the denominator silently, which is the failure the registry exists to prevent.
+
 ### Static Analysis Tools
 
 ```bash

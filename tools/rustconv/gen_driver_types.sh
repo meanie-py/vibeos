@@ -1767,7 +1767,32 @@ case "$DRIVER" in
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
-    BLOCKLIST_FUNCS=1
+    # Same call as desk/syssetup/umpnpmgr/sysdm, and for the same reason: intl is a thin driver
+    # of other people's APIs (user32/comctl32/advapi32/setupapi/shlwapi/shell32 — the locale,
+    # geo, calendar and .inf families on top), so BLOCKLIST_FUNCS=1 meant 87 prototypes to
+    # hand-write, and a hand-written prototype wrong by one pointer level links and then
+    # corrupts silently. The derive defaults to 1 and does not know the module's shape.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # MACRO_SIGNED stays OFF, and that was MEASURED rather than reasoned: one cargo check each,
+    # i386, 2026-08-07 — signed 617 errors against unsigned 97. That is FIVE property-sheet
+    # modules in a row (netcfgx and aclui aside, umpnpmgr/syssetup/desk/sysdm/intl) landing on
+    # UNSIGNED against the "dialog module, so signed int control ids" argument. Generate both
+    # and count; the resemblance argument has now been wrong five times.
+    # UNBLOCK so THIS island owns every callback type intl INSTALLS — six property-sheet
+    # DLGPROCs (currency/date/generalp/numbers/sort/time) plus the sheet callback. ntdll-sys
+    # spells each with the arch's literal convention and normalize_island_abi only rewrites a
+    # crate's OWN islands, so an -sys-owned slot stays `stdcall` while the Rust body is
+    # `extern "system"` (Rust compares fn-pointer ABIs NOMINALLY). The containers have to come
+    # too — a struct whose field type still resolves to the -sys typedef reintroduces the
+    # mismatch at the assignment. TCHAR family because ntdll-sys is built WITHOUT UNICODE, so
+    # its glob says `TCHAR = c_char`, and intl builds -DUNICODE.
+    UNBLOCK="DLGPROC WNDPROC LPFNPSPCALLBACKW LPFNPSPCALLBACKA PFNPROPSHEETCALLBACK
+             _PROPSHEETPAGEW _PROPSHEETHEADERW PROPSHEETPAGEW PROPSHEETHEADERW
+             TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C FLATTENS them
+    # (`psh.nStartPage`, `psp.pszTemplate`), which `__BindgenUnionField<T>` cannot accept.
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/dll/cpl/intl"
     WRAPPER_INC=$'#include "intl.h"\n#include <debug.h>\n#include <shellapi.h>\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <strsafe.h>\n#include <wingdi.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
@@ -1780,6 +1805,14 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
+                  # The derive allowlists a header when it OWNS a `case` label, and intl's
+                  # window messages resolve through the -sys glob instead — so winuser/winbase
+                  # never made the list even though every page proc calls GetDlgItem /
+                  # SendDlgItemMessageW / CheckDlgButton and the heap+resource helpers. Types
+                  # from a glob are not prototypes; without these two it was 20 more functions
+                  # to hand-declare. Same pair as sysdm.
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
                   --allowlist-file '.*intl[/\\].*\.h' )
     EXTRA_INC=( -I"${SRC}/dll/cpl/intl" -I"${SRC}/build-i386/dll/cpl/intl" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these

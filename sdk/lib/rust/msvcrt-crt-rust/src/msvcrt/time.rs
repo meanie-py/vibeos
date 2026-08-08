@@ -515,7 +515,17 @@ pub unsafe extern "C" fn _localtime64_s(res: *mut tm, secs: *const __time64_t) -
     }
 
     _tzset_init();
-    time = (*secs - MSVCRT___timezone as __time64_t) as ULONGLONG * TICKSPERSEC as ULONGLONG + TICKS_1601_TO_1970;
+    // Wrapping, and both operations, because THE C RELIES ON THE WRAPAROUND. `*secs -
+    // __timezone` is signed and goes negative for any instant inside the first few hours
+    // of 1970 in a zone west of Greenwich; C then converts that to `ULONGLONG` (a huge
+    // number), multiplies mod 2^64, and adds the epoch offset — and the modular arithmetic
+    // lands on exactly the right FILETIME. Rust's `*` and `+` are checked in a debug
+    // profile, so the literal translation aborts on `_localtime64(&0)` under UTC+8. The
+    // arithmetic is identical in release; spelling it wrapping makes the reliance explicit
+    // and makes both profiles agree.
+    time = ((*secs - MSVCRT___timezone as __time64_t) as ULONGLONG)
+        .wrapping_mul(TICKSPERSEC as ULONGLONG)
+        .wrapping_add(TICKS_1601_TO_1970);
 
     ft.dwHighDateTime = (time >> 32) as u32;
     ft.dwLowDateTime = time as u32;
@@ -523,7 +533,12 @@ pub unsafe extern "C" fn _localtime64_s(res: *mut tm, secs: *const __time64_t) -
 
     (*res).tm_isdst = if is_dst(&st) != 0 { 1 } else { 0 };
     if (*res).tm_isdst != 0 {
-        time -= MSVCRT__dstbias as ULONGLONG * TICKSPERSEC as ULONGLONG;
+        // Same wraparound, one level sharper: `__dstbias` is NEGATIVE (-3600 for a
+        // one-hour daylight shift), so `(ULONGLONG)__dstbias` is near 2^64 and the
+        // multiply overflows on purpose. Subtracting the wrapped product is how the C
+        // ADDS the hour.
+        time = time
+            .wrapping_sub((MSVCRT__dstbias as ULONGLONG).wrapping_mul(TICKSPERSEC as ULONGLONG));
         ft.dwHighDateTime = (time >> 32) as u32;
         ft.dwLowDateTime = time as u32;
         FileTimeToSystemTime(&ft, &mut st);
@@ -807,14 +822,21 @@ pub unsafe extern "C" fn clock() -> clock_t {
     ((systime.QuadPart - init_time) / ((TICKSPERSEC / (CLOCKS_PER_SEC) as i32)) as i64) as i32
 }
 
+// `wrapping_sub`, not `-`. The C is `(double)(time1 - time2)`, and the subtraction happens
+// in the TIME_T's own width before the promotion — so `_difftime32(INT32_MAX, INT32_MIN)`
+// overflows a 32-bit int and `_difftime64` overflows a 64-bit one. C calls that undefined
+// and every compiler emits a plain `sub` that wraps; Rust's `-` is a CHECKED subtraction
+// that panics in a debug profile, so the literal translation is a live abort inside
+// msvcrt.dll. Same class as `_abs64`'s negation in math.rs, and found the same way — by a
+// row in the debug profile, which is the only place the check is compiled in.
 #[no_mangle]
 pub unsafe extern "C" fn _difftime64(time1: __time64_t, time2: __time64_t) -> f64 {
-    (time1 - time2) as f64
+    time1.wrapping_sub(time2) as f64
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _difftime32(time1: __time32_t, time2: __time32_t) -> f64 {
-    (time1 - time2) as f64
+    time1.wrapping_sub(time2) as f64
 }
 
 #[no_mangle]
@@ -1027,7 +1049,18 @@ unsafe extern "C" fn strftime_format(
 
     while *format_ptr != 0 && ret != 0 {
         count = 1;
-        while *format_ptr.offset(count as isize) == *format_ptr.offset(count as isize) {
+        // `format[0] == format[count]`, NOT `format[count] == format[count]`. The C counts
+        // the RUN of the current picture character (`MM` is one field of width 2, `dddd`
+        // is the long weekday); the translation compared an element to ITSELF, which is
+        // unconditionally true, so `count` ran away until the read left the mapping. Every
+        // caller reaches this through `%c`, `%x` or `%X` — the three conversions that
+        // format from `lc_time_data`'s pictures — so `strftime(buf, n, "%c", tm)` hung.
+        //
+        // It survived the flip because nothing had ever driven a picture conversion: the
+        // slot those pictures live in (`locinfo->lc_time_curr`) was NULL in the harness
+        // until time.c became a reference TU, so the first row that reached this line is
+        // the one that found it.
+        while *format_ptr == *format_ptr.offset(count as isize) {
             count += 1;
         }
 

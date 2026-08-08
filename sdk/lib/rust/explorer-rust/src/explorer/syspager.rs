@@ -175,7 +175,10 @@ static TOOLBARCLASSNAMEW: [u16; 16] = [
     b'2' as u16,
     0,
 ];
-static TOOLTIPS_CLASSW: [u16; 16] = [
+// L"tooltips_class32" (16 wide chars + NUL). The trailing 0 is load-bearing: commctrl.h defines
+// this as a C string literal, which carries its terminator for free, and the hand-encoding does
+// not. It is passed as CreateWindowExW's lpClassName, which reads until a NUL.
+static TOOLTIPS_CLASSW: [u16; 17] = [
     b't' as u16,
     b'o' as u16,
     b'o' as u16,
@@ -192,6 +195,7 @@ static TOOLTIPS_CLASSW: [u16; 16] = [
     b's' as u16,
     b'3' as u16,
     b'2' as u16,
+    0,
 ];
 
 // ---- comctl32 toolbar structs (commctrl.h) ----

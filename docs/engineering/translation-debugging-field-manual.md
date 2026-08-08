@@ -275,6 +275,20 @@ so the symbol is `_DeleteFileToRecycleBinW@4` and i386 reported the mirror-image
 `extern "C" {` block controls MANGLING; `WINAPI` controls the CONVENTION; they are independent
 and you have to read both.
 
+### On a 32-bit HOST harness, `extern "system"` and `extern "stdcall"` stop agreeing
+`"system"` is stdcall only on 32-bit **Windows**; on `i686-unknown-linux-gnu` it is cdecl.
+An explicit `extern "stdcall"` is honoured on x86 whatever the OS. So in a 32-bit host
+harness the two spellings, which are the same thing in the product, become different
+conventions — and they land on different halves of the same crate: the graded exports are
+`extern "system"` (cdecl there) while `msvcrt-sys`'s Win32 imports are `extern "stdcall"`
+(still stdcall). **Symptom:** a harness stand-in written cdecl for a stdcall import leaves
+four bytes on the stack per call, and the `ret` that follows jumps to a stack-resident value
+— SIGSEGV with the PC *inside* the stack, no symbol, nowhere near the cause. **Fix:** give
+the reference prelude two spellings, `__stdcall` defined AWAY for the graded exports and an
+explicit `__attribute__((stdcall))` for the imports, and take each import's convention from
+the `-sys` crate rather than from the name. A stub that never returns (an abort) is exempt,
+because nobody pops. Precedent, from the other direction: errno.rs's `_SetErrorMode@4`.
+
 ### A `#define` in precomp.h means the C never called the function it names
 `precomp.h:63` is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so every `ShellMessageBoxW(…)`
 in shell32's C++ is really a call to the Wrap twin — shell32 does not import the exported name at
@@ -1084,6 +1098,57 @@ ASSOCIATED types (`impl Width for Narrow { type Ch = i8 }` vs `... for Wide { ty
 is msvcrt's narrow/wide scanf — differing per impl is the *point*), and an unresolvable RHS,
 which is skipped rather than guessed at. Those three took the tree from 102 findings to 78.
 
+### A header MACRO re-ported per module drifts, and only some drift is visible
+bindgen emits types, functions and object-like constants, but **never a function-like macro**,
+and it drops constants it cannot fold (a cast, a `sizeof`, a pointer literal). So every
+translated module re-ports the same `minwindef.h` / `winuser.h` / `wingdi.h` handful into its own
+prelude, and nothing ever compares the copies.
+
+**Symptom.** Nothing. Every copy compiles; the module it lives in is self-consistent. The
+divergence is only visible from a whole-tree read, which is the same shape as the typedef entry
+above.
+
+**Cause.** The measured state before `win32macros-rust` existed: `LOWORD` defined **32 times
+across 12 crates in 8 distinct spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9.
+Three kinds of divergence hide in that, and they are not equally serious:
+
+- **Type-only.** shell32/menuband spell `LOWORD` `as UINT` where the header says `WORD`. The
+  mask makes the *value* identical; only the expression type differs. Harmless, but it is why a
+  shared definition cannot simply be dropped in — 21 call sites are typed against `u32`.
+- **Re-spelling.** `GetGValue` shifts the full `COLORREF` where `wingdi.h:3382` truncates to
+  `WORD` first. Both select bits 8..15, for every input. Proving it *was* a re-spelling is the
+  work; record the proof so the next reader does not redo it.
+- **Genuinely wrong.** `wingdi.h:3386` masks each `RGB` component to `BYTE` **before** shifting
+  it. All four in-tree copies shifted the unmasked value, so a component above 255 bled into the
+  next channel — `RGB(r, 0x1FF, b)` gave `0x0001FF00 | b << 16` where C gives `0xFF00`. Latent
+  rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
+  same class as msgina's `StringCchPrintfW` dropping its bound.
+
+**Fix.** Port it once into a shared crate, transcribed from the header rather than from the
+copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
+(macros + folded constants) are the two precedents.
+
+**The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
+crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
+— but two kinds of Win32 type look primitive and are not:
+
+- **`HWND` is `*mut HWND__`**, an *opaque struct* bindgen emits separately into every island. It
+  is NOMINAL, so a shared `*mut c_void` will not unify with it. `HANDLE` really is
+  `*mut c_void` everywhere, which is why `INVALID_HANDLE_VALUE` shares and `HWND_BROADCAST`
+  cannot.
+- **`LPARAM`/`WPARAM`/`LRESULT` are not `isize`/`usize`.** They alias `LONG_PTR`/`UINT_PTR`,
+  which bindgen emits as `c_long`/`c_uint` on i386 and `c_longlong`/`c_ulonglong` on the 64-bit
+  targets — a *fixed-width* type that changes with the arch. `isize` is a distinct primitive from
+  `i32` even where both are 32 bits, so a shared macro returning `isize` fails against all three.
+
+So: share it only if its result type is a fixed-width primitive that is the SAME on all three
+targets (`u8`, `u16`, `u32`, `i32`, `*mut u16`). Anything pointer-width or nominal stays in the
+consumer, where the island's own alias is in scope — `MAKELPARAM` keeps its one-line local
+definition and only the `MAKELONG` inside it is shared. Two more that stay local for their own
+reasons: the TCHAR-neutral `MAKEINTRESOURCE`, which is `-DUNICODE`-dependent and so is a
+per-consumer property, and `ListView_*`/`PropSheet_*`, which expand against island *struct*
+types.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -1158,6 +1223,19 @@ Three faces, all seen live:
   is what differs — so fix only the sites whose guard is a variable**, with the same pointer
   arithmetic (`addr_of_mut!(FOO).cast::<Elem>().add(i)` — the `.cast()` is what stops the stride
   being the whole array).
+- **A HAND-WRITTEN `[T; 1]` in a translated module, not a bindgen one — same class, and it
+  reached the shipping i386 DLL.** msvcrt's `SCOPETABLE_V4` ends in `SCOPETABLE entries[1]`;
+  `except_i386.rs` indexed it `entries[trylevel as usize]` at eight sites across
+  `_except_handler4_common` and `msvcrt_local_unwind4`, so every function with more than one
+  `__try` level panicked *inside its own SEH handler*. The tell that this is a translation
+  slip rather than a design choice is that it is **intra-file**: `msvcrt_local_unwind2`, six
+  lines away, reaches the same table through a `*mut SCOPETABLE` and strides it correctly —
+  the difference is only that one arrives as a struct MEMBER and the other as a pointer. Grep
+  a translated module for `as usize]` before believing it; the count is small and every hit
+  wants checking against whether the C declared a flexible array. Found by
+  `msvcrt-seh-difftest` on its first run, and it could not have been found any other way:
+  the module is `#![cfg(target_arch = "x86")]`, so nothing that runs on the build host ever
+  executes it.
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it
@@ -1181,14 +1259,66 @@ upstream contract; `_mbstowcs_s_l` (mbcs.c:3408-3413) indexes `wcstr[conv-1]` wi
 because its guard is `conv == size` and size may be zero. Reproducing an upstream
 out-of-bounds read is the job — a translation that "fixes" it silently diverges.
 
-Two tells that this is the class you are in, rather than a real translation bug: the C uses an
-**unsigned** counter (`size_t`/`ULONG`), and the panic is *only* under debug. Confirm by
+**It is not only unsigned counters, and the wider rule is what to remember: anywhere the C
+relies on behaviour that is UNDEFINED in the standard but DEFINED by the hardware, Rust's
+checked operator is a live abort.** Four more shapes, all from time.c and math.c and all found
+by the first `cargo test` (not `--release`) that reached them:
+
+* **Negation at the type's minimum.** `_abs64` is `n >= 0 ? n : -n`; `-INT64_MIN` has no
+  representable answer, every compiler emits `neg`, and the value that comes back is
+  `INT64_MIN`. Use `wrapping_neg`.
+* **Subtraction that overflows before a promotion.** `_difftime32` is
+  `(double)(time1 - time2)` and the subtraction happens in the 32-bit `time_t`, so
+  `(INT32_MAX, INT32_MIN)` overflows. `wrapping_sub`, then cast.
+* **A shift by the full width.** The rotate family is `shift &= W-1; return (num << shift) |
+  (num >> (W-shift));`, so `shift == 0` shifts by `W`. x86's `shr` and arm64's `lsr` both MASK
+  the count to `log2(W)` bits, which makes it `>> 0` and the answer `num`. Write the mask out —
+  `num >> ((W - shift) & (W-1))` — rather than reaching for `rotate_left`, which is the same
+  instruction but hides which fact is being relied on.
+* **A signed value converted to unsigned SO THAT the multiply wraps.** `_localtime64_s` does
+  `time -= MSVCRT__dstbias * TICKSPERSEC` with `__dstbias` negative; `(ULONGLONG)(-3600)` is
+  near 2^64, the multiply wraps mod 2^64, and subtracting the wrapped product is how the C
+  ADDS the hour. `wrapping_mul` + `wrapping_sub`, with a comment, because this one reads like
+  a bug until you follow it through.
+
+Two tells that this is the class you are in, rather than a real translation bug: the panic is
+*only* under debug, and the C's operand types make the operation reachable. Confirm by
 reading the C before touching anything — the same panic over a **signed** C counter, or one
 the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
 
 ### Wide/narrow literal sizing
+- **The whole class above had ONE cause: the plain-C prompt never mentioned wide strings.**
+  Every entry in this section is a symptom of the same missing rule, which is why fixing them
+  module by module never made the next module better. `translate` in idiomatic mode loads
+  `templates/function_prompt.md` — 29 lines, and its single string rule was the NARROW
+  `String literals: b"text\0".as_ptr() as PCHAR`. The detailed (and self-contradictory —
+  one passage said "use a static byte array and transmute", another "prefer" explicit arrays
+  for a form that has shipped three distinct bugs) wide-string guidance lived only in
+  `system_prompt.md`, which that path never loads. So for every tier-3 user-mode module the
+  model was told to spell string literals as byte strings, and told nothing about `L"..."`;
+  what it did with them — byte string, hand-encoded UTF-16, or raw `L"..."` left verbatim —
+  was sampling noise. Note the contrast that proves it: shell32's C++ path has had *zero*
+  literals of this class, because `cpp_com` lowers `L"..."` deterministically before the model
+  sees the body. Fix: `_format_wide_literal_contract()` in `function_prompt.py` states the
+  rule against the substrate the OUTPUT CRATE actually has — it greps the crate for `w!`/
+  `wide!` and names them if present, falls back to the explicit-array form if not, and never
+  names a macro the crate lacks (an unresolvable macro call is worse than no advice, because
+  the repair pass has nothing to resolve it to). It rides in the per-file cached block, so it
+  is not re-billed per function, and prompt prose is out of the resume-cache key, so adding it
+  re-bills nothing already banked. **The durable version of this fix is a seal, not prose**, and
+  it now exists: `--seal-wide` (`rustconv/wide_seal.py`, 2026-08-07) tokenises every wide
+  literal out of the body, reveals only its Rust TYPE, and substitutes the code units after the
+  response, so a dropped or invented one fails loudly instead of shipping. The prose contract
+  stays as the backstop for the 48 occurrences the seal declines. Two things that measuring it
+  changed about the story above: the dominant C shape is **not** `L"..."` but Wine's brace list
+  `{'C','o','m','b','o','L','B','o','x',0}` (4,272 declarations vs 10,871 quoted tokens — and
+  every array in the "18 missing terminators" batch was a brace list), and the restore is a
+  generated static rather than `w!`, because `w!`'s result type is not uniform across this tree
+  (secur32's yields `&[u16; N]`, aclui's `*const u16`), so naming it would be a type error in
+  half the crates. The multiset oracle (`verify_translation_literals.py`) remains the backstop
+  and must still be run on fresh output.
 - **The `L` prefix is a width MARKER, not a character** — and the translation puts it in the
   string. Three distinct manifestations in one batch (Tier 3), from the same C construct:
   `L"%s.%s"` came back once UTF-16-encoded *including the L* (`b"L\0%\0s\0…"` — every full
@@ -3560,6 +3690,18 @@ N+1 as evidence that the fix for bug N was wrong.**
   `delete <expr>` in a class method deterministically to `<Class>_delete(<expr>)`, and audit
   worker bodies for `free`/`Box::from_raw`/`__rustconv_*` so the next miss is loud instead of
   luck.
+- **A comparison whose two sides were DIFFERENT index expressions, collapsed to the same one.**
+  msvcrt's picture formatter counts the run of the current field with `while(format[0] ==
+  format[count]) count++;` — `MM` is one field of width 2, `dddd` is the long weekday. The
+  translation emitted `while *format_ptr.offset(count) == *format_ptr.offset(count)`, i.e. an
+  element compared to ITSELF: unconditionally true, so `count` ran away until the read left the
+  mapping. It reads as a plausible line and `cargo check` has nothing to say about it. The tell
+  is that the two operands of a C comparison are rarely the same expression — **grep a fresh
+  translation for `X == X`, `X != X` and `X < X` over any subscript or field path** (an
+  `x != x` NaN test is the one real exception, and it is on a float). Reached only through
+  `%c`/`%x`/`%X`, whose data lives in `locinfo->lc_time_curr` — a slot the harness left NULL
+  until time.c became a reference TU, so the first row that ever ran the line is the one that
+  found it.
 - **A SIDE EFFECT inside a call argument, hoisted out of the condition it lived in.** Rust has
   no `++`, so `f(*p++)` has to become two statements — and WHERE the second one lands is the
   whole meaning. msvcrt's demangler reads
@@ -4777,6 +4919,37 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   own diagnostics vanish into it silently. Generalises past stdio: any singleton the
   environment supplies (a lock table, a TLS slot, a process-wide mode) is one definition
   serving both sides until you make it two.
+- **A POSIX-backed shim that rejects a WINDOWS path separator deletes a whole search arm,
+  on both sides, green.** msvcrt-difftest's `GetFileAttributesW` backs onto `stat`, and its
+  wide→narrow converter passed `\` through untouched. That was invisible for four waves
+  because nothing in file.c BUILDS a path — it forwards whatever its caller handed it. The
+  first module that builds one exposed it instantly: `msvcrt_search_executable` joins a
+  `PATH` entry to a program name with a literal `'\\'`, so every candidate it produced
+  failed to `stat` and the entire `use_path` half of the function found nothing — the same
+  nothing on both sides, so every row over it reported MATCH. **A shim must accept every
+  input form the real API accepts, not just the ones the current caller happens to use**;
+  a real `GetFileAttributesW` takes both separators. Same family as the discarded-argument
+  entry above, arriving from the input side rather than the output side.
+- **Compare an environment-allocated identifier by its ROLE, never by its value.** The
+  process.c rows compare the `STARTUPINFOW` msvcrt hands CreateProcessW, and the three std
+  handles came back `(4, 14, 8)` on the subject and `(5, 14, 9)` on the reference for
+  behaviour that was identical and correct. Each side has its own CRT fd table caching OS
+  handles the host allocated at whatever moment that side first opened something, and the
+  subject runs first in every row, so its descriptors are always one lower. The contract
+  under test is not the number — it is WHICH END OF THE PIPE the child gets, which is the
+  only thing `_popen(cmd,"r")` and `_popen(cmd,"w")` disagree about. Resolve each recorded
+  handle against *its own side's* `_get_osfhandle(0/1/2)` and compare the resulting labels;
+  the raw comparison is a permanently red row that says nothing, and "fixing" it by dropping
+  the field silently deletes the mode-string branch from the suite.
+- **A code path that CALLS `exit` is a silent-green hazard, and the fix is in the
+  substrate.** msvcrt's `_P_OVERLAY` spawn ends in `_exit(0)`: on the success path the
+  harness process terminates, `cargo test` sees exit status 0, and the run is reported as a
+  pass having compared nothing after that line. Every `_exec*` row therefore presets the
+  spawn to FAIL — but "safe because nobody makes a mistake" is not safe when the failure
+  mode is a green tick. `_exit` belongs to exit.c, i.e. the layer BELOW the code under test,
+  so redirect it like any other environment entry point: to a terminator that prints what
+  happened and leaves with a non-zero code. Leaving it plain has a second cost — it binds to
+  the SUBJECT's `#[no_mangle]` copy, so the reference would be calling the code under test.
 
 ### The oracle can be MISCOMPILED by the host's own headers `[§9.66]`
 glibc's `__nonnull` / `__attribute_pure__` attributes **deleted the reference C's NULL guards**,
@@ -4943,6 +5116,27 @@ family (inputs that overflow the C's own 80-byte scratch, after which both sides
 their own stack garbage). **Skip such a case by PREDICATE, computed from the same formatter the
 function uses, and print the count** — a hard-coded input list silently stops matching the C,
 and a silent cap reads as "the family is graded" when the wide cases were the ones dropped.
+
+**The host's TYPE MODEL is part of the miscompile, and it hides behind functions too small to
+suspect.** `clock()` is four lines — `return (systime.QuadPart - init_time) / (TICKSPERSEC /
+CLOCKS_PER_SEC);` — and BOTH of the things it names differ between msvcrt's headers and glibc's,
+neither difference being a compile error. `clock_t` is `__msvcrt_long` (32 bits) on Windows and
+64 on an LP64 host, which decides whether the division truncates — msvcrt's `clock()` wraps
+after 24.86 days and an unpinned reference does not. `CLOCKS_PER_SEC` is 1000 in msvcrt's
+`time.h` and 1000000 in glibc's, so an unpinned reference divides by 10 instead of 10000 and
+answers in MICROseconds: every row off by exactly 1000x. Derive the constant (the
+`gen_msvcrt_difftest_consts.py` probe, which `#undef`s glibc's first) and pin the type in the
+TU's prelude — but note the ORDERING trap: a `#define clock_t __msvcrt_long` that is in scope
+when glibc's `typedef __clock_t clock_t;` is parsed rewrites the TYPEDEF, which is a conflicting
+definition rather than a rename. Pull `<time.h>` in the prelude yourself, while the TU's own
+names are still hidden from it, and put the pin after.
+
+**The same width trap on the TEST side, where nothing checks you at all.** A row that reads an
+exported global through `__p__timezone()` must declare it `i32`, not `core::ffi::c_long` — that
+is 64 bits here, so the read pulls in the next global as its high half. It does not crash and
+it does not warn; it reports garbage, and the garbage differs between the two sides because
+their globals are laid out independently, so it looks exactly like a port bug. `__msvcrt_long`
+is 32 bits on every arch we build: spell it, and never reach for `c_long` in a harness.
 
 ### Exercising a branch is not testing it `[§9.75]`
 A branch is only tested when its two sides can produce **different answers**. Planting a

@@ -26,7 +26,7 @@ on all three arches with an essentially all-Rust runtime.
 
 The remaining C is four well-bounded categories, **none on the boot-critical path**: (1) the
 bulk userland **CRT** (msvcrt/ucrt leaf library — the assemble-from-`cnt-rust`+`rtl-rust`
-track), (2) **vendored/by-policy** C (ACPICA, FreeType), (3) **legacy dead** C superseded by
+track), (2) **vendored/by-policy** C (enumerated in `vendor.yaml` — see below), (3) **legacy dead** C superseded by
 Rust (videoprt, old NDIS/tcpip), and (4) **irreducible glue** (variadic trampolines, arch
 `.S`, generated RPC/syscall stubs). *(The desktop shell `explorer.exe` is NO LONGER a
 remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* The broad
@@ -73,7 +73,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **483 of 1,087 non-stub C exports Rust-backed — 44%** (2026-07-26 wave 16 finished `string.c` + `wcs.c`; the denominator here excludes the `?`-mangled C++ surface, which is a separate lane. Was 431 of 1,165 counting C++) (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **1,174 of 1,280 implemented C exports Rust-backed — 91%** (2026-08-07, amd64. **Re-measure with `python3 tools/msvcrt_export_coverage.py`** — this figure was hand-derived three times and rotted every time: the previous entry said 44% while the true value was already 91%, because eight waves landed and nobody re-ran the recipe written out beside it. The tool refuses a stale or missing archive rather than reporting the previous wave's number.) The denominator excludes 24 `-stub` entries (msvcrt has no body at all — and `-stub` is a FLAG on `@ varargs -stub`, not a directive, which is how the first draft counted them as implemented), 5 DLL forwards, and the 124 `?`-mangled C++ exports, which are a separate lane. **None of the 106 still-C exports is msvcrt's own C**: 58 are crtmath (16 x87 `_CI*`, 21 `__libm_sse2_*`, 3 `_ftol*`, 18 float/bessel/misc), 18 are i386 FDIV errata fixups in asm, 17 are SEH/setjmp asm plus `except_i386`, 6 are dbgrpt, 6 are `i386/inout.s` port I/O, and one is `memmove`, which is deliberately not Rust (§9.65: LLVM folds a byte-copy loop back into a call to itself). crtmath and dbgrpt are a shared-library lane serving five DLLs, not an msvcrt one. Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). Every `.c` in `msvcrt_static` still compiles and is inert — Rust wins by lld first-match — and every one now has a Rust counterpart except `sincos.c`, whose two symbols are `#pragma makedep implib` and never reach the DLL export table at all. `concurrency.c` (3,839 lines) and `handler4.c` (775) compile to **ZERO defined symbols** at this `_MSVCR_VER=0` config — entirely inside version-gated blocks, confirmed by `nm` and independently by `profile_derive --target msvcrt_shared`, which flags handler4 `DEAD_TU` at 97% dead with "DO NOT PAY TO TRANSLATE IT". Neither is porting debt; both would have been money burned. What is left for msvcrt is **ucrtbase**, which links `msvcrt_shared` and no Rust at all. The arch-SEH family is no longer owed on i386: `msvcrt-seh-difftest` (2026-08-07) is a 32-bit host harness that grades `except_i386.c` at 9,982 rows, and it caught a shipping panic — a C flexible array indexed as a Rust array. `except_x86_64.c` and `except_arm64.c` stay ungraded on purpose: between them the ten symbols are one-line calls through a function pointer, a `Rip` read, a two-line FIXME stub, and one `RtlUnwindEx` wrapper, so rows over them would grade nothing anyone would miss. | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -189,6 +189,63 @@ the final code unit's high half out of bounds and PATH search silently matched n
 every `use_path=1` spawn; and `_wsystem`'s `L" /c "` was plain ASCII cast to `*const wchar_t`.
 Both are now caught by `scan_wide_literals.py` — see the field manual.
 
+**GRADED 2026-08-07 — reference TU #12, 9,101 rows, and process.rs came back CLEAN.**
+`tests/process.rs` over `processimpl.c`, a RECORDING `CreateProcessW`. That shape is the whole
+design: process.c never creates a process, it MARSHALS — argv array or `...` list into one
+command line, envp array into a double-NUL block, a bare name into a full path via `PATH` and
+four extensions, a `_P_*` mode into creation flags plus a wait-or-return decision — and then
+calls Win32. A harness that compared only return values would grade two `-1`s and report green
+over the entire module, so every row compares the RECORDED CALL: application name, command
+line, the environment block including its embedded NULs, creation flags, `bInheritHandles`, and
+the `STARTUPINFOW` fields msvcrt fills (including the fd-inherit block file.c builds).
+
+Three things had to be solved before a row could exist.
+
+* **The two `va_list` models never meet.** Sixteen exports are WINAPIV and the subject cannot
+  supply them — they are C trampolines over `_v`-prefixed Rust twins that walk a flat `*mut u8`,
+  and this host's `va_list` is a SysV register-save-area struct. The scanf TU solved its version
+  by compiling the reference against refstub_printf's flat `<stdarg.h>`; that FAILS here,
+  because these bodies genuinely start their own lists and the flat header's
+  `va_start(ap, last)` is `ap = NULL`. So the reference is called with real host varargs, the
+  subject's twin is handed the same logical arguments hand-packed into 8-byte slots, and what
+  is compared is the recorded spawn.
+* **`_exec*` cannot be graded on success, and that is a finding rather than a gap.** They all
+  pass `_P_OVERLAY`, whose arm is `_exit(0)` — the harness would terminate mid-row and exit
+  ZERO. Exec rows preset the spawn to FAIL, which still grades everything through the errno
+  mapping; and `_exit` is redirected to a terminator that exits 70 with a message, so the
+  silent-green can never happen by accident.
+* **The three std handles are compared as ROLES, not numbers.** `_popen`'s only real decision
+  is which end of the pipe the child gets, and the two sides' fd tables cache different OS
+  handles for the same CRT descriptor — `(4, 14, 8)` vs `(5, 14, 9)` for identical behaviour.
+
+Nothing in process.rs diverged. Two findings landed in the harness instead, both of the class
+where both sides fail identically and the row still says MATCH: fileimpl.c's path converter
+passed `\` through to `stat`, so **every** `use_path` search found nothing on both sides; and
+the four `msvcrt.h` codepage inlines that `msvcrt_argvtos_aw`/`msvcrt_valisttos_aw` are built
+out of were a hand copy in `refstub/msvcrt_file_prelude.h` claiming to be "VERBATIM" with
+nothing checking it — build.rs now diffs it against the genuine header. Both are in the field
+manual under §9.73.
+
+**The substrate closed behind it.** process.rs was written by a lane that owned neither
+msvcrt-sys nor prelude.rs, so it carried six names as local `extern` blocks and `const`s under
+`// TODO(hoist)`. All six are derived now and the locals are gone —
+`GetEnvironmentVariableW`, `CREATE_UNICODE_ENVIRONMENT` and the bare
+`STARTUPINFOW`/`PROCESS_INFORMATION` aliases from the bindgen island, `realloc`/`_exit`/
+`intptr_t` from prelude.rs (the last three had already been hoisted by another lane; the TODOs
+outlived their premise). `CREATE_UNICODE_ENVIRONMENT` is the one that mattered: it was absent
+from the island because the allowlist said `CREATE_[A-Z]+`, which matches `CREATE_NEW` and
+silently drops every multi-word member of the family — the LOCALE_SMONTHNAME1 bug again, in a
+constant `msvcrt_spawn` ORs into the creation flags of **every** spawn. The hand-written value
+was right; nothing was checking that. `get_aw_cp`, `convert_acp_utf8_to_wcs` and `HIWORD` stay
+local on purpose: each mirrors the C's own `static inline` or macro, so a per-TU copy is the
+faithful shape.
+
+`STARTUPINFOW` and `PROCESS_INFORMATION` joined `msvcrt_crt_layout.h`'s guarded set. The second
+is not bookkeeping: msvcrt_spawn's `_P_WAIT` arm calls
+`GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)` — it writes the exit code into the PID field
+and returns THAT — so the field order is program logic, and a pin asserts the returned value is
+the exit code and not the pid.
+
 **GRADED 2026-08-07 — reference TU #10, 2,247 rows, and every finding was in the ORACLE.**
 `tests/math.rs` drives the 37 exports whose reference twin exists on the host (the rest —
 `_isnan`, `_finite`, `abs`, `div`, `ldexp`, … — are `#[cfg(any())]` here because cnt-rust's
@@ -287,11 +344,40 @@ so have no Rust counterpart: `_get_dstbias`/`_get_timezone`/`_get_daylight` (`#i
 OBJECT is the authority on that, not the source's apparent shape — the same rule wave 18
 used for file.c.
 
-**PORTED, NOT YET GRADED**, and that is the honest status: `msvcrt-difftest` has no time.c
-rows, so what has been proved is three-arch `cargo check`, a green `difftest` (nothing
-regressed), and boot. Same standing file.c had after wave 17. What the grading needs is
-already in the tree — see the substrate below — so the rows are the next step, not a new
-foundation.
+**GRADED 2026-08-07 — reference TU #11, 375,839 rows, and one REAL PORT BUG.** All 52
+exports, over five zone settings x 18 boundary instants, plus the `TZ`-string branch that no
+preset can reach and a three-hourly sweep of 2024 in every zone (which finds a transition
+disagreement without depending on knowing where the transitions are).
+
+`strftime("%c")` HUNG. msvcrt's picture formatter counts the run of the current field with
+`while(format[0] == format[count]) count++;`; the translation emitted `format[count] ==
+format[count]` — an element compared to itself, so `count` ran away until the read left the
+mapping. It reaches every `%c`, `%x` and `%X`, i.e. every locale-formatted date and time in
+the DLL. It survived the flip because those three conversions read
+`locinfo->lc_time_curr`, and that slot was NULL in both sides' harness locinfo until this
+lane filled it — so the first row that ever executed the line is the one that found it.
+Three more were debug-profile checked-arithmetic aborts where the C relies on hardware
+wraparound (`_difftime32/64`'s subtraction, `_localtime64_s`'s deliberate
+signed-to-unsigned multiply); `vibeos-cli difftest` builds `--release`, so that class is
+invisible to the gate and only a plain `cargo test` shows it. Detail in the field manual
+under "Faithful C unsigned underflow" and "Semantic rewrites that flip meaning".
+
+Everything else matched, including the two things this file exists to get wrong: the
+half-hour bias (India) and the year-wrapping southern-hemisphere DST window (Sydney).
+
+Two pieces of substrate arrived with the rows. `cloc_time_data` — the C locale's 43 calendar
+strings — is lifted out of locale.c by build.rs into a TU of its own and shared by both
+sides, on the same terms as `MSVCRT__ctype`: it is what the locale IS, neither side's code
+writes it, and what the rows grade is time.c's INDEXING into it. And `__lc_time_data` stopped
+being a bare forward declaration in `locale_layout.h`; `ref_integrity` now checks all six of
+its offsets and its size against msvcrt-sys, because the wide union arm nothing reads at
+`_MSVCR_VER=0` is 344 bytes that everything after it depends on.
+
+Two host-type-model traps were pinned in the reference TU's prelude, both in `clock()`:
+`clock_t` is 32 bits on Windows and 64 here (so msvcrt's `clock()` wraps after 24.86 days and
+an unpinned reference does not), and `CLOCKS_PER_SEC` is 1000 in msvcrt's `time.h` against
+glibc's 1000000 (so an unpinned reference answers in microseconds — every row off by exactly
+1000x). The constant is derived by `gen_msvcrt_difftest_consts.py`, not transcribed.
 
 **`timeimpl.c` — the Win32 clock and zone layer, built because the SUBJECT needed it.**
 Wiring time.rs into the harness revealed that nothing there answered `GetTimeZoneInformation`,
@@ -317,7 +403,11 @@ defines it that is a duplicate-symbol failure. The stub keeps its job and change
 `ref__time64` (file prelude stage 4.5). This is the standing tax on wiring a new module into
 the harness, and it is also the seam where time.c becomes reference TU #8: that stage points
 at time.c's own body and the stub is deleted, exactly as errno.c's arrival deleted the
-hand-written `msvcrt_set_errno`.
+hand-written `msvcrt_set_errno`. **That seam is closed as of 2026-08-07** (it turned out to
+be reference TU #11, not #8 — undname.c, misc.c and math.c landed first). The stub is gone
+and `ref__time64` is time.c's genuine body, which is a real upgrade for file.c's rows too:
+`_wutime`/`_futime` used to stamp modification times from the HARNESS's idea of "now" and now
+read the frozen instant the test set.
 
 **Two limits stated rather than papered over.** `asctime`'s `_snprintf` is answered by the
 harness over the host's `vsnprintf` (subjectimpl.c) — the shipping name is a `va_start`
@@ -966,7 +1056,7 @@ still-C when it is 3).
 | file | defines | still reached in C |
 |---|---|---|
 | `except.c` | 21 | **0** — flipped in wave 29 |
-| `except_i386.c` | 13 | **0** — flipped in wave 30 |
+| `except_i386.c` | 13 | **0** — flipped in wave 30, GRADED 2026-08-07 (reference TU #13, 9,982 rows) |
 | `except_x86_64.c` | 5 | **0** — flipped in wave 31 |
 | `except_arm64.c` | 5 | **0** — flipped in wave 31 |
 | `handler4.c` | 0 | **0** — 97% dead, compiles to an object with no symbols |
@@ -1183,6 +1273,55 @@ Worth carrying forward:
   only when the seh channel is on. Our sink is unconditional, so the arguments are deliberately
   left unevaluated; evaluating them to silence an unused-parameter warning would take a second
   fault inside a filter that is about to return CONTINUE_SEARCH.
+
+**GRADED 2026-08-07 — reference TU #13, 9,982 rows, and it found a shipping bug.**
+
+The first 32-bit harness: `sdk/lib/rust/msvcrt-seh-difftest` builds for
+`i686-unknown-linux-gnu`, compiles the genuine `except_i386.c` beside the shipping
+`except_i386.rs` + `seh_i386.rs`, and grades seven exports plus six of the TU's `static`
+bodies (`get_scopetable_v4`, `msvcrt_local_unwind2`, `msvcrt_local_unwind4`,
+`cxx_local_unwind`, `check_noexcept`, `MSVCRT_nested_handler`). The task that owed these rows
+said the blocker was "a whole second harness variant"; it was three environment questions, and
+all three answered yes — `clang -m32` builds and runs 32-bit ELF, `rustup target add
+i686-unknown-linux-gnu` is one command, and `set_thread_area` + a `%fs` load gives a real
+Windows-shaped TEB, so `fs:0` (the SEH chain head) and `fs:0x18` (`NtCurrentTeb`) mean what
+both sides think they mean. That is what Wine does, and it is why the harness can exist.
+
+What it caught, on the first run:
+
+* **A C flexible array translated as a Rust array is a panic, not a read.** `SCOPETABLE_V4`
+  ends in `SCOPETABLE entries[1]` — the flexible-array idiom, sized by the compiler to the
+  function's `__try` count — and the translation indexed it as `entries[trylevel as usize]`.
+  That is a Rust ARRAY index with a bounds check against the declared length of 1, and array
+  bounds checks are not debug-only. So the shipping i386 DLL panicked inside its own SEH
+  handler for **any** function with more than one `__try` level: eight sites across
+  `_except_handler4_common` and `msvcrt_local_unwind4`. The sibling `msvcrt_local_unwind2`,
+  reached through a `*mut SCOPETABLE` rather than a struct member, had it right — the two
+  idioms sat six lines apart. Fixed with a `scope_entry()` helper that does what the C
+  compiles to. **Nothing else in the tree could have found this**: it needs the module
+  EXECUTED on its own arch, and until this harness there was no way to execute it at all.
+* **`extern "system"` and `extern "stdcall"` diverge on a 32-bit Linux host, and the
+  difference is silent.** `"system"` means stdcall only on 32-bit *Windows*, so the seven
+  graded exports are cdecl here — but msvcrt-sys spells its Win32 imports `extern "stdcall"`
+  explicitly, and rustc honours that on x86 whatever the OS. A harness stand-in written cdecl
+  therefore left four bytes on the stack per call, and the following `ret` went to a
+  stack-resident value: SIGSEGV with the PC *inside* the stack, nowhere near the cause. Same
+  family as errno.rs's `_SetErrorMode@4`, from the other direction.
+
+Three things the harness does that the next 32-bit one should copy: a `setjmp`/`longjmp`
+recovery trampoline, because `call_finally_block` is `DECLSPEC_NORETURN` and the `__finally`
+arm cannot otherwise be graded at all; an alarm + SIGSEGV watchdog that names the ROW, because
+a scope chain that never reaches its sentinel spins with nothing to observe and a bare
+segfault with no output is the one failure that tells you nothing; and `refstub/seh_layout.h`,
+generated from the real i386 headers by `tools/gen_msvcrt_seh_layout.py`, because everything
+under test is a walk BY OFFSET and an unchecked transcription would grade correct Rust as
+wrong (§9.66).
+
+Still owed, and recorded rather than skipped: `call_catch_block`,
+`catch_function_nested_handler` and `se_translation_filter` — the catch-dispatch half, which
+needs a real thrown C++ object matched by `find_catch_handler` and ends in
+`continue_after_catch` restoring `%esp` from the throwing frame. The rows drive
+`cxx_frame_handler` up to that boundary and stop.
 
 **Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
 linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
@@ -1838,7 +1977,36 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   three sealer defects (preprocessor directives, array-parameter bounds, and `-E -dM` not
   reporting a macro the TU `#undef`s). Field manual: "A DIRECTIVE is not code, and an array
   PARAMETER's bound is not a value".
-- **Vendored, by policy (NOT targets):** ACPICA (~155 `.c`), FreeType (~208K LOC).
+- **Vendored, by policy (NOT targets):** enumerated in **`vendor.yaml`** at the repo root —
+  **23 trees, ~1.77M lines**, gated by `tools/vendored.py` (a stage of `vibeos-cli check`).
+  Run `python3 tools/vendored.py --emit` for the table; do not restate it here, and do not
+  hand-maintain a second list anywhere. This entry used to read "ACPICA (~155 `.c`),
+  FreeType (~208K LOC)" and was one of three disagreeing lists — the others being
+  `external/README-fex-vendor.md` (one tree) and a hardcoded 6-tuple in
+  `verify_conv_macros.py` that covered 5 of the 19 directories under
+  `sdk/include/reactos/libs/` and carried one entry matching nothing at all.
+
+  Two properties worth knowing. **The list cannot be a glob:**
+  `sdk/include/reactos/libs/` holds `zlib` and `mbedtls` beside `audiosrv`, `samsrv`,
+  `umpnpmgr`, `syssetup`, `fslib`, `fmifs`, `epsapi`, `cportlib` and `fast486`, all of
+  which are ours, and no path convention anywhere in the tree separates foreign code from
+  ours (ACPICA under `drivers/`, FreeType under `sdk/lib/3rdparty/`, FEX under `external/`,
+  ucrt under `sdk/lib/`). **Versions are probes, not copies:** each entry records the file
+  and regex where its version lives and the tool derives it, so a re-vendor cannot leave a
+  stale literal behind. `--check` fails on a probe that stops matching, on a stale
+  `VENDORED` stamp, and — the ratchet — on any unregistered directory appearing inside a
+  vendor container.
+
+  **`sdk/lib/ucrt` (78K lines, 459 TUs) is registered**, which is what makes ucrtbase's
+  goal sayable: ucrtbase.dll is vendored Microsoft ucrt plus **our** `msvcrt_shared`
+  (5.7K lines — `cpp.c`, `except.c`, `undname.c`, `except_<arch>.c`,
+  `reactos/ucrt_tls_sup.c`). Counting ucrt as debt makes the DLL read as permanently ~8%
+  reachable; excluding it makes the target "everything in ucrtbase that is ours is Rust"
+  — 0% today, 100% after task #55. Four entries carry a `review:` note flagging a
+  classification that is NOT settled (ucrt's unknown SDK version; `cardlib`'s unestablished
+  provenance; `libwine` and `strmbase`, which are Wine-derived and therefore arguably
+  translation TARGETS under the roadmap's Tier 3 — they sit in the registry only because
+  upstream files them under `3rdparty`). `--emit` prints those under NEEDS REVIEW.
 
 ## Open items / flagged regressions
 
@@ -1861,6 +2029,26 @@ edit-churn: **win32k 257K** and **the kernel** (see crate-split note). The drive
 big but cold: cdrom 211K, disk 170K, classpnp 166K, kernel32 161K, buslogic 138K, uniata
 125K, scsiport/atapi/storahci ~120K each, fastfat 113K, freeldr 75K, cdfs 65K, storport 65K,
 + ~130 smaller crates.
+
+## Shared substrate crates (ported once, consumed by many islands)
+
+Some header material is invisible to bindgen and therefore gets re-ported by hand into every
+module that needs it. Two crates now own that material, and both exist because the hand copies
+had measurably drifted:
+
+| Crate | What it owns | Why it exists |
+|---|---|---|
+| `strsafe-rust` | `strsafe.h`'s `static __inline` bounded string ops | `STRSAFEAPI` is `static __inline`, so **no object file in the tree defines any of them** — the last `.c` a module flips takes the module's only definition with it. Four copies existed (msgina, syssetup, desk, sysdm), no two the same subset, and msgina's `StringCchPrintfW` had DROPPED the caller's bound and forwarded to `wsprintfW` — a stack overrun on a `WCHAR[256]`. Consumers: desk, syssetup, sysdm, msgina, rosload, uefildr. |
+| `win32macros-rust` | The function-like Win32 macros (`LOWORD`/`HIWORD`/`MAKELONG`/`MAKELANGID`/`MAKELCID`/`MAKEINTRESOURCEW`/`RGB`/`Get?Value`/`GET_?_LPARAM`/`ZeroMemory`/`_countof`/`ARRAYSIZE`) plus the constants bindgen folds away (`DWLP_MSGRESULT`/`DWLP_DLGPROC`/`DWLP_USER`, `INVALID_HANDLE_VALUE`, `UNICODE_NULL`) | bindgen emits **no** function-like macro and drops cast/`sizeof`/pointer-literal constants. Before extraction: `LOWORD` defined **32× across 12 crates in 8 spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9 — and all four `RGB` copies had dropped `wingdi.h`'s per-component `BYTE` mask, so an out-of-range component bled into the next channel. Transcribed from the headers, not from the copies, with 13 known-answer tests. Consumers: desk, sysdm, intl, syssetup, aclui, netcfgx, netid, umpnpmgr, samlib, ntmarta, authz, msv1_0 (+ recyclebin, parked). |
+
+**The sharing boundary is narrower than "core primitives."** A shared crate cannot depend on any
+consumer's bindgen island, so everything it exports must be a fixed-width primitive that is the
+*same on all three targets*. Two Win32 types look primitive and are not: `HWND` is `*mut HWND__`,
+a nominal opaque struct each island emits for itself; and `LPARAM`/`WPARAM`/`LRESULT` alias
+`LONG_PTR`/`UINT_PTR`, which bindgen emits as `c_long`/`c_uint` on i386 but
+`c_longlong`/`c_ulonglong` on the 64-bit pair — never `isize`/`usize`. Anything pointer-width or
+nominal stays in the consumer prelude. Details and the full stay-local list:
+`translation-debugging-field-manual.md` → "A header MACRO re-ported per module drifts".
 
 ## Kernel crate topology (build-architecture, not coverage)
 

@@ -186,3 +186,27 @@ harness = false
 name = "wave16"
 path = "tests/wave16.rs"
 harness = false
+
+# time.c — reference TU #11. Its own binary because the whole file is driven from GLOBAL
+# state that a row must set and then re-derive on both sides: timeimpl.c's frozen instant,
+# its zone preset, and the `TZ` environment variable. `_tzset` caches the zone in a file
+# static per side, so a row that changed the knob without re-running `_tzset` on BOTH would
+# grade the previous preset — identically on both sides, and green. Sequencing that needs a
+# `fn main()`, not a set of independently-ordered `#[test]`s.
+[[test]]
+name = "time"
+path = "tests/time.rs"
+harness = false
+
+# process.c — reference TU #12. Its own binary for two reasons that are both about state.
+# `_wpopen` drives BOTH sides' fd tables and FILE rings, which only stay comparable if they
+# start empty and every row moves them in lockstep — the same property tests/file.rs needs,
+# and it does not survive sharing a process with a suite that opens files for other reasons.
+# And processimpl.c's spawn ledger is ONE recorder read back between the two calls of a row,
+# so a second suite calling CreateProcessW concurrently would be reading someone else's
+# marshalling. `harness = false` gives it one thread, which is what makes both hold; the
+# same getenv reason as the rest applies too.
+[[test]]
+name = "process"
+path = "tests/process.rs"
+harness = false

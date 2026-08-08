@@ -266,7 +266,7 @@ void ref_set_startup_handles(BYTE *blob, WORD len)
  * ------------------------------------------------------------------ */
 static char *path_from_wide(const wchar_t *w)
 {
-    int n;
+    int n, i;
     char *s;
 
     if (!w) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
@@ -274,6 +274,21 @@ static char *path_from_wide(const wchar_t *w)
     if (n <= 0) { SET_ERR(ERROR_INVALID_PARAMETER); return NULL; }
     if (!(s = malloc(n))) { SET_ERR(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
     WideCharToMultiByte(CP_ACP, 0, w, -1, s, n, NULL, NULL);
+    /* `\` IS a path separator on the API being modelled, and POSIX does not agree.
+     *
+     * This is the shim rule at the top of the file in its sharpest form. Nothing in
+     * file.c BUILDS a path — it passes through what its caller handed it, so the
+     * untranslated version worked for four waves. process.c does build one:
+     * `msvcrt_search_executable` joins a PATH entry to a program name with a literal
+     * `'\\'`, and every candidate it produced then failed to stat. The failure is the
+     * dangerous kind — the search simply finds nothing, on BOTH sides, and every row
+     * over the whole use_path half of the function reports MATCH while proving that two
+     * implementations can equally fail to open a file whose name has a backslash in it.
+     *
+     * Translating here rather than in process.c's TU because it is the OS layer's job:
+     * a real GetFileAttributesW accepts both separators. */
+    for (i = 0; s[i]; i++)
+        if (s[i] == '\\') s[i] = '/';
     return s;
 }
 
@@ -1164,16 +1179,16 @@ int CDECL _get_fmode(int *mode)
  * which is what msvcrt reports for a file on C:. */
 int CDECL _getdrive(void) { return 3; }
 
-/* `ref__time64`, not `_time64`: msvcrt exports `_time64` and time.rs defines it, so the
- * plain name in this file would be a duplicate symbol the moment the module was wired in.
- * One copy, both sides — the wall-clock is environment, not per-side state. */
-__time64_t CDECL ref__time64(__time64_t *t)
-{
-    __time64_t now = (__time64_t)time(NULL);
-
-    if (t) *t = now;
-    return now;
-}
+/* `ref__time64` USED to be here — three lines over the host's `time(NULL)`, standing in
+ * for the one call file.c's `_wutime`/`_futime` path makes. It is gone as of wave 35:
+ * time.c is reference TU #11 and DEFINES `_time64`, which the rename wall spells
+ * `ref__time64` — exactly the socket this stub occupied, so the genuine body drops
+ * straight in. (Same move errno.c's arrival made on `msvcrt_set_errno`.)
+ *
+ * It is a real upgrade rather than tidying. The stub read the host clock, so every file
+ * row that stamped a modification time was graded against the HARNESS's idea of "now"
+ * instead of msvcrt's; the genuine `_time64` reads timeimpl.c's FROZEN instant, which the
+ * test sets. `_wutime`'s "pass NULL and take the current time" arm is now reproducible. */
 
 /* The real _wgetenv returns a pointer into msvcrt's wide environ block, which
  * this harness has no reason to maintain; a thread-local buffer has the same

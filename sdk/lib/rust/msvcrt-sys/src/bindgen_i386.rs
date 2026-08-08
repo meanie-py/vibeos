@@ -4205,6 +4205,8 @@ pub const EXCEPTION_COLLIDED_UNWIND: u32 = 64;
 pub const DELETE: u32 = 65536;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
+pub const CREATE_THREAD_DEBUG_EVENT: u32 = 2;
+pub const CREATE_PROCESS_DEBUG_EVENT: u32 = 3;
 pub const STILL_ACTIVE: u32 = 259;
 pub const EXCEPTION_ACCESS_VIOLATION: i32 = -1073741819;
 pub const EXCEPTION_FLT_DENORMAL_OPERAND: i32 = -1073741683;
@@ -4230,8 +4232,19 @@ pub const FILE_END: u32 = 2;
 pub const INVALID_SET_FILE_POINTER: u32 = 4294967295;
 pub const CREATE_SUSPENDED: u32 = 4;
 pub const DETACHED_PROCESS: u32 = 8;
+pub const CREATE_NEW_CONSOLE: u32 = 16;
 pub const NORMAL_PRIORITY_CLASS: u32 = 32;
+pub const CREATE_NEW_PROCESS_GROUP: u32 = 512;
+pub const CREATE_UNICODE_ENVIRONMENT: u32 = 1024;
+pub const CREATE_SEPARATE_WOW_VDM: u32 = 2048;
+pub const CREATE_SHARED_WOW_VDM: u32 = 4096;
 pub const CREATE_FORCEDOS: u32 = 8192;
+pub const CREATE_PROTECTED_PROCESS: u32 = 262144;
+pub const CREATE_BREAKAWAY_FROM_JOB: u32 = 16777216;
+pub const CREATE_PRESERVE_CODE_AUTHZ_LEVEL: u32 = 33554432;
+pub const CREATE_DEFAULT_ERROR_MODE: u32 = 67108864;
+pub const CREATE_NO_WINDOW: u32 = 134217728;
+pub const CREATE_IGNORE_SYSTEM_DEFAULT: u32 = 2147483648;
 pub const CREATE_NEW: u32 = 1;
 pub const CREATE_ALWAYS: u32 = 2;
 pub const OPEN_EXISTING: u32 = 3;
@@ -4291,6 +4304,10 @@ pub const STARTF_TITLEISLINKNAME: u32 = 2048;
 pub const STARTF_TITLEISAPPID: u32 = 4096;
 pub const STARTF_PREVENTPINNING: u32 = 8192;
 pub const STARTF_UNTRUSTEDSOURCE: u32 = 32768;
+pub const CREATE_EVENT_MANUAL_RESET: u32 = 1;
+pub const CREATE_EVENT_INITIAL_SET: u32 = 2;
+pub const CREATE_MUTEX_INITIAL_OWNER: u32 = 1;
+pub const CREATE_WAITABLE_TIMER_MANUAL_RESET: u32 = 1;
 pub const LOCALE_ALL: u32 = 0;
 pub const LOCALE_NOUSEROVERRIDE: u32 = 2147483648;
 pub const LOCALE_USE_CP_ACP: u32 = 1073741824;
@@ -5517,6 +5534,7 @@ pub struct _STARTUPINFOW {
     pub hStdOutput: HANDLE,
     pub hStdError: HANDLE,
 }
+pub type STARTUPINFOW = _STARTUPINFOW;
 pub type LPSTARTUPINFOW = *mut _STARTUPINFOW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -5526,6 +5544,7 @@ pub struct _PROCESS_INFORMATION {
     pub dwProcessId: DWORD,
     pub dwThreadId: DWORD,
 }
+pub type PROCESS_INFORMATION = _PROCESS_INFORMATION;
 pub type LPPROCESS_INFORMATION = *mut _PROCESS_INFORMATION;
 unsafe extern "stdcall" {
     pub fn GetSystemTimePreciseAsFileTime(lpSystemTimeAsFileTime: LPFILETIME);
@@ -5718,6 +5737,9 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
     pub fn GetEnvironmentStringsW() -> LPWSTR;
+}
+unsafe extern "stdcall" {
+    pub fn GetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
 unsafe extern "stdcall" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;

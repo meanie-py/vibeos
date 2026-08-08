@@ -182,6 +182,11 @@ static threadlocinfo ref_locinfo;
  * both wrong the same way and classify would still say MATCH.  See build.rs. */
 #include "cloc_tables.h"
 
+/* locale.c's C-locale calendar strings, lifted by build.rs into a TU of their own
+ * (`-fshort-wchar`, for the wide arm nothing reads at this version). ONE object, shared
+ * with the subject — see the assignment in get_locinfo below. */
+extern __lc_time_data cloc_time_data;
+
 /* ctype.c (reference TU #3) owns the narrow ctype table.  It is shared ENVIRONMENT,
  * not code under test — exactly like get_locinfo() itself: the reference and the
  * subject must agree on what the locale IS, or the comparison means nothing.  Hence
@@ -219,6 +224,12 @@ pthreadlocinfo CDECL get_locinfo(void)
         ref_locinfo.pctype      = MSVCRT__ctype + 1;
         ref_locinfo.pclmap      = cloc_clmap;
         ref_locinfo.pcumap      = cloc_cumap;
+        /* locale.c:657 makes this assignment too. Until time.c became a reference TU the
+         * slot stayed NULL, which was honest — nothing read it — and became a null deref
+         * the moment a strftime row existed. Shared with the subject, like the ctype and
+         * case tables above and NOT like the MBCS fixture: this is what the C locale IS,
+         * and neither side's code writes it at _MSVCR_VER=0. */
+        ref_locinfo.lc_time_curr = &cloc_time_data;
         MSVCRT__pctype          = ref_locinfo.pctype;
     }
     return &ref_locinfo;

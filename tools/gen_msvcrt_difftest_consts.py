@@ -61,6 +61,8 @@ PROBE_INCLUDES = [
     "sys/locking.h",
     "sys/utime.h",
     "io.h",
+    "time.h",
+    "process.h",
     '"windef.h"',
     '"winbase.h"',
     '"winnls.h"',
@@ -148,6 +150,15 @@ CONSTANTS: dict[str, list[str]] = {
         "STDOUT_FILENO",
         "STDERR_FILENO",
     ],
+    # `clock()` is literally `(now - init_time) / (TICKSPERSEC / CLOCKS_PER_SEC)`, so this
+    # constant IS the unit of its return value.  msvcrt's is 1000 (milliseconds); glibc's
+    # is 1000000.  A reference TU that took glibc's divides by 10 instead of 10000 and
+    # answers in MICROseconds — every clock() row off by exactly 1000x, in a function whose
+    # body is four lines and looks impossible to get wrong.  Same shape as BUFSIZ and
+    # _IONBF above, and displaced for the same reason.
+    "time (msvcrt's own time.h)": [
+        "CLOCKS_PER_SEC",
+    ],
     "Win32 file API (psdk)": [
         "CREATE_ALWAYS",
         "CREATE_NEW",
@@ -184,6 +195,34 @@ CONSTANTS: dict[str, list[str]] = {
         "STD_OUTPUT_HANDLE",
         "RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO",
     ],
+    # process.c's `msvcrt_spawn` opens with `if ((unsigned)flags > _P_DETACH) return -1`
+    # and then SWITCHES on the same value, so these five numbers decide which arm every
+    # `_spawn*` call takes — and they are not in the obvious order.  msvcrt's process.h
+    # numbers them WAIT 0, NOWAIT 1, OVERLAY 2, NOWAITO 3, DETACH 4, so `_P_OVERLAY`
+    # (what every `_exec*` passes) sits in the MIDDLE of the valid range rather than at
+    # an end.  A transcription that guessed the POSIX-ish order would put the range check
+    # in a different place and every rejected-flags row would still read as MATCH.
+    "spawn modes (msvcrt's own process.h)": [
+        "_P_WAIT",
+        "_P_NOWAIT",
+        "_P_OVERLAY",
+        "_P_NOWAITO",
+        "_P_DETACH",
+    ],
+    # The CreateProcessW / WaitForSingleObject vocabulary processimpl.c answers in.
+    # `CREATE_UNICODE_ENVIRONMENT` is the one that has to be right rather than merely
+    # present: msvcrt_spawn ORs it into every single spawn, and `DETACHED_PROCESS` only
+    # on the `_P_DETACH` arm, so a wrong value for either makes the recorded creation
+    # flags agree between two sides that are both reading our number.
+    "Win32 process API (psdk)": [
+        "CREATE_UNICODE_ENVIRONMENT",
+        "DETACHED_PROCESS",
+        "STARTF_USESTDHANDLES",
+        "INFINITE",
+        "WAIT_OBJECT_0",
+        "WAIT_TIMEOUT",
+        "WAIT_FAILED",
+    ],
     "codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines": [
         "CP_ACP",
         "MB_PRECOMPOSED",
@@ -199,6 +238,11 @@ CONSTANTS: dict[str, list[str]] = {
         # timeimpl.c's GetDateFormatW/GetTimeFormatW report a too-small
         # output buffer with this, which is what the real ones do.
         "ERROR_INSUFFICIENT_BUFFER",
+        # processimpl.c: what an unset COMSPEC and a missing export really
+        # report.  `_unloaddll` RETURNS GetLastError() to its caller, so this
+        # value is not diagnostic decoration — it is the function's result.
+        "ERROR_ENVVAR_NOT_FOUND",
+        "ERROR_PROC_NOT_FOUND",
     ],
     # Every case label in errno.c's msvcrt_set_errno, which refimpl.c
     # transcribes.  A missing one would not be a compile error in a `switch` —
@@ -292,6 +336,8 @@ CONSTANTS: dict[str, list[str]] = {
 DISPLACE = {
     # glibc 8192 vs msvcrt 512 — see the stdio/io.h group above.
     "BUFSIZ",
+    # glibc 1000000 vs msvcrt 1000 — see the time group above.
+    "CLOCKS_PER_SEC",
     # glibc numbers these 0/1/2 and msvcrt 0x0000/0x0040/0x0004. The clash that
     # matters is _IONBF: msvcrt.h aliases MSVCRT__NOBUF to it below _MSVCR_VER 140,
     # and glibc's 2 collides bit-for-bit with _IOWRT.
@@ -480,6 +526,26 @@ LAYOUTS: dict[str, list[str]] = {
         "hStdError",
     ],
     "SECURITY_ATTRIBUTES": ["nLength", "lpSecurityDescriptor", "bInheritHandle"],
+    # The wide twin of STARTUPINFOA, and NOT a copy of it: three `char *` become
+    # `wchar_t *`, which on a 32-bit target changes nothing and on a 64-bit one changes
+    # nothing either — but `cbReserved2`/`lpReserved2` are what msvcrt_spawn fills from
+    # `msvcrt_create_io_inherit_block`, so the pair's offsets decide whether the recorder
+    # reads the inherit block or two bytes of padding.
+    "STARTUPINFOW": [
+        "cb",
+        "lpReserved",
+        "dwFlags",
+        "wShowWindow",
+        "cbReserved2",
+        "lpReserved2",
+        "hStdInput",
+        "hStdOutput",
+        "hStdError",
+    ],
+    # msvcrt_spawn's `_P_WAIT` arm calls `GetExitCodeProcess(pi.hProcess, &pi.dwProcessId)`
+    # — it writes the EXIT CODE into the PID field and returns that — so this struct's
+    # field order is load-bearing logic, not bookkeeping.
+    "PROCESS_INFORMATION": ["hProcess", "hThread", "dwProcessId", "dwThreadId"],
 }
 
 # Scalar widths the layouts depend on.  Harvested for the same reason.

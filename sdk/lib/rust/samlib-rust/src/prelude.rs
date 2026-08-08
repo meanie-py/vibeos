@@ -73,13 +73,10 @@ macro_rules! RtlCopyMemory {
         $crate::prelude::memcpy($dst as *mut c_void, $src as *const c_void, $len as usize)
     };
 }
-#[macro_export]
-macro_rules! ZeroMemory {
-    ($dst:expr, $len:expr $(,)?) => {
-        $crate::prelude::memset($dst as *mut c_void, 0, $len as usize)
-    };
-}
-pub use crate::{CopyMemory, RtlCopyMemory, ZeroMemory};
+// The zeroing macros live in `win32macros-rust`, ported once from the header and
+// known-answer tested there. Re-exported under the same names, so no call site changed.
+pub use win32macros_rust::ZeroMemory;
+pub use crate::{CopyMemory, RtlCopyMemory};
 
 // ================= Win32 / RPC imports ========================================================
 // Declared, never defined: rpcrt4, advapi32, kernel32 (samlib's add_importlibs).

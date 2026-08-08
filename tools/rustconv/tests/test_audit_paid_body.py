@@ -39,6 +39,7 @@ def _audit(rust, c_source, callees):
         is_cpp_source=False,
         fact_seals={},
         call_seals={"f": seal_calls(c_source, callees)},
+        wide_seals={},
         target_name="netcfgx",
     )
     return body, result

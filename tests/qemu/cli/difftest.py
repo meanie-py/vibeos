@@ -64,6 +64,35 @@ def discover(repo: Path) -> list[str]:
     return sorted({n.rsplit("/", 1)[-1] for n in names if n.rsplit("/", 1)[-1].endswith(_SUFFIX)})
 
 
+def crate_target(repo: Path, name: str) -> str | None:
+    """The `--target` triple a harness declares, or None for the host.
+
+    `msvcrt-seh-difftest` grades `except_i386.c`, which is inside `#ifdef __i386__` and whose
+    Rust counterpart is `#![cfg(target_arch = "x86")]` — so it only exists in a 32-bit binary.
+    Cargo builds one crate for one target per invocation, so that crate declares its triple in
+    its own manifest:
+
+        [package.metadata.difftest]
+        target = "i686-unknown-linux-gnu"
+
+    DISCOVERED from the manifest for the same reason the crate set is: a driver that carried
+    the list would silently build the next such harness for the host, where its `#[cfg]`s
+    compile to nothing and it grades zero rows.
+    """
+    manifest = repo.joinpath(*RUST_WS) / name / "Cargo.toml"
+    if not manifest.is_file():
+        return None
+    m = re.search(
+        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
+        manifest.read_text(),
+        re.S | re.M,
+    )
+    if not m:
+        return None
+    t = re.search(r'^\s*target\s*=\s*"([^"]+)"', m.group(1), re.M)
+    return t.group(1) if t else None
+
+
 def _salient(out: str, limit: int = 6) -> list[str]:
     """The lines a human needs from a failed harness: the assertion and its two
     values, not the linker command line."""
@@ -111,6 +140,93 @@ def graded(out: str) -> int:
     return sum(int(m.group(1)) for p in pats for m in re.finditer(p, out))
 
 
+#: Where msvcrt-difftest keeps the headers its build.rs force-includes.
+_REFSTUB = ("sdk", "lib", "rust", "msvcrt-difftest", "refstub")
+
+
+def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
+    """`(label, argv)` for every generated msvcrt-difftest artifact's `--check`.
+
+    DISCOVERED, not listed, for the same reason the crates are: the set has grown
+    from three artifacts to seven in two months, once per reference TU, and a
+    hardcoded list is how the eighth arrives uncovered. `refstub/msvcrt_<stem>_protos.h`
+    IS the registration — the file's existence names the source it was derived from.
+    """
+    py = "python3"
+    checks: list[tuple[str, list[str]]] = [
+        # The constants and the layout guardian, in one invocation: one generator
+        # writes both, so one `--check` re-derives both.
+        (
+            "consts",
+            [py, str(repo / "tools" / "gen_msvcrt_difftest_consts.py"), "--check"],
+        )
+    ]
+    for h in sorted(repo.joinpath(*_REFSTUB).glob("msvcrt_*_protos.h")):
+        stem = h.name[len("msvcrt_") : -len("_protos.h")]
+        checks.append(
+            (
+                f"protos:{stem}",
+                [py, str(repo / "tools" / "gen_msvcrt_ref_protos.py"), f"{stem}.c", "--check"],
+            )
+        )
+    # The 32-bit harness's i386 layout guardian. Same argument as the two above: it is
+    # generated from headers this repo also owns, so it can go stale without anyone editing
+    # it — and a stale SEH layout does not fail, it regrades a structure walk against offsets
+    # msvcrt.dll no longer has.
+    if (repo / "sdk/lib/rust/msvcrt-seh-difftest/refstub/seh_layout.h").is_file():
+        checks.append(
+            ("layout:seh-i386", [py, str(repo / "tools" / "gen_msvcrt_seh_layout.py"), "--check"])
+        )
+    return checks
+
+
+def check_generated(repo: Path, run: Run) -> bool:
+    """Re-derive every generated refstub artifact and refuse a stale one.
+
+    ── why this belongs HERE and not in `vibeos-cli check` ──────────────────
+
+    These artifacts have had a `--check` mode since the day they were written and
+    nothing ran it, so a PSDK header that moved a constant, or a reference `.c`
+    that changed a signature, stayed silent until some row happened to reach it —
+    and a row that reaches a stale constant does not report "stale", it reports a
+    DIVERGENCE in the Rust. Wrong file, hours later.
+
+    `check` is the wrong home because re-derivation needs the pinned
+    cross-compiler AND `build-amd64` (the prototypes come from the built object,
+    not the source text: `_MSVCR_VER` opens and closes whole families, so what got
+    EMITTED is the authority). `check` runs on a fresh worktree that has no build
+    dir. `difftest` already hard-requires one — msvcrt-difftest's build.rs reads
+    `build-amd64/.../*.obj` — so here the dependency costs nothing new.
+
+    And it runs BEFORE the harnesses, deliberately. A stale header does not make
+    one row wrong, it makes every row over that TU suspect, so the useful failure
+    is "your oracle is stale", not forty divergences.
+
+    FLEET ISOLATION: the generators resolve `build-amd64` under THIS repo root and
+    hard-fail if it is absent. That refusal is the correct behaviour and must not
+    be softened into a skip — a check that quietly does nothing when the build dir
+    is missing is exactly the shape of the four waves this closes.
+    """
+    all_ok = True
+    for label, argv in generated_checks(repo):
+        cp = run.run(argv, cwd=repo, env=dict(os.environ), stage=f"drift:{label}")
+        out = (cp.stdout or "") + (cp.stderr or "")
+        ok = cp.returncode == 0
+        all_ok &= ok
+        run.add(
+            Stage(
+                name=f"drift:{label}",
+                exit=cp.returncode,
+                status="ok" if ok else "fail",
+                detail="in sync" if ok else "STALE — regenerate",
+                salient=[]
+                if ok
+                else [ln.strip()[:200] for ln in out.splitlines() if ln.strip()][:6],
+            )
+        )
+    return all_ok
+
+
 def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool:
     """Run each harness in its own cargo invocation. Returns True iff all green."""
     ws = repo.joinpath(*RUST_WS)
@@ -126,12 +242,11 @@ def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool
     for name in names:
         # Separate invocation per crate — see the module docstring on feature
         # unification. Sharing one `cargo test -p a -p b` breaks the link.
-        cp = run.run(
-            ["cargo", "test", "--release", "-p", name],
-            cwd=ws,
-            env=dict(os.environ),
-            stage=name,
-        )
+        argv = ["cargo", "test", "--release", "-p", name]
+        target = crate_target(repo, name)
+        if target:
+            argv += ["--target", target]
+        cp = run.run(argv, cwd=ws, env=dict(os.environ), stage=name)
         out = (cp.stdout or "") + (cp.stderr or "")
         n = graded(out)
         ok = cp.returncode == 0 and n > 0
@@ -170,7 +285,13 @@ def difftest(args, repo: Path) -> int:
             return 2
 
     run = Run("difftest", "host")
+    # The oracle's own inputs first — see check_generated. A stale generated header
+    # makes every row over its TU suspect, and the harnesses still run afterwards so
+    # one command reports both facts rather than hiding the second behind the first.
+    fresh = check_generated(repo, run)
     ok = run_difftests(repo, run, only)
-    if not ok:
+    if not fresh:
+        run.classification = "DIFFTEST_STALE_ORACLE"
+    elif not ok:
         run.classification = "DIFFTEST_DIVERGENCE"
     return run.finalize(repo)

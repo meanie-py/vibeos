@@ -12,6 +12,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -111,6 +112,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -486,6 +488,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -840,6 +843,15 @@ dependencies = [
 [[package]]
 name = "interlck"
 version = "0.1.0"
+
+[[package]]
+name = "intl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "iomgr-rust"
@@ -1303,6 +1315,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1343,6 +1356,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "msvcrt-seh-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "msvcrt-crt-rust",
+ "msvcrt-sys",
+]
+
+[[package]]
 name = "msvcrt-sys"
 version = "0.1.0"
 
@@ -1376,6 +1398,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1384,6 +1407,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1478,6 +1502,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1791,15 +1816,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "recyclebin-rust"
-version = "0.1.0"
-dependencies = [
- "com-sys",
- "ntdll-sys",
- "panic-common",
-]
-
-[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2052,6 +2068,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2298,6 +2315,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2307,6 +2325,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2420,6 +2439,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2658,6 +2678,10 @@ dependencies = [
 
 [[package]]
 name = "win32k-sys"
+version = "0.1.0"
+
+[[package]]
+name = "win32macros-rust"
 version = "0.1.0"
 
 [[package]]

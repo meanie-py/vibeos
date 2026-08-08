@@ -189,6 +189,105 @@ def _format_import_context(resolve: ResolveResult, target: Target | None = None)
     return "\n".join(parts)
 
 
+def _wide_literal_macros(target: Target | None) -> set[str]:
+    """Which of `w!` / `wide!` the OUTPUT CRATE actually defines.
+
+    Derived by reading the crate, never assumed: naming a macro the crate does not
+    have is worse than naming none, because the model writes a call that cannot
+    resolve and the repair pass has nothing to resolve it to.
+    """
+    crate = (target or TARGETS["ntoskrnl"]).output_crate
+    src = crate / "src"
+    if not src.is_dir():
+        return set()
+    found: set[str] = set()
+    for path in src.rglob("*.rs"):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for name in ("w", "wide"):
+            if re.search(rf"macro_rules!\s+{name}\s*\{{", text):
+                found.add(name)
+        if len(found) == 2:
+            break
+    return found
+
+
+def _format_wide_literal_contract(target: Target | None) -> str:
+    """The `L"..."` rule, stated against the substrate this crate actually has.
+
+    WHY THIS IS NOT LEFT TO THE SYSTEM PROMPT: the plain-C idiomatic path loads
+    templates/function_prompt.md, which never mentioned wide strings at all — its one
+    string rule was the NARROW `b"text\0".as_ptr() as PCHAR`. Applied to an `L"..."`
+    that yields a byte string behind a wide pointer, and the model then hand-encodes
+    UTF-16 by eye. That is one missing rule with five modules of fallout behind it:
+    mswsock's 3 alignment-1 literals, wkssvc's 39 one-character-truncated registry
+    names, browser's unbindable `\\pipe\browser`, desk's two unterminated window
+    classes, and intl kblayouts' `L"0000%s"` banked as FIVE zeros. Every one of those
+    is a hand-count the compiler cannot check; a macro that counts for you is the
+    only form that cannot be got wrong.
+    """
+    macros = _wide_literal_macros(target)
+    parts = [
+        '\n## Wide string literals (`L"..."`)',
+        "",
+        'NEVER emit a `b"..."` byte string behind a wide pointer, in ANY of its three spellings:',
+        '`b"text\\0".as_ptr() as PWSTR` is ASCII (one byte per character, so the callee '
+        'reads garbage); the interleaved `b"t\\0e\\0x\\0t\\0\\0\\0"` is worse — it looks '
+        "correct in hex, but it has ALIGNMENT 1 for a `u16` read and one miscounted `\\0` "
+        "silently truncates the string; and "
+        '`core::mem::transmute::<&[u8; N], PWSTR>(b"t\\x00e\\x00")` is that same bug wearing '
+        "a cast that suppresses the diagnostic. All three have shipped bugs. A transmute is "
+        "not an encoding.",
+        "",
+    ]
+    if "w" in macros:
+        parts += [
+            "This crate gives you macros that do the encoding, the NUL and the counting:",
+            "",
+            "```rust",
+            '// C: L"Keyboard Layout\\\\Preload"   (an escaped backslash — ONE in the value)',
+            'w!("Keyboard Layout\\\\Preload")      // -> *const u16, NUL-terminated, aligned',
+        ]
+        if "wide" in macros:
+            parts += [
+                'wide!("SSDemoParent")               // -> [u16; N] when the C declares an ARRAY',
+            ]
+        parts += [
+            "```",
+            "",
+            "Copy the C literal's VALUE into the macro, not its source spelling: C `\\\\` is one "
+            'backslash and C `\\"` is one quote. Never write out the code units by hand, and '
+            "never declare the length yourself — the macro derives it.",
+        ]
+    else:
+        parts += [
+            "This crate has no wide-literal macro, so write an explicit array and let the "
+            "compiler count it — `[u16; N]` with a literal `N` you typed is the form that goes "
+            "wrong:",
+            "",
+            "```rust",
+            "static CLASS_NAME: [u16; 13] = ['S' as u16, 'S' as u16, /* ... */ 0];",
+            "```",
+            "",
+            'The trailing `0` is not optional: a C `WCHAR x[] = L"..."` is NUL-terminated, and '
+            "an array sized to the character count has no terminator at all.",
+        ]
+    parts.append(
+        "\nA `%s`/`%d` format string is a literal like any other — reproduce its punctuation "
+        "and its digit count exactly."
+    )
+    # The wide CHAR literal is a separate spelling and it survived the string rule above on its
+    # first outing (intl generalp.c, 6 sites). It is the benign member of the family — `prefix
+    # `L` is unknown` is a parse error, so it cannot ship — but it still costs a grind pass.
+    parts.append(
+        "\nA wide CHARACTER literal `L'x'` drops the `L` too: write `'x' as u16`. Rust reads a "
+        "leading `L` as a reserved literal prefix, not as part of the character."
+    )
+    return "\n".join(parts)
+
+
 def _format_gap_functions(gap_fns: set[str], subsystem: str) -> str:
     """Format gap function info for the LLM."""
     if not gap_fns:
@@ -431,6 +530,9 @@ def build_preamble_prompt(
     scan: ScanResult,
     resolve: ResolveResult,
     target: Target | None = None,
+    *,
+    sealed_c: str | None = None,
+    extra_contract: str = "",
 ) -> str:
     """Build the prompt for translating a file's FILE-SCOPE PREAMBLE.
 
@@ -443,8 +545,18 @@ def build_preamble_prompt(
     Uses the same resolved import context as the function prompts. The C
     text is scan.preamble_text (AST-derived, marker-independent), falling
     back to globals_text for marker-split files.
+
+    `sealed_c` replaces that text when a seal owns part of it, and
+    `extra_contract` carries the matching envelope. This is where the wide seal
+    earns most of its keep: file-scope `static const WCHAR X[] = L"...";` is
+    exactly the shape that shipped 18 arrays missing the terminator every reader
+    of them scans for, and the preamble is the ONLY pass that sees it.
     """
-    preamble_c = (scan.preamble_text or scan.globals_text or "").strip()
+    preamble_c = (
+        sealed_c
+        if sealed_c is not None
+        else (scan.preamble_text or scan.globals_text or "").strip()
+    )
     parts: list[str] = []
     parts.append(f"## Translate the FILE-SCOPE PREAMBLE of `{scan.path.name}`\n")
     parts.append(_format_import_context(resolve, target=target))
@@ -479,6 +591,8 @@ def build_preamble_prompt(
         'statements, `extern ".." {}` blocks, ANY `fn` definitions, or\n'
         "prose. The caller assembles imports and function bodies separately."
     )
+    if extra_contract:
+        parts.append(extra_contract)
     parts.append("\n## C File-Scope Preamble\n")
     parts.append("```c")
     parts.append(preamble_c)
@@ -520,6 +634,11 @@ def build_file_context(
     )
     if globals_info:
         parts.append(globals_info)
+    # Not gated on the file containing an L"..." — this block is what makes the context
+    # byte-stable across every function in the file, and a per-file test would make the
+    # cached system block depend on which function is being translated.
+    if not (target is not None and target.name == "shell32" and cpp_com):
+        parts.append(_format_wide_literal_contract(target))
     return "\n".join(parts)
 
 
@@ -668,6 +787,8 @@ def build_function_prompt(
         )
         if globals_info:
             parts.append(globals_info)
+        if not (target is not None and target.name == "shell32" and cpp_com):
+            parts.append(_format_wide_literal_contract(target))
 
     # Callee context
     callee_info = _format_callee_context(func, translated, all_deps, catalog_fn_names)

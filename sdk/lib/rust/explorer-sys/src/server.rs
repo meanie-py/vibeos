@@ -263,10 +263,15 @@ pub const TTM_ADDTOOLW: UINT = WM_USER + 50;
 pub const TTM_UPDATETIPTEXTW: UINT = WM_USER + 57;
 
 /// tooltip control class name — CreateWindowEx target for CTooltips::Create.
-pub static TOOLTIPS_CLASSW: [u16; 16] = [
+/// L"tooltips_class32" (16 wide chars + NUL). The 17th element is NOT padding: commctrl.h
+/// spells this `#define TOOLTIPS_CLASSW L"tooltips_class32"`, and a C string literal carries its
+/// terminator, but a hand-encoded array does not unless someone writes it. Every use is
+/// `.as_ptr()` into CreateWindowExW's lpClassName, which reads until a NUL — without one it runs
+/// off the end into whatever rodata follows.
+pub static TOOLTIPS_CLASSW: [u16; 17] = [
     b't' as u16, b'o' as u16, b'o' as u16, b'l' as u16, b't' as u16, b'i' as u16, b'p' as u16,
     b's' as u16, b'_' as u16, b'c' as u16, b'l' as u16, b'a' as u16, b's' as u16, b's' as u16,
-    b'3' as u16, b'2' as u16,
+    b'3' as u16, b'2' as u16, 0,
 ];
 
 // ---------------------------------------------------------------------------

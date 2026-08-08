@@ -103,6 +103,15 @@ ALLOWLIST_TYPES = [
     # third parameter type-identical to the `CreateThread` callback it is handed to.
     "_beginthread_start_routine_t",
     "_beginthreadex_start_routine_t",
+    # processthreadsapi.h's two spawn structs, by their BARE typedef names. The island
+    # already emits `_STARTUPINFOW`/`_PROCESS_INFORMATION` (dragged in as CreateProcessW's
+    # parameter types) and their `LP*` pointers, but not the plain aliases process.c
+    # itself writes — so process.rs carried `type STARTUPINFOW = msvcrt_sys::_STARTUPINFOW;`
+    # locally. Harmless as an alias, and still worth deriving: an alias is one more place
+    # for a translation to name a struct the island does not actually have, which compiles
+    # and links and reads the wrong bytes.
+    "STARTUPINFOW",
+    "PROCESS_INFORMATION",
     # winnt.h's fixed-width aliases math.c transmutes floats through.
     "UINT64",
     "INT64",
@@ -788,6 +797,12 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         # arguments including two structs and three BOOLs — the single worst shape to
         # hand-write an extern for, and the reason this island exists.
         "|CreateProcessW|WaitForSingleObject|GetExitCodeProcess|TerminateProcess"
+        # `msvcrt_get_comspec` sizes its allocation from the first call and fills from the
+        # second, so the two return DIFFERENT things (required size INCLUDING the NUL vs
+        # copied count EXCLUDING it) — a hand-written extern gets the signature right and
+        # tells you nothing about that, which is why the body it feeds is graded rather
+        # than trusted. Derived here so at least the convention is not a judgement call.
+        "|GetEnvironmentVariableW"
         "|GetProcessHeap|HeapAlloc|HeapFree|HeapReAlloc"
         "|LoadLibraryW|FreeLibrary|GetProcAddress|GetModuleFileNameW"
         # winbase.h + winternl.h: heap.c's allocator surface. It deliberately reaches
@@ -970,7 +985,14 @@ def run_bindgen(arch: str, wrapper: Path) -> str:
         "|ENAMETOOLONG|ENOLCK|ENOSYS|ENOTEMPTY|EDEADLOCK"
         # winbase.h / winnt.h: the Win32 file API file.c calls straight through to.
         "|INVALID_HANDLE_VALUE|INVALID_FILE_ATTRIBUTES|INVALID_SET_FILE_POINTER"
-        "|GENERIC_READ|GENERIC_WRITE|CREATE_[A-Z]+|OPEN_[A-Z]+|TRUNCATE_EXISTING"
+        # `CREATE_[A-Z_]+`, with the underscore, and that is the LOCALE_SMONTHNAME1 bug
+        # again in a different family: `CREATE_[A-Z]+` matched CREATE_NEW and
+        # CREATE_ALWAYS and silently dropped every multi-word member —
+        # CREATE_UNICODE_ENVIRONMENT among them, which msvcrt_spawn ORs into the flags of
+        # EVERY spawn. process.rs hand-wrote it as a local `const` because the island did
+        # not have it, which is the invented-literal shape (§9.113) arriving through an
+        # allowlist gap rather than through the model.
+        "|GENERIC_READ|GENERIC_WRITE|CREATE_[A-Z_]+|OPEN_[A-Z]+|TRUNCATE_EXISTING"
         "|FILE_SHARE_[A-Z]+|FILE_ATTRIBUTE_[A-Z]+|FILE_FLAG_[A-Z_]+|FILE_TYPE_[A-Z]+"
         "|FILE_BEGIN|FILE_CURRENT|FILE_END|FILE_[A-Z_]*INFORMATION"
         "|STD_[A-Z]+_HANDLE|MAX_PATH|MOVEFILE_[A-Z_]+|DUPLICATE_[A-Z_]+"

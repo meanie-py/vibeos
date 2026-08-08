@@ -148,6 +148,13 @@ from .stitcher import stitch_file
 from .table_audit import audit_tables
 from .trace_catalog import generate_catalog, print_catalog
 from .vtbl_gen import find_vtbl_tables
+from .wide_seal import (
+    WideSealError,
+    render_wide_statics,
+    seal_wide_literals,
+    unseal_wide_literals,
+    wide_contract,
+)
 
 _VTBL_STATIC_RE = re.compile(
     r"^\s*(?:pub\s+)?static(?:\s+mut)?\s+[A-Za-z_]\w*\s*:\s*[A-Za-z_]\w*Vtbl\b",
@@ -644,25 +651,37 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
     return scan
 
 
-def _cache_suffix(args, fact_seal_enabled: bool, call_seal_enabled: bool) -> str:
-    """Namespace the resume cache by the seals that were active when it was filled."""
+def _cache_suffix(
+    args, fact_seal_enabled: bool, call_seal_enabled: bool, wide_seal_enabled: bool = False
+) -> str:
+    """Namespace the resume cache by the seals that were active when it was filled.
+
+    One INDEPENDENT token per seal, appended — never folded into an existing one. That is
+    what lets a new protection ship for free: a `--seal-wide` run misses the cache and
+    pays, while every `__factseal_v1__callseal_v1` body already banked stays addressable
+    under its own name and is never re-billed.
+    """
     cache_tag = getattr(args, "cache_tag", None)
     suffix = f"__{cache_tag}" if cache_tag else ""
     if fact_seal_enabled:
         suffix += "__factseal_v1"
     if call_seal_enabled:
         suffix += "__callseal_v1"
+    if wide_seal_enabled:
+        suffix += "__wideseal_v1"
     return suffix
 
 
-def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled):
+def _open_response_cache(
+    args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled=False
+):
     """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
 
     Skips every function whose C body is unchanged. Coexists with the sink archive
     (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
     `--no-resume` forces fresh.
     """
-    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
+    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
     return ResponseCache(f"{subsystem}__{c_file.stem}{suffix}")
 
 
@@ -671,6 +690,12 @@ def _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_e
 # than a silent relaxation. Never a reason to skip review: `_tzset` is what one of
 # these looks like when it is wrong (fact_seal.unseal_facts).
 UNVERIFIED_CONSTANT_BODIES: list[str] = []
+
+# Bodies whose UTF-16 tokens all survived but in a different ORDER than the C used them.
+# The one damage a closed-set check cannot see (the permutation that got `_tzset` past the
+# constant seal), so it is a review queue rather than a rejection — legitimate reordering
+# exists, and a human decides. See wide_seal.unseal_wide_literals.
+REORDERED_WIDE_LITERAL_BODIES: list[str] = []
 
 
 def _audit_paid_body(
@@ -681,6 +706,7 @@ def _audit_paid_body(
     is_cpp_source: bool,
     fact_seals,
     call_seals,
+    wide_seals,
     target_name: str,
     strict: bool = True,
 ) -> str:
@@ -702,7 +728,7 @@ def _audit_paid_body(
         # cost two re-samplings of five TUs. See `_arity_disagreements` for the real check
         # that replaced what the second pass was catching by luck.
         result.rust_code = _unseal_worker(
-            dep, result.rust_code, fact_seals, call_seals, strict=strict
+            dep, result.rust_code, fact_seals, call_seals, wide_seals, strict=strict
         )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
@@ -718,7 +744,7 @@ def _audit_paid_body(
 
 
 def _adopt_rejected(
-    dep, cache, fact_seals, call_seals, cpp_com_mode: bool, func_idx, contract, sealed
+    dep, cache, fact_seals, call_seals, wide_seals, cpp_com_mode: bool, func_idx, contract, sealed
 ) -> str | None:
     """A stored REJECTED reply for ``dep``, IF it passes today's audit. Else None.
 
@@ -740,7 +766,7 @@ def _adopt_rejected(
     if rejected is None:
         return None
     try:
-        body = _unseal_worker(dep, rejected, fact_seals, call_seals)
+        body = _unseal_worker(dep, rejected, fact_seals, call_seals, wide_seals)
     except CppComError:
         return None
     # Banked under this run's contract and seal set, exactly as a paid acceptance is —
@@ -778,7 +804,9 @@ def _reject_correction(error: "CppComError | None") -> str:
     )
 
 
-def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = True) -> str:
+def _unseal_worker(
+    dep, rust: str, fact_seals, call_seals, wide_seals, *, strict: bool = True
+) -> str:
     """Undo fact/call sealing on a model response, verifying the closed envelope.
 
     Target- and language-neutral: sealing is a lexical transform, so ANY translation
@@ -806,6 +834,9 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = Tru
     # the LAST attempt. Reported the same way `dead_omissions` is, and for the same
     # reason. See fact_seal.unseal_facts.
     ignored_envelope: list[str] = []
+    # UTF-16 tokens that survived but moved. Reported, never rejected — see
+    # REORDERED_WIDE_LITERAL_BODIES.
+    order_findings: list[str] = []
     try:
         calls = call_seals.get(dep.name)
         if calls is not None:
@@ -820,13 +851,28 @@ def _unseal_worker(dep, rust: str, fact_seals, call_seals, *, strict: bool = Tru
                 ignored_envelope=ignored_envelope,
                 strict=strict,
             )
-    except (CallSealError, FactSealError) as error:
+        # LAST, which is the exact reverse of the sealing order. It is also the only one
+        # that substitutes RUST rather than restoring C: running it earlier would hand the
+        # fact seal's by-name recovery a body full of generated `0x0041u16` elements to
+        # rummage through.
+        wides = wide_seals.get(dep.name)
+        if wides is not None:
+            rust = unseal_wide_literals(
+                rust,
+                wides,
+                dead_omissions=dead_omissions,
+                order_findings=order_findings,
+            )
+    except (CallSealError, FactSealError, WideSealError) as error:
         raise CppComError(f"{dep.name}: {error}") from error
     if dead_omissions:
         print(f"    [{dep.name}] omitted in non-executed code: {', '.join(dead_omissions)}")
     for note in ignored_envelope:
         UNVERIFIED_CONSTANT_BODIES.append(f"{dep.name}: {note}")
         print(f"    [{dep.name}] ACCEPTED UNVERIFIED: {note}", file=sys.stderr)
+    for note in order_findings:
+        REORDERED_WIDE_LITERAL_BODIES.append(f"{dep.name}: {note}")
+        print(f"    [{dep.name}] WIDE LITERALS REORDERED: {note}", file=sys.stderr)
     return rust
 
 
@@ -834,7 +880,10 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     """Apply the deterministic shell32 worker boundary to a model response."""
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
     rust = normalize_worker_body(rust, signature)
-    rust = _unseal_worker(dep, rust, fact_seals, call_seals)
+    # The COM path has its own frozen UTF-16 lowering (cpp_com.rewrite_wide_literals), so
+    # there is never a wide envelope to undo here — passing one would be a lie about which
+    # mechanism owns those bytes.
+    rust = _unseal_worker(dep, rust, fact_seals, call_seals, {})
     rust = normalize_worker_body(rust, signature)
     return normalize_worker_semantics(dep.body_text, rust)
 
@@ -2182,6 +2231,7 @@ def cmd_translate(args):
                 "mode": mode,
                 "seal_facts": bool(getattr(args, "seal_facts", False)),
                 "seal_calls": bool(getattr(args, "seal_calls", False)),
+                "seal_wide": bool(getattr(args, "seal_wide", False)),
                 "cache_tag": getattr(args, "cache_tag", None),
             },
         )
@@ -2196,6 +2246,18 @@ def cmd_translate(args):
         name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
     }
     skip_fn_matched: set[str] = set()
+    # Decided ONCE, not per file, so the refusal below is stated once and not twenty times.
+    # Never on the COM path: shell32's C++ literals are already lowered deterministically by
+    # `rewrite_wide_literals`, and its prompts are banked under exactly that behaviour.
+    wide_seal_enabled = bool(getattr(args, "seal_wide", False))
+    if wide_seal_enabled and (cpp_com_mode or free_functions):
+        print(
+            '  --seal-wide IGNORED: the shell32 C++ path lowers L"..." deterministically '
+            "before the model sees the body (cpp_com.rewrite_wide_literals), and its prompts "
+            "are banked under that. Nothing is unprotected by this.",
+            file=sys.stderr,
+        )
+        wide_seal_enabled = False
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -2333,6 +2395,19 @@ def cmd_translate(args):
         fact_seal_enabled = bool(getattr(args, "seal_facts", False))
         call_seal_enabled = bool(getattr(args, "seal_calls", False))
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
+        # FIRST of the three, so the fact seal sees an identifier where a literal was and
+        # never has to reason about string contents, and so a wide literal's own array
+        # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
+        wide_seals = (
+            {dep.name: seal_wide_literals(model_bodies[dep.name]) for dep in sorted_deps}
+            if wide_seal_enabled
+            else {}
+        )
+        if wide_seals:
+            model_bodies = {
+                name: wide_seals[name].text if name in wide_seals else body
+                for name, body in model_bodies.items()
+            }
         fact_seals = (
             {
                 dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
@@ -2435,6 +2510,7 @@ def cmd_translate(args):
         deterministic_contracts = {
             dep.name: (fact_contract(fact_seals[dep.name]) if dep.name in fact_seals else "")
             + (call_contract(call_seals[dep.name]) if dep.name in call_seals else "")
+            + (wide_contract(wide_seals[dep.name]) if dep.name in wide_seals else "")
             for dep in sorted_deps
         }
         for raii_name, raii_rust in local_raii_impls.items():
@@ -2621,7 +2697,7 @@ def cmd_translate(args):
             # invalidation visible BEFORE it re-bills: a seal or contract change
             # that voids banked work shows up here as a collapsed hit count.
             dry_cache = _open_response_cache(
-                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled
+                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
             )
             banked = [
                 dep.name
@@ -2736,8 +2812,10 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled)
-        cache = _open_response_cache(args, subsystem, c_file, fact_seal_enabled, call_seal_enabled)
+        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+        cache = _open_response_cache(
+            args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+        )
 
         # A completed model stream can fail a deterministic audit and remain as
         # ``.partial``. When the harness improves, replay those already-paid bytes
@@ -3123,7 +3201,7 @@ def cmd_translate(args):
                                 # Sealing is language-neutral; unsealing must be too — and
                                 # exactly once, for the reason in `_audit_paid_body`.
                                 r.rust_code = _unseal_worker(
-                                    dp, r.rust_code, fact_seals, call_seals
+                                    dp, r.rust_code, fact_seals, call_seals, wide_seals
                                 )
                                 if is_cpp_source:
                                     r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
@@ -3270,6 +3348,7 @@ def cmd_translate(args):
                         cache,
                         fact_seals,
                         call_seals,
+                        wide_seals,
                         cpp_com_mode,
                         func_idx,
                         deterministic_contracts.get(dep.name, ""),
@@ -3354,6 +3433,7 @@ def cmd_translate(args):
                         is_cpp_source=is_cpp_source,
                         fact_seals=fact_seals,
                         call_seals=call_seals,
+                        wide_seals=wide_seals,
                         target_name=rustconv_target.name,
                         strict=attempt < attempts_allowed,
                     )
@@ -3494,6 +3574,14 @@ def cmd_translate(args):
             _record_preamble(preamble_src, "vacuous", stage="skipped")
             preamble_src = ""
 
+        # The preamble is a SEPARATE paid call with its own prompt, so the seals set up for
+        # the function bodies do not reach it — and it is where the wide seal matters most:
+        # every one of the 18 arrays that shipped without the terminator its readers scan
+        # for was a file-scope `static const WCHAR X[] = L"...";`, which only this pass sees.
+        preamble_wide_seal = (
+            seal_wide_literals(preamble_src) if (wide_seal_enabled and preamble_src) else None
+        )
+
         pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
         if pre_hit is not None:
             preamble_rust = pre_hit
@@ -3506,7 +3594,15 @@ def cmd_translate(args):
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
             )
-            pre_prompt = build_preamble_prompt(scan, file_res, target=rustconv_target)
+            pre_prompt = build_preamble_prompt(
+                scan,
+                file_res,
+                target=rustconv_target,
+                sealed_c=None if preamble_wide_seal is None else preamble_wide_seal.text,
+                extra_contract=(
+                    "" if preamble_wide_seal is None else wide_contract(preamble_wide_seal)
+                ),
+            )
             pre_sink = None
             if archive is not None:
                 pre_sink = ResponseSink(archive.stream_path(0, "preamble"))
@@ -3528,6 +3624,14 @@ def cmd_translate(args):
                     pre_sink.close()
             pre_elapsed_ms = int((time.monotonic() - pre_started) * 1000)
             if pre_res.success:
+                if preamble_wide_seal is not None:
+                    # Unseal BEFORE banking, exactly as a paid body does: the cache must
+                    # hold what was accepted, not the raw reply. A damaged envelope raises
+                    # here and the run stops rather than assembling a module whose tables
+                    # hold `__RUSTCONV_WIDE_nnnn__`.
+                    pre_res.rust_code = unseal_wide_literals(
+                        scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
+                    )
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
                 total_in += pre_res.input_tokens
@@ -3709,6 +3813,19 @@ def cmd_translate(args):
             if prelude:
                 stitched = "\n\n".join(prelude) + "\n\n" + stitched
 
+        if wide_seals or preamble_wide_seal is not None:
+            # The unsealed bodies now reference `RUSTCONV_WSTR_*` by name, so the data has
+            # to be in the module or every reference dangles. Filtered by what the module
+            # actually cites, and a citation with no source raises rather than reaching the
+            # linker. The preamble's own seal is in the pool because a file-scope table of
+            # `LPCWSTR` cites the same statics the bodies do.
+            wide_sources = list(wide_seals.values())
+            if preamble_wide_seal is not None:
+                wide_sources.append(preamble_wide_seal)
+            wide_statics = render_wide_statics(wide_sources, stitched)
+            if wide_statics:
+                stitched = wide_statics + "\n\n" + stitched
+
         # COM vtbl tables, GENERATED — never asked of the model. `translate` is
         # function-granular, so file-scope `static const IXVtbl` tables fall to the
         # one preamble call, and it drops them: all 10 of storage32's went missing
@@ -3831,6 +3948,17 @@ def cmd_translate(args):
                 f"--skip-fn: '{name}' was NOT translated and is absent from the output — "
                 f"hand-write it before this file is flipped"
             )
+        # Wide literals the seal deliberately left to the model. Reported per occurrence
+        # because "the seal was on" must never be read as "every literal was protected":
+        # these are exactly the ones a reviewer still has to diff against the C.
+        wide_skip_sources = sorted(wide_seals.items())
+        if preamble_wide_seal is not None:
+            wide_skip_sources.append(("the file-scope preamble", preamble_wide_seal))
+        for name, sealed_wide in wide_skip_sources:
+            for skip in sealed_wide.skipped:
+                file_findings.append(
+                    f"UNSEALED WIDE LITERAL in {name}: {skip.source[:60]} — {skip.reason}"
+                )
         if rustconv_target.name != "shell32":
             for name in audit_preamble(c_file, preamble_rust, rust_full=code):
                 file_findings.append(f"preamble: {name}")
@@ -3906,6 +4034,14 @@ def cmd_translate(args):
     if UNVERIFIED_CONSTANT_BODIES:
         audit_findings.setdefault("UNVERIFIED CONSTANTS (fact envelope ignored)", []).extend(
             UNVERIFIED_CONSTANT_BODIES
+        )
+
+    # Same bargain, one envelope over: every UTF-16 token came back, but not in the order
+    # the C used them. The closed-set check cannot tell a reorder from a mix-up, so it says
+    # so here instead of guessing (wide_seal, "THE BLIND SPOT WE DO NOT INHERIT").
+    if REORDERED_WIDE_LITERAL_BODIES:
+        audit_findings.setdefault("WIDE LITERALS REORDERED (check each slot)", []).extend(
+            REORDERED_WIDE_LITERAL_BODIES
         )
 
     # A `--skip-fn` name no file in the worklist carried. Per-file this is normal (the name
@@ -4681,6 +4817,18 @@ def main():
         help="Replace each known runtime callee occurrence with an audited opaque token "
         "during the paid call, so a dropped, duplicated, or invented call fails loudly "
         "instead of silently. Works for plain C and for shell32 --cpp-com.",
+    )
+    p.add_argument(
+        "--seal-wide",
+        dest="seal_wide",
+        action="store_true",
+        help="Replace each `L\"...\"` / `L'x'` occurrence with an audited opaque token during "
+        "the paid call, and substitute deterministic UTF-16 afterward. Rust has no wide "
+        "literal, so a model asked for one INVENTS an encoding — a byte string behind a wide "
+        "pointer, an alignment-1 interleave, or a hand-counted [u16; N] missing its "
+        "terminator; five modules shipped one of those. Plain C only: shell32 --cpp-com has "
+        "its own frozen lowering. 98%% of the tree's literals seal; the rest are reported as "
+        "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
     )
     p.add_argument(
         "--retry-rejects",

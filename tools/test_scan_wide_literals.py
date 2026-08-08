@@ -283,3 +283,164 @@ def test_correct_wide_literal_has_no_interior_nul(tmp_path: Path):
     """Anchor: the CORRECT spelling of the same string must stay silent, so the finding above
     is about the doubling and not about the rule firing on everything."""
     assert _scan(tmp_path, 'f(b"I\\0n\\0f\\0\\0\\0".as_ptr() as LPCWSTR);\n') == []
+
+
+# --- element-type spellings and suffixed literals ---------------------------------------------
+
+
+def test_wchar_element_type_is_examined(tmp_path: Path):
+    """`[WCHAR; N]` is by far the commonest spelling in the tree and was invisible for a long time.
+
+    The rule matched `[u16; N]` only, so it reported clean over ~2x more declarations than it
+    actually looked at (946 examined against 1975 present).
+    """
+    src = (
+        '// L"System"\n'
+        "static K: [WCHAR; 7] = [b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR, b't' as WCHAR,\n"
+        "    b'e' as WCHAR, b'm' as WCHAR, 0];\n"
+    )
+    assert _scan(tmp_path, src) == []
+    _seen, compared = _coverage(tmp_path, src)
+    assert compared == 1, "a WCHAR array must be compared against its intent, not skipped"
+
+
+def test_wchar_truncation_is_caught(tmp_path: Path):
+    """The must-FIRE direction for the alias spelling: same bug, same verdict."""
+    src = (
+        '// L"System"\n'
+        "static K: [WCHAR; 6] = [b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR, b't' as WCHAR,\n"
+        "    b'e' as WCHAR, 0];\n"
+    )
+    findings = _scan(tmp_path, src)
+    assert len(findings) == 1, findings
+    # The message must name the REAL element type; it hardcoded `u16` for every array.
+    assert "[WCHAR; 6]" in findings[0] and "TRUNCATED" in findings[0], findings[0]
+
+
+def test_tchar_element_type_is_examined(tmp_path: Path):
+    """TCHAR is included even though it is NOT always 16-bit (c_char in ntdll-sys).
+
+    Both checks are width-agnostic — decoded ordinals vs the comment, element count vs the
+    declared bound — so an 8-bit TCHAR array is checked just as correctly.
+    """
+    src = "// L\"ab\"\nstatic K: [TCHAR; 3] = [b'a' as TCHAR, b'b' as TCHAR, 0];\n"
+    assert _scan(tmp_path, src) == []
+    _seen, compared = _coverage(tmp_path, src)
+    assert compared == 1
+
+
+def test_suffixed_literals_do_not_invent_elements(tmp_path: Path):
+    """`0x0069u16` is ONE element, not `0x0069` followed by `16`.
+
+    Without consuming the suffix the hex alternative stops at `0x0069`, the scan resumes at
+    `u16`, and the bare-decimal alternative matches the `16` — inventing an element with value
+    16 and inflating the count this lint exists to check. dnsrslvr's IP6_ARPA decoded as
+    'i\\x10p6.arpa.\\x10' for exactly this reason.
+    """
+    src = '// L"ip"\nstatic K: [u16; 3] = [0x0069u16, 0x0070, 0u16];\n'
+    assert _scan(tmp_path, src) == []
+
+
+def test_suffixed_literals_still_catch_a_real_truncation(tmp_path: Path):
+    """Consuming the suffix must not blunt the rule — the same array one short still fires."""
+    src = '// L"ip6"\nstatic K: [u16; 3] = [0x0069u16, 0x0070, 0u16];\n'
+    findings = _scan(tmp_path, src)
+    assert len(findings) == 1 and '"ip"' in findings[0]
+
+
+# --- use-site-gated unterminated rule ----------------------------------------------------------
+
+
+def test_unterminated_passed_to_a_nul_scanner_is_a_finding(tmp_path: Path):
+    """THE must-fire case. RtlInitUnicodeString computes Length BY scanning for the NUL.
+
+    smss-csrss shipped eight of these (`\\NLS\\NlsSectionUnicode` and friends): the C wrote
+    `RtlInitUnicodeString(&n, L"\\NLS\\NlsSectionUnicode")`, whose literal carries a terminator for
+    free, and the hand-encoding dropped it.
+    """
+    src = (
+        "static NLS_X: [u16; 3] = [b'a' as u16, b'b' as u16, b'c' as u16];\n"
+        "fn f() { RtlInitUnicodeString(&mut n, NLS_X.as_ptr()); }\n"
+    )
+    findings = _scan(tmp_path, src)
+    assert len(findings) == 1, findings
+    assert "NO NUL terminator" in findings[0] and '"abc"' in findings[0]
+
+
+def test_terminated_array_is_silent(tmp_path: Path):
+    src = (
+        "static NLS_X: [u16; 4] = [b'a' as u16, b'b' as u16, b'c' as u16, 0];\n"
+        "fn f() { RtlInitUnicodeString(&mut n, NLS_X.as_ptr()); }\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_bounded_callee_is_silent(tmp_path: Path):
+    """`wcsncmp(p, x.as_ptr(), 3)` reads three units and stops — no terminator is needed."""
+    src = (
+        "static PROBE: [u16; 3] = [b'a' as u16, b'b' as u16, b'c' as u16];\n"
+        "fn f() { wcsncmp(p, PROBE.as_ptr(), 3); }\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_bounded_callee_is_found_through_a_nested_argument(tmp_path: Path):
+    """The bounded callee must be located depth-aware, not by a paren-free lookbehind.
+
+    npfs writes `RtlCopyMemory(addr_of_mut!((*Info).FileSystemName) as PVOID, X.as_ptr(), n)`.
+    A gap pattern that forbids parens never reaches back to `RtlCopyMemory`, so a correct,
+    deliberately-unterminated literal reads as unbounded and gets reported.
+    """
+    src = (
+        "static NPFS_FS_NAME: [u16; 4] = [b'N' as u16, b'P' as u16, b'F' as u16, b'S' as u16];\n"
+        "fn f() { RtlCopyMemory(addr_of_mut!((*Info).FileSystemName) as PVOID,\n"
+        "    NPFS_FS_NAME.as_ptr(), n); }\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_unicode_string_buffer_field_is_silent(tmp_path: Path):
+    """`Buffer:` beside an explicit Length is correct by construction — wmi declares four."""
+    src = (
+        "static NAME_BUF: [u16; 3] = [b'a' as u16, b'b' as u16, b'c' as u16];\n"
+        "pub static mut NAME: _UNICODE_STRING = _UNICODE_STRING {\n"
+        "    Length: 6, MaximumLength: 6, Buffer: NAME_BUF.as_ptr() as *mut u16,\n"
+        "};\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_numeric_table_is_silent(tmp_path: Path):
+    """Most unterminated arrays were never strings. Flagging tables is how a lint gets ignored."""
+    src = (
+        "static ZIPMASK: [u16; 5] = [0x0001, 0x0003, 0x0007, 0x000f, 0x001f];\n"
+        "fn f() { g(ZIPMASK.as_ptr()); }\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_length_dependent_use_vetoes_the_finding(tmp_path: Path):
+    """Appending a terminator here would CHANGE the length the code computes, not fix anything.
+
+    rtl-actctx's wine_trailerW is compared using `size_of_val()` AND `.len()`.
+    """
+    src = (
+        "static TRAILER: [u16; 3] = [b'a' as u16, b'b' as u16, b'c' as u16];\n"
+        "fn f() { if n == core::mem::size_of_val(&TRAILER) { g(TRAILER.as_ptr()); } }\n"
+    )
+    assert _scan(tmp_path, src) == []
+
+
+def test_name_declared_twice_in_a_file_is_not_attributed(tmp_path: Path):
+    """`fmtW` is declared twice inside rtl-actctx/src/actctx.rs alone.
+
+    Matching uses by name across a file would credit one array's uses to the other, so the
+    verdict is meaningless — skip rather than guess.
+    """
+    src = (
+        "fn a() { static fmtW: [u16; 3] = [b'a' as u16, b'b' as u16, b'c' as u16];\n"
+        "    let _ = fmtW; }\n"
+        "fn b() { static fmtW: [u16; 4] = [b'a' as u16, b'b' as u16, b'c' as u16, 0];\n"
+        "    RtlInitUnicodeString(&mut n, fmtW.as_ptr()); }\n"
+    )
+    assert _scan(tmp_path, src) == []

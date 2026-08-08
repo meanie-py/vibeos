@@ -489,6 +489,23 @@ typedef struct __thread_data {
     __msvcrt_ulong                  thread_doserrno;
     char                           *strerror_buffer;
     wchar_t                        *wcserror_buffer;
+    /* time.c's three lazily-malloc'd result buffers (dll/win32/msvcrt/msvcrt.h:191-193),
+     * added when it became reference TU #11 — same per-TU arrival rule as everything
+     * above.  They are exactly the aliasing contract the errno buffers carry, and time.c
+     * leans on it harder: `_localtime64`, `_gmtime64` and `asctime` all hand out a pointer
+     * INTO the caller's thread data and the next call overwrites it, which is why the
+     * classic "print localtime and gmtime in one printf" bug prints one twice.  A row
+     * that copied the result out before comparing would grade the value and lose the
+     * aliasing; the rows keep the pointer.
+     *
+     * `struct tm` here is the HOST's, from <time.h>: glibc's is msvcrt's nine ints plus
+     * `tm_gmtoff`/`tm_zone` at the END, so every field time.c touches sits at the same
+     * offset and the reference simply allocates a larger box than the DLL would.  Tests
+     * that hand a `struct tm` IN (mktime, asctime, strftime) must therefore allocate the
+     * larger one — see tests/time.rs's CTm. */
+    char                           *asctime_buffer;
+    wchar_t                        *wasctime_buffer;
+    struct tm                      *time_buffer;
 } thread_data_t;
 
 #define LOCALE_FREE    0x1
@@ -713,6 +730,15 @@ int __cdecl isleadbyte(int);
 #ifndef HIBYTE
 #define LOBYTE(w) ((BYTE)((uintptr_t)(w) & 0xFF))
 #define HIBYTE(w) ((BYTE)(((uintptr_t)(w) >> 8) & 0xFF))
+#endif
+
+/* minwindef.h's word accessors, as process.c spells them.  `_getdllprocaddr`'s whole
+ * body is `if (HIWORD(ordinal)) return NULL;` followed by a cast of the low word to a
+ * name pointer — so this macro IS the function's logic, not a convenience.  Same
+ * uintptr_t stand-in for DWORD_PTR as the byte pair above. */
+#ifndef HIWORD
+#define LOWORD(l) ((WORD)((uintptr_t)(l) & 0xFFFF))
+#define HIWORD(l) ((WORD)(((uintptr_t)(l) >> 16) & 0xFFFF))
 #endif
 
 /* msvcrt.h's own; the host has no such macro. */
