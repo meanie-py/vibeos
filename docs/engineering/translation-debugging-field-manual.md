@@ -324,6 +324,16 @@ explicit `__attribute__((stdcall))` for the imports, and take each import's conv
 the `-sys` crate rather than from the name. A stub that never returns (an abort) is exempt,
 because nobody pops. Precedent, from the other direction: errno.rs's `_SetErrorMode@4`.
 
+**This is also why the ABI-normalization passes REFUSE these crates.** `normalize_island_abi.py`
+and `collapse_abi_twins.py` both rest on "`system` IS stdcall on x86", which is false on the
+host target — so both carry a `HOST_HARNESS_CRATES` list (msvcrt-crt-rust, msvcrt-sys,
+cnt-rust, cnt-ctype, rtl-strings) and say out loud that they skipped it. Normalizing
+msvcrt-sys once turned its Win32 imports cdecl in the harness and killed
+`msvcrt-seh-difftest` in `cxx_frame_handler` while all three product arches built, linked,
+passed 43 scanners each and booted to the desktop. **Keep the two lists in sync with the
+harnesses' path dependencies** — a test asserts they equal each other, because if only one
+tool refuses, the other re-breaks it.
+
 ### A `#define` in precomp.h means the C never called the function it names
 `precomp.h:63` is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so every `ShellMessageBoxW(…)`
 in shell32's C++ is really a call to the Wrap twin — shell32 does not import the exported name at
@@ -4320,6 +4330,18 @@ cargo-**driven** `reactos_link` drivers ARE affected via a separate target dir �
 **Corollary: env-only toggles never re-run a cargo edge** (ninja watches files, not env). Touch
 the `build.rs` and **verify the output md5 actually changed** — the first layout-canary attempt
 no-op'd twice.
+**Corollary: editing a DEPENDENCY crate re-ran nothing either, and that one green-lit a
+push.** Every cargo edge globbed only its own `<crate>/src/*.rs`, so a change to a shared
+crate — `ntdll-sys`, `ntkrnl-sys`, `win32macros-rust`, `strsafe-rust` — left all ~100
+dependents "up to date" while stale. Cargo tracks path deps correctly, but only when it is
+INVOKED, and ninja never invoked it. Normalizing the ntdll-sys islands to `extern "system"`
+broke kernel32-rust's `stdcall` fn-pointer typedefs on i386; the local gate built warm,
+reported OK, **minted a push stamp**, and only the merge queue's fresh worktree caught it.
+**Fixed:** `rust_crate_sources()` (`sdk/cmake/rust-crate-deps.cmake`) walks the crate's
+`path = "…"` closure, and every cargo edge uses it instead of a bare `file(GLOB_RECURSE)`.
+Over-triggering is the correct direction here — those dependents really are stale.
+**A local gate is warm unless you pass `--clean`**, so a green local gate is not evidence a
+cold tree builds; the queue's conductor is, because it gates a fresh integration worktree.
 
 ### A cargo compile error leaves the prior rlib, and the link succeeds against it `[§9.87]`
 Added a `DbgPrint` to win32k, rebuilt, booted — the print never fired. Three times. One file had

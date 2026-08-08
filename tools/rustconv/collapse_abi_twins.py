@@ -55,7 +55,7 @@ HOST_HARNESS_CRATES = frozenset(
 # (by --abi-only, or by hand) is still a forked pair, and dropping it from the match makes the
 # tool blind to exactly the drift it exists to report: after one --abi-only run the repo-wide
 # drift count fell 102 -> 2 with nothing fixed, because both sides now said `system`.
-_FN = re.compile(r'^(?P<pre>(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?)extern\s+"(?P<abi>stdcall|C|system)"\s+fn\s+(?P<name>\w+)\s*[(<]')
+_FN = re.compile(r'^(?P<pre>\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?)extern\s+"(?P<abi>stdcall|C|system)"\s+fn\s+(?P<name>\w+)\s*[(<]')
 
 # `extern "stdcall" {` — a DECLARATION block, whose twin declares the same imports under the
 # other arch's convention. Same fork, same reason, different syntax; the tool read only the
@@ -66,7 +66,7 @@ _FN = re.compile(r'^(?P<pre>(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?)extern\s+"(?
 # cdecl import (the CRT), and promoting it to `system` would be a real ABI break on i386 —
 # but a block that is the `not(x86)` TWIN of a `stdcall` block is by construction the same
 # NTAPI surface spelled per arch, so `system` is what both mean.
-_EXTERN_BLOCK = re.compile(r'^(?:unsafe\s+)?extern\s+"(?P<abi>stdcall|C|system)"\s*\{\s*$')
+_EXTERN_BLOCK = re.compile(r'^\s*(?:unsafe\s+)?extern\s+"(?P<abi>stdcall|C|system)"\s*\{\s*$')
 _BLOCK_FIRST_FN = re.compile(r"^\s*(?:pub\s+)?fn\s+(?P<name>\w+)")
 
 # `pub type PKDP_INIT_ROUTINE = Option<unsafe extern "stdcall" fn(..)>;` — the fn-POINTER
@@ -74,7 +74,12 @@ _BLOCK_FIRST_FN = re.compile(r"^\s*(?:pub\s+)?fn\s+(?P<name>\w+)")
 # again; kd, ex, classpnp, kdbg and ntoskrnl all carry these. Unlike the other two shapes an
 # alias has no braces, so its extent is the `;`, and the ABI routinely lands on a later line
 # than the `type` keyword.
-_TYPE_ALIAS = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?type\s+(?P<name>\w+)\s*=")
+# Leading whitespace is allowed on all three: a fork can sit INSIDE a function body.
+# kernel32's SetFileApisToOEM declares a local `OemConvert` alias per arch, and anchoring
+# these at column 0 meant the pass walked straight past it while normalizing the island slot
+# it is transmuted into. kdbg's `type Dr7 = u32;` is indented and cfg'd too and is correctly
+# declined below — it carries no ABI, so it is arch-specific for some other reason.
+_TYPE_ALIAS = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type\s+(?P<name>\w+)\s*=")
 _ABI_ANYWHERE = re.compile(r'extern\s+"(?:stdcall|C)"')
 
 
@@ -180,6 +185,55 @@ def _attrs_and_sig(lines: list[str], cfg_at: int) -> tuple[int, dict[str, str]] 
     return None
 
 
+def _twins_named(lines: list[str], start: int, want: str, name: str) -> list[tuple[int, int]]:
+    """Every later `want`-gated item called `name`, as (attrs_start, cfg_line).
+
+    For a fork written as two BLOCKS rather than interleaved pairs. `attrs_start` walks back
+    over the item's own attribute run so a `#[no_mangle]` above the cfg is removed with it
+    instead of being left orphaned above the next item.
+    """
+    out: list[tuple[int, int]] = []
+    for k in range(start, len(lines)):
+        if lines[k].strip() != want:
+            continue
+        info = _attrs_and_sig(lines, k)
+        if not info or info[1]["name"] != name:
+            continue
+        pre = k
+        while pre > 0 and lines[pre - 1].lstrip().startswith("#[") and "]" in lines[pre - 1]:
+            pre -= 1
+        out.append((pre, k))
+    return out
+
+
+def _fork_edits(
+    lines: list[str],
+    a_at: int,
+    a_end: int,
+    b_pre_at: int,
+    b_end: int,
+    repl: list[str],
+    adjacent: bool,
+) -> list[tuple[int, int, list[str]]]:
+    """Replace the `a` side with `repl` and remove the `b` side.
+
+    When the twin is adjacent the two are one contiguous range, which is the shape this pass
+    has always emitted. When it is not, they are two edits — and the second swallows a blank
+    line if removing the item would otherwise leave two in a row.
+    """
+    if adjacent:
+        return [(a_at, b_end, repl)]
+    end = b_end
+    if (
+        b_pre_at > 0
+        and not lines[b_pre_at - 1].strip()
+        and end < len(lines)
+        and not lines[end].strip()
+    ):
+        end += 1
+    return [(a_at, a_end, repl), (b_pre_at, end, [])]
+
+
 _INT = r"(?:[ui](?:8|16|32|64|128|size))"
 
 
@@ -257,6 +311,9 @@ def collapse_file(
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     notes: list[str] = []
     edits: list[tuple[int, int, list[str]]] = []  # (start, end, replacement)
+    # A block-grouped fork takes TWO edits to collapse, so the edit count stopped being
+    # the pair count; report what the unit says it is.
+    n_pairs = 0
 
     i = 0
     while i < len(lines):
@@ -296,12 +353,38 @@ def collapse_file(
             and lines[j].strip() not in (NOT_X86, X86)
         ):
             j += 1
-        if j >= len(lines) or lines[j].strip() != want:
-            notes.append(
-                f"  ! {path.name}:{i + 1} {a_m['name']}: no `{want}` twin follows, skipped"
-            )
-            i = a_end
-            continue
+        # Adjacency has to agree about the NAME as well, or it is not this item's twin. In a
+        # block-grouped fork the LAST `x86` item abuts the FIRST `not(x86)` item, so the
+        # structural test passes and the names do not — and treating that as "the twin, but
+        # mismatched" skipped kernel32's PRTL_COUNT_STRINGA while its three siblings folded.
+        adjacent = j < len(lines) and lines[j].strip() == want
+        if adjacent:
+            probe = _attrs_and_sig(lines, j)
+            adjacent = bool(probe) and probe[1]["name"] == a_m["name"]
+        if not adjacent:
+            # A fork does not have to be written as a PAIR. kernel32's four NTAPI fn-pointer
+            # typedefs are written as a block of four `x86` aliases followed by a block of four
+            # `not(x86)` aliases, so every one of them had a twin and none of them had an
+            # ADJACENT twin — the tool reported "no twin follows" four times and folded nothing,
+            # and PRTL_CONVERT_STRING kept `stdcall` against a normalized `system` island slot.
+            # So fall back to matching by NAME, and require the match to be UNIQUE: a second
+            # candidate means the name is cfg-multiplexed on something else too, and picking one
+            # would silently fold the wrong half.
+            cands = _twins_named(lines, a_end, want, a_m["name"])
+            if len(cands) != 1:
+                notes.append(
+                    f"  ! {path.name}:{i + 1} {a_m['name']}: no `{want}` twin follows"
+                    + (
+                        ""
+                        if not cands
+                        else f", and {len(cands)} later `{want}` items share the name — "
+                        f"ambiguous, left alone"
+                    )
+                    + ("" if cands else ", skipped")
+                )
+                i = a_end
+                continue
+            b_pre_at, j = cands[0]
         # Attributes above the X86 cfg sit OUTSIDE the replaced range, so they survive the
         # collapse untouched. The twin's sit inside it and are dropped — which is only correct
         # if they are the same set. A difference is a per-arch attribute, never a formatting
@@ -337,6 +420,12 @@ def collapse_file(
             i = a_end
             continue
 
+        # Where the scan resumes. For an adjacent pair the twin is the next thing in the file,
+        # so skipping past it is right; for a block-grouped fork the twin is PAST the other
+        # three x86 items, and jumping there would fold the first of the four and silently
+        # abandon the rest.
+        nxt = b_end if adjacent else a_end
+
         a_abi, b_abi = a_m.get("abi"), (b[1] if b else {}).get("abi")
         x86_abi, other_abi = (a_abi, b_abi) if a_is_x86 else (b_abi, a_abi)
         target = "system" if a_abi == "alias" else _target_abi(x86_abi, other_abi)
@@ -346,7 +435,7 @@ def collapse_file(
                 f"way this tool will not reconcile (x86 {x86_abi}, not(x86) {other_abi}) — "
                 f"skipped"
             )
-            i = b_end
+            i = nxt
             continue
         side_a = _normalize(lines[a_sig:a_end], 0, target)
         side_b = _normalize(lines[b_sig:b_end], 0, target)
@@ -370,7 +459,7 @@ def collapse_file(
                     f"  ! {path.name}:{i + 1} {a_m['name']}: cfg pair is not an ABI fork "
                     f"(x86 {x86_abi}, not(x86) {other_abi}) — left alone"
                 )
-                i = b_end
+                i = nxt
                 continue
             # Re-spell BOTH twins `system` and leave the fork and the two bodies exactly as
             # they are. For a pair whose bodies have genuinely drifted, merging is refused (and
@@ -381,11 +470,12 @@ def collapse_file(
                 fixed = _normalize(lines[sig : sig + 1], 0)
                 if fixed != lines[sig : sig + 1]:
                     edits.append((sig, sig + 1, fixed))
+                    n_pairs += 1
             notes.append(
                 f"  {path.name}:{i + 1} {a_m['name']}: both twins spelled `system`"
                 + (" (bodies still drifted — left forked)" if drifted else "")
             )
-            i = b_end
+            i = nxt
             continue
         if drifted and survivor:
             # Only cast decoration may differ; anything else is a hand-fix we refuse to drop.
@@ -398,8 +488,13 @@ def collapse_file(
                     f"re-run crate-repair to redo them against all three targets)"
                 )
                 keep_a = [ln for ln in lines[i + 1 : a_sig] if ln.strip()]
-                edits.append((i, b_end, keep_a + keep_side))
-                i = b_end
+                edits.extend(
+                    _fork_edits(
+                        lines, i, a_end, b_pre_at, b_end, keep_a + keep_side, adjacent
+                    )
+                )
+                n_pairs += 1
+                i = nxt
                 continue
         if drifted:
             d = [
@@ -414,20 +509,31 @@ def collapse_file(
                 + "\n".join(f"      {ln}" for ln in shown)
                 + more
             )
-            i = b_end
+            i = nxt
             continue
 
         # Keep any non-cfg attributes that sat between the cfg line and the signature.
         keep = [ln for ln in lines[i + 1 : a_sig] if ln.strip()]
-        edits.append((i, b_end, keep + x86))
-        notes.append(f"  {path.name}:{i + 1} {a_m['name']} ({a_end - a_sig} lines x2 -> x1)")
-        i = b_end
+        edits.extend(_fork_edits(lines, i, a_end, b_pre_at, b_end, keep + x86, adjacent))
+        n_pairs += 1
+        notes.append(
+            f"  {path.name}:{i + 1} {a_m['name']} ({a_end - a_sig} lines x2 -> x1)"
+            + ("" if adjacent else f", twin at :{j + 1}")
+        )
+        i = nxt
 
     if edits and apply:
+        # Applying back-to-front only keeps the earlier offsets valid if the ranges are in
+        # ascending order. An adjacent pair is one range and the scan is left-to-right, so they
+        # always were — a block-grouped fork emits its `a` edit and its far-away `b` edit
+        # together, which interleaves them with the NEXT item's pair.
+        edits.sort(key=lambda e: e[0])
+        for (s, e, _), (s2, _, _) in zip(edits, edits[1:]):
+            assert e <= s2, f"{path}: overlapping edits {(s, e)} and {(s2,)}"
         for start, end, repl in reversed(edits):
             lines[start:end] = repl
         path.write_text("".join(lines), encoding="utf-8")
-    return len(edits), notes
+    return n_pairs, notes
 
 
 def main(argv: list[str]) -> int:

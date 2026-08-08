@@ -453,25 +453,6 @@ unsafe extern "system" fn TimerDlgProc(
     }
     0 as INT_PTR
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn ErrorDlgProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    if uMsg == WM_INITDIALOG {
-        let Params = lParam as PERRORDLG_PARAMS;
-        SetForegroundWindow(hDlg);
-        SetDlgItemTextW(hDlg, IDC_ERRORDESC, (*Params).pszString as LPCWSTR);
-        ErrorDlg.ulTimeout = (*Params).ulTimeout;
-        TimerDlgProc(&raw mut ErrorDlg, hDlg, WM_INITDIALOG, wParam, lParam);
-        return 1 as INT_PTR;
-    }
-    return TimerDlgProc(&raw mut ErrorDlg, hDlg, uMsg, wParam, lParam);
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn ErrorDlgProc(
     hDlg: HWND,
     uMsg: UINT,

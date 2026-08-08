@@ -1137,11 +1137,6 @@ extern "C" {
     static mut MmSystemLockPagesCount: ULONG_PTR;
 }
 // MiDecrementReferenceCount is stdcall on i386, cdecl on others
-#[cfg(target_arch = "x86")]
-extern "system" {
-    fn MiDecrementReferenceCount(Pfn1: ddk::PMMPFN, PageFrameIndex: ULONG_PTR);
-}
-#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn MiDecrementReferenceCount(Pfn1: ddk::PMMPFN, PageFrameIndex: ULONG_PTR);
 }

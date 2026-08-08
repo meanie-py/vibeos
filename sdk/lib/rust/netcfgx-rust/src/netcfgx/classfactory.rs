@@ -73,7 +73,6 @@ unsafe extern "system" fn IClassFactory_fnRelease(
     }
     return (refCount) as u32;
 }
-#[cfg(target_arch = "x86")]
 unsafe extern "system" fn IClassFactory_fnCreateInstance(
     iface: LPCLASSFACTORY,
     pUnkOuter: LPUNKNOWN,
@@ -91,33 +90,6 @@ unsafe extern "system" fn IClassFactory_fnCreateInstance(
     return E_NOINTERFACE;
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "system" fn IClassFactory_fnCreateInstance(
-    iface: LPCLASSFACTORY,
-    pUnkOuter: LPUNKNOWN,
-    riid: REFIID,
-    ppvObject: *mut LPVOID,
-) -> HRESULT {
-    let This = iface as *mut IClassFactoryImpl;
-
-    *ppvObject = core::ptr::null_mut();
-
-    if (*This).riidInst.is_null() || IsEqualCLSID!(riid, (*This).riidInst) || IsEqualCLSID!(riid, &IID_IUnknown) {
-        return ((*This).lpfnCI.unwrap_unchecked())(pUnkOuter, riid, ppvObject);
-    }
-
-    return E_NOINTERFACE;
-}
-
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn IClassFactory_fnLockServer(
-    iface: LPCLASSFACTORY,
-    fLock: BOOL,
-) -> HRESULT {
-    E_NOTIMPL
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn IClassFactory_fnLockServer(
     iface: LPCLASSFACTORY,
     fLock: BOOL,

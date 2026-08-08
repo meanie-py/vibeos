@@ -589,11 +589,6 @@ pub unsafe fn KeGetExceptionFrame(thread: ddk::PKTHREAD) -> ddk::PKEXCEPTION_FRA
 // ============================================================================
 
 // KiCheckForKernelApcDelivery is stdcall on i386, cdecl on others
-#[cfg(target_arch = "x86")]
-extern "system" {
-    fn KiCheckForKernelApcDelivery();
-}
-#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn KiCheckForKernelApcDelivery();
 }
@@ -831,11 +826,6 @@ extern "C" {
 // ============================================================================
 
 // PsGetCurrentThread is stdcall on i386, cdecl on others
-#[cfg(target_arch = "x86")]
-extern "system" {
-    fn PsGetCurrentThread() -> ddk::PETHREAD;
-}
-#[cfg(not(target_arch = "x86"))]
 extern "system" {
     fn PsGetCurrentThread() -> ddk::PETHREAD;
 }

@@ -164,18 +164,6 @@ unsafe fn IntFreeElementData_impl(pElement: PCLIP) {
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn IntAddFormatedData(
-    pWinStaObj: PWINSTATION_OBJECT,
-    fmt: UINT,
-    hData: HANDLE,
-    fGlobalHandle: BOOLEAN,
-    bEnd: BOOL,
-) -> PCLIP {
-    IntAddFormatedData_impl(pWinStaObj, fmt, hData, fGlobalHandle, bEnd)
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn IntAddFormatedData(
     pWinStaObj: PWINSTATION_OBJECT,
     fmt: UINT,

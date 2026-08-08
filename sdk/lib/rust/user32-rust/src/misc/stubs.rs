@@ -99,13 +99,6 @@ pub unsafe extern "system" fn LoadRemoteFonts() {
 #[no_mangle]
 pub unsafe extern "system" fn RegisterSystemThread(flags: DWORD, reserved: DWORD) {
 }
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "system" fn UserRealizePalette(hDC: HDC) -> UINT {
-    NtUserxRealizePalette(hDC)
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn UserRealizePalette(hDC: HDC) -> UINT {
     NtUserxRealizePalette(hDC)

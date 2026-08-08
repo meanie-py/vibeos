@@ -69,6 +69,110 @@ def test_fastcall_is_never_folded():
     assert collapse._target_abi("fastcall", "fastcall") is None
 
 
+# ------------------------------------------------------------------------- how a fork is WRITTEN
+
+
+def _fold(tmp_path, body: str) -> str:
+    f = tmp_path / "t.rs"
+    f.write_text(body)
+    collapse.collapse_file(f, apply=True)
+    return f.read_text()
+
+
+def test_a_fork_written_as_two_blocks_is_still_a_fork(tmp_path):
+    """Pairing used to require the twin to be the NEXT item in the file.
+
+    kernel32 writes its four NTAPI fn-pointer typedefs as a block of four `x86` aliases
+    followed by a block of four `not(x86)` aliases. Every one had a twin; none had an ADJACENT
+    twin, so the pass folded nothing and PRTL_CONVERT_STRING kept `stdcall` against an island
+    slot normalized to `system` — kernel32-rust then failed to compile on i386 only.
+    """
+    src = (
+        '#[cfg(target_arch = "x86")]\n'
+        'pub type PA = Option<unsafe extern "stdcall" fn(u32) -> u32>;\n'
+        '#[cfg(target_arch = "x86")]\n'
+        'pub type PB = Option<unsafe extern "stdcall" fn(u8) -> u8>;\n'
+        '#[cfg(not(target_arch = "x86"))]\n'
+        'pub type PA = Option<unsafe extern "C" fn(u32) -> u32>;\n'
+        '#[cfg(not(target_arch = "x86"))]\n'
+        'pub type PB = Option<unsafe extern "C" fn(u8) -> u8>;\n'
+    )
+    out = _fold(tmp_path, src)
+    assert out == (
+        'pub type PA = Option<unsafe extern "system" fn(u32) -> u32>;\n'
+        'pub type PB = Option<unsafe extern "system" fn(u8) -> u8>;\n'
+    )
+
+
+def test_the_last_x86_item_abutting_the_first_other_item_is_not_a_twin(tmp_path):
+    """Adjacency has to agree about the NAME.
+
+    In a block-grouped fork the final `x86` item is physically followed by a `not(x86)` cfg —
+    the first item of the OTHER block. Accepting that structurally and only then noticing the
+    name differs skipped kernel32's PRTL_COUNT_STRINGA while its three siblings folded.
+    """
+    src = (
+        '#[cfg(target_arch = "x86")]\n'
+        'pub type PA = Option<unsafe extern "stdcall" fn(u32) -> u32>;\n'
+        '#[cfg(not(target_arch = "x86"))]\n'
+        'pub type PZ = Option<unsafe extern "C" fn(u16) -> u16>;\n'
+        '#[cfg(not(target_arch = "x86"))]\n'
+        'pub type PA = Option<unsafe extern "C" fn(u32) -> u32>;\n'
+    )
+    out = _fold(tmp_path, src)
+    assert 'pub type PA = Option<unsafe extern "system" fn(u32) -> u32>;\n' in out
+    # PZ has no x86 twin at all and must survive untouched, cfg and convention intact.
+    assert '#[cfg(not(target_arch = "x86"))]\npub type PZ = Option<unsafe extern "C" fn(u16)' in out
+
+
+def test_an_ambiguous_name_is_left_alone_rather_than_guessed(tmp_path):
+    # Two later `not(x86)` items share the name, so there is no way to tell which half this
+    # one pairs with. Folding either would silently delete a real per-arch definition.
+    src = (
+        '#[cfg(target_arch = "x86")]\n'
+        'pub type PA = Option<unsafe extern "stdcall" fn(u32) -> u32>;\n'
+        "pub mod a {\n"
+        '    #[cfg(not(target_arch = "x86"))]\n'
+        '    pub type PA = Option<unsafe extern "C" fn(u32) -> u32>;\n'
+        "}\n"
+        "pub mod b {\n"
+        '    #[cfg(not(target_arch = "x86"))]\n'
+        '    pub type PA = Option<unsafe extern "C" fn(u32) -> u32>;\n'
+        "}\n"
+    )
+    assert _fold(tmp_path, src) == src
+
+
+def test_a_fork_inside_a_function_body_is_found(tmp_path):
+    # kernel32's SetFileApisToOEM declares a local `OemConvert` alias per arch. The item
+    # regexes were anchored at column 0, so an indented fork was invisible.
+    src = (
+        "pub unsafe fn f() {\n"
+        '    #[cfg(target_arch = "x86")]\n'
+        '    type OemConvert = Option<unsafe extern "stdcall" fn(u32) -> i32>;\n'
+        '    #[cfg(not(target_arch = "x86"))]\n'
+        '    type OemConvert = Option<unsafe extern "C" fn(u32) -> i32>;\n'
+        "}\n"
+    )
+    out = _fold(tmp_path, src)
+    assert '    type OemConvert = Option<unsafe extern "system" fn(u32) -> i32>;\n' in out
+    assert "target_arch" not in out
+
+
+def test_an_indented_alias_with_no_abi_is_still_declined(tmp_path):
+    # kdbg's `type Dr7 = u32;` is indented and cfg'd, but it is arch-specific for a reason
+    # that has nothing to do with calling convention. Widening the regexes must not take it.
+    src = (
+        "pub fn f() {\n"
+        '    #[cfg(target_arch = "x86")]\n'
+        "    type Dr7 = u32;\n"
+        '    #[cfg(not(target_arch = "x86"))]\n'
+        "    type Dr7 = u64;\n"
+        "}\n"
+    )
+    assert _fold(tmp_path, src) == src
+
+
 # ------------------------------------------------------------------- island witness / chains
 
 
