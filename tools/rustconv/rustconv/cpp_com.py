@@ -3132,6 +3132,41 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             insert_receiver,
             rust,
         )
+
+    # `delete this` -> the scaffold's own `X_delete`. The model cannot get this right and should
+    # never be asked to: C++ hides `operator new` and the vtable store in the constructor
+    # PROLOGUE, so the allocation strategy appears in no source it reads. Left to itself it
+    # invented five different deallocators for shellrecyclebin's five identical `delete this;` --
+    # CRT `free` and `Box::from_raw` over memory that came from `HeapAlloc(GetProcessHeap(), ...)`,
+    # plus a placeholder symbol. Those failed to compile HERE only because `Box` is undeclared in
+    # a no_std crate without `alloc`; wherever such a name is in scope the file builds clean and
+    # frees across heaps, corrupting at Release time arbitrarily far from the allocation.
+    #
+    # The class comes from the WORKER SIGNATURE, not from `owner` above. `owner` scrapes a
+    # `Class::Method(` token out of the body text, and a body that contains no `::` at all --
+    # `RecycleBin5::Release`, three lines long -- yields nothing, which silently skipped the
+    # lowering for exactly one of the five. `this: *mut <Class>` is in every worker by
+    # construction. (The receiver-insertion rewrite above still depends on `owner` and has the
+    # same blind spot; left alone here deliberately rather than changed unverified.)
+    receiver = re.search(r"\bfn\s+\w+\s*\(\s*this\s*:\s*\*mut\s+([A-Za-z_]\w*)", rust)
+    if receiver is not None and re.search(r"\bdelete\s+this\s*;", source):
+        owning_class = receiver.group(1)
+        deallocators = "|".join(
+            [
+                r"(?:alloc::boxed::)?Box::from_raw\s*\(\s*this\s*\)",
+                r"__rustconv_\w*\s*\(\s*this\s*\)",
+                r"free\s*\(\s*this\b[^;]*?\)",
+                r"SENDTO_ITEM_delete\s*\(\s*this\s*\)",
+            ]
+        )
+        # `X_delete` runs the destructor itself, so an emitted `X_dtor_body(this);` right before
+        # the free has to go with it — keeping both runs every member destructor twice.
+        rust = re.sub(
+            rf"(?:{re.escape(owning_class)}_dtor_body\s*\(\s*this\s*\)\s*;\s*)?"
+            rf"(?:let\s+_\s*=\s*)?(?:drop\s*\(\s*)?(?:{deallocators})\s*\)?\s*;",
+            f"{owning_class}_delete(this);",
+            rust,
+        )
     rust = re.sub(
         r"let\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
         r"(?P<iid>core::ptr::addr_of!\(IID_[A-Za-z_]\w*\))\s*,\s*"
@@ -3141,11 +3176,17 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     )
     rust = re.sub(r"\(\(([^()]+)\)\s*<\s*0\)\s*(?:!=|<)\s*0", r"((\1) < 0)", rust)
     rust = re.sub(r"\bCComHeapPtr::new\(\s*\)", "CComHeapPtr::empty()", rust)
-    rust = re.sub(
-        r"alloc::boxed::Box::from_raw\(\s*([A-Za-z_]\w*)\s*\)\s*;",
-        r"SENDTO_ITEM_delete(\1);",
-        rust,
-    )
+    # Guarded on the source actually naming SENDTO_ITEM. Unguarded, this rewrote EVERY
+    # `Box::from_raw(x);` in every module into a call to a shell32 helper: recyclebin's
+    # `RecycleBinGeneric::Release` came out calling `SENDTO_ITEM_delete`, a function that does
+    # not exist in that crate and has nothing to do with recycle bins. It read like a model
+    # hallucination and was ours.
+    if "SENDTO_ITEM" in source:
+        rust = re.sub(
+            r"alloc::boxed::Box::from_raw\(\s*([A-Za-z_]\w*)\s*\)\s*;",
+            r"SENDTO_ITEM_delete(\1);",
+            rust,
+        )
     rust = re.sub(r"\bSENDTO_ITEM\s*\(", "SENDTO_ITEM_new(", rust)
     heap_ptr_names = set(re.findall(r"\bCComHeapPtr\s*<[^;=]+>\s+([A-Za-z_]\w*)", source)) & set(
         re.findall(r"\b([A-Za-z_]\w*)\s*:\s*CComHeapPtr\s*<", rust)
@@ -5573,6 +5614,21 @@ def audit_worker_body(
     preserve source-level symbolic constants, and must not attempt to own COM ABI.
     """
     findings: list[str] = []
+    # A worker never owns deallocation. The scaffold allocates with HeapAlloc(GetProcessHeap())
+    # and `X_delete` is the only matching free, so any OTHER deallocator surviving into a body
+    # is a cross-heap free waiting for a crate where the name happens to resolve — it is silent
+    # everywhere until it corrupts. The deterministic lowering above should have claimed these;
+    # reaching here means it did not recognise the spelling, which must be loud, not quiet.
+    stray_frees = sorted(
+        set(re.findall(r"\b(Box::from_raw|__rustconv_\w*|free|malloc|calloc|realloc)\s*\(", rust))
+    )
+    if stray_frees:
+        findings.append(
+            "worker owns a deallocator it must not: "
+            + ", ".join(stray_frees)
+            + " — the scaffold allocates with HeapAlloc(GetProcessHeap()), so the only correct "
+            "free is the generated <Class>_delete"
+        )
     if not re.search(rf"\bfn\s+{re.escape(expected_name)}\s*\(", rust):
         findings.append(f"missing exact worker function {expected_name}")
     elif expected_signature is not None:

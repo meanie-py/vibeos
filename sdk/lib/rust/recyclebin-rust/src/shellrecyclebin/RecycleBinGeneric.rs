@@ -225,7 +225,7 @@ pub unsafe fn RecycleBinGeneric_dtor_body(this: *mut RecycleBinGeneric) -> () {}
 pub unsafe fn RecycleBinGeneric_Release_body(this: *mut RecycleBinGeneric) -> ULONG {
     let refCount = InterlockedDecrement(&mut (*this).m_ref);
     if refCount == 0 {
-        let _ = SENDTO_ITEM_delete(this);
+        RecycleBinGeneric_delete(this);
     }
     refCount
 }

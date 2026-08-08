@@ -423,7 +423,7 @@ pub unsafe fn RecycleBin5File_Release_body(this: *mut RecycleBin5File) -> ULONG 
     let ref_count = InterlockedDecrement(&mut (*this).m_ref as *mut LONG) as ULONG;
     if ref_count == 0 {
         // delete this: run destructor and free allocation
-        drop(Box::from_raw(this));
+        RecycleBin5File_delete(this);
     }
     ref_count
 }
