@@ -233,9 +233,80 @@
 #define EPIPE     0x00000020
 
 /* NT enum constants — invisible to a -dM macro dump, hence the object probe */
-#define FileBasicInformation    4
-#define FileStandardInformation 5
-#define GetFileExInfoStandard   0
+#define FileBasicInformation       4
+#define FileStandardInformation    5
+#define GetFileExInfoStandard      0
+#define ExceptionContinueSearch    1
+#define ExceptionContinueExecution 0
+#define ExceptionNestedException   2
+#define ExceptionCollidedUnwind    3
+
+/* signal numbers (msvcrt's OWN signal.h — these DISPLACE the host's) */
+#undef  SIGABRT
+#define SIGABRT  0x00000016
+#define SIGBREAK 0x00000015
+#undef  SIGFPE
+#define SIGFPE   8
+#undef  SIGILL
+#define SIGILL   4
+#undef  SIGINT
+#define SIGINT   2
+#undef  SIGSEGV
+#define SIGSEGV  0x0000000B
+#undef  SIGTERM
+#define SIGTERM  0x0000000F
+#undef  NSIG
+#define NSIG     0x00000017
+
+/* _FPE_* subcodes (msvcrt's float.h) — the second argument to a SIGFPE handler */
+#define _FPE_DENORMAL      0x00000082
+#define _FPE_EXPLICITGEN   0x0000008C
+#define _FPE_INEXACT       0x00000086
+#define _FPE_INVALID       0x00000081
+#define _FPE_OVERFLOW      0x00000084
+#define _FPE_STACKOVERFLOW 0x0000008A
+#define _FPE_UNDERFLOW     0x00000085
+#define _FPE_ZERODIVIDE    0x00000083
+
+/* SEH filter dispositions and exception-record flags (winnt.h / excpt.h) */
+#define EXCEPTION_CONTINUE_EXECUTION ((int)0xFFFFFFFF)
+#define EXCEPTION_CONTINUE_SEARCH    0
+#define EXCEPTION_EXECUTE_HANDLER    1
+#define EXCEPTION_NONCONTINUABLE     1
+#define EXCEPTION_UNWINDING          2
+#define EXCEPTION_EXIT_UNWIND        4
+#define EXCEPTION_TARGET_UNWIND      0x00000020
+#define EXCEPTION_MAXIMUM_PARAMETERS 0x0000000F
+
+/* exception CODES — except.c's SIGFPE/SIGSEGV/SIGILL mapping switches on these */
+#define EXCEPTION_ACCESS_VIOLATION      ((int)0xC0000005)
+#define EXCEPTION_ILLEGAL_INSTRUCTION   ((int)0xC000001D)
+#define EXCEPTION_PRIV_INSTRUCTION      ((int)0xC0000096)
+#define EXCEPTION_FLT_DENORMAL_OPERAND  ((int)0xC000008D)
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO    ((int)0xC000008E)
+#define EXCEPTION_FLT_INEXACT_RESULT    ((int)0xC000008F)
+#define EXCEPTION_FLT_INVALID_OPERATION ((int)0xC0000090)
+#define EXCEPTION_FLT_OVERFLOW          ((int)0xC0000091)
+#define EXCEPTION_FLT_STACK_CHECK       ((int)0xC0000092)
+#define EXCEPTION_FLT_UNDERFLOW         ((int)0xC0000093)
+
+/* NTSTATUS values (ntstatus.h) — the same codes on the other side of the map */
+#define STATUS_ACCESS_VIOLATION        ((int)0xC0000005)
+#define STATUS_FLOAT_DIVIDE_BY_ZERO    ((int)0xC000008E)
+#define STATUS_FLOAT_INEXACT_RESULT    ((int)0xC000008F)
+#define STATUS_FLOAT_INVALID_OPERATION ((int)0xC0000090)
+#define STATUS_FLOAT_OVERFLOW          ((int)0xC0000091)
+#define STATUS_FLOAT_UNDERFLOW         ((int)0xC0000093)
+#define STATUS_LONGJUMP                ((int)0x80000026)
+#define STATUS_UNWIND_CONSOLIDATE      ((int)0x80000029)
+
+/* console control events (wincon.h) — except.c's Ctrl-C handler */
+#define CTRL_C_EVENT     0
+#define CTRL_BREAK_EVENT 1
+
+/* undecoration flags (imagehlp.h) — cpp.c's type_info::name() calls __unDName */
+#define UNDNAME_NO_ARGUMENTS  0x00002000
+#define UNDNAME_32_BIT_DECODE 0x00000800
 
 /* Pointer-valued; not an integer initializer, so emitted verbatim. */
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
