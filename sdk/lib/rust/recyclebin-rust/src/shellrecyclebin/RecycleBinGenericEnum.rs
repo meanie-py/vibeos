@@ -1,48 +1,10 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::recyclebin::GetDefaultRecycleBin;
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinEnumList {
-    pub lpVtbl: *const IRecycleBinEnumListVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinEnumListVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Next: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT,
-    pub Skip: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD) -> HRESULT,
-    pub Reset: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinEnumList: IID;
-}
+// IRecycleBinEnumList: 6 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinEnumList` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinFile {
-    pub lpVtbl: *const IRecycleBinFileVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinFileVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub IsEqualIdentity: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT,
-    pub GetInfo: unsafe extern "system" fn(This: *mut IRecycleBinFile, pInfo: PDELETED_FILE_INFO) -> HRESULT,
-    pub GetLastModificationTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pLastModificationTime: *mut FILETIME) -> HRESULT,
-    pub GetDeletionTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pDeletionTime: *mut FILETIME) -> HRESULT,
-    pub GetFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetPhysicalFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetAttributes: unsafe extern "system" fn(This: *mut IRecycleBinFile, pAttributes: *mut DWORD) -> HRESULT,
-    pub GetFileName: unsafe extern "system" fn(This: *mut IRecycleBinFile, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinFile: IID;
-}
+// IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
 
 // Deterministic COM scaffold for RecycleBinGenericEnum; method bodies are generated separately.
 extern "system" {
@@ -102,12 +64,12 @@ unsafe extern "system" fn RecycleBinGenericEnum_IRecycleBinEnumList_Reset(This: 
 }
 
 pub static RECYCLEBINGENERICENUM_IRECYCLEBINENUMLIST_VTBL: IRecycleBinEnumListVtbl = IRecycleBinEnumListVtbl {
-    QueryInterface: RecycleBinGenericEnum_IRecycleBinEnumList_QueryInterface,
-    AddRef: RecycleBinGenericEnum_IRecycleBinEnumList_AddRef,
-    Release: RecycleBinGenericEnum_IRecycleBinEnumList_Release,
-    Next: RecycleBinGenericEnum_IRecycleBinEnumList_Next,
-    Skip: RecycleBinGenericEnum_IRecycleBinEnumList_Skip,
-    Reset: RecycleBinGenericEnum_IRecycleBinEnumList_Reset,
+    QueryInterface: Some(RecycleBinGenericEnum_IRecycleBinEnumList_QueryInterface),
+    AddRef: Some(RecycleBinGenericEnum_IRecycleBinEnumList_AddRef),
+    Release: Some(RecycleBinGenericEnum_IRecycleBinEnumList_Release),
+    Next: Some(RecycleBinGenericEnum_IRecycleBinEnumList_Next),
+    Skip: Some(RecycleBinGenericEnum_IRecycleBinEnumList_Skip),
+    Reset: Some(RecycleBinGenericEnum_IRecycleBinEnumList_Reset),
 };
 
 /// `new RecycleBinGenericEnum` — operator new, the vptr store, then the constructor body.
@@ -143,11 +105,6 @@ unsafe fn cpp_com_iid_equal(left: REFIID, right: REFIID) -> bool {
 // Deterministic C++ support closure selected from source identifiers.
 
 pub const DRIVE_FIXED: DWORD = 3;
-
-#[repr(C)]
-pub struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
 
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
 use crate::shellrecyclebin::recyclebin_support::CZZWStr;

@@ -12,6 +12,7 @@
 #![allow(clippy::all)]
 
 pub mod types; // bindgen island, per arch (gen_driver_types.sh recyclebin)
+pub mod commacros; // COBJMACROS dispatch helpers, per arch (gen_commacros.py)
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 

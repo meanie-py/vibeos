@@ -1,30 +1,7 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::recyclebin_generic_free::RecycleBinGeneric_IsEqualFileIdentity;
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinFile {
-    pub lpVtbl: *const IRecycleBinFileVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinFileVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub IsEqualIdentity: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT,
-    pub GetInfo: unsafe extern "system" fn(This: *mut IRecycleBinFile, pInfo: PDELETED_FILE_INFO) -> HRESULT,
-    pub GetLastModificationTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pLastModificationTime: *mut FILETIME) -> HRESULT,
-    pub GetDeletionTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pDeletionTime: *mut FILETIME) -> HRESULT,
-    pub GetFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetPhysicalFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetAttributes: unsafe extern "system" fn(This: *mut IRecycleBinFile, pAttributes: *mut DWORD) -> HRESULT,
-    pub GetFileName: unsafe extern "system" fn(This: *mut IRecycleBinFile, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinFile: IID;
-}
+// IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
 
 // Deterministic COM scaffold for RecycleBin5File; method bodies are generated separately.
 extern "system" {
@@ -116,20 +93,20 @@ unsafe extern "system" fn RecycleBin5File_IRecycleBinFile_RemoveFromDatabase(Thi
 }
 
 pub static RECYCLEBIN5FILE_IRECYCLEBINFILE_VTBL: IRecycleBinFileVtbl = IRecycleBinFileVtbl {
-    QueryInterface: RecycleBin5File_IRecycleBinFile_QueryInterface,
-    AddRef: RecycleBin5File_IRecycleBinFile_AddRef,
-    Release: RecycleBin5File_IRecycleBinFile_Release,
-    IsEqualIdentity: RecycleBin5File_IRecycleBinFile_IsEqualIdentity,
-    GetInfo: RecycleBin5File_IRecycleBinFile_GetInfo,
-    GetLastModificationTime: RecycleBin5File_IRecycleBinFile_GetLastModificationTime,
-    GetDeletionTime: RecycleBin5File_IRecycleBinFile_GetDeletionTime,
-    GetFileSize: RecycleBin5File_IRecycleBinFile_GetFileSize,
-    GetPhysicalFileSize: RecycleBin5File_IRecycleBinFile_GetPhysicalFileSize,
-    GetAttributes: RecycleBin5File_IRecycleBinFile_GetAttributes,
-    GetFileName: RecycleBin5File_IRecycleBinFile_GetFileName,
-    Delete: RecycleBin5File_IRecycleBinFile_Delete,
-    Restore: RecycleBin5File_IRecycleBinFile_Restore,
-    RemoveFromDatabase: RecycleBin5File_IRecycleBinFile_RemoveFromDatabase,
+    QueryInterface: Some(RecycleBin5File_IRecycleBinFile_QueryInterface),
+    AddRef: Some(RecycleBin5File_IRecycleBinFile_AddRef),
+    Release: Some(RecycleBin5File_IRecycleBinFile_Release),
+    IsEqualIdentity: Some(RecycleBin5File_IRecycleBinFile_IsEqualIdentity),
+    GetInfo: Some(RecycleBin5File_IRecycleBinFile_GetInfo),
+    GetLastModificationTime: Some(RecycleBin5File_IRecycleBinFile_GetLastModificationTime),
+    GetDeletionTime: Some(RecycleBin5File_IRecycleBinFile_GetDeletionTime),
+    GetFileSize: Some(RecycleBin5File_IRecycleBinFile_GetFileSize),
+    GetPhysicalFileSize: Some(RecycleBin5File_IRecycleBinFile_GetPhysicalFileSize),
+    GetAttributes: Some(RecycleBin5File_IRecycleBinFile_GetAttributes),
+    GetFileName: Some(RecycleBin5File_IRecycleBinFile_GetFileName),
+    Delete: Some(RecycleBin5File_IRecycleBinFile_Delete),
+    Restore: Some(RecycleBin5File_IRecycleBinFile_Restore),
+    RemoveFromDatabase: Some(RecycleBin5File_IRecycleBinFile_RemoveFromDatabase),
 };
 
 /// `new RecycleBin5File` — operator new, the vptr store, then the constructor body.
