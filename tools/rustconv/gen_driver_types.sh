@@ -2171,6 +2171,83 @@ case "$DRIVER" in
                -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NON_CONFORMING_SWPRINTFS -D_DLL
                -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
     ;;
+
+  # ---- shell32's private recycle-bin static library (dll/win32/shell32/shellrecyclebin).
+  # Its own CMake target, linked into shell32.dll, so it gets its own crate rather than
+  # folding into shell32-rust: shell32's island is 44K lines that 40+ landed COM modules
+  # compile against, and adding recyclebin_private.h/recyclebin_v5.h to ITS wrapper would
+  # perturb all of them to buy two headers used by six TUs. ----
+  recyclebin)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-08-07 from
+    # dll/win32/shell32/shellrecyclebin/CMakeLists.txt (6 compiled TU(s), 180 headers in the
+    # include closure, 0 switch constants — the §9.112 audit found no identifier case labels
+    # anywhere in the subtree), then adjusted in the four places noted below.
+    USERMODE=1
+    # Emit the header function surface minus what the crate defines. The subtree is a thin
+    # layer over Win32 file I/O (CreateFileW/ReadFile/SetFilePointer/SHFileOperationW/
+    # PathAppendW/SHAlloc), so BLOCKLIST_FUNCS=1 would mean hand-writing ~120 prototypes.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    # ADJUSTMENT 1 — the derive proposed `-x c++` via atlstr.h, and taking it would have been
+    # the expensive mistake here. recyclebin.h/recyclebin_v5.h declare all four interfaces
+    # (IRecycleBin, IRecycleBin5, IRecycleBinEnumList, IRecycleBinFile) with DECLARE_INTERFACE_.
+    # Parsed as C++ that yields bindgen's OPAQUE `__bindgen_vtable` — which you can hold a
+    # pointer to but cannot implement, and implementing them is the entire job. Parsed as C it
+    # yields the `lpVtbl` struct the COBJMACROS in these very headers already use. The whole
+    # cost of staying in C is FOUR CStringW sites (two RecycleBin5 fields, two locals); the cost
+    # of C++ would be hand-writing every slot of four interfaces, which is exactly the debt
+    # folders/CRecycleBin.rs is already carrying privately.
+    LANG_ARGS=()
+    # A/W ALIASING REWRITES VTABLE SLOT NAMES, and the island is right where it looks wrong.
+    # IRecycleBin5Vtbl's slots 4 and 5 come out `DeleteFileW` and `EmptyRecycleBinW` while the
+    # C++ writes `DeleteFile`/`EmptyRecycleBin` — winbase.h makes both A/W macros under UNICODE
+    # and the preprocessor rewrites the METHOD NAMES, on the C++ side identically. Same class as
+    # the TVN_SELCHANGED -> TVN_SELCHANGEDW alias that §9.112 records. A translation spelling
+    # `DeleteFile` gets a loud E0609, so this costs confusion rather than correctness.
+    # ADJUSTMENT 2 — com-sys, not a second IUnknown. objbase.h reaches the closure through
+    # recyclebin.h, so without this the island re-emits IUnknown/IID/HRESULT and anything
+    # bridging to shell32-rust sees two incompatible identities for the same ABI.
+    SYS_CRATES=( "com-sys:com-sys/src" )
+    # New usermode crate, so real unions per the REAL_UNIONS note at the top of this file —
+    # nothing here is compiled against the __BindgenUnionField accessor API yet, and
+    # ULARGE_INTEGER is threaded through the file-size methods of IRecycleBinFile.
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/dll/win32/shell32/shellrecyclebin"
+    # ADJUSTMENT 3 — atlstr.h dropped (see ADJUSTMENT 1), and `#define INITGUID` dropped with
+    # initguid.h. INITGUID turns every DEFINE_GUID into a DEFINITION; the IIDs are guid.c's job
+    # and the Rust replacement publishes them itself, so the island wants the plain
+    # `EXTERN_C const IID IID_IRecycleBin;` declarations that recyclebin.h gives without it.
+    WRAPPER_INC=$'#include "recyclebin_private.h"\n#include <shlwapi.h>\n#include "sddl.h"\n#include <strsafe.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winver\.h'
+                  # The API surface the subtree actually calls. The derive leaves these out
+                  # because SWITCH_CONST_HEADER_ADDED only pulls a header that owns a `case`
+                  # label, and this subtree reaches kernel32/advapi32 by ordinary calls —
+                  # CreateFileW, SetFilePointer, MapViewOfFile, ConvertStringSecurityDescriptor*.
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*shellrecyclebin[/\\].*\.h' )
+    # ADJUSTMENT 4 — the derive also proposed -I"${SRC}/build-i386/dll/win32/shell32/
+    # shellrecyclebin". Dropped for the same reason it was dropped from shell32 above: that
+    # directory carries no headers, and baking ONE arch's build dir into a 3-arch generator is
+    # the cross-arch header leak AGENTS.md forbids.
+    EXTRA_INC=( -I"${SRC}/dll/win32/shell32/shellrecyclebin" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    # sdk/lib/atl is NOT here; see ADJUSTMENT 1.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_UNICODE
+               -D_ATL_NO_EXCEPTIONS -D_CRT_NON_CONFORMING_SWPRINTFS
+               -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+
   usbstor)
     # USB mass-storage class driver (drivers/usb/usbstor). All private structs are defined
     # INLINE in usbstor.h: CBW/CSW (Bulk-Only command/status wrappers, pshpack1), IRP_CONTEXT,

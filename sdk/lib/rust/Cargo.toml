@@ -342,6 +342,17 @@ members = [
     "cabinet-rust",
     "cabinet-cargo",
     "mlang-cargo",
+    # shell32's private recycle-bin static library (dll/win32/shell32/shellrecyclebin) — its own
+    # CMake target, so its own crate and island rather than 44K more lines in shell32's. The four
+    # interfaces are DECLARE_INTERFACE_, and the island is generated in C mode so they arrive as
+    # implementable `lpVtbl` vtables instead of bindgen's opaque C++ ones.
+    #
+    # PARKED at 25 errors/arch (from 256) while the two v5 TUs are ground out — 11 `goto cleanup;`
+    # sites the model left as C control flow, plus L"" literals and a leaked C `static` qualifier.
+    # Membership is what puts a crate in EVERY lane's `cargo check`, so it joins on the commit
+    # that makes it green, exactly as msv1_0-rust did above. Nothing links it yet either: the
+    # subtree is not cohab-flipped, so the C still builds and no boot can regress.
+    #   "recyclebin-rust",
 ]
 resolver = "2"
 
