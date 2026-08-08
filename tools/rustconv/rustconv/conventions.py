@@ -178,3 +178,16 @@ KW_EXPANSION: dict[str, str] = {
     "STRSAFEAPI": "HRESULT WINAPI",  # psdk/strsafe.h:80 (`static __inline` dropped: see test)
     "STRSAFE_INLINE_API": "HRESULT WINAPI",  # psdk/strsafe.h:81 (ditto `__CRT_INLINE`)
 }
+
+# The FUNCTION-LIKE half of the same family: these take the return type as an argument, so
+# the keyword table above cannot reach them and `STDMETHODIMP_(ULONG) AddRef()` survived
+# into the translated signature as a literal return type `STDMETHODIMP_(ULONG)`. Values are
+# the header's own expansions, verbatim, with `\1` for the argument — the existing
+# EXTERN_C/alias normalizations then finish the job exactly as they do for the keyword
+# forms. Every hand-rolled COM class declares AddRef and Release this way.
+KW_EXPANSION_FN: dict[str, str] = {
+    "STDAPI_": r"EXTERN_C \1 STDAPICALLTYPE",  # psdk/basetyps.h:42
+    "STDMETHODIMP_": r"\1 STDMETHODCALLTYPE",  # psdk/basetyps.h:44
+    "STDAPIV_": r"EXTERN_C \1 STDAPIVCALLTYPE",  # psdk/basetyps.h:46
+    "STDMETHODIMPV_": r"\1 STDMETHODVCALLTYPE",  # psdk/basetyps.h:48
+}
