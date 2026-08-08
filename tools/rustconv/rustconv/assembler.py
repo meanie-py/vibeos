@@ -242,7 +242,13 @@ def assemble_file(
     content_parts.append("// " + "=" * 76)
     content_parts.append("")
 
-    out_path.write_text("\n".join(content_parts))
+    # Strip per-line trailing whitespace. A model that wraps a call argument list leaves a
+    # space after the comma, which `git diff --check` flags on every commit of generated
+    # output — and stripping it by hand does not stick, because the next regeneration (now
+    # a $0 cache replay, so it happens often) puts it straight back. The generator owns its
+    # own whitespace. Only trailing blanks go; indentation and blank lines are untouched.
+    text = "\n".join(line.rstrip() for line in "\n".join(content_parts).split("\n"))
+    out_path.write_text(text)
 
     # HAL-specific output routing: append to mod.rs, CMakeLists.txt DEPENDS,
     # and comment out the C file in the matching *.cmake.

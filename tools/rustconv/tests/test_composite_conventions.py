@@ -14,8 +14,9 @@ parsed is a guess, and a guess drops functions without saying so.
 
 import pytest
 
+from rustconv.config import REACTOS_ROOT
 from rustconv.conventions import KW_EXPANSION
-from rustconv.scanner import scan_file
+from rustconv.scanner import _expand_composite_conventions, scan_file
 
 # What each alias supplies as the return type, once expanded. `None` means the macro takes
 # the type from elsewhere in the same expansion chain and the test only demands extraction.
@@ -76,3 +77,40 @@ def test_a_chained_alias_resolves_through_its_stem(tmp_path):
     assert _expand_composite_conventions("WINOLEAPI f(void);") == (
         "EXTERN_C HRESULT STDAPICALLTYPE f(void);"
     )
+
+
+class TestFunctionLikeConventionMacros:
+    """`STDMETHODIMP_(t)` takes its return type as an ARGUMENT, so the keyword table
+    cannot reach it and it survived into translated signatures as a literal return type
+    `STDMETHODIMP_(ULONG)`. Every hand-rolled COM class declares AddRef/Release this way.
+    Expansions are basetyps.h:42-48, verbatim.
+    """
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            ("STDMETHODIMP_(ULONG) AddRef();", "ULONG STDMETHODCALLTYPE AddRef();"),
+            ("STDMETHODIMPV_(ULONG) V(int);", "ULONG STDMETHODVCALLTYPE V(int);"),
+            ("STDAPI_(BOOL) Foo(void);", "EXTERN_C BOOL STDAPICALLTYPE Foo(void);"),
+            ("STDAPIV_(DWORD) Bar(int);", "EXTERN_C DWORD STDAPIVCALLTYPE Bar(int);"),
+            # The keyword forms must keep working alongside them.
+            ("STDMETHODIMP Q(REFIID r);", "HRESULT STDMETHODCALLTYPE Q(REFIID r);"),
+            # Nothing else is touched.
+            ("int plain(int x);", "int plain(int x);"),
+        ],
+    )
+    def test_expands_to_the_headers_own_text(self, source: str, expected: str):
+        assert _expand_composite_conventions(source) == expected
+
+    def test_the_real_recyclebin_declarations_expand(self):
+        source = (
+            REACTOS_ROOT
+            / "dll"
+            / "win32"
+            / "shell32"
+            / "shellrecyclebin"
+            / "recyclebin_generic.cpp"
+        ).read_text()
+        expanded = _expand_composite_conventions(source)
+        assert "STDMETHODIMP_(" not in expanded
+        assert "ULONG STDMETHODCALLTYPE AddRef()" in expanded

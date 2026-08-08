@@ -5983,7 +5983,14 @@ def render_class_scaffold(
                 f"as *mut {cls.name};"
             )
             rest = ", ".join(name for _, name in params[1:])
-            if method.name in ("QueryInterface", "AddRef", "Release"):
+            # The IUnknown trio is ATL's to implement -- but only when the class actually
+            # derives from ATL. A hand-rolled COM class writes its own QueryInterface,
+            # AddRef and Release in the C++, so they translate to `_body` workers like any
+            # other method, and routing the vtable slot at `{cls}_QueryInterface` instead
+            # aims it at a function only the ATL branch below ever defines. That is not
+            # merely an undefined symbol: had anything else supplied that name, the class's
+            # OWN QueryInterface would have been silently bypassed in the shipped vtable.
+            if cls.com_map and method.name in ("QueryInterface", "AddRef", "Release"):
                 target = f"{cls.name}_{method.name}"
             else:
                 target = f"{_interface_method_target(cls.name, method, interfaces)}_body"

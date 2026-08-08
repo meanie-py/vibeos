@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin::GetDefaultRecycleBin;
+use crate::shellrecyclebin::recyclebin_generic_enumerator_free::RecycleBinGenericEnum_Constructor;
 // Deterministic from recyclebin.h
 #[repr(C)]
 pub struct IRecycleBin {
@@ -93,15 +95,15 @@ pub struct RecycleBinGeneric {
 
 unsafe extern "system" fn RecycleBinGeneric_IRecycleBin_QueryInterface(This: *mut IRecycleBin, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGeneric, IRecycleBin_iface)) as *mut RecycleBinGeneric;
-    RecycleBinGeneric_QueryInterface(this, riid, ppvObject)
+    RecycleBinGeneric_QueryInterface_body(this, riid, ppvObject)
 }
 unsafe extern "system" fn RecycleBinGeneric_IRecycleBin_AddRef(This: *mut IRecycleBin) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGeneric, IRecycleBin_iface)) as *mut RecycleBinGeneric;
-    RecycleBinGeneric_AddRef(this)
+    RecycleBinGeneric_AddRef_body(this)
 }
 unsafe extern "system" fn RecycleBinGeneric_IRecycleBin_Release(This: *mut IRecycleBin) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGeneric, IRecycleBin_iface)) as *mut RecycleBinGeneric;
-    RecycleBinGeneric_Release(this)
+    RecycleBinGeneric_Release_body(this)
 }
 unsafe extern "system" fn RecycleBinGeneric_IRecycleBin_DeleteFile(This: *mut IRecycleBin, szFileName: LPCWSTR) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGeneric, IRecycleBin_iface)) as *mut RecycleBinGeneric;
@@ -211,19 +213,21 @@ pub unsafe fn RecycleBinGeneric_QueryInterface_body(this: *mut RecycleBinGeneric
     E_NOINTERFACE
 }
 
-pub unsafe fn RecycleBinGeneric_AddRef_body(this: *mut RecycleBinGeneric) -> STDMETHODIMP_(ULONG) {
-    let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref));
-    refCount
+pub unsafe fn RecycleBinGeneric_AddRef_body(this: *mut RecycleBinGeneric) -> ULONG {
+    let ref_count = ntdll_sys::nt::InterlockedIncrement(
+        &raw mut (*this).m_ref,
+    );
+    ref_count as u32
 }
 
 pub unsafe fn RecycleBinGeneric_dtor_body(this: *mut RecycleBinGeneric) -> () {}
 
-pub unsafe fn RecycleBinGeneric_Release_body(this: *mut RecycleBinGeneric) -> STDMETHODIMP_(ULONG) {
-    let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref));
-    if ref_count == 0 {
-        RecycleBinGeneric_destroy(this);
+pub unsafe fn RecycleBinGeneric_Release_body(this: *mut RecycleBinGeneric) -> ULONG {
+    let refCount = InterlockedDecrement(&mut (*this).m_ref);
+    if refCount == 0 {
+        let _ = SENDTO_ITEM_delete(this);
     }
-    ref_count
+    refCount
 }
 
 pub unsafe fn RecycleBinGeneric_DeleteFile_body(this: *mut RecycleBinGeneric, szFileName: LPCWSTR) -> HRESULT {

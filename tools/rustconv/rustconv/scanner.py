@@ -15,7 +15,7 @@ import tree_sitter_c as tsc
 import tree_sitter_cpp as tscpp
 from tree_sitter import Language, Parser
 
-from .conventions import KW_EXPANSION, KW_TO_CONV
+from .conventions import KW_EXPANSION, KW_EXPANSION_FN, KW_TO_CONV
 
 C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
@@ -225,6 +225,15 @@ RE_EXTERN_C = re.compile(r"\bEXTERN_C\b")
 # why normalizing one to a bare `__stdcall` deletes the function.
 RE_COMPOSITE_CC = re.compile(r"\b(?:" + "|".join(map(re.escape, KW_EXPANSION)) + r")\b")
 
+# The function-like forms take their return type as an argument, so they need a capture
+# rather than a word match. Longest-first, or `STDAPI_` would shadow `STDAPIV_`. The
+# argument is a type, so it cannot itself contain a paren -- a flat `[^()]+` is exact here.
+RE_COMPOSITE_CC_FN = re.compile(
+    r"\b("
+    + "|".join(sorted(map(re.escape, KW_EXPANSION_FN), key=len, reverse=True))
+    + r")\s*\(\s*([^()]+?)\s*\)"
+)
+
 # `CONST` is `#define CONST const` (winnt.h) — same macro, uppercase. tree-sitter-c does not
 # know it, so `CONST struct sockaddr *name` reads as TWO type-identifiers and the enclosing
 # function produces ZERO function_definition nodes: it is silently dropped from the plan.
@@ -302,7 +311,10 @@ def _expand_composite_conventions(text: str) -> str:
     chains are two deep and a cycle would be a header bug, so stop rather than spin.
     """
     for _ in range(4):
-        expanded = RE_COMPOSITE_CC.sub(lambda m: KW_EXPANSION[m.group(0)], text)
+        expanded = RE_COMPOSITE_CC_FN.sub(
+            lambda m: re.sub(r"\\1", m.group(2), KW_EXPANSION_FN[m.group(1)]), text
+        )
+        expanded = RE_COMPOSITE_CC.sub(lambda m: KW_EXPANSION[m.group(0)], expanded)
         if expanded == text:
             return text
         text = expanded

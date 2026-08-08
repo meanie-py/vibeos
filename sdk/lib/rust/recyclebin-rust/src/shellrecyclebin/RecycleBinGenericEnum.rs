@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin::GetDefaultRecycleBin;
 // Deterministic from recyclebin.h
 #[repr(C)]
 pub struct IRecycleBinEnumList {
@@ -77,15 +78,15 @@ pub struct RecycleBinGenericEnum {
 
 unsafe extern "system" fn RecycleBinGenericEnum_IRecycleBinEnumList_QueryInterface(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGenericEnum, IRecycleBinEnumList_iface)) as *mut RecycleBinGenericEnum;
-    RecycleBinGenericEnum_QueryInterface(this, riid, ppvObject)
+    RecycleBinGenericEnum_QueryInterface_body(this, riid, ppvObject)
 }
 unsafe extern "system" fn RecycleBinGenericEnum_IRecycleBinEnumList_AddRef(This: *mut IRecycleBinEnumList) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGenericEnum, IRecycleBinEnumList_iface)) as *mut RecycleBinGenericEnum;
-    RecycleBinGenericEnum_AddRef(this)
+    RecycleBinGenericEnum_AddRef_body(this)
 }
 unsafe extern "system" fn RecycleBinGenericEnum_IRecycleBinEnumList_Release(This: *mut IRecycleBinEnumList) -> ULONG {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGenericEnum, IRecycleBinEnumList_iface)) as *mut RecycleBinGenericEnum;
-    RecycleBinGenericEnum_Release(this)
+    RecycleBinGenericEnum_Release_body(this)
 }
 unsafe extern "system" fn RecycleBinGenericEnum_IRecycleBinEnumList_Next(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBinGenericEnum, IRecycleBinEnumList_iface)) as *mut RecycleBinGenericEnum;
@@ -170,9 +171,9 @@ pub unsafe fn RecycleBinGenericEnum_QueryInterface_body(this: *mut RecycleBinGen
     S_OK
 }
 
-pub unsafe fn RecycleBinGenericEnum_AddRef_body(this: *mut RecycleBinGenericEnum) -> () {
-    let ref_count: i32 = InterlockedIncrement(&raw mut (*this).m_ref);
-    ref_count as u32
+pub unsafe fn RecycleBinGenericEnum_AddRef_body(this: *mut RecycleBinGenericEnum) -> ULONG {
+    let refCount = InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref));
+    refCount as u32
 }
 
 pub unsafe fn RecycleBinGenericEnum_dtor_body(this: *mut RecycleBinGenericEnum) -> () {
@@ -181,12 +182,12 @@ pub unsafe fn RecycleBinGenericEnum_dtor_body(this: *mut RecycleBinGenericEnum) 
     }
 }
 
-pub unsafe fn RecycleBinGenericEnum_Release_body(this: *mut RecycleBinGenericEnum) -> () {
-    let refCount = InterlockedDecrement(core::ptr::addr_of_mut!((*this).m_ref));
+pub unsafe fn RecycleBinGenericEnum_Release_body(this: *mut RecycleBinGenericEnum) -> ULONG {
+    let refCount = InterlockedDecrement(&mut (*this).m_ref);
     if refCount == 0 {
-        drop(Box::from_raw(this));
+        let _ = Box::from_raw(this);
     }
-    refCount
+    refCount as u32
 }
 
 pub unsafe fn RecycleBinGenericEnum_Next_body(this: *mut RecycleBinGenericEnum, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT {
