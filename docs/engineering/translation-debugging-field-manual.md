@@ -1098,6 +1098,57 @@ ASSOCIATED types (`impl Width for Narrow { type Ch = i8 }` vs `... for Wide { ty
 is msvcrt's narrow/wide scanf — differing per impl is the *point*), and an unresolvable RHS,
 which is skipped rather than guessed at. Those three took the tree from 102 findings to 78.
 
+### A header MACRO re-ported per module drifts, and only some drift is visible
+bindgen emits types, functions and object-like constants, but **never a function-like macro**,
+and it drops constants it cannot fold (a cast, a `sizeof`, a pointer literal). So every
+translated module re-ports the same `minwindef.h` / `winuser.h` / `wingdi.h` handful into its own
+prelude, and nothing ever compares the copies.
+
+**Symptom.** Nothing. Every copy compiles; the module it lives in is self-consistent. The
+divergence is only visible from a whole-tree read, which is the same shape as the typedef entry
+above.
+
+**Cause.** The measured state before `win32macros-rust` existed: `LOWORD` defined **32 times
+across 12 crates in 8 distinct spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9.
+Three kinds of divergence hide in that, and they are not equally serious:
+
+- **Type-only.** shell32/menuband spell `LOWORD` `as UINT` where the header says `WORD`. The
+  mask makes the *value* identical; only the expression type differs. Harmless, but it is why a
+  shared definition cannot simply be dropped in — 21 call sites are typed against `u32`.
+- **Re-spelling.** `GetGValue` shifts the full `COLORREF` where `wingdi.h:3382` truncates to
+  `WORD` first. Both select bits 8..15, for every input. Proving it *was* a re-spelling is the
+  work; record the proof so the next reader does not redo it.
+- **Genuinely wrong.** `wingdi.h:3386` masks each `RGB` component to `BYTE` **before** shifting
+  it. All four in-tree copies shifted the unmasked value, so a component above 255 bled into the
+  next channel — `RGB(r, 0x1FF, b)` gave `0x0001FF00 | b << 16` where C gives `0xFF00`. Latent
+  rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
+  same class as msgina's `StringCchPrintfW` dropping its bound.
+
+**Fix.** Port it once into a shared crate, transcribed from the header rather than from the
+copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
+(macros + folded constants) are the two precedents.
+
+**The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
+crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
+— but two kinds of Win32 type look primitive and are not:
+
+- **`HWND` is `*mut HWND__`**, an *opaque struct* bindgen emits separately into every island. It
+  is NOMINAL, so a shared `*mut c_void` will not unify with it. `HANDLE` really is
+  `*mut c_void` everywhere, which is why `INVALID_HANDLE_VALUE` shares and `HWND_BROADCAST`
+  cannot.
+- **`LPARAM`/`WPARAM`/`LRESULT` are not `isize`/`usize`.** They alias `LONG_PTR`/`UINT_PTR`,
+  which bindgen emits as `c_long`/`c_uint` on i386 and `c_longlong`/`c_ulonglong` on the 64-bit
+  targets — a *fixed-width* type that changes with the arch. `isize` is a distinct primitive from
+  `i32` even where both are 32 bits, so a shared macro returning `isize` fails against all three.
+
+So: share it only if its result type is a fixed-width primitive that is the SAME on all three
+targets (`u8`, `u16`, `u32`, `i32`, `*mut u16`). Anything pointer-width or nominal stays in the
+consumer, where the island's own alias is in scope — `MAKELPARAM` keeps its one-line local
+definition and only the `MAKELONG` inside it is shared. Two more that stay local for their own
+reasons: the TCHAR-neutral `MAKEINTRESOURCE`, which is `-DUNICODE`-dependent and so is a
+per-consumer property, and `ListView_*`/`PropSheet_*`, which expand against island *struct*
+types.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386

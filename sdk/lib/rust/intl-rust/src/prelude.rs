@@ -128,34 +128,17 @@ pub type LPPROPSHEETPAGE = LPPROPSHEETPAGEW;
 // bindgen never emits a FUNCTION-LIKE macro, so each of these would otherwise be an unresolved
 // name — and an unresolved name is not a no-op: the model invents a declaration for it that
 // compiles and is silently wrong. Bodies are transcribed from the header cited on each line.
-#[macro_export] macro_rules! LOWORD { ($l:expr $(,)?) => { (($l as DWORD_PTR) & 0xffff) as WORD }; }
-#[macro_export] macro_rules! HIWORD { ($l:expr $(,)?) => { ((($l as DWORD_PTR) >> 16) & 0xffff) as WORD }; }
-#[macro_export] macro_rules! MAKELONG {
-    ($lo:expr, $hi:expr $(,)?) => {
-        (((($lo as DWORD_PTR) & 0xffff) as DWORD) | (((($hi as DWORD_PTR) & 0xffff) as DWORD) << 16)) as LONG
-    };
-}
-// ntbasedef.h:939-948. The header spells the cast `($ULONG)`, a ReactOS preprocessor token, not
-// a type Rust can copy; ULONG is what it means and what every call site relies on.
-#[macro_export] macro_rules! MAKELANGID {
-    ($p:expr, $s:expr $(,)?) => { (((($s as USHORT) as u32) << 10) | (($p as USHORT) as u32)) as USHORT };
-}
-#[macro_export] macro_rules! PRIMARYLANGID { ($lgid:expr $(,)?) => { (($lgid as USHORT) & 0x3ff) as USHORT }; }
-#[macro_export] macro_rules! MAKELCID {
-    ($lgid:expr, $srtid:expr $(,)?) => { (((($srtid as USHORT) as ULONG) << 16) | (($lgid as USHORT) as ULONG)) as LCID };
-}
-#[macro_export] macro_rules! LANGIDFROMLCID { ($lcid:expr $(,)?) => { ($lcid as USHORT) }; }
-#[macro_export] macro_rules! SORTIDFROMLCID {
-    ($lcid:expr $(,)?) => { (((($lcid as ULONG) >> 16) & 0xf) as USHORT) };
-}
-// winuser.h — a resource ORDINAL smuggled through a pointer, which is why the type is LPWSTR
-// and not an integer: every call site hands it straight to a resource API.
-#[macro_export] macro_rules! MAKEINTRESOURCEW { ($i:expr $(,)?) => { (($i as usize) & 0xffff) as LPWSTR }; }
-#[macro_export] macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::MAKEINTRESOURCEW!($i) }; }
-#[macro_export] macro_rules! ZeroMemory {
-    ($d:expr, $l:expr $(,)?) => { { $crate::prelude::memset($d as *mut _ as *mut core::ffi::c_void, 0, $l as usize); } };
-}
-#[macro_export] macro_rules! _countof { ($a:expr $(,)?) => { ($a).len() as u32 }; }
+// The word/locale/resource family lives in `win32macros-rust`, ported once from the headers and
+// known-answer tested there. Re-exported here under the same names, so no call site changed.
+// (The header spells MAKELCID's cast `($ULONG)`, a ReactOS preprocessor token rather than a type
+// Rust can copy; the shared port resolves it to the u32 every call site relies on.)
+pub use win32macros_rust::{
+    HIWORD, LANGIDFROMLCID, LOWORD, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG,
+    PRIMARYLANGID, SORTIDFROMLCID, ZeroMemory, _countof,
+};
+// MAKEINTRESOURCE (no suffix) is MAKEINTRESOURCEW only because intl compiles -DUNICODE. That is
+// this module's property, not the shared crate's, so the alias stays here.
+#[macro_export] macro_rules! MAKEINTRESOURCE { ($i:expr $(,)?) => { $crate::prelude::MAKEINTRESOURCEW!($i) }; }
 // commctrl.h:2333 `#define INDEXTOSTATEIMAGEMASK(i) ((i) << 12)`
 #[macro_export] macro_rules! INDEXTOSTATEIMAGEMASK { ($i:expr $(,)?) => { (($i as UINT) << 12) as UINT }; }
 #[macro_export] macro_rules! ListView_InsertColumn {
@@ -183,10 +166,9 @@ pub type LPPROPSHEETPAGE = LPPROPSHEETPAGEW;
     ($hdlg:expr, $hpage:expr $(,)?) => { $crate::prelude::SendMessageW($hdlg, PSM_UNCHANGED, $hpage as WPARAM, 0) };
 }
 pub use crate::{
-    HIWORD, INDEXTOSTATEIMAGEMASK, LANGIDFROMLCID, LOWORD, ListView_InsertColumn,
-    ListView_InsertItem, ListView_SetExtendedListViewStyle, ListView_SetItemState, MAKEINTRESOURCE,
-    MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, PRIMARYLANGID, PropSheet_Changed,
-    PropSheet_UnChanged, SORTIDFROMLCID, ZeroMemory, _countof,
+    INDEXTOSTATEIMAGEMASK, ListView_InsertColumn, ListView_InsertItem,
+    ListView_SetExtendedListViewStyle, ListView_SetItemState, MAKEINTRESOURCE, PropSheet_Changed,
+    PropSheet_UnChanged,
 };
 
 // winuser.h:4928-4932 / 5454-5458 — GetWindowLongPtrW is a real EXPORT only under _WIN64; on

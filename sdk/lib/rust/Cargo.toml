@@ -106,6 +106,11 @@ members = [
     # defines them, so every flipped module used to port the header again — four divergent
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
+    # The Win32 header MACROS (LOWORD, MAKELONG, RGB, ZeroMemory, _countof, ...) plus the
+    # constants bindgen folds away (DWLP_*, HWND_BROADCAST, INVALID_HANDLE_VALUE). bindgen emits
+    # neither, so every translated module re-ported them by hand: LOWORD alone existed 32 times
+    # in 8 spellings, and the RGB copies all dropped the header's per-component BYTE mask.
+    "win32macros-rust",
     # The System control panel: the General/Hardware/Advanced property sheets, the
     # environment/user-profile/hardware-profile/virtual-memory/startup-recovery dialogs, and the
     # SMBIOS/DMI reader that names the machine.

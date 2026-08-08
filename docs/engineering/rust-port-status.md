@@ -2001,6 +2001,26 @@ big but cold: cdrom 211K, disk 170K, classpnp 166K, kernel32 161K, buslogic 138K
 125K, scsiport/atapi/storahci ~120K each, fastfat 113K, freeldr 75K, cdfs 65K, storport 65K,
 + ~130 smaller crates.
 
+## Shared substrate crates (ported once, consumed by many islands)
+
+Some header material is invisible to bindgen and therefore gets re-ported by hand into every
+module that needs it. Two crates now own that material, and both exist because the hand copies
+had measurably drifted:
+
+| Crate | What it owns | Why it exists |
+|---|---|---|
+| `strsafe-rust` | `strsafe.h`'s `static __inline` bounded string ops | `STRSAFEAPI` is `static __inline`, so **no object file in the tree defines any of them** — the last `.c` a module flips takes the module's only definition with it. Four copies existed (msgina, syssetup, desk, sysdm), no two the same subset, and msgina's `StringCchPrintfW` had DROPPED the caller's bound and forwarded to `wsprintfW` — a stack overrun on a `WCHAR[256]`. Consumers: desk, syssetup, sysdm, msgina, rosload, uefildr. |
+| `win32macros-rust` | The function-like Win32 macros (`LOWORD`/`HIWORD`/`MAKELONG`/`MAKELANGID`/`MAKELCID`/`MAKEINTRESOURCEW`/`RGB`/`Get?Value`/`GET_?_LPARAM`/`ZeroMemory`/`_countof`/`ARRAYSIZE`) plus the constants bindgen folds away (`DWLP_MSGRESULT`/`DWLP_DLGPROC`/`DWLP_USER`, `INVALID_HANDLE_VALUE`, `UNICODE_NULL`) | bindgen emits **no** function-like macro and drops cast/`sizeof`/pointer-literal constants. Before extraction: `LOWORD` defined **32× across 12 crates in 8 spellings**, `HIWORD` in 8, `ZeroMemory` in 6, `DWLP_USER` in 9 — and all four `RGB` copies had dropped `wingdi.h`'s per-component `BYTE` mask, so an out-of-range component bled into the next channel. Transcribed from the headers, not from the copies, with 13 known-answer tests. Consumers: desk, sysdm, intl, syssetup, aclui, netcfgx, netid, umpnpmgr, samlib, ntmarta, authz, msv1_0 (+ recyclebin, parked). |
+
+**The sharing boundary is narrower than "core primitives."** A shared crate cannot depend on any
+consumer's bindgen island, so everything it exports must be a fixed-width primitive that is the
+*same on all three targets*. Two Win32 types look primitive and are not: `HWND` is `*mut HWND__`,
+a nominal opaque struct each island emits for itself; and `LPARAM`/`WPARAM`/`LRESULT` alias
+`LONG_PTR`/`UINT_PTR`, which bindgen emits as `c_long`/`c_uint` on i386 but
+`c_longlong`/`c_ulonglong` on the 64-bit pair — never `isize`/`usize`. Anything pointer-width or
+nominal stays in the consumer prelude. Details and the full stay-local list:
+`translation-debugging-field-manual.md` → "A header MACRO re-ported per module drifts".
+
 ## Kernel crate topology (build-architecture, not coverage)
 
 `ntoskrnl-rust` is being split from one ~456K-LOC rlib monolith into per-subsystem crates to
