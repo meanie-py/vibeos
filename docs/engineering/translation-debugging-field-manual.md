@@ -275,6 +275,20 @@ so the symbol is `_DeleteFileToRecycleBinW@4` and i386 reported the mirror-image
 `extern "C" {` block controls MANGLING; `WINAPI` controls the CONVENTION; they are independent
 and you have to read both.
 
+### On a 32-bit HOST harness, `extern "system"` and `extern "stdcall"` stop agreeing
+`"system"` is stdcall only on 32-bit **Windows**; on `i686-unknown-linux-gnu` it is cdecl.
+An explicit `extern "stdcall"` is honoured on x86 whatever the OS. So in a 32-bit host
+harness the two spellings, which are the same thing in the product, become different
+conventions — and they land on different halves of the same crate: the graded exports are
+`extern "system"` (cdecl there) while `msvcrt-sys`'s Win32 imports are `extern "stdcall"`
+(still stdcall). **Symptom:** a harness stand-in written cdecl for a stdcall import leaves
+four bytes on the stack per call, and the `ret` that follows jumps to a stack-resident value
+— SIGSEGV with the PC *inside* the stack, no symbol, nowhere near the cause. **Fix:** give
+the reference prelude two spellings, `__stdcall` defined AWAY for the graded exports and an
+explicit `__attribute__((stdcall))` for the imports, and take each import's convention from
+the `-sys` crate rather than from the name. A stub that never returns (an abort) is exempt,
+because nobody pops. Precedent, from the other direction: errno.rs's `_SetErrorMode@4`.
+
 ### A `#define` in precomp.h means the C never called the function it names
 `precomp.h:63` is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so every `ShellMessageBoxW(…)`
 in shell32's C++ is really a call to the Wrap twin — shell32 does not import the exported name at
@@ -1158,6 +1172,19 @@ Three faces, all seen live:
   is what differs — so fix only the sites whose guard is a variable**, with the same pointer
   arithmetic (`addr_of_mut!(FOO).cast::<Elem>().add(i)` — the `.cast()` is what stops the stride
   being the whole array).
+- **A HAND-WRITTEN `[T; 1]` in a translated module, not a bindgen one — same class, and it
+  reached the shipping i386 DLL.** msvcrt's `SCOPETABLE_V4` ends in `SCOPETABLE entries[1]`;
+  `except_i386.rs` indexed it `entries[trylevel as usize]` at eight sites across
+  `_except_handler4_common` and `msvcrt_local_unwind4`, so every function with more than one
+  `__try` level panicked *inside its own SEH handler*. The tell that this is a translation
+  slip rather than a design choice is that it is **intra-file**: `msvcrt_local_unwind2`, six
+  lines away, reaches the same table through a `*mut SCOPETABLE` and strides it correctly —
+  the difference is only that one arrives as a struct MEMBER and the other as a pointer. Grep
+  a translated module for `as usize]` before believing it; the count is small and every hit
+  wants checking against whether the C declared a flexible array. Found by
+  `msvcrt-seh-difftest` on its first run, and it could not have been found any other way:
+  the module is `#![cfg(target_arch = "x86")]`, so nothing that runs on the build host ever
+  executes it.
 - **SILENT thread hang, message on debugcon not serial:** `IoCheckEaBufferValidity` panicked;
   the kernel panic handler writes `PANIC:<file>:<line>` to **debugcon port 0xe9**, then
   `loop {}`. QEMU's timer still preempts the spinning thread, so the box stays alive and it

@@ -2157,11 +2157,22 @@ def cmd_translate(args):
         # path a dead end: `provided` was always empty there, so the refusal message
         # named a flag that the same invocation would then reject (shlfolder.cpp /
         # shldataobject.cpp / item_prop.cpp all stalled on CDataObjectHIDA this way).
-        if not (
-            rustconv_target.name == "shell32"
-            and (getattr(args, "cpp_com", False) or getattr(args, "free_functions", False))
-        ):
-            raise CppComError("--local-raii currently requires shell32 --cpp-com/--free-functions")
+        # ...and --plain is the third such path, so it belongs here too. The gate is now on the
+        # MODE alone: body-local RAII is a C++ language feature, not a shell32 feature, and the
+        # old `target.name == "shell32"` clause hard-coded the only module that happened to have
+        # C++ TUs when this was written. shellrecyclebin (its own CMake target, so target.name
+        # == "recyclebin") hit exactly the dead end the comment above describes — refused for
+        # naming a flag it was already passing — on CZZWStr, a file-local RAII guard owning an
+        # SHAlloc'd double-NUL string for SHFILEOPSTRUCTW.
+        cpp_mode = (
+            getattr(args, "cpp_com", False)
+            or getattr(args, "free_functions", False)
+            or getattr(args, "plain", False)
+        )
+        if not cpp_mode:
+            raise CppComError(
+                "--local-raii requires a C++ mode: --cpp-com, --plain or --free-functions"
+            )
         if not raii_file.is_file():
             raise CppComError(f"--local-raii {raii_name}: no such file: {raii_file}")
         local_raii_impls[raii_name] = raii_file.read_text()
@@ -2376,6 +2387,37 @@ def cmd_translate(args):
             if cpp_com_mode and getattr(args, "class_name", None)
             else frozenset()
         )
+        # ...and the same thing for every OTHER C++ path, which the clause above cannot reach:
+        # it needs a single `--class-name`, and `cpp_com_mode` is `target.name == "shell32"`.
+        # --plain discovers its classes instead of being told one, and a non-shell32 C++ module
+        # (shellrecyclebin) fails both halves — so `receiver_callees` came out EMPTY and every
+        # implicit-receiver sibling call kept the C site's arity. That is not the safe direction
+        # the note above assumes: `AddRef();` inside a member function is `this->AddRef()`, argc
+        # 0, while the only correct --plain lowering is `RecycleBinGeneric_AddRef(this)`, argc 1.
+        # The envelope then rejected CORRECT output — RecycleBinGeneric's QueryInterface and
+        # EmptyRecycleBin both, i.e. the COM boilerplate every such class has, so --plain COM
+        # classes rejected by construction and a retry could only re-bill the same verdict.
+        #
+        # Derived per-dep from the TU's own class membership, so a TU with several classes
+        # (recyclebin_v5.cpp: CZZWStr + RecycleBin5) marks each call against the class that
+        # actually owns the CALLER. A free function in the same TU keeps argc as-is.
+        methods_by_class: dict[str, set[str]] = {}
+        for fn in scan.functions:
+            owner = getattr(fn, "cpp_class", None)
+            if owner:
+                methods_by_class.setdefault(owner, set()).add(fn.name)
+        receivers_by_dep = {}
+        for dep in sorted_deps:
+            if receiver_callees:
+                receivers_by_dep[dep.name] = receiver_callees
+                continue
+            own = methods_by_class.get(getattr(dep, "cpp_class", None) or "", ())
+            receivers_by_dep[dep.name] = frozenset(
+                callee
+                for callee in dep.callees
+                if callee in own or (callee.endswith("_body") and callee[: -len("_body")] in own)
+            )
+
         call_seals = (
             {
                 dep.name: seal_calls(
@@ -2383,7 +2425,7 @@ def cmd_translate(args):
                     set(dep.callees) | {f"{callee}_body" for callee in dep.callees},
                     seal_macros,
                     tu_source=scan.raw_source,
-                    receiver_callees=receiver_callees,
+                    receiver_callees=receivers_by_dep[dep.name],
                 )
                 for dep in sorted_deps
             }

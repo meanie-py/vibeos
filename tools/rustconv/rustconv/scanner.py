@@ -1474,6 +1474,19 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
 
     def walk(node):
         if node.type == "function_definition":
+            # `= delete` / `= default` — tree-sitter files both under function_definition, but
+            # neither HAS a body, so neither is a translatable unit and neither may count as
+            # under-translation. Recording them made _gate_unextracted HARD FAIL on a false
+            # positive, and the only escape was --allow-partial, which suppresses the gate for
+            # the WHOLE file — trading a false positive for blindness to the true ones. Found on
+            # recyclebin_v5.cpp's `CZZWStr& operator=(const CZZWStr&) = delete;`.
+            # NB `= default` does carry implicit semantics (a defaulted dtor destroys members);
+            # those belong to the ctor/dtor lowering, which synthesises the bodies, not to the
+            # per-function extractor asking "is there source code here we would miss?"
+            if any(
+                c.type in ("delete_method_clause", "default_method_clause") for c in node.children
+            ):
+                return
             func = _parse_function(node, source, source_text)
             if func:
                 result.functions.append(func)

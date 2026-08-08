@@ -73,7 +73,7 @@ rather than trusting this line: `find sdk/lib/rust -name '*.rs' | wc -l` and
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **483 of 1,087 non-stub C exports Rust-backed — 44%** (2026-07-26 wave 16 finished `string.c` + `wcs.c`; the denominator here excludes the `?`-mangled C++ surface, which is a separate lane. Was 431 of 1,165 counting C++) (2026-07-26, re-measured amd64 as `llvm-nm libmsvcrt_crt_cargo.a` ∩ the spec's implementation names; was 240 on 2026-07-14, moved by wave 15's `mbcs.c` and wave 14c's printf shells). Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). The 581 `.c` still compile; what remains is gated mainly on **printf** (Phase C). | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **1,174 of 1,280 implemented C exports Rust-backed — 91%** (2026-08-07, amd64. **Re-measure with `python3 tools/msvcrt_export_coverage.py`** — this figure was hand-derived three times and rotted every time: the previous entry said 44% while the true value was already 91%, because eight waves landed and nobody re-ran the recipe written out beside it. The tool refuses a stale or missing archive rather than reporting the previous wave's number.) The denominator excludes 24 `-stub` entries (msvcrt has no body at all — and `-stub` is a FLAG on `@ varargs -stub`, not a directive, which is how the first draft counted them as implemented), 5 DLL forwards, and the 124 `?`-mangled C++ exports, which are a separate lane. **None of the 106 still-C exports is msvcrt's own C**: 58 are crtmath (16 x87 `_CI*`, 21 `__libm_sse2_*`, 3 `_ftol*`, 18 float/bessel/misc), 18 are i386 FDIV errata fixups in asm, 17 are SEH/setjmp asm plus `except_i386`, 6 are dbgrpt, 6 are `i386/inout.s` port I/O, and one is `memmove`, which is deliberately not Rust (§9.65: LLVM folds a byte-copy loop back into a call to itself). crtmath and dbgrpt are a shared-library lane serving five DLLs, not an msvcrt one. Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). Every `.c` in `msvcrt_static` still compiles and is inert — Rust wins by lld first-match — and every one now has a Rust counterpart except `sincos.c`, whose two symbols are `#pragma makedep implib` and never reach the DLL export table at all. `concurrency.c` (3,839 lines) and `handler4.c` (775) compile to **ZERO defined symbols** at this `_MSVCR_VER=0` config — entirely inside version-gated blocks, confirmed by `nm` and independently by `profile_derive --target msvcrt_shared`, which flags handler4 `DEAD_TU` at 97% dead with "DO NOT PAY TO TRANSLATE IT". Neither is porting debt; both would have been money burned. What is left for msvcrt is **ucrtbase**, which links `msvcrt_shared` and no Rust at all. The arch-SEH family is no longer owed on i386: `msvcrt-seh-difftest` (2026-08-07) is a 32-bit host harness that grades `except_i386.c` at 9,982 rows, and it caught a shipping panic — a C flexible array indexed as a Rust array. `except_x86_64.c` and `except_arm64.c` stay ungraded on purpose: between them the ten symbols are one-line calls through a function pointer, a `Rip` read, a two-line FIXME stub, and one `RtlUnwindEx` wrapper, so rows over them would grade nothing anyone would miss. | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -225,6 +225,20 @@ the four `msvcrt.h` codepage inlines that `msvcrt_argvtos_aw`/`msvcrt_valisttos_
 out of were a hand copy in `refstub/msvcrt_file_prelude.h` claiming to be "VERBATIM" with
 nothing checking it — build.rs now diffs it against the genuine header. Both are in the field
 manual under §9.73.
+
+**The substrate closed behind it.** process.rs was written by a lane that owned neither
+msvcrt-sys nor prelude.rs, so it carried six names as local `extern` blocks and `const`s under
+`// TODO(hoist)`. All six are derived now and the locals are gone —
+`GetEnvironmentVariableW`, `CREATE_UNICODE_ENVIRONMENT` and the bare
+`STARTUPINFOW`/`PROCESS_INFORMATION` aliases from the bindgen island, `realloc`/`_exit`/
+`intptr_t` from prelude.rs (the last three had already been hoisted by another lane; the TODOs
+outlived their premise). `CREATE_UNICODE_ENVIRONMENT` is the one that mattered: it was absent
+from the island because the allowlist said `CREATE_[A-Z]+`, which matches `CREATE_NEW` and
+silently drops every multi-word member of the family — the LOCALE_SMONTHNAME1 bug again, in a
+constant `msvcrt_spawn` ORs into the creation flags of **every** spawn. The hand-written value
+was right; nothing was checking that. `get_aw_cp`, `convert_acp_utf8_to_wcs` and `HIWORD` stay
+local on purpose: each mirrors the C's own `static inline` or macro, so a per-TU copy is the
+faithful shape.
 
 `STARTUPINFOW` and `PROCESS_INFORMATION` joined `msvcrt_crt_layout.h`'s guarded set. The second
 is not bookkeeping: msvcrt_spawn's `_P_WAIT` arm calls
@@ -1042,7 +1056,7 @@ still-C when it is 3).
 | file | defines | still reached in C |
 |---|---|---|
 | `except.c` | 21 | **0** — flipped in wave 29 |
-| `except_i386.c` | 13 | **0** — flipped in wave 30 |
+| `except_i386.c` | 13 | **0** — flipped in wave 30, GRADED 2026-08-07 (reference TU #13, 9,982 rows) |
 | `except_x86_64.c` | 5 | **0** — flipped in wave 31 |
 | `except_arm64.c` | 5 | **0** — flipped in wave 31 |
 | `handler4.c` | 0 | **0** — 97% dead, compiles to an object with no symbols |
@@ -1259,6 +1273,55 @@ Worth carrying forward:
   only when the seh channel is on. Our sink is unconditional, so the arguments are deliberately
   left unevaluated; evaluating them to silence an unused-parameter warning would take a second
   fault inside a filter that is about to return CONTINUE_SEARCH.
+
+**GRADED 2026-08-07 — reference TU #13, 9,982 rows, and it found a shipping bug.**
+
+The first 32-bit harness: `sdk/lib/rust/msvcrt-seh-difftest` builds for
+`i686-unknown-linux-gnu`, compiles the genuine `except_i386.c` beside the shipping
+`except_i386.rs` + `seh_i386.rs`, and grades seven exports plus six of the TU's `static`
+bodies (`get_scopetable_v4`, `msvcrt_local_unwind2`, `msvcrt_local_unwind4`,
+`cxx_local_unwind`, `check_noexcept`, `MSVCRT_nested_handler`). The task that owed these rows
+said the blocker was "a whole second harness variant"; it was three environment questions, and
+all three answered yes — `clang -m32` builds and runs 32-bit ELF, `rustup target add
+i686-unknown-linux-gnu` is one command, and `set_thread_area` + a `%fs` load gives a real
+Windows-shaped TEB, so `fs:0` (the SEH chain head) and `fs:0x18` (`NtCurrentTeb`) mean what
+both sides think they mean. That is what Wine does, and it is why the harness can exist.
+
+What it caught, on the first run:
+
+* **A C flexible array translated as a Rust array is a panic, not a read.** `SCOPETABLE_V4`
+  ends in `SCOPETABLE entries[1]` — the flexible-array idiom, sized by the compiler to the
+  function's `__try` count — and the translation indexed it as `entries[trylevel as usize]`.
+  That is a Rust ARRAY index with a bounds check against the declared length of 1, and array
+  bounds checks are not debug-only. So the shipping i386 DLL panicked inside its own SEH
+  handler for **any** function with more than one `__try` level: eight sites across
+  `_except_handler4_common` and `msvcrt_local_unwind4`. The sibling `msvcrt_local_unwind2`,
+  reached through a `*mut SCOPETABLE` rather than a struct member, had it right — the two
+  idioms sat six lines apart. Fixed with a `scope_entry()` helper that does what the C
+  compiles to. **Nothing else in the tree could have found this**: it needs the module
+  EXECUTED on its own arch, and until this harness there was no way to execute it at all.
+* **`extern "system"` and `extern "stdcall"` diverge on a 32-bit Linux host, and the
+  difference is silent.** `"system"` means stdcall only on 32-bit *Windows*, so the seven
+  graded exports are cdecl here — but msvcrt-sys spells its Win32 imports `extern "stdcall"`
+  explicitly, and rustc honours that on x86 whatever the OS. A harness stand-in written cdecl
+  therefore left four bytes on the stack per call, and the following `ret` went to a
+  stack-resident value: SIGSEGV with the PC *inside* the stack, nowhere near the cause. Same
+  family as errno.rs's `_SetErrorMode@4`, from the other direction.
+
+Three things the harness does that the next 32-bit one should copy: a `setjmp`/`longjmp`
+recovery trampoline, because `call_finally_block` is `DECLSPEC_NORETURN` and the `__finally`
+arm cannot otherwise be graded at all; an alarm + SIGSEGV watchdog that names the ROW, because
+a scope chain that never reaches its sentinel spins with nothing to observe and a bare
+segfault with no output is the one failure that tells you nothing; and `refstub/seh_layout.h`,
+generated from the real i386 headers by `tools/gen_msvcrt_seh_layout.py`, because everything
+under test is a walk BY OFFSET and an unchecked transcription would grade correct Rust as
+wrong (§9.66).
+
+Still owed, and recorded rather than skipped: `call_catch_block`,
+`catch_function_nested_handler` and `se_translation_filter` — the catch-dispatch half, which
+needs a real thrown C++ object matched by `find_catch_handler` and ends in
+`continue_after_catch` restoring `%esp` from the throwing frame. The rows drive
+`cxx_frame_handler` up to that boundary and stop.
 
 **Wave 30 — except_i386.c (13/13), $0.21.** 32-bit SEH: an exception frame is a node in a
 linked list rooted at `fs:0`, and the frame handler walks that list, where amd64/arm64 look the
