@@ -1974,19 +1974,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
   real arm64 divergence (§9.136). Blocked on offline symbolication of the `0x50` PC: the kernel
   runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
-- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
-  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
-  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
-  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
-  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
-  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
-  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
-  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
-  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
-  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
-  its own system thread with no dependency on the usermode components. Owed: either give the
-  marker wait a load-proportional budget or make the poll worker's completion deterministic —
-  and stop treating 3 retries as sufficient cover.
+- **net suite one-test timeout (`test_tdi_selftest_roundtrip` et al) — FIXED 2026-08-09, root
+  cause was the HARNESS.** Three independent guest consumers (netstack `engine.rs`'s outbound
+  client, `tditest.rs`'s TDI roundtrip, `nettest.exe`) all dialled the same slirp guestfwd
+  endpoint `10.0.2.100:9999`, and slirp hands an echo to the FIRST socket matching (addr, port)
+  — so one consumer got the reply and the others timed out. `-cmd:cat` masks this on the native
+  backend by forking a fresh `cat` per CONNECTION; the windows-host rewrite bound the whole
+  forward to ONE `-chardev` byte stream, making it a coin flip. Fixed by giving each consumer
+  its own port + chardev + echo server (`vm.GUESTFWD_ECHO_PORTS`). **Every earlier diagnosis
+  here was wrong** — host contention, a VPN, the host resolver, a red base — and two of the
+  discriminators this registry recommended were backwards: the ~4× wall clock is just the loser
+  waiting out its marker timeout, and "the engine-level echo to the very same endpoint succeeds
+  in the same boot" identified the thief, not an alibi. Field manual, "`NET_FLAKE` that is not
+  a flake". Cost: ~90% gate failure and a day of wedged merge queue.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
