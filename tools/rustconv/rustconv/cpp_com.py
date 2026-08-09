@@ -1812,6 +1812,40 @@ def _assert_no_dropped_slots(interface: str, header: Path, body: str, parsed: in
         )
 
 
+def _vtbl_declared_slots(body: str) -> int:
+    """Count vtable SLOT declarations in a WIDL ``InterfaceVtbl`` body.
+
+    Counting every ``STDMETHODCALLTYPE`` token over-counts, because a slot's PARAMETER can be a
+    function pointer carrying the same calling convention. oleidl.h's IViewObject is the case:
+
+        HRESULT (STDMETHODCALLTYPE *Draw)(
+            ...
+            BOOL (STDMETHODCALLTYPE *pfnContinue)(ULONG_PTR dwContinue),   <-- a parameter
+            ULONG_PTR dwContinue);
+
+    That reads as 10 tokens for an interface with 9 slots (QueryInterface, AddRef, Release,
+    Draw, GetColorSet, Freeze, Unfreeze, SetAdvise, GetAdvise — the documented layout), so the
+    cross-check fired on a CORRECT parse and refused the whole translation. A false positive
+    here is not harmless: this guard is the thing standing between us and a silently shifted
+    vtable, so it has to be trustworthy enough that nobody is tempted to loosen it.
+
+    Depth separates the two cleanly. A slot's token sits inside the declarator parens, at depth
+    1 of the struct body; a parameter's sits inside the slot's parameter list and then its own
+    declarator, i.e. deeper. Counting only depth 1 keeps a genuinely missed slot mismatching.
+    """
+    depth = 0
+    slots = 0
+    for match in re.finditer(r"[()]|\bSTDMETHODCALLTYPE\b", body):
+        token = match.group(0)
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+        elif depth == 1:
+            slots += 1
+    return slots
+
+
 def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
     text = _CLASSIC_SAL.sub("", text).strip()
@@ -1844,6 +1878,8 @@ def _parse_param(text: str, index: int) -> tuple[str, str]:
 def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
     """Read an exact flattened interface vtable from a compiler-facing SDK header.
 
+    See :func:`_vtbl_declared_slots` for why the slot cross-check counts by paren depth.
+
     WIDL's generated ``InterfaceVtbl`` struct is preferred. A small number of
     legacy shell interfaces use ``DECLARE_INTERFACE_`` instead; that C macro
     surface explicitly lists every inherited slot, so it is equally suitable
@@ -1867,7 +1903,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     params=tuple(params),
                 )
             )
-        declared = len(re.findall(r"\bSTDMETHODCALLTYPE\b", block.group("body")))
+        declared = _vtbl_declared_slots(block.group("body"))
         if declared != len(methods):
             raise CppComError(
                 f"{interface}: {header.name}'s {wanted} declares {declared} slot(s) but "

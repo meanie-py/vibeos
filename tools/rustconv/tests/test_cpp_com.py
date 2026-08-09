@@ -15,6 +15,7 @@ from rustconv.cpp_com import (
     InterfaceSpec,
     _parse_plain_state_field,
     _state_field_name,
+    _vtbl_declared_slots,
     analyze_class,
     apply_interface_method_signatures,
     audit_worker_body,
@@ -3040,6 +3041,49 @@ def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
 
     with pytest.raises(CppComError, match="static"):
         _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
+
+
+class TestVtableSlotCount:
+    """The cross-check behind `declares N slot(s) but M parsed`."""
+
+    def test_a_callback_parameter_is_not_a_slot(self):
+        # oleidl.h's IViewObject: `Draw` takes `BOOL (STDMETHODCALLTYPE *pfnContinue)(...)`,
+        # a function-pointer PARAMETER carrying the same calling convention as a slot. Counting
+        # every STDMETHODCALLTYPE token read that as a 10th slot for a 9-slot interface, so the
+        # guard fired on a CORRECT parse and refused the translation outright.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This,
+                BOOL (STDMETHODCALLTYPE *cb)(ULONG_PTR d), ULONG_PTR d);
+            HRESULT (STDMETHODCALLTYPE *C)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 3
+
+    def test_a_genuinely_missed_slot_still_mismatches(self):
+        # The negative control that matters: this guard is what stands between us and a
+        # silently shifted vtable, so narrowing the count must not blunt it.
+        body = """
+            HRESULT (STDMETHODCALLTYPE *A)(I *This);
+            HRESULT (STDMETHODCALLTYPE *B)(I *This);
+        """
+        assert _vtbl_declared_slots(body) == 2, "a real second slot must still be counted"
+
+    def test_iviewobject_parses_to_its_documented_nine_slots(self):
+        header = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk" / "oleidl.h"
+        if not header.is_file():
+            pytest.skip(f"generated header absent; build it in THIS worktree: {header}")
+        spec = parse_widl_interface(header, "IViewObject")
+        assert [method.name for method in spec.methods] == [
+            "QueryInterface",
+            "AddRef",
+            "Release",
+            "Draw",
+            "GetColorSet",
+            "Freeze",
+            "Unfreeze",
+            "SetAdvise",
+            "GetAdvise",
+        ]
 
 
 class TestProvenScalarStateTypes:
