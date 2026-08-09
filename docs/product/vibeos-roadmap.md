@@ -2000,6 +2000,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   pays full freight. Cheap mitigations if the real fix stays owed: retry the net lane against
   a quiet host rather than mid-batch, raise the retry count for a stage classified as a known
   flake, or let a lane touching no build input skip it entirely.
+  **Host networking / VPN is RULED OUT (2026-08-09) — don't spend an evening re-testing it.**
+  The obvious suspicion, something on the host re-routing traffic away from the
+  `10.0.2.100:9999` guestfwd echo, is refuted by the failing boot's OWN serial log: every other
+  host-touching path works in that same boot. `outbound TCP connected -> 10.0.2.100:9999, probe
+  sent` is followed by `outbound TCP echo received (25 bytes) OK` — the exact endpoint the TDI
+  client is waiting on, answering feet away from the failure — plus `RECEIVE_DATAGRAM OK — UDP
+  round-trip works` and `TDI server: echoed 13 bytes — server round-trip OK`. A broken host path
+  would have taken all three with it. Only the TDI *client's* pended-IRP receive misses its
+  window, i.e. the 2026-07-24 timing signature unchanged. So the discriminator to run BEFORE
+  blaming the environment is that one grep: if the outbound echo line is present, the host is
+  fine and the bug is ours.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
