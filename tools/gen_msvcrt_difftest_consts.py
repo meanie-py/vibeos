@@ -67,7 +67,51 @@ PROBE_INCLUDES = [
     '"winbase.h"',
     '"winnls.h"',
     '"winternl.h"',
+    # …and what the C++ EH pair (cpp.c, except.c) adds on top.  `signal.h` and
+    # `float.h` are msvcrt's OWN, and that is the point: the host's <signal.h>
+    # has SIGABRT at 6 where msvcrt has it at 22, and glibc's <float.h> has no
+    # _FPE_* at all.  A reference TU that took glibc's numbering would index
+    # except.c's handler table one slot off the subject's.
+    "signal.h",
+    "float.h",
+    '"wincon.h"',
+    '"ntstatus.h"',
+    '"winver.h"',
+    '"imagehlp.h"',
+    # msvcrt's own, for `frame_info` / `cxx_frame_info` — the linked list except.c
+    # walks.  Last, so nothing above it is compiled under msvcrt.h's own macros.
+    '"msvcrt.h"',
+    # cxx.h, for `exception` and `type_info` — the two objects cpp.c's 40-odd
+    # ctor/dtor/accessor exports are all methods ON.  It comes after msvcrt.h
+    # because it is what cpp.c does.  Nothing here is transcribed FROM it; it is
+    # here so DERIVED below can measure it.
+    '"cxx.h"',
 ]
+
+# ── DERIVED: measured numbers that are not constants and cannot be asserted ──
+#
+# The layout guardian (render_layout) works by asserting a transcription, which
+# needs the struct DEFINITION in scope at the point of the assert.  That rules it
+# out for `exception` and `type_info`: they are defined by the genuine cxx.h,
+# which the reference TU includes long AFTER the wall, and nothing else in the
+# harness may define them without colliding with it.
+#
+# But tests/cpp.rs still has to build a `type_info` to hand to `type_info_name`
+# and the comparison trio — its `mangled` member is the only input those three
+# read — so it needs a Rust `#[repr(C)]` mirror, which is a transcription like any
+# other and would be checked by nothing.  So: measure the numbers here, emit them
+# as macros, and let cppimpl.c hand them to the test to assert its mirror against.
+# The 128-byte `mangled` tail is exactly the sort of number a reader guesses wrong.
+#
+# {macro name: C expression}.  Any constant expression the probe can evaluate.
+DERIVED: dict[str, str] = {
+    "MSVCRT_SIZEOF_EXCEPTION": "sizeof(exception)",
+    "MSVCRT_OFF_EXCEPTION_NAME": "__builtin_offsetof(exception, name)",
+    "MSVCRT_OFF_EXCEPTION_DO_FREE": "__builtin_offsetof(exception, do_free)",
+    "MSVCRT_SIZEOF_TYPE_INFO": "sizeof(type_info)",
+    "MSVCRT_OFF_TYPE_INFO_NAME": "__builtin_offsetof(type_info, name)",
+    "MSVCRT_OFF_TYPE_INFO_MANGLED": "__builtin_offsetof(type_info, mangled)",
+}
 
 # ── the allowlist ────────────────────────────────────────────────────────
 #
@@ -321,6 +365,71 @@ CONSTANTS: dict[str, list[str]] = {
         "FileBasicInformation",
         "FileStandardInformation",
         "GetFileExInfoStandard",
+        # except.c returns these out of __CxxFrameHandler and the SEH filters.
+        "ExceptionContinueSearch",
+        "ExceptionContinueExecution",
+        "ExceptionNestedException",
+        "ExceptionCollidedUnwind",
+    ],
+    "signal numbers (msvcrt's OWN signal.h — these DISPLACE the host's)": [
+        "SIGABRT",
+        "SIGBREAK",
+        "SIGFPE",
+        "SIGILL",
+        "SIGINT",
+        "SIGSEGV",
+        "SIGTERM",
+        "NSIG",
+    ],
+    "_FPE_* subcodes (msvcrt's float.h) — the second argument to a SIGFPE handler": [
+        "_FPE_DENORMAL",
+        "_FPE_EXPLICITGEN",
+        "_FPE_INEXACT",
+        "_FPE_INVALID",
+        "_FPE_OVERFLOW",
+        "_FPE_STACKOVERFLOW",
+        "_FPE_UNDERFLOW",
+        "_FPE_ZERODIVIDE",
+    ],
+    "SEH filter dispositions and exception-record flags (winnt.h / excpt.h)": [
+        "EXCEPTION_CONTINUE_EXECUTION",
+        "EXCEPTION_CONTINUE_SEARCH",
+        "EXCEPTION_EXECUTE_HANDLER",
+        "EXCEPTION_NONCONTINUABLE",
+        "EXCEPTION_UNWINDING",
+        "EXCEPTION_EXIT_UNWIND",
+        "EXCEPTION_TARGET_UNWIND",
+        "EXCEPTION_MAXIMUM_PARAMETERS",
+    ],
+    "exception CODES — except.c's SIGFPE/SIGSEGV/SIGILL mapping switches on these": [
+        "EXCEPTION_ACCESS_VIOLATION",
+        "EXCEPTION_ILLEGAL_INSTRUCTION",
+        "EXCEPTION_PRIV_INSTRUCTION",
+        "EXCEPTION_FLT_DENORMAL_OPERAND",
+        "EXCEPTION_FLT_DIVIDE_BY_ZERO",
+        "EXCEPTION_FLT_INEXACT_RESULT",
+        "EXCEPTION_FLT_INVALID_OPERATION",
+        "EXCEPTION_FLT_OVERFLOW",
+        "EXCEPTION_FLT_STACK_CHECK",
+        "EXCEPTION_FLT_UNDERFLOW",
+    ],
+    "NTSTATUS values (ntstatus.h) — the same codes on the other side of the map": [
+        "STATUS_ACCESS_VIOLATION",
+        "STATUS_FLOAT_DIVIDE_BY_ZERO",
+        "STATUS_FLOAT_INEXACT_RESULT",
+        "STATUS_FLOAT_INVALID_OPERATION",
+        "STATUS_FLOAT_OVERFLOW",
+        "STATUS_FLOAT_UNDERFLOW",
+        "STATUS_LONGJUMP",
+        "STATUS_UNWIND_CONSOLIDATE",
+    ],
+    "console control events (wincon.h) — except.c's Ctrl-C handler": [
+        "CTRL_C_EVENT",
+        "CTRL_BREAK_EVENT",
+    ],
+    "undecoration flags (imagehlp.h) — cpp.c's type_info::name() calls __unDName": [
+        "UNDNAME_NO_ARGUMENTS",
+        "UNDNAME_32_BIT_DECODE",
     ],
 }
 
@@ -362,6 +471,19 @@ DISPLACE = {
     "ENOSPC",
     "ENOTEMPTY",
     "EPIPE",
+    # The signal family, and it is the sharpest displacement in the set after
+    # errno's: msvcrt numbers SIGABRT 22 where glibc numbers it 6, and NSIG 23
+    # where glibc says 65.  except.c's `signal()` bounds-checks against NSIG and
+    # then INDEXES a per-signal handler table, so glibc's numbering would file
+    # the reference's abort handler in a different slot from the subject's and
+    # every other signal row would keep passing.
+    "SIGABRT",
+    "SIGFPE",
+    "SIGILL",
+    "SIGINT",
+    "SIGSEGV",
+    "SIGTERM",
+    "NSIG",
 }
 
 # Constants whose value is a POINTER cast in the headers (`((HANDLE)(LONG_PTR)-1`)
@@ -549,9 +671,70 @@ LAYOUTS: dict[str, list[str]] = {
 }
 
 # Scalar widths the layouts depend on.  Harvested for the same reason.
+#
+# CONTEXT is here rather than in LAYOUTS on purpose.  Neither reference TU reads
+# a single field of it: except.c zeroes one on the stack and hands the address to
+# RtlUnwindEx, and stores CONTEXT pointers it never dereferences.  So the refstub
+# models it as a correctly sized, correctly aligned OPAQUE BLOCK and this size is
+# what proves the block.  The day a row needs `Rip`, that block has to become
+# fields and this entry moves up into LAYOUTS — recording the reach rather than
+# transcribing 40 registers nothing reads.
 SCALAR_SIZES = ["_dev_t", "_ino_t", "_off_t", "__time32_t", "__time64_t"]
 
+# ── the SECOND layout wall: the C++ EH substrate ─────────────────────────
+#
+# Its own dict, and its own output header, because a wall is only checkable by a
+# TU that has every type in it.  msvcrt_crt_layout.h asserts over FILE and the
+# _stat family, which only the file.c reference TU defines; the cpp.c/except.c
+# pair defines neither and would fail on every line of it.  Splitting the wall by
+# WHICH TU CAN CHECK IT is what keeps each one fully checked instead of partially
+# included.
+CPP_LAYOUTS: dict[str, list[str]] = {
+    # ── the C++ EH pair (cpp.c reference TU #14, except.c reference TU #15) ──
+    #
+    # EXCEPTION_RECORD is the sharpest of these.  `_CxxThrowException` FILLS ONE
+    # IN BY HAND and hands it to RaiseException, and `is_cxx_exception` reads
+    # ExceptionInformation[0] back out — so a wrong `ExceptionInformation` offset
+    # is not a crash, it is a throw that carries the magic in the wrong slot and
+    # a catch that silently declines to match.  ExceptionInformation is also a
+    # FLEXIBLE-ARRAY-shaped tail (EXCEPTION_MAXIMUM_PARAMETERS entries), i.e. the
+    # exact class task #51 found hiding.
+    "EXCEPTION_RECORD": [
+        "ExceptionCode",
+        "ExceptionFlags",
+        "ExceptionRecord",
+        "ExceptionAddress",
+        "NumberParameters",
+        "ExceptionInformation",
+    ],
+    "EXCEPTION_POINTERS": ["ExceptionRecord", "ContextRecord"],
+    # except.c passes a DISPATCHER_CONTEXT through unchanged in the parts that are
+    # graded and reads ImageBase/ControlPc/FunctionEntry in the parts that are not.
+    "DISPATCHER_CONTEXT": [
+        "ControlPc",
+        "ImageBase",
+        "FunctionEntry",
+        "EstablisherFrame",
+        "TargetIp",
+        "ContextRecord",
+        "LanguageHandler",
+        "HandlerData",
+        "HistoryTable",
+        "ScopeIndex",
+    ],
+    "RUNTIME_FUNCTION": ["BeginAddress", "EndAddress", "UnwindData"],
+    # `frame_info` and `cxx_frame_info` are msvcrt's OWN, from
+    # dll/win32/msvcrt/msvcrt.h.  They are the linked list `_CreateFrameInfo` /
+    # `_FindAndUnlinkFrame` walk — the bookkeeping half of except.c, which is the
+    # half that IS graded, so their layout is under test rather than incidental.
+    "frame_info": ["object", "next"],
+    "cxx_frame_info": ["frame_info", "rec", "context"],
+}
+
+CPP_SCALAR_SIZES = ["CONTEXT"]
+
 OUT_LAYOUT_H = REPO / "sdk/lib/rust/msvcrt-difftest/refstub/msvcrt_crt_layout.h"
+OUT_CPP_LAYOUT_H = REPO / "sdk/lib/rust/msvcrt-difftest/refstub/msvcrt_cpp_layout.h"
 
 
 def include_flags() -> list[str]:
@@ -597,11 +780,14 @@ def _probe_exprs() -> list[tuple[str, str]]:
     for group in CONSTANTS.values():
         for n in group:
             items.append((f"const:{n}", n))
-    for struct_name, fields in LAYOUTS.items():
-        for f in fields:
-            items.append((f"off:{struct_name}:{f}", f"__builtin_offsetof({struct_name}, {f})"))
-        items.append((f"size:{struct_name}", f"sizeof({struct_name})"))
-    for s in SCALAR_SIZES:
+    for name, expr in DERIVED.items():
+        items.append((f"derived:{name}", expr))
+    for group in (LAYOUTS, CPP_LAYOUTS):
+        for struct_name, fields in group.items():
+            for f in fields:
+                items.append((f"off:{struct_name}:{f}", f"__builtin_offsetof({struct_name}, {f})"))
+            items.append((f"size:{struct_name}", f"sizeof({struct_name})"))
+    for s in SCALAR_SIZES + CPP_SCALAR_SIZES:
         items.append((f"size:{s}", f"sizeof({s})"))
     return items
 
@@ -693,30 +879,37 @@ def _ishex(s: str) -> bool:
     return all(ch in "0123456789abcdefABCDEF" for ch in s)
 
 
-def render_layout(values: dict[str, int]) -> str:
+def render_layout(
+    values: dict[str, int],
+    *,
+    layouts: dict[str, list[str]],
+    scalars: list[str],
+    guard: str,
+    after: str,
+) -> str:
     """A wall of _Static_assert the HOST compiler checks against the transcription."""
     out = [
         "/* GENERATED by tools/gen_msvcrt_difftest_consts.py — DO NOT EDIT.",
         " *",
         " * The layout guardian.  Every number below was measured by the PINNED",
         " * CROSS-COMPILER reading msvcrt's real headers; the host compiler checks",
-        " * them against the transcribed definitions in msvcrt_file_types.h.  The",
+        f" * them against the transcribed definitions in {after}.  The",
         " * two must agree or the reference TU does not build — which is the whole",
         " * point: a struct layout cannot be derived into a header the way a",
         " * constant can, so it is transcribed and then PROVED.",
         " *",
-        " * Include AFTER msvcrt_file_types.h.",
+        f" * Include AFTER {after}.",
         " */",
-        "#ifndef MSVCRT_DIFFTEST_CRT_LAYOUT_H",
-        "#define MSVCRT_DIFFTEST_CRT_LAYOUT_H",
+        f"#ifndef {guard}",
+        f"#define {guard}",
         "",
         "/* Scalar widths every layout below depends on. */",
     ]
-    for s in SCALAR_SIZES:
+    for s in scalars:
         v = values[f"size:{s}"]
         out.append(f'_Static_assert(sizeof({s}) == {v}, "{s} width drifted");')
     out.append("")
-    for struct_name, fields in LAYOUTS.items():
+    for struct_name, fields in layouts.items():
         ident = struct_name.replace("struct ", "")
         out.append(f"/* {struct_name} */")
         for f in fields:
@@ -728,7 +921,7 @@ def render_layout(values: dict[str, int]) -> str:
         v = values[f"size:{struct_name}"]
         out.append(f'_Static_assert(sizeof({struct_name}) == {v}, "{ident} size drifted");')
         out.append("")
-    out += ["#endif /* MSVCRT_DIFFTEST_CRT_LAYOUT_H */", ""]
+    out += [f"#endif /* {guard} */", ""]
     return "\n".join(out)
 
 
@@ -756,12 +949,33 @@ def render(values: dict[str, int]) -> str:
         width = max(len(n) for n in names)
         for n in names:
             v = values[f"const:{n}"]
-            lit = f"0x{v:08X}" if v > 9 or v < 0 else str(v)
-            suffix = "u" if v > 0x7FFFFFFF else ""
+            if v < 0:
+                # A SIGNED 32-bit constant: the NTSTATUS family, whose headers
+                # spell it `((NTSTATUS)0xC0000005L)` — a `long` that is 32-bit on
+                # Windows and so comes back sign-extended from the probe.  Emit
+                # the same bit pattern under the same signedness (`int` is the
+                # host's 32-bit signed type), NOT the decimal negative and not
+                # `f"0x{v:08X}"`, which for a negative produces the nonsense
+                # literal `0x-3FFFFFFB`.  Signedness is not cosmetic here:
+                # except.c compares `_SEH2_GetExceptionCode()` — an `int` — against
+                # these, and an unsigned spelling would convert the int operand
+                # and change which arm of the mapping switch runs.
+                lit, suffix = f"((int)0x{v & 0xFFFFFFFF:08X})", ""
+            else:
+                lit = f"0x{v:08X}" if v > 9 else str(v)
+                suffix = "u" if v > 0x7FFFFFFF else ""
             if n in DISPLACE:
                 out.append(f"#undef  {n}")
             out.append(f"#define {n:<{width}} {lit}{suffix}")
         out.append("")
+    out.append(
+        "/* MEASURED, not transcribed: cxx.h's two object layouts, for the Rust mirror in\n"
+        " * tests/cpp.rs to assert itself against.  See DERIVED in the generator. */"
+    )
+    width = max(len(n) for n in DERIVED)
+    for n in DERIVED:
+        out.append(f"#define {n:<{width}} {values[f'derived:{n}']}")
+    out.append("")
     out.append("/* Pointer-valued; not an integer initializer, so emitted verbatim. */")
     for n, expr in VERBATIM.items():
         out.append(f"#define {n} {expr}")
@@ -779,10 +993,37 @@ def main() -> int:
     args = ap.parse_args()
 
     values = harvest()
-    outputs = [(OUT_H, render(values)), (OUT_LAYOUT_H, render_layout(values))]
+    outputs = [
+        (OUT_H, render(values)),
+        (
+            OUT_LAYOUT_H,
+            render_layout(
+                values,
+                layouts=LAYOUTS,
+                scalars=SCALAR_SIZES,
+                guard="MSVCRT_DIFFTEST_CRT_LAYOUT_H",
+                after="msvcrt_file_types.h",
+            ),
+        ),
+        (
+            OUT_CPP_LAYOUT_H,
+            render_layout(
+                values,
+                layouts=CPP_LAYOUTS,
+                scalars=CPP_SCALAR_SIZES,
+                guard="MSVCRT_DIFFTEST_CPP_LAYOUT_H",
+                after="msvcrt_cpp_types.h",
+            ),
+        ),
+    ]
 
-    n_const = sum(len(v) for v in CONSTANTS.values()) + len(VERBATIM)
-    n_assert = len(SCALAR_SIZES) + sum(len(f) + 1 for f in LAYOUTS.values())
+    n_const = sum(len(v) for v in CONSTANTS.values()) + len(VERBATIM) + len(DERIVED)
+    n_assert = (
+        len(SCALAR_SIZES)
+        + len(CPP_SCALAR_SIZES)
+        + sum(len(f) + 1 for f in LAYOUTS.values())
+        + sum(len(f) + 1 for f in CPP_LAYOUTS.values())
+    )
 
     if args.check:
         stale = [p for p, text in outputs if not p.exists() or p.read_text() != text]
@@ -798,7 +1039,9 @@ def main() -> int:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
     print(f"wrote {OUT_H.relative_to(REPO)} ({n_const} constants)")
-    print(f"wrote {OUT_LAYOUT_H.relative_to(REPO)} ({n_assert} assertions)")
+    print(
+        f"wrote {OUT_LAYOUT_H.relative_to(REPO)} + {OUT_CPP_LAYOUT_H.name} ({n_assert} assertions)"
+    )
     return 0
 
 

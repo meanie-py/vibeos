@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::RecycleBinGeneric::RecycleBinGeneric_new;
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
 use crate::shellrecyclebin::recyclebin_support::CZZWStr;
 
@@ -15,7 +16,7 @@ pub struct RecycleBinGeneric {
 }
 #[no_mangle]
 pub unsafe extern "C" fn RecycleBinGeneric_Constructor(ppUnknown: *mut *mut core::ffi::c_void) -> i32 {
-    let pThis: *mut core::ffi::c_void = RecycleBinGeneric();
+    let pThis: *mut core::ffi::c_void = RecycleBinGeneric_new();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }

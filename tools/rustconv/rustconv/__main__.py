@@ -78,6 +78,7 @@ from .cpp_com import (
     audit_worker_body,
     discover_widl_header,
     find_class_header,
+    island_lpvtbl_interfaces,
     lower_trivial_worker,
     normalize_cpp_idioms,
     normalize_worker_body,
@@ -733,6 +734,7 @@ def _audit_paid_body(
         )
         if is_cpp_source:
             result.rust_code = normalize_cpp_idioms(dep.body_text, result.rust_code)
+            result.rust_code = _cpp_free_half_semantics(dep, result.rust_code)
         return result.rust_code
     result.rust_code = _normalize_unseal_cpp_worker(dep, result.rust_code, fact_seals, call_seals)
     signature = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
@@ -875,6 +877,23 @@ def _unseal_worker(
         REORDERED_WIDE_LITERAL_BODIES.append(f"{dep.name}: {note}")
         print(f"    [{dep.name}] WIDE LITERALS REORDERED: {note}", file=sys.stderr)
     return rust
+
+
+def _cpp_free_half_semantics(dep, rust: str) -> str:
+    """Apply the C++ semantic lowerings to the FREE half of a C++ TU.
+
+    Everything the class path does after a body comes back -- the `delete this` lowering, the
+    `new X()`/`delete v` scaffold pairing, the SENDTO_ITEM guard -- was gated on
+    `cpp_com_mode`, so the `--free-functions` half of the same `.cpp` got only the lighter
+    `normalize_cpp_idioms` and none of it. That is precisely backwards: the free half is where
+    the `*_Constructor` family lives, which is to say the functions that ALLOCATE and FREE the
+    objects. `RecycleBin5File_Constructor` shipped `RecycleBin5File()` (a call to the struct,
+    skipping the vptr store) and a CRT `free` over `HeapAlloc(GetProcessHeap())` memory.
+
+    Scoped to `is_cpp_source` at the call sites, so a plain-C module's cached bodies keep
+    replaying byte-identically; these rewrites are all keyed on C++ syntax anyway.
+    """
+    return normalize_worker_semantics(dep.body_text, rust)
 
 
 def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
@@ -1065,13 +1084,19 @@ def cmd_cpp_com(args):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    chunks = [render_interface(interface) for interface in interfaces]
+    island_slots = island_lpvtbl_interfaces(
+        [SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")]
+    )
+    chunks = [
+        render_interface(interface, island_slots.get(interface.name)) for interface in interfaces
+    ]
     chunks.append(
         render_class_scaffold(
             cls,
             interfaces,
             allow_internal=args.internal,
             allow_plain=getattr(args, "plain", False),
+            island_slots=island_slots,
         )
     )
     output = "\n\n".join(chunks) + "\n"
@@ -3013,6 +3038,7 @@ def cmd_translate(args):
                 # normalization is idempotent, so applying it here is free insurance
                 # against a stale entry replaying a raw IID_PPV_ARG forever.
                 hit = normalize_cpp_idioms(dep.body_text, hit)
+                hit = _cpp_free_half_semantics(dep, hit)
             if hit is None:
                 pending_paid_deps.append(dep)
         if deterministic_workers:
@@ -3092,6 +3118,7 @@ def cmd_translate(args):
                             hit = None
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
+                        hit = _cpp_free_half_semantics(dep, hit)
                     # No unseal on a cache hit. What is banked is the ACCEPTED text, already
                     # unsealed (`_audit_paid_body` mutates `rust_code` before `cache.put`),
                     # and `ResponseCache.get` refuses any entry that still holds a token —
@@ -3206,6 +3233,7 @@ def cmd_translate(args):
                                 )
                                 if is_cpp_source:
                                     r.rust_code = normalize_cpp_idioms(dp.body_text, r.rust_code)
+                                    r.rust_code = _cpp_free_half_semantics(dp, r.rust_code)
                             body = r.rust_code
                         except CppComError as error:
                             _record_outcome(
@@ -3342,6 +3370,7 @@ def cmd_translate(args):
                         hit = None
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
+                    hit = _cpp_free_half_semantics(dep, hit)
                 # No unseal on a cache hit — see the same site on the parallel path.
                 if hit is None:
                     hit = _adopt_rejected(
@@ -3536,10 +3565,23 @@ def cmd_translate(args):
                 break
 
         if sequential_errors:
+            # Name the file that is now STALE. This raise aborts the TU before assembly, so
+            # the output on disk is whatever the last successful run left there — and nothing
+            # said so. RecycleBin5.rs sat two full regenerations behind its four siblings that
+            # way, which made a new deterministic lowering look like it had a hole in exactly
+            # one module when in fact nothing had rewritten that module at all.
+            stale = ""
+            if getattr(args, "output", None) and Path(args.output).exists():
+                stale = (
+                    f"\n  ⚠ {args.output} was NOT rewritten and is now STALE — it still holds "
+                    "the last successful run's output, so any deterministic fix made since "
+                    "then is absent from it."
+                )
             raise CppComError(
                 "sequential translation completed with rejected/failed worker(s); "
                 "all other accepted paid artifacts were preserved in the resume cache:\n  - "
                 + "\n  - ".join(sequential_errors)
+                + stale
             )
 
         if not translated:
@@ -3749,13 +3791,20 @@ def cmd_translate(args):
         if cpp_com_mode:
             if cpp_com_cls is None:
                 raise CppComError("internal error: shell32 COM preflight state was lost")
-            deterministic = [render_interface(item) for item in cpp_com_interfaces]
+            # Interfaces the bindgen island already provides in the C `lpVtbl` idiom are NOT
+            # re-rendered -- a second same-named struct is a distinct Rust type, and the
+            # worker bodies see the island's through the prelude glob.
+            island_slots = island_lpvtbl_interfaces(list(rustconv_target.com_island_files.values()))
+            deterministic = [
+                render_interface(item, island_slots.get(item.name)) for item in cpp_com_interfaces
+            ]
             deterministic.append(
                 render_class_scaffold(
                     cpp_com_cls,
                     cpp_com_interfaces,
                     allow_internal=getattr(args, "internal", False),
                     allow_plain=getattr(args, "plain", False),
+                    island_slots=island_slots,
                 )
             )
             support_selection = "\n".join(
@@ -3773,6 +3822,7 @@ def cmd_translate(args):
                     support_selection,
                     {pod.name for pod in cpp_com_cls.pod_state_types},
                     provided_types=set(local_raii_impls),
+                    island_types=set(island_slots),
                 )
             )
             if cpp_com_wide_statics:

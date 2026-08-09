@@ -1096,6 +1096,127 @@ def test_cpu_state_falls_back_to_a_live_sample(tmp_path):
     assert lines == ["CPU#0 0xffff8000040567ac -> (unresolved)"]
 
 
+def _hang_vm(work: Path, artifact: Path | None, capture):
+    """A QemuVM with only what save_hang_state touches — no QEMU, no __init__."""
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    v.work_dir = work
+    v.artifact_dir = artifact
+    v.hang_cpu_state = ""
+    v.config = vm_mod.ArchConfig(
+        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
+    )
+    v.capture_cpu_state = capture  # type: ignore[method-assign]
+    return v
+
+
+@pytest.fixture
+def _no_resample_wait(monkeypatch):
+    monkeypatch.setattr(vm_mod, "HANG_RESAMPLE_SECONDS", 0.0)
+
+
+def test_save_hang_state_also_lands_in_the_durable_artifact_dir(tmp_path, _no_resample_wait):
+    # The bug this closes: work_dir under the pytest `vm` fixture is a tmp_path
+    # that pytest prunes to the last 3 runs, so a capture written only there is
+    # deleted by unrelated later runs. Callers owning a durable run dir set
+    # VIBEOS_ARTIFACT_DIR and must get their own copy.
+    work, art = tmp_path / "w", tmp_path / "run"
+    work.mkdir()
+    v = _hang_vm(work, art, lambda: "CPU#0\nPC=ffff800004001234\n")
+    v.save_hang_state("sweep drain")
+
+    for d in (work, art):
+        body = (d / "hang-cpustate.txt").read_text()
+        assert "PC=ffff800004001234" in body
+        # The phase is what tells a bare file in a run dir WHICH stall it is.
+        assert "sweep drain" in body
+        assert "arch=arm64" in body
+
+
+def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no_resample_wait):
+    # The whole point of two samples: a dead clock and a thread blocked forever
+    # both park every vCPU in the idle loop and are indistinguishable in ONE
+    # dump. Only "did the PC move" tells them apart, and it has to be decided
+    # while the guest is alive, so the artifact must carry the verdict.
+    frozen = _hang_vm(tmp_path / "a", None, lambda: "CPU#0\nPC=ffff800004001234\n")
+    frozen.save_hang_state("sweep drain")
+    assert "FROZEN" in (tmp_path / "a" / "hang-cpustate.txt").read_text()
+
+    pcs = iter(["CPU#0\nPC=ffff800004001234\n", "CPU#0\nPC=ffff8000040099f0\n"])
+    moving = _hang_vm(tmp_path / "b", None, lambda: next(pcs))
+    moving.save_hang_state("sweep drain")
+    assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
+
+
+def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
+    # A diagnostic that raises on an already-failing run destroys the failure it
+    # was there to explain, so a dead QMP must degrade to a note in the file —
+    # and must NOT report FROZEN, which two empty samples would otherwise imply.
+    def _boom():
+        raise RuntimeError("qmp gone")
+
+    v = _hang_vm(tmp_path, None, _boom)
+    v.save_hang_state("boot-wait timeout")
+    body = (tmp_path / "hang-cpustate.txt").read_text()
+    assert "capture failed" in body
+    assert "UNKNOWN" in body and "FROZEN" not in body
+
+
+def test_a_drained_out_payload_captures_the_hang_before_it_fails():
+    # The gap this closes: a sweep that BOOTS and then wedges never enters
+    # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
+    # the assert has failed and the fixture torn the VM down, the vCPU PCs are
+    # unrecoverable. The capture has to happen here, before the assert.
+    from tests.qemu import test_payload as payload_mod
+
+    calls = []
+
+    class _StubVm:
+        _boot_output = "booted fine, then nothing\n"
+
+        def serial_output(self, timeout=1.0):
+            return ""
+
+        def save_hang_state(self, phase):
+            calls.append(phase)
+            return ""
+
+    spec = {"test": {"launch_marker": "[KMTEST-SWEEP] done", "launch_drain_secs": 2}}
+    with pytest.raises(AssertionError):
+        payload_mod.test_payload_launched(_StubVm(), "arm64", "kmtest", spec)  # type: ignore[arg-type]
+    assert calls and "kmtest" in calls[0]
+
+
+def test_a_crashed_payload_does_not_capture_a_hang():
+    # A BUGCHECK already carries its own faulting PC on serial. Capturing here
+    # would resample a dead guest and file it as if it were a silent wedge.
+    from tests.qemu import test_payload as payload_mod
+
+    calls = []
+
+    class _StubVm:
+        _boot_output = "*** BUGCHECK 0x1E\n"
+
+        def serial_output(self, timeout=1.0):
+            return ""
+
+        def save_hang_state(self, phase):
+            calls.append(phase)
+            return ""
+
+    spec = {"test": {"launch_marker": "[KMTEST-SWEEP] done", "launch_drain_secs": 2}}
+    with pytest.raises(AssertionError):
+        payload_mod.test_payload_launched(_StubVm(), "arm64", "kmtest", spec)  # type: ignore[arg-type]
+    assert calls == []
+
+
+def test_conformance_points_the_sweep_at_its_run_dir():
+    # conformance shells out to pytest, so the run dir can only reach the VM
+    # through the environment. If this wiring is dropped, hang captures silently
+    # go back to the prunable pytest tmp_path and the run dir holds serial only.
+    src = Path(conformance_mod.__file__).read_text()
+    assert 'env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)' in src
+
+
 def test_triage_kernel_panic_via_debugcon():
     # kernel-mode Rust panic reaches debugcon 0xE9 only (serial goes silent) —
     # must classify RUST_PANIC (never retried), not HANG_TIMEOUT (retryable)

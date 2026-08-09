@@ -52,6 +52,12 @@ _CLK = os.sysconf("SC_CLK_TCK")
 #   3. (qemu/start.sh) a detached watchdog subshell for toolkit-launched VMs.
 MAX_VM_LIFETIME_SECONDS = 30 * 60
 
+# Gap between the two vCPU-state samples save_hang_state() takes. Long enough
+# that a live box is guaranteed several clock ticks and context switches (arm64
+# TCG runs the scheduler at 100 Hz), short enough to add nothing meaningful to a
+# run that has already drained its whole timeout.
+HANG_RESAMPLE_SECONDS = 5.0
+
 # Predictable, per-arch live serial log. Agents `tail -f` this to watch boot
 # progress in real time (a cold arm64 TCG boot is silent for long stretches —
 # the live log is the difference between "making progress" and "wedged").
@@ -1042,6 +1048,23 @@ class QemuVM:
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
+        # A SECOND, durable home for hang diagnostics. Under the pytest `vm`
+        # fixture work_dir is a tmp_path_factory dir, and pytest keeps only the
+        # last 3 runs — so a capture written only there is deleted by unrelated
+        # later runs, long before anyone reads the run dir it belonged to. That
+        # is not hypothetical: the arm64 MP wedge was captured and pruned, and
+        # the hunt then spent a round re-deriving "we have no PCs" from a run
+        # dir holding only serial. Callers that shell out to pytest and own a
+        # durable dir (vibeos-cli conformance, farm) point this at it.
+        self.artifact_dir: Path | None = None
+        _art = os.environ.get("VIBEOS_ARTIFACT_DIR", "").strip()
+        if _art:
+            try:
+                self.artifact_dir = Path(_art)
+                self.artifact_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                self.artifact_dir = None
+
         # Optional gdbstub. On windows-host QEMU.exe is the SERVER (gdb is the client),
         # so — unlike QMP/serial, where the harness listens and QEMU dials back — the
         # stub binds 0.0.0.0:<port> on the WINDOWS TCP stack and a WSL gdb connects to
@@ -1576,11 +1599,12 @@ class QemuVM:
             # pytest `vm` fixture that conformance shells out to, and farm. Wiring
             # them individually would have left the conformance sweep — the very
             # place the arm64 --smp 1 stall shows up — with no capture at all.
-            self.hang_cpu_state = self.capture_cpu_state()
-            try:
-                (self.work_dir / "hang-cpustate.txt").write_text(self.hang_cpu_state)
-            except OSError:
-                pass
+            #
+            # This covers a boot that never reaches its marker. It does NOT cover
+            # a guest that boots fine and then wedges while a test drains serial
+            # (the kmtest sweep) — that path never enters this except, so it must
+            # call save_hang_state() itself.
+            self.save_hang_state("boot-wait timeout")
             raise
 
         # Wait for desktop to come up (user-mode processes need time after
@@ -1672,6 +1696,84 @@ class QemuVM:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== {cmd} ===\n{body}")
         return "\n\n".join(chunks) + "\n"
+
+    def save_hang_state(self, phase: str) -> str:
+        """Capture where every vCPU is parked and persist it where it survives.
+
+        Call this from ANY path that has decided the guest is wedged, while the
+        guest is still alive — the capture is only possible before teardown, and
+        a wedge that prints nothing leaves no other evidence at all. `phase`
+        names what gave up (boot wait, sweep drain, ...) so a bare file in a run
+        dir still says which stall it belongs to.
+
+        Writes to work_dir AND artifact_dir: see the artifact_dir comment in
+        __init__ for why work_dir alone loses the file. Never raises — a
+        diagnostic that can fail its own already-failing run is worse than none.
+        """
+        ok = True
+        try:
+            self.hang_cpu_state = self.capture_cpu_state()
+        except Exception as exc:
+            self.hang_cpu_state = f"<capture failed: {exc!r}>\n"
+            ok = False
+        # A SECOND sample, seconds later. One sample cannot tell a box that is
+        # frozen (nothing runs at all — dead clock, no scheduling) from one that
+        # is merely blocked (CPUs cycling through the idle loop, work waiting on
+        # something that never arrives). Both park every vCPU in KiIdleLoop and
+        # read identically in a single dump — and they are completely different
+        # bugs, so the fork has to be settled here, while the guest is alive.
+        # A drained-out sweep has already spent its budget; a few more seconds to
+        # make the artifact self-answering is free by comparison.
+        second = ""
+        try:
+            time.sleep(HANG_RESAMPLE_SECONDS)
+            second = self.capture_cpu_state()
+        except Exception as exc:
+            second = f"<resample failed: {exc!r}>\n"
+            ok = False
+        if not ok:
+            # Two failed samples parse to the same (empty) PC list, and calling
+            # that "FROZEN" would be the instrument inventing its own evidence.
+            verdict = "UNKNOWN — the monitor did not answer; there is no sample to compare"
+        else:
+            # triage owns the `info registers -a` parse; import it here rather
+            # than at module scope because vm.py is imported by the cli package.
+            try:
+                from .cli.triage import cpu_pcs
+
+                moved = cpu_pcs(second) != cpu_pcs(self.hang_cpu_state)
+            except Exception:
+                moved = second.strip() != self.hang_cpu_state.strip()
+            verdict = (
+                "EXECUTING — vCPU PCs moved between samples, so the box is running "
+                "and blocked on something specific, not frozen"
+                if moved
+                else "FROZEN — every vCPU PC is identical across both samples; "
+                "nothing was scheduled in between"
+            )
+        smp = smp_count()
+        body = (
+            f"=== hang capture: {phase} ===\n"
+            f"arch={self.config.arch} smp={smp or 1} "
+            f"boot_timeout={self.config.boot_timeout:.0f}s\n"
+            f"verdict: {verdict}\n"
+            f"(samples {HANG_RESAMPLE_SECONDS}s apart)\n\n"
+            + self.hang_cpu_state
+            + f"\n=== resample (+{HANG_RESAMPLE_SECONDS}s) ===\n"
+            + second
+        )
+        for d in (self.work_dir, self.artifact_dir):
+            if d is None:
+                continue
+            try:
+                # mkdir here rather than trusting __init__: this runs minutes or
+                # hours after launch, and a swallowed OSError from a dir that
+                # went missing looks exactly like "the guest never wedged".
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "hang-cpustate.txt").write_text(body)
+            except OSError:
+                pass
+        return self.hang_cpu_state
 
     def read_debugcon(self) -> bytes:
         """Read raw debugcon (bochs debug port 0xE9) output."""

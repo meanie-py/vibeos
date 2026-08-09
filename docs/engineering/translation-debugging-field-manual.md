@@ -2972,6 +2972,43 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### A vtable SLOT the interface parser could not read renumbers every slot after it
+
+**Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
+its header declares, and the missing one has been folded into its predecessor's parameter
+list. From `recyclebin_v5.h`:
+
+```rust
+pub EmptyRecycleBin: unsafe extern "system" fn(ppEnumList: *mut *mut ); \
+    STDMETHOD(EnumObjects)(THIS_ OUT IRecycleBinEnumList) -> HRESULT,
+```
+
+`IRecycleBin5` declares 11 methods; the emitted vtable had 10.
+
+**Cause.** `_DECLARE_METHOD` required a declaration to end `) PURE ;`. ReactOS's header has
+one that omits `PURE` — a typo no compiler can see, because `PURE` expands to nothing in C
+mode. The non-greedy `(?P<params>.*?)` then ran straight through the unmatched declaration to
+the *next* `) PURE;` and swallowed the following method whole. A second, unrelated leak had
+the same root: `_SAL_ANNOTATION` only matches the underscore-flanked modern spellings
+(`_In_`, `_Out_opt_`), so ntdef.h's `IN`, `OUT` and `OPTIONAL` — also defined to nothing —
+survived into the parsed type as `riid: IN REFIID` and `*mut *mut OUT void`.
+
+**Fix.** `PURE` is optional; classic uppercase SAL is stripped alongside the `_In_` family.
+Neither of those is the real fix. **A vtable is positional, so a dropped slot is not a partial
+result — it renumbers everything after it**, and `GetDirectory` dispatches to `Delete`,
+`Delete` to `Restore`, and `OnClosing` off the end. So the parser now HARD FAILS when the
+number of methods it parsed disagrees with the number of `STDMETHOD` tokens in the body (and
+`STDMETHODCALLTYPE` on the WIDL path). Where the bindgen island also carries the interface,
+the two slot counts are cross-checked as well — bindgen through the real preprocessor is an
+independent derivation of the same vtable, and that check catches this class on its own.
+
+Note how narrowly this stayed visible: the swallow happened to produce a Rust *syntax* error,
+so it was loud. That was luck. Swallow a method whose parameter list survives the fold and you
+get a vtable that compiles, links, and dispatches to the wrong function — reached through a
+COM call, so the stack at the crash names nobody involved. When a deterministic emitter can
+drop one element of an ordered sequence, count the elements; never trust that a bad parse will
+also fail to compile.
+
 ### A convention macro that also carries the RETURN TYPE deletes the function
 
 **Symptom.** `rustconv translate` refuses a TU: *"N SPEC-EXPORTED function(s) are in the
@@ -4809,6 +4846,22 @@ on the surface under suspicion. **Before crediting a negative from an instrument
 implementation of the function it lives in — per arch AND per build flavour — and confirm the
 suspect path actually reaches it.** A tripwire in a shared funnel is only as broad as the set of
 callers that genuinely funnel.
+
+**Reachability is not the only way an instrument can be structurally blind. Three more, all
+found on one wedge:** *(1)* **An instrument driven by the mechanism under suspicion goes silent
+exactly when it should fire.** The `[CENSUS]` sync watchdog loops on
+`KeDelayExecutionThread(10s)` — a timed wait — so a stall in timed-wait expiry stops the
+watchdog first, and its silence gets read as "nothing is stuck". Ask what your detector *depends
+on*, not just where it lives. *(2)* **A capture written to a directory someone else prunes is the
+same as no capture.** `wait_for_boot` wrote its per-vCPU PC dump to the VM's `work_dir`, which
+under the pytest `vm` fixture is a `tmp_path_factory` dir — pytest keeps the last 3 runs, so the
+one dump anybody ever needed had been deleted by unrelated later runs before it was read, and
+the run dir held only serial. Diagnostics go to the caller's durable dir, not wherever the
+harness happened to be working. *(3)* **One sample cannot tell FROZEN from BLOCKED.** A dead
+clock and a thread waiting on something that never arrives both park every vCPU in the idle loop
+and produce byte-identical dumps — and they are completely different bugs. Sample twice, seconds
+apart, and write the verdict into the artifact while the guest is still alive; the fork cannot be
+recovered afterwards.
 
 And after fixing anything a harness caught, **re-break one site deliberately and confirm the
 suite goes red.** Widening an assertion is itself untested code: it is easy to add a field to a

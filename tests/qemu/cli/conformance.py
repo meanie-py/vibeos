@@ -395,6 +395,12 @@ def _conformance_once(args, repo: Path) -> int:
     env = dict(os.environ)
     if smp:
         env["VIBEOS_QEMU_SMP"] = str(smp)
+    # Give the shelled-out VM a durable place to drop hang diagnostics. Its own
+    # work_dir is a pytest tmp_path that pytest prunes to the last 3 runs, so
+    # without this a wedge's vCPU-PC capture is written and then deleted by
+    # unrelated later runs — which is exactly what happened to the arm64 MP
+    # wedge, leaving a run dir with serial and nothing else.
+    env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
     sweep_cmd = [
         sys.executable,
         "-m",
@@ -457,6 +463,38 @@ def _conformance_once(args, repo: Path) -> int:
     # paying for the same lost evidence is what makes this worth a comment.
     saved_serial = run_dir / f"{pytest_arch}_serial.log"
     saved_serial.write_text(serial_text)
+
+    # --- 3b. a wedged sweep: symbolicate the vCPU PCs ------------------------
+    # The raw capture is written by the VM (VIBEOS_ARTIFACT_DIR above); resolving
+    # the PCs to symbols has to happen HERE because it needs the build tree and
+    # the MP/UP kernel choice, neither of which the in-guest sweep knows. Without
+    # the symbols the file is a wall of hex and the operator still cannot tell
+    # "spinning at DISPATCH_LEVEL" from "idle, waiting" — which is the whole fork
+    # a stall hunt turns on.
+    hang_state_path = run_dir / "hang-cpustate.txt"
+    hang_pcs: list[str] = []
+    if hang_state_path.is_file():
+        try:
+            from . import triage as _triage
+
+            hang_pcs = _triage.symbolicate_cpu_state(
+                repo,
+                # BASE arch, not pytest_arch: the symbol index is
+                # qemu/symbols-<base>.tsv and addr2sym.sh's arch_validate accepts
+                # only i386/amd64/arm64, so "i386-uefi" resolves NOTHING — and it
+                # fails by returning no symbols, not by complaining.
+                base,
+                hang_state_path.read_text(errors="replace"),
+                mp="ntkrnlmp.exe" in serial_text,
+            )
+            if hang_pcs:
+                with hang_state_path.open("a") as f:
+                    f.write("\n=== symbolicated ===\n" + "\n".join(hang_pcs) + "\n")
+        except Exception as exc:  # never let triage sink the run it is triaging
+            print(f"[conformance] cpu-state symbolication failed: {exc!r}", file=sys.stderr)
+        print(f"[conformance] guest was WEDGED — vCPU state: {hang_state_path}")
+        for line in hang_pcs:
+            print(f"    {line}")
 
     # An `--smp N` sweep that quietly swept the UP kernel is the false green this
     # whole experiment exists to avoid, and it is INVISIBLE in the results — a UP
@@ -591,6 +629,11 @@ def _conformance_once(args, repo: Path) -> int:
         "results_file": str(results_path),
         "serial_log": str(saved_serial),
         "serial_log_live": str(log_path),  # truncated by the next same-arch sweep
+        # Present only when the guest wedged. `hang_pcs` is the payload: on a
+        # stall that prints nothing, this is the ONLY statement of where the box
+        # actually was, and summary.json is what gets read.
+        "hang_cpustate": str(hang_state_path) if hang_state_path.is_file() else None,
+        "hang_pcs": hang_pcs,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 

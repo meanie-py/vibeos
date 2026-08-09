@@ -27,7 +27,15 @@ publish = false
 # which is what lets this crate grade it. The one suite needing file.rs ABSENT, the scanf
 # engine's, lives in the sibling ../msvcrt-scanf-difftest; its Cargo.toml carries the
 # reason and the alternative that was weighed and rejected.
-msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = ["stdio"] }
+#
+# `cpp` is on too, which the feature's own comment in msvcrt-crt-rust/Cargo.toml said was
+# impossible. It was wrong on both counts, and the correction lives there now: the x86-64 arm
+# of cpp_rtti's vtable asm is plain `.data`/`.balign 8`/`.quad`/`.globl` — valid ELF, and the
+# same text cxx.h's `__ASM_VTABLE` emits for the reference TU beside it — and
+# `RtlPcToFileHeader` is just an undefined symbol, which cppimpl.c now supplies with a real
+# image base. Turning it on is what gives tests/cpp.rs a SUBJECT to grade cpp.c and except.c
+# against; without it the reference TUs would be compiled and compared to nothing.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false, features = ["stdio", "cpp"] }
 msvcrt-sys = { path = "../msvcrt-sys" }
 # guard-page probe (tests/oob_guard.rs): mmap/mprotect/fork.
 libc = "0.2"
@@ -209,4 +217,18 @@ harness = false
 [[test]]
 name = "process"
 path = "tests/process.rs"
+harness = false
+
+# cpp.c (#14) + except.c (#15) — the C++ EH subsystem. Its own binary for three reasons, all
+# of them state. It installs per-thread terminate/unexpected/se_translator handlers and drives
+# except.c's file-static `sighandlers` table, none of which any other suite expects to find
+# moved. It calls `msvcrt_init_exception`, which rewrites BOTH sides' static RTTI tables from
+# absolute pointers into RVAs — a one-way conversion that must happen exactly once per process.
+# And it FORKS, for the arms that terminate; a child inherits whatever the rest of a shared
+# binary had already set up. `harness = false` gives it one thread, without which the shared
+# `RaiseException` sink would be read by one row while another wrote it — plus the same getenv
+# reason as the rest.
+[[test]]
+name = "cpp"
+path = "tests/cpp.rs"
 harness = false
