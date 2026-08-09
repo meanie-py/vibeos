@@ -350,6 +350,11 @@ unsafe extern "system" fn worker(_context: PVOID) {
 
         // --- Outbound TCP client to the host via slirp guestfwd (10.0.2.100:9999) ---
         // Retries until the host listener is up (the test starts it post-boot).
+        // :9999 is THIS consumer's port and nobody else's — the harness gives every
+        // independent echo consumer its own guestfwd (tests/qemu/vm.py
+        // GUESTFWD_ECHO_PORTS), because a shared one hands slirp two sockets matching
+        // the same (addr, port) and one of them silently eats the other's echo. This
+        // retry loop re-opens forever, so sharing made it the thief in ~90% of runs.
         if dhcp_configured && !client_done {
             let s = sockets.get_mut::<tcp::Socket>(client_handle);
             if !s.is_open() {

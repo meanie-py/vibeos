@@ -55,6 +55,7 @@ from .catalog import build_catalog, print_catalog_stats
 from .checker import check_all_targets, print_check_report
 from .config import (
     BATCH_DISCOUNT,
+    DEEPSEEK_MODEL_V4_PRO,
     DEFAULT_MODELS,
     HAL_DIR,
     MODEL_PRICING,
@@ -4083,6 +4084,7 @@ def cmd_translate(args):
                     c_source_path=c_file,
                     selector=selector,
                     assembled_fns={dep.name for dep in sorted_deps},
+                    reassemble=getattr(args, "reassemble", False),
                 )
             except AssemblyClobberError as exc:
                 print(f"\n\u26d4 {exc}", file=sys.stderr)
@@ -4230,7 +4232,14 @@ def cmd_estimate(args):
     print("     each RE-SENDING the system prompt + growing context — real input")
     print("     is commonly 2–5× the figure above. These estimates are a FLOOR.")
 
+    # DeepSeek FIRST, and flagged, because it is what an unflagged run actually bills. The
+    # table used to list only Claude and Gemini, so the one number a spend decision is made
+    # from was never the price of the default lane — a re-translate got priced at Sonnet's
+    # $1.22 and declined as too expensive when the real bill was ~$0.10. Every other row is
+    # an escalation from the first one.
     rows = [
+        ("DeepSeek v4-pro  (DEFAULT)", DEEPSEEK_MODEL_V4_PRO),
+        ("DeepSeek v4-flash", "deepseek-v4-flash"),
         ("Opus   (claude-opus-4-8)", "claude-opus-4-8"),
         ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
         ("Haiku  (claude-haiku-4-5)", "claude-haiku-4-5-20251001"),
@@ -4964,6 +4973,12 @@ def main():
             "finding, and an unknown name is an error rather than a no-op. Repeatable, "
             "and accepts several names per flag."
         ),
+    )
+    p.add_argument(
+        "--reassemble",
+        action="store_true",
+        help="Allow overwriting a COMMITTED, unmodified .rs. Off by default: a re-translation "
+        "sees only the C, so it reverts every repair made after integration.",
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(

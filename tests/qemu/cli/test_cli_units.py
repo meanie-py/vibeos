@@ -2227,14 +2227,42 @@ def test_backend_rewrite_netdev_for_windows():
         "-netdev",
         "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777,guestfwd=tcp:10.0.2.100:9999-cmd:cat",
     ]
-    out, needs_echo = be_mod.rewrite_netdev_for_windows(args, "gf0")
-    assert needs_echo is True
+    out, ids = be_mod.rewrite_netdev_for_windows(args)
+    assert ids == ["gf0"]
     assert "hostfwd=tcp:0.0.0.0:54321-:7777" in out[-1]
     assert "guestfwd=tcp:10.0.2.100:9999-chardev:gf0" in out[-1]
     assert "cmd:cat" not in out[-1]
     # no netdev with fwds -> no-op, no echo server needed (the native-config shape)
     plain = ["-M", "pc", "-accel", "tcg"]
-    assert be_mod.rewrite_netdev_for_windows(plain, "gf0") == (plain, False)
+    assert be_mod.rewrite_netdev_for_windows(plain) == (plain, [])
+
+
+def test_every_guestfwd_gets_its_OWN_chardev():
+    """One chardev is one byte stream, so two guestfwds sharing an id merge their
+    traffic — three consumers on a shared :9999 is what wedged the merge queue for a
+    day (vm.GUESTFWD_ECHO_PORTS). The rewrite must hand out one id per forward."""
+    netdev = "user,id=net0,hostfwd=tcp:127.0.0.1:54321-:7777" + "".join(
+        f",guestfwd=tcp:10.0.2.100:{port}-cmd:cat" for port in (9997, 9998, 9999)
+    )
+    out, ids = be_mod.rewrite_netdev_for_windows(["-netdev", netdev])
+    assert ids == ["gf0", "gf1", "gf2"]
+    assert len(set(ids)) == len(ids)
+    for port, cid in zip((9997, 9998, 9999), ids, strict=True):
+        assert f"guestfwd=tcp:10.0.2.100:{port}-chardev:{cid}" in out[-1]
+    assert "cmd:cat" not in out[-1]
+
+
+def test_the_three_echo_consumers_never_share_a_port():
+    """The guest hardcodes these; a duplicate here is a silently stolen echo, not a
+    build error. Kept as a set-size check so adding a consumer forces a new port."""
+    from tests.qemu import vm as vm_mod
+
+    ports = vm_mod.GUESTFWD_ECHO_PORTS
+    assert len(set(ports.values())) == len(ports), f"duplicate guestfwd echo port: {ports}"
+    # Each port must appear exactly once in the emitted netdev options.
+    opts = vm_mod._guestfwd_echo_opts("10.0.2.100")
+    for port in ports.values():
+        assert opts.count(f":{port}-cmd:cat") == 1
 
 
 def test_free_tcp_port_windows_picker_hook():
