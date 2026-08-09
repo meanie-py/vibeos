@@ -2874,6 +2874,43 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### A vtable SLOT the interface parser could not read renumbers every slot after it
+
+**Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
+its header declares, and the missing one has been folded into its predecessor's parameter
+list. From `recyclebin_v5.h`:
+
+```rust
+pub EmptyRecycleBin: unsafe extern "system" fn(ppEnumList: *mut *mut ); \
+    STDMETHOD(EnumObjects)(THIS_ OUT IRecycleBinEnumList) -> HRESULT,
+```
+
+`IRecycleBin5` declares 11 methods; the emitted vtable had 10.
+
+**Cause.** `_DECLARE_METHOD` required a declaration to end `) PURE ;`. ReactOS's header has
+one that omits `PURE` — a typo no compiler can see, because `PURE` expands to nothing in C
+mode. The non-greedy `(?P<params>.*?)` then ran straight through the unmatched declaration to
+the *next* `) PURE;` and swallowed the following method whole. A second, unrelated leak had
+the same root: `_SAL_ANNOTATION` only matches the underscore-flanked modern spellings
+(`_In_`, `_Out_opt_`), so ntdef.h's `IN`, `OUT` and `OPTIONAL` — also defined to nothing —
+survived into the parsed type as `riid: IN REFIID` and `*mut *mut OUT void`.
+
+**Fix.** `PURE` is optional; classic uppercase SAL is stripped alongside the `_In_` family.
+Neither of those is the real fix. **A vtable is positional, so a dropped slot is not a partial
+result — it renumbers everything after it**, and `GetDirectory` dispatches to `Delete`,
+`Delete` to `Restore`, and `OnClosing` off the end. So the parser now HARD FAILS when the
+number of methods it parsed disagrees with the number of `STDMETHOD` tokens in the body (and
+`STDMETHODCALLTYPE` on the WIDL path). Where the bindgen island also carries the interface,
+the two slot counts are cross-checked as well — bindgen through the real preprocessor is an
+independent derivation of the same vtable, and that check catches this class on its own.
+
+Note how narrowly this stayed visible: the swallow happened to produce a Rust *syntax* error,
+so it was loud. That was luck. Swallow a method whose parameter list survives the fold and you
+get a vtable that compiles, links, and dispatches to the wrong function — reached through a
+COM call, so the stack at the crash names nobody involved. When a deterministic emitter can
+drop one element of an ordered sequence, count the elements; never trust that a bad parse will
+also fail to compile.
+
 ### A convention macro that also carries the RETURN TYPE deletes the function
 
 **Symptom.** `rustconv translate` refuses a TU: *"N SPEC-EXPORTED function(s) are in the

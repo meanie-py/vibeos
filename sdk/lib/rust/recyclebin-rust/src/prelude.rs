@@ -4,6 +4,11 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 pub use crate::types::*;
+// recyclebin.h's COBJMACROS block: `IRecycleBin_DeleteFile(This, x)` etc. Generated from the
+// island's vtable structs, so a helper's parameter list cannot drift from the slot it
+// dispatches through. Re-exported here because the translated sources call them unqualified,
+// exactly as the C does.
+pub use crate::commacros::*;
 pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void};
 pub use core::ptr::{addr_of, addr_of_mut};
 

@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_delete;
+use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_new;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_delete;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_new;
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
 use crate::shellrecyclebin::recyclebin_support::CZZWStr;
 
@@ -33,20 +35,20 @@ unsafe extern "C" fn RecycleBin5File_Constructor(
     prb: *mut IRecycleBin5,
     Folder: LPCWSTR,
     pDeletedFile: *mut DELETED_FILE_RECORD,
-    ppFile: *mut *mut IRecycleBinFile
+    ppFile: *mut *mut IRecycleBinFile,
 ) -> HRESULT {
     if ppFile.is_null() {
         return E_POINTER;
     }
     *ppFile = core::ptr::null_mut();
 
-    let pThis = RecycleBin5File() as *mut RecycleBin5File;
+    let pThis = RecycleBin5File_new();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    let hr = (*pThis).Init(prb, Folder, pDeletedFile);
-    if hr < 0 {
+    let hr = RecycleBin5File_Init(pThis, prb, Folder, pDeletedFile);
+    if ((hr) < 0) {
         RecycleBin5File_delete(pThis);
         return hr;
     }
@@ -68,7 +70,7 @@ pub unsafe extern "C" fn RecycleBin5Enum_Constructor(
     }
     *ppUnknown = core::ptr::null_mut();
 
-    let pThis: *mut RecycleBin5Enum = RecycleBin5Enum();
+    let pThis: *mut RecycleBin5Enum = RecycleBin5Enum_new();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }

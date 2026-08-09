@@ -1,71 +1,15 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin::EmptyRecycleBinW;
 use crate::shellrecyclebin::recyclebin_v5_enumerator_free::RecycleBin5Enum_Constructor;
 use crate::shellrecyclebin::recyclebin_support::wide_len;
-// Deterministic from recyclebin_v5.h
-#[repr(C)]
-pub struct IRecycleBin5 {
-    pub lpVtbl: *const IRecycleBin5Vtbl,
-}
-#[repr(C)]
-pub struct IRecycleBin5Vtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBin5, riid: IN REFIID, ppvObject: *mut *mut OUT void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBin5) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBin5) -> ULONG,
-    pub DeleteFile: unsafe extern "system" fn(This: *mut IRecycleBin5, szFileName: IN LPCWSTR) -> HRESULT,
-    pub EmptyRecycleBin: unsafe extern "system" fn(ppEnumList: *mut *mut ); STDMETHOD(EnumObjects)(THIS_ OUT IRecycleBinEnumList) -> HRESULT,
-    pub GetDirectory: unsafe extern "system" fn(This: *mut IRecycleBin5, szPath: LPWSTR) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT,
-    pub OnClosing: unsafe extern "system" fn(This: *mut IRecycleBin5, prbel: *mut IN IRecycleBinEnumList) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBin5: IID;
-}
+// IRecycleBin5: 11 slot(s) from the bindgen island, which agrees with recyclebin_v5.h.
+// Not re-rendered here -- a second `IRecycleBin5` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinEnumList {
-    pub lpVtbl: *const IRecycleBinEnumListVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinEnumListVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Next: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT,
-    pub Skip: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD) -> HRESULT,
-    pub Reset: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinEnumList: IID;
-}
+// IRecycleBinEnumList: 6 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinEnumList` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinFile {
-    pub lpVtbl: *const IRecycleBinFileVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinFileVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub IsEqualIdentity: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT,
-    pub GetInfo: unsafe extern "system" fn(This: *mut IRecycleBinFile, pInfo: PDELETED_FILE_INFO) -> HRESULT,
-    pub GetLastModificationTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pLastModificationTime: *mut FILETIME) -> HRESULT,
-    pub GetDeletionTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pDeletionTime: *mut FILETIME) -> HRESULT,
-    pub GetFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetPhysicalFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetAttributes: unsafe extern "system" fn(This: *mut IRecycleBinFile, pAttributes: *mut DWORD) -> HRESULT,
-    pub GetFileName: unsafe extern "system" fn(This: *mut IRecycleBinFile, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinFile: IID;
-}
+// IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
 
 // Deterministic COM scaffold for RecycleBin5; method bodies are generated separately.
 extern "system" {
@@ -109,7 +53,7 @@ unsafe fn RecycleBin5_cpp_com_assign_m_Folder(this: *mut RecycleBin5, value: LPC
     (*this).m_Folder.assign(value);
 }
 
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_QueryInterface(This: *mut IRecycleBin5, riid: IN REFIID, ppvObject: *mut *mut OUT void) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_QueryInterface(This: *mut IRecycleBin5, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_QueryInterface_body(this, riid, ppvObject)
 }
@@ -121,46 +65,51 @@ unsafe extern "system" fn RecycleBin5_IRecycleBin5_Release(This: *mut IRecycleBi
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_Release_body(this)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_DeleteFile(This: *mut IRecycleBin5, szFileName: IN LPCWSTR) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_DeleteFile(This: *mut IRecycleBin5, szFileName: LPCWSTR) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_DeleteFile_body(this, szFileName)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_EmptyRecycleBin(ppEnumList: *mut *mut ); STDMETHOD(EnumObjects)(THIS_ OUT IRecycleBinEnumList) -> HRESULT {
-    let this = (ppEnumList as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_EmptyRecycleBin(This: *mut IRecycleBin5) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_EmptyRecycleBin_body(this)
+}
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_EnumObjects(This: *mut IRecycleBin5, ppEnumList: *mut *mut IRecycleBinEnumList) -> HRESULT {
+    let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
+    RecycleBin5_EnumObjects_body(this, ppEnumList)
 }
 unsafe extern "system" fn RecycleBin5_IRecycleBin5_GetDirectory(This: *mut IRecycleBin5, szPath: LPWSTR) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_GetDirectory_body(this, szPath)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_Delete(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_Delete(This: *mut IRecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_Delete_v1_body(this, pDeletedFileName, pDeletedFile)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_Restore(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_Restore(This: *mut IRecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_Restore_v1_body(this, pDeletedFileName, pDeletedFile)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_RemoveFromDatabase(This: *mut IRecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_RemoveFromDatabase(This: *mut IRecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_RemoveFromDatabase_v1_body(this, pDeletedFileName, pDeletedFile)
 }
-unsafe extern "system" fn RecycleBin5_IRecycleBin5_OnClosing(This: *mut IRecycleBin5, prbel: *mut IN IRecycleBinEnumList) -> HRESULT {
+unsafe extern "system" fn RecycleBin5_IRecycleBin5_OnClosing(This: *mut IRecycleBin5, prbel: *mut IRecycleBinEnumList) -> HRESULT {
     let this = (This as *mut u8).sub(core::mem::offset_of!(RecycleBin5, IRecycleBin5_iface)) as *mut RecycleBin5;
     RecycleBin5_OnClosing_body(this, prbel)
 }
 
 pub static RECYCLEBIN5_IRECYCLEBIN5_VTBL: IRecycleBin5Vtbl = IRecycleBin5Vtbl {
-    QueryInterface: RecycleBin5_IRecycleBin5_QueryInterface,
-    AddRef: RecycleBin5_IRecycleBin5_AddRef,
-    Release: RecycleBin5_IRecycleBin5_Release,
-    DeleteFile: RecycleBin5_IRecycleBin5_DeleteFile,
-    EmptyRecycleBin: RecycleBin5_IRecycleBin5_EmptyRecycleBin,
-    GetDirectory: RecycleBin5_IRecycleBin5_GetDirectory,
-    Delete: RecycleBin5_IRecycleBin5_Delete,
-    Restore: RecycleBin5_IRecycleBin5_Restore,
-    RemoveFromDatabase: RecycleBin5_IRecycleBin5_RemoveFromDatabase,
-    OnClosing: RecycleBin5_IRecycleBin5_OnClosing,
+    QueryInterface: Some(RecycleBin5_IRecycleBin5_QueryInterface),
+    AddRef: Some(RecycleBin5_IRecycleBin5_AddRef),
+    Release: Some(RecycleBin5_IRecycleBin5_Release),
+    DeleteFileW: Some(RecycleBin5_IRecycleBin5_DeleteFile),
+    EmptyRecycleBinW: Some(RecycleBin5_IRecycleBin5_EmptyRecycleBin),
+    EnumObjects: Some(RecycleBin5_IRecycleBin5_EnumObjects),
+    GetDirectory: Some(RecycleBin5_IRecycleBin5_GetDirectory),
+    Delete: Some(RecycleBin5_IRecycleBin5_Delete),
+    Restore: Some(RecycleBin5_IRecycleBin5_Restore),
+    RemoveFromDatabase: Some(RecycleBin5_IRecycleBin5_RemoveFromDatabase),
+    OnClosing: Some(RecycleBin5_IRecycleBin5_OnClosing),
 };
 
 /// `new RecycleBin5` — operator new, the vptr store, then the constructor body.
@@ -486,94 +435,108 @@ pub unsafe fn SHELL_SingleFileOperation_body(hWnd: HWND, Op: UINT, pszFrom: LPCW
 
 pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
     let removable_attributes: u32 = FILE_ATTRIBUTE_READONLY;
-    let mut find_data: WIN32_FIND_DATAW = core::mem::zeroed();
+    let mut find_data: WIN32_FIND_DATAW = core::mem::zeroed::<WIN32_FIND_DATAW>();
+    let mut h_search: HANDLE = INVALID_HANDLE_VALUE;
     let mut full_path: *mut u16 = core::ptr::null_mut();
-    let mut file_attributes: u32;
-    let mut dwLength: usize;
     let mut ret: i32 = FALSE;
-    let mut hSearch: isize = INVALID_HANDLE_VALUE;
 
-    'outer: loop {
-        file_attributes = GetFileAttributesW(FullName);
+    'cleanup: {
+        let file_attributes: u32 = GetFileAttributesW(FullName);
         if file_attributes == INVALID_FILE_ATTRIBUTES {
             if GetLastError() == ERROR_FILE_NOT_FOUND {
                 ret = TRUE;
             }
-            break 'outer;
+            break 'cleanup;
         }
         if (file_attributes & removable_attributes) != 0 {
-            if !SetFileAttributesW(FullName, file_attributes & !removable_attributes) {
-                break 'outer;
+            if SetFileAttributesW(FullName, file_attributes & !removable_attributes) == 0 {
+                break 'cleanup;
             }
         }
         if (file_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-            dwLength = wcslen(FullName);
-            let size = (dwLength as usize
-                .overflowing_add(1 as usize)
-                .0
-                .overflowing_add(MAX_PATH as usize)
-                .0
-                .overflowing_add(1 as usize)
-                .0)
+            // Directory branch
+            let mut dw_length: usize = wcslen(FullName) as usize;
+            let alloc_size: usize = (dw_length
+                + 1 as usize
+                + MAX_PATH as usize
+                + 1 as usize)
                 * core::mem::size_of::<u16>();
+
             full_path = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                size,
+                alloc_size,
             ) as *mut u16;
+
             if full_path.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'outer;
+                break 'cleanup;
             }
             wcscpy(full_path, FullName);
-            if *full_path.add(dwLength - 1 as usize) != '\\' as u16 {
-                *full_path.add(dwLength) = '\\' as u16;
-                dwLength += 1;
-            }
-            let pFilePart = full_path.add(dwLength);
-            wcscpy(pFilePart, CPP_COM_WSTR_E8A4B2EE7EDE);
 
-            hSearch = FindFirstFileW(full_path, &mut find_data);
-            if hSearch == INVALID_HANDLE_VALUE {
-                break 'outer;
+            // Append a backslash if not present
+            if *full_path.add(dw_length - 1 as usize) != '\\' as u16 {
+                *full_path.add(dw_length) = '\\' as u16;
+                dw_length += 1;
             }
+            let p_file_part: *mut u16 = full_path.add(dw_length);
+            wcscpy(p_file_part, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
+
+            h_search = FindFirstFileW(full_path, &mut find_data);
+            if h_search == INVALID_HANDLE_VALUE {
+                break 'cleanup;
+            }
+
             loop {
-                if !(find_data.cFileName[0 as usize] == '.' as u16
-                    && (find_data.cFileName[1 as usize] == 0
-                        || (find_data.cFileName[1 as usize] == '.' as u16
-                            && find_data.cFileName[2 as usize] == 0)))
-                {
-                    wcscpy(pFilePart, find_data.cFileName.as_ptr());
-                    if IntDeleteRecursive_body(full_path) == FALSE {
-                        FindClose(hSearch);
-                        break 'outer;
+                let skip = {
+                    let c = &find_data.cFileName;
+                    c[0 as usize] == '.' as u16
+                        && (c[1 as usize] == 0u16
+                            || (c[1 as usize] == '.' as u16
+                                && c[2 as usize] == 0u16))
+                };
+
+                if !skip {
+                    wcscpy(p_file_part, find_data.cFileName.as_ptr());
+                    if IntDeleteRecursive_body(full_path) == 0 {
+                        FindClose(h_search);
+                        break 'cleanup;
                     }
                 }
-                if !FindNextFileW(hSearch, &mut find_data) {
+
+                if FindNextFileW(h_search, &mut find_data) == 0 {
                     break;
                 }
             }
-            FindClose(hSearch);
+
+            FindClose(h_search);
+            h_search = INVALID_HANDLE_VALUE;
+
             if GetLastError() != ERROR_NO_MORE_FILES {
-                break 'outer;
+                break 'cleanup;
             }
-            if !RemoveDirectoryW(FullName) {
-                break 'outer;
+            if RemoveDirectoryW(FullName) == 0 {
+                break 'cleanup;
             }
         } else {
-            if !DeleteFileW(FullName) {
-                break 'outer;
+            // File branch
+            if DeleteFileW(FullName) == 0 {
+                break 'cleanup;
             }
         }
+
         ret = TRUE;
-        break 'outer;
     }
 
-    HeapFree(
-        GetProcessHeap(),
-        0,
-        full_path,
-    );
+    // cleanup
+    if !full_path.is_null() {
+        HeapFree(
+            GetProcessHeap(),
+            0,
+            full_path as *mut _,
+        );
+    }
+
     ret
 }
 
@@ -619,12 +582,12 @@ pub unsafe fn RecycleBin5_dtor_body(this: *mut RecycleBin5) -> () {
 pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> ULONG {
     let refCount = InterlockedDecrement(&mut (*this).m_ref);
     if refCount == 0 {
-        __rustconv_delete(this);
+        RecycleBin5_delete(this);
     }
     refCount
 }
 
-pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: IN LPCWSTR) -> HRESULT {
+pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LPCWSTR) -> HRESULT {
     let mut szFullName: LPWSTR = core::ptr::null_mut();
     let mut dwBufferLength: u32 = 0;
     let mut lpFilePart: LPWSTR = core::ptr::null_mut();
@@ -951,7 +914,7 @@ pub unsafe fn RecycleBin5_EnumObjects_body(this: *mut RecycleBin5, ppEnumList: *
     hr
 }
 
-pub unsafe fn RecycleBin5_Delete_v1_body(this: *mut RecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+pub unsafe fn RecycleBin5_Delete_v1_body(this: *mut RecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let mut res: HRESULT = IntDeleteRecursive_body(pDeletedFileName) as HRESULT;
     if res == 0 {
         return HResultFromWin32(GetLastError());
@@ -963,7 +926,7 @@ pub unsafe fn RecycleBin5_Delete_v1_body(this: *mut RecycleBin5, pDeletedFileNam
     res
 }
 
-pub unsafe fn RecycleBin5_Restore_v1_body(this: *mut RecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+pub unsafe fn RecycleBin5_Restore_v1_body(this: *mut RecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let mut res = SHELL_SingleFileOperation_body(
         core::ptr::null_mut(),
         FO_MOVE,
@@ -981,7 +944,7 @@ pub unsafe fn RecycleBin5_Restore_v1_body(this: *mut RecycleBin5, pDeletedFileNa
     res
 }
 
-pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDeletedFileName: IN LPCWSTR, pDeletedFile: *mut IN DELETED_FILE_RECORD) -> HRESULT {
+pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDeletedFileName: LPCWSTR, pDeletedFile: *mut DELETED_FILE_RECORD) -> HRESULT {
     let mut FileSize: ULARGE_INTEGER = ULARGE_INTEGER::default();
     let pHeader: PINFO2_HEADER;
     let mut pRecord: *const DELETED_FILE_RECORD;
@@ -1071,90 +1034,93 @@ pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDe
     HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND as LONG)
 }
 
-pub unsafe fn RecycleBin5_OnClosing_body(this: *mut RecycleBin5, prbel: *mut IN IRecycleBinEnumList) -> HRESULT {
+pub unsafe fn RecycleBin5_OnClosing_body(this: *mut RecycleBin5, prbel: *mut IRecycleBinEnumList) -> HRESULT {
     (*this).m_EnumeratorCount -= 1;
     S_OK
 }
 
 pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESULT {
-    let mut BufferName: *mut u16 = core::ptr::null_mut();
+    let mut hr: HRESULT;
     let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
-    let mut hr: HRESULT = 0;
-    let mut BytesToWrite: u32 = 0;
-    let mut BytesWritten: u32 = 0;
+    let mut buffer_name: LPWSTR = core::ptr::null_mut();
 
-    let DesktopIniContents: *const u8 = b"[.ShellClassInfo]\r\nCLSID={645FF040-5081-101B-9F08-00AA002F954E}\r\n".as_ptr();
-    let Info2Contents: [u32; 5] = [
-        5,
-        0,
-        0,
-        0x320,
-        0,
-    ];
+    // ---------- Main logic with goto-cleanup simulation ----------
+    'cleanup_main: loop {
+        // Allocate buffer for path manipulation
+        let needed: usize = (wcslen(Folder)
+            + 1
+            + max(
+                wcslen(RECYCLE_BIN_FILE_NAME as *const c_char),
+                wcslen(CPP_COM_WSTR_A5DBFDEBD401.as_ptr()),
+            )
+            + 1)
+            * core::mem::size_of::<u16>();
 
-    'cleanup_block: {
-        // Calculate needed buffer size
-        let folder_len = wcslen(Folder);
-        let max_len = max(
-            wcslen(RECYCLE_BIN_FILE_NAME),
-            wcslen(CPP_COM_WSTR_A5DBFDEBD401.as_ptr()),
-        );
-        let Needed: usize = (folder_len + 1 + max_len + 1) * core::mem::size_of::<u16>();
-
-        BufferName = HeapAlloc(
+        buffer_name = HeapAlloc(
             GetProcessHeap(),
             0,
-            Needed,
-        ) as *mut u16;
-        if BufferName.is_null() {
+            needed,
+        ) as LPWSTR;
+        if buffer_name.is_null() {
             hr = ERROR_NOT_ENOUGH_MEMORY;
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
 
-        // Copy folder path
-        wcscpy(BufferName, Folder);
+        // Copy Folder path into buffer
+        wcscpy(buffer_name, Folder);
 
-        // Find and optionally strip trailing backslash
-        let Separator = wcsstr(
-            BufferName.add(3) as *const u16,
-            CPP_COM_WSTR_B7FC02907B1F.as_ptr(),
-        );
-        if !Separator.is_null() {
-            *Separator = UNICODE_NULL;
+        // Find a possible separator substring in the buffer (offset given by FACT_0012)
+        let mut separator: LPWSTR =
+            wcsstr(
+                buffer_name.wrapping_add(3 as usize),
+                CPP_COM_WSTR_B7FC02907B1F.as_ptr(),
+            );
+        if !separator.is_null() {
+            *separator = UNICODE_NULL;
         }
 
-        // Create base directory if needed
-        if CreateDirectoryW(BufferName, core::ptr::null_mut()) == 0
+        // Create main directory (without separator)
+        if !CreateDirectoryW(buffer_name, core::ptr::null_mut())
             && GetLastError() != ERROR_ALREADY_EXISTS
         {
             hr = HRESULT_FROM_WIN32(GetLastError());
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
+
+        // Set attributes on the directory
         SetFileAttributesW(
-            BufferName,
+            buffer_name,
             FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_HIDDEN,
         );
 
-        // If separator existed, process subfolder
-        if !Separator.is_null() {
-            *Separator = 0x005Cu16;
-            if CreateDirectoryW(BufferName, core::ptr::null_mut()) == 0
+        // If we had a separator (e.g. backslash), create the subdirectory too
+        if !separator.is_null() {
+            *separator = 0x005Cu16;
+            if !CreateDirectoryW(buffer_name, core::ptr::null_mut())
                 && GetLastError() != ERROR_ALREADY_EXISTS
             {
                 hr = HRESULT_FROM_WIN32(GetLastError());
-                break 'cleanup_block;
+                break 'cleanup_main;
             }
         }
 
-        // (OwnerSid ACL code is intentionally commented out in the original)
-        // Append subdirectory for special files
-        wcscat(BufferName, CPP_COM_WSTR_B7FC02907B1F.as_ptr());
-        let FileName = BufferName.add(wcslen(BufferName));
+        // Owner SID handling (FIXME – stub)
+        if !OwnerSid.is_null() {
+            // FIXME: ACL setup not yet implemented
+        }
 
-        // Create desktop.ini
-        wcscpy(FileName, CPP_COM_WSTR_A5DBFDEBD401.as_ptr());
+        // Append a trailing separator (fact string) to build final file paths
+        wcscat(buffer_name, CPP_COM_WSTR_B7FC02907B1F.as_ptr());
+
+        // Pointer to the end of the current buffer (where we will concat file names)
+        let file_name: LPWSTR =
+            buffer_name.wrapping_add(wcslen(buffer_name) as usize);
+
+        // ---------- Create desktop.ini ----------
+        wcscpy(file_name, CPP_COM_WSTR_A5DBFDEBD401.as_ptr());
+
         hFile = CreateFileW(
-            BufferName,
+            buffer_name,
             GENERIC_WRITE,
             0,
             core::ptr::null_mut(),
@@ -1164,33 +1130,35 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         );
         if hFile == INVALID_HANDLE_VALUE {
             hr = HRESULT_FROM_WIN32(GetLastError());
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
 
-        BytesToWrite = strlen(DesktopIniContents) as u32;
+        let bytes_to_write: u32 =
+            strlen(RECYCLE_BIN_FILE_NAME as *const c_char) as u32;
+        let mut bytes_written: u32 = 0;
         if WriteFile(
             hFile,
-            DesktopIniContents,
-            BytesToWrite,
-            &mut BytesWritten,
+            RECYCLE_BIN_FILE_NAME as *const c_char as *const u8,
+            bytes_to_write,
+            &mut bytes_written,
             core::ptr::null_mut(),
         ) == 0
         {
             hr = HRESULT_FROM_WIN32(GetLastError());
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
-        if BytesWritten != BytesToWrite {
+        if bytes_written != bytes_to_write {
             hr = E_FAIL;
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
-
         CloseHandle(hFile);
         hFile = INVALID_HANDLE_VALUE;
 
-        // Create empty INFO2 file
-        wcscpy(FileName, RECYCLE_BIN_FILE_NAME);
+        // ---------- Create empty INFO2 file ----------
+        wcscpy(file_name, RECYCLE_BIN_FILE_NAME);
+
         hFile = CreateFileW(
-            BufferName,
+            buffer_name,
             GENERIC_READ | GENERIC_WRITE,
             0,
             core::ptr::null_mut(),
@@ -1200,34 +1168,42 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         );
         if hFile == INVALID_HANDLE_VALUE {
             hr = HRESULT_FROM_WIN32(GetLastError());
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
 
-        BytesToWrite = core::mem::size_of_val(&Info2Contents) as u32;
+        let info2_contents: [u32; 5] = [
+            5 as u32,
+            0 as u32,
+            0 as u32,
+            0x320 as u32,
+            0 as u32,
+        ];
+        let bytes_to_write = core::mem::size_of_val(&info2_contents) as u32;
+        bytes_written = 0;
         if WriteFile(
             hFile,
-            Info2Contents.as_ptr().cast(),
-            BytesToWrite,
-            &mut BytesWritten,
+            info2_contents.as_ptr() as *const u8,
+            bytes_to_write,
+            &mut bytes_written,
             core::ptr::null_mut(),
         ) == 0
         {
             hr = HRESULT_FROM_WIN32(GetLastError());
-            break 'cleanup_block;
+            break 'cleanup_main;
         }
-
-        hr = if BytesWritten == BytesToWrite {
-            S_OK
+        if bytes_written == bytes_to_write {
+            hr = S_OK;
         } else {
-            E_FAIL
-        };
+            hr = E_FAIL;
+        }
+        break 'cleanup_main;
     }
 
-    // Cleanup
+    // ---------- Cleanup block ----------
     HeapFree(
         GetProcessHeap(),
         0,
-        BufferName as *mut core::ffi::c_void,
+        buffer_name as *mut core::ffi::c_void,
     );
     if hFile != INVALID_HANDLE_VALUE {
         CloseHandle(hFile);

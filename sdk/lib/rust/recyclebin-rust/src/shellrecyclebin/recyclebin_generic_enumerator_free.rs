@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::RecycleBinGenericEnum::RecycleBinGenericEnum_new;
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
 use crate::shellrecyclebin::recyclebin_support::CZZWStr;
 
@@ -24,7 +25,7 @@ pub unsafe extern "C" fn RecycleBinGenericEnum_Constructor(pprbel: *mut *mut IRe
 pub unsafe extern "C" fn RecycleBinGenericEnum_Constructor(
     pprbel: *mut *mut IRecycleBinEnumList,
 ) -> HRESULT {
-    let pThis = RecycleBinGenericEnum();
+    let pThis = RecycleBinGenericEnum_new();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
