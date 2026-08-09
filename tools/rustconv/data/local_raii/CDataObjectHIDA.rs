@@ -81,6 +81,18 @@ impl CDataObjectHIDA {
         hr
     }
 
+    /// Mirrors the C++ public static. It is not only the destructor's body:
+    /// dll/shellext/cabview/folder.cpp calls CreateCIDA/DestroyCIDA directly to
+    /// hold a CIDA across a scope the guard cannot span, so it must stay callable.
+    /// shell32-rust's prelude re-exports it and move_to_menu.rs reaches it through
+    /// CDataObjectHIDA_DestroyCIDA_RustBridge — a lowering without it links short.
+    unsafe fn DestroyCIDA(pcida: *const CIDA, medium: *mut STGMEDIUM) {
+        if !pcida.is_null() {
+            GlobalUnlock((*medium).__bindgen_anon_1.hGlobal);
+        }
+        ReleaseStgMedium(medium);
+    }
+
     unsafe fn hr(&self) -> HRESULT {
         self.m_hr
     }
@@ -96,11 +108,6 @@ impl CDataObjectHIDA {
 
 impl Drop for CDataObjectHIDA {
     fn drop(&mut self) {
-        unsafe {
-            if !self.m_cida.is_null() {
-                GlobalUnlock(self.m_medium.__bindgen_anon_1.hGlobal);
-            }
-            ReleaseStgMedium(&mut self.m_medium);
-        }
+        unsafe { CDataObjectHIDA::DestroyCIDA(self.m_cida, &mut self.m_medium) }
     }
 }
