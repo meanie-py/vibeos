@@ -700,10 +700,14 @@ def gate(args, repo: Path) -> int:
     # the (cheap, thread-blocking) lint runs and the concurrent builds share the same
     # executor. All of these BLOCK on subprocesses or on the host broker, so the worker
     # count only has to be large enough not to re-serialize what the broker would allow.
+    # Retries need one worker PER LANE, not per attempt: a lane's attempts run serially
+    # inside a single task (see phase 3 — concurrent attempts recreate the very load
+    # NET_FLAKE and HOST_STARVED are defined by). Keep the +n_lanes headroom anyway so
+    # a retrying lane never has to wait on a first-pass worker to drain.
     n_lanes = len(arches) + (1 if net_requested and "amd64" in arches else 0)
     max_workers = (
         min(
-            n_lanes * (1 + retries)
+            n_lanes * 2
             + (len(arches) if do_lint else 0)
             + (len(arches) if do_build else 0)
             # check-tooling + difftest: two arch-independent workers
@@ -882,26 +886,50 @@ def gate(args, repo: Path) -> int:
             r = f.result()
             results[r["arch"]] = r
 
-        # --- phase 3: parallel flake-retries for retryable failures ---
+        # --- phase 3: flake-retries for retryable failures ---
+        # Lanes retry in PARALLEL with each other, but each lane's own attempts run
+        # SEQUENTIALLY and stop at the first green. Firing all `retries` at once —
+        # which this did — makes the retry a worse experiment than the original:
+        #   * NET_FLAKE is defined as "the net suite failed under concurrent-smoke
+        #     load". Launching its attempts concurrently RECREATES the load, so the
+        #     retry re-runs the failing condition instead of removing it. With only
+        #     the net lane pending, `--retries 2` put two amd64-uefi-net VMs in
+        #     contention with each other and nothing else — self-inflicted, and
+        #     harsher than the first pass. Observed 2026-08-08: a gate and then a
+        #     land both burned 3/3 attempts on test_tdi_selftest_roundtrip, while
+        #     the same test on byte-identical media passed 4/4 standalone seconds
+        #     later. The second of those rejected a lane whose entire diff was
+        #     three one-line baseline edits and a doc.
+        #   * HOST_STARVED is "the lane never booted because it spent its budget
+        #     queued". Competing retries make starvation MORE likely, not less.
+        # A repeated experiment that holds the suspected cause fixed falsifies
+        # nothing — the same rule the field manual states for harnesses. Serial
+        # attempts also cost less: a green first retry means the rest never run.
         pending = [a for a in lanes if not results[a]["ok"] and results[a]["retryable"]]
         if pending and retries > 0:
             run.log(
                 f"flake-retry: {', '.join(pending)} "
                 f"({', '.join(results[a]['classification'] for a in pending)}) "
-                f"— up to {retries} parallel attempts each",
+                f"— up to {retries} serial attempts each, lanes in parallel",
                 header="flake-retry",
             )
-            retry_fut = {}
-            for a in pending:
+
+            def _retry_lane(a: str) -> tuple[dict, int]:
+                r, n = None, 0
                 for k in range(retries):
-                    root = gate_root / f"smoke-{a}-r{k + 1}"
-                    retry_fut[ex.submit(_lane_once, a, root)] = a
-            # collect all retries; an arch passes on its first green attempt.
+                    r = _lane_once(a, gate_root / f"smoke-{a}-r{k + 1}")
+                    n += 1
+                    if r["ok"]:
+                        break
+                return r, n  # type: ignore[return-value]
+
+            retry_fut = {ex.submit(_retry_lane, a): a for a in pending}
+            # an arch passes on its first green attempt.
             for f in cf.as_completed(retry_fut):
-                r = f.result()
+                r, n = f.result()
                 a = r["arch"]
                 prev = results[a]
-                r["attempts"] = prev.get("attempts", 1) + 1
+                r["attempts"] = prev.get("attempts", 1) + n
                 # keep the best: a green retry supersedes the failed first pass.
                 if r["ok"] and not prev["ok"]:
                     r["recovered"] = True
