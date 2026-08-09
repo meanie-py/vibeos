@@ -1986,3 +1986,37 @@ What the serial does now say, which it did not before: good runs print
 waiting, and the wedge never prints it. So SCM created lsass, resumed it, and blocked; lsass's
 dispatcher never reached the pipe. The `NtControlPipe0 (disposition=0)` line that looks alarming
 is byte-identical in the good runs — not a lead.
+
+## #47 closed the KeSpinLock MP-vs-UP divergence on all three arches (2026-08-08)
+
+`KeTryToAcquireSpinLockAtDpcLevel` gated the `KI_TRACK_SPINLOCK_OWNER` stamp on cargo's
+`debug_assertions`, which is OFF for `ntoskrnl-rust` — the per-crate override in
+`sdk/lib/rust/Cargo.toml` is written out but commented, staged behind the arm-the-asserts
+migration. So the stamp never happened, while `KxAcquireSpinLock` wrote it under
+`feature = "dbg"`. On UP the `smp` body compiles out too, leaving the entire function a no-op
+that returned TRUE against a lock that could never read as held.
+
+Measured before and after, `KeSpinLock` rows:
+
+| arch  | UP before | UP after | MP@1cpu before | MP@1cpu after |
+|-------|-----------|----------|----------------|---------------|
+| arm64 | 321 / 2   | 323 / 0  | 322 / 1        | 323 / 0       |
+| i386  | 753 / 32  | 755 / 30 | 754 / 31       | 755 / 30      |
+| amd64 | 321 / 2   | 323 / 0  | —              | 323 / 0       |
+
+The same shape three times: two failures fixed on UP, one on MP, and **UP and MP now agree
+exactly**. This row no longer contributes anything to the collapse delta on any arch. All three
+UP baselines were re-seeded with `--write-baseline --only KeSpinLock`, one line each — the
+improvement is real and explained, and the ratchet only flags regressions, so leaving it would
+have silently banked slack.
+
+Note what made this findable at all: the row was a *one-assertion* MP-vs-UP difference, which is
+exactly the size of signal the collapse criterion exists to surface. Two of the three arches
+were also carrying a second UP-only failure that no MP-vs-UP comparison could ever have shown —
+it took reading the cfg to see that the whole function was dead.
+
+i386's `IoDeviceObject` baseline turns out to be seeded on the LUCKY side of a coin flip
+(line 300, `STATUS_INVALID_DEVICE_REQUEST` vs `0xC0000034`, alternates across runs), so it
+reports a phantom regression on about half of all i386 sweeps. That is the inverse of arm64,
+whose floor deliberately absorbs the worse value. Left alone deliberately — lowering a shared
+gate floor wants a decision, not a quiet edit. Evidence and a nine-run sample are on the task.
