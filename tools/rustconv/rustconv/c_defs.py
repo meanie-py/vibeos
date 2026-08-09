@@ -234,11 +234,19 @@ def compiled_tus(
     """
     index = _target_index(repo_root)
     root_cml = c_dir / "CMakeLists.txt"
-    root_name = parse_cmakelists(root_cml, repo_root, arch=arch, target=target).name
+    if target is not None:
+        roots = [target]
+    else:
+        # `parse_cmakelists` refuses to guess between several targets, which is right when you
+        # are deriving ONE island — but here every target the module defines contributes C to
+        # the binary, so take them all. ntdll defines etwtrace and rtl_um and needs both.
+        roots = _ADD_LIBRARY.findall(_read_text(root_cml)) or [
+            parse_cmakelists(root_cml, repo_root, arch=arch).name
+        ]
 
     tus: list[Path] = []
     seen_targets: set[str] = set()
-    pending: list[tuple[Path, str]] = [(root_cml, root_name)]
+    pending: list[tuple[Path, str]] = [(root_cml, n) for n in roots]
     while pending:
         cml, name = pending.pop()
         if name in seen_targets:

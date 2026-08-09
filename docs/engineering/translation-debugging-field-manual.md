@@ -1378,10 +1378,19 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
-- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is latent.**
+- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
-  defect is ALIGNMENT 1, so it misbehaves when the linker happens to place it on an odd
-  address (that is task #39's mswsock incident). `b"LogEvent\0" as *const u16` is the severe
+  defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
+  of it here was wrong** — mswsock's 33 fixes were all CONTENT bugs (odd byte length = half a
+  wide NUL, UTF-16 stored big-endian, narrow ASCII behind a wide pointer); not one was an
+  alignment fault. An unaligned `u16` load is fine in HARDWARE on all three targets (x86
+  always; AArch64 for normal cacheable memory, and we never set SCTLR.A). The real objection is
+  LANGUAGE-level — dereferencing a misaligned `*const u16` is UB and LLVM tags the load
+  `align 2` — and it only bites where RUST ITSELF dereferences, whereas the overwhelmingly
+  common site hands the pointer straight to a Win32/Nt callee. **So: convert these to `w!()`
+  when you are already in the crate for another reason, and gate it with whatever you were
+  doing. Never as a repo-wide sweep** — the risk of touching kernel crates for a reviewability
+  win does not pay. `b"LogEvent\0" as *const u16` is the severe
   one — a NARROW string read as wide, where `"Lo"` is one code unit U+6F4C, so
   `RegQueryValueExW` looks up a value nobody has ever created and the call silently does
   nothing. sysdm shipped ~30 of the second kind. `postprocess.fix_wide_byte_string_literals`
