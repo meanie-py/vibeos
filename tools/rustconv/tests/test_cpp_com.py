@@ -9,6 +9,7 @@ from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
+    _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
@@ -3039,6 +3040,41 @@ def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
 
     with pytest.raises(CppComError, match="static"):
         _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
+
+
+class TestProvenScalarStateTypes:
+    """The scalar allowlist behind `state field type is not proven C scalar/pointer state`."""
+
+    def test_the_array_arm_and_the_plain_arm_prove_the_same_types(self):
+        # THE regression guard for this class. The allowlist was written out inline in both
+        # arms of _parse_plain_state_field, and the copies drifted: `INT8` reached the plain
+        # set and never the array one, so `INT8 Direction` was proven state while
+        # `INT8 Direction[2]` was rejected. Nothing anywhere compares two hand-maintained
+        # copies of a table, so the divergence was invisible until a TU happened to hold the
+        # array spelling. Asserting the two arms agree is what makes re-splitting them fail.
+        for name in sorted(_WINDOWS_SCALAR_TYPEDEFS):
+            assert _parse_plain_state_field(f"{name} field").c_type == name
+            assert _parse_plain_state_field(f"{name} field[4]").array_len == 4
+
+    def test_signed_char_is_proven(self):
+        # CDefView's `signed char m_SpecialFolder`. The table carried `char` and
+        # `unsigned char` and simply missed the third spelling — and this is the one that
+        # needs no platform commitment at all, since `signed char` is 8-bit and signed in
+        # every C implementation while plain `char`'s signedness is implementation-defined.
+        assert _parse_plain_state_field("signed char m_SpecialFolder").c_type == "signed char"
+
+    def test_uint8_is_proven(self):
+        # LISTVIEW_SORT_INFO's `UINT8 Reserved`, the last thing holding CDefView UNSUPPORTED.
+        # `INT8` was admitted and `UINT8` was not; both state their width in the name, so
+        # there is nothing left to prove about either.
+        assert _parse_plain_state_field("UINT8 Reserved").c_type == "UINT8"
+
+    def test_an_unproven_type_still_fails_loudly(self):
+        # The negative control: widening the allowlist must not turn into admitting anything
+        # that looks vaguely scalar. A type nobody has proven is a loud failure that wants an
+        # island proof, not a new table entry.
+        with pytest.raises(CppComError, match="not proven C scalar/pointer state"):
+            _parse_plain_state_field("SOME_UNKNOWN_TYPE m_thing")
 
 
 class TestWorkerParamNameConformance:

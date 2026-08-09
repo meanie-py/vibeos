@@ -1125,30 +1125,7 @@ def _parse_plain_state_field(
     if fixed_array is not None:
         c_type = fixed_array.group("type")
         base = " ".join(re.sub(r"\b(?:const|volatile)\b", "", c_type).split())
-        scalar_types = set(_RUST_SCALARS) | {
-            "BOOL",
-            "BOOLEAN",
-            "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-            "BYTE",
-            "CHAR",
-            "DWORD",
-            "DWORD64",
-            "HRESULT",
-            "INT",
-            "INT_PTR",
-            "LONG",
-            "LONG_PTR",
-            "LONGLONG",
-            "SIZE_T",
-            "UINT",
-            "UINT_PTR",
-            "ULONG",
-            "ULONG_PTR",
-            "ULONGLONG",
-            "USHORT",
-            "WCHAR",
-            "WORD",
-        }
+        scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
         pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
             re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
         )
@@ -1199,31 +1176,7 @@ def _parse_plain_state_field(
         raise CppComError(f"cannot parse object state declaration: {declaration}")
     base = re.sub(r"\b(?:const|volatile)\b", "", c_type).replace("*", "")
     base = " ".join(base.split())
-    scalar_types = _RUST_SCALARS | {
-        "BOOL": "",
-        "BOOLEAN": "",
-        "bool": "",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
-        "BYTE": "",
-        "CHAR": "",
-        "DWORD": "",
-        "DWORD64": "",
-        "HRESULT": "",
-        "INT": "",
-        "INT8": "",
-        "INT_PTR": "",
-        "LONG": "",
-        "LONG_PTR": "",
-        "LONGLONG": "",
-        "SIZE_T": "",
-        "UINT": "",
-        "UINT_PTR": "",
-        "ULONG": "",
-        "ULONG_PTR": "",
-        "ULONGLONG": "",
-        "USHORT": "",
-        "WCHAR": "",
-        "WORD": "",
-    }
+    scalar_types = set(_RUST_SCALARS) | _WINDOWS_SCALAR_TYPEDEFS
     pointer_typedef = base in _KNOWN_POINTER_TYPEDEFS or bool(
         re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", base)
     )
@@ -1973,6 +1926,12 @@ _RUST_SCALARS = {
     "void": "core::ffi::c_void",
     "VOID": "()",
     "char": "i8",
+    # The one entry here that needs no platform commitment: `signed char` is exactly 8 bits and
+    # signed in every C implementation, where plain `char`'s signedness is implementation-defined
+    # and the `i8` above is really a bet on MSVC. Its absence had nothing to do with doubt — the
+    # table simply covered two of the three char spellings, and the third rejected CDefView's
+    # `signed char m_SpecialFolder` as "not proven C scalar/pointer state".
+    "signed char": "i8",
     "unsigned char": "u8",
     "short": "i16",
     "unsigned short": "u16",
@@ -1981,6 +1940,56 @@ _RUST_SCALARS = {
     "long": "i32",
     "unsigned long": "u32",
 }
+
+# Windows SDK integer typedefs admitted as proven scalar state, on top of _RUST_SCALARS.
+#
+# ONE copy on purpose. This lived inline in both arms of _parse_plain_state_field — the fixed
+# array arm and the plain arm — and the two had already drifted: `INT8` was in the plain set and
+# missing from the array set, so `INT8 Direction` was proven state while `INT8 Direction[2]` was
+# not. Nothing reports a divergence between two hand-maintained copies of the same table, so the
+# fix is to stop having two.
+#
+# Two kinds of name are in here and they are trusted for different reasons. A name that STATES
+# its width (INT8/UINT16/...) is self-proving — there is nothing left to establish, which is why
+# completing that family is not the same guess as admitting an unmeasured typedef. The rest
+# (LONG, INT_PTR, SIZE_T, ...) are data-model-dependent and are here because this codebase is
+# Windows; a name that is neither still fails loudly and wants an island proof, not an entry.
+_WINDOWS_SCALAR_TYPEDEFS = frozenset(
+    {
+        "BOOL",
+        "BOOLEAN",
+        "bool",  # C++ bool: 1-byte on all targets (Itanium/MSVC), == Rust bool
+        "BYTE",
+        "CHAR",
+        "DWORD",
+        "DWORD64",
+        "HRESULT",
+        "INT",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "INT_PTR",
+        "LONG",
+        "LONG_PTR",
+        "LONGLONG",
+        "SHORT",
+        "SIZE_T",
+        "UCHAR",
+        "UINT",
+        "UINT8",
+        "UINT16",
+        "UINT32",
+        "UINT64",
+        "UINT_PTR",
+        "ULONG",
+        "ULONG_PTR",
+        "ULONGLONG",
+        "USHORT",
+        "WCHAR",
+        "WORD",
+    }
+)
 
 
 def c_type_to_rust(c_type: str) -> str:
