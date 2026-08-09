@@ -42,37 +42,16 @@ unsafe fn SURFACE_ShareUnlockSurface(psurf: PSURFACE) {
 // drop_gdiobj_macro_externs: dropped 1 bogus extern decl(s) for GDI-object macro(s): SURFACE_ShareUnlockSurface — these are macros in gdi/eng/<type>.h or gdi/ntgdi/<type>.h, not real fns. Inline-expand via GDIOBJ_* primitives per win32k_translation_prompt.md §6.
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: () = ();
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAbortDoc(hDC: HDC) -> INT {
+pub unsafe extern "system" fn NtGdiAbortDoc(hDC: HDC) -> INT {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAbortDoc(hDC: HDC) -> INT {
+pub unsafe extern "system" fn NtGdiEndDoc(hDC: HDC) -> INT {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEndDoc(hDC: HDC) -> INT {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEndDoc(hDC: HDC) -> INT {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEndPage(hDC: HDC) -> INT {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEndPage(hDC: HDC) -> INT {
+pub unsafe extern "system" fn NtGdiEndPage(hDC: HDC) -> INT {
     0
 }
 
@@ -125,9 +104,8 @@ pub unsafe extern "system" fn NtGdiEscape(
     DC_UnlockDc(dc);
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtEscape(
+pub unsafe extern "system" fn NtGdiExtEscape(
     hDC: HDC,
     pDriver: *mut u16,
     _nDriver: INT,
@@ -272,157 +250,8 @@ pub unsafe extern "stdcall" fn NtGdiExtEscape(
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiExtEscape(
-    hDC: HDC,
-    pDriver: *mut u16,
-    _nDriver: INT,
-    Escape: INT,
-    InSize: INT,
-    UnsafeInData: LPSTR,
-    OutSize: INT,
-    UnsafeOutData: LPSTR,
-) -> INT {
-    let mut SafeInData: LPVOID = core::ptr::null_mut();
-    let mut SafeOutData: LPVOID = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut Result: INT;
-    let ppdev: PPDEVOBJ;
-    let psurf: PSURFACE;
-
-    const GDITAG_TEMP: u32 = u32::from_le_bytes([b'p', b'm', b't', b'G']);
-
-    /* Validate input parameters */
-    if (InSize < 0) || (OutSize < 0) || (UnsafeInData.is_null() && InSize != 0) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-
-    if hDC.is_null() {
-        if !pDriver.is_null() {
-            /* FIXME : Get the pdev from its name */
-            return -1;
-        }
-
-        ppdev = EngpGetPDEV(core::ptr::null_mut());
-        if ppdev.is_null() {
-            EngSetLastError(ERROR_BAD_DEVICE);
-            return -1;
-        }
-
-        /* We're using the primary surface of the pdev. Lock it */
-        EngAcquireSemaphore((*ppdev).hsemDevLock);
-
-        psurf = (*ppdev).pSurface;
-        if psurf.is_null() {
-            EngReleaseSemaphore((*ppdev).hsemDevLock);
-            PDEVOBJ_vRelease(ppdev);
-            return 0;
-        }
-        SURFACE_ShareLockByPointer(psurf);
-    } else {
-        let pDC: PDC = DC_LockDc(hDC);
-        if pDC.is_null() {
-            EngSetLastError(ERROR_INVALID_HANDLE);
-            return -1;
-        }
-
-        /* Get the PDEV from the DC */
-        ppdev = (*pDC).ppdev;
-        PDEVOBJ_vReference(ppdev);
-
-        EngAcquireSemaphore((*ppdev).hsemDevLock);
-
-        /* Check if we have a surface */
-        psurf = (*pDC).dclevel.pSurface;
-        if psurf.is_null() {
-            EngReleaseSemaphore((*ppdev).hsemDevLock);
-            PDEVOBJ_vRelease(ppdev);
-            DC_UnlockDc(pDC);
-            return 0;
-        }
-        SURFACE_ShareLockByPointer(psurf);
-
-        /* We're done with the DC */
-        DC_UnlockDc(pDC);
-    }
-
-    'exit: {
-        /* See if we actually have a driver function to call */
-        if (*ppdev).__bindgen_anon_1.DriverFunctions.Escape.is_none() {
-            Result = 0;
-            break 'exit;
-        }
-
-        if InSize != 0 {
-            SafeInData = ExAllocatePoolWithTag(PagedPool, InSize as _, GDITAG_TEMP);
-            if SafeInData.is_null() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                Result = 0;
-                break 'exit;
-            }
-            Status = SafeProbeForRead(UnsafeInData as *mut core::ffi::c_void, InSize as usize, 1);
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                Result = 0;
-                break 'exit;
-            } else {
-                RtlCopyMemory(SafeInData, UnsafeInData as *const core::ffi::c_void, InSize as usize);
-            }
-        }
-
-        if OutSize != 0 {
-            if !UnsafeOutData.is_null() {
-                Status = SafeProbeForWrite(UnsafeOutData as *mut core::ffi::c_void, OutSize as usize, 1);
-                if !NT_SUCCESS(Status) {
-                    SetLastNtError(Status);
-                    Result = 0;
-                    break 'exit;
-                }
-            }
-
-            SafeOutData = ExAllocatePoolZero_rs(PagedPool, OutSize as _, GDITAG_TEMP);
-            if SafeOutData.is_null() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                Result = 0;
-                break 'exit;
-            }
-        }
-
-        /* Finally call the driver */
-        Result = ((*ppdev).__bindgen_anon_1.DriverFunctions.Escape.unwrap())(
-            core::ptr::addr_of_mut!((*psurf).SurfObj),
-            Escape as _,
-            InSize as _,
-            SafeInData,
-            OutSize as _,
-            SafeOutData,
-        ) as INT;
-
-        if OutSize != 0 && !UnsafeOutData.is_null() && !SafeOutData.is_null() {
-            RtlCopyMemory(UnsafeOutData as *mut core::ffi::c_void, SafeOutData, OutSize as usize);
-        }
-    }
-
-    SURFACE_ShareUnlockSurface(psurf);
-    EngReleaseSemaphore((*ppdev).hsemDevLock);
-    PDEVOBJ_vRelease(ppdev);
-
-    if !SafeInData.is_null() {
-        ExFreePoolWithTag(SafeInData, GDITAG_TEMP);
-    }
-
-    if !SafeOutData.is_null() {
-        ExFreePoolWithTag(SafeOutData, GDITAG_TEMP);
-    }
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiStartDoc(
+pub unsafe extern "system" fn NtGdiStartDoc(
     hdc: HDC,
     pdi: *mut DOCINFOW,
     pbBanding: *mut BOOL,
@@ -430,26 +259,8 @@ pub unsafe extern "stdcall" fn NtGdiStartDoc(
 ) -> INT {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiStartDoc(
-    hdc: HDC,
-    pdi: *mut DOCINFOW,
-    pbBanding: *mut BOOL,
-    iJob: INT,
-) -> INT {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiStartPage(hDC: HDC) -> INT {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiStartPage(hDC: HDC) -> INT {
+pub unsafe extern "system" fn NtGdiStartPage(hDC: HDC) -> INT {
     0
 }
 

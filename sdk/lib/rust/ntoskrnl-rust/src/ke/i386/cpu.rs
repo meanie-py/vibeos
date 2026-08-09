@@ -1811,7 +1811,7 @@ pub unsafe extern "system" fn KeGetRecommendedSharedDataAlignment() -> ULONG {
 // (bindgen spells it "stdcall", which rustc type-distinguishes from "system")
 // when handed to KiIpiSendPacket under smp. i386-only file, so bare stdcall
 // is fine.
-unsafe extern "stdcall" fn KiFlushTargetEntireTb(
+unsafe extern "system" fn KiFlushTargetEntireTb(
     PacketContext: PKIPI_CONTEXT,
     _Ignored1: PVOID,
     _Ignored2: PVOID,
@@ -1828,7 +1828,7 @@ unsafe extern "stdcall" fn KiFlushTargetEntireTb(
 // 0xE1 ISR, and the interrupted code cannot touch the stale mapping again
 // until the ISR returns, by which point the entry is gone.
 #[cfg(feature = "smp")]
-unsafe extern "stdcall" fn KiFlushTargetSingleTb(
+unsafe extern "system" fn KiFlushTargetSingleTb(
     PacketContext: PKIPI_CONTEXT,
     _Ignored1: PVOID,
     Virtual: PVOID,

@@ -4,6 +4,11 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 pub use crate::types::*;
+// recyclebin.h's COBJMACROS block: `IRecycleBin_DeleteFile(This, x)` etc. Generated from the
+// island's vtable structs, so a helper's parameter list cannot drift from the slot it
+// dispatches through. Re-exported here because the translated sources call them unqualified,
+// exactly as the C does.
+pub use crate::commacros::*;
 pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void};
 pub use core::ptr::{addr_of, addr_of_mut};
 
@@ -130,8 +135,6 @@ pub unsafe fn IRecycleBinFileFromHDELFILE(hDF: HDELFILE) -> *mut IRecycleBinFile
 pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF;
 
 extern "system" {
-    pub fn InterlockedIncrement(Addend: *mut LONG) -> LONG;
-    pub fn InterlockedDecrement(Addend: *mut LONG) -> LONG;
     pub fn SHStrDupW(psz: LPCWSTR, ppwsz: *mut LPWSTR) -> HRESULT;
 }
 /// `SHStrDup` is the A/W macro; under UNICODE it is `SHStrDupW`.
@@ -184,10 +187,38 @@ extern "C" {
     pub fn wcsstr(haystack: *const WCHAR, needle: *const WCHAR) -> *mut WCHAR;
     pub fn _ultow(value: ULONG, buf: *mut WCHAR, radix: c_int) -> *mut WCHAR;
     pub fn tolower(c: c_int) -> c_int;
+    pub fn strlen(s: *const c_char) -> usize;
+    pub fn _wcsicmp(a: LPCWSTR, b: LPCWSTR) -> c_int;
 }
-extern "system" {
+// `extern "C"`, NOT `extern "system"`. winuser.h declares these `WINAPIV`, which is `__cdecl`
+// on every arch precisely BECAUSE they are variadic — stdcall cannot express a caller-cleaned
+// stack. So cdecl is the correct ABI here, and it is also the only one Rust accepts on stable:
+// a C-variadic with the "system" convention is a nightly feature (E0658), which is how the
+// wrong spelling announced itself.
+extern "C" {
     pub fn wsprintfA(buf: *mut c_char, fmt: *const c_char, ...) -> c_int;
     pub fn wsprintfW(buf: *mut WCHAR, fmt: *const WCHAR, ...) -> c_int;
+}
+
+// guiddef.h: `#define REFGUID const GUID * const`. bindgen emits REFIID (it is used in an
+// interface signature) but never REFGUID, which only appears in ones this module does not use.
+pub type REFGUID = *const GUID;
+
+// winbase.h maps InterlockedIncrement/Decrement onto COMPILER INTRINSICS, not library symbols,
+// and which library happens to carry a `_Interlocked*` differs per arch — aclui's i386 link
+// found one and amd64 did not. Implemented here rather than declared, so no arch depends on
+// someone else exporting it. Semantics per winbase.h: atomic, returns the NEW value.
+#[inline(always)]
+pub unsafe fn InterlockedIncrement(addend: *mut LONG) -> LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+#[inline(always)]
+pub unsafe fn InterlockedDecrement(addend: *mut LONG) -> LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
 }
 
 /// `MoveMemory` (winbase.h) is a MACRO for `memmove`; `swprintf` here is only ever the

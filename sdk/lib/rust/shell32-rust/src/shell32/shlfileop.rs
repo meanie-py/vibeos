@@ -349,33 +349,7 @@ unsafe extern "C" fn ConfirmMsgBox_Init(hDlg: HWND, lParam: LPARAM) -> INT_PTR {
 
     (TRUE) as INT_PTR
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ConfirmMsgBoxProc(
-    hDlg: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> INT_PTR {
-    match uMsg {
-        WM_INITDIALOG => {
-            return ConfirmMsgBox_Init(hDlg, lParam);
-        }
-        WM_PAINT => {
-            return ConfirmMsgBox_Paint(hDlg);
-        }
-        WM_COMMAND => {
-            EndDialog(hDlg, (wParam) as INT_PTR);
-        }
-        WM_CLOSE => {
-            EndDialog(hDlg, (IDCANCEL) as INT_PTR);
-        }
-        _ => {}
-    }
-    (FALSE) as INT_PTR
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ConfirmMsgBoxProc(
+unsafe extern "system" fn ConfirmMsgBoxProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -893,25 +867,8 @@ unsafe fn SHCopyProgress(
 // fn-pointer types, so `Some(routine)` is rejected unless the callback is written with the
 // island's own per-arch spelling. Hence the cfg twins, the same idiom the dialog procs use.
 // The params are also the island's real types (LARGE_INTEGER, not i64) for the same reason.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn SHCopyProgressRoutine(
-    TotalFileSize: LARGE_INTEGER,
-    TotalBytesTransferred: LARGE_INTEGER,
-    _StreamSize: LARGE_INTEGER,
-    _StreamBytesTransferred: LARGE_INTEGER,
-    _dwStreamNumber: DWORD,
-    dwCallbackReason: DWORD,
-    _hSourceFile: HANDLE,
-    _hDestinationFile: HANDLE,
-    lpData: LPVOID,
-) -> DWORD {
-    SHCopyProgress(TotalFileSize.QuadPart, TotalBytesTransferred.QuadPart, dwCallbackReason, lpData)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn SHCopyProgressRoutine(
+pub unsafe extern "system" fn SHCopyProgressRoutine(
     TotalFileSize: LARGE_INTEGER,
     TotalBytesTransferred: LARGE_INTEGER,
     _StreamSize: LARGE_INTEGER,

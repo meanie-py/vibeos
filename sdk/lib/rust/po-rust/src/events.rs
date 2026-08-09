@@ -137,21 +137,7 @@ pub unsafe extern "system" fn PoNotifySystemTimeSet() {
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopGetSysButtonCompletion(
-    _device_object: PDEVICE_OBJECT,
-    irp: PIRP,
-    context: PVOID,
-) -> NTSTATUS {
-    let _device_object = opaque_ptr(_device_object);
-    let irp = opaque_ptr(irp);
-    let context = opaque_ptr(context);
-    PopGetSysButtonCompletionInner(_device_object, irp, context)
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn PopGetSysButtonCompletion(
+pub unsafe extern "system" fn PopGetSysButtonCompletion(
     _device_object: PDEVICE_OBJECT,
     irp: PIRP,
     context: PVOID,
@@ -195,19 +181,7 @@ pub unsafe extern "system" fn PopGetSysButtonCompletionInner(
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PopGetSysButton(
-    device_object: PDEVICE_OBJECT,
-    context: PVOID,
-) {
-    let device_object = opaque_ptr(device_object);
-    let context = opaque_ptr(context);
-    PopGetSysButtonInner(device_object, context)
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn PopGetSysButton(
+pub unsafe extern "system" fn PopGetSysButton(
     device_object: PDEVICE_OBJECT,
     context: PVOID,
 ) {
@@ -261,20 +235,8 @@ pub unsafe extern "system" fn PopGetSysButtonInner(
     IoFreeWorkItem(current_work_item);
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PopAddRemoveSysCapsCallback(
-    notification_structure: PVOID,
-    context: PVOID,
-) -> NTSTATUS {
-    let notification_structure = opaque_ptr(notification_structure);
-    let context = opaque_ptr(context);
-    PopAddRemoveSysCapsCallbackInner(notification_structure, context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PopAddRemoveSysCapsCallback(
+pub unsafe extern "system" fn PopAddRemoveSysCapsCallback(
     notification_structure: PVOID,
     context: PVOID,
 ) -> NTSTATUS {

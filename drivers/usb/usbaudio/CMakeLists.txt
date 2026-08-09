@@ -26,7 +26,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBAUDIO_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBAUDIO_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBAUDIO_RUST_SRCS ${USBAUDIO_RUST_WORKSPACE_DIR}/usbaudio-rust/src/*.rs)
+rust_crate_sources(USBAUDIO_RUST_SRCS "${USBAUDIO_RUST_WORKSPACE_DIR}" usbaudio-rust)
 add_custom_command(
     OUTPUT ${USBAUDIO_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

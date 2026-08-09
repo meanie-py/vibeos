@@ -112,14 +112,8 @@ pub unsafe extern "C" fn BitmapFormat(cBits: ULONG, iCompression: ULONG) -> ULON
 }
 
 // NTAPI in C (surface.h:120) — stdcall on i386, cdecl elsewhere.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn SURFACE_vCleanup(ObjectBody: PVOID) {
-    SURFACE_vCleanup_impl(ObjectBody)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn SURFACE_vCleanup(ObjectBody: PVOID) {
+pub unsafe extern "system" fn SURFACE_vCleanup(ObjectBody: PVOID) {
     SURFACE_vCleanup_impl(ObjectBody)
 }
 
@@ -274,24 +268,8 @@ unsafe fn SURFACE_AllocSurface_impl(
     psurf
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn SURFACE_AllocSurface(
-    iType: u16,
-    cx: u32,
-    cy: u32,
-    iFormat: u32,
-    fjBitmap: u32,
-    cjWidth: u32,
-    cjBufSize: u32,
-    pvBits: *mut core::ffi::c_void,
-) -> PSURFACE {
-    SURFACE_AllocSurface_impl(iType, cx, cy, iFormat, fjBitmap, cjWidth, cjBufSize, pvBits)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn SURFACE_AllocSurface(
+pub unsafe extern "system" fn SURFACE_AllocSurface(
     iType: u16,
     cx: u32,
     cy: u32,
@@ -306,7 +284,7 @@ pub unsafe extern "C" fn SURFACE_AllocSurface(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
+pub unsafe extern "system" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     // SURFACE_ShareLockSurface(hsurf) — macro surface.h:91 expands to
     //   GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE
     let psurf =
@@ -320,7 +298,7 @@ pub unsafe extern "stdcall" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
+pub unsafe extern "system" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     let psurf =
         GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
     if psurf.is_null() {
@@ -330,21 +308,13 @@ pub unsafe extern "C" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
+pub unsafe extern "system" fn NtGdiEngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     EngLockSurface(hsurf)
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
-    EngLockSurface(hsurf)
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateBitmap(
+pub unsafe extern "system" fn EngCreateBitmap(
     sizl: SIZEL,
     lWidth: i32,
     iFormat: u32,
@@ -382,50 +352,8 @@ pub unsafe extern "stdcall" fn EngCreateBitmap(
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
     hbmp
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateBitmap(
-    sizl: SIZEL,
-    lWidth: i32,
-    iFormat: u32,
-    fl: u32,
-    pvBits: *mut core::ffi::c_void,
-) -> HBITMAP {
-    let psurf: PSURFACE;
-    let hbmp: HBITMAP;
-
-    psurf = SURFACE_AllocSurface(
-        STYPE_BITMAP as u16,
-        sizl.cx as u32,
-        sizl.cy as u32,
-        iFormat,
-        fl,
-        lWidth as u32,
-        0,
-        pvBits,
-    );
-    if psurf.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    hbmp = (*psurf).SurfObj.hsurf as HBITMAP;
-
-    (*psurf).flags = API_BITMAP as FLONG;
-
-    GDIOBJ_vSetObjectOwner(
-        core::ptr::addr_of_mut!((*psurf).BaseObject),
-        GDI_OBJ_HMGR_PUBLIC,
-    );
-
-    // SURFACE_UnlockSurface(psurf) — macro surface.h:100
-    //   => GDIOBJ_vUnlockObject((POBJ)pBMObj)
-    GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-    hbmp
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateDeviceBitmap(
+pub unsafe extern "system" fn EngCreateDeviceBitmap(
     dhsurf: DHSURF,
     sizl: SIZEL,
     iFormat: u32,
@@ -460,85 +388,8 @@ pub unsafe extern "stdcall" fn EngCreateDeviceBitmap(
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
     hbmp
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateDeviceBitmap(
-    dhsurf: DHSURF,
-    sizl: SIZEL,
-    iFormat: u32,
-) -> HBITMAP {
-    let psurf: PSURFACE;
-    let hbmp: HBITMAP;
-
-    psurf = SURFACE_AllocSurface(
-        STYPE_DEVBITMAP as u16,
-        sizl.cx as u32,
-        sizl.cy as u32,
-        iFormat,
-        0,
-        0,
-        0,
-        core::ptr::null_mut(),
-    );
-    if psurf.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*psurf).SurfObj.dhsurf = dhsurf;
-
-    GDIOBJ_vSetObjectOwner(
-        core::ptr::addr_of_mut!((*psurf).BaseObject),
-        GDI_OBJ_HMGR_PUBLIC,
-    );
-
-    hbmp = (*psurf).SurfObj.hsurf as HBITMAP;
-
-    // SURFACE_UnlockSurface(psurf) — macro surface.h:100
-    GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-    hbmp
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateDeviceSurface(
-    dhsurf: DHSURF,
-    sizl: SIZEL,
-    iFormat: u32,
-) -> HSURF {
-    let psurf: PSURFACE;
-    let hsurf: HSURF;
-
-    psurf = SURFACE_AllocSurface(
-        STYPE_DEVICE as u16,
-        sizl.cx as u32,
-        sizl.cy as u32,
-        iFormat,
-        0,
-        0,
-        0,
-        core::ptr::null_mut(),
-    );
-    if psurf.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*psurf).SurfObj.dhsurf = dhsurf;
-
-    GDIOBJ_vSetObjectOwner(
-        core::ptr::addr_of_mut!((*psurf).BaseObject),
-        GDI_OBJ_HMGR_PUBLIC,
-    );
-
-    hsurf = (*psurf).SurfObj.hsurf;
-
-    // SURFACE_UnlockSurface(psurf) — macro surface.h:100
-    GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-    return hsurf;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngCreateDeviceSurface(
+pub unsafe extern "system" fn EngCreateDeviceSurface(
     dhsurf: DHSURF,
     sizl: SIZEL,
     iFormat: u32,
@@ -575,7 +426,7 @@ pub unsafe extern "C" fn EngCreateDeviceSurface(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngAssociateSurface(
+pub unsafe extern "system" fn EngAssociateSurface(
     hsurf: HSURF,
     hdev: HDEV,
     flHooks: FLONG,
@@ -622,7 +473,7 @@ pub unsafe extern "stdcall" fn EngAssociateSurface(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngAssociateSurface(
+pub unsafe extern "system" fn EngAssociateSurface(
     hsurf: HSURF,
     hdev: HDEV,
     flHooks: FLONG,
@@ -662,9 +513,8 @@ pub unsafe extern "C" fn EngAssociateSurface(
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngModifySurface(
+pub unsafe extern "system" fn EngModifySurface(
     hsurf: HSURF,
     hdev: HDEV,
     flHooks: FLONG,
@@ -741,89 +591,8 @@ pub unsafe extern "stdcall" fn EngModifySurface(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngModifySurface(
-    hsurf: HSURF,
-    hdev: HDEV,
-    flHooks: FLONG,
-    flSurface: FLONG,
-    dhsurf: DHSURF,
-    pvScan0: *mut core::ffi::c_void,
-    lDelta: i32,
-    pvReserved: *mut core::ffi::c_void,
-) -> i32 {
-
-    // SURFACE_ShareLockSurface(hsurf) — macro surface.h:91
-    let psurf = GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
-    if psurf.is_null() {
-        return 0;
-    }
-
-    let ppdev = hdev as *mut PDEVOBJ;
-    let pso = core::ptr::addr_of_mut!((*psurf).SurfObj);
-    (*pso).dhsurf = dhsurf;
-
-    (*pso).hdev = hdev;
-    (*pso).dhpdev = (*ppdev).dhpdev;
-
-    (*psurf).flags &= !HOOK_FLAGS;
-    (*psurf).flags |= flHooks & HOOK_FLAGS;
-
-    // PALETTE_ShareLockPalette(hpalDefault) — macro palette.h:57
-    let ppal = GDIOBJ_ShareLockObj(
-        (*ppdev).devinfo.hpalDefault as HGDIOBJ,
-        GDI_OBJECT_TYPE_PALETTE,
-    ) as PPALETTE;
-    SURFACE_vSetPalette(psurf, ppal);
-    // PALETTE_ShareUnlockPalette(ppal) — macro palette.h:59
-    GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-
-    if (flSurface & MS_NOTSYSTEMMEMORY) != 0 {
-        (*pso).fjBitmap |= BMF_NOTSYSMEM as u16;
-    } else {
-        (*pso).fjBitmap &= !(BMF_NOTSYSMEM as u16);
-    }
-    if (flSurface & MS_SHAREDACCESS) != 0 {
-        (*psurf).flags |= SHAREACCESS_SURFACE as FLONG;
-    } else {
-        (*psurf).flags &= !(SHAREACCESS_SURFACE as FLONG);
-    }
-
-    if !pvScan0.is_null() && lDelta != 0 {
-        (*pso).pvScan0 = pvScan0;
-        (*pso).lDelta = lDelta;
-
-        (*pso).iType = STYPE_BITMAP as u16;
-
-        if lDelta > 0 {
-            (*pso).cjBits = (lDelta * (*pso).sizlBitmap.cy) as u32;
-            (*pso).pvBits = (*pso).pvScan0;
-            (*pso).fjBitmap |= BMF_TOPDOWN as u16;
-        } else {
-            (*pso).cjBits = ((-lDelta) * (*pso).sizlBitmap.cy) as u32;
-            (*pso).pvBits = ((*pso).pvScan0 as *mut u8).offset(-((*pso).cjBits as isize) - (lDelta as isize)) as *mut core::ffi::c_void;
-            (*pso).fjBitmap &= !(BMF_TOPDOWN as u16);
-        }
-    } else {
-        (*pso).pvBits = core::ptr::null_mut();
-        (*pso).pvScan0 = core::ptr::null_mut();
-        (*pso).lDelta = 0;
-
-        if (*pso).iType != STYPE_DEVICE as u16 {
-            (*pso).iType = STYPE_DEVBITMAP as u16;
-        }
-    }
-
-    // SURFACE_ShareUnlockSurface(psurf) — macro surface.h:102
-    GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteSurface(
+pub unsafe extern "system" fn EngDeleteSurface(
     hsurf: HSURF
 ) -> BOOL {
     let psurf: PSURFACE;
@@ -837,26 +606,8 @@ pub unsafe extern "stdcall" fn EngDeleteSurface(
     GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteSurface(
-    hsurf: HSURF
-) -> BOOL {
-    let psurf: PSURFACE;
-
-    // SURFACE_ShareLockSurface(hsurf) — macro surface.h:91
-    psurf = GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
-    if psurf.is_null() {
-        return 0;
-    }
-
-    GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngEraseSurface(
+pub unsafe extern "system" fn EngEraseSurface(
     pso: *mut SURFOBJ,
     prcl: *mut RECTL,
     iColor: ULONG,
@@ -864,45 +615,14 @@ pub unsafe extern "stdcall" fn EngEraseSurface(
 
     FillSolid(pso, prcl, iColor)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngEraseSurface(
-    pso: *mut SURFOBJ,
-    prcl: *mut RECTL,
-    iColor: ULONG,
-) -> BOOL {
-
-    FillSolid(pso, prcl, iColor)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngUnlockSurface(
+pub unsafe extern "system" fn NtGdiEngUnlockSurface(
     pso: *mut SURFOBJ,
 ) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngUnlockSurface(
-    pso: *mut SURFOBJ,
-) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnlockSurface(pso: *mut SURFOBJ) {
-    if !pso.is_null() {
-        let psurf = (pso as *mut u8).offset(-(core::mem::offset_of!(SURFACE, SurfObj) as isize)) as *mut SURFACE;
-        // SURFACE_ShareUnlockSurface(psurf) — macro surface.h:102
-        GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngUnlockSurface(pso: *mut SURFOBJ) {
+pub unsafe extern "system" fn EngUnlockSurface(pso: *mut SURFOBJ) {
     if !pso.is_null() {
         let psurf = (pso as *mut u8).offset(-(core::mem::offset_of!(SURFACE, SurfObj) as isize)) as *mut SURFACE;
         // SURFACE_ShareUnlockSurface(psurf) — macro surface.h:102

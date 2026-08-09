@@ -485,9 +485,8 @@ pub unsafe extern "C" fn GetControlBrush(
     let pwndParent = IntGetParent(pwnd);
     GetControlColor(pwndParent, pwnd, hdc, ctlType)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetControlBrush(
+pub unsafe extern "system" fn NtUserGetControlBrush(
     hwnd: HWND,
     hdc: HDC,
     ctlType: UINT,
@@ -505,30 +504,8 @@ pub unsafe extern "stdcall" fn NtUserGetControlBrush(
     UserLeave();
     hBrush
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetControlBrush(
-    hwnd: HWND,
-    hdc: HDC,
-    ctlType: UINT,
-) -> HBRUSH {
-    let mut hBrush: HBRUSH = core::ptr::null_mut();
-
-    UserEnterExclusive();
-    let pwnd = UserGetWindowObject(hwnd);
-    if !pwnd.is_null()
-        && (ctlType.wrapping_sub(WM_CTLCOLORMSGBOX)) < CTLCOLOR_MAX
-        && !hdc.is_null()
-    {
-        hBrush = GetControlBrush(pwnd, hdc, ctlType);
-    }
-    UserLeave();
-    hBrush
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetControlColor(
+pub unsafe extern "system" fn NtUserGetControlColor(
     hwndParent: HWND,
     hwnd: HWND,
     hdc: HDC,
@@ -552,36 +529,8 @@ pub unsafe extern "stdcall" fn NtUserGetControlColor(
     UserLeave();
     hBrush
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetControlColor(
-    hwndParent: HWND,
-    hwnd: HWND,
-    hdc: HDC,
-    CtlMsg: UINT,
-) -> HBRUSH {
-    let mut pwnd: PWND;
-    let mut pwndParent: PWND = core::ptr::null_mut();
-    let mut hBrush: HBRUSH = core::ptr::null_mut();
-
-    UserEnterExclusive();
-    pwnd = UserGetWindowObject(hwnd);
-    if !pwnd.is_null()
-        && (CtlMsg.wrapping_sub(WM_CTLCOLORMSGBOX) < CTLCOLOR_MAX)
-        && !hdc.is_null()
-    {
-        if !hwndParent.is_null() {
-            pwndParent = UserGetWindowObject(hwndParent);
-        }
-        hBrush = GetControlColor(pwndParent, pwnd, hdc, CtlMsg);
-    }
-    UserLeave();
-    hBrush
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR {
+pub unsafe extern "system" fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR {
     let mut ret: DWORD_PTR = 0;
     let pti: PTHREADINFO;
 
@@ -691,122 +640,8 @@ pub unsafe extern "stdcall" fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR {
-    let mut ret: DWORD_PTR = 0;
-    let pti: PTHREADINFO;
-
-    if Routine != THREADSTATE_GETTHREADINFO {
-        UserEnterShared();
-    } else {
-        UserEnterExclusive();
-    }
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-    match Routine {
-        THREADSTATE_GETTHREADINFO => {
-            ret = 1;
-        }
-        THREADSTATE_FOCUSWINDOW => {
-            ret = IntGetThreadFocusWindow() as DWORD_PTR;
-        }
-        THREADSTATE_CAPTUREWINDOW => {
-            ret = IntGetCapture() as DWORD_PTR;
-        }
-        THREADSTATE_PROGMANWINDOW => {
-            ret = (*(*GetW32ThreadInfo()).pDeskInfo).hProgmanWindow as DWORD_PTR;
-        }
-        THREADSTATE_TASKMANWINDOW => {
-            ret = (*(*GetW32ThreadInfo()).pDeskInfo).hTaskManWindow as DWORD_PTR;
-        }
-        THREADSTATE_ACTIVEWINDOW => {
-            ret = UserGetActiveWindow() as DWORD_PTR;
-        }
-        THREADSTATE_INSENDMESSAGE => {
-            let Message: PUSER_SENT_MESSAGE =
-                (*(PsGetCurrentThreadWin32Thread() as PTHREADINFO)).pusmCurrent;
-
-            ret = ISMEX_NOSEND as DWORD_PTR;
-            if !Message.is_null() {
-                if !(*Message).ptiSender.is_null() {
-                    ret = ISMEX_SEND as DWORD_PTR;
-                } else if (*Message).CompletionCallback.is_some() {
-                    ret = ISMEX_CALLBACK as DWORD_PTR;
-                } else {
-                    ret = ISMEX_NOTIFY as DWORD_PTR;
-                }
-                if (*Message).QS_Flags & QS_SMRESULT != 0 {
-                    ret |= ISMEX_REPLIED as DWORD_PTR;
-                }
-            }
-        }
-        THREADSTATE_GETMESSAGETIME => {
-            ret = (*(PsGetCurrentThreadWin32Thread() as PTHREADINFO)).timeLast as DWORD_PTR;
-        }
-        THREADSTATE_UPTIMELASTREAD => {
-            (*(*pti).pcti).timeLastRead = EngGetTickCount32();
-        }
-        THREADSTATE_GETINPUTSTATE => {
-            ret = (LOWORD(IntGetQueueStatus(
-                QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_SENDMESSAGE | QS_INPUT,
-            )) as DWORD_PTR)
-                & (QS_KEY | QS_MOUSEBUTTON) as DWORD_PTR;
-        }
-        THREADSTATE_FOREGROUNDTHREAD => {
-            ret = (gpqForeground == (*GetW32ThreadInfo()).MessageQueue) as DWORD_PTR;
-        }
-        THREADSTATE_GETCURSOR => {
-            ret = if !(*(*GetW32ThreadInfo()).MessageQueue).CursorObject.is_null() {
-                UserHMGetHandle((*(*GetW32ThreadInfo()).MessageQueue).CursorObject) as DWORD_PTR
-            } else {
-                0
-            };
-        }
-        THREADSTATE_GETMESSAGEEXTRAINFO => {
-            ret = MsqGetMessageExtraInfo() as DWORD_PTR;
-        }
-        THREADSTATE_DEFAULTIMEWINDOW => {
-            if !(*pti).spwndDefaultIme.is_null() {
-                ret = UserHMGetHandle((*pti).spwndDefaultIme) as DWORD_PTR;
-            }
-        }
-        THREADSTATE_DEFAULTINPUTCONTEXT => {
-            if !(*pti).spDefaultImc.is_null() {
-                ret = UserHMGetHandle((*pti).spDefaultImc) as DWORD_PTR;
-            }
-        }
-        THREADSTATE_CHANGEBITS => {
-            ret = (*(*pti).pcti).fsChangeBits as DWORD_PTR;
-        }
-        THREADSTATE_IMECOMPATFLAGS => {
-            ret = (*(*pti).ppi).dwImeCompatFlags as DWORD_PTR;
-        }
-        THREADSTATE_OLDKEYBOARDLAYOUT => {
-            ret = (*pti).hklPrev as DWORD_PTR;
-        }
-        THREADSTATE_ISWINLOGON => {
-            ret = (gpidLogon == PsGetCurrentProcessId()) as DWORD_PTR;
-        }
-        THREADSTATE_UNKNOWN_0x10 => {
-            FIXME!(b"stub\n\0".as_ptr() as *const i8);
-        }
-        THREADSTATE_CHECKCONIME => {
-            ret = (IntTID2PTI(UlongToHandle((*(*pti).rpdesk).dwConsoleThreadId)) == pti)
-                as DWORD_PTR;
-        }
-        _ => {}
-    }
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetThreadState(Set: DWORD, Flags: DWORD) -> DWORD {
+pub unsafe extern "system" fn NtUserSetThreadState(Set: DWORD, Flags: DWORD) -> DWORD {
     let pti: PTHREADINFO;
     let mut Ret: DWORD = 0;
 
@@ -832,38 +667,8 @@ pub unsafe extern "stdcall" fn NtUserSetThreadState(Set: DWORD, Flags: DWORD) ->
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetThreadState(Set: DWORD, Flags: DWORD) -> DWORD {
-    let pti: PTHREADINFO;
-    let mut Ret: DWORD = 0;
-
-    if Set & !(QF_FF10STATUS | QF_DIALOGACTIVE | QF_TABSWITCHING | QF_FMENUSTATUS | QF_FMENUSTATUSBREAK) != 0 {
-        return 0;
-    }
-    if Flags & !(QF_FF10STATUS | QF_DIALOGACTIVE | QF_TABSWITCHING | QF_FMENUSTATUS | QF_FMENUSTATUSBREAK) != 0 {
-        return 0;
-    }
-
-    UserEnterExclusive();
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-    if !(*pti).MessageQueue.is_null() {
-        Ret = (*(*pti).MessageQueue).QF_flags;
-        if Set != 0 {
-            (*(*pti).MessageQueue).QF_flags |= Set & Flags;
-        } else {
-            if Flags != 0 {
-                (*(*pti).MessageQueue).QF_flags &= !Flags;
-            }
-        }
-    }
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetDoubleClickTime() -> UINT {
+pub unsafe extern "system" fn NtUserGetDoubleClickTime() -> UINT {
     let Result: UINT;
 
     UserEnterShared();
@@ -873,22 +678,8 @@ pub unsafe extern "stdcall" fn NtUserGetDoubleClickTime() -> UINT {
     UserLeave();
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetDoubleClickTime() -> UINT {
-    let Result: UINT;
-
-    UserEnterShared();
-
-    Result = gspv.iDblClickTime as UINT;
-
-    UserLeave();
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetGUIThreadInfo(
+pub unsafe extern "system" fn NtUserGetGUIThreadInfo(
     idThread: DWORD,
     lpgui: LPGUITHREADINFO,
 ) -> BOOL {
@@ -1006,184 +797,8 @@ pub unsafe extern "stdcall" fn NtUserGetGUIThreadInfo(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetGUIThreadInfo(
-    idThread: DWORD,
-    lpgui: LPGUITHREADINFO,
-) -> BOOL {
-    let mut Status: NTSTATUS;
-    let CaretInfo: PTHRDCARETINFO;
-    let mut SafeGui: GUITHREADINFO = core::mem::zeroed();
-    let Desktop: PDESKTOP;
-    let MsgQueue: PUSER_MESSAGE_QUEUE;
-    let W32Thread: PTHREADINFO;
-    let pti: PTHREADINFO;
-    let mut Ret: BOOL = 0;
-
-    UserEnterShared();
-
-    'block: {
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(SafeGui) as *mut core::ffi::c_void,
-            lpgui as *mut core::ffi::c_void,
-            core::mem::size_of::<DWORD>(),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'block;
-        }
-
-        if SafeGui.cbSize != core::mem::size_of::<GUITHREADINFO>() as UINT {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'block;
-        }
-
-        if idThread != 0 {
-            pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-
-            W32Thread = IntTID2PTI(UlongToHandle(idThread));
-
-            if W32Thread.is_null() {
-                EngSetLastError(ERROR_ACCESS_DENIED);
-                break 'block;
-            }
-
-            Desktop = (*W32Thread).rpdesk;
-
-            if Desktop.is_null() || Desktop != (*pti).rpdesk {
-                EngSetLastError(ERROR_ACCESS_DENIED);
-                break 'block;
-            }
-
-            if !(*W32Thread).MessageQueue.is_null() {
-                MsgQueue = (*W32Thread).MessageQueue;
-            } else {
-                MsgQueue = (*Desktop).ActiveMessageQueue;
-            }
-        } else {
-            MsgQueue = IntGetFocusMessageQueue();
-            if MsgQueue.is_null() {
-                EngSetLastError(ERROR_ACCESS_DENIED);
-                break 'block;
-            }
-        }
-
-        CaretInfo = core::ptr::addr_of_mut!((*MsgQueue).CaretInfo);
-
-        SafeGui.flags = if (*CaretInfo).Visible != 0 {
-            GUI_CARETBLINKING
-        } else {
-            0
-        };
-
-        SafeGui.hwndMenuOwner = (*MsgQueue).MenuOwner;
-
-        if !(*MsgQueue).MenuOwner.is_null() {
-            SafeGui.flags |= GUI_INMENUMODE | (*MsgQueue).MenuState as u32;
-        }
-
-        if !(*MsgQueue).MoveSize.is_null() {
-            SafeGui.flags |= GUI_INMOVESIZE;
-        }
-
-        SafeGui.hwndActive = if !(*MsgQueue).spwndActive.is_null() {
-            UserHMGetHandle((*MsgQueue).spwndActive as *mut core::ffi::c_void)
-        } else {
-            core::ptr::null_mut()
-        };
-        SafeGui.hwndFocus = if !(*MsgQueue).spwndFocus.is_null() {
-            UserHMGetHandle((*MsgQueue).spwndFocus as *mut core::ffi::c_void)
-        } else {
-            core::ptr::null_mut()
-        };
-        SafeGui.hwndCapture = if !(*MsgQueue).spwndCapture.is_null() {
-            UserHMGetHandle((*MsgQueue).spwndCapture as *mut core::ffi::c_void)
-        } else {
-            core::ptr::null_mut()
-        };
-        SafeGui.hwndMoveSize = (*MsgQueue).MoveSize;
-        SafeGui.hwndCaret = (*CaretInfo).hWnd;
-
-        SafeGui.rcCaret.left = (*CaretInfo).Pos.x;
-        SafeGui.rcCaret.top = (*CaretInfo).Pos.y;
-        SafeGui.rcCaret.right = SafeGui.rcCaret.left + (*CaretInfo).Size.cx;
-        SafeGui.rcCaret.bottom = SafeGui.rcCaret.top + (*CaretInfo).Size.cy;
-
-        Status = MmCopyToCaller(
-            lpgui as *mut core::ffi::c_void,
-            core::ptr::addr_of_mut!(SafeGui) as *mut core::ffi::c_void,
-            core::mem::size_of::<GUITHREADINFO>(),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'block;
-        }
-
-        Ret = 1;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetGuiResources(
-    hProcess: HANDLE,
-    uiFlags: DWORD,
-) -> DWORD {
-    let mut Process: PEPROCESS = core::ptr::null_mut();
-    let W32Process: PPROCESSINFO;
-    let Status: NTSTATUS;
-    let mut Ret: DWORD = 0;
-
-    UserEnterShared();
-
-    Status = ObReferenceObjectByHandle(
-        hProcess,
-        PROCESS_QUERY_INFORMATION,
-        *PsProcessType as _,
-        ExGetPreviousMode(),
-        &mut Process as *mut PEPROCESS as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-
-    'exit: {
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'exit;
-        }
-
-        W32Process = (*Process).Win32Process as PPROCESSINFO;
-        if W32Process.is_null() {
-            ObDereferenceObject(Process as PVOID);
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            break 'exit;
-        }
-
-        match uiFlags {
-            GR_GDIOBJECTS => {
-                Ret = ppi_GDIHandleCount(W32Process) as DWORD;
-            }
-            GR_USEROBJECTS => {
-                Ret = ppi_UserHandleCount(W32Process) as DWORD;
-            }
-            _ => {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-            }
-        }
-
-        ObDereferenceObject(Process as PVOID);
-    }
-
-    UserLeave();
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserGetGuiResources(
+pub unsafe extern "system" fn NtUserGetGuiResources(
     hProcess: HANDLE,
     uiFlags: DWORD,
 ) -> DWORD {
@@ -1459,34 +1074,14 @@ unsafe extern "system" fn UserDbgAssertThreadInfo(_showCaller: BOOL) {
     let _ = ppi;
     let _ = pci;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserDbgPreServiceHook(ulSyscallId: ULONG, pulArguments: PULONG_PTR) {
+pub unsafe extern "system" fn UserDbgPreServiceHook(ulSyscallId: ULONG, pulArguments: PULONG_PTR) {
     let _ = ulSyscallId;
     let _ = pulArguments;
     UserDbgAssertThreadInfo(0);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserDbgPreServiceHook(ulSyscallId: ULONG, pulArguments: PULONG_PTR) {
-    let _ = ulSyscallId;
-    let _ = pulArguments;
-    UserDbgAssertThreadInfo(0);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserDbgPostServiceHook(ulSyscallId: ULONG, ulResult: ULONG_PTR) -> ULONG_PTR {
-    let _ = ulSyscallId;
-
-    UserDbgAssertThreadInfo(TRUE as BOOL);
-
-    ulResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserDbgPostServiceHook(ulSyscallId: ULONG, ulResult: ULONG_PTR) -> ULONG_PTR {
+pub unsafe extern "system" fn UserDbgPostServiceHook(ulSyscallId: ULONG, ulResult: ULONG_PTR) -> ULONG_PTR {
     let _ = ulSyscallId;
 
     UserDbgAssertThreadInfo(TRUE as BOOL);

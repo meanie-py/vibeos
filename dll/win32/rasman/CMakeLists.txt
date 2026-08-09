@@ -15,7 +15,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(RASMAN_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasman-target")
 set(RASMAN_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasman_rust.a")
-file(GLOB_RECURSE RASMAN_RUST_SRCS "${RASMAN_RUST_WORKSPACE_DIR}/rasman-rust/src/*.rs")
+rust_crate_sources(RASMAN_RUST_SRCS "${RASMAN_RUST_WORKSPACE_DIR}" rasman-rust)
 add_custom_command(
     OUTPUT ${RASMAN_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

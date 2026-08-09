@@ -89,9 +89,7 @@ add_custom_target(rust_lsa_stub DEPENDS ${LSA_STUB_LIB})
 # substrate = lsasrv-sys (bindgen, builds transitively).
 set(LSASRV_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-lsasrv-target")
 set(LSASRV_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/liblsasrv_rust.a")
-file(GLOB_RECURSE LSASRV_RUST_SRCS
-    "${LSA_STUB_WORKSPACE_DIR}/lsasrv-rust/src/*.rs"
-    "${LSA_STUB_WORKSPACE_DIR}/lsasrv-sys/src/*.rs")
+rust_crate_sources(LSASRV_RUST_SRCS "${LSA_STUB_WORKSPACE_DIR}" lsasrv-rust)
 add_custom_command(
     OUTPUT ${LSASRV_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

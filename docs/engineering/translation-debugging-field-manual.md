@@ -123,6 +123,41 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### A `#[cfg(target_arch)]` pair is not automatically an ABI fork
+
+**Symptom.** Folding cfg-gated twins into one `extern "system"` item (`collapse_abi_twins.py`)
+builds clean on the arch you are testing, then: `undefined _PATH_RoundRect` at link — or an
+unexpected `ud2` in a driver — or, in two of four cases, *nothing at all*.
+
+**Cause.** Two definitions under complementary cfgs are only an ABI fork when they carry
+DIFFERENT conventions — `stdcall` on x86 against `C` on the 64-bit pair. That pair means one
+NTAPI callback spelled per arch, and `system` is exactly its portable name. But a pair spelled
+`extern "C"` on BOTH sides is a different thing entirely: one function with two per-arch
+IMPLEMENTATIONS, gated for a reason that has nothing to do with ABI (kdbg's `KdbpCmdTss` is
+real on i386 and a stub elsewhere). Rewriting that to `system` makes it **stdcall on i386**,
+which changes the symbol decoration (`_PATH_RoundRect` → `_PATH_RoundRect@28`) and mismatches
+the caller's stack cleanup.
+
+**How each one surfaced, worst last** — four in one pass, and the ordering is the lesson:
+
+- `PATH_RoundRect` — link error. C callers reference the cdecl name. The easy case.
+- `GetW32ThreadInfo` — `scan_ud2`: `win32k.sys: @UserGetDCEx@12 *** BUG ***`. The decl/def
+  convention split let LLVM fold the *caller* to `unreachable` (the §9.99 fold), which is a
+  BUGCHECK 0x1E at boot, not a compile error.
+- `KdbpCmdTss`, `MiDecrementPageTableReferences` — **nothing.** No link error, no ud2, no
+  warning. Found only by diffing every collapsed pair against its pre-collapse ABI in git.
+
+**Fix.** Fold only `x86 stdcall` + `not(x86) C` → `system`. A pair whose two sides already
+agree still collapses when the bodies are identical, but KEEPS its convention. Both
+`collapse_abi_twins.py` (`_target_abi`) and its `--abi-only` mode refuse anything else and say
+so. `cargo check` cannot see any of this — it type-checks one arch and has no opinion on
+decoration, so the gate's `scan_ud2` + `scan_cc_mismatch` are the real detectors.
+
+**Corollary — a reconciled pair is still a pair.** Once `--abi-only` spells both twins
+`system`, a matcher keyed on `stdcall|C` stops recognizing them, and the tool goes blind to the
+drift it exists to report: the repo-wide DRIFTED count fell 102 → 2 with nothing fixed. Keep
+`system` in the match.
+
 ### Same convention, different `@N`: stdcall decoration is a free ABI *width* checker
 
 Not every `undefined _Foo@N` is a convention mismatch. When BOTH sides are `extern "system"`
@@ -289,6 +324,16 @@ explicit `__attribute__((stdcall))` for the imports, and take each import's conv
 the `-sys` crate rather than from the name. A stub that never returns (an abort) is exempt,
 because nobody pops. Precedent, from the other direction: errno.rs's `_SetErrorMode@4`.
 
+**This is also why the ABI-normalization passes REFUSE these crates.** `normalize_island_abi.py`
+and `collapse_abi_twins.py` both rest on "`system` IS stdcall on x86", which is false on the
+host target — so both carry a `HOST_HARNESS_CRATES` list (msvcrt-crt-rust, msvcrt-sys,
+cnt-rust, cnt-ctype, rtl-strings) and say out loud that they skipped it. Normalizing
+msvcrt-sys once turned its Win32 imports cdecl in the harness and killed
+`msvcrt-seh-difftest` in `cxx_frame_handler` while all three product arches built, linked,
+passed 43 scanners each and booted to the desktop. **Keep the two lists in sync with the
+harnesses' path dependencies** — a test asserts they equal each other, because if only one
+tool refuses, the other re-breaks it.
+
 ### A `#define` in precomp.h means the C never called the function it names
 `precomp.h:63` is `#define ShellMessageBoxW ShellMessageBoxWrapW`, so every `ShellMessageBoxW(…)`
 in shell32's C++ is really a call to the Wrap twin — shell32 does not import the exported name at
@@ -370,7 +415,10 @@ invisible on i386, from `dialogs/dialogs.rs`:
   as the RESOLVED convention for the target**, so the same pointer is `stdcall` on i686 and `C`
   on amd64/arm64, while our definitions say `extern "system"` — which IS that convention on each
   target, but Rust keeps the spellings as distinct nominal types on fn pointers. Hardcoding one
-  compiles on i386 and fails everywhere else; use a `cfg`'d alias.
+  compiles on i386 and fails everywhere else. The old answer was a `cfg`'d alias; the answer now
+  is that there is nothing to bridge — `normalize_island_abi.py` spells those slots `system`, so
+  assign the fn directly. **Delete the transmute rather than cfg-ing it**: it erased the whole
+  fn type, signature included, so a real argument drift underneath it compiled silently.
 
 The habit that avoids all of it: **cast at the call site using the NAMED type** (`as WPARAM`,
 `as SIZE_T`, `as INT_PTR`), never a concrete width. That is arch-neutral by construction —
@@ -1330,10 +1378,19 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   translation output carries neither the array form nor the comment, so it reports a confident
   `0 findings` over 0 comparisons. Grep `b"L` and `\bL'` in fresh output; the correct fix is
   the crate's `w!()` macro.
-- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is latent.**
+- **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
-  defect is ALIGNMENT 1, so it misbehaves when the linker happens to place it on an odd
-  address (that is task #39's mswsock incident). `b"LogEvent\0" as *const u16` is the severe
+  defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
+  of it here was wrong** — mswsock's 33 fixes were all CONTENT bugs (odd byte length = half a
+  wide NUL, UTF-16 stored big-endian, narrow ASCII behind a wide pointer); not one was an
+  alignment fault. An unaligned `u16` load is fine in HARDWARE on all three targets (x86
+  always; AArch64 for normal cacheable memory, and we never set SCTLR.A). The real objection is
+  LANGUAGE-level — dereferencing a misaligned `*const u16` is UB and LLVM tags the load
+  `align 2` — and it only bites where RUST ITSELF dereferences, whereas the overwhelmingly
+  common site hands the pointer straight to a Win32/Nt callee. **So: convert these to `w!()`
+  when you are already in the crate for another reason, and gate it with whatever you were
+  doing. Never as a repo-wide sweep** — the risk of touching kernel crates for a reviewability
+  win does not pay. `b"LogEvent\0" as *const u16` is the severe
   one — a NARROW string read as wide, where `"Lo"` is one code unit U+6F4C, so
   `RegQueryValueExW` looks up a value nobody has ever created and the call silently does
   nothing. sysdm shipped ~30 of the second kind. `postprocess.fix_wide_byte_string_literals`
@@ -2874,6 +2931,43 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### A vtable SLOT the interface parser could not read renumbers every slot after it
+
+**Symptom.** A hand-rolled COM interface comes out of `--cpp-com` with one fewer method than
+its header declares, and the missing one has been folded into its predecessor's parameter
+list. From `recyclebin_v5.h`:
+
+```rust
+pub EmptyRecycleBin: unsafe extern "system" fn(ppEnumList: *mut *mut ); \
+    STDMETHOD(EnumObjects)(THIS_ OUT IRecycleBinEnumList) -> HRESULT,
+```
+
+`IRecycleBin5` declares 11 methods; the emitted vtable had 10.
+
+**Cause.** `_DECLARE_METHOD` required a declaration to end `) PURE ;`. ReactOS's header has
+one that omits `PURE` — a typo no compiler can see, because `PURE` expands to nothing in C
+mode. The non-greedy `(?P<params>.*?)` then ran straight through the unmatched declaration to
+the *next* `) PURE;` and swallowed the following method whole. A second, unrelated leak had
+the same root: `_SAL_ANNOTATION` only matches the underscore-flanked modern spellings
+(`_In_`, `_Out_opt_`), so ntdef.h's `IN`, `OUT` and `OPTIONAL` — also defined to nothing —
+survived into the parsed type as `riid: IN REFIID` and `*mut *mut OUT void`.
+
+**Fix.** `PURE` is optional; classic uppercase SAL is stripped alongside the `_In_` family.
+Neither of those is the real fix. **A vtable is positional, so a dropped slot is not a partial
+result — it renumbers everything after it**, and `GetDirectory` dispatches to `Delete`,
+`Delete` to `Restore`, and `OnClosing` off the end. So the parser now HARD FAILS when the
+number of methods it parsed disagrees with the number of `STDMETHOD` tokens in the body (and
+`STDMETHODCALLTYPE` on the WIDL path). Where the bindgen island also carries the interface,
+the two slot counts are cross-checked as well — bindgen through the real preprocessor is an
+independent derivation of the same vtable, and that check catches this class on its own.
+
+Note how narrowly this stayed visible: the swallow happened to produce a Rust *syntax* error,
+so it was loud. That was luck. Swallow a method whose parameter list survives the fold and you
+get a vtable that compiles, links, and dispatches to the wrong function — reached through a
+COM call, so the stack at the crash names nobody involved. When a deterministic emitter can
+drop one element of an ordered sequence, count the elements; never trust that a bad parse will
+also fail to compile.
+
 ### A convention macro that also carries the RETURN TYPE deletes the function
 
 **Symptom.** `rustconv translate` refuses a TU: *"N SPEC-EXPORTED function(s) are in the
@@ -4282,6 +4376,18 @@ cargo-**driven** `reactos_link` drivers ARE affected via a separate target dir �
 **Corollary: env-only toggles never re-run a cargo edge** (ninja watches files, not env). Touch
 the `build.rs` and **verify the output md5 actually changed** — the first layout-canary attempt
 no-op'd twice.
+**Corollary: editing a DEPENDENCY crate re-ran nothing either, and that one green-lit a
+push.** Every cargo edge globbed only its own `<crate>/src/*.rs`, so a change to a shared
+crate — `ntdll-sys`, `ntkrnl-sys`, `win32macros-rust`, `strsafe-rust` — left all ~100
+dependents "up to date" while stale. Cargo tracks path deps correctly, but only when it is
+INVOKED, and ninja never invoked it. Normalizing the ntdll-sys islands to `extern "system"`
+broke kernel32-rust's `stdcall` fn-pointer typedefs on i386; the local gate built warm,
+reported OK, **minted a push stamp**, and only the merge queue's fresh worktree caught it.
+**Fixed:** `rust_crate_sources()` (`sdk/cmake/rust-crate-deps.cmake`) walks the crate's
+`path = "…"` closure, and every cargo edge uses it instead of a bare `file(GLOB_RECURSE)`.
+Over-triggering is the correct direction here — those dependents really are stale.
+**A local gate is warm unless you pass `--clean`**, so a green local gate is not evidence a
+cold tree builds; the queue's conductor is, because it gates a fresh integration worktree.
 
 ### A cargo compile error leaves the prior rlib, and the link succeeds against it `[§9.87]`
 Added a `DbgPrint` to win32k, rebuilt, booted — the print never fired. Three times. One file had

@@ -296,28 +296,16 @@ pub unsafe extern "C" fn DC_vUpdateBackgroundBrush(pdc: PDC) {
 
     (*pdcattr).ulDirty_ &= !DIRTY_BACKGROUND;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn DC_vSetBrushOrigin(pdc: PDC, x: LONG, y: LONG) {
+pub unsafe extern "system" fn DC_vSetBrushOrigin(pdc: PDC, x: LONG, y: LONG) {
     (*pdc).dclevel.ptlBrushOrigin.x = x;
     (*pdc).dclevel.ptlBrushOrigin.y = y;
 
     (*pdc).ptlFillOrigin.x = x + (*pdc).ptlDCOrig.x;
     (*pdc).ptlFillOrigin.y = y + (*pdc).ptlDCOrig.y;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn DC_vSetBrushOrigin(pdc: PDC, x: LONG, y: LONG) {
-    (*pdc).dclevel.ptlBrushOrigin.x = x;
-    (*pdc).dclevel.ptlBrushOrigin.y = y;
-
-    (*pdc).ptlFillOrigin.x = x + (*pdc).ptlDCOrig.x;
-    (*pdc).ptlFillOrigin.y = y + (*pdc).ptlDCOrig.y;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetBrushOrg(
+pub unsafe extern "system" fn NtGdiSetBrushOrg(
     hdc: HDC,
     x: i32,
     y: i32,
@@ -340,35 +328,8 @@ pub unsafe extern "stdcall" fn NtGdiSetBrushOrg(
     }
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetBrushOrg(
-    hdc: HDC,
-    x: i32,
-    y: i32,
-    pptOut: LPPOINT,
-) -> i32 {
-    let mut ptOut: POINT = core::mem::zeroed();
-    let Ret = GreSetBrushOrg(hdc, x, y, core::ptr::addr_of_mut!(ptOut) as *mut _POINTL) as i32;
-    if Ret != 0 {
-        if !pptOut.is_null() {
-            let __SehStatus = SafeProbeForWrite(
-                pptOut as *mut core::ffi::c_void,
-                core::mem::size_of::<POINT>(),
-                1,
-            );
-            if !NT_SUCCESS(__SehStatus) {
-                return 0;
-            }
-            *pptOut = ptOut;
-        }
-    }
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GdiSelectPalette(
+pub unsafe extern "system" fn GdiSelectPalette(
     hDC: HDC,
     hpal: HPALETTE,
     ForceBackground: i32,
@@ -407,51 +368,8 @@ pub unsafe extern "stdcall" fn GdiSelectPalette(
 
     oldPal
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GdiSelectPalette(
-    hDC: HDC,
-    hpal: HPALETTE,
-    ForceBackground: i32,
-) -> HPALETTE {
-    let mut oldPal: HPALETTE = core::ptr::null_mut();
-
-    let pdc = DC_LockDc(hDC);
-    if pdc.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    let ppal = PALETTE_ShareLockPalette(hpal as _);
-    if ppal.is_null() {
-        DC_UnlockDc(pdc);
-        return core::ptr::null_mut();
-    }
-
-    if (*pdc).dclevel.pSurface.is_null() ||
-       (BitsPerFormat((*(*pdc).dclevel.pSurface).SurfObj.iBitmapFormat) <= 8 &&
-        ((*ppal).flFlags & PAL_INDEXED) != 0) ||
-       (BitsPerFormat((*(*pdc).dclevel.pSurface).SurfObj.iBitmapFormat) > 8)
-    {
-        oldPal = (*pdc).dclevel.hpal;
-        (*pdc).dclevel.hpal = hpal;
-        DC_vSelectPalette(pdc, ppal);
-
-        (*(*pdc).pdcattr).ulDirty_ |= DIRTY_FILL | DIRTY_LINE |
-                                      DIRTY_BACKGROUND | DIRTY_TEXT;
-    }
-
-    if (*pdc).dctype == DCTYPE_MEMORY {
-    }
-
-    PALETTE_ShareUnlockPalette(ppal);
-    DC_UnlockDc(pdc);
-
-    oldPal
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSelectBrush(
+pub unsafe extern "system" fn NtGdiSelectBrush(
     hDC: HDC,
     hBrush: HBRUSH,
 ) -> HBRUSH {
@@ -475,63 +393,8 @@ pub unsafe extern "stdcall" fn NtGdiSelectBrush(
 
     hOrgBrush
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSelectBrush(
-    hDC: HDC,
-    hBrush: HBRUSH,
-) -> HBRUSH {
-    let pDC: PDC;
-    let hOrgBrush: HBRUSH;
-
-    if hDC.is_null() || hBrush.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pDC = DC_LockDc(hDC);
-    if pDC.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    hOrgBrush = (*(*pDC).pdcattr).hbrush as _;
-    (*(*pDC).pdcattr).hbrush = hBrush as _;
-    DC_vUpdateFillBrush(pDC);
-
-    DC_UnlockDc(pDC);
-
-    hOrgBrush
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSelectPen(
-    hDC: HDC,
-    hPen: HPEN,
-) -> HPEN {
-    let pDC: PDC;
-    let hOrgPen: HPEN;
-
-    if hDC.is_null() || hPen.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pDC = DC_LockDc(hDC);
-    if pDC.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    hOrgPen = (*(*pDC).pdcattr).hpen as _;
-    (*(*pDC).pdcattr).hpen = hPen as _;
-    DC_vUpdateLineBrush(pDC);
-
-    DC_UnlockDc(pDC);
-
-    hOrgPen
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSelectPen(
+pub unsafe extern "system" fn NtGdiSelectPen(
     hDC: HDC,
     hPen: HPEN,
 ) -> HPEN {
@@ -582,7 +445,7 @@ pub unsafe extern "system" fn DC_bIsBitmapCompatible(pdc: PDC, psurf: PSURFACE) 
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSelectBitmap(
+pub unsafe extern "system" fn NtGdiSelectBitmap(
     hdc: HDC,
     hbmp: HBITMAP,
 ) -> HBITMAP {
@@ -683,7 +546,7 @@ pub unsafe extern "stdcall" fn NtGdiSelectBitmap(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSelectBitmap(
+pub unsafe extern "system" fn NtGdiSelectBitmap(
     hdc: HDC,
     hbmp: HBITMAP,
 ) -> HBITMAP {
@@ -781,9 +644,8 @@ pub unsafe extern "C" fn NtGdiSelectBitmap(
 
     return hbmpOld;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSelectClipPath(
+pub unsafe extern "system" fn NtGdiSelectClipPath(
     hDC: HDC,
     Mode: i32,
 ) -> i32 {
@@ -848,77 +710,8 @@ pub unsafe extern "stdcall" fn NtGdiSelectClipPath(
 
     success
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSelectClipPath(
-    hDC: HDC,
-    Mode: i32,
-) -> i32 {
-    let mut RgnPath: PREGION;
-    let pPath: PPATH;
-    let pNewPath: PPATH;
-    let mut success: i32 = 0;
-    let pdcattr: PDC_ATTR;
-    let pdc: PDC;
-
-    pdc = DC_LockDc(hDC);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-    pdcattr = (*pdc).pdcattr;
-
-    let hPath = (*pdc).dclevel.hPath;
-    pPath = PATH_LockPath(hPath);
-    if pPath.is_null() {
-        DC_UnlockDc(pdc);
-        return 0;
-    }
-
-    if (*pPath).state != PATH_Closed {
-        EngSetLastError(ERROR_CAN_NOT_COMPLETE);
-        success = 0;
-        PATH_UnlockPath(pPath);
-        PATH_Delete((*pdc).dclevel.hPath);
-        (*pdc).dclevel.flPath &= !DCPATH_ACTIVE;
-        (*pdc).dclevel.hPath = core::ptr::null_mut();
-        DC_UnlockDc(pdc);
-        return success;
-    }
-
-    RgnPath = IntSysCreateRectpRgn(0, 0, 0, 0);
-    if RgnPath.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        DC_UnlockDc(pdc);
-        return 0;
-    }
-
-    pNewPath = PATH_FlattenPath(pPath);
-
-    success = PATH_PathToRegion(pNewPath, (*pdcattr).jFillMode as i32, RgnPath) as i32;
-
-    PATH_UnlockPath(pNewPath);
-    PATH_Delete((*pNewPath).BaseObject.hHmgr);
-
-    if success != 0 {
-        success = if IntGdiExtSelectClipRgn(pdc, RgnPath, Mode as INT) != ERROR as INT { 1 } else { 0 };
-    }
-
-    REGION_Delete(RgnPath);
-
-    PATH_UnlockPath(pPath);
-    PATH_Delete((*pdc).dclevel.hPath);
-    (*pdc).dclevel.flPath &= !DCPATH_ACTIVE;
-    (*pdc).dclevel.hPath = core::ptr::null_mut();
-
-    DC_UnlockDc(pdc);
-
-    success
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn DC_hSelectFont(
+pub unsafe extern "system" fn DC_hSelectFont(
     pdc: PDC,
     hlfntNew: HFONT,
 ) -> HFONT {
@@ -949,68 +742,8 @@ pub unsafe extern "stdcall" fn DC_hSelectFont(
 
     hlfntOld
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn DC_hSelectFont(
-    pdc: PDC,
-    hlfntNew: HFONT,
-) -> HFONT {
-    let plfntNew: PLFONT;
-    let mut hlfntOld: HFONT;
-
-    if !NT_SUCCESS(TextIntRealizeFont(hlfntNew, core::ptr::null_mut())) {
-        return core::ptr::null_mut();
-    }
-
-    hlfntOld = (*(*pdc).dclevel.plfnt).BaseObject.hHmgr as _;
-
-    if hlfntNew != hlfntOld {
-        plfntNew = LFONT_ShareLockFont(hlfntNew as _);
-        if !plfntNew.is_null() {
-            LFONT_ShareUnlockFont((*pdc).dclevel.plfnt);
-
-            (*pdc).dclevel.plfnt = plfntNew;
-            (*(*pdc).pdcattr).hlfntNew = hlfntNew as _;
-
-            (*(*pdc).pdcattr).ulDirty_ |= DIRTY_CHARSET;
-            (*(*pdc).pdcattr).ulDirty_ &= !SLOW_WIDTHS;
-        } else {
-            (*(*pdc).pdcattr).hlfntNew = hlfntOld as _;
-            hlfntOld = core::ptr::null_mut();
-        }
-    }
-
-    hlfntOld
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSelectFont(
-    hdc: HDC,
-    hfont: HFONT,
-) -> HFONT {
-    let hfontOld: HFONT;
-    let pdc: PDC;
-
-    if hdc.is_null() || hfont.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    hfontOld = DC_hSelectFont(pdc, hfont);
-
-    DC_UnlockDc(pdc);
-
-    return hfontOld;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSelectFont(
+pub unsafe extern "system" fn NtGdiSelectFont(
     hdc: HDC,
     hfont: HFONT,
 ) -> HFONT {
@@ -1034,7 +767,7 @@ pub unsafe extern "C" fn NtGdiSelectFont(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
+pub unsafe extern "system" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
     let SelObject: HGDIOBJ;
     let pdc: *mut DC;
     let pdcattr: PDC_ATTR;
@@ -1113,7 +846,7 @@ pub unsafe extern "stdcall" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HA
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
+pub unsafe extern "system" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
     let SelObject: HGDIOBJ;
     let pdc: *mut DC;
     let pdcattr: PDC_ATTR;
@@ -1189,9 +922,8 @@ pub unsafe extern "C" fn NtGdiGetDCObject(hDC: HDC, ObjectType: INT) -> HANDLE {
     DC_UnlockDc(pdc);
     SelObject
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetRandomRgn(
+pub unsafe extern "system" fn NtGdiGetRandomRgn(
     hdc: HDC,
     hrgnDest: HRGN,
     iCode: i32,
@@ -1256,88 +988,8 @@ pub unsafe extern "stdcall" fn NtGdiGetRandomRgn(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetRandomRgn(
-    hdc: HDC,
-    hrgnDest: HRGN,
-    iCode: i32,
-) -> i32 {
-    let mut ret: i32 = 0;
-    let pdc: PDC;
-    let mut prgnSrc: PREGION = core::ptr::null_mut();
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return -1;
-    }
-
-    match iCode as u32 {
-        CLIPRGN => {
-            prgnSrc = (*pdc).dclevel.prgnClip;
-        }
-
-        METARGN => {
-            prgnSrc = (*pdc).dclevel.prgnMeta;
-        }
-
-        APIRGN => {
-            if (*pdc).fs & (DC_DIRTY_RAO as i32) != 0 {
-                CLIPPING_UpdateGCRegion(pdc);
-            }
-            if !(*pdc).prgnAPI.is_null() {
-                prgnSrc = (*pdc).prgnAPI;
-            } else if !(*pdc).dclevel.prgnClip.is_null() {
-                prgnSrc = (*pdc).dclevel.prgnClip;
-            } else if !(*pdc).dclevel.prgnMeta.is_null() {
-                prgnSrc = (*pdc).dclevel.prgnMeta;
-            }
-        }
-
-        SYSRGN => {
-            prgnSrc = (*pdc).prgnVis;
-        }
-
-        _ => {}
-    }
-
-    if !prgnSrc.is_null() {
-        let prgnDest: PREGION = REGION_LockRgn(hrgnDest);
-        if !prgnDest.is_null() {
-            ret = if IntGdiCombineRgn(prgnDest, prgnSrc, core::ptr::null_mut(), RGN_COPY as INT) == ERROR as i32 {
-                -1
-            } else {
-                1
-            };
-            if (ret == 1) && (iCode as u32 == SYSRGN) {
-                ret = REGION_bOffsetRgn(prgnDest, (*pdc).ptlDCOrig.x, (*pdc).ptlDCOrig.y) as i32;
-            }
-            REGION_UnlockRgn(prgnDest);
-        } else {
-            ret = -1;
-        }
-    }
-
-    DC_UnlockDc(pdc);
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEnumObjects(
-    hdc: HDC,
-    iObjectType: INT,
-    cjBuf: ULONG,
-    pvBuf: PVOID,
-) -> ULONG {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEnumObjects(
+pub unsafe extern "system" fn NtGdiEnumObjects(
     hdc: HDC,
     iObjectType: INT,
     cjBuf: ULONG,

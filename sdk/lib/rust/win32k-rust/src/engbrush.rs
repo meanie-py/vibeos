@@ -140,15 +140,8 @@ unsafe fn InitBrushImpl_impl() -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn InitBrushImpl() -> NTSTATUS {
-    InitBrushImpl_impl()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn InitBrushImpl() -> NTSTATUS {
+pub unsafe extern "system" fn InitBrushImpl() -> NTSTATUS {
     InitBrushImpl_impl()
 }
 
@@ -157,18 +150,7 @@ pub unsafe extern "C" fn InitBrushImpl() -> NTSTATUS {
 // `#[no_mangle]` with per-arch NTAPI ABI: stdcall on i386 (=> `_EBRUSHOBJ_vInit@24`
 // decoration matching 6×4=24 bytes of args), cdecl on amd64/arm64.
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn EBRUSHOBJ_vInit(
-    pebo: *mut EBRUSHOBJ,
-    pbrush: PBRUSH,
-    psurf: PSURFACE,
-    crBackgroundClr: COLORREF,
-    crForegroundClr: COLORREF,
-    ppalDC: PPALETTE,
-) { ebrushobj_v_init_impl(pebo, pbrush, psurf, crBackgroundClr, crForegroundClr, ppalDC) }
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn EBRUSHOBJ_vInit(
+pub unsafe extern "system" fn EBRUSHOBJ_vInit(
     pebo: *mut EBRUSHOBJ,
     pbrush: PBRUSH,
     psurf: PSURFACE,
@@ -227,15 +209,7 @@ unsafe fn ebrushobj_v_init_impl(
 
 // EBRUSHOBJ_vInitFromDC is also exported (NTAPI, 3 args = `@12` on i386).
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn EBRUSHOBJ_vInitFromDC(
-    pebo: *mut EBRUSHOBJ,
-    pbrush: PBRUSH,
-    pdc: PDC,
-) { ebrushobj_v_init_from_dc_impl(pebo, pbrush, pdc) }
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn EBRUSHOBJ_vInitFromDC(
+pub unsafe extern "system" fn EBRUSHOBJ_vInitFromDC(
     pebo: *mut EBRUSHOBJ,
     pbrush: PBRUSH,
     pdc: PDC,
@@ -490,25 +464,11 @@ pub unsafe extern "system" fn EBRUSHOBJ_bRealizeBrush(
 
         psoMask = EBRUSHOBJ_psoMask(pebo);
     } else {
-        // PFN_DrvRealizeBrush is `extern "stdcall"` on i386 and `extern "C"` on
-        // amd64/arm64 per bindgen. Our EngRealizeBrush is `extern "system"`,
-        // which lowers to the same ABI on each arch — the transmute is sound
-        // (same ABI on each side) but Rust's type checker needs the explicit
-        // cast because fn-ptr types are nominal per-ABI.
-        #[cfg(target_arch = "x86")]
-        {
-            pfnRealizeBrush = Some(core::mem::transmute::<
-                unsafe extern "system" fn(*mut BRUSHOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut XLATEOBJ, ULONG) -> BOOL,
-                unsafe extern "stdcall" fn(*mut BRUSHOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut XLATEOBJ, ULONG) -> BOOL,
-            >(EngRealizeBrush));
-        }
-        #[cfg(not(target_arch = "x86"))]
-        {
-            pfnRealizeBrush = Some(core::mem::transmute::<
-                unsafe extern "system" fn(*mut BRUSHOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut XLATEOBJ, ULONG) -> BOOL,
-                unsafe extern "C" fn(*mut BRUSHOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut SURFOBJ, *mut XLATEOBJ, ULONG) -> BOOL,
-            >(EngRealizeBrush));
-        }
+        // PFN_DrvRealizeBrush is spelled `system` in the island now, the same as
+        // EngRealizeBrush, so this assigns directly. It used to need a transmute per arch to
+        // reach bindgen's literal `stdcall`/`C` — and that transmute erased the six-argument
+        // signature along with the convention, so a drift in either would have compiled.
+        pfnRealizeBrush = Some(EngRealizeBrush);
 
         psoMask = core::ptr::null_mut();
     }

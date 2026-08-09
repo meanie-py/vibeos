@@ -1033,62 +1033,22 @@ pub unsafe extern "C" fn LDEVOBJ_bProbeAndCaptureDevmode(
     *pSelectedMode = pdm;
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngLoadImage(
+pub unsafe extern "system" fn EngLoadImage(
     pwszDriverName: LPWSTR,
 ) -> HANDLE {
     LDEVOBJ_pLoadDriver(pwszDriverName, LDEV_IMAGE) as HANDLE
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLoadImage(
-    pwszDriverName: LPWSTR,
-) -> HANDLE {
-    LDEVOBJ_pLoadDriver(pwszDriverName, LDEV_IMAGE) as HANDLE
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnloadImage(
+pub unsafe extern "system" fn EngUnloadImage(
     hModule: HANDLE,
 ) {
     let pldev: PLDEVOBJ = hModule as PLDEVOBJ;
 
     LDEVOBJ_vDereference(pldev);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngUnloadImage(
-    hModule: HANDLE,
-) {
-    let pldev: PLDEVOBJ = hModule as PLDEVOBJ;
-
-    LDEVOBJ_vDereference(pldev);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFindImageProcAddress(
-    hModule: HANDLE,
-    lpProcName: LPSTR,
-) -> PVOID {
-    let mut pldev: PLDEVOBJ = hModule as PLDEVOBJ;
-
-    if pldev.is_null() {
-        pldev = gpldevWin32k;
-    }
-
-    if _strnicmp(lpProcName, b"DrvEnableDriver\0".as_ptr() as LPSTR, 15) == 0 {
-        return (*(*pldev).pGdiDriverInfo).EntryPoint;
-    }
-
-    return LDEVOBJ_pvFindImageProcAddress(pldev, lpProcName);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngFindImageProcAddress(
+pub unsafe extern "system" fn EngFindImageProcAddress(
     hModule: HANDLE,
     lpProcName: LPSTR,
 ) -> PVOID {

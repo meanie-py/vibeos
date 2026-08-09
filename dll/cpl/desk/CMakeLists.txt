@@ -41,7 +41,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(DESK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-desk-target")
 set(DESK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdesk_rust.a")
-file(GLOB_RECURSE DESK_RUST_SRCS "${DESK_RUST_WORKSPACE_DIR}/desk-rust/src/*.rs")
+rust_crate_sources(DESK_RUST_SRCS "${DESK_RUST_WORKSPACE_DIR}" desk-rust)
 add_custom_command(
     OUTPUT ${DESK_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

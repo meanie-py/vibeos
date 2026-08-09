@@ -418,13 +418,20 @@ fn EnumConnectionsImpl_Release(iface: *mut IEnumConnections) -> ULONG {
     refCount
 }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn EnumConnectionsImpl_Next(
+// Its six vtable siblings go through `stdmethod!`, which still forks the ABI per arch because
+// com-sys is the one island this pass did NOT normalize (8,121 slots, every COM consumer in
+// the tree — its own change, not this one). This method was the odd one out, written as a
+// hand-rolled cfg pair; expressed through the macro it matches the rest of the vtable and
+// flips with com-sys when that lands.
+stdmethod! {
+fn EnumConnectionsImpl_Next(
     iface: *mut IEnumConnections,
-    mut cConn: ULONG,
-    mut pCD: LPCONNECTDATA,
+    cConn: ULONG,
+    pCD: LPCONNECTDATA,
     pEnum: *mut ULONG,
 ) -> HRESULT {
+    let mut cConn = cConn;
+    let mut pCD = pCD;
     let This: *mut EnumConnectionsImpl = impl_from_IEnumConnections(iface);
     let mut nRet: DWORD = 0;
     TRACE!(b"(%p)->(%d, %p, %p)\n\0".as_ptr(), This, cConn, pCD, pEnum);
@@ -457,45 +464,6 @@ unsafe extern "stdcall" fn EnumConnectionsImpl_Next(
 
     S_OK
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn EnumConnectionsImpl_Next(
-    iface: *mut IEnumConnections,
-    mut cConn: ULONG,
-    mut pCD: LPCONNECTDATA,
-    pEnum: *mut ULONG,
-) -> HRESULT {
-    let This: *mut EnumConnectionsImpl = impl_from_IEnumConnections(iface);
-    let mut nRet: DWORD = 0;
-    TRACE!(b"(%p)->(%d, %p, %p)\n\0".as_ptr(), This, cConn, pCD, pEnum);
-
-    if pEnum.is_null() {
-        if cConn != 1 {
-            return E_POINTER;
-        }
-    } else {
-        *pEnum = 0;
-    }
-
-    if (*This).nCur >= (*This).nConns {
-        return S_FALSE;
-    }
-
-    while (*This).nCur < (*This).nConns && cConn != 0 {
-        let fresh_pCD = pCD;
-        pCD = pCD.offset(1);
-        *fresh_pCD = *(*This).pCD.offset((*This).nCur as isize);
-        IUnknown_AddRef((*(*This).pCD.offset((*This).nCur as isize)).pUnk);
-        (*This).nCur = (*This).nCur.wrapping_add(1);
-        cConn = cConn.wrapping_sub(1);
-        nRet = nRet.wrapping_add(1);
-    }
-
-    if !pEnum.is_null() {
-        *pEnum = nRet;
-    }
-
-    S_OK
 }
 stdmethod! {
 fn EnumConnectionsImpl_Skip(

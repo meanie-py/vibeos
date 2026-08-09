@@ -72,14 +72,8 @@ unsafe fn wnd_pti(w: PWND) -> PTHREADINFO {
 
 pub static mut gptiGhostThread: PTHREADINFO = core::ptr::null_mut();
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserGhostThreadEntry() {
-    UserGhostThreadEntry_impl()
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserGhostThreadEntry() {
+pub unsafe extern "system" fn UserGhostThreadEntry() {
     UserGhostThreadEntry_impl()
 }
 unsafe fn UserGhostThreadEntry_impl() {

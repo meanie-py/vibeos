@@ -416,14 +416,8 @@ static mut gcLoadMPH: DWORD = 0;
 // types. Coerce each fn-item to a fn pointer of its real ABI (i386 stdcall /
 // other cdecl) so it is no longer a ZST, then transmute that pointer to the
 // "system" typedef. Faithful: same WINAPI proc as the C; only nominal-type glue.
-#[cfg(target_arch = "x86")]
-type NtUserRIGMFnPtr = unsafe extern "stdcall" fn(LPMSG, HWND, UINT, UINT, UINT, BOOL) -> BOOL;
-#[cfg(not(target_arch = "x86"))]
-type NtUserRIGMFnPtr = unsafe extern "C" fn(LPMSG, HWND, UINT, UINT, UINT, BOOL) -> BOOL;
-#[cfg(target_arch = "x86")]
-type NtUserRWMEFnPtr = unsafe extern "stdcall" fn(DWORD, UINT) -> BOOL;
-#[cfg(not(target_arch = "x86"))]
-type NtUserRWMEFnPtr = unsafe extern "C" fn(DWORD, UINT) -> BOOL;
+type NtUserRIGMFnPtr = unsafe extern "system" fn(LPMSG, HWND, UINT, UINT, UINT, BOOL) -> BOOL;
+type NtUserRWMEFnPtr = unsafe extern "system" fn(DWORD, UINT) -> BOOL;
 
 const NTUSER_RIGM: NtUserRIGMFnPtr = NtUserRealInternalGetMessage;
 const NTUSER_RWME: NtUserRWMEFnPtr = NtUserRealWaitMessageEx;
@@ -3093,17 +3087,8 @@ pub unsafe extern "system" fn GetInputState() -> BOOL {
 // (No output/result mutation occurs in any except body; the C uses no SEH here.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32CallWindowProcFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    User32CallWindowProcFromKernel_impl(Arguments, ArgumentLength)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32CallWindowProcFromKernel(
+pub unsafe extern "system" fn User32CallWindowProcFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {

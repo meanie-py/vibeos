@@ -36,7 +36,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(ACLUI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-aclui-target")
 set(ACLUI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libaclui_rust.a")
-file(GLOB_RECURSE ACLUI_RUST_SRCS "${ACLUI_RUST_WORKSPACE_DIR}/aclui-rust/src/*.rs")
+rust_crate_sources(ACLUI_RUST_SRCS "${ACLUI_RUST_WORKSPACE_DIR}" aclui-rust)
 add_custom_command(
     OUTPUT ${ACLUI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

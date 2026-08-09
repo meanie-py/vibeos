@@ -50,9 +50,8 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate from the preamble
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreateEvent(
+pub unsafe extern "system" fn EngCreateEvent(
     ppEvent: *mut PEVENT
 ) -> BOOL {
     let mut Result: BOOLEAN = 1u8;
@@ -81,41 +80,8 @@ pub unsafe extern "stdcall" fn EngCreateEvent(
 
     Result as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreateEvent(
-    ppEvent: *mut PEVENT
-) -> BOOL {
-    let mut Result: BOOLEAN = 1u8;
-    let mut EngEvent: PENG_EVENT;
-
-    EngEvent = ExAllocatePoolWithTag(
-        _POOL_TYPE_NonPagedPool,
-        (core::mem::size_of::<ENG_EVENT>() + core::mem::size_of::<ntkrnl_sys::ddk::_KEVENT>()) as SIZE_T,
-        GDITAG_ENG_EVENT,
-    ) as PENG_EVENT;
-
-    if !EngEvent.is_null() {
-        (*EngEvent).fFlags = 0;
-        (*EngEvent).pKEvent = EngEvent.offset(1) as PVOID;
-
-        KeInitializeEvent(
-            (*EngEvent).pKEvent as PRKEVENT,
-            _EVENT_TYPE_SynchronizationEvent,
-            0u8,
-        );
-
-        *ppEvent = EngEvent as PEVENT;
-    } else {
-        Result = 0u8;
-    }
-
-    Result as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngDeleteEvent(
+pub unsafe extern "system" fn EngDeleteEvent(
     Event: PEVENT,
 ) -> BOOL {
     if ((*Event).fFlags & ENG_EVENT_USERMAPPED) != 0 {
@@ -126,64 +92,24 @@ pub unsafe extern "stdcall" fn EngDeleteEvent(
 
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngDeleteEvent(
-    Event: PEVENT,
-) -> BOOL {
-    if ((*Event).fFlags & ENG_EVENT_USERMAPPED) != 0 {
-        return 0;
-    }
-
-    ExFreePoolWithTag(Event as *mut c_void, GDITAG_ENG_EVENT);
-
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngClearEvent(Event: PEVENT) {
+pub unsafe extern "system" fn EngClearEvent(Event: PEVENT) {
     KeClearEvent((*Event).pKEvent as PRKEVENT);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngClearEvent(Event: PEVENT) {
-    KeClearEvent((*Event).pKEvent as PRKEVENT);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngSetEvent(
+pub unsafe extern "system" fn EngSetEvent(
     Event: PEVENT,
 ) -> i32 {
     KeSetEvent((*Event).pKEvent as PRKEVENT, IO_NO_INCREMENT, 0u8)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngSetEvent(
-    Event: PEVENT,
-) -> i32 {
-    KeSetEvent((*Event).pKEvent as PRKEVENT, IO_NO_INCREMENT, 0u8)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngReadStateEvent(
+pub unsafe extern "system" fn EngReadStateEvent(
     Event: PEVENT,
 ) -> i32 {
     KeReadStateEvent((*Event).pKEvent as PRKEVENT)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngReadStateEvent(
-    Event: PEVENT,
-) -> i32 {
-    KeReadStateEvent((*Event).pKEvent as PRKEVENT)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMapEvent(
+pub unsafe extern "system" fn EngMapEvent(
     _hDev: HDEV,
     hUserObject: HANDLE,
     Reserved1: PVOID,
@@ -228,57 +154,8 @@ pub unsafe extern "stdcall" fn EngMapEvent(
     }
     EngEvent as PEVENT
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapEvent(
-    _hDev: HDEV,
-    hUserObject: HANDLE,
-    Reserved1: PVOID,
-    _Reserved2: PVOID,
-    _Reserved3: PVOID,
-) -> PEVENT {
-    let mut EngEvent: PENG_EVENT;
-    let mut pvEvent: PVOID = core::ptr::null_mut();
-    let Status: NTSTATUS;
-
-    EngEvent = ExAllocatePoolWithTag(
-        _POOL_TYPE_NonPagedPool,
-        core::mem::size_of::<ENG_EVENT>() as SIZE_T,
-        GDITAG_ENG_EVENT,
-    ) as PENG_EVENT;
-    if EngEvent.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    (*EngEvent).fFlags = 0;
-    (*EngEvent).pKEvent = core::ptr::null_mut();
-
-    Status = ObReferenceObjectByHandle(
-        hUserObject,
-        EVENT_ALL_ACCESS,
-        ExEventObjectType,
-        _MODE_UserMode as KPROCESSOR_MODE,
-        &mut pvEvent,
-        core::ptr::null_mut(),
-    );
-    if NT_SUCCESS(Status) {
-        KePulseEvent(pvEvent as PRKEVENT, EVENT_INCREMENT, 0u8);
-        (*EngEvent).pKEvent = pvEvent;
-        (*EngEvent).fFlags |= ENG_EVENT_USERMAPPED;
-    } else {
-        ExFreePoolWithTag(EngEvent as PVOID, GDITAG_ENG_EVENT);
-        EngEvent = core::ptr::null_mut();
-    }
-
-    if !Reserved1.is_null() {
-        *(Reserved1 as *mut PVOID) = EngEvent as PVOID;
-    }
-    EngEvent as PEVENT
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnmapEvent(
+pub unsafe extern "system" fn EngUnmapEvent(
     Event: PEVENT,
 ) -> BOOL {
     if ((*Event).fFlags & ENG_EVENT_USERMAPPED) == 0 {
@@ -290,55 +167,8 @@ pub unsafe extern "stdcall" fn EngUnmapEvent(
     ExFreePoolWithTag(Event as *mut c_void, GDITAG_ENG_EVENT);
     return 1;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngUnmapEvent(
-    Event: PEVENT,
-) -> BOOL {
-    if ((*Event).fFlags & ENG_EVENT_USERMAPPED) == 0 {
-        return 0;
-    }
-
-    ObDereferenceObject((*Event).pKEvent as *mut c_void);
-
-    ExFreePoolWithTag(Event as *mut c_void, GDITAG_ENG_EVENT);
-    return 1;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngWaitForSingleObject(
-    Event: PEVENT,
-    TimeOut: PLARGE_INTEGER,
-) -> u8 {
-    let Status: NTSTATUS;
-
-    if Event.is_null() {
-        return 0u8;
-    }
-
-    if ((*Event).fFlags & ENG_EVENT_USERMAPPED) != 0 {
-        return 0u8;
-    }
-
-    Status = KeWaitForSingleObject(
-        (*Event).pKEvent,
-        _KWAIT_REASON_Executive as KWAIT_REASON,
-        0i32 as KPROCESSOR_MODE, // KernelMode = 0
-        0u8,
-        TimeOut as *mut ntkrnl_sys::ddk::_LARGE_INTEGER,
-    );
-
-    if NT_SUCCESS(Status) {
-        1u8
-    } else {
-        0u8
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngWaitForSingleObject(
+pub unsafe extern "system" fn EngWaitForSingleObject(
     Event: PEVENT,
     TimeOut: PLARGE_INTEGER,
 ) -> u8 {

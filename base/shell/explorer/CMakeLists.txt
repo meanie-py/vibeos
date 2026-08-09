@@ -67,9 +67,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(EXPLORER_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE EXPLORER_RUST_SRCS
-    "${EXPLORER_RUST_WORKSPACE_DIR}/explorer-rust/src/*.rs"
-    "${EXPLORER_RUST_WORKSPACE_DIR}/explorer-sys/src/*.rs")
+rust_crate_sources(EXPLORER_RUST_SRCS "${EXPLORER_RUST_WORKSPACE_DIR}" explorer-rust)
 add_custom_command(
     OUTPUT ${EXPLORER_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

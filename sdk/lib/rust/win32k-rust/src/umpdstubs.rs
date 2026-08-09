@@ -23,9 +23,8 @@ extern "C" {
 // hardcode the canonical value. NTSTATUS is `LONG` (signed), so the bit
 // pattern 0xC0000002 (STATUS_NOT_IMPLEMENTED, severity=ERROR) is cast.
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiUMPDEngFreeUserMem(
+pub unsafe extern "system" fn NtGdiUMPDEngFreeUserMem(
     ppv: *mut KERNEL_PVOID,
 ) -> BOOL {
     DbgPrint(
@@ -36,23 +35,8 @@ pub unsafe extern "stdcall" fn NtGdiUMPDEngFreeUserMem(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiUMPDEngFreeUserMem(
-    ppv: *mut KERNEL_PVOID,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiUMPDEngFreeUserMem\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetPUMPDOBJ(
+pub unsafe extern "system" fn NtGdiSetPUMPDOBJ(
     humpd: HUMPD,
     bStoreID: BOOL,
     phumpd: *mut HUMPD,
@@ -66,26 +50,8 @@ pub unsafe extern "stdcall" fn NtGdiSetPUMPDOBJ(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetPUMPDOBJ(
-    humpd: HUMPD,
-    bStoreID: BOOL,
-    phumpd: *mut HUMPD,
-    pbWOW64: *mut BOOL,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSetPUMPDOBJ\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_hGetColorTransform(
+pub unsafe extern "system" fn NtGdiBRUSHOBJ_hGetColorTransform(
     pbo: *mut BRUSHOBJ
 ) -> HANDLE {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
@@ -94,21 +60,8 @@ pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_hGetColorTransform(
              b"NtGdiBRUSHOBJ_hGetColorTransform\0".as_ptr() as PCHAR);
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBRUSHOBJ_hGetColorTransform(
-    pbo: *mut BRUSHOBJ
-) -> HANDLE {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             b"umpdstubs.c\0".as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"NtGdiBRUSHOBJ_hGetColorTransform\0".as_ptr() as PCHAR);
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_pvAllocRbrush(
+pub unsafe extern "system" fn NtGdiBRUSHOBJ_pvAllocRbrush(
     pbo: *mut BRUSHOBJ,
     cj: ULONG,
 ) -> PVOID {
@@ -120,41 +73,15 @@ pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_pvAllocRbrush(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBRUSHOBJ_pvAllocRbrush(
-    pbo: *mut BRUSHOBJ,
-    cj: ULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiBRUSHOBJ_pvAllocRbrush\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_pvGetRbrush(
+pub unsafe extern "system" fn NtGdiBRUSHOBJ_pvGetRbrush(
     pbo: *mut BRUSHOBJ
 ) -> PVOID {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiBRUSHOBJ_pvGetRbrush\0".as_ptr() as PCHAR);
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBRUSHOBJ_pvGetRbrush(
-    pbo: *mut BRUSHOBJ
-) -> PVOID {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiBRUSHOBJ_pvGetRbrush\0".as_ptr() as PCHAR);
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_ulGetBrushColor(
+pub unsafe extern "system" fn NtGdiBRUSHOBJ_ulGetBrushColor(
     pbo: *mut BRUSHOBJ
 ) -> ULONG {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
@@ -163,21 +90,8 @@ pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_ulGetBrushColor(
              b"NtGdiBRUSHOBJ_ulGetBrushColor\0".as_ptr() as PCHAR);
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBRUSHOBJ_ulGetBrushColor(
-    pbo: *mut BRUSHOBJ
-) -> ULONG {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             b"umpdstubs.c\0".as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"NtGdiBRUSHOBJ_ulGetBrushColor\0".as_ptr() as PCHAR);
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_DeleteRbrush(
+pub unsafe extern "system" fn NtGdiBRUSHOBJ_DeleteRbrush(
     pbo: *mut BRUSHOBJ,
     pboB: *mut BRUSHOBJ,
 ) -> BOOL {
@@ -189,24 +103,8 @@ pub unsafe extern "stdcall" fn NtGdiBRUSHOBJ_DeleteRbrush(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiBRUSHOBJ_DeleteRbrush(
-    pbo: *mut BRUSHOBJ,
-    pboB: *mut BRUSHOBJ,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiBRUSHOBJ_DeleteRbrush\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_bEnum(
+pub unsafe extern "system" fn NtGdiCLIPOBJ_bEnum(
     pco: *mut CLIPOBJ,
     cj: ULONG,
     pul: *mut ULONG,
@@ -219,25 +117,8 @@ pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_bEnum(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCLIPOBJ_bEnum(
-    pco: *mut CLIPOBJ,
-    cj: ULONG,
-    pul: *mut ULONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiCLIPOBJ_bEnum\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_cEnumStart(
+pub unsafe extern "system" fn NtGdiCLIPOBJ_cEnumStart(
     _pco: *mut CLIPOBJ,
     _bAll: BOOL,
     _iType: ULONG,
@@ -252,27 +133,8 @@ pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_cEnumStart(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCLIPOBJ_cEnumStart(
-    _pco: *mut CLIPOBJ,
-    _bAll: BOOL,
-    _iType: ULONG,
-    _iDirection: ULONG,
-    _cLimit: ULONG,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiCLIPOBJ_cEnumStart\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_ppoGetPath(
+pub unsafe extern "system" fn NtGdiCLIPOBJ_ppoGetPath(
     pco: *mut CLIPOBJ
 ) -> *mut PATHOBJ {
     DbgPrint(
@@ -283,23 +145,8 @@ pub unsafe extern "stdcall" fn NtGdiCLIPOBJ_ppoGetPath(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCLIPOBJ_ppoGetPath(
-    pco: *mut CLIPOBJ
-) -> *mut PATHOBJ {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        0i32,
-        b"NtGdiCLIPOBJ_ppoGetPath\0".as_ptr() as PCHAR
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngAssociateSurface(
+pub unsafe extern "system" fn NtGdiEngAssociateSurface(
     hsurf: HSURF,
     hdev: HDEV,
     flHooks: FLONG,
@@ -312,25 +159,8 @@ pub unsafe extern "stdcall" fn NtGdiEngAssociateSurface(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngAssociateSurface(
-    hsurf: HSURF,
-    hdev: HDEV,
-    flHooks: FLONG,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEngAssociateSurface\0".as_ptr() as *const i8,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCheckAbort(
+pub unsafe extern "system" fn NtGdiEngCheckAbort(
     _pso: *mut SURFOBJ
 ) -> i32 {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
@@ -339,21 +169,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCheckAbort(
              b"NtGdiEngCheckAbort\0".as_ptr() as PCHAR);
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCheckAbort(
-    _pso: *mut SURFOBJ
-) -> i32 {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             file!().as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"NtGdiEngCheckAbort\0".as_ptr() as PCHAR);
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCopyBits(
+pub unsafe extern "system" fn NtGdiEngCopyBits(
     psoDst: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
@@ -369,28 +186,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCopyBits(
     );
     0u32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCopyBits(
-    psoDst: *mut SURFOBJ,
-    psoSrc: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    prclDst: *mut RECTL,
-    pptlSrc: *mut POINTL,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngCopyBits\0".as_ptr() as PCHAR,
-    );
-    0u32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCreateBitmap(
+pub unsafe extern "system" fn NtGdiEngCreateBitmap(
     sizl: SIZEL,
     lWidth: LONG,
     iFormat: ULONG,
@@ -405,27 +202,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCreateBitmap(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCreateBitmap(
-    sizl: SIZEL,
-    lWidth: LONG,
-    iFormat: ULONG,
-    fl: FLONG,
-    pvBits: PVOID,
-) -> HBITMAP {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngCreateBitmap\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCreateClip() -> *mut CLIPOBJ {
+pub unsafe extern "system" fn NtGdiEngCreateClip() -> *mut CLIPOBJ {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         b"umpdstubs.c\0".as_ptr() as PCHAR,
@@ -434,21 +212,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCreateClip() -> *mut CLIPOBJ {
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCreateClip() -> *mut CLIPOBJ {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngCreateClip\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCreateDeviceBitmap(
+pub unsafe extern "system" fn NtGdiEngCreateDeviceBitmap(
     dhsurf: DHSURF,
     sizl: SIZEL,
     iFormatCompat: ULONG,
@@ -461,25 +226,8 @@ pub unsafe extern "stdcall" fn NtGdiEngCreateDeviceBitmap(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCreateDeviceBitmap(
-    dhsurf: DHSURF,
-    sizl: SIZEL,
-    iFormatCompat: ULONG,
-) -> HBITMAP {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngCreateDeviceBitmap\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngCreateDeviceSurface(
+pub unsafe extern "system" fn NtGdiEngCreateDeviceSurface(
     dhsurf: DHSURF,
     sizl: SIZEL,
     iFormatCompat: ULONG,
@@ -492,76 +240,29 @@ pub unsafe extern "stdcall" fn NtGdiEngCreateDeviceSurface(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngCreateDeviceSurface(
-    dhsurf: DHSURF,
-    sizl: SIZEL,
-    iFormatCompat: ULONG,
-) -> HANDLE {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngCreateDeviceSurface\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngDeleteClip(
+pub unsafe extern "system" fn NtGdiEngDeleteClip(
     pco: *mut CLIPOBJ
 ) -> NTSTATUS {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngDeleteClip\0".as_ptr() as PCHAR);
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngDeleteClip(
-    pco: *mut CLIPOBJ
-) -> NTSTATUS {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngDeleteClip\0".as_ptr() as PCHAR);
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngDeletePath(
+pub unsafe extern "system" fn NtGdiEngDeletePath(
     _ppo: *mut PATHOBJ
 ) -> NTSTATUS {
     UNIMPLEMENTED;
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngDeletePath(
-    _ppo: *mut PATHOBJ
-) -> NTSTATUS {
-    UNIMPLEMENTED;
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngDeleteSurface(
+pub unsafe extern "system" fn NtGdiEngDeleteSurface(
     hsurf: HSURF
 ) -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngDeleteSurface\0".as_ptr() as PCHAR);
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngDeleteSurface(
-    hsurf: HSURF
-) -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngDeleteSurface\0".as_ptr() as PCHAR);
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngEraseSurface(
+pub unsafe extern "system" fn NtGdiEngEraseSurface(
     _pso: *mut SURFOBJ,
     _prcl: *mut RECTL,
     _iColor: u32,
@@ -574,25 +275,8 @@ pub unsafe extern "stdcall" fn NtGdiEngEraseSurface(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngEraseSurface(
-    _pso: *mut SURFOBJ,
-    _prcl: *mut RECTL,
-    _iColor: u32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"umpdstubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEngEraseSurface\0".as_ptr() as *const i8,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngFillPath(
+pub unsafe extern "system" fn NtGdiEngFillPath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -609,29 +293,8 @@ pub unsafe extern "stdcall" fn NtGdiEngFillPath(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngFillPath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mix: MIX,
-    flOptions: FLONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngFillPath\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngGradientFill(
+pub unsafe extern "system" fn NtGdiEngGradientFill(
     psoDest: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
@@ -651,32 +314,8 @@ pub unsafe extern "stdcall" fn NtGdiEngGradientFill(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngGradientFill(
-    psoDest: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pVertex: *mut TRIVERTEX,
-    nVertex: ULONG,
-    pMesh: PVOID,
-    nMesh: ULONG,
-    prclExtents: *mut RECTL,
-    pptlDitherOrg: *mut POINTL,
-    ulMode: ULONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngGradientFill\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngLineTo(
+pub unsafe extern "system" fn NtGdiEngLineTo(
     _pso: *mut SURFOBJ,
     _pco: *mut CLIPOBJ,
     _pbo: *mut BRUSHOBJ,
@@ -695,48 +334,15 @@ pub unsafe extern "stdcall" fn NtGdiEngLineTo(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngLineTo(
-    _pso: *mut SURFOBJ,
-    _pco: *mut CLIPOBJ,
-    _pbo: *mut BRUSHOBJ,
-    _x1: i32,
-    _y1: i32,
-    _x2: i32,
-    _y2: i32,
-    _prclBounds: *mut RECTL,
-    _mix: MIX,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngLineTo\0".as_ptr() as PCHAR,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngMarkBandingSurface(
+pub unsafe extern "system" fn NtGdiEngMarkBandingSurface(
     hsurf: HSURF
 ) -> BOOL {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngMarkBandingSurface\0".as_ptr() as PCHAR);
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngMarkBandingSurface(
-    hsurf: HSURF
-) -> BOOL {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiEngMarkBandingSurface\0".as_ptr() as PCHAR);
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngPaint(
+pub unsafe extern "system" fn NtGdiEngPaint(
     _pso: *mut SURFOBJ,
     _pco: *mut CLIPOBJ,
     _pbo: *mut BRUSHOBJ,
@@ -751,27 +357,8 @@ pub unsafe extern "stdcall" fn NtGdiEngPaint(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngPaint(
-    _pso: *mut SURFOBJ,
-    _pco: *mut CLIPOBJ,
-    _pbo: *mut BRUSHOBJ,
-    _pptlBrushOrg: *mut POINTL,
-    _mix: MIX,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"umpdstubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEngPaint\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngPlgBlt(
+pub unsafe extern "system" fn NtGdiEngPlgBlt(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
     psoMsk: *mut SURFOBJ,
@@ -792,33 +379,8 @@ pub unsafe extern "stdcall" fn NtGdiEngPlgBlt(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngPlgBlt(
-    psoTrg: *mut SURFOBJ,
-    psoSrc: *mut SURFOBJ,
-    psoMsk: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pca: *mut COLORADJUSTMENT,
-    pptlBrushOrg: *mut POINTL,
-    pptfx: *mut POINTFIX,
-    prcl: *mut RECTL,
-    pptl: *mut POINTL,
-    iMode: ULONG,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngPlgBlt\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngStretchBltROP(
+pub unsafe extern "system" fn NtGdiEngStretchBltROP(
     psoTrg: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
     psoMask: *mut SURFOBJ,
@@ -841,35 +403,8 @@ pub unsafe extern "stdcall" fn NtGdiEngStretchBltROP(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngStretchBltROP(
-    psoTrg: *mut SURFOBJ,
-    psoSrc: *mut SURFOBJ,
-    psoMask: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pca: *mut COLORADJUSTMENT,
-    pptlBrushOrg: *mut POINTL,
-    prclTrg: *mut RECTL,
-    prclSrc: *mut RECTL,
-    pptlMask: *mut POINTL,
-    iMode: ULONG,
-    pbo: *mut BRUSHOBJ,
-    rop4: ROP4,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngStretchBltROP\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngStrokePath(
+pub unsafe extern "system" fn NtGdiEngStrokePath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -887,30 +422,8 @@ pub unsafe extern "stdcall" fn NtGdiEngStrokePath(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngStrokePath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pxo: *mut XFORMOBJ,
-    pbo: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    plineattrs: *mut LINEATTRS,
-    mix: MIX,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"umpdstubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEngStrokePath\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngStrokeAndFillPath(
+pub unsafe extern "system" fn NtGdiEngStrokeAndFillPath(
     pso: *mut SURFOBJ,
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
@@ -930,32 +443,8 @@ pub unsafe extern "stdcall" fn NtGdiEngStrokeAndFillPath(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngStrokeAndFillPath(
-    pso: *mut SURFOBJ,
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pxo: *mut XFORMOBJ,
-    pboStroke: *mut BRUSHOBJ,
-    plineattrs: *mut LINEATTRS,
-    pboFill: *mut BRUSHOBJ,
-    pptlBrushOrg: *mut POINTL,
-    mix: MIX,
-    flOptions: FLONG,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngStrokeAndFillPath\0".as_ptr() as PCHAR,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngTextOut(
+pub unsafe extern "system" fn NtGdiEngTextOut(
     pso: *mut SURFOBJ,
     pstro: *mut STROBJ,
     pfo: *mut FONTOBJ,
@@ -975,32 +464,8 @@ pub unsafe extern "stdcall" fn NtGdiEngTextOut(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngTextOut(
-    pso: *mut SURFOBJ,
-    pstro: *mut STROBJ,
-    pfo: *mut FONTOBJ,
-    pco: *mut CLIPOBJ,
-    prclExtra: *mut RECTL,
-    prclOpaque: *mut RECTL,
-    pboFore: *mut BRUSHOBJ,
-    pboOpaque: *mut BRUSHOBJ,
-    pptlOrg: *mut POINTL,
-    mix: MIX,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiEngTextOut\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngTransparentBlt(
+pub unsafe extern "system" fn NtGdiEngTransparentBlt(
     psoDst: *mut SURFOBJ,
     psoSrc: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
@@ -1018,30 +483,8 @@ pub unsafe extern "stdcall" fn NtGdiEngTransparentBlt(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiEngTransparentBlt(
-    psoDst: *mut SURFOBJ,
-    psoSrc: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    prclDst: *mut RECTL,
-    prclSrc: *mut RECTL,
-    iTransColor: u32,
-    ulReserved: u32,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiEngTransparentBlt\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_vGetInfo(
+pub unsafe extern "system" fn NtGdiFONTOBJ_vGetInfo(
     pfo: *mut FONTOBJ,
     cjSize: u32,
     pfi: *mut FONTINFO,
@@ -1054,42 +497,15 @@ pub unsafe extern "stdcall" fn NtGdiFONTOBJ_vGetInfo(
     );
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_vGetInfo(
-    pfo: *mut FONTOBJ,
-    cjSize: u32,
-    pfi: *mut FONTINFO,
-) -> NTSTATUS {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiFONTOBJ_vGetInfo\0".as_ptr() as PCHAR,
-    );
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pxoGetXform(
+pub unsafe extern "system" fn NtGdiFONTOBJ_pxoGetXform(
     pfo: *mut FONTOBJ
 ) -> *mut XFORMOBJ {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiFONTOBJ_pxoGetXform\0".as_ptr() as PCHAR);
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_pxoGetXform(
-    pfo: *mut FONTOBJ
-) -> *mut XFORMOBJ {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiFONTOBJ_pxoGetXform\0".as_ptr() as PCHAR);
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_cGetGlyphs(
+pub unsafe extern "system" fn NtGdiFONTOBJ_cGetGlyphs(
     pfo: *mut FONTOBJ,
     iMode: u32,
     cGlyph: u32,
@@ -1104,46 +520,16 @@ pub unsafe extern "stdcall" fn NtGdiFONTOBJ_cGetGlyphs(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_cGetGlyphs(
-    pfo: *mut FONTOBJ,
-    iMode: u32,
-    cGlyph: u32,
-    phg: *mut HGLYPH,
-    ppvGlyph: *mut *mut core::ffi::c_void,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        file!().as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiFONTOBJ_cGetGlyphs\0".as_ptr() as *const i8,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pQueryGlyphAttrs(
+pub unsafe extern "system" fn NtGdiFONTOBJ_pQueryGlyphAttrs(
     pfo: *mut FONTOBJ,
     iMode: ULONG
 ) -> PFD_GLYPHATTR {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiFONTOBJ_pQueryGlyphAttrs\0".as_ptr() as PCHAR);
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_pQueryGlyphAttrs(
-    pfo: *mut FONTOBJ,
-    iMode: ULONG
-) -> PFD_GLYPHATTR {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiFONTOBJ_pQueryGlyphAttrs\0".as_ptr() as PCHAR);
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pvTrueTypeFontFile(
+pub unsafe extern "system" fn NtGdiFONTOBJ_pvTrueTypeFontFile(
     pfo: *mut FONTOBJ,
     pcjFile: *mut ULONG,
 ) -> PVOID {
@@ -1155,39 +541,8 @@ pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pvTrueTypeFontFile(
     );
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_pvTrueTypeFontFile(
-    pfo: *mut FONTOBJ,
-    pcjFile: *mut ULONG,
-) -> PVOID {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiFONTOBJ_pvTrueTypeFontFile\0".as_ptr() as PCHAR,
-    );
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_cGetAllGlyphHandles(
-    pfo: *mut FONTOBJ,
-    phg: *mut HGLYPH,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiFONTOBJ_cGetAllGlyphHandles\0".as_ptr() as PCHAR,
-    );
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_cGetAllGlyphHandles(
+pub unsafe extern "system" fn NtGdiFONTOBJ_cGetAllGlyphHandles(
     pfo: *mut FONTOBJ,
     phg: *mut HGLYPH,
 ) -> ULONG {
@@ -1201,19 +556,8 @@ pub unsafe extern "C" fn NtGdiFONTOBJ_cGetAllGlyphHandles(
 }
 // NtGdiEngComputeGlyphSet — APIENTRY (stdcall i386, cdecl elsewhere).
 // @unimplemented in umpdstubs.c; NULL-returning stub.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiEngComputeGlyphSet(
-    _nCodePage: INT,
-    _nFirstChar: INT,
-    _cChars: INT,
-) -> *mut FD_GLYPHSET {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiEngComputeGlyphSet(
+pub unsafe extern "system" fn NtGdiEngComputeGlyphSet(
     _nCodePage: INT,
     _nFirstChar: INT,
     _cChars: INT,
@@ -1222,34 +566,19 @@ pub unsafe extern "C" fn NtGdiEngComputeGlyphSet(
 }
 
 // NtGdiFONTOBJ_pifi — APIENTRY. @unimplemented.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pifi(_pfo: *mut FONTOBJ) -> *mut IFIMETRICS {
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_pifi(_pfo: *mut FONTOBJ) -> *mut IFIMETRICS {
+pub unsafe extern "system" fn NtGdiFONTOBJ_pifi(_pfo: *mut FONTOBJ) -> *mut IFIMETRICS {
     core::ptr::null_mut()
 }
 
 // NtGdiFONTOBJ_pfdg — APIENTRY. @unimplemented. Returns FD_GLYPHSET*.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiFONTOBJ_pfdg(_pfo: *mut FONTOBJ) -> *mut FD_GLYPHSET {
+pub unsafe extern "system" fn NtGdiFONTOBJ_pfdg(_pfo: *mut FONTOBJ) -> *mut FD_GLYPHSET {
     core::ptr::null_mut()
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiFONTOBJ_pfdg(_pfo: *mut FONTOBJ) -> *mut FD_GLYPHSET {
-    core::ptr::null_mut()
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiHT_Get8BPPMaskPalette(
+pub unsafe extern "system" fn NtGdiHT_Get8BPPMaskPalette(
     pPaletteEntry: LPPALETTEENTRY,
     Use8BPPMaskPal: BOOL,
     CMYMask: BYTE,
@@ -1265,28 +594,8 @@ pub unsafe extern "stdcall" fn NtGdiHT_Get8BPPMaskPalette(
     );
     0u32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiHT_Get8BPPMaskPalette(
-    pPaletteEntry: LPPALETTEENTRY,
-    Use8BPPMaskPal: BOOL,
-    CMYMask: BYTE,
-    RedGamma: USHORT,
-    GreenGamma: USHORT,
-    BlueGamma: USHORT,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiHT_Get8BPPMaskPalette\0".as_ptr() as PCHAR,
-    );
-    0u32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiHT_Get8BPPFormatPalette(
+pub unsafe extern "system" fn NtGdiHT_Get8BPPFormatPalette(
     pPaletteEntry: LPPALETTEENTRY,
     RedGamma: u16,
     GreenGamma: u16,
@@ -1300,26 +609,8 @@ pub unsafe extern "stdcall" fn NtGdiHT_Get8BPPFormatPalette(
     );
     0i32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiHT_Get8BPPFormatPalette(
-    pPaletteEntry: LPPALETTEENTRY,
-    RedGamma: u16,
-    GreenGamma: u16,
-    BlueGamma: u16,
-) -> i32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as *const i8,
-        b"umpdstubs.c\0".as_ptr() as *const i8,
-        line!() as i32,
-        b"NtGdiHT_Get8BPPFormatPalette\0".as_ptr() as *const i8,
-    );
-    0i32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPATHOBJ_vGetBounds(
+pub unsafe extern "system" fn NtGdiPATHOBJ_vGetBounds(
     ppo: *mut PATHOBJ,
     prectfx: PRECTFX,
 ) -> NTSTATUS {
@@ -1331,24 +622,8 @@ pub unsafe extern "stdcall" fn NtGdiPATHOBJ_vGetBounds(
     );
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPATHOBJ_vGetBounds(
-    ppo: *mut PATHOBJ,
-    prectfx: PRECTFX,
-) -> NTSTATUS {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiPATHOBJ_vGetBounds\0".as_ptr() as PCHAR,
-    );
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPATHOBJ_bEnum(
+pub unsafe extern "system" fn NtGdiPATHOBJ_bEnum(
     ppo: *mut PATHOBJ,
     ppd: *mut PATHDATA,
 ) -> u32 {
@@ -1360,41 +635,15 @@ pub unsafe extern "stdcall" fn NtGdiPATHOBJ_bEnum(
     );
     0u32
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPATHOBJ_bEnum(
-    ppo: *mut PATHOBJ,
-    ppd: *mut PATHDATA,
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiPATHOBJ_bEnum\0".as_ptr() as PCHAR,
-    );
-    0u32
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPATHOBJ_vEnumStart(
+pub unsafe extern "system" fn NtGdiPATHOBJ_vEnumStart(
     ppo: *mut PATHOBJ
 ) -> NTSTATUS {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiPATHOBJ_vEnumStart\0".as_ptr() as PCHAR);
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPATHOBJ_vEnumStart(
-    ppo: *mut PATHOBJ
-) -> NTSTATUS {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiPATHOBJ_vEnumStart\0".as_ptr() as PCHAR);
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPATHOBJ_vEnumStartClipLines(
+pub unsafe extern "system" fn NtGdiPATHOBJ_vEnumStartClipLines(
     ppo: *mut PATHOBJ,
     pco: *mut CLIPOBJ,
     pso: *mut SURFOBJ,
@@ -1408,26 +657,8 @@ pub unsafe extern "stdcall" fn NtGdiPATHOBJ_vEnumStartClipLines(
     );
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPATHOBJ_vEnumStartClipLines(
-    ppo: *mut PATHOBJ,
-    pco: *mut CLIPOBJ,
-    pso: *mut SURFOBJ,
-    pla: *mut LINEATTRS,
-) -> NTSTATUS {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiPATHOBJ_vEnumStartClipLines\0".as_ptr() as PCHAR,
-    );
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPATHOBJ_bEnumClipLines(
+pub unsafe extern "system" fn NtGdiPATHOBJ_bEnumClipLines(
     ppo: *mut PATHOBJ,
     cb: ULONG,
     pcl: *mut CLIPLINE,
@@ -1440,25 +671,8 @@ pub unsafe extern "stdcall" fn NtGdiPATHOBJ_bEnumClipLines(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPATHOBJ_bEnumClipLines(
-    ppo: *mut PATHOBJ,
-    cb: ULONG,
-    pcl: *mut CLIPLINE,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiPATHOBJ_bEnumClipLines\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSTROBJ_bEnum(
+pub unsafe extern "system" fn NtGdiSTROBJ_bEnum(
     pstro: *mut STROBJ,
     pc: *mut ULONG,
     ppgpos: *mut PGLYPHPOS,
@@ -1471,25 +685,8 @@ pub unsafe extern "stdcall" fn NtGdiSTROBJ_bEnum(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSTROBJ_bEnum(
-    pstro: *mut STROBJ,
-    pc: *mut ULONG,
-    ppgpos: *mut PGLYPHPOS,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSTROBJ_bEnum\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSTROBJ_bEnumPositionsOnly(
+pub unsafe extern "system" fn NtGdiSTROBJ_bEnumPositionsOnly(
     pstro: *mut STROBJ,
     pc: *mut ULONG,
     ppgpos: *mut PGLYPHPOS,
@@ -1502,25 +699,8 @@ pub unsafe extern "stdcall" fn NtGdiSTROBJ_bEnumPositionsOnly(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSTROBJ_bEnumPositionsOnly(
-    pstro: *mut STROBJ,
-    pc: *mut ULONG,
-    ppgpos: *mut PGLYPHPOS,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSTROBJ_bEnumPositionsOnly\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSTROBJ_bGetAdvanceWidths(
+pub unsafe extern "system" fn NtGdiSTROBJ_bGetAdvanceWidths(
     pstro: *mut STROBJ,
     iFirst: ULONG,
     c: ULONG,
@@ -1534,26 +714,8 @@ pub unsafe extern "stdcall" fn NtGdiSTROBJ_bGetAdvanceWidths(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSTROBJ_bGetAdvanceWidths(
-    pstro: *mut STROBJ,
-    iFirst: ULONG,
-    c: ULONG,
-    pptqD: *mut POINTQF,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSTROBJ_bGetAdvanceWidths\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSTROBJ_vEnumStart(
+pub unsafe extern "system" fn NtGdiSTROBJ_vEnumStart(
     pstro: *mut STROBJ
 ) -> NTSTATUS {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
@@ -1562,21 +724,8 @@ pub unsafe extern "stdcall" fn NtGdiSTROBJ_vEnumStart(
              b"NtGdiSTROBJ_vEnumStart\0".as_ptr() as PCHAR);
     STATUS_NOT_IMPLEMENTED
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSTROBJ_vEnumStart(
-    pstro: *mut STROBJ
-) -> NTSTATUS {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, 
-             file!().as_ptr() as PCHAR, 
-             line!() as i32, 
-             b"NtGdiSTROBJ_vEnumStart\0".as_ptr() as PCHAR);
-    STATUS_NOT_IMPLEMENTED
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSTROBJ_dwGetCodePage(
+pub unsafe extern "system" fn NtGdiSTROBJ_dwGetCodePage(
     pstro: *mut STROBJ
 ) -> u32 {
     DbgPrint(
@@ -1587,23 +736,8 @@ pub unsafe extern "stdcall" fn NtGdiSTROBJ_dwGetCodePage(
     );
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSTROBJ_dwGetCodePage(
-    pstro: *mut STROBJ
-) -> u32 {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiSTROBJ_dwGetCodePage\0".as_ptr() as PCHAR
-    );
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiXFORMOBJ_bApplyXform(
+pub unsafe extern "system" fn NtGdiXFORMOBJ_bApplyXform(
     pxo: *mut XFORMOBJ,
     iMode: ULONG,
     cPoints: ULONG,
@@ -1618,27 +752,8 @@ pub unsafe extern "stdcall" fn NtGdiXFORMOBJ_bApplyXform(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiXFORMOBJ_bApplyXform(
-    pxo: *mut XFORMOBJ,
-    iMode: ULONG,
-    cPoints: ULONG,
-    pptIn: PPOINTL,
-    pptOut: PPOINTL,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiXFORMOBJ_bApplyXform\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiXFORMOBJ_iGetXform(
+pub unsafe extern "system" fn NtGdiXFORMOBJ_iGetXform(
     pxo: *mut XFORMOBJ,
     pxform: *mut XFORML,
 ) -> ULONG {
@@ -1650,24 +765,8 @@ pub unsafe extern "stdcall" fn NtGdiXFORMOBJ_iGetXform(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiXFORMOBJ_iGetXform(
-    pxo: *mut XFORMOBJ,
-    pxform: *mut XFORML,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiXFORMOBJ_iGetXform\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiXLATEOBJ_cGetPalette(
+pub unsafe extern "system" fn NtGdiXLATEOBJ_cGetPalette(
     pxlo: *mut XLATEOBJ,
     iPal: ULONG,
     cPal: ULONG,
@@ -1681,26 +780,8 @@ pub unsafe extern "stdcall" fn NtGdiXLATEOBJ_cGetPalette(
     );
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiXLATEOBJ_cGetPalette(
-    pxlo: *mut XLATEOBJ,
-    iPal: ULONG,
-    cPal: ULONG,
-    pPal: *mut ULONG,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"umpdstubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiXLATEOBJ_cGetPalette\0".as_ptr() as PCHAR,
-    );
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiXLATEOBJ_iXlate(
+pub unsafe extern "system" fn NtGdiXLATEOBJ_iXlate(
     pxlo: *mut XLATEOBJ,
     iColor: ULONG,
 ) -> ULONG {
@@ -1712,33 +793,8 @@ pub unsafe extern "stdcall" fn NtGdiXLATEOBJ_iXlate(
     );
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiXLATEOBJ_iXlate(
-    pxlo: *mut XLATEOBJ,
-    iColor: ULONG,
-) -> ULONG {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        file!().as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiXLATEOBJ_iXlate\0".as_ptr() as PCHAR,
-    );
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiXLATEOBJ_hGetColorTransform(
-    pxlo: *mut XLATEOBJ
-) -> HANDLE {
-    DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiXLATEOBJ_hGetColorTransform\0".as_ptr() as PCHAR);
-    0 as HANDLE
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiXLATEOBJ_hGetColorTransform(
+pub unsafe extern "system" fn NtGdiXLATEOBJ_hGetColorTransform(
     pxlo: *mut XLATEOBJ
 ) -> HANDLE {
     DbgPrint(b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR, file!().as_ptr() as PCHAR, line!() as i32, b"NtGdiXLATEOBJ_hGetColorTransform\0".as_ptr() as PCHAR);

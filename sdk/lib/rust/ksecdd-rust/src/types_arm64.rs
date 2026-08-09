@@ -67,7 +67,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut KsecLsaProcessHandle: HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KsecDdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "system" {

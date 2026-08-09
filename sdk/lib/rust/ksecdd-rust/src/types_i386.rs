@@ -71,21 +71,21 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut KsecLsaProcessHandle: HANDLE;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecDdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecGatherEntropyData(EntropyData: PKSEC_ENTROPY_DATA) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecGenRandom(Buffer: PVOID, Length: SIZE_T) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecInitializeEncryptionSupport();
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecEncryptMemory(Buffer: PVOID, Length: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn KsecDecryptMemory(Buffer: PVOID, Length: ULONG, OptionFlags: ULONG) -> NTSTATUS;
 }

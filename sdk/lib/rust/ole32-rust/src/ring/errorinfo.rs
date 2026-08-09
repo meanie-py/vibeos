@@ -8,10 +8,7 @@ use crate::prelude::*;
 // concrete ABI. Same macro as oleaut32-rust/src/oleaut.rs.
 macro_rules! stdmethod {
     ( fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block ) => {
-        #[cfg(target_arch = "x86")]
-        unsafe extern "stdcall" fn $name ( $($arg : $ty),* ) -> $ret $body
-        #[cfg(not(target_arch = "x86"))]
-        unsafe extern "C" fn $name ( $($arg : $ty),* ) -> $ret $body
+        unsafe extern "system" fn $name ( $($arg : $ty),* ) -> $ret $body
     };
 }
 

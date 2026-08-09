@@ -1,49 +1,12 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_Init_body;
-use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_dtor_body;
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinEnumList {
-    pub lpVtbl: *const IRecycleBinEnumListVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinEnumListVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Next: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT,
-    pub Skip: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD) -> HRESULT,
-    pub Reset: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinEnumList: IID;
-}
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_delete;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_new;
+// IRecycleBinEnumList: 6 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinEnumList` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinFile {
-    pub lpVtbl: *const IRecycleBinFileVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinFileVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub IsEqualIdentity: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT,
-    pub GetInfo: unsafe extern "system" fn(This: *mut IRecycleBinFile, pInfo: PDELETED_FILE_INFO) -> HRESULT,
-    pub GetLastModificationTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pLastModificationTime: *mut FILETIME) -> HRESULT,
-    pub GetDeletionTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pDeletionTime: *mut FILETIME) -> HRESULT,
-    pub GetFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetPhysicalFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetAttributes: unsafe extern "system" fn(This: *mut IRecycleBinFile, pAttributes: *mut DWORD) -> HRESULT,
-    pub GetFileName: unsafe extern "system" fn(This: *mut IRecycleBinFile, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinFile: IID;
-}
+// IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
 
 // Deterministic COM scaffold for RecycleBin5Enum; method bodies are generated separately.
 extern "system" {
@@ -105,12 +68,12 @@ unsafe extern "system" fn RecycleBin5Enum_IRecycleBinEnumList_Reset(This: *mut I
 }
 
 pub static RECYCLEBIN5ENUM_IRECYCLEBINENUMLIST_VTBL: IRecycleBinEnumListVtbl = IRecycleBinEnumListVtbl {
-    QueryInterface: RecycleBin5Enum_IRecycleBinEnumList_QueryInterface,
-    AddRef: RecycleBin5Enum_IRecycleBinEnumList_AddRef,
-    Release: RecycleBin5Enum_IRecycleBinEnumList_Release,
-    Next: RecycleBin5Enum_IRecycleBinEnumList_Next,
-    Skip: RecycleBin5Enum_IRecycleBinEnumList_Skip,
-    Reset: RecycleBin5Enum_IRecycleBinEnumList_Reset,
+    QueryInterface: Some(RecycleBin5Enum_IRecycleBinEnumList_QueryInterface),
+    AddRef: Some(RecycleBin5Enum_IRecycleBinEnumList_AddRef),
+    Release: Some(RecycleBin5Enum_IRecycleBinEnumList_Release),
+    Next: Some(RecycleBin5Enum_IRecycleBinEnumList_Next),
+    Skip: Some(RecycleBin5Enum_IRecycleBinEnumList_Skip),
+    Reset: Some(RecycleBin5Enum_IRecycleBinEnumList_Reset),
 };
 
 /// `new RecycleBin5Enum` — operator new, the vptr store, then the constructor body.
@@ -358,18 +321,14 @@ pub unsafe fn RecycleBin5File_Constructor_body(prb: *mut IRecycleBin5, Folder: L
     }
     *ppFile = core::ptr::null_mut();
 
-    let pThis: *mut RecycleBin5File = RecycleBin5File() as *mut RecycleBin5File;
+    let pThis: *mut RecycleBin5File = RecycleBin5File_new();
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
 
     let hr = RecycleBin5File_Init_body(pThis, prb, Folder, pDeletedFile);
     if hr < 0 {
-        RecycleBin5File_dtor_body(pThis);
-        core::alloc::dealloc(
-            pThis as *mut u8,
-            core::alloc::Layout::new::<RecycleBin5File>(),
-        );
+        RecycleBin5File_delete(pThis);
         return hr;
     }
 

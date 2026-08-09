@@ -501,64 +501,8 @@ pub unsafe extern "system" fn UserEnumDisplayDevices(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEnumDisplayDevices(
-    mut pustrDevice: PUNICODE_STRING,
-    iDevNum: DWORD,
-    pDisplayDevice: PDISPLAY_DEVICEW,
-    dwFlags: DWORD,
-) -> BOOL {
-    let mut ustrDevice: _UNICODE_STRING = core::mem::zeroed();
-    let mut awcDevice: [WCHAR; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
-    let mut dispdev: DISPLAY_DEVICEW = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-
-    dispdev.cb = core::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
-
-    if !pustrDevice.is_null() {
-        rtl_init_empty_unicode_string(
-            &mut ustrDevice,
-            awcDevice.as_mut_ptr(),
-            core::mem::size_of_val(&awcDevice) as USHORT,
-        );
-
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, pustrDevice as _);
-
-        if ustrDevice.Length > 0 {
-            pustrDevice = &mut ustrDevice;
-        } else {
-            pustrDevice = core::ptr::null_mut();
-        }
-    }
-
-    UserEnterShared();
-
-    Status = UserEnumDisplayDevices(pustrDevice, iDevNum, &mut dispdev, dwFlags);
-
-    UserLeave();
-
-    if NT_SUCCESS(Status) {
-        if (*pDisplayDevice).cb != 0 {
-            (*pDisplayDevice).cb = core::cmp::min(
-                (*pDisplayDevice).cb,
-                core::mem::size_of::<DISPLAY_DEVICEW>() as DWORD,
-            );
-
-            RtlCopyMemory(
-                pDisplayDevice as *mut _,
-                &dispdev as *const _ as *const _,
-                (*pDisplayDevice).cb as usize,
-            );
-        }
-    }
-
-    NT_SUCCESS(Status) as BOOL
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserEnumDisplayDevices(
+pub unsafe extern "system" fn NtUserEnumDisplayDevices(
     mut pustrDevice: PUNICODE_STRING,
     iDevNum: DWORD,
     pDisplayDevice: PDISPLAY_DEVICEW,
@@ -711,72 +655,8 @@ pub unsafe extern "system" fn UserEnumRegistryDisplaySettings(
     }
     Status
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEnumDisplaySettings(
-    pustrDevice: PUNICODE_STRING,
-    iModeNum: u32,
-    lpDevMode: LPDEVMODEW,
-    dwFlags: u32,
-) -> i32 {
-    let mut ustrDeviceUser: _UNICODE_STRING = core::mem::zeroed();
-    let mut ustrDevice: _UNICODE_STRING = core::mem::zeroed();
-    let mut awcDevice: [u16; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
-    let mut Status: i32;
-    let mut cbSize: u32 = 0;
-    let mut cbExtra: u32 = 0;
-    let mut pustrDevice = pustrDevice;
-
-    Status = SafeProbeForRead(
-        lpDevMode as *mut core::ffi::c_void,
-        core::mem::size_of::<DEVMODEW>(),
-        core::mem::size_of::<u8>(),
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForWrite(
-            lpDevMode as *mut core::ffi::c_void,
-            (cbSize + cbExtra) as usize,
-            core::mem::size_of::<u8>(),
-        );
-    }
-    if !NT_SUCCESS(Status) {
-        return Status;
-    }
-    if NT_SUCCESS(Status) {
-        cbSize = (*lpDevMode).dmSize as u32;
-        cbExtra = (*lpDevMode).dmDriverExtra as u32;
-    }
-
-    if cbSize != core::mem::size_of::<DEVMODEW>() as u32 {
-        return STATUS_BUFFER_TOO_SMALL;
-    }
-
-    if !pustrDevice.is_null() {
-        rtl_init_empty_unicode_string(
-            &mut ustrDevice,
-            awcDevice.as_mut_ptr(),
-            core::mem::size_of_val(&awcDevice) as u16,
-        );
-
-        ustrDeviceUser = ProbeForReadUnicodeString(pustrDevice);
-
-        if ustrDeviceUser.Length == 0 || ustrDeviceUser.Buffer.is_null() {
-            ExRaiseStatus(STATUS_NO_MEMORY);
-        }
-
-        let _ = ustrDeviceUser.Length;
-
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, &mut ustrDeviceUser as *mut _ as _);
-
-        pustrDevice = &mut ustrDevice;
-    }
-
-    return Status;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserEnumDisplaySettings(
+pub unsafe extern "system" fn NtUserEnumDisplaySettings(
     pustrDevice: PUNICODE_STRING,
     iModeNum: u32,
     lpDevMode: LPDEVMODEW,
@@ -1041,94 +921,8 @@ pub unsafe extern "C" fn UserDisplayNotifyShutdown(ppiCurrent: PPROCESSINFO) {
         }
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserChangeDisplaySettings(
-    mut pustrDevice: PUNICODE_STRING,
-    mut lpDevMode: LPDEVMODEW,
-    dwflags: DWORD,
-    lParam: LPVOID,
-) -> LONG {
-
-    let mut awcDevice: [u16; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
-    let mut ustrDevice: _UNICODE_STRING = core::mem::zeroed();
-    let mut dmLocal: DEVMODEW = core::mem::zeroed();
-    let lRet: LONG;
-
-    /* Check arguments */
-    if dwflags != CDS_VIDEOPARAMETERS && lParam != core::ptr::null_mut() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return DISP_CHANGE_BADPARAM;
-    }
-
-    /* Check flags */
-    if (dwflags & (CDS_GLOBAL | CDS_NORESET)) != 0 && (dwflags & CDS_UPDATEREGISTRY) == 0 {
-        return DISP_CHANGE_BADFLAGS;
-    }
-
-    if (dwflags & CDS_RESET) != 0 && (dwflags & CDS_NORESET) != 0 {
-        return DISP_CHANGE_BADFLAGS;
-    }
-
-    /* Copy the device name */
-    if pustrDevice != core::ptr::null_mut() {
-        /* Initialize destination string */
-        rtl_init_empty_unicode_string(
-            &mut ustrDevice,
-            awcDevice.as_mut_ptr(),
-            core::mem::size_of_val(&awcDevice) as u16,
-        );
-
-        /* Copy the string */
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, pustrDevice as _);
-
-        pustrDevice = &mut ustrDevice;
-    }
-
-    /* Copy devmode */
-    if lpDevMode != core::ptr::null_mut() {
-        /* Calculate usable size */
-        let sizeOfLocal = core::mem::size_of::<DEVMODEW>() as u16;
-        dmLocal.dmSize = if sizeOfLocal < (*lpDevMode).dmSize {
-            sizeOfLocal
-        } else {
-            (*lpDevMode).dmSize
-        };
-
-        /* Probe and copy the full DEVMODE */
-        core::ptr::copy_nonoverlapping(
-            lpDevMode as *const u8,
-            &mut dmLocal as *mut DEVMODEW as *mut u8,
-            dmLocal.dmSize as usize,
-        );
-
-        /* Check for extra parameters */
-        if dmLocal.dmDriverExtra > 0 {
-            /* FIXME: TODO */
-            dmLocal.dmDriverExtra = 0;
-        }
-
-        /* Use the local structure */
-        lpDevMode = &mut dmLocal;
-    }
-
-    // FIXME: Copy videoparameters
-
-    /* Acquire global USER lock */
-    UserEnterExclusive();
-
-    /* Call internal function */
-    lRet = UserChangeDisplaySettings(pustrDevice, lpDevMode, dwflags, core::ptr::null_mut());
-
-    /* Release lock */
-    UserLeave();
-
-    lRet
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserChangeDisplaySettings(
+pub unsafe extern "system" fn NtUserChangeDisplaySettings(
     mut pustrDevice: PUNICODE_STRING,
     mut lpDevMode: LPDEVMODEW,
     dwflags: DWORD,

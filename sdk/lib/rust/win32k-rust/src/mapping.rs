@@ -8,9 +8,8 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 // ---- file-scope preamble (translated) ----
 pub static mut ghSystem32Directory: HANDLE = core::ptr::null_mut();
 pub static mut ghRootDirectory: HANDLE = core::ptr::null_mut();
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngMapSectionView(
+pub unsafe extern "system" fn EngMapSectionView(
     hSection: HANDLE,
     cjSize: SIZE_T,
     cjOffset: ULONG,
@@ -52,70 +51,8 @@ pub unsafe extern "stdcall" fn EngMapSectionView(
 
     (pvBaseAddress as PUCHAR).add((cjOffset & (MM_ALLOCATION_GRANULARITY - 1)) as usize) as PVOID
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapSectionView(
-    hSection: HANDLE,
-    cjSize: SIZE_T,
-    cjOffset: ULONG,
-    phSecure: PHANDLE,
-) -> PVOID {
-    let mut liSectionOffset: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
-    let mut pvBaseAddress: PVOID = core::ptr::null_mut();
-    let Status: NTSTATUS;
-    let mut cjSize: ntkrnl_sys::ddk::SIZE_T = cjSize as _;
-
-    if cjSize > ULONG_MAX as ntkrnl_sys::ddk::SIZE_T {
-        return core::ptr::null_mut();
-    }
-
-    liSectionOffset.QuadPart = (cjOffset & !(MM_ALLOCATION_GRANULARITY - 1)) as i64;
-    cjSize += (cjOffset & (MM_ALLOCATION_GRANULARITY - 1)) as ntkrnl_sys::ddk::SIZE_T;
-
-    Status = ZwMapViewOfSection(
-        hSection,
-        NtCurrentProcess(),
-        &mut pvBaseAddress,
-        0,
-        cjSize,
-        &mut liSectionOffset,
-        &mut cjSize,
-        ViewShare as ntkrnl_sys::ddk::SECTION_INHERIT,
-        0,
-        PAGE_READWRITE,
-    );
-    if !NT_SUCCESS(Status) {
-        return core::ptr::null_mut();
-    }
-
-    *phSecure = EngSecureMem(pvBaseAddress, cjSize as ULONG);
-    if (*phSecure).is_null() {
-        ZwUnmapViewOfSection(NtCurrentProcess(), pvBaseAddress);
-        return core::ptr::null_mut();
-    }
-
-    (pvBaseAddress as PUCHAR).add((cjOffset & (MM_ALLOCATION_GRANULARITY - 1)) as usize) as PVOID
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnmapSectionView(
-    pvBits: PVOID,
-    cjOffset: ULONG,
-    hSecure: HANDLE,
-) {
-    let mut Status: NTSTATUS;
-
-    EngUnsecureMem(hSecure);
-
-    let pvBits = (pvBits as PUCHAR).offset(-((cjOffset & (MM_ALLOCATION_GRANULARITY - 1)) as isize)) as PVOID;
-
-    Status = MmUnmapViewOfSection(PsGetCurrentProcess() as *mut _, pvBits);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngUnmapSectionView(
+pub unsafe extern "system" fn EngUnmapSectionView(
     pvBits: PVOID,
     cjOffset: ULONG,
     hSecure: HANDLE,
@@ -210,7 +147,7 @@ unsafe fn EngCreateSectionHack(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngMapSection(
+pub unsafe extern "system" fn EngMapSection(
     pvSection: PVOID,
     bMap: BOOL,
     hProcess: HANDLE,
@@ -265,7 +202,7 @@ pub unsafe extern "stdcall" fn EngMapSection(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapSection(
+pub unsafe extern "system" fn EngMapSection(
     pvSection: PVOID,
     bMap: BOOL,
     hProcess: HANDLE,
@@ -316,9 +253,8 @@ pub unsafe extern "C" fn EngMapSection(
     *pvBaseAddress = (*pSection).pvMappedBase;
     if NT_SUCCESS(Status) { 1i32 } else { 0i32 }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngFreeSectionMem(
+pub unsafe extern "system" fn EngFreeSectionMem(
     pvSection: *mut core::ffi::c_void,
     pvMappedBase: *mut core::ffi::c_void,
 ) -> u32 {
@@ -339,73 +275,8 @@ pub unsafe extern "stdcall" fn EngFreeSectionMem(
 
     bResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFreeSectionMem(
-    pvSection: *mut core::ffi::c_void,
-    pvMappedBase: *mut core::ffi::c_void,
-) -> u32 {
-    let pSection = pvSection as PENGSECTION;
-    let mut bResult: u32 = 1;
-
-    if !pvMappedBase.is_null() {
-        let Status = MmUnmapViewInSessionSpace(pvMappedBase);
-        if !NT_SUCCESS(Status) {
-            bResult = 0;
-        }
-    }
-
-    if !pSection.is_null() {
-        ObDereferenceObject((*pSection).pvSectionObject as *mut core::ffi::c_void);
-        EngFreeMem(pSection as *mut core::ffi::c_void);
-    }
-
-    bResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngAllocSectionMem(
-    ppvSection: *mut *mut core::ffi::c_void,
-    fl: u32,
-    cjSize: usize,
-    ulTag: u32,
-) -> *mut core::ffi::c_void {
-    let mut Status: i32;
-    let mut pSection: PENGSECTION;
-
-    if cjSize == 0 {
-        return core::ptr::null_mut();
-    }
-
-    pSection = EngCreateSectionHack(fl, cjSize, ulTag) as PENGSECTION;
-    if pSection.is_null() {
-        *ppvSection = core::ptr::null_mut();
-        return core::ptr::null_mut();
-    }
-
-    Status = MmMapViewInSessionSpace(
-        (*pSection).pvSectionObject,
-        core::ptr::addr_of_mut!((*pSection).pvMappedBase),
-        core::ptr::addr_of_mut!((*pSection).cjViewSize),
-    );
-    if !NT_SUCCESS(Status) {
-        *ppvSection = core::ptr::null_mut();
-        EngFreeSectionMem(pSection as *mut core::ffi::c_void, core::ptr::null_mut());
-        return core::ptr::null_mut();
-    }
-
-    if (fl & FL_ZERO_MEMORY) != 0 {
-        core::ptr::write_bytes((*pSection).pvMappedBase as *mut u8, 0, cjSize);
-    }
-
-    *ppvSection = pSection as *mut core::ffi::c_void;
-    (*pSection).pvMappedBase
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngAllocSectionMem(
+pub unsafe extern "system" fn EngAllocSectionMem(
     ppvSection: *mut *mut core::ffi::c_void,
     fl: u32,
     cjSize: usize,
@@ -444,7 +315,7 @@ pub unsafe extern "C" fn EngAllocSectionMem(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngLoadModuleEx(
+pub unsafe extern "system" fn EngLoadModuleEx(
     pwsz: LPWSTR,
     cjSizeOfModule: u32,
     fl: FLONG,
@@ -545,7 +416,7 @@ pub unsafe extern "stdcall" fn EngLoadModuleEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLoadModuleEx(
+pub unsafe extern "system" fn EngLoadModuleEx(
     pwsz: LPWSTR,
     cjSizeOfModule: u32,
     fl: FLONG,
@@ -641,41 +512,21 @@ pub unsafe extern "C" fn EngLoadModuleEx(
 
     pFileView
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngLoadModule(
+pub unsafe extern "system" fn EngLoadModule(
     pwsz: LPWSTR,
 ) -> *mut core::ffi::c_void {
     EngLoadModuleEx(pwsz, 0, FVF_READONLY | FVF_SYSTEMROOT) as *mut core::ffi::c_void
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLoadModule(
-    pwsz: LPWSTR,
-) -> *mut core::ffi::c_void {
-    EngLoadModuleEx(pwsz, 0, FVF_READONLY | FVF_SYSTEMROOT) as *mut core::ffi::c_void
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngLoadModuleForWrite(
+pub unsafe extern "system" fn EngLoadModuleForWrite(
     pwsz: LPWSTR,
     cjSizeOfModule: u32,
 ) -> *mut core::ffi::c_void {
     EngLoadModuleEx(pwsz, cjSizeOfModule, FVF_SYSTEMROOT) as *mut core::ffi::c_void
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngLoadModuleForWrite(
-    pwsz: LPWSTR,
-    cjSizeOfModule: u32,
-) -> *mut core::ffi::c_void {
-    EngLoadModuleEx(pwsz, cjSizeOfModule, FVF_SYSTEMROOT) as *mut core::ffi::c_void
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMapModule(
+pub unsafe extern "system" fn EngMapModule(
     h: HANDLE,
     pulSize: PULONG,
 ) -> PVOID {
@@ -697,34 +548,8 @@ pub unsafe extern "stdcall" fn EngMapModule(
     *pulSize = (*pFileView).cjView as ULONG;
     (*pFileView).pvKView
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapModule(
-    h: HANDLE,
-    pulSize: PULONG,
-) -> PVOID {
-    let pFileView = h as PFILEVIEW;
-    let Status: NTSTATUS;
-
-    (*pFileView).cjView = 0;
-
-    Status = MmMapViewInSystemSpace(
-        (*pFileView).pSection,
-        core::ptr::addr_of_mut!((*pFileView).pvKView),
-        core::ptr::addr_of_mut!((*pFileView).cjView),
-    );
-    if !NT_SUCCESS(Status) {
-        *pulSize = 0;
-        return core::ptr::null_mut();
-    }
-
-    *pulSize = (*pFileView).cjView as ULONG;
-    (*pFileView).pvKView
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngFreeModule(
+pub unsafe extern "system" fn EngFreeModule(
     h: HANDLE,
 ) {
     let pFileView = h as PFILEVIEW;
@@ -739,27 +564,8 @@ pub unsafe extern "stdcall" fn EngFreeModule(
 
     EngFreeMem(pFileView as PVOID);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngFreeModule(
-    h: HANDLE,
-) {
-    let pFileView = h as PFILEVIEW;
-    let Status: NTSTATUS;
-
-    Status = MmUnmapViewInSystemSpace((*pFileView).pvKView);
-    if !NT_SUCCESS(Status) {
-        // DPRINT removed
-    }
-
-    ObDereferenceObject((*pFileView).pSection as PVOID);
-
-    EngFreeMem(pFileView as PVOID);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMapFile(
+pub unsafe extern "system" fn EngMapFile(
     pwsz: LPWSTR,
     cjSize: u32,
     piFile: *mut usize,
@@ -783,36 +589,8 @@ pub unsafe extern "stdcall" fn EngMapFile(
     *piFile = hModule as usize;
     return pvBase;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapFile(
-    pwsz: LPWSTR,
-    cjSize: u32,
-    piFile: *mut usize,
-) -> *mut core::ffi::c_void {
-    let mut hModule: *mut core::ffi::c_void;
-    let pvBase: *mut core::ffi::c_void;
-    let mut cjSizeLocal = cjSize;
-
-    hModule = EngLoadModuleEx(pwsz, 0, 0) as *mut core::ffi::c_void;
-    if hModule.is_null() {
-        *piFile = 0;
-        return core::ptr::null_mut();
-    }
-
-    pvBase = EngMapModule(hModule, core::ptr::addr_of_mut!(cjSizeLocal));
-    if pvBase.is_null() {
-        EngFreeModule(hModule);
-        hModule = core::ptr::null_mut();
-    }
-
-    *piFile = hModule as usize;
-    return pvBase;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnmapFile(
+pub unsafe extern "system" fn EngUnmapFile(
     iFile: ULONG_PTR,
 ) -> BOOL {
     let hModule = iFile as HANDLE;
@@ -821,34 +599,13 @@ pub unsafe extern "stdcall" fn EngUnmapFile(
 
     return 1i32;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngUnmapFile(
-    iFile: ULONG_PTR,
-) -> BOOL {
-    let hModule = iFile as HANDLE;
-
-    EngFreeModule(hModule);
-
-    return 1i32;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnmapFontFileFD(
+pub unsafe extern "system" fn EngUnmapFontFileFD(
     iFile: ULONG_PTR,
 ) {
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngUnmapFontFileFD(
-    iFile: ULONG_PTR,
-) {
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMapFontFileFD(
+pub unsafe extern "system" fn EngMapFontFileFD(
     _iFile: ULONG_PTR,
     _ppjBuf: *mut PULONG,
     _pcjBuf: PULONG,
@@ -857,47 +614,16 @@ pub unsafe extern "stdcall" fn EngMapFontFileFD(
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapFontFileFD(
-    _iFile: ULONG_PTR,
-    _ppjBuf: *mut PULONG,
-    _pcjBuf: PULONG,
-) -> BOOL {
-    // @unimplemented stub
-    0
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngMapFontFile(
+pub unsafe extern "system" fn EngMapFontFile(
     iFile: ULONG_PTR,
     ppjBuf: *mut PULONG,
     pcjBuf: PULONG,
 ) -> BOOL {
     return EngMapFontFileFD(iFile, ppjBuf, pcjBuf);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngMapFontFile(
-    iFile: ULONG_PTR,
-    ppjBuf: *mut PULONG,
-    pcjBuf: PULONG,
-) -> BOOL {
-    return EngMapFontFileFD(iFile, ppjBuf, pcjBuf);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngUnmapFontFile(
-    iFile: ULONG_PTR,
-) {
-    EngUnmapFontFileFD(iFile);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngUnmapFontFile(
+pub unsafe extern "system" fn EngUnmapFontFile(
     iFile: ULONG_PTR,
 ) {
     EngUnmapFontFileFD(iFile);

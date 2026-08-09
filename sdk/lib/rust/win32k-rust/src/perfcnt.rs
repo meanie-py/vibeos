@@ -3,33 +3,15 @@ use ntkrnl_sys::ddk::{KeQueryPerformanceCounter};
 // ---- file-scope preamble (translated) ----
 // (empty preamble — perfcnt.c has no file-scope declarations)
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryPerformanceFrequency(Frequency: *mut i64) {
+pub unsafe extern "system" fn EngQueryPerformanceFrequency(Frequency: *mut i64) {
     let mut Freq: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
     
     KeQueryPerformanceCounter(&mut Freq);
     *Frequency = Freq.QuadPart;
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngQueryPerformanceFrequency(Frequency: *mut i64) {
-    let mut Freq: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
-    
-    KeQueryPerformanceCounter(&mut Freq);
-    *Frequency = Freq.QuadPart;
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngQueryPerformanceCounter(Count: *mut i64) {
-    let PerfCount = KeQueryPerformanceCounter(core::ptr::null_mut());
-    *Count = PerfCount.QuadPart;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngQueryPerformanceCounter(Count: *mut i64) {
+pub unsafe extern "system" fn EngQueryPerformanceCounter(Count: *mut i64) {
     let PerfCount = KeQueryPerformanceCounter(core::ptr::null_mut());
     *Count = PerfCount.QuadPart;
 }

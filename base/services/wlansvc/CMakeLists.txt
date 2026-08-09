@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WLANSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlansvc-target")
 set(WLANSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwlansvc_rust.a")
-file(GLOB_RECURSE WLANSVC_RUST_SRCS "${WLANSVC_RUST_WORKSPACE_DIR}/wlansvc-rust/src/*.rs")
+rust_crate_sources(WLANSVC_RUST_SRCS "${WLANSVC_RUST_WORKSPACE_DIR}" wlansvc-rust)
 add_custom_command(
     OUTPUT ${WLANSVC_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

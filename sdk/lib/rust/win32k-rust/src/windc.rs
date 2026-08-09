@@ -48,11 +48,6 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HWND {
 
 // GetW32ThreadInfo — exported NTAPI (`_GetW32ThreadInfo`, cdecl on i386).
 // DCU_SetDcUndeletable — FASTCALL (`@DCU_SetDcUndeletable@4`).
-#[cfg(target_arch = "x86")]
-extern "C" {
-    fn GetW32ThreadInfo() -> PTHREADINFO;
-}
-#[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn GetW32ThreadInfo() -> PTHREADINFO;
 }
@@ -1066,9 +1061,8 @@ unsafe fn UserGethWnd_impl(hdc: HDC, pwndo: *mut PWNDOBJ) -> HWND {
     }
     hWnd
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetDCEx(hWnd: HWND, ClipRegion: HANDLE, Flags: ULONG) -> HDC {
+pub unsafe extern "system" fn NtUserGetDCEx(hWnd: HWND, ClipRegion: HANDLE, Flags: ULONG) -> HDC {
     let mut Wnd: PWND = core::ptr::null_mut();
     let mut Ret: HDC = core::ptr::null_mut();
 
@@ -1087,42 +1081,12 @@ pub unsafe extern "stdcall" fn NtUserGetDCEx(hWnd: HWND, ClipRegion: HANDLE, Fla
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetDCEx(hWnd: HWND, ClipRegion: HANDLE, Flags: ULONG) -> HDC {
-    let mut Wnd: PWND = core::ptr::null_mut();
-    let mut Ret: HDC = core::ptr::null_mut();
-
-    UserEnterExclusive();
-
-    'block: {
-        if !hWnd.is_null() {
-            Wnd = UserGetWindowObject(hWnd);
-            if Wnd.is_null() {
-                break 'block;
-            }
-        }
-        Ret = UserGetDCEx(Wnd, ClipRegion, Flags);
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetWindowDC(hWnd: HWND) -> HDC {
+pub unsafe extern "system" fn NtUserGetWindowDC(hWnd: HWND) -> HDC {
     NtUserGetDCEx(hWnd, core::ptr::null_mut(), (DCX_USESTYLE | DCX_WINDOW) as ULONG)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetWindowDC(hWnd: HWND) -> HDC {
-    NtUserGetDCEx(hWnd, core::ptr::null_mut(), (DCX_USESTYLE | DCX_WINDOW) as ULONG)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetDC(hWnd: HWND) -> HDC {
+pub unsafe extern "system" fn NtUserGetDC(hWnd: HWND) -> HDC {
     NtUserGetDCEx(
         hWnd,
         core::ptr::null_mut(),
@@ -1133,37 +1097,8 @@ pub unsafe extern "stdcall" fn NtUserGetDC(hWnd: HWND) -> HDC {
         },
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetDC(hWnd: HWND) -> HDC {
-    NtUserGetDCEx(
-        hWnd,
-        core::ptr::null_mut(),
-        if hWnd.is_null() {
-            DCX_CACHE | DCX_WINDOW
-        } else {
-            DCX_USESTYLE
-        },
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSelectPalette(
-    hDC: HDC,
-    hpal: HPALETTE,
-    ForceBackground: BOOL,
-) -> HPALETTE {
-    let oldPal: HPALETTE;
-    UserEnterExclusive();
-    oldPal = GdiSelectPalette(hDC, hpal, ForceBackground);
-    UserLeave();
-    oldPal
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSelectPalette(
+pub unsafe extern "system" fn NtUserSelectPalette(
     hDC: HDC,
     hpal: HPALETTE,
     ForceBackground: BOOL,

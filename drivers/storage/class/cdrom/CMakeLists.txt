@@ -30,7 +30,7 @@ elseif(ARCH STREQUAL "arm64")
     set(CDROM_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(CDROM_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE CDROM_RUST_SRCS ${CDROM_RUST_WORKSPACE_DIR}/cdrom-rust/src/*.rs)
+rust_crate_sources(CDROM_RUST_SRCS "${CDROM_RUST_WORKSPACE_DIR}" cdrom-rust)
 add_custom_command(
     OUTPUT ${CDROM_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WLANAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wlanapi-target")
 set(WLANAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwlanapi_rust.a")
-file(GLOB_RECURSE WLANAPI_RUST_SRCS "${WLANAPI_RUST_WORKSPACE_DIR}/wlanapi-rust/src/*.rs")
+rust_crate_sources(WLANAPI_RUST_SRCS "${WLANAPI_RUST_WORKSPACE_DIR}" wlanapi-rust)
 add_custom_command(
     OUTPUT ${WLANAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

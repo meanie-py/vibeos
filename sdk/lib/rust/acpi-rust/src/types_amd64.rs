@@ -659,7 +659,7 @@ unsafe extern "C" {
 unsafe extern "system" {
     pub fn Bus_PDO_EvalMethod(DeviceData: PPDO_DEVICE_DATA, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Bus_CreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -674,7 +674,7 @@ unsafe extern "C" {
 unsafe extern "system" {
     pub fn Bus_PnP(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Bus_CompletionRoutine(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,

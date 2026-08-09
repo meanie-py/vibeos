@@ -138,8 +138,7 @@ pub unsafe extern "system" fn Dns_Ip4AddressToReverseName_W(
 #[no_mangle]
 pub unsafe extern "system" fn Dns_SplitHostFromDomainNameW(DomainName: LPWSTR) {
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ConvertAddrinfoFromUnicodeToAnsi(mut Addrinfo: PADDRINFOW) -> i32 {
+unsafe extern "system" fn ConvertAddrinfoFromUnicodeToAnsi(mut Addrinfo: PADDRINFOW) -> i32 {
     let mut AnsiName: LPSTR;
     let mut UnicodeName: *mut LPWSTR;
 
@@ -166,143 +165,7 @@ unsafe extern "stdcall" fn ConvertAddrinfoFromUnicodeToAnsi(mut Addrinfo: PADDRI
 
     ERROR_SUCCESS as i32
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ConvertAddrinfoFromUnicodeToAnsi(mut Addrinfo: PADDRINFOW) -> i32 {
-    let mut AnsiName: LPSTR;
-    let mut UnicodeName: *mut LPWSTR;
-
-    if !Addrinfo.is_null() {
-        loop {
-            UnicodeName = core::ptr::addr_of_mut!((*Addrinfo).ai_canonname);
-
-            if !(*UnicodeName).is_null() {
-                AnsiName = AnsiDupFromUnicode(*UnicodeName);
-                if !AnsiName.is_null() {
-                    HeapFree(WsSockHeap, 0, *UnicodeName as *mut core::ffi::c_void);
-                    *UnicodeName = AnsiName as LPWSTR;
-                } else {
-                    return GetLastError() as i32;
-                }
-            }
-
-            Addrinfo = (*Addrinfo).ai_next;
-            if Addrinfo.is_null() {
-                break;
-            }
-        }
-    }
-
-    ERROR_SUCCESS as i32
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ParseV4Address(AddressString: PCWSTR, pAddress: PDWORD) -> u8 {
-    let mut AnsiAddressString: [i8; 128] = [0; 128];
-    let mut cp: *mut i8 = AnsiAddressString.as_mut_ptr();
-    let mut val: u32;
-    let mut base: u32;
-    let mut c: u8;
-    let mut parts: [u32; 4] = [0; 4];
-    let mut pp: *mut u32 = parts.as_mut_ptr();
-
-    if AddressString.is_null() {
-        return 0u8;
-    }
-
-    WideCharToMultiByte(
-        0,
-        0,
-        (AddressString as *mut u16),
-        -1,
-        AnsiAddressString.as_mut_ptr(),
-        core::mem::size_of::<[i8; 128]>() as i32,
-        core::ptr::null(),
-        core::ptr::null_mut(),
-    );
-
-    if isdigit(*cp as i32) == 0 {
-        return 0u8;
-    }
-
-    loop {
-        val = 0;
-        base = 10;
-
-        if *cp as i32 == '0' as i32 {
-            cp = cp.offset(1);
-            if *cp as i32 == 'x' as i32 || *cp as i32 == 'X' as i32 {
-                base = 16;
-                cp = cp.offset(1);
-            } else {
-                base = 8;
-            }
-        }
-
-        loop {
-            c = *cp as u8;
-            if c == 0 {
-                break;
-            }
-
-            if isdigit(c as i32) != 0 {
-                val = val.wrapping_mul(base).wrapping_add((c as i32 - '0' as i32) as u32);
-                cp = cp.offset(1);
-            } else {
-                if !(base == 16 && isxdigit(c as i32) != 0) {
-                    break;
-                }
-                val = (val << 4).wrapping_add(
-                    (c as i32 + 10 - (if islower(c as i32) != 0 {
-                        'a' as i32
-                    } else {
-                        'A' as i32
-                    })) as u32
-                );
-                cp = cp.offset(1);
-            }
-        }
-
-        if *cp as i32 != '.' as i32 {
-            break;
-        }
-
-        if pp >= parts.as_mut_ptr().offset(4) {
-            return 0u8;
-        }
-        *pp = val;
-        pp = pp.offset(1);
-        cp = cp.offset(1);
-    }
-
-    if *cp != 0 {
-        return 0u8;
-    }
-
-    if pp >= parts.as_mut_ptr().offset(4) {
-        return 0u8;
-    }
-    *pp = val;
-    pp = pp.offset(1);
-
-    if pp.offset_from(parts.as_mut_ptr()) as u32 != 4 {
-        return 0u8;
-    }
-
-    if parts[0] > 0xff || parts[1] > 0xff || parts[2] > 0xff || parts[3] > 0xff {
-        return 0u8;
-    }
-
-    val = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
-
-    if !pAddress.is_null() {
-        *pAddress = htonl(val);
-    }
-
-    1u8
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ParseV4Address(AddressString: PCWSTR, pAddress: PDWORD) -> u8 {
+unsafe extern "system" fn ParseV4Address(AddressString: PCWSTR, pAddress: PDWORD) -> u8 {
     let mut AnsiAddressString: [i8; 128] = [0; 128];
     let mut cp: *mut i8 = AnsiAddressString.as_mut_ptr();
     let mut val: u32;
@@ -407,7 +270,7 @@ unsafe extern "C" fn ParseV4Address(AddressString: PCWSTR, pAddress: PDWORD) -> 
     1u8
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn NewAddrInfo(
+unsafe extern "system" fn NewAddrInfo(
     SocketType: i32,
     Protocol: i32,
     Port: u16,
@@ -457,7 +320,7 @@ unsafe extern "stdcall" fn NewAddrInfo(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn NewAddrInfo(
+unsafe extern "system" fn NewAddrInfo(
     SocketType: i32,
     Protocol: i32,
     Port: u16,
@@ -505,8 +368,7 @@ unsafe extern "C" fn NewAddrInfo(
 
     return AddrInfo;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CloneAddrInfo(Port: u16, ptResult: PADDRINFOW) -> i32 {
+unsafe extern "system" fn CloneAddrInfo(Port: u16, ptResult: PADDRINFOW) -> i32 {
     let mut Next: PADDRINFOW = core::ptr::null_mut::<ADDRINFOW>();
     let mut New: PADDRINFOW = core::ptr::null_mut::<ADDRINFOW>();
 
@@ -532,36 +394,7 @@ unsafe extern "stdcall" fn CloneAddrInfo(Port: u16, ptResult: PADDRINFOW) -> i32
 
     return 0;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CloneAddrInfo(Port: u16, ptResult: PADDRINFOW) -> i32 {
-    let mut Next: PADDRINFOW = core::ptr::null_mut::<ADDRINFOW>();
-    let mut New: PADDRINFOW = core::ptr::null_mut::<ADDRINFOW>();
-
-    Next = ptResult;
-    while !Next.is_null() {
-        New = NewAddrInfo(
-            (SOCK_DGRAM as i32),
-            (*Next).ai_protocol,
-            Port,
-            (*((*Next).ai_addr as PSOCKADDR_IN)).sin_addr.S_un.S_addr,
-        );
-        if New.is_null() {
-            break;
-        }
-        (*New).ai_next = (*Next).ai_next;
-        (*Next).ai_next = New;
-        Next = (*New).ai_next;
-    }
-
-    if !Next.is_null() {
-        return EAI_MEMORY;
-    }
-
-    return 0;
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn QueryDNS(
+unsafe extern "system" fn QueryDNS(
     NodeName: LPCSTR,
     SocketType: i32,
     Protocol: i32,
@@ -610,59 +443,7 @@ unsafe extern "stdcall" fn QueryDNS(
         _ => EAI_NONAME,
     }
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn QueryDNS(
-    NodeName: LPCSTR,
-    SocketType: i32,
-    Protocol: i32,
-    Port: u16,
-    Alias: *mut i8,
-    pptResult: *mut PADDRINFOW,
-) -> i32 {
-    let mut Next: *mut PADDRINFOW = pptResult;
-    let mut Hostent: PHOSTENT = core::ptr::null_mut();
-    let mut Addresses: *mut *mut i8;
-
-    *Next = core::ptr::null_mut();
-    *Alias.offset(0) = 0;
-
-    Hostent = gethostbyname(NodeName);
-    if !Hostent.is_null() {
-        if (*Hostent).h_addrtype as i32 == AF_INET as i32
-            && (*Hostent).h_length as usize == core::mem::size_of::<IN_ADDR>()
-        {
-            Addresses = (*Hostent).h_addr_list as *mut *mut i8;
-            while !(*Addresses).is_null() {
-                *Next = NewAddrInfo(
-                    SocketType,
-                    Protocol,
-                    Port,
-                    (*(*Addresses as PIN_ADDR)).S_un.S_addr,
-                );
-                if (*Next).is_null() {
-                    return EAI_MEMORY;
-                }
-                Next = core::ptr::addr_of_mut!((**Next).ai_next);
-                Addresses = Addresses.offset(1);
-            }
-        }
-
-        strcpy(Alias, (*Hostent).h_name);
-
-        return 0;
-    }
-
-    match GetLastError() {
-        WSAHOST_NOT_FOUND => EAI_NONAME,
-        WSATRY_AGAIN => EAI_AGAIN,
-        WSANO_RECOVERY => EAI_FAIL,
-        WSANO_DATA => EAI_NODATA,
-        _ => EAI_NONAME,
-    }
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn LookupNodeByAddr(
+unsafe extern "system" fn LookupNodeByAddr(
     pNodeBuffer: LPWSTR,
     NodeBufferSize: DWORD,
     OnlyNodeName: u8,
@@ -757,115 +538,7 @@ unsafe extern "stdcall" fn LookupNodeByAddr(
 
     ErrorCode
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn LookupNodeByAddr(
-    pNodeBuffer: LPWSTR,
-    NodeBufferSize: DWORD,
-    OnlyNodeName: u8,
-    Addr: *mut core::ffi::c_void,
-    AddrSize: DWORD,
-    AddressFamily: i32,
-) -> i32 {
-    let mut LookupGuid: GUID = GUID {
-        Data1: ((0x9 << 16) | 53) as u32,
-        Data2: 0,
-        Data3: 0xc,
-        Data4: [0xc0, 0, 0, 0, 0, 0, 0, 0x46],
-    };
-    let mut Ip4Addr: PIN_ADDR = Addr as PIN_ADDR;
-    let mut ReverseBuffer: [u16; 76] = [0; 76];
-    let mut Restrictions: WSAQUERYSETW = core::mem::zeroed();
-    let mut Reply: WSAQUERYSETW;
-    let mut BufferLength: DWORD;
-    let mut ErrorCode: i32;
-    let mut LookupHandle: *mut core::ffi::c_void = core::ptr::null_mut();
-
-    if Addr.is_null() {
-        return WSAEFAULT as i32;
-    }
-
-    if AddressFamily == (AF_INET6 as i32) {
-        if AddrSize as usize != core::mem::size_of::<IN6_ADDR>() {
-            return WSAEFAULT as i32;
-        }
-        Ip4Addr = core::ptr::addr_of_mut!((*((Addr as PIN6_ADDR))).u.Byte).offset(12) as PIN_ADDR;
-    } else if AddressFamily == (AF_INET as i32) {
-        if AddrSize as usize != core::mem::size_of::<IN_ADDR>() {
-            return WSAEFAULT as i32;
-        }
-    } else {
-        return WSAEAFNOSUPPORT as i32;
-    }
-
-    if ((AddressFamily == (AF_INET6 as i32)) && (IN6_IS_ADDR_V4MAPPED(Addr as *const IN6_ADDR) != 0))
-        || (AddressFamily == (AF_INET as i32))
-    {
-        Dns_Ip4AddressToReverseName_W(ReverseBuffer.as_mut_ptr(), *Ip4Addr);
-    }
-
-    RtlZeroMemory(
-        core::ptr::addr_of_mut!(Restrictions) as *mut core::ffi::c_void,
-        core::mem::size_of::<WSAQUERYSETW>() as usize,
-    );
-    Restrictions.dwSize = core::mem::size_of::<WSAQUERYSETW>() as DWORD;
-    Restrictions.lpszServiceInstanceName = ReverseBuffer.as_mut_ptr();
-    Restrictions.lpServiceClassId = core::ptr::addr_of_mut!(LookupGuid);
-    Restrictions.dwNameSpace = NS_DNS as DWORD;
-
-    ErrorCode = WSALookupServiceBeginW(
-        core::ptr::addr_of_mut!(Restrictions),
-        LUP_RETURN_NAME as DWORD,
-        core::ptr::addr_of_mut!(LookupHandle),
-    );
-
-    if ErrorCode == ERROR_SUCCESS as i32 {
-        BufferLength = ((NI_MAXHOST - 1) as usize * core::mem::size_of::<u16>()
-            + core::mem::size_of::<WSAQUERYSETW>()) as DWORD;
-        ErrorCode = WSALookupServiceNextW(
-            LookupHandle,
-            0,
-            core::ptr::addr_of_mut!(BufferLength),
-            core::ptr::addr_of_mut!(Restrictions),
-        );
-        if ErrorCode == ERROR_SUCCESS as i32 {
-            Reply = Restrictions;
-            if Reply.lpszServiceInstanceName.is_null() {
-                ErrorCode = WSAHOST_NOT_FOUND as i32;
-            } else {
-                if OnlyNodeName != 0 {
-                    Dns_SplitHostFromDomainNameW(Reply.lpszServiceInstanceName);
-                }
-                if wcslen(Reply.lpszServiceInstanceName).wrapping_add(1) > NodeBufferSize as usize
-                {
-                    ErrorCode = WSAEFAULT as i32;
-                } else {
-                    wcscpy(pNodeBuffer, Reply.lpszServiceInstanceName);
-                }
-            }
-        }
-    } else if ErrorCode == WSASERVICE_NOT_FOUND as i32 {
-        ErrorCode = WSAHOST_NOT_FOUND as i32;
-    }
-
-    if !LookupHandle.is_null() {
-        WSALookupServiceEnd(LookupHandle);
-    }
-
-    ErrorCode
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn GetServiceNameForPort(
-    pServiceBuffer: LPWSTR,
-    ServiceBufferSize: DWORD,
-    Port: WORD,
-    Flags: DWORD,
-) -> INT {
-    return (ERROR_SUCCESS as i32);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn GetServiceNameForPort(
+unsafe extern "system" fn GetServiceNameForPort(
     pServiceBuffer: LPWSTR,
     ServiceBufferSize: DWORD,
     Port: WORD,
@@ -874,7 +547,7 @@ unsafe extern "C" fn GetServiceNameForPort(
     return (ERROR_SUCCESS as i32);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn LookupAddressForName(
+unsafe extern "system" fn LookupAddressForName(
     NodeName: LPCSTR,
     SocketType: INT,
     Protocol: INT,
@@ -936,7 +609,7 @@ unsafe extern "stdcall" fn LookupAddressForName(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn LookupAddressForName(
+unsafe extern "system" fn LookupAddressForName(
     NodeName: LPCSTR,
     SocketType: INT,
     Protocol: INT,

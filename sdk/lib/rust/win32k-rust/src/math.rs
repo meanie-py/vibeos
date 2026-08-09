@@ -1,51 +1,7 @@
 use win32k_sys::win32k::*;
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngMulDiv(
-    iMultiplicand: INT,
-    iMultiplier: INT,
-    iDivisor: INT,
-) -> INT {
-
-    let mut iMultiplicand = iMultiplicand;
-    let mut iDivisor = iDivisor;
-
-    if iDivisor == 0 {
-        return if (iMultiplicand ^ iMultiplier) < 0 { i32::MIN } else { i32::MAX };
-    }
-
-    if iDivisor < 0 {
-        iMultiplicand = -iMultiplicand;
-        iDivisor = -iDivisor;
-    }
-
-    // Int32x32To64(a,b) is a macro in <xdk/ntbasedef.h>:774 — inline its
-    // sign-extending widened multiply rather than declaring it extern.
-    let mut i64Multiplied: INT64 = (iMultiplicand as INT64) * (iMultiplier as INT64);
-
-    if i64Multiplied >= 0 {
-        i64Multiplied += (iDivisor / 2) as INT64;
-    } else {
-        i64Multiplied -= (iDivisor / 2) as INT64;
-    }
-
-    let i64Result: INT64 = i64Multiplied / iDivisor as INT64;
-
-    if i64Result > i32::MAX as INT64 {
-        return i32::MAX;
-    }
-
-    if i64Result < i32::MIN as INT64 {
-        return i32::MIN;
-    }
-
-    i64Result as INT
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngMulDiv(
+pub unsafe extern "system" fn EngMulDiv(
     iMultiplicand: INT,
     iMultiplier: INT,
     iDivisor: INT,

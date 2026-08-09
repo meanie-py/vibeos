@@ -20,6 +20,7 @@ from rustconv.cpp_com import (
     c_type_to_rust,
     discover_widl_header,
     island_integer_aliases,
+    island_lpvtbl_interfaces,
     island_struct_types,
     lower_trivial_worker,
     normalize_cpp_idioms,
@@ -226,6 +227,101 @@ def test_legacy_declare_interface_is_flattened_deterministically(tmp_path: Path)
         ("DWORD", "flags"),
         ("int *", "value"),
     )
+
+
+def test_a_method_without_pure_does_not_eat_the_next_slot(tmp_path: Path):
+    """PURE expands to nothing in C mode, so a header that omits it is a typo no compiler
+    sees. recyclebin_v5.h has one, and it silently cost IRecycleBin5 a vtable slot."""
+    header = tmp_path / "nopure.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IGappy, IUnknown)
+{
+    STDMETHOD(QueryInterface) (THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef) (THIS) PURE;
+    STDMETHOD_(ULONG,Release) (THIS) PURE;
+    STDMETHOD(EmptyIt)(THIS);
+    STDMETHOD(EnumObjects)(THIS_ IEnumThing **ppEnum) PURE;
+    STDMETHOD(GetDirectory)(THIS_ LPWSTR szPath) PURE;
+};"""
+    )
+    spec = parse_widl_interface(header, "IGappy")
+    assert [method.name for method in spec.methods] == [
+        "QueryInterface",
+        "AddRef",
+        "Release",
+        "EmptyIt",
+        "EnumObjects",
+        "GetDirectory",
+    ]
+    # The swallow used to fold EnumObjects into EmptyIt's parameter list.
+    assert spec.methods[3].params == (("IGappy *", "This"),)
+    assert spec.methods[4].params == (("IGappy *", "This"), ("IEnumThing **", "ppEnum"))
+
+
+def test_classic_uppercase_sal_is_stripped_like_the_underscore_family(tmp_path: Path):
+    """ntdef.h defines IN/OUT/OPTIONAL to nothing. Left in, they become part of the type."""
+    header = tmp_path / "classic.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IClassic, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ IN REFIID riid, OUT void **ppvObject) PURE;
+    STDMETHOD(Delete)(THIS_ IN LPCWSTR pName, IN OPTIONAL RECORD *pRec) PURE;
+};"""
+    )
+    spec = parse_widl_interface(header, "IClassic")
+    assert spec.methods[0].params == (
+        ("IClassic *", "This"),
+        ("REFIID", "riid"),
+        ("void **", "ppvObject"),
+    )
+    assert spec.methods[1].params == (
+        ("IClassic *", "This"),
+        ("LPCWSTR", "pName"),
+        ("RECORD *", "pRec"),
+    )
+
+
+def test_a_declaration_the_parser_cannot_read_is_a_hard_failure(tmp_path: Path):
+    """A vtable is positional: a dropped slot renumbers every slot after it, so calls
+    dispatch to the wrong method. That can never be a warning."""
+    header = tmp_path / "unparseable.h"
+    header.write_text(
+        """DECLARE_INTERFACE_(IWeird, IUnknown)
+{
+    STDMETHOD(Fine)(THIS) PURE;
+    STDMETHOD(Broken)(THIS_ int a  /* no closing paren before the semicolon */ ;
+    STDMETHOD(AlsoFine)(THIS) PURE;
+};"""
+    )
+    with pytest.raises(CppComError, match=r"declares 3 vtable method\(s\) but 2 parsed"):
+        parse_widl_interface(header, "IWeird")
+
+
+def test_the_real_recyclebin_v5_header_keeps_all_eleven_slots():
+    """The header that found this. IRecycleBin5 emitted 10 slots for 11 methods, so
+    GetDirectory dispatched to Delete, Delete to Restore, and OnClosing off the end."""
+    spec = parse_widl_interface(
+        REACTOS_ROOT / "dll/win32/shell32/shellrecyclebin/recyclebin_v5.h",
+        "IRecycleBin5",
+    )
+    assert [method.name for method in spec.methods] == [
+        "QueryInterface",
+        "AddRef",
+        "Release",
+        "DeleteFile",
+        "EmptyRecycleBin",
+        "EnumObjects",
+        "GetDirectory",
+        "Delete",
+        "Restore",
+        "RemoveFromDatabase",
+        "OnClosing",
+    ]
+    rust = render_interface(spec)
+    assert "ppvObject: *mut *mut core::ffi::c_void" in rust
+    assert "riid: REFIID" in rust
+    for leaked in (" IN ", " OUT ", "OPTIONAL"):
+        assert leaked not in rust
 
 
 def test_interface_renderer_owns_system_abi(tmp_path: Path):
@@ -2880,6 +2976,209 @@ def test_debris_in_a_field_is_a_hard_failure_not_a_guess():
         _state_fields("class X { static INT_PTR static INT_PTR const FOO *m_pInfo; };")
 
 
+class TestWorkerParamNameConformance:
+    """A body whose only defect is the SPELLING of its parameters is a good body. Rejecting
+    it means it is never banked, so it is re-bought on every single run, forever."""
+
+    CONTRACT = "pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL"
+
+    def test_snake_cased_de_aliased_params_are_conformed_to_the_contract(self):
+        rust = (
+            "pub unsafe fn IntDeleteRecursive_body(full_name: *const u16) -> i32 {\n"
+            "    let attrs = GetFileAttributesW(full_name);\n    attrs as i32\n}"
+        )
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert self.CONTRACT in out
+        assert "GetFileAttributesW(FullName)" in out
+        assert "full_name" not in out
+
+    def test_a_mut_qualifier_survives_the_conformance(self):
+        contract = "pub unsafe fn f_body(Count: DWORD) -> BOOL"
+        rust = "pub unsafe fn f_body(mut count: u32) -> i32 {\n    count += 1;\n    1\n}"
+        out = normalize_worker_body(rust, contract)
+        assert "mut Count: DWORD" in out
+        assert "Count += 1;" in out
+
+    def test_a_DIFFERENT_ARITY_is_still_rejected(self):
+        """Spelling is a spelling difference; a missing or extra parameter is a real
+        disagreement about what the function receives, and must stay a hard reject."""
+        rust = "pub unsafe fn IntDeleteRecursive_body() -> i32 {\n    0\n}"
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert self.CONTRACT not in out
+        assert audit_worker_body(
+            "BOOL IntDeleteRecursive(LPCWSTR FullName) { return 0; }",
+            out,
+            "IntDeleteRecursive_body",
+            self.CONTRACT,
+        )
+
+    def test_a_collision_with_the_contract_name_is_left_for_the_audit(self):
+        """If the contract's name already occurs in the body, something else answers to it
+        and a blind rename would capture that instead."""
+        rust = (
+            "pub unsafe fn IntDeleteRecursive_body(full_name: *const u16) -> i32 {\n"
+            "    let FullName = 1;\n    full_name as i32\n}"
+        )
+        out = normalize_worker_body(rust, self.CONTRACT)
+        assert "full_name: *const u16" in out
+
+
+class TestFreeFunctionNewAndDelete:
+    """A file-scope factory builds the class too, and its half of the TU has no scaffold in
+    front of it — so it invents the allocator AND the deallocator the same way `delete this`
+    did. The C++ names the static type at the `new` site; nothing in the Rust still does."""
+
+    SOURCE = (
+        "HRESULT RecycleBin5File_Constructor(IRecycleBin5 *prb, IRecycleBinFile **ppFile) {\n"
+        "    RecycleBin5File *pThis = new RecycleBin5File();\n"
+        "    if (!pThis) return E_OUTOFMEMORY;\n"
+        "    HRESULT hr = pThis->Init(prb);\n"
+        "    if (FAILED(hr)) { delete pThis; return hr; }\n"
+        "    return S_OK;\n}"
+    )
+
+    def test_new_becomes_the_scaffold_allocator(self):
+        rust = (
+            "pub unsafe fn RecycleBin5File_Constructor_body() -> HRESULT {\n"
+            "    let pThis: *mut RecycleBin5File = RecycleBin5File();\n    S_OK\n}"
+        )
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_new()" in out
+        # `RecycleBin5File()` alone is a call to the STRUCT, and it also skips the vptr store.
+        assert "= RecycleBin5File();" not in out
+
+    @pytest.mark.parametrize(
+        "emitted",
+        [
+            "free(pThis);",
+            "alloc::boxed::Box::from_raw(pThis);",
+            "let _ = Box::from_raw(pThis);",
+            "drop(alloc::boxed::Box::from_raw(pThis));",
+            "__rustconv_delete(pThis);",
+            "RecycleBin5File_dtor_body(pThis); free(pThis);",
+        ],
+    )
+    def test_every_invented_deallocator_becomes_the_scaffold_one(self, emitted: str):
+        rust = f"pub unsafe fn RecycleBin5File_Constructor_body() {{\n    {emitted}\n}}"
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_delete(pThis);" in out
+        for banned in ("free(pThis)", "Box::from_raw", "__rustconv_delete"):
+            assert banned not in out
+        # X_delete runs the destructor itself; keeping both would run it twice.
+        assert out.count("_dtor_body") == 0
+
+    def test_the_COM_Delete_METHOD_is_not_mistaken_for_the_deallocator(self):
+        """`X_Delete` (capital D) is the class's COM Delete method — for a recycle-bin file
+        that DELETES THE FILE FROM DISK. It is one letter from `X_delete`, it resolves, and
+        it compiles, so nothing downstream catches it."""
+        rust = (
+            "pub unsafe fn RecycleBin5File_Constructor_body() -> HRESULT {\n"
+            "    RecycleBin5File_Delete(pThis);\n    S_OK\n}"
+        )
+        out = normalize_worker_semantics(self.SOURCE, rust)
+        assert "RecycleBin5File_delete(pThis);" in out
+        assert "RecycleBin5File_Delete(pThis)" not in out
+
+    def test_a_body_that_legitimately_calls_Delete_keeps_it(self):
+        source = (
+            "HRESULT f() {\n"
+            "    RecycleBin5File *pThis = new RecycleBin5File();\n"
+            "    pThis->Delete();\n"
+            "    delete pThis;\n}"
+        )
+        rust = "pub unsafe fn f_body() {\n    RecycleBin5File_Delete(pThis);\n    free(pThis);\n}"
+        out = normalize_worker_semantics(source, rust)
+        assert "RecycleBin5File_Delete(pThis);" in out  # the real method call survives
+        assert "RecycleBin5File_delete(pThis);" in out  # and the free is still lowered
+
+    def test_a_factory_with_no_failure_path_still_gets_its_allocator(self):
+        """RecycleBinGeneric_Constructor news and never deletes. Gating the `new` lowering on
+        the presence of a `delete` skipped the whole function."""
+        source = (
+            "HRESULT RecycleBinGeneric_Constructor(IUnknown **ppUnknown) {\n"
+            "    RecycleBinGeneric *pThis = new RecycleBinGeneric();\n"
+            "    if (!pThis) return E_OUTOFMEMORY;\n    return S_OK;\n}"
+        )
+        rust = (
+            "pub unsafe fn RecycleBinGeneric_Constructor_body() -> HRESULT {\n"
+            "    let pThis: *mut c_void = RecycleBinGeneric();\n    S_OK\n}"
+        )
+        assert "RecycleBinGeneric_new()" in normalize_worker_semantics(source, rust)
+
+    def test_a_struct_the_source_never_news_is_left_alone(self):
+        """The lowering is keyed on the C++ `Class *v = new Class`, not on name shape."""
+        source = "void f() { SomeOther x; }"
+        rust = "pub unsafe fn f_body() {\n    let a = SomeOther();\n    free(p);\n}"
+        assert normalize_worker_semantics(source, rust) == rust
+
+
+class TestIslandOwnedInterfaces:
+    """An interface the bindgen island already provides must not be rendered a second time:
+    two same-named `#[repr(C)]` structs are DISTINCT Rust types that transmute past a cast."""
+
+    RECYCLEBIN = REACTOS_ROOT / "sdk/lib/rust/recyclebin-rust/src"
+    SHELL32_RUST = REACTOS_ROOT / "sdk/lib/rust/shell32-rust/src"
+
+    def _islands(self, root: Path, stem: str) -> list[Path]:
+        return [root / f"{stem}_{arch}.rs" for arch in ("i386", "amd64", "arm64")]
+
+    def test_the_c_lpvtbl_idiom_is_recognized_with_its_slot_order(self):
+        found = island_lpvtbl_interfaces(self._islands(self.RECYCLEBIN, "types"))
+        assert found["IRecycleBinEnumList"] == (
+            "QueryInterface",
+            "AddRef",
+            "Release",
+            "Next",
+            "Skip",
+            "Reset",
+        )
+
+    def test_the_slot_names_are_the_island_s_after_A_W_expansion(self):
+        """The Windows A/W macros expand INSIDE the interface definition, so the island's
+        slot for `STDMETHOD(DeleteFile)` is `DeleteFileW`. A vtable instance must use that
+        spelling, not the header's textual one."""
+        found = island_lpvtbl_interfaces(self._islands(self.RECYCLEBIN, "types"))
+        assert "DeleteFileW" in found["IRecycleBin5"]
+        assert "DeleteFile" not in found["IRecycleBin5"]
+
+    def test_a_cpp_mode_island_offers_nothing(self):
+        """bindgen renders a C++ abstract class as an opaque `__bindgen_vtable` with no
+        named slots. shell32's island is entirely that shape, so shell32 keeps rendering its
+        own interfaces and this whole mechanism is inert there."""
+        assert island_lpvtbl_interfaces(self._islands(self.SHELL32_RUST, "island")) == {}
+
+    def test_an_island_owned_interface_is_not_re_rendered(self, tmp_path: Path):
+        header = tmp_path / "owned.h"
+        header.write_text(
+            """DECLARE_INTERFACE_(IOwned, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+};"""
+        )
+        spec = parse_widl_interface(header, "IOwned")
+        rendered = render_interface(spec, ("QueryInterface", "AddRef", "Release"))
+        assert "pub struct IOwned" not in rendered
+        assert "pub static IID_IOwned" not in rendered
+        # Without island slots it renders as before.
+        assert "pub struct IOwnedVtbl {" in render_interface(spec)
+
+    def test_two_derivations_disagreeing_on_slot_count_is_a_hard_failure(self, tmp_path: Path):
+        header = tmp_path / "drift.h"
+        header.write_text(
+            """DECLARE_INTERFACE_(IDrift, IUnknown)
+{
+    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS) PURE;
+    STDMETHOD_(ULONG,Release)(THIS) PURE;
+};"""
+        )
+        spec = parse_widl_interface(header, "IDrift")
+        with pytest.raises(CppComError, match="4 vtable slot"):
+            render_interface(spec, ("QueryInterface", "AddRef", "Release", "Extra"))
+
+
 class TestDeleteThisLowering:
     """`delete this` is the scaffold's business, never the model's.
 
@@ -2940,7 +3239,10 @@ class TestDeleteThisLowering:
         # SENDTO_ITEM_delete -- a function absent from that crate, which read as a model
         # hallucination and was ours.
         source = "void CFoo::Drop() { free_item(p); }"
-        rust = "pub unsafe fn CFoo_Drop_body(this: *mut CFoo) {\n    alloc::boxed::Box::from_raw(p);\n}"
+        rust = (
+            "pub unsafe fn CFoo_Drop_body(this: *mut CFoo) {\n"
+            "    alloc::boxed::Box::from_raw(p);\n}"
+        )
         assert "SENDTO_ITEM_delete" not in normalize_worker_semantics(source, rust)
 
     def test_a_worker_that_still_owns_a_deallocator_is_a_finding(self):

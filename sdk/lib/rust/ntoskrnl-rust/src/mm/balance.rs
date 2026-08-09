@@ -388,13 +388,7 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
     STATUS_SUCCESS
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn MiBalancerThread(_Unused: PVOID) {
-    MiBalancerThreadInner();
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn MiBalancerThread(_Unused: PVOID) {
+unsafe extern "system" fn MiBalancerThread(_Unused: PVOID) {
     MiBalancerThreadInner();
 }
 

@@ -681,7 +681,7 @@ impl _HIDP_KEYBOARD_MODIFIER_STATE__bindgen_ty_1__bindgen_ty_1 {
 pub type HIDP_KEYBOARD_MODIFIER_STATE = _HIDP_KEYBOARD_MODIFIER_STATE;
 pub type PHIDP_KEYBOARD_MODIFIER_STATE = *mut _HIDP_KEYBOARD_MODIFIER_STATE;
 pub type PHIDP_INSERT_SCANCODES = ::core::option::Option<
-    unsafe extern "stdcall" fn(Context: PVOID, NewScanCodes: PCHAR, Length: ULONG) -> BOOLEAN,
+    unsafe extern "system" fn(Context: PVOID, NewScanCodes: PCHAR, Length: ULONG) -> BOOLEAN,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

@@ -1804,16 +1804,16 @@ pub struct _SCSI_PNP_REQUEST_BLOCK {
 pub type SCSI_PNP_REQUEST_BLOCK = _SCSI_PNP_REQUEST_BLOCK;
 pub type PSCSI_PNP_REQUEST_BLOCK = *mut _SCSI_PNP_REQUEST_BLOCK;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
-pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
+pub type PHW_DMA_STARTED = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -1823,12 +1823,12 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS =
-    ::core::option::Option<unsafe extern "C" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN>;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "C" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Context: PVOID, SaveState: BOOLEAN) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -1889,7 +1889,7 @@ pub struct _HW_INITIALIZATION_DATA__bindgen_ty_1 {
 }
 pub type HW_INITIALIZATION_DATA = _HW_INITIALIZATION_DATA;
 pub type PHW_INITIALIZATION_DATA = *mut _HW_INITIALIZATION_DATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortCompleteRequest(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -1898,19 +1898,19 @@ unsafe extern "C" {
         SrbStatus: UCHAR,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertPhysicalAddressToUlong(Address: SCSI_PHYSICAL_ADDRESS) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortConvertUlongToPhysicalAddress(UlongAddress: ULONG_PTR) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFlushDma(DeviceExtension: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortFreeDeviceBase(HwDeviceExtension: PVOID, MappedAddress: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetBusData(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -1920,7 +1920,7 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetDeviceBase(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -1930,7 +1930,7 @@ unsafe extern "C" {
         InIoSpace: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetLogicalUnit(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -1938,7 +1938,7 @@ unsafe extern "C" {
         Lun: UCHAR,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetPhysicalAddress(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -1946,7 +1946,7 @@ unsafe extern "C" {
         Length: *mut ULONG,
     ) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetSrb(
         DeviceExtension: PVOID,
         PathId: UCHAR,
@@ -1955,20 +1955,20 @@ unsafe extern "C" {
         QueueTag: LONG,
     ) -> PSCSI_REQUEST_BLOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetUncachedExtension(
         HwDeviceExtension: PVOID,
         ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
         NumberOfBytes: ULONG,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortGetVirtualAddress(
         HwDeviceExtension: PVOID,
         PhysicalAddress: SCSI_PHYSICAL_ADDRESS,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -1976,7 +1976,7 @@ unsafe extern "C" {
         HwContext: PVOID,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortIoMapTransfer(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -1984,7 +1984,7 @@ unsafe extern "C" {
         Length: ULONG,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortLogError(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2002,10 +2002,10 @@ unsafe extern "C" {
         ...
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortSetBusDataByOffset(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -2016,10 +2016,10 @@ unsafe extern "C" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortStallExecution(Delay: ULONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortValidateRange(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -38052,7 +38052,7 @@ pub struct _SCSIPORT_DRIVER_EXTENSION {
 }
 pub type SCSI_PORT_DRIVER_EXTENSION = _SCSIPORT_DRIVER_EXTENSION;
 pub type PSCSI_PORT_DRIVER_EXTENSION = *mut _SCSIPORT_DRIVER_EXTENSION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -38087,7 +38087,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PdoDispatchPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortDispatchPower(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -38109,7 +38109,7 @@ unsafe extern "C" {
         OldIrql: PKIRQL,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortDpcForIsr(
         Dpc: *mut _KDPC,
         DeviceObject: *mut _DEVICE_OBJECT,
@@ -38117,19 +38117,19 @@ unsafe extern "C" {
         Context: PVOID,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortDispatchScsi(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortStartPacket(SynchronizeContext: PVOID) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortStartIo(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortIsr(Interrupt: *mut _KINTERRUPT, ServiceContext: PVOID) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SpiAdapterControl(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -38137,7 +38137,7 @@ unsafe extern "C" {
         Context: PVOID,
     ) -> IO_ALLOCATION_ACTION;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScsiPortAllocateAdapterChannel(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,

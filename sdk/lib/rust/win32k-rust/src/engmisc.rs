@@ -60,7 +60,7 @@ unsafe fn GDIDEVFUNCS(pso: *mut SURFOBJ) -> *mut DRIVER_FUNCTIONS {
 // ---- file-scope preamble (translated) ----
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngEnter(
+pub unsafe extern "system" fn IntEngEnter(
     EnterLeave: PINTENG_ENTER_LEAVE,
     psoDest: *mut SURFOBJ,
     DestRect: *mut RECTL,
@@ -192,7 +192,7 @@ pub unsafe extern "stdcall" fn IntEngEnter(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntEngEnter(
+pub unsafe extern "system" fn IntEngEnter(
     EnterLeave: PINTENG_ENTER_LEAVE,
     psoDest: *mut SURFOBJ,
     DestRect: *mut RECTL,
@@ -321,9 +321,8 @@ pub unsafe extern "C" fn IntEngEnter(
 
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntEngLeave(EnterLeave: PINTENG_ENTER_LEAVE) -> BOOL {
+pub unsafe extern "system" fn IntEngLeave(EnterLeave: PINTENG_ENTER_LEAVE) -> BOOL {
     let mut SrcPoint: POINTL = core::mem::zeroed();
     let mut Result: BOOL = 1;
 
@@ -377,140 +376,19 @@ pub unsafe extern "stdcall" fn IntEngLeave(EnterLeave: PINTENG_ENTER_LEAVE) -> B
 
     Result
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn IntEngLeave(EnterLeave: PINTENG_ENTER_LEAVE) -> BOOL {
-    let mut SrcPoint: POINTL = core::mem::zeroed();
-    let mut Result: BOOL = 1;
-
-    if (*EnterLeave).OutputObj != (*EnterLeave).DestObj && !(*EnterLeave).OutputObj.is_null() {
-        if (*EnterLeave).ReadOnly == 0 {
-            SrcPoint.x = 0;
-            SrcPoint.y = 0;
-            if (*EnterLeave).DestRect.left < 0 {
-                SrcPoint.x = -(*EnterLeave).DestRect.left;
-                (*EnterLeave).DestRect.left = 0;
-            }
-            if (*(*EnterLeave).DestObj).sizlBitmap.cx < (*EnterLeave).DestRect.right {
-                (*EnterLeave).DestRect.right = (*(*EnterLeave).DestObj).sizlBitmap.cx;
-            }
-            if (*EnterLeave).DestRect.top < 0 {
-                SrcPoint.y = -(*EnterLeave).DestRect.top;
-                (*EnterLeave).DestRect.top = 0;
-            }
-            if (*(*EnterLeave).DestObj).sizlBitmap.cy < (*EnterLeave).DestRect.bottom {
-                (*EnterLeave).DestRect.bottom = (*(*EnterLeave).DestObj).sizlBitmap.cy;
-            }
-            if SrcPoint.x < (*(*EnterLeave).OutputObj).sizlBitmap.cx &&
-               (*EnterLeave).DestRect.left <= (*EnterLeave).DestRect.right &&
-               (*EnterLeave).DestRect.left < (*(*EnterLeave).DestObj).sizlBitmap.cx &&
-               SrcPoint.y < (*(*EnterLeave).OutputObj).sizlBitmap.cy &&
-               (*EnterLeave).DestRect.top <= (*EnterLeave).DestRect.bottom &&
-               (*EnterLeave).DestRect.top < (*(*EnterLeave).DestObj).sizlBitmap.cy {
-                let funcs = GDIDEVFUNCS((*EnterLeave).DestObj);
-                Result = if let Some(copy_bits) = (*funcs).CopyBits {
-                    copy_bits(
-                        (*EnterLeave).DestObj,
-                        (*EnterLeave).OutputObj,
-                        (*EnterLeave).TrivialClipObj,
-                        core::ptr::null_mut(),
-                        core::ptr::addr_of_mut!((*EnterLeave).DestRect),
-                        core::ptr::addr_of_mut!(SrcPoint),
-                    )
-                } else {
-                    0
-                };
-            } else {
-                Result = 1;
-            }
-        }
-        EngUnlockSurface((*EnterLeave).OutputObj);
-        EngDeleteSurface((*EnterLeave).OutputBitmap as HSURF);
-        EngDeleteClip((*EnterLeave).TrivialClipObj);
-    } else {
-        Result = 1;
-    }
-
-    Result
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetProcessHandle() -> HANDLE {
+pub unsafe extern "system" fn EngGetProcessHandle() -> HANDLE {
     core::ptr::null_mut()
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetProcessHandle() -> HANDLE {
-    core::ptr::null_mut()
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngGetCurrentCodePage(
+pub unsafe extern "system" fn EngGetCurrentCodePage(
     OemCodePage: PUSHORT,
     AnsiCodePage: PUSHORT,
 ) {
     RtlGetDefaultCodePage(AnsiCodePage, OemCodePage);
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGetCurrentCodePage(
-    OemCodePage: PUSHORT,
-    AnsiCodePage: PUSHORT,
-) {
-    RtlGetDefaultCodePage(AnsiCodePage, OemCodePage);
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn EngQuerySystemAttribute(
-    CapNum: ENG_SYSTEM_ATTRIBUTE,
-    pCapability: PDWORD,
-) -> BOOL {
-    let mut sbi: SYSTEM_BASIC_INFORMATION = core::mem::zeroed();
-    let mut spi: SYSTEM_PROCESSOR_INFORMATION = core::mem::zeroed();
-    let status: NTSTATUS;
-
-    match CapNum {
-        _ENG_SYSTEM_ATTRIBUTE_EngNumberOfProcessors => {
-            status = NtQuerySystemInformation(
-                SystemBasicInformation,
-                &mut sbi as *mut _ as *mut core::ffi::c_void,
-                core::mem::size_of::<SYSTEM_BASIC_INFORMATION>() as u32,
-                core::ptr::null_mut(),
-            );
-            if !NT_SUCCESS(status) {
-                return 0;
-            }
-
-            *pCapability = sbi.NumberOfProcessors as u32;
-            return 1;
-        }
-
-        _ENG_SYSTEM_ATTRIBUTE_EngProcessorFeature => {
-            status = NtQuerySystemInformation(
-                SystemProcessorInformation,
-                &mut spi as *mut _ as *mut core::ffi::c_void,
-                core::mem::size_of::<SYSTEM_PROCESSOR_INFORMATION>() as u32,
-                core::ptr::null_mut(),
-            );
-            if !NT_SUCCESS(status) {
-                return 0;
-            }
-            *pCapability = spi.ProcessorFeatureBits;
-            return 1;
-        }
-
-        _ => {}
-    }
-
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngQuerySystemAttribute(
+pub unsafe extern "system" fn EngQuerySystemAttribute(
     CapNum: ENG_SYSTEM_ATTRIBUTE,
     pCapability: PDWORD,
 ) -> BOOL {
@@ -576,21 +454,8 @@ unsafe fn read_tick_count() -> u64 {
     }
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngGetTickCount() -> u64 {
-    let tick_qword = read_tick_count();
-    let low: u32 = tick_qword as u32;
-    let high: i32 = (tick_qword >> 32) as i32;
-    let Multiplier: u32 = (*shared_user_data()).TickCountMultiplier;
-
-    Int64ShrlMod32(UInt32x32To64(Multiplier, low), 24)
-        + (Multiplier as u64).wrapping_mul((high as u32 as u64) << 8)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngGetTickCount() -> u64 {
+pub unsafe extern "system" fn EngGetTickCount() -> u64 {
     let tick_qword = read_tick_count();
     let low: u32 = tick_qword as u32;
     let high: i32 = (tick_qword >> 32) as i32;

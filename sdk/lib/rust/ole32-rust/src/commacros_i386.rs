@@ -7537,7 +7537,7 @@ pub unsafe fn IViewObject_Release(This: *mut IViewObject) -> ULONG {
 }
 #[inline]
 pub unsafe fn IViewObject_Draw(This: *mut IViewObject, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<
-                unsafe extern "stdcall" fn(dwContinue: ULONG_PTR) -> BOOL,
+                unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL,
             >, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }
@@ -7577,7 +7577,7 @@ pub unsafe fn IViewObject2_Release(This: *mut IViewObject2) -> ULONG {
 }
 #[inline]
 pub unsafe fn IViewObject2_Draw(This: *mut IViewObject2, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<
-                unsafe extern "stdcall" fn(dwContinue: ULONG_PTR) -> BOOL,
+                unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL,
             >, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }
@@ -7621,7 +7621,7 @@ pub unsafe fn IViewObjectEx_Release(This: *mut IViewObjectEx) -> ULONG {
 }
 #[inline]
 pub unsafe fn IViewObjectEx_Draw(This: *mut IViewObjectEx, dwDrawAspect: DWORD, lindex: LONG, pvAspect: *mut ::core::ffi::c_void, ptd: *mut DVTARGETDEVICE, hdcTargetDev: HDC, hdcDraw: HDC, lprcBounds: LPCRECTL, lprcWBounds: LPCRECTL, pfnContinue: ::core::option::Option<
-                unsafe extern "stdcall" fn(dwContinue: ULONG_PTR) -> BOOL,
+                unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL,
             >, dwContinue: ULONG_PTR) -> HRESULT {
     ((*(*This).lpVtbl).Draw.unwrap_unchecked())(This, dwDrawAspect, lindex, pvAspect, ptd, hdcTargetDev, hdcDraw, lprcBounds, lprcWBounds, pfnContinue, dwContinue)
 }

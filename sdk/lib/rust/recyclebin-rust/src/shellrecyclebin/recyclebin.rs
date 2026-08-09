@@ -301,7 +301,7 @@ pub unsafe extern "system" fn EnumerateRecycleBinW(
     return (FALSE) as i32;
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL {
+unsafe extern "system" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL {
     let pCtx = Context as *mut BBENUMFILECONTEXT;
     let pRBF = IRecycleBinFileFromHDELFILE(hDeletedFile);
     if IRecycleBinFile_IsEqualIdentity(pRBF, (*pCtx).pFI) == S_OK {
@@ -313,7 +313,7 @@ unsafe extern "stdcall" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDele
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL {
+unsafe extern "system" fn GetRecycleBinFileHandleCallback(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL {
     let pCtx = Context as *mut BBENUMFILECONTEXT;
     let pRBF = IRecycleBinFileFromHDELFILE(hDeletedFile);
     if IRecycleBinFile_IsEqualIdentity(pRBF, (*pCtx).pFI) == S_OK {

@@ -44,7 +44,7 @@ pub const PATHTYPE_KEEPME: u32 = 0x00000001;
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngCreatePath() -> *mut PATHOBJ {
+pub unsafe extern "system" fn EngCreatePath() -> *mut PATHOBJ {
     // PATH_AllocPathWithHandle() — §6 macro:
     //   GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_PATH, sizeof(PATH)) as PPATH
     // (win32ss/gdi/ntgdi/path.h:69)
@@ -77,7 +77,7 @@ pub unsafe extern "stdcall" fn EngCreatePath() -> *mut PATHOBJ {
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngCreatePath() -> *mut PATHOBJ {
+pub unsafe extern "system" fn EngCreatePath() -> *mut PATHOBJ {
     let pPath: PPATH = GDIOBJ_AllocObjWithHandle(
         GDI_OBJECT_TYPE_PATH,
         core::mem::size_of::<PATH>() as ULONG,
@@ -107,29 +107,8 @@ pub unsafe extern "C" fn EngCreatePath() -> *mut PATHOBJ {
 
 // ---- EngDeletePath ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngDeletePath(ppo: *mut PATHOBJ) {
-    let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
-        return;
-    }
-
-    let pPath: PPATH = (*pPathObj).pPath;
-
-    let mut ppd: PEXTPATHDATA = (*pPath).ppdFirst;
-    while !ppd.is_null() {
-        let ppdNext: PEXTPATHDATA = (*ppd).ppdNext;
-        ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626F5074u32);
-        ppd = ppdNext;
-    }
-    ExFreePoolWithTag(pPathObj as *mut core::ffi::c_void, 0x626F5074u32);
-    GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*pPath).BaseObject) as POBJ);
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngDeletePath(ppo: *mut PATHOBJ) {
+pub unsafe extern "system" fn EngDeletePath(ppo: *mut PATHOBJ) {
     let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
     if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
         return;
@@ -149,26 +128,8 @@ pub unsafe extern "C" fn EngDeletePath(ppo: *mut PATHOBJ) {
 
 // ---- PATHOBJ_bCloseFigure ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bCloseFigure(ppo: *mut PATHOBJ) -> BOOL {
-    let pPathObj = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
-        return 0;
-    }
-
-    let ppd: PEXTPATHDATA = (*(*pPathObj).pPath).ppdLast;
-    if ppd.is_null() {
-        return 0;
-    }
-
-    (*ppd).pd.flags |= PD_CLOSEFIGURE | PD_ENDSUBPATH;
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bCloseFigure(ppo: *mut PATHOBJ) -> BOOL {
+pub unsafe extern "system" fn PATHOBJ_bCloseFigure(ppo: *mut PATHOBJ) -> BOOL {
     let pPathObj = ppo as PEPATHOBJ;
     if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
         return 0;
@@ -185,20 +146,8 @@ pub unsafe extern "C" fn PATHOBJ_bCloseFigure(ppo: *mut PATHOBJ) -> BOOL {
 
 // ---- PATHOBJ_vEnumStart ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_vEnumStart(ppo: *mut PATHOBJ) {
-    let pPathObj = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
-        return;
-    }
-
-    (*(*pPathObj).pPath).ppdCurrent = (*(*pPathObj).pPath).ppdFirst;
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_vEnumStart(ppo: *mut PATHOBJ) {
+pub unsafe extern "system" fn PATHOBJ_vEnumStart(ppo: *mut PATHOBJ) {
     let pPathObj = ppo as PEPATHOBJ;
     if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
         return;
@@ -209,26 +158,8 @@ pub unsafe extern "C" fn PATHOBJ_vEnumStart(ppo: *mut PATHOBJ) {
 
 // ---- PATHOBJ_bEnum ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bEnum(
-    ppo: *mut PATHOBJ,
-    ppd: *mut PATHDATA,
-) -> BOOL {
-    let pPathObj = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() || (*(*pPathObj).pPath).ppdCurrent.is_null() {
-        return 0;
-    }
-
-    *ppd = (*(*(*pPathObj).pPath).ppdCurrent).pd;
-
-    (*(*pPathObj).pPath).ppdCurrent = (*(*(*pPathObj).pPath).ppdCurrent).ppdNext;
-    if (*(*pPathObj).pPath).ppdCurrent.is_null() { 0 } else { 1 }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bEnum(
+pub unsafe extern "system" fn PATHOBJ_bEnum(
     ppo: *mut PATHOBJ,
     ppd: *mut PATHDATA,
 ) -> BOOL {
@@ -245,60 +176,8 @@ pub unsafe extern "C" fn PATHOBJ_bEnum(
 
 // ---- PATHOBJ_bMoveTo ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bMoveTo(
-    ppo: *mut PATHOBJ,
-    ptfx: POINTFIX,
-) -> BOOL {
-    let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() {
-        return 0;
-    }
-
-    let ppd: PEXTPATHDATA = ExAllocatePoolWithTag(
-        _POOL_TYPE_PagedPool,
-        core::mem::size_of::<EXTPATHDATA>() as _,
-        0x626A506F,
-    ) as PEXTPATHDATA;
-    if ppd.is_null() {
-        return 0;
-    }
-
-    RtlZeroMemory(ppd as *mut core::ffi::c_void, core::mem::size_of::<EXTPATHDATA>() as _);
-
-    (*ppd).pd.flags = PD_BEGINSUBPATH;
-    (*ppd).pd.count = 1;
-    (*ppd).pd.pptfx = ExAllocatePoolWithTag(
-        _POOL_TYPE_PagedPool,
-        core::mem::size_of::<POINTFIX>() as _,
-        0x626A506F,
-    ) as *mut POINTFIX;
-    if (*ppd).pd.pptfx.is_null() {
-        ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626A506F);
-        return 0;
-    }
-    *(*ppd).pd.pptfx.offset(0) = ptfx;
-
-    let ppdLast: PEXTPATHDATA = (*(*pPathObj).pPath).ppdLast;
-    if !ppdLast.is_null() {
-        (*ppdLast).pd.flags |= PD_ENDSUBPATH;
-
-        (*ppdLast).ppdNext = ppd;
-        (*(*pPathObj).pPath).ppdLast = ppd;
-    } else {
-        (*(*pPathObj).pPath).ppdLast = ppd;
-        (*(*pPathObj).pPath).ppdFirst = ppd;
-    }
-
-    (*pPathObj).po.cCurves += 1;
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bMoveTo(
+pub unsafe extern "system" fn PATHOBJ_bMoveTo(
     ppo: *mut PATHOBJ,
     ptfx: POINTFIX,
 ) -> BOOL {
@@ -349,115 +228,8 @@ pub unsafe extern "C" fn PATHOBJ_bMoveTo(
 
 // ---- PATHOBJ_bPolyLineTo ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bPolyLineTo(
-    ppo: *mut PATHOBJ,
-    pptfx: *mut POINTFIX,
-    cptfx: ULONG,
-) -> BOOL {
-    let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() || pptfx.is_null() || cptfx == 0 {
-        return 0;
-    }
-
-    let ppdLast: PEXTPATHDATA = (*(*pPathObj).pPath).ppdLast;
-    if ppdLast.is_null() {
-        let ppd: PEXTPATHDATA = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            core::mem::size_of::<EXTPATHDATA>() as _,
-            0x626A4F50,
-        ) as PEXTPATHDATA;
-        if ppd.is_null() {
-            return 0;
-        }
-
-        RtlZeroMemory(ppd as *mut core::ffi::c_void, core::mem::size_of::<EXTPATHDATA>() as _);
-        (*ppd).pd.flags = PD_BEGINSUBPATH;
-
-        let size: ULONG = cptfx * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626A4F50,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626A4F50);
-            return 0;
-        }
-        core::ptr::copy_nonoverlapping(pptfx, pptfxNew, cptfx as usize);
-        (*ppd).pd.pptfx = pptfxNew;
-        (*ppd).pd.count = cptfx;
-
-        (*(*pPathObj).pPath).ppdLast = ppd;
-        (*(*pPathObj).pPath).ppdFirst = ppd;
-
-        (*pPathObj).po.cCurves += 1;
-    } else if ((*ppdLast).pd.flags & (PD_BEZIERS | PD_ENDSUBPATH)) != 0 {
-        let ppd: PEXTPATHDATA = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            core::mem::size_of::<EXTPATHDATA>() as _,
-            0x626A4F50,
-        ) as PEXTPATHDATA;
-        if ppd.is_null() {
-            return 0;
-        }
-
-        RtlZeroMemory(ppd as *mut core::ffi::c_void, core::mem::size_of::<EXTPATHDATA>() as _);
-        (*ppd).pd.flags = 0;
-        (*ppd).pd.count = cptfx;
-
-        let size: ULONG = cptfx * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626A4F50,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626A4F50);
-            return 0;
-        }
-        core::ptr::copy_nonoverlapping(pptfx, pptfxNew, cptfx as usize);
-        (*ppd).pd.pptfx = pptfxNew;
-
-        (*ppdLast).ppdNext = ppd;
-        (*(*pPathObj).pPath).ppdLast = ppd;
-
-        (*pPathObj).po.cCurves += 1;
-    } else {
-        let size: ULONG = ((*ppdLast).pd.count + cptfx) * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626A4F50,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            return 0;
-        }
-
-        core::ptr::copy_nonoverlapping(
-            (*ppdLast).pd.pptfx,
-            pptfxNew.offset(0),
-            (*ppdLast).pd.count as usize,
-        );
-        core::ptr::copy_nonoverlapping(
-            pptfx,
-            pptfxNew.offset((*ppdLast).pd.count as isize),
-            cptfx as usize,
-        );
-
-        let pptfxOld: PPOINTFIX = (*ppdLast).pd.pptfx;
-        (*ppdLast).pd.pptfx = pptfxNew;
-        (*ppdLast).pd.count += cptfx;
-        ExFreePoolWithTag(pptfxOld as *mut core::ffi::c_void, 0x626A4F50);
-    }
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bPolyLineTo(
+pub unsafe extern "system" fn PATHOBJ_bPolyLineTo(
     ppo: *mut PATHOBJ,
     pptfx: *mut POINTFIX,
     cptfx: ULONG,
@@ -563,117 +335,8 @@ pub unsafe extern "C" fn PATHOBJ_bPolyLineTo(
 
 // ---- PATHOBJ_bPolyBezierTo ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bPolyBezierTo(
-    ppo: *mut PATHOBJ,
-    pptfx: *mut POINTFIX,
-    cptfx: ULONG,
-) -> BOOL {
-    let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() || pptfx.is_null() || cptfx == 0 {
-        return 0;
-    }
-
-    let ppdLast: PEXTPATHDATA = (*(*pPathObj).pPath).ppdLast;
-    if ppdLast.is_null() {
-        let ppd: PEXTPATHDATA = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            core::mem::size_of::<EXTPATHDATA>() as _,
-            0x626F5061,
-        ) as PEXTPATHDATA;
-        if ppd.is_null() {
-            return 0;
-        }
-
-        RtlZeroMemory(ppd as *mut core::ffi::c_void, core::mem::size_of::<EXTPATHDATA>() as _);
-        (*ppd).pd.flags = PD_BEGINSUBPATH | PD_BEZIERS;
-
-        let size: ULONG = cptfx * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626F5061,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626F5061);
-            return 0;
-        }
-        core::ptr::copy_nonoverlapping(pptfx, pptfxNew, cptfx as usize);
-        (*ppd).pd.pptfx = pptfxNew;
-        (*ppd).pd.count = cptfx;
-
-        (*(*pPathObj).pPath).ppdLast = ppd;
-        (*(*pPathObj).pPath).ppdFirst = ppd;
-
-        (*pPathObj).po.cCurves += 1;
-    } else if ((*ppdLast).pd.flags & PD_BEZIERS) == 0 || ((*ppdLast).pd.flags & PD_ENDSUBPATH) != 0 {
-        let ppd: PEXTPATHDATA = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            core::mem::size_of::<EXTPATHDATA>() as _,
-            0x626F5061,
-        ) as PEXTPATHDATA;
-        if ppd.is_null() {
-            return 0;
-        }
-
-        RtlZeroMemory(ppd as *mut core::ffi::c_void, core::mem::size_of::<EXTPATHDATA>() as _);
-        (*ppd).pd.flags = PD_BEZIERS;
-        (*ppd).pd.count = cptfx;
-
-        let size: ULONG = cptfx * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626F5061,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            ExFreePoolWithTag(ppd as *mut core::ffi::c_void, 0x626F5061);
-            return 0;
-        }
-        core::ptr::copy_nonoverlapping(pptfx, pptfxNew, cptfx as usize);
-        (*ppd).pd.pptfx = pptfxNew;
-
-        (*ppdLast).ppdNext = ppd;
-        (*(*pPathObj).pPath).ppdLast = ppd;
-
-        (*pPathObj).po.cCurves += 1;
-    } else {
-        let size: ULONG = ((*ppdLast).pd.count + cptfx) * core::mem::size_of::<POINTFIX>() as ULONG;
-        let pptfxNew: PPOINTFIX = ExAllocatePoolWithTag(
-            _POOL_TYPE_PagedPool,
-            size as _,
-            0x626F5061,
-        ) as PPOINTFIX;
-        if pptfxNew.is_null() {
-            return 0;
-        }
-
-        core::ptr::copy_nonoverlapping(
-            (*ppdLast).pd.pptfx,
-            pptfxNew.offset(0),
-            (*ppdLast).pd.count as usize,
-        );
-        core::ptr::copy_nonoverlapping(
-            pptfx,
-            pptfxNew.offset((*ppdLast).pd.count as isize),
-            cptfx as usize,
-        );
-
-        let pptfxOld: PPOINTFIX = (*ppdLast).pd.pptfx;
-        (*ppdLast).pd.pptfx = pptfxNew;
-        (*ppdLast).pd.count += cptfx;
-        ExFreePoolWithTag(pptfxOld as *mut core::ffi::c_void, 0x626F5061);
-    }
-
-    (*pPathObj).po.fl |= PO_BEZIERS;
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bPolyBezierTo(
+pub unsafe extern "system" fn PATHOBJ_bPolyBezierTo(
     ppo: *mut PATHOBJ,
     pptfx: *mut POINTFIX,
     cptfx: ULONG,
@@ -785,20 +448,8 @@ pub unsafe extern "C" fn PATHOBJ_bPolyBezierTo(
 // callers may dispatch here; a `panic!`/`unimplemented!()` would BUGCHECK.
 // Match the C behavior: do nothing and return.
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_vEnumStartClipLines(
-    _ppo: *mut PATHOBJ,
-    _pco: *mut CLIPOBJ,
-    _pso: *mut SURFOBJ,
-    _pla: *mut LINEATTRS,
-) {
-    // UNIMPLEMENTED in C — silent stub (no panic).
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_vEnumStartClipLines(
+pub unsafe extern "system" fn PATHOBJ_vEnumStartClipLines(
     _ppo: *mut PATHOBJ,
     _pco: *mut CLIPOBJ,
     _pso: *mut SURFOBJ,
@@ -811,7 +462,7 @@ pub unsafe extern "C" fn PATHOBJ_vEnumStartClipLines(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_bEnumClipLines(
+pub unsafe extern "system" fn PATHOBJ_bEnumClipLines(
     _ppo: *mut PATHOBJ,
     _cb: ULONG,
     _pcl: *mut CLIPLINE,
@@ -822,7 +473,7 @@ pub unsafe extern "stdcall" fn PATHOBJ_bEnumClipLines(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_bEnumClipLines(
+pub unsafe extern "system" fn PATHOBJ_bEnumClipLines(
     _ppo: *mut PATHOBJ,
     _cb: ULONG,
     _pcl: *mut CLIPLINE,
@@ -834,7 +485,7 @@ pub unsafe extern "C" fn PATHOBJ_bEnumClipLines(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn PATHOBJ_vGetBounds(
+pub unsafe extern "system" fn PATHOBJ_vGetBounds(
     ppo: *mut PATHOBJ,
     prectfx: PRECTFX,
 ) {
@@ -882,7 +533,7 @@ pub unsafe extern "stdcall" fn PATHOBJ_vGetBounds(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn PATHOBJ_vGetBounds(
+pub unsafe extern "system" fn PATHOBJ_vGetBounds(
     ppo: *mut PATHOBJ,
     prectfx: PRECTFX,
 ) {

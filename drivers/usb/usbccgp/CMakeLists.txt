@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
     set(USBCCGP_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(USBCCGP_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE USBCCGP_RUST_SRCS ${USBCCGP_RUST_WORKSPACE_DIR}/usbccgp-rust/src/*.rs)
+rust_crate_sources(USBCCGP_RUST_SRCS "${USBCCGP_RUST_WORKSPACE_DIR}" usbccgp-rust)
 add_custom_command(
     OUTPUT ${USBCCGP_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

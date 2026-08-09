@@ -20,7 +20,7 @@ import json
 import re
 import subprocess
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -821,6 +821,59 @@ _ISLAND_STRUCT = re.compile(r"^pub struct (?P<name>\w+)\b", re.M)
 # resolves names through, however it spells the import.
 _ISLAND_SYS_REF = re.compile(r"^pub use (?P<crate>\w+)_sys::", re.M)
 _ISLAND_STRUCT_CACHE: dict[tuple[str, ...], frozenset[str]] = {}
+
+_ISLAND_VTBL_BLOCK = re.compile(r"^pub struct (?P<name>\w+)Vtbl \{(?P<body>.*?)^\}", re.M | re.S)
+_ISLAND_VTBL_SLOT = re.compile(r"^    pub (?P<slot>\w+):", re.M)
+_ISLAND_LPVTBL_CACHE: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = {}
+
+
+def island_lpvtbl_interfaces(islands: Sequence[Path]) -> dict[str, tuple[str, ...]]:
+    """Interfaces the island already provides in the C ``lpVtbl`` idiom, slots in order.
+
+    Only that idiom qualifies. A header read in C++ mode makes bindgen emit an opaque
+    ``<I>__bindgen_vtable`` with no named slots -- shell32's island is entirely that shape --
+    and such a type cannot stand in for a rendered vtable struct, so shell32 keeps rendering
+    its own. recyclebin's headers are read in C mode and produce the real thing.
+
+    Returning the slot NAMES, not just the interface names, is the point. The Windows A/W
+    macros expand inside the interface definition, so the island's slot for
+    ``STDMETHOD(DeleteFile)`` is ``DeleteFileW`` -- and a vtable instance must use the
+    island's spelling, not the header's textual one.
+
+    Intersected across arches for the same reason as :func:`island_integer_aliases`: a slot
+    list only one arch proves is not proven.
+    """
+    key = tuple(str(path) for path in islands)
+    if key in _ISLAND_LPVTBL_CACHE:
+        return _ISLAND_LPVTBL_CACHE[key]
+    per_arch: list[dict[str, tuple[str, ...]]] = []
+    for island in islands:
+        if not island.is_file():
+            continue
+        text = island.read_text(encoding="utf-8", errors="replace")
+        # The companion object struct is what proves the C idiom: `pub struct I { pub lpVtbl }`.
+        with_lpvtbl = {
+            match.group("name")
+            for match in re.finditer(r"^pub struct (?P<name>\w+) \{\n    pub lpVtbl:", text, re.M)
+        }
+        found: dict[str, tuple[str, ...]] = {}
+        for block in _ISLAND_VTBL_BLOCK.finditer(text):
+            name = block.group("name")
+            if name not in with_lpvtbl:
+                continue
+            slots = tuple(_ISLAND_VTBL_SLOT.findall(block.group("body")))
+            if slots:
+                found[name] = slots
+        per_arch.append(found)
+    if not per_arch:
+        result: dict[str, tuple[str, ...]] = {}
+    else:
+        shared = set(per_arch[0])
+        for other in per_arch[1:]:
+            shared &= {name for name, slots in other.items() if per_arch[0].get(name) == slots}
+        result = {name: per_arch[0][name] for name in sorted(shared)}
+    _ISLAND_LPVTBL_CACHE[key] = result
+    return result
 
 
 def island_struct_types(islands: Sequence[Path]) -> frozenset[str]:
@@ -1776,14 +1829,39 @@ _VTBL_METHOD = re.compile(
 _DECLARE_METHOD = re.compile(
     r"STDMETHOD(?:(?:_\s*\(\s*(?P<ret>[^,]+?)\s*,\s*(?P<name2>\w+)\s*\))"
     r"|(?:\s*\(\s*(?P<name1>\w+)\s*\)))\s*"
-    r"\((?P<params>.*?)\)\s*PURE\s*;",
+    # PURE is OPTIONAL. It expands to nothing in C mode, so a header that omits it is a
+    # typo no compiler can see -- and when this pattern required it, the non-greedy params
+    # ran straight through the unmatched declaration to the next `) PURE;` and swallowed
+    # the following method whole. recyclebin_v5.h's `STDMETHOD(EmptyRecycleBin)(THIS);`
+    # ate EnumObjects that way, leaving a 10-slot vtable for an 11-method interface with
+    # every slot after it shifted up by one. _assert_no_dropped_slots is the backstop.
+    r"\((?P<params>.*?)\)\s*(?:PURE\s*)?;",
     re.S,
 )
 _SAL_ANNOTATION = re.compile(r"\b_[A-Za-z][A-Za-z0-9_]*_(?:\s*\([^)]*\))?\s*")
+# ntdef.h defines these to nothing, so they are annotations exactly like the `_In_` family
+# above -- but they are not underscore-flanked, so _SAL_ANNOTATION cannot see them. Left in
+# place they become part of the parsed type: `IN REFIID` and `*mut *mut OUT void`.
+_CLASSIC_SAL = re.compile(r"\b(?:IN|OUT|INOUT|OPTIONAL)\b\s*")
+_STDMETHOD_TOKEN = re.compile(r"\bSTDMETHOD_?\s*\(")
+
+
+def _assert_no_dropped_slots(interface: str, header: Path, body: str, parsed: int) -> None:
+    """A vtable is positional, so a dropped slot is not a partial result -- it renumbers
+    every slot after it. That can never degrade to a warning."""
+    declared = len(_STDMETHOD_TOKEN.findall(body))
+    if declared != parsed:
+        raise CppComError(
+            f"{interface}: {header.name} declares {declared} vtable method(s) but "
+            f"{parsed} parsed. A vtable is positional -- a missed declaration shifts "
+            f"every slot after it, so calls dispatch to the wrong method. Check for a "
+            f"declaration this parser does not recognize."
+        )
 
 
 def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
+    text = _CLASSIC_SAL.sub("", text).strip()
     if text in ("", "void"):
         return "", ""
     array = re.match(
@@ -1836,6 +1914,13 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     params=tuple(params),
                 )
             )
+        declared = len(re.findall(r"\bSTDMETHODCALLTYPE\b", block.group("body")))
+        if declared != len(methods):
+            raise CppComError(
+                f"{interface}: {header.name}'s {wanted} declares {declared} slot(s) but "
+                f"{len(methods)} parsed. A vtable is positional -- a missed declaration "
+                f"shifts every slot after it."
+            )
     else:
         legacy_text = re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=re.S)
         legacy = re.search(
@@ -1867,6 +1952,7 @@ def parse_widl_interface(header: Path, interface: str) -> InterfaceSpec:
                     params=tuple(params),
                 )
             )
+        _assert_no_dropped_slots(interface, header, body, len(methods))
     if not methods:
         raise CppComError(f"{interface}: no vtable methods parsed from {header}")
     # The C++ half of WIDL's generated header is also compiler-facing authority
@@ -2330,6 +2416,46 @@ def _adopt_assembled_shaped_worker(
     return rust[: prefix.start()] + f"pub unsafe fn {expected_name}" + rust[opening:]
 
 
+def _conform_worker_param_names(rust: str, expected_name: str, expected_params: list[str]) -> str:
+    """Rename a worker's parameters to the deterministic contract's, in place.
+
+    The splice below already replaces every type/return spelling with the contract's -- but
+    only once the parameter NAMES line up, and a model that snake_cases them never gets
+    there. `IntDeleteRecursive` came back as `(full_name: *const u16) -> i32` against a
+    contract of `(FullName: LPCWSTR) -> BOOL`: the same ABI, renamed and de-aliased. The
+    equality test could not see past the names, so a perfectly good body was rejected -- and
+    a rejected body is never banked, so that one was re-bought on EVERY run, forever.
+
+    ARITY is the line, and it stays hard. A missing or extra parameter is a real defect about
+    what the function receives, not a spelling difference.
+    """
+    match = re.search(rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(", rust)
+    if match is None:
+        return rust
+    opening = rust.find("(", match.start())
+    closing = _matching_paren(rust, opening)
+    brace = rust.find("{", closing + 1)
+    if brace < 0:
+        return rust
+    items = _split_args(re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust[opening + 1 : closing], flags=re.S))
+    names = [
+        found.group(1)
+        for item in items
+        if (found := re.match(r"\s*(?:mut\s+)?([A-Za-z_]\w*)\s*:", item))
+    ]
+    if len(names) != len(items) or len(names) != len(expected_params) or names == expected_params:
+        return rust
+    renames = [(was, now) for was, now in zip(names, expected_params, strict=True) if was != now]
+    tail = rust[opening:]
+    # If the contract's name already occurs, something else in this body answers to it and a
+    # blind rename would capture that instead. Leave it for the audit to reject.
+    if any(re.search(rf"\b{re.escape(now)}\b", tail) for _, now in renames):
+        return rust
+    for was, now in renames:
+        tail = re.sub(rf"\b{re.escape(was)}\b", now, tail)
+    return rust[:opening] + tail
+
+
 def normalize_worker_body(rust: str, expected_signature: str | None = None) -> str:
     """Normalize only syntax the deterministic shell32 substrate already owns."""
     names = "|".join(sorted(_CPP_COM_DEBUG_MACROS))
@@ -2390,6 +2516,7 @@ def normalize_worker_body(rust: str, expected_signature: str | None = None) -> s
             raise CppComError(f"invalid deterministic worker signature: {expected_signature}")
         expected_name = expected_name_match.group(1)
         rust = _adopt_assembled_shaped_worker(rust, expected_name, expected_params)
+        rust = _conform_worker_param_names(rust, expected_name, expected_params)
         actual = re.search(
             rf"\b(?:pub\s+)?(?:unsafe\s+)?fn\s+{re.escape(expected_name)}\s*\(",
             rust,
@@ -3167,6 +3294,64 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
             f"{owning_class}_delete(this);",
             rust,
         )
+
+    # The same rule one step out: a FREE function that builds one of these objects.
+    #
+    #     RecycleBin5File *pThis = new RecycleBin5File();
+    #     ...
+    #     delete pThis;
+    #
+    # `--cpp-com --class` never sees this function (it is file-scope, so it belongs to the
+    # `--free-functions` half), and that half has no scaffold in front of it -- so the model
+    # is again inventing an allocator and a deallocator for a strategy written nowhere it can
+    # read. It duly produced `RecycleBin5File()` (calling the STRUCT) and `free(pThis)` for a
+    # `HeapAlloc(GetProcessHeap(), ...)` object.
+    #
+    # The C++ names the static type at the `new` site, which is exactly what `delete v` needs
+    # and the one thing the Rust cannot recover: by the time it is `let pThis = ...`, the
+    # class name has been erased into whatever the model chose to call the constructor.
+    owned_locals = {
+        var: cls
+        for cls, var in re.findall(
+            r"\b([A-Za-z_]\w*)\s*\*\s*([A-Za-z_]\w*)\s*=\s*new\s+\1\b", source
+        )
+    }
+    for var, cls in owned_locals.items():
+        # `new X()` with no scaffold in scope became a call to the STRUCT `X()`. The paired
+        # allocator is the scaffold's `X_new`, which also performs the vptr store -- so
+        # getting this wrong is not merely an unresolved name, it is an object whose lpVtbl
+        # stays the HEAP_ZERO_MEMORY null. Unconditional: a factory with no failure path
+        # (RecycleBinGeneric_Constructor) news without ever deleting, and gating this on the
+        # presence of a `delete` skipped it entirely.
+        rust = re.sub(
+            rf"(?<![\w:]){re.escape(cls)}\s*\(\s*\)(?!\s*\{{)",
+            f"{cls}_new()",
+            rust,
+        )
+        if not re.search(rf"\bdelete\s+{re.escape(var)}\s*;", source):
+            continue
+        deallocators = [
+            rf"(?:alloc::boxed::)?Box::from_raw\s*\(\s*{re.escape(var)}\s*\)",
+            rf"__rustconv_\w*\s*\(\s*{re.escape(var)}\s*\)",
+            rf"free\s*\(\s*{re.escape(var)}\b[^;]*?\)",
+            rf"SENDTO_ITEM_delete\s*\(\s*{re.escape(var)}\s*\)",
+        ]
+        # The nastiest spelling of all, and the only one that COMPILES: `X_Delete` — capital
+        # D — is the class's own COM `Delete` METHOD, which for a recycle-bin file deletes the
+        # FILE FROM DISK. `delete pThis` came back as `RecycleBin5File_Delete(pThis)`, one
+        # letter away from the deallocator and a completely different operation, resolving to
+        # a real symbol with a matching signature. Only claimed when the C++ body never calls
+        # `->Delete()` itself, so a body that legitimately does both is left alone.
+        if "->Delete(" not in source:
+            deallocators.append(rf"{re.escape(cls)}_Delete\s*\(\s*{re.escape(var)}\s*\)")
+        deallocators = "|".join(deallocators)
+        rust = re.sub(
+            rf"(?:{re.escape(cls)}_dtor_body\s*\(\s*{re.escape(var)}\s*\)\s*;\s*)?"
+            rf"(?:let\s+_\s*=\s*)?(?:drop\s*\(\s*)?(?:{deallocators})\s*\)?\s*;",
+            f"{cls}_delete({var});",
+            rust,
+        )
+
     rust = re.sub(
         r"let\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
         r"(?P<iid>core::ptr::addr_of!\(IID_[A-Za-z_]\w*\))\s*,\s*"
@@ -4022,6 +4207,7 @@ def render_cpp_support(
     additional_source: str = "",
     exclude_types: set[str] | None = None,
     provided_types: set[str] | None = None,
+    island_types: set[str] | None = None,
 ) -> str:
     """Render the deterministic non-class support closure selected by one C++ file."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
@@ -4076,6 +4262,11 @@ def render_cpp_support(
             additional_source,
         )
     )
+    # Interfaces the bindgen island owns. `additional_source` cannot reveal them: an
+    # island-provided interface is deliberately NOT re-rendered, so it leaves no
+    # `pub struct` for the scan above to find, and this closure would then render its own
+    # second copy of the very type render_interface just declined to duplicate.
+    declared_types.update(island_types or set())
     repo_root = next(
         (parent for parent in source_path.parents if (parent / "sdk/include").is_dir()), None
     )
@@ -5833,7 +6024,34 @@ def audit_worker_body(
     return findings
 
 
-def render_interface(spec: InterfaceSpec) -> str:
+def render_interface(spec: InterfaceSpec, island_slots: tuple[str, ...] | None = None) -> str:
+    """Render the interface, unless the bindgen island already provides it.
+
+    When it does, rendering a second copy is not a harmless duplicate: it is a DISTINCT Rust
+    type with the same name, so every value that crosses between a worker body (which sees the
+    island's, via the prelude glob) and the scaffold (which saw the local one) is a type error
+    -- and the ones that do not error are the frightening half, because two structurally
+    identical `#[repr(C)]` types will happily transmute past a cast.
+
+    The island is an INDEPENDENT derivation of the same vtable -- bindgen through the real
+    preprocessor, versus this module's read of the header text -- so a disagreement on slot
+    count is two sources contradicting each other about an ABI. Never a warning.
+    """
+    if island_slots is not None:
+        if len(island_slots) != len(spec.methods):
+            raise CppComError(
+                f"{spec.name}: the bindgen island has {len(island_slots)} vtable slot(s) but "
+                f"{spec.source} parses to {len(spec.methods)}. These are two independent "
+                f"derivations of one vtable and they disagree; a positional mismatch "
+                f"dispatches calls to the wrong method. island={list(island_slots)} "
+                f"header={[method.name for method in spec.methods]}"
+            )
+        return (
+            f"// {spec.name}: {len(island_slots)} slot(s) from the bindgen island, which agrees "
+            f"with {spec.source}.\n"
+            f"// Not re-rendered here -- a second `{spec.name}` would be a distinct type with "
+            f"the same name."
+        )
     lines = [
         f"// Deterministic from {spec.source}",
         "#[repr(C)]",
@@ -5864,6 +6082,7 @@ def render_class_scaffold(
     *,
     allow_internal: bool = False,
     allow_plain: bool = False,
+    island_slots: Mapping[str, tuple[str, ...]] | None = None,
 ) -> str:
     """Render the ABI-owned portion. Method worker bodies remain separate LLM output.
 
@@ -6060,8 +6279,18 @@ def render_class_scaffold(
                 f"{entry.interface}Vtbl {{",
             ]
         )
-        for method in iface.methods:
-            lines.append(f"    {method.name}: {prefix}_{method.name},")
+        # Slot NAMES come from the island when the island owns the type, because the Windows
+        # A/W macros expand inside the interface definition and rename the slot itself:
+        # `STDMETHOD(DeleteFile)` is `DeleteFileW` in the island. Paired POSITIONALLY, which
+        # is the only pairing a vtable has -- and render_interface has already refused the
+        # case where the two derivations disagree on how many slots there are.
+        slots = island_slots.get(entry.interface) if island_slots else None
+        for index, method in enumerate(iface.methods):
+            field = slots[index] if slots else method.name
+            # bindgen wraps every slot in `Option<fn>` (same layout, by the null-pointer
+            # optimization); a locally rendered vtable uses a bare `fn`.
+            value = f"Some({prefix}_{method.name})" if slots else f"{prefix}_{method.name}"
+            lines.append(f"    {field}: {value},")
         lines.extend(["};", ""])
 
     if not cls.com_map:

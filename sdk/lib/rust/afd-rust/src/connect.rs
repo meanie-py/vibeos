@@ -373,17 +373,7 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn StreamSocketConnectSendComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    stream_socket_connect_send_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn StreamSocketConnectSendComplete(
+unsafe extern "system" fn StreamSocketConnectSendComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -430,17 +420,7 @@ unsafe fn stream_socket_connect_send_complete_impl(
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn StreamSocketConnectComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    stream_socket_connect_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn StreamSocketConnectComplete(
+unsafe extern "system" fn StreamSocketConnectComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

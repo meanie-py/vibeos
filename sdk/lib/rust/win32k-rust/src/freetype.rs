@@ -7294,120 +7294,8 @@ unsafe fn IntGetFontFamilyInfo_impl(
 
     AvailCount
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetFontFamilyInfo(
-    Dc: HDC,
-    UnsafeLogFont: *const LOGFONTW,
-    UnsafeInfo: PFONTFAMILYINFO,
-    UnsafeInfoCount: *mut LONG,
-) -> LONG {
-    let mut Status: NTSTATUS;
-    let mut LogFont: LOGFONTW = core::mem::zeroed();
-    let Info: PFONTFAMILYINFO;
-    let mut GotCount: LONG;
-    let AvailCount: LONG;
-    let mut SafeInfoCount: LONG = 0;
-    let mut DataSize: ULONG = 0;
-
-    if UnsafeLogFont.is_null() || UnsafeInfo.is_null() || UnsafeInfoCount.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-
-    Status = MmCopyFromCaller(
-        core::ptr::addr_of_mut!(SafeInfoCount) as *mut core::ffi::c_void,
-        UnsafeInfoCount as *const core::ffi::c_void,
-        core::mem::size_of::<LONG>() as ULONG,
-    );
-    if !NT_SUCCESS(Status) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    GotCount = 0;
-    Status = MmCopyToCaller(
-        UnsafeInfoCount as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!(GotCount) as *const core::ffi::c_void,
-        core::mem::size_of::<LONG>() as ULONG,
-    );
-    if !NT_SUCCESS(Status) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    Status = MmCopyFromCaller(
-        core::ptr::addr_of_mut!(LogFont) as *mut core::ffi::c_void,
-        UnsafeLogFont as *const core::ffi::c_void,
-        core::mem::size_of::<LOGFONTW>() as ULONG,
-    );
-    if !NT_SUCCESS(Status) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    if SafeInfoCount <= 0 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-
-    Status = w32r_RtlULongMult(
-        SafeInfoCount as ULONG,
-        core::mem::size_of::<FONTFAMILYINFO>() as ULONG,
-        core::ptr::addr_of_mut!(DataSize),
-    );
-    if !NT_SUCCESS(Status) || DataSize as LONG_MAX_TYPE > LONG_MAX as LONG_MAX_TYPE {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return -1;
-    }
-    Info = ExAllocatePoolWithTag(PagedPool, DataSize as usize, GDITAG_TEXT) as PFONTFAMILYINFO;
-    if Info.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return -1;
-    }
-
-    AvailCount = IntGetFontFamilyInfo(Dc, core::ptr::addr_of!(LogFont), Info, SafeInfoCount);
-    GotCount = if AvailCount < SafeInfoCount { AvailCount } else { SafeInfoCount };
-    SafeInfoCount = AvailCount;
-
-    if GotCount > 0 {
-        Status = w32r_RtlULongMult(
-            GotCount as ULONG,
-            core::mem::size_of::<FONTFAMILYINFO>() as ULONG,
-            core::ptr::addr_of_mut!(DataSize),
-        );
-        if !NT_SUCCESS(Status) || DataSize as LONG_MAX_TYPE > LONG_MAX as LONG_MAX_TYPE {
-            ExFreePoolWithTag(Info as *mut core::ffi::c_void, GDITAG_TEXT);
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return -1;
-        }
-        Status = MmCopyToCaller(
-            UnsafeInfo as *mut core::ffi::c_void,
-            Info as *const core::ffi::c_void,
-            DataSize,
-        );
-        if !NT_SUCCESS(Status) {
-            ExFreePoolWithTag(Info as *mut core::ffi::c_void, GDITAG_TEXT);
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return -1;
-        }
-        Status = MmCopyToCaller(
-            UnsafeInfoCount as *mut core::ffi::c_void,
-            core::ptr::addr_of!(SafeInfoCount) as *const core::ffi::c_void,
-            core::mem::size_of::<LONG>() as ULONG,
-        );
-        if !NT_SUCCESS(Status) {
-            ExFreePoolWithTag(Info as *mut core::ffi::c_void, GDITAG_TEXT);
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            return -1;
-        }
-    }
-
-    ExFreePoolWithTag(Info as *mut core::ffi::c_void, GDITAG_TEXT);
-
-    GotCount
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetFontFamilyInfo(
+pub unsafe extern "system" fn NtGdiGetFontFamilyInfo(
     Dc: HDC,
     UnsafeLogFont: *const LOGFONTW,
     UnsafeInfo: PFONTFAMILYINFO,
@@ -8097,48 +7985,8 @@ pub unsafe extern "system" fn IntExtTextOutW(
 
     bResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreExtTextOutW(
-    hDC: HDC,
-    XStart: INT,
-    YStart: INT,
-    fuOptions: UINT,
-    lprc: PRECTL,
-    String: PCWCH,
-    Count: INT,
-    Dx: *const INT,
-    dwCodePage: DWORD,
-) -> BOOL {
-    let bResult: BOOL;
-    let dc: *mut DC;
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    bResult = IntExtTextOutW(
-        dc,
-        XStart,
-        YStart,
-        fuOptions,
-        lprc,
-        String,
-        Count,
-        Dx,
-        dwCodePage,
-    );
-
-    DC_UnlockDc(dc);
-
-    bResult
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreExtTextOutW(
+pub unsafe extern "system" fn GreExtTextOutW(
     hDC: HDC,
     XStart: INT,
     YStart: INT,
@@ -8176,7 +8024,7 @@ pub unsafe extern "C" fn GreExtTextOutW(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetCharWidthW(
+pub unsafe extern "system" fn NtGdiGetCharWidthW(
     hDC: HDC,
     FirstChar: UINT,
     Count: UINT,
@@ -8319,7 +8167,7 @@ pub unsafe extern "stdcall" fn NtGdiGetCharWidthW(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetCharWidthW(
+pub unsafe extern "system" fn NtGdiGetCharWidthW(
     hDC: HDC,
     FirstChar: UINT,
     Count: UINT,
@@ -8461,7 +8309,7 @@ pub unsafe extern "C" fn NtGdiGetCharWidthW(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetGlyphIndicesW(
+pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
     hdc: HDC,
     pwc: PCWCH,
     cwc: INT,
@@ -8637,7 +8485,7 @@ pub unsafe extern "stdcall" fn NtGdiGetGlyphIndicesW(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
+pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
     hdc: HDC,
     pwc: PCWCH,
     cwc: INT,
@@ -8815,96 +8663,8 @@ pub unsafe extern "C" fn NtGdiGetGlyphIndicesW(
 
 // NtGdiExtTextOutW: _NtGdiExtTextOutW@36 on i386 (9 args x 4 bytes).
 // DUMMY_PSEH: skip _SEH2_TRY/_SEH2_EXCEPT; keep the normal (try-body) path.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtTextOutW(
-    hDC: HDC,
-    XStart: INT,
-    YStart: INT,
-    fuOptions: UINT,
-    UnsafeRect: LPCRECT,
-    UnsafeString: PCWCH,
-    Count: UINT,
-    UnsafeDx: *const INT,
-    dwCodePage: DWORD,
-) -> BOOL {
-    let mut Result: BOOL = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut SafeRect: RECTL = core::mem::zeroed();
-    let mut LocalBuffer: [BYTE; STACK_TEXT_BUFFER_SIZE] = [0; STACK_TEXT_BUFFER_SIZE];
-    let mut Buffer: *mut c_void = LocalBuffer.as_mut_ptr() as *mut c_void;
-    let mut SafeString: PCWCH = core::ptr::null();
-    let mut SafeDx: *mut INT = core::ptr::null_mut();
-    let mut BufSize: ULONG;
-    let StringSize: ULONG;
-    let mut DxSize: ULONG = 0;
-
-    if Count > 0xFFFF || (Count > 0 && UnsafeString.is_null()) {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    if Count > 0 {
-        StringSize = Count * core::mem::size_of::<WCHAR>() as ULONG;
-        BufSize = StringSize;
-        if !UnsafeDx.is_null() {
-            DxSize = Count * core::mem::size_of::<INT>() as ULONG
-                * if fuOptions & ETO_PDY != 0 { 2 } else { 1 };
-            BufSize += DxSize;
-        }
-        if BufSize > STACK_TEXT_BUFFER_SIZE as ULONG {
-            Buffer = ExAllocatePoolWithTag(PagedPool, BufSize as usize, GDITAG_TEXT);
-            if Buffer.is_null() {
-                return 0;
-            }
-        }
-        Status = SafeProbeForRead(UnsafeString as PVOID, StringSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            Status = SafeProbeForRead(UnsafeDx as PVOID, DxSize as usize, 1);
-        }
-        if NT_SUCCESS(Status) {
-            SafeString = (Buffer as usize + DxSize as usize) as PCWCH;
-            RtlCopyMemory(SafeString as *mut c_void, UnsafeString as *const c_void, StringSize as usize);
-            if !UnsafeDx.is_null() {
-                SafeDx = Buffer as *mut INT;
-                RtlCopyMemory(SafeDx as *mut c_void, UnsafeDx as *const c_void, DxSize as usize);
-            }
-        }
-        if !NT_SUCCESS(Status) {
-            if Buffer as *mut u8 != LocalBuffer.as_mut_ptr() {
-                ExFreePoolWithTag(Buffer, GDITAG_TEXT);
-            }
-            return 0;
-        }
-    }
-
-    if !UnsafeRect.is_null() {
-        Status = SafeProbeForRead(UnsafeRect as PVOID, core::mem::size_of::<RECT>(), 1);
-        if NT_SUCCESS(Status) {
-            SafeRect = *(UnsafeRect as *const RECTL);
-        }
-        if !NT_SUCCESS(Status) {
-            if Buffer as *mut u8 != LocalBuffer.as_mut_ptr() {
-                ExFreePoolWithTag(Buffer, GDITAG_TEXT);
-            }
-            return 0;
-        }
-    }
-
-    Result = GreExtTextOutW(
-        hDC, XStart, YStart, fuOptions,
-        core::ptr::addr_of!(SafeRect) as PRECTL,
-        SafeString, Count as INT, SafeDx, dwCodePage,
-    );
-
-    if Buffer as *mut u8 != LocalBuffer.as_mut_ptr() {
-        ExFreePoolWithTag(Buffer, GDITAG_TEXT);
-    }
-    Result
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiExtTextOutW(
+pub unsafe extern "system" fn NtGdiExtTextOutW(
     hDC: HDC,
     XStart: INT,
     YStart: INT,
@@ -8991,21 +8751,8 @@ pub unsafe extern "C" fn NtGdiExtTextOutW(
 }
 
 // NtGdiGetCharABCWidthsW: _NtGdiGetCharABCWidthsW@24 on i386 (6 args x 4 bytes).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetCharABCWidthsW(
-    hDC: HDC,
-    FirstChar: UINT,
-    Count: ULONG,
-    UnSafepwch: PCWCH,
-    fl: FLONG,
-    Buffer: PVOID,
-) -> BOOL {
-    ntgdi_get_char_abc_widths_w_impl(hDC, FirstChar, Count, UnSafepwch, fl, Buffer)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetCharABCWidthsW(
+pub unsafe extern "system" fn NtGdiGetCharABCWidthsW(
     hDC: HDC,
     FirstChar: UINT,
     Count: ULONG,

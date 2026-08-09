@@ -35,7 +35,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(INTL_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-intl-target")
 set(INTL_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libintl_rust.a")
-file(GLOB_RECURSE INTL_RUST_SRCS "${INTL_RUST_WORKSPACE_DIR}/intl-rust/src/*.rs")
+rust_crate_sources(INTL_RUST_SRCS "${INTL_RUST_WORKSPACE_DIR}" intl-rust)
 add_custom_command(
     OUTPUT ${INTL_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

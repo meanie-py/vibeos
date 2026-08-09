@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(BROWSER_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-browser-target")
 set(BROWSER_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libbrowser_rust.a")
-file(GLOB_RECURSE BROWSER_RUST_SRCS "${BROWSER_RUST_WORKSPACE_DIR}/browser-rust/src/*.rs")
+rust_crate_sources(BROWSER_RUST_SRCS "${BROWSER_RUST_WORKSPACE_DIR}" browser-rust)
 add_custom_command(
     OUTPUT ${BROWSER_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

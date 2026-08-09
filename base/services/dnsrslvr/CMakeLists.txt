@@ -24,7 +24,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(DNSRSLVR_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsrslvr-target")
 set(DNSRSLVR_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdnsrslvr_rust.a")
-file(GLOB_RECURSE DNSRSLVR_RUST_SRCS "${DNSRSLVR_RUST_WORKSPACE_DIR}/dnsrslvr-rust/src/*.rs")
+rust_crate_sources(DNSRSLVR_RUST_SRCS "${DNSRSLVR_RUST_WORKSPACE_DIR}" dnsrslvr-rust)
 add_custom_command(
     OUTPUT ${DNSRSLVR_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

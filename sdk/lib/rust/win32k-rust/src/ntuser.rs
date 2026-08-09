@@ -243,53 +243,8 @@ pub unsafe extern "system" fn UserInitialize() -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInitialize(
-    dwWinVersion: DWORD,
-    hPowerRequestEvent: HANDLE,
-    hMediaRequestEvent: HANDLE,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-
-    if !gpepCSRSS.is_null() {
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    if dwWinVersion != USER_VERSION {
-        KeBugCheckEx(
-            WIN32K_INIT_OR_RIT_FAILURE,
-            0,
-            0,
-            dwWinVersion as ULONG_PTR,
-            USER_VERSION as ULONG_PTR,
-        );
-    }
-
-    UserEnterExclusive();
-
-    InitCsrProcess();
-
-    Status = IntInitWin32PowerManagement(hPowerRequestEvent);
-    if !NT_SUCCESS(Status) {
-        UserLeave();
-        return Status;
-    }
-
-    if InitializeGreCSRSS() == 0 {
-        UserLeave();
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    Status = UserInitialize();
-
-    UserLeave();
-    Status
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserInitialize(
+pub unsafe extern "system" fn NtUserInitialize(
     dwWinVersion: DWORD,
     hPowerRequestEvent: HANDLE,
     hMediaRequestEvent: HANDLE,

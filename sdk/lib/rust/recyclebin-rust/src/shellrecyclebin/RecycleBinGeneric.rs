@@ -1,68 +1,15 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::recyclebin::EmptyRecycleBinW;
 use crate::shellrecyclebin::recyclebin::GetDefaultRecycleBin;
 use crate::shellrecyclebin::recyclebin_generic_enumerator_free::RecycleBinGenericEnum_Constructor;
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBin {
-    pub lpVtbl: *const IRecycleBinVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBin, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBin) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBin) -> ULONG,
-    pub DeleteFile: unsafe extern "system" fn(This: *mut IRecycleBin, szFileName: LPCWSTR) -> HRESULT,
-    pub EmptyRecycleBin: unsafe extern "system" fn(This: *mut IRecycleBin) -> HRESULT,
-    pub EnumObjects: unsafe extern "system" fn(This: *mut IRecycleBin, ppEnumList: *mut *mut IRecycleBinEnumList) -> HRESULT,
-    pub GetDirectory: unsafe extern "system" fn(This: *mut IRecycleBin, szPath: LPWSTR) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBin: IID;
-}
+// IRecycleBin: 7 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBin` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinEnumList {
-    pub lpVtbl: *const IRecycleBinEnumListVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinEnumListVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> ULONG,
-    pub Next: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD, rgelt: *mut *mut IRecycleBinFile, pceltFetched: *mut DWORD) -> HRESULT,
-    pub Skip: unsafe extern "system" fn(This: *mut IRecycleBinEnumList, celt: DWORD) -> HRESULT,
-    pub Reset: unsafe extern "system" fn(This: *mut IRecycleBinEnumList) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinEnumList: IID;
-}
+// IRecycleBinEnumList: 6 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinEnumList` would be a distinct type with the same name.
 
-// Deterministic from recyclebin.h
-#[repr(C)]
-pub struct IRecycleBinFile {
-    pub lpVtbl: *const IRecycleBinFileVtbl,
-}
-#[repr(C)]
-pub struct IRecycleBinFileVtbl {
-    pub QueryInterface: unsafe extern "system" fn(This: *mut IRecycleBinFile, riid: REFIID, ppvObject: *mut *mut core::ffi::c_void) -> HRESULT,
-    pub AddRef: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub Release: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> ULONG,
-    pub IsEqualIdentity: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT,
-    pub GetInfo: unsafe extern "system" fn(This: *mut IRecycleBinFile, pInfo: PDELETED_FILE_INFO) -> HRESULT,
-    pub GetLastModificationTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pLastModificationTime: *mut FILETIME) -> HRESULT,
-    pub GetDeletionTime: unsafe extern "system" fn(This: *mut IRecycleBinFile, pDeletionTime: *mut FILETIME) -> HRESULT,
-    pub GetFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetPhysicalFileSize: unsafe extern "system" fn(This: *mut IRecycleBinFile, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT,
-    pub GetAttributes: unsafe extern "system" fn(This: *mut IRecycleBinFile, pAttributes: *mut DWORD) -> HRESULT,
-    pub GetFileName: unsafe extern "system" fn(This: *mut IRecycleBinFile, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT,
-    pub Delete: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub Restore: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-    pub RemoveFromDatabase: unsafe extern "system" fn(This: *mut IRecycleBinFile) -> HRESULT,
-}
-extern "C" {
-    pub static IID_IRecycleBinFile: IID;
-}
+// IRecycleBinFile: 14 slot(s) from the bindgen island, which agrees with recyclebin.h.
+// Not re-rendered here -- a second `IRecycleBinFile` would be a distinct type with the same name.
 
 // Deterministic COM scaffold for RecycleBinGeneric; method bodies are generated separately.
 extern "system" {
@@ -123,13 +70,13 @@ unsafe extern "system" fn RecycleBinGeneric_IRecycleBin_GetDirectory(This: *mut 
 }
 
 pub static RECYCLEBINGENERIC_IRECYCLEBIN_VTBL: IRecycleBinVtbl = IRecycleBinVtbl {
-    QueryInterface: RecycleBinGeneric_IRecycleBin_QueryInterface,
-    AddRef: RecycleBinGeneric_IRecycleBin_AddRef,
-    Release: RecycleBinGeneric_IRecycleBin_Release,
-    DeleteFile: RecycleBinGeneric_IRecycleBin_DeleteFile,
-    EmptyRecycleBin: RecycleBinGeneric_IRecycleBin_EmptyRecycleBin,
-    EnumObjects: RecycleBinGeneric_IRecycleBin_EnumObjects,
-    GetDirectory: RecycleBinGeneric_IRecycleBin_GetDirectory,
+    QueryInterface: Some(RecycleBinGeneric_IRecycleBin_QueryInterface),
+    AddRef: Some(RecycleBinGeneric_IRecycleBin_AddRef),
+    Release: Some(RecycleBinGeneric_IRecycleBin_Release),
+    DeleteFileW: Some(RecycleBinGeneric_IRecycleBin_DeleteFile),
+    EmptyRecycleBinW: Some(RecycleBinGeneric_IRecycleBin_EmptyRecycleBin),
+    EnumObjects: Some(RecycleBinGeneric_IRecycleBin_EnumObjects),
+    GetDirectory: Some(RecycleBinGeneric_IRecycleBin_GetDirectory),
 };
 
 /// `new RecycleBinGeneric` — operator new, the vptr store, then the constructor body.
@@ -169,11 +116,6 @@ pub const E_UNEXPECTED: HRESULT = 0x8000_FFFFu32 as HRESULT;
 pub const DRIVE_FIXED: DWORD = 3;
 
 pub const ERROR_NOT_ENOUGH_MEMORY: DWORD = 8;
-
-#[repr(C)]
-pub struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
 
 extern "system" {
     fn GetLastError() -> DWORD;

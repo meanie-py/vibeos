@@ -47,9 +47,8 @@ extern "C" {
 extern "C" {
     fn InitCsrApiPort(CsrPortHandle: HANDLE) -> NTSTATUS;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserBitBltSysBmp(
+pub unsafe extern "system" fn NtUserBitBltSysBmp(
     hdc: HDC,
     nXDest: INT,
     nYDest: INT,
@@ -79,42 +78,8 @@ pub unsafe extern "stdcall" fn NtUserBitBltSysBmp(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserBitBltSysBmp(
-    hdc: HDC,
-    nXDest: INT,
-    nYDest: INT,
-    nWidth: INT,
-    nHeight: INT,
-    nXSrc: INT,
-    nYSrc: INT,
-    dwRop: DWORD,
-) -> BOOL {
-    let mut Ret: BOOL = 0;
-    UserEnterExclusive();
-
-    Ret = NtGdiBitBlt(
-        hdc,
-        nXDest,
-        nYDest,
-        nWidth,
-        nHeight,
-        hSystemBM,
-        nXSrc,
-        nYSrc,
-        dwRop,
-        CLR_INVALID,
-        0,
-    );
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDragObject(
+pub unsafe extern "system" fn NtUserDragObject(
     hwnd1: HWND,
     hwnd2: HWND,
     u1: UINT,
@@ -123,21 +88,8 @@ pub unsafe extern "stdcall" fn NtUserDragObject(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDragObject(
-    hwnd1: HWND,
-    hwnd2: HWND,
-    u1: UINT,
-    dw1: DWORD,
-    hc1: HCURSOR,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDrawAnimatedRects(
+pub unsafe extern "system" fn NtUserDrawAnimatedRects(
     hwnd: HWND,
     idAni: INT,
     lprcFrom: *mut RECT,
@@ -145,31 +97,12 @@ pub unsafe extern "stdcall" fn NtUserDrawAnimatedRects(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserDrawAnimatedRects(
-    hwnd: HWND,
-    idAni: INT,
-    lprcFrom: *mut RECT,
-    lprcTo: *mut RECT,
-) -> BOOL {
+pub unsafe extern "system" fn NtUserEvent(Unknown0: DWORD) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEvent(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserEvent(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetAltTabInfo(
+pub unsafe extern "system" fn NtUserGetAltTabInfo(
     hwnd: HWND,
     iItem: INT,
     pati: PALTTABINFO,
@@ -179,22 +112,8 @@ pub unsafe extern "stdcall" fn NtUserGetAltTabInfo(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetAltTabInfo(
-    hwnd: HWND,
-    iItem: INT,
-    pati: PALTTABINFO,
-    pszItemText: LPWSTR,
-    cchItemText: UINT,
-    Ansi: BOOL,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInitializeClientPfnArrays(
+pub unsafe extern "system" fn NtUserInitializeClientPfnArrays(
     pfnClientA: PPFNCLIENT,
     pfnClientW: PPFNCLIENT,
     pfnClientWorker: PPFNCLIENTWORKER,
@@ -261,79 +180,8 @@ pub unsafe extern "stdcall" fn NtUserInitializeClientPfnArrays(
     UserLeave();
     Status
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserInitializeClientPfnArrays(
-    pfnClientA: PPFNCLIENT,
-    pfnClientW: PPFNCLIENT,
-    pfnClientWorker: PPFNCLIENTWORKER,
-    hmodUser: HINSTANCE,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    if ClientPfnInit != 0 {
-        return Status;
-    }
-
-    UserEnterExclusive();
-
-    Status = SafeProbeForRead(
-        pfnClientA as *mut core::ffi::c_void,
-        core::mem::size_of::<PFNCLIENT>() as _,
-        1,
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            pfnClientW as *mut core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-            1,
-        );
-    }
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            pfnClientWorker as *mut core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENTWORKER>() as _,
-            1,
-        );
-    }
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*gpsi).apfnClientA) as *mut core::ffi::c_void,
-            pfnClientA as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*gpsi).apfnClientW) as *mut core::ffi::c_void,
-            pfnClientW as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*gpsi).apfnClientWorker) as *mut core::ffi::c_void,
-            pfnClientWorker as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENTWORKER>() as _,
-        );
-
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!((*gpsi).aStoCidPfn) as *mut core::ffi::c_void,
-            pfnClientW as *const core::ffi::c_void,
-            core::mem::size_of_val(&(*gpsi).aStoCidPfn),
-        );
-
-        hModClient = hmodUser;
-        ClientPfnInit = 1;
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-    }
-
-    UserLeave();
-    Status
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserInitTask(
+pub unsafe extern "system" fn NtUserInitTask(
     Unknown0: DWORD,
     Unknown1: DWORD,
     Unknown2: DWORD,
@@ -349,73 +197,26 @@ pub unsafe extern "stdcall" fn NtUserInitTask(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserInitTask(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-    Unknown2: DWORD,
-    Unknown3: DWORD,
-    Unknown4: DWORD,
-    Unknown5: DWORD,
-    Unknown6: DWORD,
-    Unknown7: DWORD,
-    Unknown8: DWORD,
-    Unknown9: DWORD,
-    Unknown10: DWORD,
-    Unknown11: DWORD,
-) -> DWORD {
+pub unsafe extern "system" fn NtUserMNDragLeave() -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMNDragLeave() -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserMNDragLeave() -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMNDragOver(
+pub unsafe extern "system" fn NtUserMNDragOver(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMNDragOver(
+pub unsafe extern "system" fn NtUserModifyUserStartupInfoFlags(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserModifyUserStartupInfoFlags(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserModifyUserStartupInfoFlags(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserQueryUserCounters(
+pub unsafe extern "system" fn NtUserQueryUserCounters(
     Unknown0: DWORD,
     Unknown1: DWORD,
     Unknown2: DWORD,
@@ -424,122 +225,48 @@ pub unsafe extern "stdcall" fn NtUserQueryUserCounters(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserQueryUserCounters(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-    Unknown2: DWORD,
-    Unknown3: DWORD,
-    Unknown4: DWORD,
-) -> DWORD {
+pub unsafe extern "system" fn NtUserRegisterTasklist(Unknown0: DWORD) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterTasklist(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterTasklist(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetConsoleReserveKeys(
+pub unsafe extern "system" fn NtUserSetConsoleReserveKeys(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetConsoleReserveKeys(
+pub unsafe extern "system" fn NtUserSetDbgTag(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetDbgTag(
+pub unsafe extern "system" fn NtUserSetDbgTagCount(Unknown0: DWORD) -> DWORD {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn NtUserSetRipFlags(Unknown0: DWORD) -> DWORD {
+    0
+}
+#[no_mangle]
+pub unsafe extern "system" fn NtUserDbgWin32HeapFail(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetDbgTag(
+pub unsafe extern "system" fn NtUserDbgWin32HeapStat(
     Unknown0: DWORD,
     Unknown1: DWORD,
 ) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetDbgTagCount(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetDbgTagCount(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetRipFlags(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserSetRipFlags(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDbgWin32HeapFail(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDbgWin32HeapFail(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserDbgWin32HeapStat(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserDbgWin32HeapStat(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetSysColors(
+pub unsafe extern "system" fn NtUserSetSysColors(
     cElements: core::ffi::c_int,
     lpaElements: *const INT,
     lpaRgbValues: *const COLORREF,
@@ -569,91 +296,28 @@ pub unsafe extern "stdcall" fn NtUserSetSysColors(
     UserLeave();
     Ret as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetSysColors(
-    cElements: core::ffi::c_int,
-    lpaElements: *const INT,
-    lpaRgbValues: *const COLORREF,
-    Flags: FLONG,
-) -> BOOL {
-    let mut Ret: DWORD = 1;
-
-    if cElements == 0 {
-        return 1;
-    }
-
-    if (cElements as ULONG) >= 0x40000000 {
-        EngSetLastError(ERROR_NOACCESS);
-        return 0;
-    }
-
-    UserEnterExclusive();
-
-    IntSetSysColors(cElements as _, lpaElements, lpaRgbValues);
-
-    if Ret != 0 {
-        UserSendNotifyMessage(HWND_BROADCAST, WM_SYSCOLORCHANGE, 0, 0);
-
-        UserRedrawDesktop();
-    }
-
-    UserLeave();
-    Ret as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUpdateInstance(
+pub unsafe extern "system" fn NtUserUpdateInstance(
     Unknown0: DWORD,
     Unknown1: DWORD,
     Unknown2: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserUpdateInstance(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-    Unknown2: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUserHandleGrantAccess(
+pub unsafe extern "system" fn NtUserUserHandleGrantAccess(
     hUserHandle: HANDLE,
     hJob: HANDLE,
     bGrant: BOOL,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserUserHandleGrantAccess(
-    hUserHandle: HANDLE,
-    hJob: HANDLE,
-    bGrant: BOOL,
-) -> BOOL {
+pub unsafe extern "system" fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserWin32PoolAllocationStats(
+pub unsafe extern "system" fn NtUserWin32PoolAllocationStats(
     Unknown0: DWORD,
     Unknown1: DWORD,
     Unknown2: DWORD,
@@ -663,52 +327,20 @@ pub unsafe extern "stdcall" fn NtUserWin32PoolAllocationStats(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserWin32PoolAllocationStats(
-    Unknown0: DWORD,
-    Unknown1: DWORD,
-    Unknown2: DWORD,
-    Unknown3: DWORD,
-    Unknown4: DWORD,
-    Unknown5: DWORD,
-) -> DWORD {
+pub unsafe extern "system" fn NtUserYieldTask() -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserYieldTask() -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserYieldTask() -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetRawInputBuffer(
+pub unsafe extern "system" fn NtUserGetRawInputBuffer(
     pData: PRAWINPUT,
     pcbSize: PUINT,
     cbSizeHeader: UINT,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetRawInputBuffer(
-    pData: PRAWINPUT,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetRawInputData(
+pub unsafe extern "system" fn NtUserGetRawInputData(
     hRawInput: HRAWINPUT,
     uiCommand: UINT,
     pData: LPVOID,
@@ -717,21 +349,8 @@ pub unsafe extern "stdcall" fn NtUserGetRawInputData(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetRawInputData(
-    hRawInput: HRAWINPUT,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetRawInputDeviceInfo(
+pub unsafe extern "system" fn NtUserGetRawInputDeviceInfo(
     hDevice: HANDLE,
     uiCommand: UINT,
     pData: LPVOID,
@@ -739,77 +358,32 @@ pub unsafe extern "stdcall" fn NtUserGetRawInputDeviceInfo(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetRawInputDeviceInfo(
-    hDevice: HANDLE,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetRawInputDeviceList(
+pub unsafe extern "system" fn NtUserGetRawInputDeviceList(
     pRawInputDeviceList: PRAWINPUTDEVICELIST,
     puiNumDevices: PUINT,
     cbSize: UINT,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetRawInputDeviceList(
-    pRawInputDeviceList: PRAWINPUTDEVICELIST,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetRegisteredRawInputDevices(
+pub unsafe extern "system" fn NtUserGetRegisteredRawInputDevices(
     pRawInputDevices: PRAWINPUTDEVICE,
     puiNumDevices: PUINT,
     cbSize: UINT,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetRegisteredRawInputDevices(
-    pRawInputDevices: PRAWINPUTDEVICE,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserHardErrorControl(
+pub unsafe extern "system" fn NtUserHardErrorControl(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
     dwUnknown3: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserHardErrorControl(
-    dwUnknown1: DWORD,
-    dwUnknown2: DWORD,
-    dwUnknown3: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserNotifyProcessCreate(
+pub unsafe extern "system" fn NtUserNotifyProcessCreate(
     NewProcessId: HANDLE,
     ParentThreadId: HANDLE,
     dwUnknown: ULONG,
@@ -817,20 +391,8 @@ pub unsafe extern "stdcall" fn NtUserNotifyProcessCreate(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserNotifyProcessCreate(
-    NewProcessId: HANDLE,
-    ParentThreadId: HANDLE,
-    dwUnknown: ULONG,
-    CreateFlags: ULONG,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserProcessConnect(
+pub unsafe extern "system" fn NtUserProcessConnect(
     ProcessHandle: HANDLE,
     pUserConnect: PUSERCONNECT,
     Size: ULONG,
@@ -909,91 +471,8 @@ pub unsafe extern "stdcall" fn NtUserProcessConnect(
 
     Status
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserProcessConnect(
-    ProcessHandle: HANDLE,
-    pUserConnect: PUSERCONNECT,
-    Size: ULONG,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let mut Process: PEPROCESS = core::ptr::null_mut();
-    let W32Process: PPROCESSINFO;
-
-    if pUserConnect.is_null()
-        || Size as usize != core::mem::size_of_val(&*pUserConnect)
-    {
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    Status = ObReferenceObjectByHandle(
-        ProcessHandle,
-        PROCESS_VM_OPERATION,
-        *PsProcessType as _,
-        1i32 as i8,
-        core::ptr::addr_of_mut!(Process) as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        return Status;
-    }
-
-    UserEnterShared();
-
-    W32Process = PsGetProcessWin32Process(Process as _) as _;
-
-    if W32Process.is_null() {
-        UserLeave();
-        ObDereferenceObject(Process as PVOID);
-        return STATUS_UNSUCCESSFUL;
-    }
-
-    Status = SafeProbeForWrite(
-        pUserConnect as PVOID,
-        core::mem::size_of_val(&*pUserConnect) as _,
-        core::mem::size_of::<PVOID>() as _,
-    );
-    if NT_SUCCESS(Status) {
-        (*pUserConnect).siClient.ulSharedDelta =
-            ((*W32Process).HeapMappings.KernelMapping as ULONG_PTR)
-                .wrapping_sub((*W32Process).HeapMappings.UserMapping as ULONG_PTR);
-
-        (*pUserConnect).siClient.psi = (gpsi as ULONG_PTR)
-            .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
-            as PVOID as _;
-        (*pUserConnect).siClient.aheList = (gHandleTable as ULONG_PTR)
-            .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
-            as PVOID as _;
-        (*pUserConnect).siClient.pDispInfo = core::ptr::null_mut();
-
-        (*pUserConnect).siClient.DefWindowMsgs.maxMsgs = 0;
-        (*pUserConnect).siClient.DefWindowMsgs.abMsgs = core::ptr::null_mut();
-        (*pUserConnect).siClient.DefWindowSpecMsgs.maxMsgs = 0;
-        (*pUserConnect).siClient.DefWindowSpecMsgs.abMsgs = core::ptr::null_mut();
-
-        let count = (*pUserConnect).siClient.awmControl.len();
-        let mut i: UINT = 0;
-        while (i as usize) < count {
-            (*pUserConnect).siClient.awmControl[i as usize].maxMsgs = 0;
-            (*pUserConnect).siClient.awmControl[i as usize].abMsgs = core::ptr::null_mut();
-            i += 1;
-        }
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-    }
-
-    UserLeave();
-
-    ObDereferenceObject(Process as PVOID);
-
-    Status
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserQueryInformationThread(
+pub unsafe extern "system" fn NtUserQueryInformationThread(
     ThreadHandle: HANDLE,
     ThreadInformationClass: USERTHREADINFOCLASS,
     ThreadInformation: PVOID,
@@ -1033,52 +512,8 @@ pub unsafe extern "stdcall" fn NtUserQueryInformationThread(
     UserLeave();
     Status
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserQueryInformationThread(
-    ThreadHandle: HANDLE,
-    ThreadInformationClass: USERTHREADINFOCLASS,
-    ThreadInformation: PVOID,
-    ThreadInformationLength: ULONG,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut Thread: PETHREAD = core::ptr::null_mut();
-
-    if PsGetCurrentProcess() as PVOID != gpepCSRSS as PVOID {
-        return STATUS_ACCESS_DENIED;
-    }
-
-    UserEnterExclusive();
-
-    'quit: {
-        Status = ObReferenceObjectByHandle(
-            ThreadHandle,
-            THREAD_QUERY_INFORMATION,
-            *PsThreadType as _,
-            1i32 as _,
-            core::ptr::addr_of_mut!(Thread) as *mut PVOID,
-            core::ptr::null_mut(),
-        );
-        if !NT_SUCCESS(Status) {
-            break 'quit;
-        }
-
-        match ThreadInformationClass {
-            _ => {
-                Status = STATUS_NOT_IMPLEMENTED;
-            }
-        }
-
-        ObDereferenceObject(Thread as PVOID);
-    }
-
-    UserLeave();
-    Status
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRealInternalGetMessage(
+pub unsafe extern "system" fn NtUserRealInternalGetMessage(
     lpMsg: LPMSG,
     hWnd: HWND,
     wMsgFilterMin: UINT,
@@ -1088,69 +523,27 @@ pub unsafe extern "stdcall" fn NtUserRealInternalGetMessage(
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRealInternalGetMessage(
-    lpMsg: LPMSG,
-    hWnd: HWND,
-    wMsgFilterMin: UINT,
-    wMsgFilterMax: UINT,
-    wRemoveMsg: UINT,
-    bGMSG: BOOL,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRealWaitMessageEx(
+pub unsafe extern "system" fn NtUserRealWaitMessageEx(
     dwWakeMask: DWORD,
     uTimeout: UINT,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRealWaitMessageEx(
-    dwWakeMask: DWORD,
-    uTimeout: UINT,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRegisterRawInputDevices(
+pub unsafe extern "system" fn NtUserRegisterRawInputDevices(
     pRawInputDevices: PCRAWINPUTDEVICE,
     uiNumDevices: UINT,
     cbSize: UINT,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRegisterRawInputDevices(
-    pRawInputDevices: PCRAWINPUTDEVICE,
-    uiNumDevices: UINT,
-    cbSize: UINT,
-) -> BOOL {
+pub unsafe extern "system" fn NtUserResolveDesktopForWOW(Unknown0: DWORD) -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserResolveDesktopForWOW(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserResolveDesktopForWOW(Unknown0: DWORD) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetInformationProcess(
+pub unsafe extern "system" fn NtUserSetInformationProcess(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
     dwUnknown3: DWORD,
@@ -1158,20 +551,8 @@ pub unsafe extern "stdcall" fn NtUserSetInformationProcess(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetInformationProcess(
-    dwUnknown1: DWORD,
-    dwUnknown2: DWORD,
-    dwUnknown3: DWORD,
-    dwUnknown4: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSetInformationThread(
+pub unsafe extern "system" fn NtUserSetInformationThread(
     ThreadHandle: HANDLE,
     ThreadInformationClass: USERTHREADINFOCLASS,
     ThreadInformation: PVOID,
@@ -1265,151 +646,26 @@ pub unsafe extern "stdcall" fn NtUserSetInformationThread(
     UserLeave();
     Status
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSetInformationThread(
-    ThreadHandle: HANDLE,
-    ThreadInformationClass: USERTHREADINFOCLASS,
-    ThreadInformation: PVOID,
-    ThreadInformationLength: ULONG,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut Thread: PETHREAD = core::ptr::null_mut();
-
-    /* Allow only CSRSS to perform this operation */
-    if PsGetCurrentProcess() as PVOID != gpepCSRSS as PVOID {
-        return STATUS_ACCESS_DENIED;
-    }
-
-    UserEnterExclusive();
-
-    'quit: {
-        /* Get the Thread */
-        Status = ObReferenceObjectByHandle(
-            ThreadHandle,
-            THREAD_SET_INFORMATION,
-            *PsThreadType as _,
-            1i32 as i8,
-            core::ptr::addr_of_mut!(Thread) as *mut PVOID,
-            core::ptr::null_mut(),
-        );
-        if !NT_SUCCESS(Status) {
-            break 'quit;
-        }
-
-        match ThreadInformationClass {
-            _ if ThreadInformationClass == UserThreadInitiateShutdown => {
-                let mut CapturedFlags: ULONG = 0;
-
-                if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
-                    Status = STATUS_INFO_LENGTH_MISMATCH;
-                } else {
-                    Status = STATUS_SUCCESS;
-                    CapturedFlags = *(ThreadInformation as PULONG);
-
-                    Status = UserInitiateShutdown(Thread, core::ptr::addr_of_mut!(CapturedFlags));
-
-                    core::ptr::write_volatile(ThreadInformation as PULONG, CapturedFlags);
-                }
-            }
-
-            _ if ThreadInformationClass == UserThreadEndShutdown => {
-                if ThreadInformationLength != core::mem::size_of::<NTSTATUS>() as ULONG {
-                    Status = STATUS_INFO_LENGTH_MISMATCH;
-                } else {
-                    Status = STATUS_SUCCESS;
-                    let ShutdownStatus: NTSTATUS = *(ThreadInformation as *mut NTSTATUS);
-                    Status = UserEndShutdown(Thread, ShutdownStatus);
-                }
-            }
-
-            _ if ThreadInformationClass == UserThreadCsrApiPort => {
-                if ThreadInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
-                    Status = STATUS_INFO_LENGTH_MISMATCH;
-                } else {
-                    Status = STATUS_SUCCESS;
-                    let CsrPortHandle: HANDLE = *(ThreadInformation as PHANDLE);
-                    Status = InitCsrApiPort(CsrPortHandle);
-                }
-            }
-
-            _ if ThreadInformationClass == UserThreadUseActiveDesktop => {
-                if Thread as PVOID != PsGetCurrentThread() as PVOID {
-                    Status = STATUS_NOT_IMPLEMENTED;
-                } else {
-                    let hdesk: HDESK = IntGetDesktopObjectHandle(gpdeskInputDesktop);
-                    IntSetThreadDesktop(hdesk, 0);
-                }
-            }
-
-            _ if ThreadInformationClass == UserThreadRestoreDesktop => {
-                if Thread as PVOID != PsGetCurrentThread() as PVOID {
-                    Status = STATUS_NOT_IMPLEMENTED;
-                } else {
-                    IntSetThreadDesktop(core::ptr::null_mut(), 0);
-                }
-            }
-
-            _ => {
-                Status = STATUS_NOT_IMPLEMENTED;
-            }
-        }
-
-        ObDereferenceObject(Thread as PVOID);
-    }
-
-    UserLeave();
-    Status
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserSoundSentry() -> BOOL {
+pub unsafe extern "system" fn NtUserSoundSentry() -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserSoundSentry() -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserTestForInteractiveUser(
+pub unsafe extern "system" fn NtUserTestForInteractiveUser(
     dwUnknown1: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserTestForInteractiveUser(
-    dwUnknown1: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoteConnect(
+pub unsafe extern "system" fn NtUserRemoteConnect(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
     dwUnknown3: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRemoteConnect(
-    dwUnknown1: DWORD,
-    dwUnknown2: DWORD,
-    dwUnknown3: DWORD,
-) -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoteRedrawRectangle(
+pub unsafe extern "system" fn NtUserRemoteRedrawRectangle(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
     dwUnknown3: DWORD,
@@ -1417,78 +673,28 @@ pub unsafe extern "stdcall" fn NtUserRemoteRedrawRectangle(
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRemoteRedrawRectangle(
-    dwUnknown1: DWORD,
-    dwUnknown2: DWORD,
-    dwUnknown3: DWORD,
-    dwUnknown4: DWORD,
-) -> DWORD {
+pub unsafe extern "system" fn NtUserRemoteRedrawScreen() -> DWORD {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoteRedrawScreen() -> DWORD {
+pub unsafe extern "system" fn NtUserRemoteStopScreenUpdates() -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserRemoteRedrawScreen() -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserRemoteStopScreenUpdates() -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserRemoteStopScreenUpdates() -> DWORD {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCtxDisplayIOCtl(
+pub unsafe extern "system" fn NtUserCtxDisplayIOCtl(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
     dwUnknown3: DWORD,
 ) -> DWORD {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCtxDisplayIOCtl(
-    dwUnknown1: DWORD,
-    dwUnknown2: DWORD,
-    dwUnknown3: DWORD,
-) -> DWORD {
+pub unsafe extern "system" fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD {
+pub unsafe extern "system" fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD {
     0
 }
 
@@ -1512,32 +718,15 @@ pub unsafe extern "system" fn NtUserGetUpdatedClipboardFormats(
 ) -> BOOL {
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMakeObjectXferable(
+pub unsafe extern "system" fn NtGdiMakeObjectXferable(
     hHandle: HANDLE,
     dwProcessId: DWORD,
 ) -> BOOL {
     0
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiMakeObjectXferable(
-    hHandle: HANDLE,
-    dwProcessId: DWORD,
-) -> BOOL {
-    0
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMakeObjectUnXferable(hHandle: HANDLE) -> BOOL {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiMakeObjectUnXferable(hHandle: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtGdiMakeObjectUnXferable(hHandle: HANDLE) -> BOOL {
     0
 }
 

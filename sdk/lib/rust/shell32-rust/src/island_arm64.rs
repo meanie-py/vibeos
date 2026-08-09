@@ -10655,10 +10655,10 @@ pub const SV_MINPAGEDPOOLCHUNKSIZE_INFOLEVEL: u32 = 1583;
 pub const SV_MAXPAGEDPOOLCHUNKSIZE_INFOLEVEL: u32 = 1584;
 pub const SV_SENDSFROMPREFERREDPROCESSOR_INFOLEVEL: u32 = 1585;
 pub const SV_MAXTHREADSPERQUEUE_INFOLEVEL: u32 = 1586;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelIo(hFile: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateIoCompletionPort(
         FileHandle: HANDLE,
         ExistingCompletionPort: HANDLE,
@@ -10666,7 +10666,7 @@ unsafe extern "C" {
         NumberOfConcurrentThreads: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceIoControl(
         hDevice: HANDLE,
         dwIoControlCode: DWORD,
@@ -10678,7 +10678,7 @@ unsafe extern "C" {
         lpOverlapped: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOverlappedResult(
         hFile: HANDLE,
         lpOverlapped: LPOVERLAPPED,
@@ -10686,7 +10686,7 @@ unsafe extern "C" {
         bWait: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOverlappedResultEx(
         hFile: HANDLE,
         lpOverlapped: LPOVERLAPPED,
@@ -10695,7 +10695,7 @@ unsafe extern "C" {
         bAlertable: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetQueuedCompletionStatus(
         CompletionPort: HANDLE,
         lpNumberOfBytesTransferred: LPDWORD,
@@ -10704,7 +10704,7 @@ unsafe extern "C" {
         dwMilliseconds: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostQueuedCompletionStatus(
         CompletionPort: HANDLE,
         dwNumberOfBytesTransferred: DWORD,
@@ -10712,7 +10712,7 @@ unsafe extern "C" {
         lpOverlapped: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetQueuedCompletionStatusEx(
         CompletionPort: HANDLE,
         lpCompletionPortEntries: LPOVERLAPPED_ENTRY,
@@ -10722,10 +10722,10 @@ unsafe extern "C" {
         fAlertable: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelIoEx(hFile: HANDLE, lpOverlapped: LPOVERLAPPED) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelSynchronousIo(hThread: HANDLE) -> BOOL;
 }
 pub const _FILE_ID_TYPE_FileIdType: _FILE_ID_TYPE = 0;
@@ -10882,7 +10882,7 @@ pub type CONDITION_VARIABLE = RTL_CONDITION_VARIABLE;
 pub type PCONDITION_VARIABLE = *mut RTL_CONDITION_VARIABLE;
 pub type APPLICATION_RECOVERY_CALLBACK =
     ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> DWORD>;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WinMain(
         arg1: HINSTANCE,
         arg2: HINSTANCE,
@@ -10890,7 +10890,7 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wWinMain(
         arg1: HINSTANCE,
         arg2: HINSTANCE,
@@ -10898,39 +10898,39 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _hread(
         hFile: HFILE,
         lpBuffer: LPVOID,
         lBytes: ::core::ffi::c_long,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _hwrite(
         hFile: HFILE,
         lpBuffer: LPCCH,
         lBytes: ::core::ffi::c_long,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _lclose(arg1: HFILE) -> HFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _lcreat(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _llseek(arg1: HFILE, arg2: LONG, arg3: ::core::ffi::c_int) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _lopen(arg1: LPCSTR, arg2: ::core::ffi::c_int) -> HFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _lread(hFile: HFILE, lpBuffer: LPVOID, uBytes: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _lwrite(hFile: HFILE, lpBuffer: LPCCH, uBytes: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AccessCheck(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: HANDLE,
@@ -10942,7 +10942,7 @@ unsafe extern "C" {
         arg8: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AccessCheckAndAuditAlarmA(
         SubsystemName: LPCSTR,
         HandleId: LPVOID,
@@ -10957,7 +10957,7 @@ unsafe extern "C" {
         pfGenerateOnClose: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AccessCheckAndAuditAlarmW(
         arg1: LPCWSTR,
         arg2: LPVOID,
@@ -10972,22 +10972,22 @@ unsafe extern "C" {
         arg11: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AcquireSRWLockExclusive(arg1: PSRWLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AcquireSRWLockShared(arg1: PSRWLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ActivateActCtx(arg1: HANDLE, arg2: *mut ULONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessAllowedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessDeniedAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessAllowedAceEx(
         arg1: PACL,
         arg2: DWORD,
@@ -10996,7 +10996,7 @@ unsafe extern "C" {
         arg5: PSID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessDeniedAceEx(
         arg1: PACL,
         arg2: DWORD,
@@ -11005,7 +11005,7 @@ unsafe extern "C" {
         arg5: PSID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessAllowedObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -11016,7 +11016,7 @@ unsafe extern "C" {
         arg7: PSID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAccessDeniedObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -11027,16 +11027,16 @@ unsafe extern "C" {
         arg7: PSID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAce(arg1: PACL, arg2: DWORD, arg3: DWORD, arg4: PVOID, arg5: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAuditAccessAce(
         arg1: PACL,
         arg2: DWORD,
@@ -11046,7 +11046,7 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddAuditAccessObjectAce(
         arg1: PACL,
         arg2: DWORD,
@@ -11059,16 +11059,16 @@ unsafe extern "C" {
         arg9: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddRefActCtx(arg1: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddVectoredExceptionHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddVectoredContinueHandler(arg1: ULONG, arg2: PVECTORED_EXCEPTION_HANDLER) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AccessCheckByType(
         pSecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -11083,7 +11083,7 @@ unsafe extern "C" {
         AccessStatus: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AccessCheckByTypeResultList(
         pSecurityDescriptor: PSECURITY_DESCRIPTOR,
         PrincipalSelfSid: PSID,
@@ -11098,7 +11098,7 @@ unsafe extern "C" {
         AccessStatus: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AdjustTokenGroups(
         arg1: HANDLE,
         arg2: BOOL,
@@ -11108,7 +11108,7 @@ unsafe extern "C" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AdjustTokenPrivileges(
         arg1: HANDLE,
         arg2: BOOL,
@@ -11118,7 +11118,7 @@ unsafe extern "C" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllocateAndInitializeSid(
         arg1: PSID_IDENTIFIER_AUTHORITY,
         arg2: BYTE,
@@ -11133,28 +11133,28 @@ unsafe extern "C" {
         arg11: *mut PSID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckTokenMembership(arg1: HANDLE, arg2: PSID, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllocateLocallyUniqueId(arg1: PLUID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AreAllAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AreAnyAccessesGranted(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AreFileApisANSI() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BackupEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BackupEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BackupRead(
         hFile: HANDLE,
         lpBuffer: LPBYTE,
@@ -11165,7 +11165,7 @@ unsafe extern "C" {
         lpContext: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BackupSeek(
         arg1: HANDLE,
         arg2: DWORD,
@@ -11175,7 +11175,7 @@ unsafe extern "C" {
         arg6: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BackupWrite(
         hFile: HANDLE,
         lpBuffer: LPBYTE,
@@ -11186,35 +11186,35 @@ unsafe extern "C" {
         lpContext: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Beep(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginUpdateResourceA(arg1: LPCSTR, arg2: BOOL) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginUpdateResourceW(arg1: LPCWSTR, arg2: BOOL) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BindIoCompletionCallback(
         arg1: HANDLE,
         arg2: LPOVERLAPPED_COMPLETION_ROUTINE,
         arg3: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BuildCommDCBA(arg1: LPCSTR, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BuildCommDCBW(arg1: LPCWSTR, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BuildCommDCBAndTimeoutsA(arg1: LPCSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BuildCommDCBAndTimeoutsW(arg1: LPCWSTR, arg2: LPDCB, arg3: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallNamedPipeA(
         lpNamedPipeName: LPCSTR,
         lpInBuffer: LPVOID,
@@ -11225,7 +11225,7 @@ unsafe extern "C" {
         nTimeOut: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallNamedPipeW(
         lpNamedPipeName: LPCWSTR,
         lpInBuffer: LPVOID,
@@ -11236,13 +11236,13 @@ unsafe extern "C" {
         nTimeOut: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelDeviceWakeupRequest(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelWaitableTimer(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckNameLegalDOS8Dot3A(
         lpName: LPCSTR,
         lpOemName: LPSTR,
@@ -11251,7 +11251,7 @@ unsafe extern "C" {
         pbNameLegal: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckNameLegalDOS8Dot3W(
         lpName: LPCWSTR,
         lpOemName: LPSTR,
@@ -11260,59 +11260,59 @@ unsafe extern "C" {
         pbNameLegal: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckRemoteDebuggerPresent(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClearCommBreak(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClearCommError(arg1: HANDLE, arg2: PDWORD, arg3: LPCOMSTAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClearEventLogA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClearEventLogW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseEventLog(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseHandle(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CommConfigDialogA(arg1: LPCSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CommConfigDialogW(arg1: LPCWSTR, arg2: HWND, arg3: LPCOMMCONFIG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CompareFileTime(arg1: *const FILETIME, arg2: *const FILETIME) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ConnectNamedPipe(arg1: HANDLE, arg2: LPOVERLAPPED) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ContinueDebugEvent(arg1: DWORD, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ConvertFiberToThread() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ConvertThreadToFiber(arg1: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyFileA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyFileW(
         lpExistingFileName: LPCWSTR,
         lpNewFileName: LPCWSTR,
         bFailIfExists: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyFileExA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -11322,7 +11322,7 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyFileExW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -11332,34 +11332,34 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopySid(arg1: DWORD, arg2: PSID, arg3: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateActCtxA(arg1: PCACTCTXA) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateActCtxW(arg1: PCACTCTXW) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDirectoryA(
         lpPathName: LPCSTR,
         lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDirectoryW(
         lpPathName: LPCWSTR,
         lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDirectoryExA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDirectoryExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEventA(
         lpEventAttributes: LPSECURITY_ATTRIBUTES,
         bManualReset: BOOL,
@@ -11367,7 +11367,7 @@ unsafe extern "C" {
         lpName: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEventW(
         arg1: LPSECURITY_ATTRIBUTES,
         bManualReset: BOOL,
@@ -11375,7 +11375,7 @@ unsafe extern "C" {
         lpName: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEventExA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCSTR,
@@ -11383,7 +11383,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEventExW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCWSTR,
@@ -11391,10 +11391,10 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFiber(arg1: SIZE_T, arg2: LPFIBER_START_ROUTINE, arg3: LPVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFiberEx(
         arg1: SIZE_T,
         arg2: SIZE_T,
@@ -11403,7 +11403,7 @@ unsafe extern "C" {
         arg5: LPVOID,
     ) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFileA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -11414,7 +11414,7 @@ unsafe extern "C" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFileW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -11425,7 +11425,7 @@ unsafe extern "C" {
         arg7: HANDLE,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFileMappingA(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -11435,7 +11435,7 @@ unsafe extern "C" {
         arg6: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFileMappingW(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -11445,25 +11445,25 @@ unsafe extern "C" {
         arg6: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateHardLinkA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateHardLinkW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateJobObjectA(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateJobObjectW(arg1: LPSECURITY_ATTRIBUTES, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TerminateJobObject(arg1: HANDLE, arg2: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssignProcessToJobObject(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMailslotA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -11471,7 +11471,7 @@ unsafe extern "C" {
         arg4: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMailslotW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -11479,16 +11479,16 @@ unsafe extern "C" {
         arg4: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMemoryResourceNotification(arg1: MEMORY_RESOURCE_NOTIFICATION_TYPE) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMutexA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMutexW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMutexExA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCSTR,
@@ -11496,7 +11496,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMutexExW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCWSTR,
@@ -11504,7 +11504,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateNamedPipeA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -11516,7 +11516,7 @@ unsafe extern "C" {
         arg8: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateNamedPipeW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -11528,7 +11528,7 @@ unsafe extern "C" {
         arg8: LPSECURITY_ATTRIBUTES,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePipe(
         arg1: PHANDLE,
         arg2: PHANDLE,
@@ -11536,7 +11536,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePrivateObjectSecurity(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
@@ -11546,7 +11546,7 @@ unsafe extern "C" {
         arg6: PGENERIC_MAPPING,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessA(
         arg1: LPCSTR,
         arg2: LPSTR,
@@ -11560,7 +11560,7 @@ unsafe extern "C" {
         arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -11574,7 +11574,7 @@ unsafe extern "C" {
         arg10: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessAsUserA(
         arg1: HANDLE,
         arg2: LPCSTR,
@@ -11589,7 +11589,7 @@ unsafe extern "C" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessAsUserW(
         arg1: HANDLE,
         arg2: LPCWSTR,
@@ -11604,7 +11604,7 @@ unsafe extern "C" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessWithLogonW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -11619,7 +11619,7 @@ unsafe extern "C" {
         arg11: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateProcessWithTokenW(
         arg1: HANDLE,
         arg2: DWORD,
@@ -11632,7 +11632,7 @@ unsafe extern "C" {
         arg9: LPPROCESS_INFORMATION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateRemoteThread(
         arg1: HANDLE,
         arg2: LPSECURITY_ATTRIBUTES,
@@ -11643,7 +11643,7 @@ unsafe extern "C" {
         arg7: LPDWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateRestrictedToken(
         ExistingTokenHandle: HANDLE,
         Flags: DWORD,
@@ -11656,7 +11656,7 @@ unsafe extern "C" {
         NewTokenHandle: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateSemaphoreA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -11664,7 +11664,7 @@ unsafe extern "C" {
         arg4: LPCSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateSemaphoreW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -11672,7 +11672,7 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateSemaphoreExA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -11682,7 +11682,7 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateSemaphoreExW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LONG,
@@ -11692,13 +11692,13 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateTapePartition(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateTimerQueue() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateTimerQueueTimer(
         arg1: PHANDLE,
         arg2: HANDLE,
@@ -11709,7 +11709,7 @@ unsafe extern "C" {
         arg7: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChangeTimerQueueTimer(
         TimerQueue: HANDLE,
         Timer: HANDLE,
@@ -11717,7 +11717,7 @@ unsafe extern "C" {
         Period: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateThread(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: DWORD,
@@ -11727,13 +11727,13 @@ unsafe extern "C" {
         arg6: PDWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerA(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerW(arg1: LPSECURITY_ATTRIBUTES, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerExA(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCSTR,
@@ -11741,7 +11741,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWaitableTimerExW(
         arg1: LPSECURITY_ATTRIBUTES,
         arg2: LPCWSTR,
@@ -11749,7 +11749,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWellKnownSid(
         arg1: WELL_KNOWN_SID_TYPE,
         arg2: PSID,
@@ -11757,105 +11757,105 @@ unsafe extern "C" {
         arg4: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeactivateActCtx(arg1: DWORD, arg2: ULONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DebugActiveProcess(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DebugActiveProcessStop(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DebugBreak();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DebugBreakProcess(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DebugSetProcessKillOnExit(arg1: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DecodePointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DecodeSystemPointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DecryptFileA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DecryptFileW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefineDosDeviceA(arg1: DWORD, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefineDosDeviceW(arg1: DWORD, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteAce(arg1: PACL, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteAtom(arg1: ATOM) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteCriticalSection(arg1: PCRITICAL_SECTION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFiber(arg1: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFileA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFileW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteTimerQueue(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteTimerQueueEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteTimerQueueTimer(arg1: HANDLE, arg2: HANDLE, arg3: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteVolumeMountPointA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteVolumeMountPointW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeregisterEventSource(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyPrivateObjectSecurity(arg1: *mut PSECURITY_DESCRIPTOR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DisableThreadLibraryCalls(arg1: HMODULE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DnsHostnameToComputerNameA(
         Hostname: LPCSTR,
         ComputerName: LPSTR,
         nSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DnsHostnameToComputerNameW(
         Hostname: LPCWSTR,
         ComputerName: LPWSTR,
         nSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DisconnectNamedPipe(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DosDateTimeToFileTime(arg1: WORD, arg2: WORD, arg3: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DuplicateHandle(
         arg1: HANDLE,
         arg2: HANDLE,
@@ -11866,10 +11866,10 @@ unsafe extern "C" {
         arg7: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DuplicateToken(arg1: HANDLE, arg2: SECURITY_IMPERSONATION_LEVEL, arg3: PHANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DuplicateTokenEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -11879,28 +11879,28 @@ unsafe extern "C" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EncodePointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EncodeSystemPointer(arg1: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EncryptFileA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EncryptFileW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndUpdateResourceA(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndUpdateResourceW(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceLanguagesA(
         arg1: HMODULE,
         arg2: LPCSTR,
@@ -11909,7 +11909,7 @@ unsafe extern "C" {
         arg5: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceLanguagesW(
         arg1: HMODULE,
         arg2: LPCWSTR,
@@ -11918,7 +11918,7 @@ unsafe extern "C" {
         arg5: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceNamesA(
         arg1: HMODULE,
         arg2: LPCSTR,
@@ -11926,7 +11926,7 @@ unsafe extern "C" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceNamesW(
         arg1: HMODULE,
         arg2: LPCWSTR,
@@ -11934,61 +11934,61 @@ unsafe extern "C" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceTypesA(arg1: HMODULE, arg2: ENUMRESTYPEPROCA, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumResourceTypesW(arg1: HMODULE, arg2: ENUMRESTYPEPROCW, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EqualPrefixSid(arg1: PSID, arg2: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EqualSid(arg1: PSID, arg2: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EraseTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EscapeCommFunction(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExitProcess(arg1: UINT) -> !;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExitThread(dwExitCode: DWORD) -> !;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FatalAppExitA(arg1: UINT, arg2: LPCSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FatalAppExitW(arg1: UINT, arg2: LPCWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FatalExit(arg1: ::core::ffi::c_int);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileEncryptionStatusA(arg1: LPCSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileEncryptionStatusW(arg1: LPCWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileTimeToDosDateTime(arg1: *const FILETIME, arg2: LPWORD, arg3: LPWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileTimeToLocalFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindActCtxSectionGuid(
         arg1: DWORD,
         arg2: *const GUID,
@@ -11997,7 +11997,7 @@ unsafe extern "C" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindActCtxSectionStringA(
         arg1: DWORD,
         arg2: *const GUID,
@@ -12006,7 +12006,7 @@ unsafe extern "C" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindActCtxSectionStringW(
         arg1: DWORD,
         arg2: *const GUID,
@@ -12015,31 +12015,31 @@ unsafe extern "C" {
         arg5: PACTCTX_SECTION_KEYED_DATA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindCloseChangeNotification(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstChangeNotificationA(arg1: LPCSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstChangeNotificationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstFileA(arg1: LPCSTR, arg2: LPWIN32_FIND_DATAA) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstFileW(arg1: LPCWSTR, arg2: LPWIN32_FIND_DATAW) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstFileExA(
         arg1: LPCSTR,
         arg2: FINDEX_INFO_LEVELS,
@@ -12049,7 +12049,7 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstFileExW(
         arg1: LPCWSTR,
         arg2: FINDEX_INFO_LEVELS,
@@ -12059,7 +12059,7 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstStreamW(
         arg1: LPCWSTR,
         arg2: STREAM_INFO_LEVELS,
@@ -12067,105 +12067,105 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstFreeAce(arg1: PACL, arg2: *mut PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstVolumeA(lpszVolumeName: LPSTR, cchBufferLength: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstVolumeW(arg1: LPWSTR, arg2: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstVolumeMountPointA(
         lpszRootPathName: LPCSTR,
         lpszVolumeMountPoint: LPSTR,
         cchBufferLength: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstVolumeMountPointW(
         lpszRootPathName: LPCWSTR,
         lpszVolumeMountPoint: LPWSTR,
         cchBufferLength: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextChangeNotification(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextFileA(arg1: HANDLE, arg2: LPWIN32_FIND_DATAA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextFileW(arg1: HANDLE, arg2: LPWIN32_FIND_DATAW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextStreamW(arg1: HANDLE, arg2: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextVolumeA(
         hFindVolume: HANDLE,
         lpszVolumeName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextVolumeW(arg1: HANDLE, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextVolumeMountPointA(
         hFindVolumeMountPoint: HANDLE,
         lpszVolumeMountPoint: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextVolumeMountPointW(
         hFindVolumeMountPoint: HANDLE,
         lpszVolumeMountPoint: LPWSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindVolumeClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindVolumeMountPointClose(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindResourceA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR) -> HRSRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindResourceW(arg1: HMODULE, arg2: LPCWSTR, arg3: LPCWSTR) -> HRSRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindResourceExA(arg1: HMODULE, arg2: LPCSTR, arg3: LPCSTR, arg4: WORD) -> HRSRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindResourceExW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPCWSTR, arg4: WORD) -> HRSRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlushFileBuffers(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlushInstructionCache(arg1: HANDLE, arg2: LPCVOID, arg3: SIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlushViewOfFile(arg1: LPCVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlsAlloc(arg1: PFLS_CALLBACK_FUNCTION) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlsGetValue(arg1: DWORD) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlsFree(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FormatMessageA(
         dwFlags: DWORD,
         lpSource: LPCVOID,
@@ -12176,7 +12176,7 @@ unsafe extern "C" {
         Arguments: *mut va_list,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FormatMessageW(
         dwFlags: DWORD,
         lpSource: LPCVOID,
@@ -12187,28 +12187,28 @@ unsafe extern "C" {
         Arguments: *mut va_list,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeEnvironmentStringsA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeEnvironmentStringsW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeLibrary(arg1: HMODULE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeLibraryAndExitThread(arg1: HMODULE, arg2: DWORD) -> !;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeResource(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeSid(arg1: PSID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAce(arg1: PACL, arg2: DWORD, arg3: *mut LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAclInformation(
         arg1: PACL,
         arg2: PVOID,
@@ -12216,7 +12216,7 @@ unsafe extern "C" {
         arg4: ACL_INFORMATION_CLASS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetApplicationRecoveryCallback(
         arg1: HANDLE,
         arg2: *mut APPLICATION_RECOVERY_CALLBACK,
@@ -12225,97 +12225,97 @@ unsafe extern "C" {
         arg5: *mut DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetApplicationRestart(arg1: HANDLE, arg2: PWSTR, arg3: PDWORD, arg4: PDWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBinaryTypeA(arg1: LPCSTR, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBinaryTypeW(arg1: LPCWSTR, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommandLineA() -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommandLineW() -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommMask(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommModemStatus(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommProperties(arg1: HANDLE, arg2: LPCOMMPROP) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCompressedFileSizeA(arg1: LPCSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCompressedFileSizeW(arg1: LPCWSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerNameA(lpBuffer: LPSTR, nSize: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerNameW(lpBuffer: LPWSTR, nSize: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPWSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentActCtx(arg1: *mut HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentDirectoryA(arg1: DWORD, arg2: LPSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentDirectoryW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentHwProfileA(arg1: LPHW_PROFILE_INFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentHwProfileW(arg1: LPHW_PROFILE_INFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentProcess() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentProcessId() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentThread() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentThreadId() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, lpdwSize: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceA(
         arg1: LPCSTR,
         arg2: PDWORD,
@@ -12324,7 +12324,7 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceW(
         arg1: LPCWSTR,
         arg2: PDWORD,
@@ -12333,7 +12333,7 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceExA(
         arg1: LPCSTR,
         arg2: PULARGE_INTEGER,
@@ -12341,7 +12341,7 @@ unsafe extern "C" {
         arg4: PULARGE_INTEGER,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDiskFreeSpaceExW(
         arg1: LPCWSTR,
         arg2: PULARGE_INTEGER,
@@ -12349,67 +12349,67 @@ unsafe extern "C" {
         arg4: PULARGE_INTEGER,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDllDirectoryA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDllDirectoryW(nBufferLength: DWORD, lpBuffer: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDriveTypeA(arg1: LPCSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDriveTypeW(arg1: LPCWSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnvironmentStrings() -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnvironmentStringsW() -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnvironmentVariableA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetExitCodeProcess(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetExitCodeThread(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileAttributesA(lpFileName: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileAttributesByHandle(arg1: HANDLE, arg2: LPDWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFinalPathNameByHandleA(arg1: HANDLE, arg2: LPSTR, arg3: DWORD, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFinalPathNameByHandleW(arg1: HANDLE, arg2: LPWSTR, arg3: DWORD, arg4: DWORD)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileAttributesExA(
         lpFileName: LPCSTR,
         fInfoLevelId: GET_FILEEX_INFO_LEVELS,
         lpFileInformation: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileAttributesExW(
         lpFileName: LPCWSTR,
         fInfoLevelId: GET_FILEEX_INFO_LEVELS,
         lpFileInformation: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileBandwidthReservation(
         arg1: HANDLE,
         arg2: LPDWORD,
@@ -12419,10 +12419,10 @@ unsafe extern "C" {
         arg6: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileInformationByHandle(arg1: HANDLE, arg2: LPBY_HANDLE_FILE_INFORMATION) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileInformationByHandleEx(
         hFile: HANDLE,
         FileInformationClass: FILE_INFO_BY_HANDLE_CLASS,
@@ -12430,7 +12430,7 @@ unsafe extern "C" {
         dwBufferSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileSecurityA(
         lpFileName: LPCSTR,
         RequestedInformation: SECURITY_INFORMATION,
@@ -12439,7 +12439,7 @@ unsafe extern "C" {
         lpnLengthNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileSecurityW(
         arg1: LPCWSTR,
         arg2: SECURITY_INFORMATION,
@@ -12448,28 +12448,28 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileSize(arg1: HANDLE, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileSizeEx(arg1: HANDLE, arg2: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileTime(arg1: HANDLE, arg2: LPFILETIME, arg3: LPFILETIME, arg4: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileType(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFullPathNameA(arg1: LPCSTR, arg2: DWORD, arg3: LPSTR, arg4: *mut LPSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFullPathNameW(arg1: LPCWSTR, arg2: DWORD, arg3: LPWSTR, arg4: *mut LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetHandleInformation(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKernelObjectSecurity(
         arg1: HANDLE,
         arg2: SECURITY_INFORMATION,
@@ -12478,31 +12478,31 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLastError() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLengthSid(arg1: PSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLocalTime(arg1: LPSYSTEMTIME);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLogicalDrives() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLogicalDriveStringsA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLogicalDriveStringsW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLongPathNameA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLongPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMailslotInfo(
         arg1: HANDLE,
         arg2: PDWORD,
@@ -12511,34 +12511,34 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleFileNameA(hModule: HINSTANCE, lpFilename: LPSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleFileNameW(hModule: HINSTANCE, lpFilename: LPWSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleHandleA(arg1: LPCSTR) -> HMODULE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleHandleW(arg1: LPCWSTR) -> HMODULE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleHandleExA(arg1: DWORD, arg2: LPCSTR, arg3: *mut HMODULE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetModuleHandleExW(arg1: DWORD, arg2: LPCWSTR, arg3: *mut HMODULE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NeedCurrentDirectoryForExePathA(ExeName: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NeedCurrentDirectoryForExePathW(ExeName: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNamedPipeClientProcessId(Pipe: HANDLE, ClientProcessId: PULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNamedPipeHandleStateA(
         hNamedPipe: HANDLE,
         lpState: LPDWORD,
@@ -12549,7 +12549,7 @@ unsafe extern "C" {
         nMaxUserNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNamedPipeHandleStateW(
         hNamedPipe: HANDLE,
         lpState: LPDWORD,
@@ -12560,7 +12560,7 @@ unsafe extern "C" {
         nMaxUserNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNamedPipeInfo(
         arg1: HANDLE,
         arg2: PDWORD,
@@ -12569,10 +12569,10 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNativeSystemInfo(arg1: LPSYSTEM_INFO);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEventLogInformation(
         hEventLog: HANDLE,
         dwInfoLevel: DWORD,
@@ -12581,16 +12581,16 @@ unsafe extern "C" {
         pcbBytesNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNumberOfEventLogRecords(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOldestEventLogRecord(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPriorityClass(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateObjectSecurity(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: SECURITY_INFORMATION,
@@ -12599,13 +12599,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT, arg4: LPCSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT, arg4: LPCWSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionA(
         lpAppName: LPCSTR,
         lpReturnedString: LPSTR,
@@ -12613,7 +12613,7 @@ unsafe extern "C" {
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionW(
         lpAppName: LPCWSTR,
         lpReturnedString: LPWSTR,
@@ -12621,21 +12621,21 @@ unsafe extern "C" {
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionNamesA(
         lpszReturnBuffer: LPSTR,
         nSize: DWORD,
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileSectionNamesW(
         lpszReturnBuffer: LPWSTR,
         nSize: DWORD,
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStringA(
         lpAppName: LPCSTR,
         lpKeyName: LPCSTR,
@@ -12645,7 +12645,7 @@ unsafe extern "C" {
         lpFileName: LPCSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStringW(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -12655,7 +12655,7 @@ unsafe extern "C" {
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStructA(
         lpszSection: LPCSTR,
         lpszKey: LPCSTR,
@@ -12664,7 +12664,7 @@ unsafe extern "C" {
         szFile: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPrivateProfileStructW(
         lpszSection: LPCWSTR,
         lpszKey: LPCWSTR,
@@ -12673,37 +12673,37 @@ unsafe extern "C" {
         szFile: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcAddress(arg1: HINSTANCE, arg2: LPCSTR) -> FARPROC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessAffinityMask(arg1: HANDLE, arg2: PDWORD_PTR, arg3: PDWORD_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessHandleCount(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessHeaps(arg1: DWORD, arg2: PHANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessId(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessIdOfThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessIoCounters(arg1: HANDLE, arg2: PIO_COUNTERS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessShutdownParameters(arg1: PDWORD, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessTimes(
         arg1: HANDLE,
         arg2: LPFILETIME,
@@ -12712,28 +12712,28 @@ unsafe extern "C" {
         arg5: LPFILETIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessVersion(arg1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessWindowStation() -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessWorkingSetSize(arg1: HANDLE, arg2: PSIZE_T, arg3: PSIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileIntA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileIntW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileSectionA(lpAppName: LPCSTR, lpReturnedString: LPSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileSectionW(lpAppName: LPCWSTR, lpReturnedString: LPWSTR, nSize: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileStringA(
         lpAppName: LPCSTR,
         lpKeyName: LPCSTR,
@@ -12742,7 +12742,7 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileStringW(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -12751,14 +12751,14 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorControl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR_CONTROL,
         arg3: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorDacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: LPBOOL,
@@ -12766,27 +12766,27 @@ unsafe extern "C" {
         arg4: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorGroup(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: *mut PSID,
         arg3: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorLength(arg1: PSECURITY_DESCRIPTOR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorOwner(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: *mut PSID,
         arg3: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSecurityDescriptorSacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: LPBOOL,
@@ -12794,74 +12794,74 @@ unsafe extern "C" {
         arg4: LPBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetShortPathNameA(lpszLongPath: LPCSTR, lpszShortPath: LPSTR, cchBuffer: DWORD)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetShortPathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSidIdentifierAuthority(arg1: PSID) -> PSID_IDENTIFIER_AUTHORITY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSidLengthRequired(arg1: UCHAR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSidSubAuthority(arg1: PSID, arg2: DWORD) -> PDWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSidSubAuthorityCount(arg1: PSID) -> PUCHAR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStartupInfoA(arg1: LPSTARTUPINFOA);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStartupInfoW(arg1: LPSTARTUPINFOW);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemInfo(arg1: LPSYSTEM_INFO);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemPowerStatus(arg1: LPSYSTEM_POWER_STATUS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemRegistryQuota(arg1: PDWORD, arg2: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemTime(lpSystemTime: LPSYSTEMTIME);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemTimes(arg1: LPFILETIME, arg2: LPFILETIME, arg3: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemTimeAdjustment(arg1: PDWORD, arg2: PDWORD, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemTimeAsFileTime(arg1: LPFILETIME);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemWow64DirectoryA(lpBuffer: LPSTR, uSize: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemWow64DirectoryW(lpBuffer: LPWSTR, uSize: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTapeParameters(
         hDevice: HANDLE,
         dwOperation: DWORD,
@@ -12869,7 +12869,7 @@ unsafe extern "C" {
         lpTapeInformation: LPVOID,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTapePosition(
         arg1: HANDLE,
         arg2: DWORD,
@@ -12878,10 +12878,10 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTapeStatus(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTempFileNameA(
         lpPathName: LPCSTR,
         lpPrefixString: LPCSTR,
@@ -12889,31 +12889,31 @@ unsafe extern "C" {
         lpTempFileName: LPSTR,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTempPathA(nBufferLength: DWORD, lpBuffer: LPSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTempPathW(arg1: DWORD, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadContext(arg1: HANDLE, arg2: LPCONTEXT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadIOPendingFlag(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadPriority(arg1: HANDLE) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadPriorityBoost(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadSelectorEntry(arg1: HANDLE, arg2: DWORD, arg3: LPLDT_ENTRY) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadTimes(
         arg1: HANDLE,
         arg2: LPFILETIME,
@@ -12922,19 +12922,19 @@ unsafe extern "C" {
         arg5: LPFILETIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTickCount() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTickCount64() -> ULONGLONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadId(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTokenInformation(
         arg1: HANDLE,
         arg2: TOKEN_INFORMATION_CLASS,
@@ -12943,22 +12943,22 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserNameA(lpBuffer: LPSTR, pcbBuffer: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserNameW(lpBuffer: LPWSTR, pcbBuffer: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVersion() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVersionExA(arg1: LPOSVERSIONINFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVersionExW(arg1: LPOSVERSIONINFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumeInformationA(
         lpRootPathName: LPCSTR,
         lpVolumeNameBuffer: LPSTR,
@@ -12970,7 +12970,7 @@ unsafe extern "C" {
         nFileSystemNameSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumeInformationW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -12982,27 +12982,27 @@ unsafe extern "C" {
         arg8: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumeNameForVolumeMountPointA(
         lpszVolumeMountPoint: LPCSTR,
         lpszVolumeName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumeNameForVolumeMountPointW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumePathNameA(
         lpszFileName: LPCSTR,
         lpszVolumePathName: LPSTR,
         cchBufferLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumePathNameW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumePathNamesForVolumeNameA(
         lpszVolumeName: LPCSTR,
         lpszVolumePathNames: LPCH,
@@ -13010,7 +13010,7 @@ unsafe extern "C" {
         lpcchReturnLength: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetVolumePathNamesForVolumeNameW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -13018,16 +13018,16 @@ unsafe extern "C" {
         arg4: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowsDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowsDirectoryW(arg1: LPWSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWriteWatch(
         arg1: DWORD,
         arg2: PVOID,
@@ -13037,91 +13037,91 @@ unsafe extern "C" {
         arg6: PULONG,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalAddAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalAddAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalAlloc(arg1: UINT, arg2: SIZE_T) -> HGLOBAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalCompact(arg1: DWORD) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalDeleteAtom(arg1: ATOM) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalFindAtomA(arg1: LPCSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalFindAtomW(arg1: LPCWSTR) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalFix(arg1: HGLOBAL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalFlags(arg1: HGLOBAL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalFree(arg1: HGLOBAL) -> HGLOBAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalGetAtomNameA(nAtom: ATOM, lpBuffer: LPSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalGetAtomNameW(nAtom: ATOM, lpBuffer: LPWSTR, nSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalHandle(arg1: LPCVOID) -> HGLOBAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalLock(arg1: HGLOBAL) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalMemoryStatus(arg1: LPMEMORYSTATUS);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalMemoryStatusEx(arg1: LPMEMORYSTATUSEX) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalReAlloc(arg1: HGLOBAL, arg2: SIZE_T, arg3: UINT) -> HGLOBAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalSize(arg1: HGLOBAL) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalUnfix(arg1: HGLOBAL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalUnlock(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalUnWire(arg1: HGLOBAL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GlobalWire(arg1: HGLOBAL) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapCompact(arg1: HANDLE, arg2: DWORD) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapCreate(arg1: DWORD, arg2: SIZE_T, arg3: SIZE_T) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapDestroy(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapFree(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapLock(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapQueryInformation(
         arg1: HANDLE,
         arg2: HEAP_INFORMATION_CLASS,
@@ -13130,10 +13130,10 @@ unsafe extern "C" {
         arg5: PSIZE_T,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapReAlloc(arg1: HANDLE, arg2: DWORD, arg3: PVOID, arg4: SIZE_T) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapSetInformation(
         arg1: HANDLE,
         arg2: HEAP_INFORMATION_CLASS,
@@ -13141,173 +13141,173 @@ unsafe extern "C" {
         arg4: SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapSize(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapUnlock(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapValidate(arg1: HANDLE, arg2: DWORD, arg3: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HeapWalk(arg1: HANDLE, arg2: LPPROCESS_HEAP_ENTRY) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImpersonateAnonymousToken(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImpersonateLoggedOnUser(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImpersonateNamedPipeClient(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImpersonateSelf(arg1: SECURITY_IMPERSONATION_LEVEL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitAtomTable(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeAcl(arg1: PACL, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeConditionVariable(arg1: PCONDITION_VARIABLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeCriticalSectionAndSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCriticalSectionSpinCount(arg1: LPCRITICAL_SECTION, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeSid(arg1: PSID, arg2: PSID_IDENTIFIER_AUTHORITY, arg3: BYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeSRWLock(arg1: PSRWLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadCodePtr(arg1: FARPROC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadHugeReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadHugeWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadReadPtr(arg1: *const ::core::ffi::c_void, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadStringPtrA(arg1: LPCSTR, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadStringPtrW(arg1: LPCWSTR, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsBadWritePtr(arg1: PVOID, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDebuggerPresent() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsProcessInJob(arg1: HANDLE, arg2: HANDLE, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsProcessorFeaturePresent(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsSystemResumeAutomatic() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsTextUnicode(
         lpv: *const ::core::ffi::c_void,
         iSize: ::core::ffi::c_int,
         lpiResult: LPINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsThreadAFiber() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidAcl(arg1: PACL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidSecurityDescriptor(arg1: PSECURITY_DESCRIPTOR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidSid(arg1: PSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWellKnownSid(arg1: PSID, arg2: WELL_KNOWN_SID_TYPE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWow64Process(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadLibraryA(arg1: LPCSTR) -> HINSTANCE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadLibraryW(arg1: LPCWSTR) -> HINSTANCE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadLibraryExA(arg1: LPCSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadLibraryExW(arg1: LPCWSTR, arg2: HANDLE, arg3: DWORD) -> HINSTANCE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadModule(arg1: LPCSTR, arg2: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadResource(arg1: HINSTANCE, arg2: HRSRC) -> HGLOBAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalAlloc(arg1: UINT, arg2: SIZE_T) -> HLOCAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalCompact(arg1: UINT) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalFileTimeToFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalFlags(arg1: HLOCAL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalFree(arg1: HLOCAL) -> HLOCAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalHandle(arg1: LPCVOID) -> HLOCAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalLock(arg1: HLOCAL) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalReAlloc(arg1: HLOCAL, arg2: SIZE_T, arg3: UINT) -> HLOCAL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalShrink(arg1: HLOCAL, arg2: UINT) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalSize(arg1: HLOCAL) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocalUnlock(arg1: HLOCAL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -13317,10 +13317,10 @@ unsafe extern "C" {
         arg6: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockResource(arg1: HGLOBAL) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LogonUserA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -13330,7 +13330,7 @@ unsafe extern "C" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LogonUserW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -13340,7 +13340,7 @@ unsafe extern "C" {
         arg6: PHANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LogonUserExA(
         lpszUsername: LPSTR,
         lpszDomain: LPSTR,
@@ -13354,7 +13354,7 @@ unsafe extern "C" {
         pQuotaLimits: PQUOTA_LIMITS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LogonUserExW(
         lpszUsername: LPWSTR,
         lpszDomain: LPWSTR,
@@ -13368,7 +13368,7 @@ unsafe extern "C" {
         pQuotaLimits: PQUOTA_LIMITS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupAccountNameA(
         lpSystemName: LPCSTR,
         lpAccountName: LPCSTR,
@@ -13379,7 +13379,7 @@ unsafe extern "C" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupAccountNameW(
         lpSystemName: LPCWSTR,
         lpAccountName: LPCWSTR,
@@ -13390,7 +13390,7 @@ unsafe extern "C" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupAccountSidA(
         lpSystemName: LPCSTR,
         Sid: PSID,
@@ -13401,7 +13401,7 @@ unsafe extern "C" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupAccountSidW(
         lpSystemName: LPCWSTR,
         Sid: PSID,
@@ -13412,7 +13412,7 @@ unsafe extern "C" {
         peUse: PSID_NAME_USE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeDisplayNameA(
         lpSystemName: LPCSTR,
         lpName: LPCSTR,
@@ -13421,7 +13421,7 @@ unsafe extern "C" {
         lpLanguageId: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeDisplayNameW(
         lpSystemName: LPCWSTR,
         lpName: LPCWSTR,
@@ -13430,7 +13430,7 @@ unsafe extern "C" {
         lpLanguageId: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeNameA(
         lpSystemName: LPCSTR,
         lpLuid: PLUID,
@@ -13438,7 +13438,7 @@ unsafe extern "C" {
         cchName: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeNameW(
         lpSystemName: LPCWSTR,
         lpLuid: PLUID,
@@ -13446,49 +13446,49 @@ unsafe extern "C" {
         cchName: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeValueA(arg1: LPCSTR, arg2: LPCSTR, arg3: PLUID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupPrivilegeValueW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PLUID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcatA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcatW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcmpA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcmpiA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcmpiW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcmpW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcpyA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcpynA(arg1: LPSTR, arg2: LPCSTR, arg3: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrcpynW(arg1: LPWSTR, arg2: LPCWSTR, arg3: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrlenA(arg1: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn lstrlenW(arg1: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MakeAbsoluteSD(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
@@ -13503,17 +13503,17 @@ unsafe extern "C" {
         arg11: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MakeSelfRelativeSD(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: PSECURITY_DESCRIPTOR,
         arg3: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapGenericMask(arg1: PDWORD, arg2: PGENERIC_MAPPING);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapViewOfFile(
         arg1: HANDLE,
         arg2: DWORD,
@@ -13522,7 +13522,7 @@ unsafe extern "C" {
         arg5: SIZE_T,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapViewOfFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -13532,19 +13532,19 @@ unsafe extern "C" {
         arg6: PVOID,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileExA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileExW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileWithProgressA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -13553,7 +13553,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveFileWithProgressW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -13562,29 +13562,29 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MulDiv(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NotifyChangeEventLog(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectCloseAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectCloseAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectDeleteAuditAlarmA(arg1: LPCSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectDeleteAuditAlarmW(arg1: LPCWSTR, arg2: PVOID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectOpenAuditAlarmA(
         arg1: LPCSTR,
         arg2: PVOID,
@@ -13600,7 +13600,7 @@ unsafe extern "C" {
         arg12: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectOpenAuditAlarmW(
         arg1: LPCWSTR,
         arg2: PVOID,
@@ -13616,7 +13616,7 @@ unsafe extern "C" {
         arg12: PBOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectPrivilegeAuditAlarmA(
         arg1: LPCSTR,
         arg2: PVOID,
@@ -13626,7 +13626,7 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ObjectPrivilegeAuditAlarmW(
         arg1: LPCWSTR,
         arg2: PVOID,
@@ -13636,28 +13636,28 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenBackupEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenBackupEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenEventA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenEventLogA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenEventLogW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenEventW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenFile(arg1: LPCSTR, arg2: LPOFSTRUCT, arg3: UINT) -> HFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenFileById(
         arg1: HANDLE,
         arg2: LPFILE_ID_DESCRIPTOR,
@@ -13667,49 +13667,49 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenFileMappingA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenFileMappingW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenMutexA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenMutexW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenProcess(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenProcessToken(arg1: HANDLE, arg2: DWORD, arg3: PHANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenSemaphoreA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenSemaphoreW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenThread(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenThreadToken(arg1: HANDLE, arg2: DWORD, arg3: BOOL, arg4: PHANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenWaitableTimerA(arg1: DWORD, arg2: BOOL, arg3: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenWaitableTimerW(arg1: DWORD, arg2: BOOL, arg3: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OutputDebugStringA(arg1: LPCSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OutputDebugStringW(arg1: LPCWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PeekNamedPipe(
         arg1: HANDLE,
         arg2: PVOID,
@@ -13719,13 +13719,13 @@ unsafe extern "C" {
         arg6: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrepareTape(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivilegeCheck(arg1: HANDLE, arg2: PPRIVILEGE_SET, arg3: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivilegedServiceAuditAlarmA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -13734,7 +13734,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivilegedServiceAuditAlarmW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -13743,16 +13743,16 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ProcessIdToSessionId(arg1: DWORD, arg2: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PulseEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PurgeComm(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryActCtxW(
         dwFlags: DWORD,
         hActCtx: HANDLE,
@@ -13763,34 +13763,34 @@ unsafe extern "C" {
         pcbWrittenOrRequired: *mut SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryDosDeviceA(lpDeviceName: LPCSTR, lpTargetPath: LPSTR, ucchMax: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryDosDeviceW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryMemoryResourceNotification(arg1: HANDLE, arg2: PBOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryPerformanceCounter(arg1: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryPerformanceFrequency(arg1: PLARGE_INTEGER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QuerySecurityAccessMask(arg1: SECURITY_INFORMATION, arg2: LPDWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueueUserAPC(arg1: PAPCFUNC, arg2: HANDLE, arg3: ULONG_PTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueueUserWorkItem(arg1: LPTHREAD_START_ROUTINE, arg2: PVOID, arg3: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RaiseException(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: *const ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryInformationJobObject(
         hJob: HANDLE,
         JobObjectInformationClass: JOBOBJECTINFOCLASS,
@@ -13799,7 +13799,7 @@ unsafe extern "C" {
         lpReturnLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadDirectoryChangesW(
         hDirectory: HANDLE,
         lpBuffer: LPVOID,
@@ -13811,7 +13811,7 @@ unsafe extern "C" {
         lpCompletionRoutine: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadEventLogA(
         hEventLog: HANDLE,
         dwReadFlags: DWORD,
@@ -13822,7 +13822,7 @@ unsafe extern "C" {
         pnMinNumberOfBytesNeeded: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadEventLogW(
         hEventLog: HANDLE,
         dwReadFlags: DWORD,
@@ -13833,7 +13833,7 @@ unsafe extern "C" {
         pnMinNumberOfBytesNeeded: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadFile(
         arg1: HANDLE,
         arg2: PVOID,
@@ -13842,7 +13842,7 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadFileEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -13851,7 +13851,7 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadFileScatter(
         arg1: HANDLE,
         arg2: *mut FILE_SEGMENT_ELEMENT,
@@ -13860,7 +13860,7 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadProcessMemory(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -13869,13 +13869,13 @@ unsafe extern "C" {
         arg5: PSIZE_T,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RecoveryFinished(arg1: BOOL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RecoveryInProgress(arg1: PBOOL) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterApplicationRecoveryCallback(
         arg1: APPLICATION_RECOVERY_CALLBACK,
         arg2: PVOID,
@@ -13883,16 +13883,16 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterApplicationRestart(arg1: PCWSTR, arg2: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterEventSourceA(arg1: LPCSTR, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterEventSourceW(arg1: LPCWSTR, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterWaitForSingleObject(
         arg1: PHANDLE,
         arg2: HANDLE,
@@ -13902,7 +13902,7 @@ unsafe extern "C" {
         arg6: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterWaitForSingleObjectEx(
         arg1: HANDLE,
         arg2: WAITORTIMERCALLBACK,
@@ -13911,34 +13911,34 @@ unsafe extern "C" {
         arg5: ULONG,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseActCtx(arg1: HANDLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseMutex(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseSemaphore(arg1: HANDLE, arg2: LONG, arg3: LPLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseSRWLockExclusive(arg1: PSRWLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseSRWLockShared(arg1: PSRWLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveVectoredExceptionHandler(arg1: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveVectoredContinueHandler(arg1: PVOID) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReplaceFileA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -13948,7 +13948,7 @@ unsafe extern "C" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReplaceFileW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -13958,7 +13958,7 @@ unsafe extern "C" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReportEventA(
         hEventLog: HANDLE,
         wType: WORD,
@@ -13971,7 +13971,7 @@ unsafe extern "C" {
         lpRawData: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReportEventW(
         hEventLog: HANDLE,
         wType: WORD,
@@ -13984,22 +13984,22 @@ unsafe extern "C" {
         lpRawData: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResetEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResetWriteWatch(arg1: LPVOID, arg2: SIZE_T) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RestoreLastError(arg1: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResumeThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RevertToSelf() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SearchPathA(
         lpPath: LPCSTR,
         lpFileName: LPCSTR,
@@ -14009,7 +14009,7 @@ unsafe extern "C" {
         lpFilePart: *mut LPSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SearchPathW(
         lpPath: LPCWSTR,
         lpFileName: LPCWSTR,
@@ -14019,7 +14019,7 @@ unsafe extern "C" {
         lpFilePart: *mut LPWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetAclInformation(
         arg1: PACL,
         arg2: PVOID,
@@ -14027,82 +14027,82 @@ unsafe extern "C" {
         arg4: ACL_INFORMATION_CLASS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCommBreak(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCommConfig(hCommDev: HANDLE, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCommMask(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCommState(arg1: HANDLE, arg2: LPDCB) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCommTimeouts(arg1: HANDLE, arg2: LPCOMMTIMEOUTS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetComputerNameA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetComputerNameW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetComputerNameExA(arg1: COMPUTER_NAME_FORMAT, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetComputerNameExW(arg1: COMPUTER_NAME_FORMAT, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCurrentDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCurrentDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDefaultCommConfigA(lpszName: LPCSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDefaultCommConfigW(lpszName: LPCWSTR, lpCC: LPCOMMCONFIG, dwSize: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDllDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDllDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetEndOfFile(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetEnvironmentVariableA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetEnvironmentVariableW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetErrorMode(arg1: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetEvent(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileApisToANSI();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileApisToOEM();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileAttributesA(lpFileName: LPCSTR, dwFileAttributes: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileAttributesByHandle(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileAttributesW(lpFileName: LPCWSTR, dwFileAttributes: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileBandwidthReservation(
         arg1: HANDLE,
         arg2: DWORD,
@@ -14112,13 +14112,13 @@ unsafe extern "C" {
         arg6: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileCompletionNotificationModes(arg1: HANDLE, arg2: UCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFilePointer(arg1: HANDLE, arg2: LONG, arg3: PLONG, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFilePointerEx(
         arg1: HANDLE,
         arg2: LARGE_INTEGER,
@@ -14126,27 +14126,27 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileSecurityA(
         arg1: LPCSTR,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileSecurityW(
         arg1: LPCWSTR,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileShortNameA(arg1: HANDLE, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileShortNameW(arg1: HANDLE, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileTime(
         arg1: HANDLE,
         arg2: *const FILETIME,
@@ -14154,17 +14154,17 @@ unsafe extern "C" {
         arg4: *const FILETIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFileValidData(arg1: HANDLE, arg2: LONGLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemFirmwareTables(
         FirmwareTableProviderSignature: DWORD,
         pFirmwareTableEnumBuffer: PVOID,
         BufferSize: DWORD,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemFirmwareTable(
         FirmwareTableProviderSignature: DWORD,
         FirmwareTableID: DWORD,
@@ -14172,7 +14172,7 @@ unsafe extern "C" {
         BufferSize: DWORD,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFirmwareEnvironmentVariableA(
         lpName: LPCSTR,
         lpGuid: LPCSTR,
@@ -14180,7 +14180,7 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFirmwareEnvironmentVariableW(
         lpName: LPCWSTR,
         lpGuid: LPCWSTR,
@@ -14188,7 +14188,7 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFirmwareEnvironmentVariableA(
         lpName: LPCSTR,
         lpGuid: LPCSTR,
@@ -14196,7 +14196,7 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFirmwareEnvironmentVariableW(
         lpName: LPCWSTR,
         lpGuid: LPCWSTR,
@@ -14204,13 +14204,13 @@ unsafe extern "C" {
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetHandleCount(arg1: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetHandleInformation(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetInformationJobObject(
         hJob: HANDLE,
         JobObjectInformationClass: JOBOBJECTINFOCLASS,
@@ -14218,32 +14218,32 @@ unsafe extern "C" {
         cbJobObjectInformationLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetKernelObjectSecurity(
         arg1: HANDLE,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLastError(arg1: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLastErrorEx(arg1: DWORD, arg2: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLocalTime(arg1: *const SYSTEMTIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMailslotInfo(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetNamedPipeHandleState(arg1: HANDLE, arg2: PDWORD, arg3: PDWORD, arg4: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPriorityClass(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPrivateObjectSecurity(
         arg1: SECURITY_INFORMATION,
         arg2: PSECURITY_DESCRIPTOR,
@@ -14252,29 +14252,29 @@ unsafe extern "C" {
         arg5: HANDLE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessShutdownParameters(arg1: DWORD, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessWorkingSetSize(arg1: HANDLE, arg2: SIZE_T, arg3: SIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityAccessMask(arg1: SECURITY_INFORMATION, arg2: LPDWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorControl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: SECURITY_DESCRIPTOR_CONTROL,
         arg3: SECURITY_DESCRIPTOR_CONTROL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorDacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: BOOL,
@@ -14282,16 +14282,16 @@ unsafe extern "C" {
         arg4: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorGroup(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorOwner(arg1: PSECURITY_DESCRIPTOR, arg2: PSID, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorRMControl(arg1: PSECURITY_DESCRIPTOR, arg2: PUCHAR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSecurityDescriptorSacl(
         arg1: PSECURITY_DESCRIPTOR,
         arg2: BOOL,
@@ -14299,22 +14299,22 @@ unsafe extern "C" {
         arg4: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetStdHandle(arg1: DWORD, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemPowerState(arg1: BOOL, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemTime(arg1: *const SYSTEMTIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemTimeAdjustment(arg1: DWORD, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTapeParameters(arg1: HANDLE, arg2: DWORD, arg3: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTapePosition(
         arg1: HANDLE,
         arg2: DWORD,
@@ -14324,28 +14324,28 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadContext(arg1: HANDLE, arg2: *const CONTEXT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadIdealProcessor(arg1: HANDLE, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadPriority(arg1: HANDLE, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadToken(arg1: PHANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTimeZoneInformation(arg1: *const TIME_ZONE_INFORMATION) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTokenInformation(
         arg1: HANDLE,
         arg2: TOKEN_INFORMATION_CLASS,
@@ -14353,27 +14353,27 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUnhandledExceptionFilter(
         arg1: LPTOP_LEVEL_EXCEPTION_FILTER,
     ) -> LPTOP_LEVEL_EXCEPTION_FILTER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetupComm(arg1: HANDLE, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetVolumeLabelA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetVolumeLabelW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetVolumeMountPointA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetVolumeMountPointW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWaitableTimer(
         arg1: HANDLE,
         arg2: *const LARGE_INTEGER,
@@ -14383,23 +14383,23 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SignalObjectAndWait(arg1: HANDLE, arg2: HANDLE, arg3: DWORD, arg4: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SizeofResource(arg1: HINSTANCE, arg2: HRSRC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Sleep(arg1: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SleepConditionVariableCS(
         arg1: PCONDITION_VARIABLE,
         arg2: PCRITICAL_SECTION,
         arg3: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SleepConditionVariableSRW(
         arg1: PCONDITION_VARIABLE,
         arg2: PSRWLOCK,
@@ -14407,47 +14407,47 @@ unsafe extern "C" {
         arg4: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SleepEx(arg1: DWORD, arg2: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SuspendThread(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwitchToFiber(arg1: PVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwitchToThread() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemTimeToTzSpecificLocalTime(
         arg1: *const TIME_ZONE_INFORMATION,
         arg2: *const SYSTEMTIME,
         arg3: LPSYSTEMTIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TerminateThread(hThread: HANDLE, dwExitCode: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TlsAlloc() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TlsFree(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TlsGetValue(arg1: DWORD) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TlsSetValue(arg1: DWORD, arg2: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TransactNamedPipe(
         arg1: HANDLE,
         arg2: PVOID,
@@ -14458,26 +14458,26 @@ unsafe extern "C" {
         arg7: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TransmitCommChar(arg1: HANDLE, arg2: ::core::ffi::c_char) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TzSpecificLocalTimeToSystemTime(
         arg1: LPTIME_ZONE_INFORMATION,
         arg2: LPSYSTEMTIME,
         arg3: LPSYSTEMTIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnhandledExceptionFilter(arg1: LPEXCEPTION_POINTERS) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnlockFile(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnlockFileEx(
         arg1: HANDLE,
         arg2: DWORD,
@@ -14486,16 +14486,16 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnmapViewOfFile(arg1: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterWait(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterWaitEx(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateResourceA(
         hUpdate: HANDLE,
         lpType: LPCSTR,
@@ -14505,7 +14505,7 @@ unsafe extern "C" {
         cb: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateResourceW(
         hUpdate: HANDLE,
         lpType: LPCWSTR,
@@ -14515,16 +14515,16 @@ unsafe extern "C" {
         cb: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerifyVersionInfoA(arg1: LPOSVERSIONINFOEXA, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerifyVersionInfoW(arg1: LPOSVERSIONINFOEXW, arg2: DWORD, arg3: DWORDLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualAlloc(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: DWORD) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualAllocEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -14533,19 +14533,19 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualFree(arg1: PVOID, arg2: SIZE_T, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualFreeEx(arg1: HANDLE, arg2: PVOID, arg3: SIZE_T, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualLock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualProtect(arg1: PVOID, arg2: SIZE_T, arg3: DWORD, arg4: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualProtectEx(
         arg1: HANDLE,
         arg2: PVOID,
@@ -14554,10 +14554,10 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualQuery(arg1: LPCVOID, arg2: PMEMORY_BASIC_INFORMATION, arg3: SIZE_T) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualQueryEx(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -14565,16 +14565,16 @@ unsafe extern "C" {
         arg4: SIZE_T,
     ) -> SIZE_T;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VirtualUnlock(arg1: PVOID, arg2: SIZE_T) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitCommEvent(arg1: HANDLE, arg2: PDWORD, arg3: LPOVERLAPPED) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForDebugEvent(arg1: LPDEBUG_EVENT, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForMultipleObjects(
         nCount: DWORD,
         lpHandles: *const HANDLE,
@@ -14582,7 +14582,7 @@ unsafe extern "C" {
         dwMilliseconds: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForMultipleObjectsEx(
         arg1: DWORD,
         arg2: *const HANDLE,
@@ -14591,40 +14591,40 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForSingleObjectEx(arg1: HANDLE, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitNamedPipeA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitNamedPipeW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WakeConditionVariable(arg1: PCONDITION_VARIABLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WakeAllConditionVariable(arg1: PCONDITION_VARIABLE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WinLoadTrustProvider(arg1: *mut GUID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Wow64DisableWow64FsRedirection(arg1: *mut PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Wow64EnableWow64FsRedirection(arg1: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Wow64RevertWow64FsRedirection(arg1: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteEncryptedFileRaw(arg1: PFE_IMPORT_FUNC, arg2: PVOID, arg3: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteFile(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -14633,7 +14633,7 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteFileEx(
         arg1: HANDLE,
         arg2: LPCVOID,
@@ -14642,7 +14642,7 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED_COMPLETION_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteFileGather(
         arg1: HANDLE,
         arg2: *mut FILE_SEGMENT_ELEMENT,
@@ -14651,13 +14651,13 @@ unsafe extern "C" {
         arg5: LPOVERLAPPED,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileSectionA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStringA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -14665,7 +14665,7 @@ unsafe extern "C" {
         arg4: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStringW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -14673,7 +14673,7 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStructA(
         lpszSection: LPCSTR,
         lpszKey: LPCSTR,
@@ -14682,7 +14682,7 @@ unsafe extern "C" {
         szFile: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePrivateProfileStructW(
         lpszSection: LPCWSTR,
         lpszKey: LPCWSTR,
@@ -14691,7 +14691,7 @@ unsafe extern "C" {
         szFile: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProcessMemory(
         arg1: HANDLE,
         arg2: LPVOID,
@@ -14700,59 +14700,59 @@ unsafe extern "C" {
         arg5: *mut SIZE_T,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProfileSectionA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProfileSectionW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProfileStringA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProfileStringW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteTapemark(arg1: HANDLE, arg2: DWORD, arg3: DWORD, arg4: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WTSGetActiveConsoleSessionId() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ZombifyActCtx(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllocateUserPhysicalPages(
         hProcess: HANDLE,
         NumberOfPages: PULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeUserPhysicalPages(
         hProcess: HANDLE,
         NumberOfPages: PULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapUserPhysicalPages(
         VirtualAddress: PVOID,
         NumberOfPages: ULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapUserPhysicalPagesScatter(
         VirtualAddresses: *mut PVOID,
         NumberOfPages: ULONG_PTR,
         PageArray: PULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitOnceInitialize(InitOnce: PINIT_ONCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitOnceBeginInitialize(
         lpInitOnce: LPINIT_ONCE,
         dwFlags: DWORD,
@@ -14760,10 +14760,10 @@ unsafe extern "C" {
         lpContext: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitOnceComplete(lpInitOnce: LPINIT_ONCE, dwFlags: DWORD, lpContext: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitOnceExecuteOnce(
         InitOnce: PINIT_ONCE,
         InitFn: PINIT_ONCE_FN,
@@ -14771,31 +14771,31 @@ unsafe extern "C" {
         Context: *mut LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeSListHead(ListHead: PSLIST_HEADER);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InterlockedPopEntrySList(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InterlockedPushEntrySList(
         ListHead: PSLIST_HEADER,
         ListEntry: PSLIST_ENTRY,
     ) -> PSLIST_ENTRY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InterlockedFlushSList(ListHead: PSLIST_HEADER) -> PSLIST_ENTRY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryDepthSList(ListHead: PSLIST_HEADER) -> USHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AbortSystemShutdownA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AbortSystemShutdownW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateShutdownA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -14804,7 +14804,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateShutdownW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -14813,7 +14813,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -14822,7 +14822,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -14831,7 +14831,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownExA(
         arg1: LPSTR,
         arg2: LPSTR,
@@ -14841,7 +14841,7 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitiateSystemShutdownExW(
         arg1: LPWSTR,
         arg2: LPWSTR,
@@ -14851,28 +14851,28 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCloseKey(hKey: HKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegConnectRegistryA(arg1: LPCSTR, arg2: HKEY, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegConnectRegistryW(arg1: LPCWSTR, arg2: HKEY, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCopyTreeA(arg1: HKEY, arg2: LPCSTR, arg3: HKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCopyTreeW(arg1: HKEY, arg2: LPCWSTR, arg3: HKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCreateKeyA(hKey: HKEY, lpSubKey: LPCSTR, phkResult: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCreateKeyW(hKey: HKEY, lpSubKey: LPCWSTR, phkResult: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCreateKeyExA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -14885,7 +14885,7 @@ unsafe extern "C" {
         lpdwDisposition: PDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCreateKeyExW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -14898,13 +14898,13 @@ unsafe extern "C" {
         lpdwDisposition: PDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyA(hKey: HKEY, lpSubKey: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyW(hKey: HKEY, lpSubKey: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyExA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -14912,7 +14912,7 @@ unsafe extern "C" {
         Reserved: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyExW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -14920,28 +14920,28 @@ unsafe extern "C" {
         Reserved: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyValueA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteKeyValueW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteTreeA(arg1: HKEY, arg2: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteTreeW(arg1: HKEY, arg2: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteValueA(arg1: HKEY, arg2: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDeleteValueW(arg1: HKEY, arg2: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDisablePredefinedCache() -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSaveKeyExA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -14949,7 +14949,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSaveKeyExW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -14957,22 +14957,22 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDisablePredefinedCacheEx() -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegDisableReflectionKey(arg1: HKEY) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnableReflectionKey(arg1: HKEY) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumKeyA(hKey: HKEY, dwIndex: DWORD, lpName: LPSTR, cchName: DWORD) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumKeyW(hKey: HKEY, dwIndex: DWORD, lpName: LPWSTR, cchName: DWORD) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumKeyExA(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -14984,7 +14984,7 @@ unsafe extern "C" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumKeyExW(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -14996,7 +14996,7 @@ unsafe extern "C" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumValueA(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -15008,7 +15008,7 @@ unsafe extern "C" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegEnumValueW(
         hKey: HKEY,
         dwIndex: DWORD,
@@ -15020,7 +15020,7 @@ unsafe extern "C" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegGetValueA(
         hkey: HKEY,
         lpSubKey: LPCSTR,
@@ -15031,7 +15031,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegGetValueW(
         hkey: HKEY,
         lpSubKey: LPCWSTR,
@@ -15042,10 +15042,10 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegFlushKey(arg1: HKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegGetKeySecurity(
         hKey: HKEY,
         SecurityInformation: SECURITY_INFORMATION,
@@ -15053,13 +15053,13 @@ unsafe extern "C" {
         lpcbSecurityDescriptor: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegLoadKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegLoadKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegNotifyChangeKeyValue(
         arg1: HKEY,
         arg2: BOOL,
@@ -15068,16 +15068,16 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegOpenCurrentUser(arg1: REGSAM, arg2: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegOpenKeyA(arg1: HKEY, arg2: LPCSTR, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegOpenKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: PHKEY) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegOpenKeyExA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -15086,7 +15086,7 @@ unsafe extern "C" {
         arg5: PHKEY,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegOpenKeyExW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -15095,7 +15095,7 @@ unsafe extern "C" {
         arg5: PHKEY,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryInfoKeyA(
         hKey: HKEY,
         lpClass: LPSTR,
@@ -15111,7 +15111,7 @@ unsafe extern "C" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryInfoKeyW(
         hKey: HKEY,
         lpClass: LPWSTR,
@@ -15127,7 +15127,7 @@ unsafe extern "C" {
         lpftLastWriteTime: PFILETIME,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryMultipleValuesA(
         hKey: HKEY,
         val_list: PVALENTA,
@@ -15136,7 +15136,7 @@ unsafe extern "C" {
         ldwTotsize: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryMultipleValuesW(
         hKey: HKEY,
         val_list: PVALENTW,
@@ -15145,13 +15145,13 @@ unsafe extern "C" {
         ldwTotsize: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryReflectionKey(arg1: HKEY, arg2: *mut BOOL) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryValueA(hKey: HKEY, lpSubKey: LPCSTR, lpData: LPSTR, lpcbData: PLONG) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryValueW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -15159,7 +15159,7 @@ unsafe extern "C" {
         lpcbData: PLONG,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryValueExA(
         hKey: HKEY,
         lpValueName: LPCSTR,
@@ -15169,7 +15169,7 @@ unsafe extern "C" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegQueryValueExW(
         hKey: HKEY,
         lpValueName: LPCWSTR,
@@ -15179,32 +15179,32 @@ unsafe extern "C" {
         lpcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegReplaceKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR, arg4: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegReplaceKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR, arg4: LPCWSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegRestoreKeyA(arg1: HKEY, arg2: LPCSTR, arg3: DWORD) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegRestoreKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: DWORD) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSaveKeyA(arg1: HKEY, arg2: LPCSTR, arg3: LPSECURITY_ATTRIBUTES) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSaveKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPSECURITY_ATTRIBUTES) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetKeySecurity(
         arg1: HKEY,
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetKeyValueA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -15214,7 +15214,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetKeyValueW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -15224,7 +15224,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetValueA(
         hKey: HKEY,
         lpSubKey: LPCSTR,
@@ -15233,7 +15233,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetValueW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -15242,7 +15242,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetValueExA(
         hKey: HKEY,
         lpValueName: LPCSTR,
@@ -15252,7 +15252,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegSetValueExW(
         hKey: HKEY,
         lpValueName: LPCWSTR,
@@ -15262,10 +15262,10 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegUnLoadKeyA(arg1: HKEY, arg2: LPCSTR) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegUnLoadKeyW(arg1: HKEY, arg2: LPCWSTR) -> LSTATUS;
 }
 pub use self::tagAR_STATE as AR_STATE;
@@ -15277,43 +15277,43 @@ pub struct tagAUDIODESCRIPTION {
 }
 pub type AUDIODESCRIPTION = tagAUDIODESCRIPTION;
 pub type LPAUDIODESCRIPTION = *mut tagAUDIODESCRIPTION;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ActivateKeyboardLayout(arg1: HKL, arg2: UINT) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AdjustWindowRect(arg1: LPRECT, arg2: DWORD, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AdjustWindowRectEx(arg1: LPRECT, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AnimateWindow(arg1: HWND, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AnyPopup() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AppendMenuA(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AppendMenuW(arg1: HMENU, arg2: UINT, arg3: UINT_PTR, arg4: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ArrangeIconicWindows(arg1: HWND) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AttachThreadInput(arg1: DWORD, arg2: DWORD, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginDeferWindowPos(arg1: ::core::ffi::c_int) -> HDWP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginPaint(arg1: HWND, arg2: LPPAINTSTRUCT) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BringWindowToTop(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BroadcastSystemMessage(
         arg1: DWORD,
         arg2: LPDWORD,
@@ -15322,7 +15322,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BroadcastSystemMessageA(
         flags: DWORD,
         lpInfo: LPDWORD,
@@ -15331,7 +15331,7 @@ unsafe extern "C" {
         lParam: LPARAM,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BroadcastSystemMessageW(
         flags: DWORD,
         lpInfo: LPDWORD,
@@ -15340,7 +15340,7 @@ unsafe extern "C" {
         lParam: LPARAM,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BroadcastSystemMessageExA(
         flags: DWORD,
         lpInfo: LPDWORD,
@@ -15350,7 +15350,7 @@ unsafe extern "C" {
         pbsmInfo: PBSMINFO,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BroadcastSystemMessageExW(
         flags: DWORD,
         lpInfo: LPDWORD,
@@ -15360,16 +15360,16 @@ unsafe extern "C" {
         pbsmInfo: PBSMINFO,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CalcChildScroll(arg1: HWND, arg2: INT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallMsgFilterA(arg1: LPMSG, arg2: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallMsgFilterW(arg1: LPMSG, arg2: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallNextHookEx(
         arg1: HHOOK,
         arg2: ::core::ffi::c_int,
@@ -15377,7 +15377,7 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallWindowProcA(
         arg1: WNDPROC,
         arg2: HWND,
@@ -15386,7 +15386,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallWindowProcW(
         arg1: WNDPROC,
         arg2: HWND,
@@ -15395,7 +15395,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CascadeWindows(
         hwndParent: HWND,
         wHow: UINT,
@@ -15404,85 +15404,85 @@ unsafe extern "C" {
         lpKids: *const HWND,
     ) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChangeClipboardChain(arg1: HWND, arg2: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChangeMenuA(arg1: HMENU, arg2: UINT, arg3: LPCSTR, arg4: UINT, arg5: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChangeMenuW(arg1: HMENU, arg2: UINT, arg3: LPCWSTR, arg4: UINT, arg5: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharLowerA(arg1: LPSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharLowerW(arg1: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharLowerBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharLowerBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharNextA(arg1: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharNextW(arg1: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharNextExA(arg1: WORD, arg2: LPCSTR, arg3: DWORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharNextExW(arg1: WORD, arg2: LPCWSTR, arg3: DWORD) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharPrevA(arg1: LPCSTR, arg2: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharPrevW(arg1: LPCWSTR, arg2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharPrevExA(arg1: WORD, arg2: LPCSTR, arg3: LPCSTR, arg4: DWORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharPrevExW(arg1: WORD, arg2: LPCWSTR, arg3: LPCWSTR, arg4: DWORD) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharToOemA(pSrc: LPCSTR, pDst: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharToOemW(pSrc: LPCWSTR, pDst: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharToOemBuffA(lpszSrc: LPCSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharToOemBuffW(lpszSrc: LPCWSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharUpperA(arg1: LPSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharUpperW(arg1: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharUpperBuffA(lpsz: LPSTR, cchLength: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CharUpperBuffW(lpsz: LPWSTR, cchLength: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckDlgButton(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckMenuRadioItem(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckRadioButton(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -15490,48 +15490,48 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChildWindowFromPoint(arg1: HWND, arg2: POINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChildWindowFromPointEx(arg1: HWND, arg2: POINT, arg3: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClipCursor(arg1: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseDesktop(arg1: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseWindowStation(arg1: HWINSTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyAcceleratorTableA(
         hAccelSrc: HACCEL,
         lpAccelDst: LPACCEL,
         cAccelEntries: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyAcceleratorTableW(
         hAccelSrc: HACCEL,
         lpAccelDst: LPACCEL,
         cAccelEntries: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyIcon(arg1: HICON) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyImage(
         arg1: HANDLE,
         arg2: UINT,
@@ -15540,19 +15540,19 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyRect(arg1: LPRECT, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CountClipboardFormats() -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateAcceleratorTableA(paccel: LPACCEL, cAccel: ::core::ffi::c_int) -> HACCEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateAcceleratorTableW(paccel: LPACCEL, cAccel: ::core::ffi::c_int) -> HACCEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateCaret(
         arg1: HWND,
         arg2: HBITMAP,
@@ -15560,7 +15560,7 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateCursor(
         arg1: HINSTANCE,
         arg2: ::core::ffi::c_int,
@@ -15571,7 +15571,7 @@ unsafe extern "C" {
         arg7: *const ::core::ffi::c_void,
     ) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDialogIndirectParamA(
         arg1: HINSTANCE,
         arg2: LPCDLGTEMPLATE,
@@ -15580,7 +15580,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDialogIndirectParamW(
         arg1: HINSTANCE,
         arg2: LPCDLGTEMPLATE,
@@ -15589,7 +15589,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDialogParamA(
         arg1: HINSTANCE,
         arg2: LPCSTR,
@@ -15598,7 +15598,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDialogParamW(
         arg1: HINSTANCE,
         arg2: LPCWSTR,
@@ -15607,7 +15607,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateIcon(
         arg1: HINSTANCE,
         arg2: ::core::ffi::c_int,
@@ -15618,7 +15618,7 @@ unsafe extern "C" {
         arg7: *const BYTE,
     ) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateIconFromResource(
         presbits: PBYTE,
         dwResSize: DWORD,
@@ -15626,7 +15626,7 @@ unsafe extern "C" {
         dwVer: DWORD,
     ) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateIconFromResourceEx(
         presbits: PBYTE,
         dwResSize: DWORD,
@@ -15637,10 +15637,10 @@ unsafe extern "C" {
         Flags: UINT,
     ) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateIconIndirect(arg1: PICONINFO) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMDIWindowA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -15654,7 +15654,7 @@ unsafe extern "C" {
         arg10: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMDIWindowW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -15668,13 +15668,13 @@ unsafe extern "C" {
         arg10: LPARAM,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMenu() -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePopupMenu() -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWindowExA(
         dwExStyle: DWORD,
         lpClassName: LPCSTR,
@@ -15690,7 +15690,7 @@ unsafe extern "C" {
         lpParam: LPVOID,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWindowExW(
         dwExStyle: DWORD,
         lpClassName: LPCWSTR,
@@ -15706,7 +15706,7 @@ unsafe extern "C" {
         lpParam: LPVOID,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWindowStationA(
         lpwinsta: LPCSTR,
         dwFlags: DWORD,
@@ -15714,7 +15714,7 @@ unsafe extern "C" {
         lpsa: LPSECURITY_ATTRIBUTES,
     ) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateWindowStationW(
         lpwinsta: LPCWSTR,
         dwFlags: DWORD,
@@ -15722,13 +15722,13 @@ unsafe extern "C" {
         lpsa: LPSECURITY_ATTRIBUTES,
     ) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefDlgProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefDlgProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeferWindowPos(
         arg1: HDWP,
         arg2: HWND,
@@ -15740,54 +15740,54 @@ unsafe extern "C" {
         arg8: UINT,
     ) -> HDWP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefFrameProcA(arg1: HWND, arg2: HWND, arg3: UINT, arg4: WPARAM, arg5: LPARAM)
         -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefFrameProcW(arg1: HWND, arg2: HWND, arg3: UINT, arg4: WPARAM, arg5: LPARAM)
         -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefMDIChildProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefMDIChildProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefRawInputProc(paRawInput: *mut PRAWINPUT, nInput: INT, cbSizeHeader: UINT) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefWindowProcA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefWindowProcW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeregisterShellHookWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyAcceleratorTable(arg1: HACCEL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyCaret() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyCursor(arg1: HCURSOR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyIcon(arg1: HICON) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyMenu(arg1: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DialogBoxIndirectParamA(
         arg1: HINSTANCE,
         arg2: LPCDLGTEMPLATE,
@@ -15796,7 +15796,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> INT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DialogBoxIndirectParamW(
         arg1: HINSTANCE,
         arg2: LPCDLGTEMPLATE,
@@ -15805,7 +15805,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> INT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DialogBoxParamA(
         arg1: HINSTANCE,
         arg2: LPCSTR,
@@ -15814,7 +15814,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> INT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DialogBoxParamW(
         arg1: HINSTANCE,
         arg2: LPCWSTR,
@@ -15823,13 +15823,13 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> INT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DispatchMessageA(arg1: *const MSG) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DispatchMessageW(arg1: *const MSG) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirListA(
         arg1: HWND,
         arg2: LPSTR,
@@ -15838,7 +15838,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirListW(
         arg1: HWND,
         arg2: LPWSTR,
@@ -15847,7 +15847,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirListComboBoxA(
         arg1: HWND,
         arg2: LPSTR,
@@ -15856,7 +15856,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirListComboBoxW(
         arg1: HWND,
         arg2: LPWSTR,
@@ -15865,7 +15865,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirSelectComboBoxExA(
         hwndDlg: HWND,
         lpString: LPSTR,
@@ -15873,7 +15873,7 @@ unsafe extern "C" {
         idComboBox: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirSelectComboBoxExW(
         hwndDlg: HWND,
         lpString: LPWSTR,
@@ -15881,7 +15881,7 @@ unsafe extern "C" {
         idComboBox: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirSelectExA(
         hwndDlg: HWND,
         lpString: LPSTR,
@@ -15889,7 +15889,7 @@ unsafe extern "C" {
         idListBox: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DlgDirSelectExW(
         hwndDlg: HWND,
         lpString: LPWSTR,
@@ -15897,13 +15897,13 @@ unsafe extern "C" {
         idListBox: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DragDetect(arg1: HWND, arg2: POINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DragObject(arg1: HWND, arg2: HWND, arg3: UINT, arg4: ULONG_PTR, arg5: HCURSOR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawAnimatedRects(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -15911,19 +15911,19 @@ unsafe extern "C" {
         arg4: LPCRECT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawCaption(arg1: HWND, arg2: HDC, arg3: LPCRECT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawEdge(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawFocusRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawFrameControl(arg1: HDC, arg2: LPRECT, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawIcon(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -15931,7 +15931,7 @@ unsafe extern "C" {
         arg4: HICON,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawIconEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -15944,13 +15944,13 @@ unsafe extern "C" {
         arg9: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawMenuBar(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawMenuBarTemp(arg1: HWND, arg2: HDC, arg3: LPRECT, arg4: HMENU, arg5: HFONT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawStateA(
         arg1: HDC,
         arg2: HBRUSH,
@@ -15964,7 +15964,7 @@ unsafe extern "C" {
         arg10: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawStateW(
         arg1: HDC,
         arg2: HBRUSH,
@@ -15978,7 +15978,7 @@ unsafe extern "C" {
         arg10: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawTextA(
         hdc: HDC,
         lpchText: LPCSTR,
@@ -15987,7 +15987,7 @@ unsafe extern "C" {
         format: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawTextW(
         hdc: HDC,
         lpchText: LPCWSTR,
@@ -15996,7 +15996,7 @@ unsafe extern "C" {
         format: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawTextExA(
         hdc: HDC,
         lpchText: LPSTR,
@@ -16006,7 +16006,7 @@ unsafe extern "C" {
         lpdtp: LPDRAWTEXTPARAMS,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawTextExW(
         hdc: HDC,
         lpchText: LPWSTR,
@@ -16016,49 +16016,49 @@ unsafe extern "C" {
         lpdtp: LPDRAWTEXTPARAMS,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EmptyClipboard() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableMenuItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableScrollBar(arg1: HWND, arg2: UINT, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableWindow(arg1: HWND, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndDeferWindowPos(arg1: HDWP) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndDialog(arg1: HWND, arg2: INT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndMenu() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndPaint(arg1: HWND, arg2: *const PAINTSTRUCT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndTask(arg1: HWND, arg2: BOOL, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumChildWindows(arg1: HWND, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumClipboardFormats(arg1: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDesktopsA(arg1: HWINSTA, arg2: DESKTOPENUMPROCA, arg3: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDesktopsW(arg1: HWINSTA, arg2: DESKTOPENUMPROCW, arg3: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDesktopWindows(arg1: HDESK, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDisplayMonitors(
         arg1: HDC,
         arg2: LPCRECT,
@@ -16066,91 +16066,91 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumPropsA(arg1: HWND, arg2: PROPENUMPROCA) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumPropsW(arg1: HWND, arg2: PROPENUMPROCW) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumPropsExA(arg1: HWND, arg2: PROPENUMPROCEXA, lParam: LPARAM) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumPropsExW(arg1: HWND, arg2: PROPENUMPROCEXW, lParam: LPARAM) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumThreadWindows(arg1: DWORD, arg2: WNDENUMPROC, arg3: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumWindowStationsA(arg1: WINSTAENUMPROCA, lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumWindowStationsW(arg1: WINSTAENUMPROCW, lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EqualRect(arg1: LPCRECT, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExitWindowsEx(arg1: UINT, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindWindowA(arg1: LPCSTR, arg2: LPCSTR) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindWindowW(arg1: LPCWSTR, arg2: LPCWSTR) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindWindowExA(arg1: HWND, arg2: HWND, arg3: LPCSTR, arg4: LPCSTR) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindWindowExW(arg1: HWND, arg2: HWND, arg3: LPCWSTR, arg4: LPCWSTR) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlashWindow(arg1: HWND, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlashWindowEx(arg1: PFLASHWINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FrameRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetActiveWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAncestor(arg1: HWND, arg2: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAsyncKeyState(arg1: ::core::ffi::c_int) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCapture() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCaretBlinkTime() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCaretPos(arg1: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassInfoA(arg1: HINSTANCE, arg2: LPCSTR, arg3: LPWNDCLASSA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassInfoExA(arg1: HINSTANCE, arg2: LPCSTR, arg3: LPWNDCLASSEXA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassInfoW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPWNDCLASSW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassInfoExW(arg1: HINSTANCE, arg2: LPCWSTR, arg3: LPWNDCLASSEXW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassLongA(arg1: HWND, arg2: ::core::ffi::c_int) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassLongW(arg1: HWND, arg2: ::core::ffi::c_int) -> DWORD;
 }
 unsafe extern "C" {
@@ -16159,80 +16159,80 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GetClassLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassNameA(
         hWnd: HWND,
         lpClassName: LPSTR,
         nMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassNameW(
         hWnd: HWND,
         lpClassName: LPWSTR,
         nMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassWord(arg1: HWND, arg2: ::core::ffi::c_int) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClientRect(arg1: HWND, arg2: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardData(arg1: UINT) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardFormatNameA(
         format: UINT,
         lpszFormatName: LPSTR,
         cchMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardFormatNameW(
         format: UINT,
         lpszFormatName: LPWSTR,
         cchMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardOwner() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardSequenceNumber() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipboardViewer() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipCursor(arg1: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCursorPos(arg1: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDC(arg1: HWND) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDCEx(arg1: HWND, arg2: HRGN, arg3: DWORD) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDesktopWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDialogBaseUnits() -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDlgCtrlID(arg1: HWND) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDlgItem(arg1: HWND, arg2: ::core::ffi::c_int) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDlgItemInt(arg1: HWND, arg2: ::core::ffi::c_int, arg3: PBOOL, arg4: BOOL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDlgItemTextA(
         hDlg: HWND,
         nIDDlgItem: ::core::ffi::c_int,
@@ -16240,7 +16240,7 @@ unsafe extern "C" {
         cchMax: ::core::ffi::c_int,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDlgItemTextW(
         hDlg: HWND,
         nIDDlgItem: ::core::ffi::c_int,
@@ -16248,102 +16248,102 @@ unsafe extern "C" {
         cchMax: ::core::ffi::c_int,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDoubleClickTime() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFocus() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetForegroundWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGuiResources(arg1: HANDLE, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetIconInfo(arg1: HICON, arg2: PICONINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetIconInfoExA(arg1: HICON, arg2: *mut ICONINFOEXA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetIconInfoExW(arg1: HICON, arg2: *mut ICONINFOEXW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetInputState() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKBCodePage() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardLayout(arg1: DWORD) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardLayoutList(nBuff: ::core::ffi::c_int, lpList: *mut HKL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardLayoutNameA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardLayoutNameW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardState(lpKeyState: PBYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyboardType(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyNameTextA(
         lParam: LONG,
         lpString: LPSTR,
         cchSize: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyNameTextW(
         lParam: LONG,
         lpString: LPWSTR,
         cchSize: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKeyState(arg1: ::core::ffi::c_int) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLastActivePopup(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenu(arg1: HWND) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuCheckMarkDimensions() -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuContextHelpId(arg1: HMENU) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuDefaultItem(hMenu: HMENU, fByPos: UINT, gmdiFlags: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuItemCount(arg1: HMENU) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuItemID(arg1: HMENU, arg2: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuItemInfoA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPMENUITEMINFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuItemInfoW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPMENUITEMINFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuItemRect(arg1: HWND, arg2: HMENU, arg3: UINT, arg4: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuState(arg1: HMENU, arg2: UINT, arg3: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuStringA(
         hMenu: HMENU,
         uIDItem: UINT,
@@ -16352,7 +16352,7 @@ unsafe extern "C" {
         flags: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuStringW(
         hMenu: HMENU,
         uIDItem: UINT,
@@ -16361,22 +16361,22 @@ unsafe extern "C" {
         flags: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMessageA(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMessageW(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMessageExtraInfo() -> LPARAM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMessagePos() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMessageTime() -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMouseMovePointsEx(
         cbSize: UINT,
         lppt: LPMOUSEMOVEPOINT,
@@ -16385,34 +16385,34 @@ unsafe extern "C" {
         resolution: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNextDlgGroupItem(arg1: HWND, arg2: HWND, arg3: BOOL) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNextDlgTabItem(arg1: HWND, arg2: HWND, arg3: BOOL) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOpenClipboardWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetParent(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPriorityClipboardFormat(
         paFormatPriorityList: *mut UINT,
         cFormats: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPropA(arg1: HWND, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPropW(arg1: HWND, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRawInputBuffer(pData: PRAWINPUT, pcbSize: PUINT, cbSizeHeader: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRawInputData(
         hRawInput: HRAWINPUT,
         uiCommand: UINT,
@@ -16421,7 +16421,7 @@ unsafe extern "C" {
         cbSizeHeader: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRawInputDeviceInfoA(
         hDevice: HANDLE,
         uiCommand: UINT,
@@ -16429,7 +16429,7 @@ unsafe extern "C" {
         pcbSize: PUINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRawInputDeviceInfoW(
         hDevice: HANDLE,
         uiCommand: UINT,
@@ -16437,51 +16437,51 @@ unsafe extern "C" {
         pcbSize: PUINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRawInputDeviceList(
         pRawInputDeviceList: PRAWINPUTDEVICELIST,
         puiNumDevices: PUINT,
         cbSize: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRegisteredRawInputDevices(
         pRawInputDevices: PRAWINPUTDEVICE,
         puiNumDevices: PUINT,
         cbSize: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetQueueStatus(arg1: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetScrollInfo(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPSCROLLINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetScrollPos(arg1: HWND, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetScrollRange(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPINT, arg4: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetShellWindow() -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSubMenu(arg1: HMENU, arg2: ::core::ffi::c_int) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSysColor(arg1: ::core::ffi::c_int) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSysColorBrush(arg1: ::core::ffi::c_int) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemMenu(arg1: HWND, arg2: BOOL) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemMetrics(arg1: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTabbedTextExtentA(
         hdc: HDC,
         lpString: LPCSTR,
@@ -16490,7 +16490,7 @@ unsafe extern "C" {
         lpnTabStopPositions: *const INT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTabbedTextExtentW(
         hdc: HDC,
         lpString: LPCWSTR,
@@ -16499,10 +16499,10 @@ unsafe extern "C" {
         lpnTabStopPositions: *const INT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowLongA(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowLongW(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG;
 }
 unsafe extern "C" {
@@ -16511,19 +16511,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GetWindowLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadDesktop(arg1: DWORD) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTopWindow(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUpdateRect(arg1: HWND, arg2: LPRECT, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUpdateRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserObjectInformationA(
         hObj: HANDLE,
         nIndex: ::core::ffi::c_int,
@@ -16532,7 +16532,7 @@ unsafe extern "C" {
         lpnLengthNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserObjectInformationW(
         hObj: HANDLE,
         nIndex: ::core::ffi::c_int,
@@ -16541,7 +16541,7 @@ unsafe extern "C" {
         lpnLengthNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserObjectSecurity(
         hObj: HANDLE,
         pSIRequested: PSECURITY_INFORMATION,
@@ -16550,48 +16550,48 @@ unsafe extern "C" {
         lpnLengthNeeded: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindow(arg1: HWND, arg2: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowContextHelpId(arg1: HWND) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowDC(arg1: HWND) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowPlacement(arg1: HWND, arg2: *mut WINDOWPLACEMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowRect(arg1: HWND, arg2: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowRgn(arg1: HWND, arg2: HRGN) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowTextA(
         hWnd: HWND,
         lpString: LPSTR,
         nMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowTextW(
         hWnd: HWND,
         lpString: LPWSTR,
         nMaxCount: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowTextLengthA(arg1: HWND) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowTextLengthW(arg1: HWND) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowWord(arg1: HWND, arg2: ::core::ffi::c_int) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAltTabInfoA(
         hwnd: HWND,
         iItem: ::core::ffi::c_int,
@@ -16600,7 +16600,7 @@ unsafe extern "C" {
         cchItemText: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAltTabInfoW(
         hwnd: HWND,
         iItem: ::core::ffi::c_int,
@@ -16609,52 +16609,52 @@ unsafe extern "C" {
         cchItemText: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComboBoxInfo(arg1: HWND, arg2: PCOMBOBOXINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCursorInfo(arg1: PCURSORINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGUIThreadInfo(arg1: DWORD, arg2: LPGUITHREADINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLastInputInfo(arg1: PLASTINPUTINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetListBoxInfo(arg1: HWND) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuBarInfo(arg1: HWND, arg2: LONG, arg3: LONG, arg4: PMENUBARINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuInfo(arg1: HMENU, arg2: LPMENUINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessDefaultLayout(arg1: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetScrollBarInfo(arg1: HWND, arg2: LONG, arg3: PSCROLLBARINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTitleBarInfo(arg1: HWND, arg2: PTITLEBARINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowInfo(arg1: HWND, arg2: PWINDOWINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMonitorInfoA(arg1: HMONITOR, arg2: LPMONITORINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMonitorInfoW(arg1: HMONITOR, arg2: LPMONITORINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowModuleFileNameA(hwnd: HWND, pszFileName: LPSTR, cchFileNameMax: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowModuleFileNameW(hwnd: HWND, pszFileName: LPWSTR, cchFileNameMax: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GrayStringA(
         arg1: HDC,
         arg2: HBRUSH,
@@ -16667,7 +16667,7 @@ unsafe extern "C" {
         arg9: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GrayStringW(
         arg1: HDC,
         arg2: HBRUSH,
@@ -16680,164 +16680,164 @@ unsafe extern "C" {
         arg9: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HideCaret(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HiliteMenuItem(arg1: HWND, arg2: HMENU, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InSendMessage() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InSendMessageEx(arg1: LPVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InsertMenuA(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InsertMenuW(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InsertMenuItemA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InsertMenuItemW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternalGetWindowText(
         hWnd: HWND,
         pString: LPWSTR,
         cchMaxCount: ::core::ffi::c_int,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntersectRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InvalidateRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InvertRect(arg1: HDC, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharAlphaA(ch: CHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharAlphaNumericA(arg1: CHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharAlphaNumericW(arg1: WCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharAlphaW(arg1: WCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharLowerA(arg1: CHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharLowerW(arg1: WCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharUpperA(arg1: CHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharUpperW(arg1: WCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsChild(arg1: HWND, arg2: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsClipboardFormatAvailable(arg1: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDialogMessageA(arg1: HWND, arg2: LPMSG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDialogMessageW(arg1: HWND, arg2: LPMSG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDlgButtonChecked(arg1: HWND, arg2: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsGUIThread(arg1: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsHungAppWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsIconic(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsMenu(arg1: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsRectEmpty(arg1: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWindowEnabled(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWindowUnicode(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWindowVisible(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsWinEventHookInstalled(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsZoomed(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn keybd_event(arg1: BYTE, arg2: BYTE, arg3: DWORD, arg4: ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KillTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn KillSystemTimer(arg1: HWND, arg2: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadAcceleratorsA(arg1: HINSTANCE, arg2: LPCSTR) -> HACCEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadAcceleratorsW(arg1: HINSTANCE, arg2: LPCWSTR) -> HACCEL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadBitmapA(arg1: HINSTANCE, arg2: LPCSTR) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadBitmapW(arg1: HINSTANCE, arg2: LPCWSTR) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadCursorA(arg1: HINSTANCE, arg2: LPCSTR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadCursorW(arg1: HINSTANCE, arg2: LPCWSTR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadCursorFromFileA(arg1: LPCSTR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadCursorFromFileW(arg1: LPCWSTR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadIconA(hInstance: HINSTANCE, lpIconName: LPCSTR) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadImageA(
         hInst: HINSTANCE,
         name: LPCSTR,
@@ -16847,7 +16847,7 @@ unsafe extern "C" {
         fuLoad: UINT,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadImageW(
         hInst: HINSTANCE,
         name: LPCWSTR,
@@ -16857,25 +16857,25 @@ unsafe extern "C" {
         fuLoad: UINT,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadKeyboardLayoutA(arg1: LPCSTR, arg2: UINT) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadKeyboardLayoutW(arg1: LPCWSTR, arg2: UINT) -> HKL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadMenuA(arg1: HINSTANCE, arg2: LPCSTR) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadMenuIndirectA(arg1: *const MENUTEMPLATE) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadMenuIndirectW(arg1: *const MENUTEMPLATE) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadMenuW(arg1: HINSTANCE, arg2: LPCWSTR) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadStringA(
         hInstance: HINSTANCE,
         uID: UINT,
@@ -16883,7 +16883,7 @@ unsafe extern "C" {
         cchBufferMax: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadStringW(
         hInstance: HINSTANCE,
         uID: UINT,
@@ -16891,16 +16891,16 @@ unsafe extern "C" {
         cchBufferMax: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockWindowUpdate(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockWorkStation() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupIconIdFromDirectory(arg1: PBYTE, arg2: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LookupIconIdFromDirectoryEx(
         arg1: PBYTE,
         arg2: BOOL,
@@ -16909,22 +16909,22 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapDialogRect(arg1: HWND, arg2: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapVirtualKeyA(arg1: UINT, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapVirtualKeyExA(arg1: UINT, arg2: UINT, arg3: HKL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapVirtualKeyExW(arg1: UINT, arg2: UINT, arg3: HKL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapVirtualKeyW(arg1: UINT, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MapWindowPoints(
         hWndFrom: HWND,
         hWndTo: HWND,
@@ -16932,13 +16932,13 @@ unsafe extern "C" {
         cPoints: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MenuItemFromPoint(arg1: HWND, arg2: HMENU, arg3: POINT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBeep(uType: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxA(
         hWnd: HWND,
         lpText: LPCSTR,
@@ -16946,7 +16946,7 @@ unsafe extern "C" {
         uType: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxW(
         hWnd: HWND,
         lpText: LPCWSTR,
@@ -16954,7 +16954,7 @@ unsafe extern "C" {
         uType: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxExA(
         hWnd: HWND,
         lpText: LPCSTR,
@@ -16963,7 +16963,7 @@ unsafe extern "C" {
         wLanguageId: WORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxExW(
         hWnd: HWND,
         lpText: LPCWSTR,
@@ -16972,31 +16972,31 @@ unsafe extern "C" {
         wLanguageId: WORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxIndirectA(lpmbp: *const MSGBOXPARAMSA) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MessageBoxIndirectW(lpmbp: *const MSGBOXPARAMSW) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ModifyMenuA(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ModifyMenuW(arg1: HMENU, arg2: UINT, arg3: UINT, arg4: UINT_PTR, arg5: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MonitorFromPoint(arg1: POINT, arg2: DWORD) -> HMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MonitorFromRect(arg1: LPCRECT, arg2: DWORD) -> HMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MonitorFromWindow(arg1: HWND, arg2: DWORD) -> HMONITOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn mouse_event(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: DWORD, arg5: ULONG_PTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveWindow(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17006,7 +17006,7 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MsgWaitForMultipleObjects(
         nCount: DWORD,
         pHandles: *const HANDLE,
@@ -17015,7 +17015,7 @@ unsafe extern "C" {
         dwWakeMask: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MsgWaitForMultipleObjectsEx(
         nCount: DWORD,
         pHandles: *const HANDLE,
@@ -17024,76 +17024,76 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NotifyWinEvent(arg1: DWORD, arg2: HWND, arg3: LONG, arg4: LONG);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OemKeyScan(arg1: WORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OemToCharA(pSrc: LPCSTR, pDst: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OemToCharBuffA(lpszSrc: LPCSTR, lpszDst: LPSTR, cchDstLength: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OemToCharBuffW(lpszSrc: LPCSTR, lpszDst: LPWSTR, cchDstLength: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OemToCharW(pSrc: LPCSTR, pDst: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OffsetRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenClipboard(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenDesktopA(arg1: LPCSTR, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenDesktopW(arg1: LPCWSTR, arg2: DWORD, arg3: BOOL, arg4: DWORD) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenIcon(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenInputDesktop(arg1: DWORD, arg2: BOOL, arg3: DWORD) -> HDESK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenWindowStationA(arg1: LPCSTR, arg2: BOOL, arg3: DWORD) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenWindowStationW(arg1: LPCWSTR, arg2: BOOL, arg3: DWORD) -> HWINSTA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PaintDesktop(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PeekMessageA(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PeekMessageW(arg1: LPMSG, arg2: HWND, arg3: UINT, arg4: UINT, arg5: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostQuitMessage(arg1: ::core::ffi::c_int);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostThreadMessageA(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PostThreadMessageW(arg1: DWORD, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrintWindow(arg1: HWND, arg2: HDC, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivateExtractIconsA(
         szFileName: LPCSTR,
         nIconIndex: ::core::ffi::c_int,
@@ -17105,7 +17105,7 @@ unsafe extern "C" {
         flags: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivateExtractIconsW(
         szFileName: LPCWSTR,
         nIconIndex: ::core::ffi::c_int,
@@ -17117,7 +17117,7 @@ unsafe extern "C" {
         flags: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivateExtractIconExA(
         arg1: LPCSTR,
         arg2: ::core::ffi::c_int,
@@ -17126,7 +17126,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivateExtractIconExW(
         arg1: LPCWSTR,
         arg2: ::core::ffi::c_int,
@@ -17135,92 +17135,92 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PtInRect(arg1: LPCRECT, arg2: POINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RealChildWindowFromPoint(arg1: HWND, arg2: POINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RealGetWindowClassA(hwnd: HWND, ptszClassName: LPSTR, cchClassNameMax: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RealGetWindowClassW(hwnd: HWND, ptszClassName: LPWSTR, cchClassNameMax: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RedrawWindow(arg1: HWND, arg2: LPCRECT, arg3: HRGN, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClassA(arg1: *const WNDCLASSA) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClassW(arg1: *const WNDCLASSW) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClassExA(arg1: *const WNDCLASSEXA) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClassExW(arg1: *const WNDCLASSEXW) -> ATOM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClipboardFormatA(arg1: LPCSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterClipboardFormatW(arg1: LPCWSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterDeviceNotificationA(arg1: HANDLE, arg2: LPVOID, arg3: DWORD) -> HDEVNOTIFY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterDeviceNotificationW(arg1: HANDLE, arg2: LPVOID, arg3: DWORD) -> HDEVNOTIFY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterHotKey(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterLogonProcess(arg1: DWORD, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterRawInputDevices(
         pRawInputDevices: PCRAWINPUTDEVICE,
         uiNumDevices: UINT,
         cbSize: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterShellHookWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterWindowMessageA(arg1: LPCSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterWindowMessageW(arg1: LPCWSTR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseCapture() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemovePropA(arg1: HWND, arg2: LPCSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemovePropW(arg1: HWND, arg2: LPCWSTR) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReplyMessage(arg1: LRESULT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScreenToClient(arg1: HWND, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScrollChildren(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScrollDC(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -17231,7 +17231,7 @@ unsafe extern "C" {
         arg7: LPRECT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScrollWindow(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17240,7 +17240,7 @@ unsafe extern "C" {
         arg5: LPCRECT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScrollWindowEx(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17252,7 +17252,7 @@ unsafe extern "C" {
         arg8: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendDlgItemMessageA(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17261,7 +17261,7 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendDlgItemMessageW(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17270,13 +17270,13 @@ unsafe extern "C" {
         arg5: LPARAM,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendInput(cInputs: UINT, pInputs: LPINPUT, cbSize: ::core::ffi::c_int) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageCallbackA(
         arg1: HWND,
         arg2: UINT,
@@ -17286,7 +17286,7 @@ unsafe extern "C" {
         arg6: ULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageCallbackW(
         arg1: HWND,
         arg2: UINT,
@@ -17296,7 +17296,7 @@ unsafe extern "C" {
         arg6: ULONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageTimeoutA(
         arg1: HWND,
         arg2: UINT,
@@ -17307,7 +17307,7 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageTimeoutW(
         arg1: HWND,
         arg2: UINT,
@@ -17318,31 +17318,31 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendNotifyMessageA(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SendNotifyMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetActiveWindow(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCapture(hWnd: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCaretBlinkTime(arg1: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCaretPos(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetClassLongA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetClassLongW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> DWORD;
 }
 unsafe extern "C" {
@@ -17351,61 +17351,61 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn SetClassLongPtrW(arg1: HWND, arg2: INT, arg3: LONG_PTR) -> ULONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetClassWord(arg1: HWND, arg2: ::core::ffi::c_int, arg3: WORD) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetClipboardData(arg1: UINT, arg2: HANDLE) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetClipboardViewer(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCursor(arg1: HCURSOR) -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCursorPos(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDebugErrorLevel(arg1: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDeskWallPaper(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDlgItemInt(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT, arg4: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDlgItemTextA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDlgItemTextW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDoubleClickTime(arg1: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetFocus(arg1: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetForegroundWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetKeyboardState(arg1: LPBYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenu(arg1: HWND, arg2: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuContextHelpId(arg1: HMENU, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuDefaultItem(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuInfo(arg1: HMENU, arg2: LPCMENUINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuItemBitmaps(
         arg1: HMENU,
         arg2: UINT,
@@ -17414,34 +17414,34 @@ unsafe extern "C" {
         arg5: HBITMAP,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuItemInfoA(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMenuItemInfoW(arg1: HMENU, arg2: UINT, arg3: BOOL, arg4: LPCMENUITEMINFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMessageExtraInfo(arg1: LPARAM) -> LPARAM;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMessageQueue(arg1: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetParent(arg1: HWND, arg2: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessDefaultLayout(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessWindowStation(arg1: HWINSTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPropA(arg1: HWND, arg2: LPCSTR, arg3: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPropW(arg1: HWND, arg2: LPCWSTR, arg3: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetRect(
         arg1: LPRECT,
         arg2: ::core::ffi::c_int,
@@ -17450,10 +17450,10 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetRectEmpty(arg1: LPRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetScrollInfo(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17461,7 +17461,7 @@ unsafe extern "C" {
         arg4: BOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetScrollPos(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17469,7 +17469,7 @@ unsafe extern "C" {
         arg4: BOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetScrollRange(
         arg1: HWND,
         arg2: ::core::ffi::c_int,
@@ -17478,36 +17478,36 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSysColors(
         cElements: ::core::ffi::c_int,
         lpaElements: *const INT,
         lpaRgbValues: *const COLORREF,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSysColorsTemp(
         arg1: *const COLORREF,
         arg2: *const HBRUSH,
         arg3: DWORD_PTR,
     ) -> DWORD_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemCursor(arg1: HCURSOR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemMenu(arg1: HWND, arg2: HMENU) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadDesktop(arg1: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTimer(arg1: HWND, arg2: UINT_PTR, arg3: UINT, arg4: TIMERPROC) -> UINT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemTimer(arg1: HWND, arg2: UINT_PTR, arg3: UINT, arg4: TIMERPROC) -> UINT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserObjectInformationA(
         hObj: HANDLE,
         nIndex: ::core::ffi::c_int,
@@ -17515,7 +17515,7 @@ unsafe extern "C" {
         nLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserObjectInformationW(
         hObj: HANDLE,
         nIndex: ::core::ffi::c_int,
@@ -17523,14 +17523,14 @@ unsafe extern "C" {
         nLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserObjectSecurity(
         arg1: HANDLE,
         arg2: PSECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWinEventHook(
         arg1: UINT,
         arg2: UINT,
@@ -17541,13 +17541,13 @@ unsafe extern "C" {
         arg7: UINT,
     ) -> HWINEVENTHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowContextHelpId(arg1: HWND, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowLongA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowLongW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG) -> LONG;
 }
 unsafe extern "C" {
@@ -17556,10 +17556,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn SetWindowLongPtrW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LONG_PTR) -> LONG_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowPlacement(hWnd: HWND, arg1: *const WINDOWPLACEMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowPos(
         arg1: HWND,
         arg2: HWND,
@@ -17570,16 +17570,16 @@ unsafe extern "C" {
         arg7: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowRgn(arg1: HWND, arg2: HRGN, arg3: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowsHookA(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowsHookW(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowsHookExA(
         arg1: ::core::ffi::c_int,
         arg2: HOOKPROC,
@@ -17587,7 +17587,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowsHookExW(
         arg1: ::core::ffi::c_int,
         arg2: HOOKPROC,
@@ -17595,46 +17595,46 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HHOOK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowTextA(arg1: HWND, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowTextW(arg1: HWND, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowWord(arg1: HWND, arg2: ::core::ffi::c_int, arg3: WORD) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowCaret(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowCursor(arg1: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowOwnedPopups(arg1: HWND, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowScrollBar(arg1: HWND, arg2: ::core::ffi::c_int, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowWindow(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowWindowAsync(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SubtractRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwapMouseButton(arg1: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwitchDesktop(arg1: HDESK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwitchToThisWindow(arg1: HWND, arg2: BOOL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemParametersInfoA(
         uiAction: UINT,
         uiParam: UINT,
@@ -17642,7 +17642,7 @@ unsafe extern "C" {
         fWinIni: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SystemParametersInfoW(
         uiAction: UINT,
         uiParam: UINT,
@@ -17650,7 +17650,7 @@ unsafe extern "C" {
         fWinIni: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TabbedTextOutA(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -17662,7 +17662,7 @@ unsafe extern "C" {
         nTabOrigin: ::core::ffi::c_int,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TabbedTextOutW(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -17674,7 +17674,7 @@ unsafe extern "C" {
         nTabOrigin: ::core::ffi::c_int,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TileWindows(
         hwndParent: HWND,
         wHow: UINT,
@@ -17683,7 +17683,7 @@ unsafe extern "C" {
         lpKids: *const HWND,
     ) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ToAscii(
         arg1: UINT,
         arg2: UINT,
@@ -17692,7 +17692,7 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ToAsciiEx(
         arg1: UINT,
         arg2: UINT,
@@ -17702,7 +17702,7 @@ unsafe extern "C" {
         arg6: HKL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ToUnicode(
         wVirtKey: UINT,
         wScanCode: UINT,
@@ -17712,7 +17712,7 @@ unsafe extern "C" {
         wFlags: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ToUnicodeEx(
         wVirtKey: UINT,
         wScanCode: UINT,
@@ -17723,10 +17723,10 @@ unsafe extern "C" {
         dwhkl: HKL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TrackMouseEvent(arg1: LPTRACKMOUSEEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TrackPopupMenu(
         arg1: HMENU,
         arg2: UINT,
@@ -17737,7 +17737,7 @@ unsafe extern "C" {
         arg7: LPCRECT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TrackPopupMenuEx(
         arg1: HMENU,
         arg2: UINT,
@@ -17747,91 +17747,91 @@ unsafe extern "C" {
         arg6: LPTPMPARAMS,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateAcceleratorA(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateAcceleratorW(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateMDISysAccel(arg1: HWND, arg2: LPMSG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateMessage(arg1: *const MSG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnhookWindowsHook(arg1: ::core::ffi::c_int, arg2: HOOKPROC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnhookWindowsHookEx(arg1: HHOOK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnhookWinEvent(arg1: HWINEVENTHOOK) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnionRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnloadKeyboardLayout(arg1: HKL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterClassA(arg1: LPCSTR, arg2: HINSTANCE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterClassW(arg1: LPCWSTR, arg2: HINSTANCE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterDeviceNotification(arg1: HDEVNOTIFY) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterHotKey(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateWindow(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UserHandleGrantAccess(arg1: HANDLE, arg2: HANDLE, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ValidateRect(arg1: HWND, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ValidateRgn(arg1: HWND, arg2: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VkKeyScanA(arg1: CHAR) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VkKeyScanExA(arg1: CHAR, arg2: HKL) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VkKeyScanExW(arg1: WCHAR, arg2: HKL) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VkKeyScanW(arg1: WCHAR) -> SHORT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitForInputIdle(arg1: HANDLE, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WaitMessage() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WindowFromDC(hDC: HDC) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WindowFromPhysicalPoint(arg1: POINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WindowFromPoint(arg1: POINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WinExec(arg1: LPCSTR, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WinHelpA(arg1: HWND, arg2: LPCSTR, arg3: UINT, arg4: ULONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WinHelpW(arg1: HWND, arg2: LPCWSTR, arg3: UINT, arg4: ULONG_PTR) -> BOOL;
 }
 unsafe extern "C" {
@@ -17840,22 +17840,22 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn wsprintfW(arg1: LPWSTR, arg2: LPCWSTR, ...) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wvsprintfA(arg1: LPSTR, arg2: LPCSTR, arglist: va_list) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wvsprintfW(arg1: LPWSTR, arg2: LPCWSTR, arglist: va_list) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AllowSetForegroundWindow(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LockSetForegroundWindow(arg1: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLayeredWindowAttributes(arg1: HWND, arg2: COLORREF, arg3: BYTE, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLayeredWindowAttributes(
         arg1: HWND,
         arg2: *mut COLORREF,
@@ -19821,19 +19821,19 @@ pub type LPFNDEVCAPS = ::core::option::Option<
         arg5: LPDEVMODEA,
     ) -> DWORD,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AbortDoc(hdc: HDC) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AbortPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddFontResourceA(pszFilename: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddFontResourceW(pszFilename: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddFontMemResourceEx(
         pvFileView: PVOID,
         cjSize: DWORD,
@@ -19841,13 +19841,13 @@ unsafe extern "C" {
         pNumFonts: *mut DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddFontResourceExA(pszFilename: LPCSTR, fl: DWORD, pvReserved: PVOID) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddFontResourceExW(pszFilename: LPCWSTR, fl: DWORD, pvReserved: PVOID) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AngleArc(
         hdc: HDC,
         x: INT,
@@ -19857,7 +19857,7 @@ unsafe extern "C" {
         eSweepAngle: FLOAT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AnimatePalette(
         hPal: HPALETTE,
         iStartIndex: UINT,
@@ -19865,7 +19865,7 @@ unsafe extern "C" {
         ppe: *const PALETTEENTRY,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Arc(
         hdc: HDC,
         xLeft: INT,
@@ -19878,7 +19878,7 @@ unsafe extern "C" {
         yEndArc: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ArcTo(
         hdc: HDC,
         xLeft: INT,
@@ -19891,10 +19891,10 @@ unsafe extern "C" {
         yRadial2: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginPath(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BitBlt(
         hdcDest: HDC,
         xDest: INT,
@@ -19907,10 +19907,10 @@ unsafe extern "C" {
         dwRop: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CancelDC(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CheckColorsInGamut(
         hdc: HDC,
         pRGBTriple: LPVOID,
@@ -19918,7 +19918,7 @@ unsafe extern "C" {
         nCount: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Chord(
         hdc: HDC,
         xLeft: INT,
@@ -19931,22 +19931,22 @@ unsafe extern "C" {
         yRadial2: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseEnhMetaFile(hdc: HDC) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseFigure(hdc: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseMetaFile(hdc: HDC) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ColorMatchToTarget(hdc: HDC, hdcTarget: HDC, uAction: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CombineRgn(
         hrgnDest: HRGN,
         hrgnSrc1: HRGN,
@@ -19954,26 +19954,26 @@ unsafe extern "C" {
         fnCombineMode: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CombineTransform(
         pxformResult: LPXFORM,
         pxform1: *const XFORM,
         pxform2: *const XFORM,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyEnhMetaFileA(hemfSrc: HENHMETAFILE, pszFile: LPCSTR) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyEnhMetaFileW(hemfSrc: HENHMETAFILE, pszFile: LPCWSTR) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyMetaFileA(hmfSrc: HMETAFILE, pszFile: LPCSTR) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyMetaFileW(hmfSrc: HMETAFILE, pszFile: LPCWSTR) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateBitmap(
         cx: INT,
         cy: INT,
@@ -19982,25 +19982,25 @@ unsafe extern "C" {
         pvBits: *const ::core::ffi::c_void,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateBitmapIndirect(pbm: *const BITMAP) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateBrushIndirect(plb: *const LOGBRUSH) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateColorSpaceA(pLogColorSpace: LPLOGCOLORSPACEA) -> HCOLORSPACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateColorSpaceW(pLogColorSpace: LPLOGCOLORSPACEW) -> HCOLORSPACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateCompatibleBitmap(hdc: HDC, cx: INT, cy: INT) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDCA(
         pszDriver: LPCSTR,
         pszDevice: LPCSTR,
@@ -20008,7 +20008,7 @@ unsafe extern "C" {
         pdmInit: *const DEVMODEA,
     ) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDCW(
         pszDriver: LPCWSTR,
         pszDevice: LPCWSTR,
@@ -20016,7 +20016,7 @@ unsafe extern "C" {
         pdmInit: *const DEVMODEW,
     ) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDIBitmap(
         hdc: HDC,
         pbmih: *const BITMAPINFOHEADER,
@@ -20026,14 +20026,14 @@ unsafe extern "C" {
         uUsage: UINT,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDIBPatternBrush(hglbDIBPacked: HGLOBAL, uUsage: UINT) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDIBPatternBrushPt(pvPackedDIB: *const ::core::ffi::c_void, uUsage: UINT)
         -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDIBSection(
         hdc: HDC,
         pbmi: *const BITMAPINFO,
@@ -20043,14 +20043,14 @@ unsafe extern "C" {
         offset: DWORD,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDiscardableBitmap(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> HBITMAP;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEllipticRgn(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -20058,16 +20058,16 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEllipticRgnIndirect(arg1: LPCRECT) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEnhMetaFileA(arg1: HDC, arg2: LPCSTR, arg3: LPCRECT, arg4: LPCSTR) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEnhMetaFileW(arg1: HDC, arg2: LPCWSTR, arg3: LPCRECT, arg4: LPCWSTR) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontA(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -20085,7 +20085,7 @@ unsafe extern "C" {
         arg14: LPCSTR,
     ) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontW(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -20103,56 +20103,56 @@ unsafe extern "C" {
         arg14: LPCWSTR,
     ) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontIndirectA(arg1: *const LOGFONTA) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontIndirectW(arg1: *const LOGFONTW) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontIndirectExA(arg1: *const ENUMLOGFONTEXDVA) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFontIndirectExW(arg1: *const ENUMLOGFONTEXDVW) -> HFONT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateHalftonePalette(arg1: HDC) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateHatchBrush(arg1: ::core::ffi::c_int, arg2: COLORREF) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateICA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR, arg4: *const DEVMODEA) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateICW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR, arg4: *const DEVMODEW) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMetaFileA(arg1: LPCSTR) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMetaFileW(arg1: LPCWSTR) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePalette(arg1: *const LOGPALETTE) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePatternBrush(arg1: HBITMAP) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePen(arg1: ::core::ffi::c_int, arg2: ::core::ffi::c_int, arg3: COLORREF) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePenIndirect(arg1: *const LOGPEN) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePolygonRgn(
         pptl: *const POINT,
         cPoint: ::core::ffi::c_int,
         iMode: ::core::ffi::c_int,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePolyPolygonRgn(
         pptl: *const POINT,
         pc: *const INT,
@@ -20160,7 +20160,7 @@ unsafe extern "C" {
         iMode: ::core::ffi::c_int,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateRectRgn(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -20168,10 +20168,10 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateRectRgnIndirect(arg1: LPCRECT) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateRoundRectRgn(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -20181,7 +20181,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateScalableFontResourceA(
         arg1: DWORD,
         arg2: LPCSTR,
@@ -20189,7 +20189,7 @@ unsafe extern "C" {
         arg4: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateScalableFontResourceW(
         arg1: DWORD,
         arg2: LPCWSTR,
@@ -20197,25 +20197,25 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateSolidBrush(arg1: COLORREF) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteColorSpace(arg1: HCOLORSPACE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteDC(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteEnhMetaFile(arg1: HENHMETAFILE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteMetaFile(arg1: HMETAFILE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteObject(arg1: HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DescribePixelFormat(
         hdc: HDC,
         iPixelFormat: ::core::ffi::c_int,
@@ -20223,7 +20223,7 @@ unsafe extern "C" {
         ppfd: LPPIXELFORMATDESCRIPTOR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceCapabilitiesA(
         pDevice: LPCSTR,
         pPort: LPCSTR,
@@ -20232,7 +20232,7 @@ unsafe extern "C" {
         pDevMode: *const DEVMODEA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeviceCapabilitiesW(
         pDevice: LPCWSTR,
         pPort: LPCWSTR,
@@ -20241,10 +20241,10 @@ unsafe extern "C" {
         pDevMode: *const DEVMODEW,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPtoLP(hdc: HDC, lppt: LPPOINT, c: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawEscape(
         hdc: HDC,
         iEscape: ::core::ffi::c_int,
@@ -20252,7 +20252,7 @@ unsafe extern "C" {
         lpIn: LPCSTR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Ellipse(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20261,16 +20261,16 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndDoc(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndPage(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndPath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumEnhMetaFile(
         arg1: HDC,
         arg2: HENHMETAFILE,
@@ -20279,7 +20279,7 @@ unsafe extern "C" {
         arg5: LPCRECT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontFamiliesA(
         arg1: HDC,
         arg2: LPCSTR,
@@ -20287,7 +20287,7 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontFamiliesW(
         arg1: HDC,
         arg2: LPCWSTR,
@@ -20295,7 +20295,7 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontFamiliesExA(
         arg1: HDC,
         arg2: PLOGFONTA,
@@ -20304,7 +20304,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontFamiliesExW(
         arg1: HDC,
         arg2: PLOGFONTW,
@@ -20313,7 +20313,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontsA(
         arg1: HDC,
         arg2: LPCSTR,
@@ -20321,7 +20321,7 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumFontsW(
         arg1: HDC,
         arg2: LPCWSTR,
@@ -20329,16 +20329,16 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumICMProfilesA(arg1: HDC, arg2: ICMENUMPROCA, arg3: LPARAM) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumICMProfilesW(arg1: HDC, arg2: ICMENUMPROCW, arg3: LPARAM) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumMetaFile(arg1: HDC, arg2: HMETAFILE, arg3: MFENUMPROC, arg4: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumObjects(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20346,10 +20346,10 @@ unsafe extern "C" {
         arg4: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EqualRgn(arg1: HRGN, arg2: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Escape(
         hdc: HDC,
         iEscape: ::core::ffi::c_int,
@@ -20358,7 +20358,7 @@ unsafe extern "C" {
         pvOut: LPVOID,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExcludeClipRect(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20367,10 +20367,10 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExcludeUpdateRgn(arg1: HDC, arg2: HWND) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtCreatePen(
         iPenStyle: DWORD,
         cWidth: DWORD,
@@ -20379,10 +20379,10 @@ unsafe extern "C" {
         pstyle: *const DWORD,
     ) -> HPEN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtCreateRegion(lpx: *const XFORM, nCount: DWORD, lpData: *const RGNDATA) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtEscape(
         hdc: HDC,
         iEscape: ::core::ffi::c_int,
@@ -20392,7 +20392,7 @@ unsafe extern "C" {
         lpOutData: LPSTR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtFloodFill(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20401,10 +20401,10 @@ unsafe extern "C" {
         arg5: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtSelectClipRgn(arg1: HDC, arg2: HRGN, arg3: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtTextOutA(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -20416,7 +20416,7 @@ unsafe extern "C" {
         lpDx: *const INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtTextOutW(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -20428,16 +20428,16 @@ unsafe extern "C" {
         lpDx: *const INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FillPath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FillRect(arg1: HDC, arg2: LPCRECT, arg3: HBRUSH) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FillRgn(arg1: HDC, arg2: HRGN, arg3: HBRUSH) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FixBrushOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20445,10 +20445,10 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlattenPath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FloodFill(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20456,7 +20456,7 @@ unsafe extern "C" {
         arg4: COLORREF,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FrameRgn(
         arg1: HDC,
         arg2: HRGN,
@@ -20465,7 +20465,7 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiAlphaBlend(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20480,28 +20480,28 @@ unsafe extern "C" {
         arg11: BLENDFUNCTION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiComment(hdc: HDC, nSize: UINT, lpData: *const BYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiConvertToDevmodeW(arg1: *const DEVMODEA) -> *mut DEVMODEW;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiFlush() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetCharDimensions(arg1: HDC, arg2: LPTEXTMETRICW, arg3: *mut LONG) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetCodePage(arg1: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGetBatchLimit() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiSetBatchLimit(arg1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiGradientFill(
         hdc: HDC,
         pVertex: PTRIVERTEX,
@@ -20511,7 +20511,7 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiTransparentBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -20526,49 +20526,49 @@ unsafe extern "C" {
         arg11: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GdiIsMetaFileDC(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetArcDirection(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAspectRatioFilterEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBitmapBits(hbit: HBITMAP, cb: LONG, lpvBits: LPVOID) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBitmapDimensionEx(arg1: HBITMAP, arg2: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBkColor(arg1: HDC) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBkMode(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBoundsRect(arg1: HDC, arg2: LPRECT, arg3: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBrushOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharABCWidthsA(hdc: HDC, wFirst: UINT, wLast: UINT, lpABC: LPABC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharABCWidthsW(hdc: HDC, wFirst: UINT, wLast: UINT, lpABC: LPABC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharABCWidthsFloatA(hdc: HDC, iFirst: UINT, iLast: UINT, lpABC: LPABCFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharABCWidthsFloatW(hdc: HDC, iFirst: UINT, iLast: UINT, lpABC: LPABCFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharABCWidthsI(hdc: HDC, giFirst: UINT, cgi: UINT, pgi: LPWORD, pabc: LPABC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharacterPlacementA(
         hdc: HDC,
         lpString: LPCSTR,
@@ -20578,7 +20578,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharacterPlacementW(
         hdc: HDC,
         lpString: LPCWSTR,
@@ -20588,67 +20588,67 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidth32A(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidth32W(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidthA(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidthW(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidthI(hdc: HDC, giFirst: UINT, cgi: UINT, pgi: LPWORD, piWidths: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidthFloatA(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: PFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCharWidthFloatW(hdc: HDC, iFirst: UINT, iLast: UINT, lpBuffer: PFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipBox(arg1: HDC, arg2: LPRECT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClipRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetColorAdjustment(arg1: HDC, arg2: LPCOLORADJUSTMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetColorSpace(arg1: HDC) -> HCOLORSPACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentObject(arg1: HDC, arg2: UINT) -> HGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentPositionEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCursor() -> HCURSOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDCOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDCBrushColor(arg1: HDC) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDCPenColor(arg1: HDC) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDeviceCaps(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDeviceGammaRamp(hdc: HDC, lpRamp: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDIBColorTable(hdc: HDC, iStart: UINT, cEntries: UINT, prgbq: *mut RGBQUAD) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDIBits(
         hdc: HDC,
         hbm: HBITMAP,
@@ -20659,51 +20659,51 @@ unsafe extern "C" {
         usage: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileA(arg1: LPCSTR) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileW(arg1: LPCWSTR) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileBits(hEMF: HENHMETAFILE, nSize: UINT, lpData: LPBYTE) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileDescriptionA(
         hemf: HENHMETAFILE,
         cchBuffer: UINT,
         lpDescription: LPSTR,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileDescriptionW(
         hemf: HENHMETAFILE,
         cchBuffer: UINT,
         lpDescription: LPWSTR,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFileHeader(
         hemf: HENHMETAFILE,
         nSize: UINT,
         lpEnhMetaHeader: LPENHMETAHEADER,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFilePaletteEntries(
         hemf: HENHMETAFILE,
         nNumEntries: UINT,
         lpPaletteEntries: LPPALETTEENTRY,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEnhMetaFilePixelFormat(
         hemf: HENHMETAFILE,
         cbBuffer: UINT,
         ppfd: *mut PIXELFORMATDESCRIPTOR,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFontData(
         hdc: HDC,
         dwTable: DWORD,
@@ -20712,13 +20712,13 @@ unsafe extern "C" {
         cjBuffer: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFontLanguageInfo(arg1: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFontUnicodeRanges(arg1: HDC, arg2: LPGLYPHSET) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGlyphIndicesA(
         hdc: HDC,
         lpstr: LPCSTR,
@@ -20727,7 +20727,7 @@ unsafe extern "C" {
         fl: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGlyphIndicesW(
         hdc: HDC,
         lpstr: LPCWSTR,
@@ -20736,7 +20736,7 @@ unsafe extern "C" {
         fl: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGlyphOutlineA(
         hdc: HDC,
         uChar: UINT,
@@ -20747,7 +20747,7 @@ unsafe extern "C" {
         lpmat2: *const MAT2,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGlyphOutlineW(
         hdc: HDC,
         uChar: UINT,
@@ -20758,75 +20758,75 @@ unsafe extern "C" {
         lpmat2: *const MAT2,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGraphicsMode(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetICMProfileA(hdc: HDC, pBufSize: LPDWORD, pszFilename: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetICMProfileW(hdc: HDC, pBufSize: LPDWORD, pszFilename: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKerningPairsA(hdc: HDC, nPairs: DWORD, lpKernPair: LPKERNINGPAIR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetKerningPairsW(hdc: HDC, nPairs: DWORD, lpKernPair: LPKERNINGPAIR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLogColorSpaceA(
         hColorSpace: HCOLORSPACE,
         lpBuffer: LPLOGCOLORSPACEA,
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLogColorSpaceW(
         hColorSpace: HCOLORSPACE,
         lpBuffer: LPLOGCOLORSPACEW,
         nSize: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMapMode(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMetaFileA(arg1: LPCSTR) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMetaFileW(arg1: LPCWSTR) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMetaFileBitsEx(hMF: HMETAFILE, cbBuffer: UINT, lpData: LPVOID) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMetaRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMiterLimit(arg1: HDC, arg2: PFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNearestColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNearestPaletteIndex(arg1: HPALETTE, arg2: COLORREF) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetObjectA(h: HANDLE, c: ::core::ffi::c_int, pv: LPVOID) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetObjectW(h: HANDLE, c: ::core::ffi::c_int, pv: LPVOID) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetObjectType(arg1: HGDIOBJ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOutlineTextMetricsA(hdc: HDC, cjCopy: UINT, potm: LPOUTLINETEXTMETRICA) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOutlineTextMetricsW(hdc: HDC, cjCopy: UINT, potm: LPOUTLINETEXTMETRICW) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPaletteEntries(
         hpal: HPALETTE,
         iStart: UINT,
@@ -20834,7 +20834,7 @@ unsafe extern "C" {
         pPalEntries: LPPALETTEENTRY,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPath(
         hdc: HDC,
         apt: LPPOINT,
@@ -20842,37 +20842,37 @@ unsafe extern "C" {
         cpt: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPixel(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPixelFormat(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPolyFillMode(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRasterizerCaps(lpraststat: LPRASTERIZER_STATUS, cjBytes: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRandomRgn(arg1: HDC, arg2: HRGN, arg3: INT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRegionData(hrgn: HRGN, nCount: DWORD, lpRgnData: LPRGNDATA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRgnBox(arg1: HRGN, arg2: LPRECT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetROP2(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStockObject(arg1: ::core::ffi::c_int) -> HGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStretchBltMode(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemPaletteEntries(
         hdc: HDC,
         iStart: UINT,
@@ -20880,25 +20880,25 @@ unsafe extern "C" {
         pPalEntries: LPPALETTEENTRY,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemPaletteUse(arg1: HDC) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextAlign(arg1: HDC) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextCharacterExtra(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextCharset(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextCharsetInfo(arg1: HDC, arg2: LPFONTSIGNATURE, arg3: DWORD) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextColor(arg1: HDC) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentExPointA(
         hdc: HDC,
         lpszString: LPCSTR,
@@ -20909,7 +20909,7 @@ unsafe extern "C" {
         lpSize: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentExPointW(
         hdc: HDC,
         lpszString: LPCWSTR,
@@ -20920,7 +20920,7 @@ unsafe extern "C" {
         lpSize: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentExPointI(
         hdc: HDC,
         lpwszString: LPWORD,
@@ -20931,7 +20931,7 @@ unsafe extern "C" {
         lpSize: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentPointA(
         hdc: HDC,
         lpString: LPCSTR,
@@ -20939,7 +20939,7 @@ unsafe extern "C" {
         lpsz: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentPointW(
         hdc: HDC,
         lpString: LPCWSTR,
@@ -20947,7 +20947,7 @@ unsafe extern "C" {
         lpsz: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentPointI(
         hdc: HDC,
         pgiIn: LPWORD,
@@ -20955,7 +20955,7 @@ unsafe extern "C" {
         psize: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentPoint32A(
         hdc: HDC,
         lpString: LPCSTR,
@@ -20963,7 +20963,7 @@ unsafe extern "C" {
         psizl: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextExtentPoint32W(
         hdc: HDC,
         lpString: LPCWSTR,
@@ -20971,34 +20971,34 @@ unsafe extern "C" {
         psizl: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextFaceA(hdc: HDC, c: ::core::ffi::c_int, lpName: LPSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextFaceW(hdc: HDC, c: ::core::ffi::c_int, lpName: LPWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextMetricsA(arg1: HDC, arg2: LPTEXTMETRICA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTextMetricsW(arg1: HDC, arg2: LPTEXTMETRICW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTransform(arg1: HDC, arg2: DWORD, arg3: *mut XFORM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetViewportExtEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetViewportOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowExtEx(arg1: HDC, arg2: LPSIZE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowOrgEx(arg1: HDC, arg2: LPPOINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWinMetaFileBits(
         hemf: HENHMETAFILE,
         cbData16: UINT,
@@ -21007,10 +21007,10 @@ unsafe extern "C" {
         hdcRef: HDC,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWorldTransform(arg1: HDC, arg2: LPXFORM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntersectClipRect(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21019,10 +21019,10 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InvertRgn(arg1: HDC, arg2: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LineDDA(
         arg1: ::core::ffi::c_int,
         arg2: ::core::ffi::c_int,
@@ -21032,13 +21032,13 @@ unsafe extern "C" {
         arg6: LPARAM,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LineTo(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LPtoDP(hdc: HDC, lppt: LPPOINT, c: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MaskBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21054,10 +21054,10 @@ unsafe extern "C" {
         arg12: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ModifyWorldTransform(arg1: HDC, arg2: *const XFORM, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MoveToEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21065,21 +21065,21 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OffsetClipRgn(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OffsetRgn(
         arg1: HRGN,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OffsetViewportOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21087,7 +21087,7 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OffsetWindowOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21095,10 +21095,10 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PaintRgn(arg1: HDC, arg2: HRGN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PatBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21108,10 +21108,10 @@ unsafe extern "C" {
         arg6: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathToRegion(arg1: HDC) -> HRGN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Pie(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21124,10 +21124,10 @@ unsafe extern "C" {
         arg9: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PlayEnhMetaFile(arg1: HDC, arg2: HENHMETAFILE, arg3: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PlayEnhMetaFileRecord(
         hdc: HDC,
         pht: LPHANDLETABLE,
@@ -21135,10 +21135,10 @@ unsafe extern "C" {
         cht: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PlayMetaFile(arg1: HDC, arg2: HMETAFILE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PlayMetaFileRecord(
         hdc: HDC,
         lpHandleTable: LPHANDLETABLE,
@@ -21146,7 +21146,7 @@ unsafe extern "C" {
         noObjs: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PlgBlt(
         hdcDest: HDC,
         lpPoint: *const POINT,
@@ -21160,25 +21160,25 @@ unsafe extern "C" {
         yMask: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyBezier(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyBezierTo(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyDraw(hdc: HDC, apt: *const POINT, aj: *const BYTE, cpt: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Polygon(hdc: HDC, apt: *const POINT, cpt: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Polyline(hdc: HDC, apt: *const POINT, cpt: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolylineTo(hdc: HDC, apt: *const POINT, cpt: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyPolygon(
         hdc: HDC,
         apt: *const POINT,
@@ -21186,25 +21186,25 @@ unsafe extern "C" {
         csz: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyPolyline(hdc: HDC, apt: *const POINT, asz: *const DWORD, csz: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyTextOutA(hdc: HDC, ppt: *const POLYTEXTA, nstrings: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PolyTextOutW(hdc: HDC, ppt: *const POLYTEXTW, nstrings: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PtInRegion(arg1: HRGN, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PtVisible(arg1: HDC, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RealizePalette(arg1: HDC) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Rectangle(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21213,40 +21213,40 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RectInRegion(arg1: HRGN, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RectVisible(arg1: HDC, arg2: LPCRECT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveFontResourceA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveFontResourceW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveFontMemResourceEx(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveFontResourceExA(arg1: LPCSTR, arg2: DWORD, arg3: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveFontResourceExW(arg1: LPCWSTR, arg2: DWORD, arg3: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResetDCA(arg1: HDC, arg2: *const DEVMODEA) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResetDCW(arg1: HDC, arg2: *const DEVMODEW) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResizePalette(arg1: HPALETTE, arg2: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RestoreDC(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RoundRect(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21257,10 +21257,10 @@ unsafe extern "C" {
         arg7: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SaveDC(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScaleViewportExtEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21270,7 +21270,7 @@ unsafe extern "C" {
         arg6: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ScaleWindowExtEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21280,28 +21280,28 @@ unsafe extern "C" {
         arg6: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SelectClipPath(arg1: HDC, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SelectClipRgn(arg1: HDC, arg2: HRGN) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SelectObject(arg1: HDC, arg2: HGDIOBJ) -> HGDIOBJ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SelectPalette(arg1: HDC, arg2: HPALETTE, arg3: BOOL) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetAbortProc(arg1: HDC, arg2: ABORTPROC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetArcDirection(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBitmapBits(hbm: HBITMAP, cb: DWORD, pvBits: *const ::core::ffi::c_void) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBitmapDimensionEx(
         arg1: HBITMAP,
         arg2: ::core::ffi::c_int,
@@ -21309,16 +21309,16 @@ unsafe extern "C" {
         arg4: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBkColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBkMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBoundsRect(arg1: HDC, arg2: LPCRECT, arg3: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetBrushOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21326,25 +21326,25 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetColorAdjustment(arg1: HDC, arg2: *const COLORADJUSTMENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetColorSpace(arg1: HDC, arg2: HCOLORSPACE) -> HCOLORSPACE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDCBrushColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDCPenColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDeviceGammaRamp(hdc: HDC, lpRamp: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDIBColorTable(hdc: HDC, iStart: UINT, cEntries: UINT, prgbq: *const RGBQUAD) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDIBits(
         arg1: HDC,
         arg2: HBITMAP,
@@ -21355,7 +21355,7 @@ unsafe extern "C" {
         arg7: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetDIBitsToDevice(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21371,43 +21371,43 @@ unsafe extern "C" {
         arg12: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetEnhMetaFileBits(nSize: UINT, pb: *const BYTE) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetGraphicsMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetICMMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetICMProfileA(arg1: HDC, arg2: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetICMProfileW(arg1: HDC, arg2: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMapMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMapperFlags(arg1: HDC, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLayout(arg1: HDC, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLayout(arg1: HDC) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMetaFileBitsEx(cbBuffer: UINT, lpData: *const BYTE) -> HMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMetaRgn(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetMiterLimit(arg1: HDC, arg2: FLOAT, arg3: PFLOAT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPaletteEntries(
         hpal: HPALETTE,
         iStart: UINT,
@@ -21415,7 +21415,7 @@ unsafe extern "C" {
         pPalEntries: *const PALETTEENTRY,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPixel(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21423,14 +21423,14 @@ unsafe extern "C" {
         arg4: COLORREF,
     ) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPixelFormat(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
         arg3: *const PIXELFORMATDESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPixelV(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21438,10 +21438,10 @@ unsafe extern "C" {
         arg4: COLORREF,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetPolyFillMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetRectRgn(
         arg1: HRGN,
         arg2: ::core::ffi::c_int,
@@ -21450,35 +21450,35 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetRelAbs(arg1: HDC, arg2: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetROP2(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetStretchBltMode(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSystemPaletteUse(arg1: HDC, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTextAlign(arg1: HDC, arg2: UINT) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTextCharacterExtra(arg1: HDC, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTextColor(arg1: HDC, arg2: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetTextJustification(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetViewportExtEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21486,7 +21486,7 @@ unsafe extern "C" {
         arg4: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetViewportOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21494,7 +21494,7 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowExtEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21502,7 +21502,7 @@ unsafe extern "C" {
         arg4: LPSIZE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowOrgEx(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21510,7 +21510,7 @@ unsafe extern "C" {
         arg4: LPPOINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWinMetaFileBits(
         nSize: UINT,
         lpMeta16Data: *const BYTE,
@@ -21518,19 +21518,19 @@ unsafe extern "C" {
         lpMFP: *const METAFILEPICT,
     ) -> HENHMETAFILE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWorldTransform(arg1: HDC, arg2: *const XFORM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StartDocA(arg1: HDC, arg2: *const DOCINFOA) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StartDocW(arg1: HDC, arg2: *const DOCINFOW) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StartPage(arg1: HDC) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StretchBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21545,7 +21545,7 @@ unsafe extern "C" {
         arg11: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StretchDIBits(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21562,16 +21562,16 @@ unsafe extern "C" {
         arg13: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrokeAndFillPath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrokePath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SwapBuffers(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TextOutA(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -21580,7 +21580,7 @@ unsafe extern "C" {
         c: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TextOutW(
         hdc: HDC,
         x: ::core::ffi::c_int,
@@ -21589,37 +21589,37 @@ unsafe extern "C" {
         c: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateCharsetInfo(arg1: PDWORD, arg2: LPCHARSETINFO, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnrealizeObject(arg1: HGDIOBJ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateColors(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateICMRegKeyA(arg1: DWORD, arg2: LPSTR, arg3: LPSTR, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UpdateICMRegKeyW(arg1: DWORD, arg2: LPWSTR, arg3: LPWSTR, arg4: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WidenPath(arg1: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglCopyContext(arg1: HGLRC, arg2: HGLRC, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglCreateContext(arg1: HDC) -> HGLRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglCreateLayerContext(arg1: HDC, arg2: ::core::ffi::c_int) -> HGLRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglDeleteContext(arg1: HGLRC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglDescribeLayerPlane(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21628,13 +21628,13 @@ unsafe extern "C" {
         arg5: LPLAYERPLANEDESCRIPTOR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglGetCurrentContext() -> HGLRC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglGetCurrentDC() -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglGetLayerPaletteEntries(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21643,16 +21643,16 @@ unsafe extern "C" {
         arg5: *mut COLORREF,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglGetProcAddress(arg1: LPCSTR) -> PROC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglMakeCurrent(arg1: HDC, arg2: HGLRC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglRealizeLayerPalette(arg1: HDC, arg2: ::core::ffi::c_int, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglSetLayerPaletteEntries(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21661,19 +21661,19 @@ unsafe extern "C" {
         arg5: *const COLORREF,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglShareLists(arg1: HGLRC, arg2: HGLRC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglSwapLayerBuffers(arg1: HDC, arg2: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglUseFontBitmapsA(arg1: HDC, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglUseFontBitmapsW(arg1: HDC, arg2: DWORD, arg3: DWORD, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglUseFontOutlinesA(
         arg1: HDC,
         arg2: DWORD,
@@ -21685,7 +21685,7 @@ unsafe extern "C" {
         arg8: LPGLYPHMETRICSFLOAT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglUseFontOutlinesW(
         arg1: HDC,
         arg2: DWORD,
@@ -21705,10 +21705,10 @@ pub struct _WGLSWAP {
 pub type WGLSWAP = _WGLSWAP;
 pub type PWGLSWAP = *mut _WGLSWAP;
 pub type LPWGLSWAP = *mut _WGLSWAP;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wglSwapMultipleBuffers(arg1: UINT, arg2: *const WGLSWAP) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AlphaBlend(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -21723,7 +21723,7 @@ unsafe extern "C" {
         arg11: BLENDFUNCTION,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GradientFill(
         hdc: HDC,
         pVertex: PTRIVERTEX,
@@ -21733,7 +21733,7 @@ unsafe extern "C" {
         ulMode: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TransparentBlt(
         arg1: HDC,
         arg2: ::core::ffi::c_int,
@@ -22303,19 +22303,19 @@ pub struct _PSHNOTIFY {
 }
 pub type PSHNOTIFY = _PSHNOTIFY;
 pub type LPPSHNOTIFY = *mut _PSHNOTIFY;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePropertySheetPageA(arg1: LPCPROPSHEETPAGEA) -> HPROPSHEETPAGE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePropertySheetPageW(arg1: LPCPROPSHEETPAGEW) -> HPROPSHEETPAGE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyPropertySheetPage(arg1: HPROPSHEETPAGE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PropertySheetA(arg1: LPCPROPSHEETHEADERA) -> INT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PropertySheetW(arg1: LPCPROPSHEETHEADERW) -> INT_PTR;
 }
 #[repr(C)]
@@ -22377,67 +22377,67 @@ pub struct tagPDEXW {
 }
 pub type PRINTDLGEXW = tagPDEXW;
 pub type LPPRINTDLGEXW = *mut tagPDEXW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChooseColorA(arg1: LPCHOOSECOLORA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChooseColorW(arg1: LPCHOOSECOLORW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChooseFontA(arg1: LPCHOOSEFONTA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChooseFontW(arg1: LPCHOOSEFONTW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CommDlgExtendedError() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindTextA(arg1: LPFINDREPLACEA) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindTextW(arg1: LPFINDREPLACEW) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileTitleA(arg1: LPCSTR, arg2: LPSTR, arg3: WORD) -> ::core::ffi::c_short;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileTitleW(arg1: LPCWSTR, arg2: LPWSTR, arg3: WORD) -> ::core::ffi::c_short;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOpenFileNameA(arg1: LPOPENFILENAMEA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOpenFileNameW(arg1: LPOPENFILENAMEW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSaveFileNameA(arg1: LPOPENFILENAMEA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSaveFileNameW(arg1: LPOPENFILENAMEW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PageSetupDlgA(arg1: LPPAGESETUPDLGA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PageSetupDlgW(arg1: LPPAGESETUPDLGW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrintDlgA(arg1: LPPRINTDLGA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrintDlgW(arg1: LPPRINTDLGW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReplaceTextA(arg1: LPFINDREPLACEA) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReplaceTextW(arg1: LPFINDREPLACEW) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrintDlgExA(arg1: LPPRINTDLGEXA) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrintDlgExW(arg1: LPPRINTDLGEXW) -> HRESULT;
 }
 pub type CHOOSECOLOR = CHOOSECOLORW;
@@ -22532,16 +22532,16 @@ pub struct tagCONVINFO {
 }
 pub type CONVINFO = tagCONVINFO;
 pub type PCONVINFO = *mut tagCONVINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeInitializeA(arg1: LPDWORD, arg2: PFNCALLBACK, arg3: DWORD, arg4: DWORD) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeInitializeW(arg1: LPDWORD, arg2: PFNCALLBACK, arg3: DWORD, arg4: DWORD) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeUninitialize(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeConnectList(
         arg1: DWORD,
         arg2: HSZ,
@@ -22550,25 +22550,25 @@ unsafe extern "C" {
         arg5: PCONVCONTEXT,
     ) -> HCONVLIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeQueryNextServer(arg1: HCONVLIST, arg2: HCONV) -> HCONV;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeQueryStringA(arg1: DWORD, arg2: HSZ, arg3: LPSTR, arg4: DWORD, arg5: INT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeQueryStringW(arg1: DWORD, arg2: HSZ, arg3: LPWSTR, arg4: DWORD, arg5: INT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeDisconnectList(arg1: HCONVLIST) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeConnect(arg1: DWORD, arg2: HSZ, arg3: HSZ, arg4: PCONVCONTEXT) -> HCONV;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeDisconnect(arg1: HCONV) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeCreateDataHandle(
         arg1: DWORD,
         arg2: LPBYTE,
@@ -22579,25 +22579,25 @@ unsafe extern "C" {
         arg7: UINT,
     ) -> HDDEDATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeReconnect(arg1: HCONV) -> HCONV;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeCreateStringHandleA(arg1: DWORD, arg2: LPCSTR, arg3: INT) -> HSZ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeCreateStringHandleW(arg1: DWORD, arg2: LPCWSTR, arg3: INT) -> HSZ;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeFreeStringHandle(arg1: DWORD, arg2: HSZ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeFreeDataHandle(arg1: HDDEDATA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeKeepStringHandle(arg1: DWORD, arg2: HSZ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeClientTransaction(
         arg1: LPBYTE,
         arg2: DWORD,
@@ -22609,43 +22609,43 @@ unsafe extern "C" {
         arg8: LPDWORD,
     ) -> HDDEDATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeAbandonTransaction(idInst: DWORD, hConv: HCONV, idTransaction: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeImpersonateClient(arg1: HCONV) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdePostAdvise(arg1: DWORD, arg2: HSZ, arg3: HSZ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeAddData(arg1: HDDEDATA, arg2: LPBYTE, arg3: DWORD, arg4: DWORD) -> HDDEDATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeGetData(arg1: HDDEDATA, arg2: LPBYTE, arg3: DWORD, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeAccessData(arg1: HDDEDATA, arg2: LPDWORD) -> LPBYTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeUnaccessData(arg1: HDDEDATA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeEnableCallback(arg1: DWORD, arg2: HCONV, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeCmpStringHandles(arg1: HSZ, arg2: HSZ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeSetUserHandle(arg1: HCONV, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeNameService(arg1: DWORD, arg2: HSZ, arg3: HSZ, arg4: UINT) -> HDDEDATA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeGetLastError(arg1: DWORD) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DdeQueryConvInfo(arg1: HCONV, arg2: DWORD, arg3: PCONVINFO) -> UINT;
 }
 #[repr(C)]
@@ -22718,16 +22718,16 @@ pub struct _GROUP_POLICY_OBJECTW {
 }
 pub type GROUP_POLICY_OBJECTW = _GROUP_POLICY_OBJECTW;
 pub type PGROUP_POLICY_OBJECTW = *mut _GROUP_POLICY_OBJECTW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeProfiles() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUserProfileA(arg1: PSID, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUserProfileW(arg1: PSID, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUserProfileExA(
         arg1: PSID,
         arg2: LPCSTR,
@@ -22737,7 +22737,7 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUserProfileExW(
         arg1: PSID,
         arg2: LPCWSTR,
@@ -22747,7 +22747,7 @@ unsafe extern "C" {
         arg6: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddDesktopItemA(
         arg1: BOOL,
         arg2: LPCSTR,
@@ -22759,7 +22759,7 @@ unsafe extern "C" {
         arg8: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddDesktopItemW(
         arg1: BOOL,
         arg2: LPCWSTR,
@@ -22771,25 +22771,25 @@ unsafe extern "C" {
         arg8: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteDesktopItemA(arg1: BOOL, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteDesktopItemW(arg1: BOOL, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateGroupA(arg1: LPCSTR, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateGroupW(arg1: LPCWSTR, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteGroupA(arg1: LPCSTR, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteGroupW(arg1: LPCWSTR, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddItemA(
         arg1: LPCSTR,
         arg2: BOOL,
@@ -22802,7 +22802,7 @@ unsafe extern "C" {
         arg9: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddItemW(
         arg1: LPCWSTR,
         arg2: BOOL,
@@ -22815,73 +22815,73 @@ unsafe extern "C" {
         arg9: INT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteItemA(arg1: LPCSTR, arg2: BOOL, arg3: LPCSTR, arg4: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteItemW(arg1: LPCWSTR, arg2: BOOL, arg3: LPCWSTR, arg4: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyProfileDirectoryA(arg1: LPCSTR, arg2: LPCSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyProfileDirectoryW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserSid(arg1: HANDLE) -> PSID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopySystemProfile(arg1: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteProfileA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteProfileW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadUserProfileA(arg1: HANDLE, arg2: LPPROFILEINFOA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LoadUserProfileW(arg1: HANDLE, arg2: LPPROFILEINFOW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnloadUserProfile(arg1: HANDLE, arg2: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAllUsersProfileDirectoryA(arg1: LPSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAllUsersProfileDirectoryW(arg1: LPWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDefaultUserProfileDirectoryA(arg1: LPSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDefaultUserProfileDirectoryW(arg1: LPWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfilesDirectoryA(arg1: LPSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfilesDirectoryW(arg1: LPWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserProfileDirectoryA(arg1: HANDLE, arg2: LPSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserProfileDirectoryW(arg1: HANDLE, arg2: LPWSTR, arg3: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProfileType(arg1: PDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateEnvironmentBlock(arg1: *mut LPVOID, arg2: HANDLE, arg3: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DestroyEnvironmentBlock(arg1: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsForUserA(
         arg1: HANDLE,
         arg2: LPCSTR,
@@ -22889,7 +22889,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExpandEnvironmentStringsForUserW(
         arg1: HANDLE,
         arg2: LPCWSTR,
@@ -22897,7 +22897,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAppliedGPOListA(
         dwFlags: DWORD,
         pMachineName: LPCSTR,
@@ -22906,7 +22906,7 @@ unsafe extern "C" {
         ppGPOList: *mut PGROUP_POLICY_OBJECTA,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetAppliedGPOListW(
         dwFlags: DWORD,
         pMachineName: LPCWSTR,
@@ -22915,22 +22915,22 @@ unsafe extern "C" {
         ppGPOList: *mut PGROUP_POLICY_OBJECTW,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnterCriticalPolicySection(arg1: BOOL) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LeaveCriticalPolicySection(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RefreshPolicy(arg1: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RefreshPolicyEx(arg1: BOOL, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegisterGPNotification(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnregisterGPNotification(arg1: HANDLE) -> BOOL;
 }
 pub type PROFILEINFO = PROFILEINFOW;
@@ -23000,44 +23000,44 @@ pub type LPRUNNINGOBJECTTABLE = *mut IRunningObjectTable;
 pub type LPMONIKER = *mut IMoniker;
 pub type LPDATAADVISEHOLDER = *mut IDataAdviseHolder;
 pub type LPMESSAGEFILTER = *mut IMessageFilter;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoBuildVersion() -> DWORD;
 }
 pub use self::tagCOINIT as COINIT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoInitialize(lpReserved: LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoInitializeEx(lpReserved: LPVOID, dwCoInit: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoUninitialize();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetCurrentProcess() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetCurrentLogicalThreadId(id: *mut GUID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetApartmentType(type_: *mut APTTYPE, qualifier: *mut APTTYPEQUALIFIER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoLoadLibrary(lpszLibName: LPOLESTR, bAutoFree: BOOL) -> HINSTANCE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFreeAllLibraries();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFreeLibrary(hLibrary: HINSTANCE);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFreeUnusedLibraries();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFreeUnusedLibrariesEx(dwUnloadDelay: DWORD, dwReserved: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoCreateInstance(
         rclsid: *const CLSID,
         pUnkOuter: LPUNKNOWN,
@@ -23046,7 +23046,7 @@ unsafe extern "C" {
         ppv: *mut LPVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoCreateInstanceEx(
         rclsid: *const CLSID,
         pUnkOuter: LPUNKNOWN,
@@ -23056,7 +23056,7 @@ unsafe extern "C" {
         pResults: *mut MULTI_QI,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetInstanceFromFile(
         pServerInfo: *mut COSERVERINFO,
         pClsid: *mut CLSID,
@@ -23068,7 +23068,7 @@ unsafe extern "C" {
         pResults: *mut MULTI_QI,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetInstanceFromIStorage(
         pServerInfo: *mut COSERVERINFO,
         pClsid: *mut CLSID,
@@ -23079,29 +23079,29 @@ unsafe extern "C" {
         pResults: *mut MULTI_QI,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetMalloc(dwMemContext: DWORD, lpMalloc: *mut LPMALLOC) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoTaskMemAlloc(size: SIZE_T) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoTaskMemFree(ptr: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoTaskMemRealloc(ptr: LPVOID, size: SIZE_T) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterMallocSpy(pMallocSpy: LPMALLOCSPY) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRevokeMallocSpy() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetContextToken(token: *mut ULONG_PTR) -> HRESULT;
 }
 pub use self::tagREGCLS as REGCLS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetClassObject(
         rclsid: *const CLSID,
         dwClsContext: DWORD,
@@ -23110,7 +23110,7 @@ unsafe extern "C" {
         ppv: *mut LPVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterClassObject(
         rclsid: *const CLSID,
         pUnk: LPUNKNOWN,
@@ -23119,44 +23119,44 @@ unsafe extern "C" {
         lpdwRegister: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRevokeClassObject(dwRegister: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetPSClsid(riid: *const IID, pclsid: *mut CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterPSClsid(riid: *const IID, rclsid: *const CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterSurrogate(pSurrogate: LPSURROGATE) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoSuspendClassObjects() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoResumeClassObjects() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoAddRefServerProcess() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoReleaseServerProcess() -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoCreateFreeThreadedMarshaler(
         punkOuter: LPUNKNOWN,
         ppunkMarshal: *mut LPUNKNOWN,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetInterfaceAndReleaseStream(
         pStm: LPSTREAM,
         iid: *const IID,
         ppv: *mut LPVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetMarshalSizeMax(
         pulSize: *mut ULONG,
         riid: *const IID,
@@ -23166,7 +23166,7 @@ unsafe extern "C" {
         mshlflags: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetStandardMarshal(
         riid: *const IID,
         pUnk: LPUNKNOWN,
@@ -23176,10 +23176,10 @@ unsafe extern "C" {
         ppMarshal: *mut LPMARSHAL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoMarshalHresult(pstm: LPSTREAM, hresult: HRESULT) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoMarshalInterface(
         pStm: LPSTREAM,
         riid: *const IID,
@@ -23189,33 +23189,33 @@ unsafe extern "C" {
         mshlflags: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoMarshalInterThreadInterfaceInStream(
         riid: *const IID,
         pUnk: LPUNKNOWN,
         ppStm: *mut LPSTREAM,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoReleaseMarshalData(pStm: LPSTREAM) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoDisconnectObject(lpUnk: LPUNKNOWN, reserved: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoUnmarshalHresult(pstm: LPSTREAM, phresult: *mut HRESULT) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoUnmarshalInterface(pStm: LPSTREAM, riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoLockObjectExternal(pUnk: LPUNKNOWN, fLock: BOOL, fLastUnlockReleases: BOOL)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoIsHandlerConnected(pUnk: LPUNKNOWN) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoInitializeSecurity(
         pSecDesc: PSECURITY_DESCRIPTOR,
         cAuthSvc: LONG,
@@ -23228,25 +23228,25 @@ unsafe extern "C" {
         pReserved3: *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetCallContext(
         riid: *const IID,
         ppInterface: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoSwitchCallContext(
         pContext: *mut IUnknown,
         ppOldContext: *mut *mut IUnknown,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoQueryAuthenticationServices(
         pcAuthSvc: *mut DWORD,
         asAuthSvc: *mut *mut SOLE_AUTHENTICATION_SERVICE,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoQueryProxyBlanket(
         pProxy: *mut IUnknown,
         pwAuthnSvc: *mut DWORD,
@@ -23258,7 +23258,7 @@ unsafe extern "C" {
         pCapabilities: *mut DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoSetProxyBlanket(
         pProxy: *mut IUnknown,
         dwAuthnSvc: DWORD,
@@ -23270,13 +23270,13 @@ unsafe extern "C" {
         dwCapabilities: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoCopyProxy(pProxy: *mut IUnknown, ppCopy: *mut *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoImpersonateClient() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoQueryClientBlanket(
         pAuthnSvc: *mut DWORD,
         pAuthzSvc: *mut DWORD,
@@ -23287,60 +23287,60 @@ unsafe extern "C" {
         pCapabilities: *mut DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRevertToSelf() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetTreatAsClass(clsidOld: *const CLSID, pClsidNew: LPCLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoTreatAsClass(clsidOld: *const CLSID, clsidNew: *const CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoAllowSetForegroundWindow(pUnk: *mut IUnknown, lpvReserved: LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetObjectContext(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterInitializeSpy(
         spy: *mut IInitializeSpy,
         cookie: *mut ULARGE_INTEGER,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRevokeInitializeSpy(cookie: ULARGE_INTEGER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoCreateGuid(pguid: *mut GUID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoIsOle1Class(rclsid: *const CLSID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoDosDateTimeToFileTime(
         nDosDate: WORD,
         nDosTime: WORD,
         lpFileTime: *mut FILETIME,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFileTimeToDosDateTime(
         lpFileTime: *mut FILETIME,
         lpDosDate: *mut WORD,
         lpDosTime: *mut WORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoFileTimeNow(lpFileTime: *mut FILETIME) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterMessageFilter(
         lpMessageFilter: LPMESSAGEFILTER,
         lplpMessageFilter: *mut LPMESSAGEFILTER,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoRegisterChannelHook(
         ExtensionGuid: *const GUID,
         pChannelHook: *mut IChannelHook,
@@ -23352,7 +23352,7 @@ pub const tagCOWAIT_FLAGS_COWAIT_ALERTABLE: tagCOWAIT_FLAGS = 2;
 pub const tagCOWAIT_FLAGS_COWAIT_INPUTAVAILABLE: tagCOWAIT_FLAGS = 4;
 pub type tagCOWAIT_FLAGS = ::core::ffi::c_uint;
 pub use self::tagCOWAIT_FLAGS as COWAIT_FLAGS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoWaitForMultipleHandles(
         dwFlags: DWORD,
         dwTimeout: DWORD,
@@ -23361,34 +23361,34 @@ unsafe extern "C" {
         lpdwindex: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StringFromCLSID(id: *const CLSID, arg1: *mut LPOLESTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CLSIDFromString(arg1: LPCOLESTR, arg2: LPCLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CLSIDFromProgID(progid: LPCOLESTR, riid: LPCLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ProgIDFromCLSID(clsid: *const CLSID, lplpszProgID: *mut LPOLESTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StringFromGUID2(id: *const GUID, str_: LPOLESTR, cmax: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IIDFromString(lpsz: LPCOLESTR, lpiid: LPIID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DllGetClassObject(rclsid: *const CLSID, riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DllCanUnloadNow() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDataAdviseHolder(ppDAHolder: *mut LPDATAADVISEHOLDER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateDataCache(
         pUnkOuter: LPUNKNOWN,
         rclsid: *const CLSID,
@@ -23396,7 +23396,7 @@ unsafe extern "C" {
         ppv: *mut LPVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BindMoniker(
         pmk: LPMONIKER,
         grfOpt: DWORD,
@@ -23404,7 +23404,7 @@ unsafe extern "C" {
         ppvResult: *mut LPVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CoGetObject(
         pszName: LPCWSTR,
         pBindOptions: *mut BIND_OPTS,
@@ -23412,45 +23412,45 @@ unsafe extern "C" {
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateAntiMoniker(ppmk: *mut LPMONIKER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateBindCtx(reserved: DWORD, ppbc: *mut LPBC) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateClassMoniker(rclsid: *const CLSID, ppmk: *mut LPMONIKER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateFileMoniker(lpszPathName: LPCOLESTR, ppmk: *mut LPMONIKER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateGenericComposite(
         pmkFirst: LPMONIKER,
         pmkRest: LPMONIKER,
         ppmkComposite: *mut LPMONIKER,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateItemMoniker(
         lpszDelim: LPCOLESTR,
         lpszItem: LPCOLESTR,
         ppmk: *mut LPMONIKER,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateObjrefMoniker(punk: LPUNKNOWN, ppmk: *mut LPMONIKER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreatePointerMoniker(punk: LPUNKNOWN, ppmk: *mut LPMONIKER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetClassFile(filePathName: LPCOLESTR, pclsid: *mut CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetRunningObjectTable(reserved: DWORD, pprot: *mut LPRUNNINGOBJECTTABLE) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MkParseDisplayName(
         pbc: LPBC,
         szUserName: LPCOLESTR,
@@ -23458,14 +23458,14 @@ unsafe extern "C" {
         ppmk: *mut LPMONIKER,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MonikerCommonPrefixWith(
         pmkThis: *mut IMoniker,
         pmkOther: *mut IMoniker,
         ppmkCommon: *mut *mut IMoniker,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MonikerRelativePathTo(
         pmkSrc: LPMONIKER,
         pmkDest: LPMONIKER,
@@ -23481,10 +23481,10 @@ pub struct tagSTGOPTIONS {
     pub pwcsTemplateFile: *const WCHAR,
 }
 pub type STGOPTIONS = tagSTGOPTIONS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StringFromIID(rclsid: *const IID, lplpsz: *mut LPOLESTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgCreateDocfile(
         pwcsName: LPCOLESTR,
         grfMode: DWORD,
@@ -23492,7 +23492,7 @@ unsafe extern "C" {
         ppstgOpen: *mut *mut IStorage,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgCreateStorageEx(
         arg1: *const WCHAR,
         arg2: DWORD,
@@ -23504,13 +23504,13 @@ unsafe extern "C" {
         arg8: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgIsStorageILockBytes(plkbyt: *mut ILockBytes) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgOpenStorage(
         pwcsName: *const OLECHAR,
         pstgPriority: *mut IStorage,
@@ -23520,7 +23520,7 @@ unsafe extern "C" {
         ppstgOpen: *mut *mut IStorage,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgOpenStorageEx(
         pwcwName: *const WCHAR,
         grfMode: DWORD,
@@ -23532,7 +23532,7 @@ unsafe extern "C" {
         ppObjectOpen: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgCreateDocfileOnILockBytes(
         plkbyt: *mut ILockBytes,
         grfMode: DWORD,
@@ -23540,7 +23540,7 @@ unsafe extern "C" {
         ppstgOpen: *mut *mut IStorage,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgOpenStorageOnILockBytes(
         plkbyt: *mut ILockBytes,
         pstgPriority: *mut IStorage,
@@ -23550,7 +23550,7 @@ unsafe extern "C" {
         ppstgOpen: *mut *mut IStorage,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StgSetTimes(
         lpszName: *const OLECHAR,
         pctime: *const FILETIME,
@@ -23625,16 +23625,16 @@ pub type COMDLG_FILTERSPEC = _COMDLG_FILTERSPEC;
 pub type SHCOLSTATEF = DWORD;
 pub type KNOWNFOLDERID = GUID;
 pub type FOLDERTYPEID = GUID;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAutoComplete(arg1: HWND, arg2: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetThreadRef(arg1: *mut *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetThreadRef(arg1: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateThread(
         pfnThreadProc: LPTHREAD_START_ROUTINE,
         pData: *mut ::core::ffi::c_void,
@@ -23642,7 +23642,7 @@ unsafe extern "C" {
         pfnCallback: LPTHREAD_START_ROUTINE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSkipJunction(arg1: *mut IBindCtx, arg2: *const CLSID) -> BOOL;
 }
 pub const CTF_INSIST: _bindgen_ty_4 = 1;
@@ -23673,7 +23673,7 @@ pub struct _DLLVERSIONINFO2 {
     pub ullVersion: ULONGLONG,
 }
 pub type DLLVERSIONINFO2 = _DLLVERSIONINFO2;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DllInstall(arg1: BOOL, arg2: LPCWSTR) -> HRESULT;
 }
 #[repr(C)]
@@ -23682,7 +23682,7 @@ pub struct QITAB {
     pub dwOffset: DWORD,
 }
 pub type LPQITAB = *mut QITAB;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QISearch(
         base: *mut ::core::ffi::c_void,
         pqit: *const QITAB,
@@ -23690,29 +23690,29 @@ unsafe extern "C" {
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMenuPosFromID(hMenu: HMENU, uID: UINT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_AtomicRelease(punk: *mut *mut IUnknown);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_Set(ppunk: *mut *mut IUnknown, punk: *mut IUnknown);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_GetWindow(punk: *mut IUnknown, phwnd: *mut HWND) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_SetSite(punk: *mut IUnknown, punkSite: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_GetSite(
         punk: *mut IUnknown,
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_QueryService(
         punk: *mut IUnknown,
         guidService: *const GUID,
@@ -23720,10 +23720,10 @@ unsafe extern "C" {
         ppvOut: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IStream_Size(pstm: *mut IStream, pui: *mut ULARGE_INTEGER) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetViewStatePropertyBag(
         pidl: PCIDLIST_ABSOLUTE,
         bag_name: LPCWSTR,
@@ -23732,47 +23732,47 @@ unsafe extern "C" {
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHReleaseThreadRef() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsInternetESCEnabled() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAllocShared(
         pvData: *const ::core::ffi::c_void,
         dwSize: DWORD,
         dwDestinationProcessId: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFreeShared(hData: HANDLE, dwProcessId: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLockShared(hData: HANDLE, dwProcessId: DWORD) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHUnlockShared(pvData: *mut ::core::ffi::c_void) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateThreadRef(arg1: *mut LONG, arg2: *mut *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ColorAdjustLuma(arg1: COLORREF, arg2: ::core::ffi::c_int, arg3: BOOL) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ColorHLSToRGB(arg1: WORD, arg2: WORD, arg3: WORD) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ColorRGBToHLS(arg1: COLORREF, arg2: LPWORD, arg3: LPWORD, arg4: LPWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellPalette(arg1: HDC) -> HPALETTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsOS(dwOS: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HashData(
         arg1: *const ::core::ffi::c_uchar,
         cbData: DWORD,
@@ -23780,65 +23780,65 @@ unsafe extern "C" {
         cbHash: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAddBackslashA(arg1: LPSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAddBackslashW(arg1: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAddExtensionA(arg1: LPSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAddExtensionW(arg1: LPWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAppendA(arg1: LPSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAppendW(arg1: LPWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathBuildRootA(arg1: LPSTR, arg2: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathBuildRootW(arg1: LPWSTR, arg2: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCanonicalizeA(arg1: LPSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCanonicalizeW(arg1: LPWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCombineA(arg1: LPSTR, arg2: LPCSTR, arg3: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCombineW(arg1: LPWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCompactPathA(arg1: HDC, arg2: LPSTR, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCompactPathW(arg1: HDC, arg2: LPWSTR, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCompactPathExA(arg1: LPSTR, arg2: LPCSTR, cchMax: UINT, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCompactPathExW(arg1: LPWSTR, arg2: LPCWSTR, cchMax: UINT, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCommonPrefixA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCommonPrefixW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCreateFromUrlA(arg1: LPCSTR, arg2: LPSTR, pcchPath: LPDWORD, arg3: DWORD)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCreateFromUrlW(
         pszUrl: LPCWSTR,
         pszPath: LPWSTR,
@@ -23846,186 +23846,186 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsA(pszPath: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsW(pszPath: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindExtensionA(pszPath: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindFileNameA(pszPath: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindNextComponentA(arg1: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindNextComponentW(arg1: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindOnPathA(arg1: LPSTR, arg2: *mut LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindOnPathW(arg1: LPWSTR, arg2: *mut LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindSuffixArrayA(
         arg1: LPCSTR,
         arg2: *mut LPCSTR,
         iArraySize: ::core::ffi::c_int,
     ) -> LPCSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindSuffixArrayW(
         arg1: LPCWSTR,
         arg2: *mut LPCWSTR,
         iArraySize: ::core::ffi::c_int,
     ) -> LPCWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetArgsA(pszPath: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetArgsW(pszPath: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetCharTypeA(ch: UCHAR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetCharTypeW(ch: WCHAR) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetDriveNumberA(arg1: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetDriveNumberW(arg1: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsContentTypeA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsContentTypeW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsDirectoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsDirectoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsDirectoryEmptyA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsDirectoryEmptyW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsFileSpecA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsFileSpecW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsLFNFileSpecA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsLFNFileSpecW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsNetworkPathA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsNetworkPathW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsPrefixA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsPrefixW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsRelativeA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsRelativeW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsRootA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsRootW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSameRootA(arg1: LPCSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSameRootW(arg1: LPCWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSystemFolderA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSystemFolderW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCServerA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCServerW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCServerShareA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCServerShareW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsURLA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsURLW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMakePrettyA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMakePrettyW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMakeSystemFolderA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMakeSystemFolderW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMatchSpecA(pszFile: LPCSTR, pszSpec: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMatchSpecW(pszFile: LPCWSTR, pszSpec: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathParseIconLocationA(arg1: LPSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathParseIconLocationW(arg1: LPWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathQuoteSpacesA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathQuoteSpacesW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRelativePathToA(
         arg1: LPSTR,
         arg2: LPCSTR,
@@ -24034,7 +24034,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRelativePathToW(
         arg1: LPWSTR,
         arg2: LPCWSTR,
@@ -24043,94 +24043,94 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveArgsA(arg1: LPSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveArgsW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveBackslashA(arg1: LPSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveBackslashW(arg1: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveBlanksA(arg1: LPSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveBlanksW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveExtensionA(arg1: LPSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveExtensionW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveFileSpecA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveFileSpecW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRenameExtensionA(arg1: LPSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRenameExtensionW(arg1: LPWSTR, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSearchAndQualifyA(arg1: LPCSTR, arg2: LPSTR, cchBuf: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSearchAndQualifyW(arg1: LPCWSTR, arg2: LPWSTR, cchBuf: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSetDlgItemPathA(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSetDlgItemPathW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSkipRootA(arg1: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSkipRootW(arg1: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripPathA(arg1: LPSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripPathW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripToRootA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripToRootW(arg1: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUndecorateA(arg1: LPSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUndecorateW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnExpandEnvStringsA(arg1: LPCSTR, arg2: LPSTR, cchBuf: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnExpandEnvStringsW(arg1: LPCWSTR, arg2: LPWSTR, cchBuf: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnmakeSystemFolderA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnmakeSystemFolderW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnquoteSpacesA(arg1: LPSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnquoteSpacesW(arg1: LPWSTR) -> BOOL;
 }
 pub const URL_SCHEME_URL_SCHEME_INVALID: URL_SCHEME = -1;
@@ -24197,13 +24197,13 @@ pub struct tagPARSEDURLW {
 }
 pub type PARSEDURLW = tagPARSEDURLW;
 pub type PPARSEDURLW = *mut tagPARSEDURLW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlApplySchemeA(arg1: LPCSTR, arg2: LPSTR, pcchOut: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlApplySchemeW(arg1: LPCWSTR, arg2: LPWSTR, pcchOut: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCanonicalizeA(
         arg1: LPCSTR,
         arg2: LPSTR,
@@ -24211,7 +24211,7 @@ unsafe extern "C" {
         arg3: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCanonicalizeW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -24219,7 +24219,7 @@ unsafe extern "C" {
         arg3: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCombineA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -24228,7 +24228,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCombineW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -24237,25 +24237,25 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCompareA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCompareW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: BOOL) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlEscapeA(arg1: LPCSTR, arg2: LPSTR, pcchEscaped: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlEscapeW(arg1: LPCWSTR, arg2: LPWSTR, pcchEscaped: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlGetLocationA(arg1: LPCSTR) -> LPCSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlGetLocationW(arg1: LPCWSTR) -> LPCWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlGetPartA(
         arg1: LPCSTR,
         arg2: LPSTR,
@@ -24264,7 +24264,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlGetPartW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -24273,41 +24273,41 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlHashA(arg1: LPCSTR, arg2: *mut ::core::ffi::c_uchar, cbHash: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlHashW(arg1: LPCWSTR, arg2: *mut ::core::ffi::c_uchar, cbHash: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsA(arg1: LPCSTR, arg2: URLIS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsW(arg1: LPCWSTR, arg2: URLIS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsNoHistoryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsNoHistoryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsOpaqueA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlIsOpaqueW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlUnescapeA(arg1: LPSTR, arg2: LPSTR, pcchUnescaped: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlUnescapeW(arg1: LPWSTR, arg2: LPWSTR, pcchUnescaped: LPDWORD, arg3: DWORD)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCreateFromPathA(arg1: LPCSTR, arg2: LPSTR, pcchUrl: LPDWORD, arg3: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UrlCreateFromPathW(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -24315,10 +24315,10 @@ unsafe extern "C" {
         arg3: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ParseURLA(pszUrl: LPCSTR, ppu: *mut PARSEDURLA) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ParseURLW(pszUrl: LPCWSTR, ppu: *mut PARSEDURLW) -> HRESULT;
 }
 pub type SRRF = INT;
@@ -24334,49 +24334,49 @@ pub const SHREGENUM_FLAGS_SHREGENUM_BOTH: SHREGENUM_FLAGS = 17;
 pub type SHREGENUM_FLAGS = ::core::ffi::c_uint;
 pub type HUSKEY = HANDLE;
 pub type PHUSKEY = *mut HUSKEY;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegCloseUSKey(arg1: HUSKEY) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegDuplicateHKey(arg1: HKEY) -> HKEY;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCopyKeyA(arg1: HKEY, arg2: LPCSTR, arg3: HKEY, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCopyKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: HKEY, arg4: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteEmptyKeyA(arg1: HKEY, arg2: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteEmptyKeyW(arg1: HKEY, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteKeyA(arg1: HKEY, arg2: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteKeyW(arg1: HKEY, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteOrphanKeyA(arg1: HKEY, arg2: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteOrphanKeyW(arg1: HKEY, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteValueA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDeleteValueW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumKeyExA(arg1: HKEY, arg2: DWORD, arg3: LPSTR, pcchName: LPDWORD) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumKeyExW(arg1: HKEY, arg2: DWORD, arg3: LPWSTR, pcchName: LPDWORD) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumValueA(
         arg1: HKEY,
         arg2: DWORD,
@@ -24387,7 +24387,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumValueW(
         arg1: HKEY,
         arg2: DWORD,
@@ -24398,7 +24398,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetValueA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -24408,7 +24408,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetValueW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -24418,7 +24418,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetValueA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -24428,7 +24428,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetValueW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -24438,7 +24438,7 @@ unsafe extern "C" {
         cbData: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryValueExA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -24448,7 +24448,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryValueExW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -24458,7 +24458,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryInfoKeyA(
         arg1: HKEY,
         arg2: LPDWORD,
@@ -24467,7 +24467,7 @@ unsafe extern "C" {
         arg5: LPDWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryInfoKeyW(
         arg1: HKEY,
         arg2: LPDWORD,
@@ -24476,7 +24476,7 @@ unsafe extern "C" {
         arg5: LPDWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegCreateUSKeyA(
         arg1: LPCSTR,
         arg2: REGSAM,
@@ -24485,7 +24485,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegCreateUSKeyW(
         arg1: LPCWSTR,
         arg2: REGSAM,
@@ -24494,19 +24494,19 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegDeleteEmptyUSKeyA(arg1: HUSKEY, arg2: LPCSTR, arg3: SHREGDEL_FLAGS) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegDeleteEmptyUSKeyW(arg1: HUSKEY, arg2: LPCWSTR, arg3: SHREGDEL_FLAGS) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegDeleteUSValueA(arg1: HUSKEY, arg2: LPCSTR, arg3: SHREGDEL_FLAGS) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegDeleteUSValueW(arg1: HUSKEY, arg2: LPCWSTR, arg3: SHREGDEL_FLAGS) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegEnumUSKeyA(
         arg1: HUSKEY,
         arg2: DWORD,
@@ -24515,7 +24515,7 @@ unsafe extern "C" {
         arg4: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegEnumUSKeyW(
         arg1: HUSKEY,
         arg2: DWORD,
@@ -24524,7 +24524,7 @@ unsafe extern "C" {
         arg4: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegEnumUSValueA(
         arg1: HUSKEY,
         arg2: DWORD,
@@ -24536,7 +24536,7 @@ unsafe extern "C" {
         arg6: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegEnumUSValueW(
         arg1: HUSKEY,
         arg2: DWORD,
@@ -24548,17 +24548,17 @@ unsafe extern "C" {
         arg6: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetBoolUSValueA(arg1: LPCSTR, arg2: LPCSTR, arg3: BOOL, arg4: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetBoolUSValueW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: BOOL, arg4: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetPathA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR, arg4: LPSTR, arg5: DWORD)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetPathW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -24567,7 +24567,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetUSValueA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -24579,7 +24579,7 @@ unsafe extern "C" {
         dwDefaultDataSize: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetUSValueW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -24591,7 +24591,7 @@ unsafe extern "C" {
         dwDefaultDataSize: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetValueA(
         hkey: HKEY,
         pszSubKey: LPCSTR,
@@ -24602,7 +24602,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetValueW(
         hkey: HKEY,
         pszSubKey: LPCWSTR,
@@ -24613,7 +24613,7 @@ unsafe extern "C" {
         pcbData: LPDWORD,
     ) -> LSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegOpenUSKeyA(
         arg1: LPCSTR,
         arg2: REGSAM,
@@ -24622,7 +24622,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegOpenUSKeyW(
         arg1: LPCWSTR,
         arg2: REGSAM,
@@ -24631,7 +24631,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegQueryInfoUSKeyA(
         arg1: HUSKEY,
         arg2: LPDWORD,
@@ -24641,7 +24641,7 @@ unsafe extern "C" {
         arg6: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegQueryInfoUSKeyW(
         arg1: HUSKEY,
         arg2: LPDWORD,
@@ -24651,7 +24651,7 @@ unsafe extern "C" {
         arg6: SHREGENUM_FLAGS,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegQueryUSValueA(
         arg1: HUSKEY,
         arg2: LPCSTR,
@@ -24663,7 +24663,7 @@ unsafe extern "C" {
         dwDefaultDataSize: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegQueryUSValueW(
         arg1: HUSKEY,
         arg2: LPCWSTR,
@@ -24675,7 +24675,7 @@ unsafe extern "C" {
         dwDefaultDataSize: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegSetPathA(
         arg1: HKEY,
         arg2: LPCSTR,
@@ -24684,7 +24684,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegSetPathW(
         arg1: HKEY,
         arg2: LPCWSTR,
@@ -24693,7 +24693,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegSetUSValueA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -24703,7 +24703,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegSetUSValueW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -24713,7 +24713,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegWriteUSValueA(
         arg1: HUSKEY,
         arg2: LPCSTR,
@@ -24723,7 +24723,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegWriteUSValueW(
         arg1: HUSKEY,
         arg2: LPCWSTR,
@@ -24733,7 +24733,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetIntW(arg1: HKEY, arg2: LPCWSTR, arg3: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
 pub const ASSOCF_NONE: _bindgen_ty_5 = 0;
@@ -24815,13 +24815,13 @@ pub struct IQueryAssociations {
     pub vtable_: *const IQueryAssociations__bindgen_vtable,
 }
 pub type LPQUERYASSOCIATIONS = *mut IQueryAssociations;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocCreate(arg1: CLSID, arg2: *const IID, arg3: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocIsDangerous(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryStringA(
         arg1: ASSOCF,
         arg2: ASSOCSTR,
@@ -24831,7 +24831,7 @@ unsafe extern "C" {
         pcchOut: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryStringW(
         arg1: ASSOCF,
         arg2: ASSOCSTR,
@@ -24841,7 +24841,7 @@ unsafe extern "C" {
         pcchOut: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryStringByKeyA(
         arg1: ASSOCF,
         arg2: ASSOCSTR,
@@ -24851,7 +24851,7 @@ unsafe extern "C" {
         pcchOut: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryStringByKeyW(
         arg1: ASSOCF,
         arg2: ASSOCSTR,
@@ -24861,7 +24861,7 @@ unsafe extern "C" {
         pcchOut: LPDWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryKeyA(
         arg1: ASSOCF,
         arg2: ASSOCKEY,
@@ -24870,7 +24870,7 @@ unsafe extern "C" {
         arg5: PHKEY,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AssocQueryKeyW(
         arg1: ASSOCF,
         arg2: ASSOCKEY,
@@ -24879,7 +24879,7 @@ unsafe extern "C" {
         arg5: PHKEY,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateStreamWrapper(
         arg1: LPBYTE,
         arg2: DWORD,
@@ -24887,10 +24887,10 @@ unsafe extern "C" {
         arg4: *mut *mut IStream,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateMemStream(pInit: *const BYTE, cbInit: UINT) -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateStreamOnFileEx(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -24900,40 +24900,40 @@ unsafe extern "C" {
         arg6: *mut *mut IStream,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateStreamOnFileA(arg1: LPCSTR, arg2: DWORD, arg3: *mut *mut IStream) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateStreamOnFileW(arg1: LPCWSTR, arg2: DWORD, arg3: *mut *mut IStream) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenRegStreamA(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR, arg4: DWORD) -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenRegStreamW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR, arg4: DWORD) -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenRegStream2A(arg1: HKEY, arg2: LPCSTR, arg3: LPCSTR, arg4: DWORD) -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenRegStream2W(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR, arg4: DWORD)
         -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IStream_Reset(arg1: *mut IStream) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IStream_Read(arg1: *mut IStream, arg2: *mut ::core::ffi::c_void, arg3: ULONG)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IStream_Write(
         arg1: *mut IStream,
         arg2: *const ::core::ffi::c_void,
         arg3: ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLoadIndirectString(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -24941,22 +24941,22 @@ unsafe extern "C" {
         arg3: *mut PVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRetToBSTR(arg1: *mut STRRET, arg2: PCUITEMID_CHILD, arg3: *mut BSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCatChainW(arg1: LPWSTR, cchDst: DWORD, arg2: DWORD, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpLogicalW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrNW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrNIW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntlStrEqWorkerA(
         arg1: BOOL,
         arg2: LPCSTR,
@@ -24964,7 +24964,7 @@ unsafe extern "C" {
         nChar: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IntlStrEqWorkerW(
         arg1: BOOL,
         arg2: LPCWSTR,
@@ -24972,97 +24972,97 @@ unsafe extern "C" {
         nChar: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChrCmpIA(arg1: WORD, arg2: WORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChrCmpIW(arg1: WCHAR, arg2: WCHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHStrDupA(psz: LPCSTR, ppwsz: *mut *mut WCHAR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHStrDupW(psz: LPCWSTR, ppwsz: *mut *mut WCHAR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCatW(arg1: LPWSTR, arg2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCatBuffA(arg1: LPSTR, arg2: LPCSTR, cchDestBuffSize: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCatBuffW(arg1: LPWSTR, arg2: LPCWSTR, cchDestBuffSize: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrChrA(arg1: LPCSTR, arg2: WORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrChrW(arg1: LPCWSTR, arg2: WCHAR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrChrIA(arg1: LPCSTR, arg2: WORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrChrIW(arg1: LPCWSTR, arg2: WCHAR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpIW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpNA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpNW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpNIA(arg1: LPCSTR, arg2: LPCSTR, arg3: INT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCmpNIW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: INT) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCpyW(arg1: LPWSTR, arg2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCpyNW(arg1: LPWSTR, arg2: LPCWSTR, cchMax: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCSpnA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCSpnW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCSpnIA(arg1: LPCSTR, arg2: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrCSpnIW(arg1: LPCWSTR, arg2: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrDupA(arg1: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrDupW(arg1: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFormatByteSize64A(arg1: LONGLONG, arg2: LPSTR, cchBuf: UINT) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFormatByteSizeA(arg1: DWORD, arg2: LPSTR, cchBuf: UINT) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFormatByteSizeW(arg1: LONGLONG, arg2: LPWSTR, cchBuf: UINT) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFormatKBSizeA(arg1: LONGLONG, arg2: LPSTR, cchBuf: UINT) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFormatKBSizeW(arg1: LONGLONG, arg2: LPWSTR, cchBuf: UINT) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFromTimeIntervalA(
         arg1: LPSTR,
         cchMax: UINT,
@@ -25070,7 +25070,7 @@ unsafe extern "C" {
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrFromTimeIntervalW(
         arg1: LPWSTR,
         cchMax: UINT,
@@ -25078,7 +25078,7 @@ unsafe extern "C" {
         arg3: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrIsIntlEqualA(
         arg1: BOOL,
         arg2: LPCSTR,
@@ -25086,7 +25086,7 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrIsIntlEqualW(
         arg1: BOOL,
         arg2: LPCWSTR,
@@ -25094,37 +25094,37 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrNCatA(arg1: LPSTR, arg2: LPCSTR, cchMax: ::core::ffi::c_int) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrNCatW(arg1: LPWSTR, arg2: LPCWSTR, cchMax: ::core::ffi::c_int) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrPBrkA(arg1: LPCSTR, arg2: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrPBrkW(arg1: LPCWSTR, arg2: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRChrA(arg1: LPCSTR, arg2: LPCSTR, arg3: WORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRChrW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: WCHAR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRChrIA(arg1: LPCSTR, arg2: LPCSTR, arg3: WORD) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRChrIW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: WCHAR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRStrIA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRStrIW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRetToBufA(
         arg1: *mut STRRET,
         arg2: PCUITEMID_CHILD,
@@ -25132,7 +25132,7 @@ unsafe extern "C" {
         cchBuf: UINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRetToBufW(
         arg1: *mut STRRET,
         arg2: PCUITEMID_CHILD,
@@ -25140,46 +25140,46 @@ unsafe extern "C" {
         cchBuf: UINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRetToStrA(arg1: *mut STRRET, arg2: PCUITEMID_CHILD, arg3: *mut LPSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRetToStrW(arg1: *mut STRRET, arg2: PCUITEMID_CHILD, arg3: *mut LPWSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrSpnA(psz: LPCSTR, pszSet: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrSpnW(psz: LPCWSTR, pszSet: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrA(pszFirst: LPCSTR, pszSrch: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrW(pszFirst: LPCWSTR, pszSrch: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrIA(pszFirst: LPCSTR, pszSrch: LPCSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrStrIW(pszFirst: LPCWSTR, pszSrch: LPCWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToIntA(arg1: LPCSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToIntW(arg1: LPCWSTR) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToIntExA(arg1: LPCSTR, arg2: DWORD, arg3: *mut ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToIntExW(arg1: LPCWSTR, arg2: DWORD, arg3: *mut ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrTrimA(arg1: LPSTR, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrTrimW(arg1: LPWSTR, arg2: LPCWSTR) -> BOOL;
 }
 unsafe extern "C" {
@@ -25188,7 +25188,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn wnsprintfW(arg1: LPWSTR, cchDest: INT, arg2: LPCWSTR, ...) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wvnsprintfA(
         arg1: LPSTR,
         cchDest: INT,
@@ -25196,7 +25196,7 @@ unsafe extern "C" {
         arg3: va_list,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn wvnsprintfW(
         arg1: LPWSTR,
         cchDest: INT,
@@ -25204,16 +25204,16 @@ unsafe extern "C" {
         arg3: va_list,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToInt64ExA(arg1: LPCSTR, arg2: DWORD, arg3: *mut LONGLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrToInt64ExW(arg1: LPCWSTR, arg2: DWORD, arg3: *mut LONGLONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharSpaceA(arg1: CHAR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsCharSpaceW(arg1: WCHAR) -> BOOL;
 }
 pub type HINTERNET = LPVOID;
@@ -25463,7 +25463,7 @@ pub struct _INTERNET_DIAGNOSTIC_SOCKET_INFO {
 }
 pub type INTERNET_DIAGNOSTIC_SOCKET_INFO = _INTERNET_DIAGNOSTIC_SOCKET_INFO;
 pub type LPINTERNET_DIAGNOSTIC_SOCKET_INFO = *mut _INTERNET_DIAGNOSTIC_SOCKET_INFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetTimeFromSystemTimeA(
         pst: *const SYSTEMTIME,
         dwRFC: DWORD,
@@ -25471,7 +25471,7 @@ unsafe extern "C" {
         cbTime: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetTimeFromSystemTimeW(
         pst: *const SYSTEMTIME,
         dwRFC: DWORD,
@@ -25479,13 +25479,13 @@ unsafe extern "C" {
         cbTime: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetTimeToSystemTimeA(arg1: LPCSTR, arg2: *mut SYSTEMTIME, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetTimeToSystemTimeW(arg1: LPCWSTR, arg2: *mut SYSTEMTIME, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCrackUrlA(
         lpszUrl: LPCSTR,
         dwUrlLength: DWORD,
@@ -25493,7 +25493,7 @@ unsafe extern "C" {
         lpUrlComponents: LPURL_COMPONENTSA,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCrackUrlW(
         lpszUrl: LPCWSTR,
         dwUrlLength: DWORD,
@@ -25501,7 +25501,7 @@ unsafe extern "C" {
         lpUrlComponents: LPURL_COMPONENTSW,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCreateUrlA(
         lpUrlComponents: LPURL_COMPONENTSA,
         dwFlags: DWORD,
@@ -25509,7 +25509,7 @@ unsafe extern "C" {
         lpdwUrlLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCreateUrlW(
         lpUrlComponents: LPURL_COMPONENTSW,
         dwFlags: DWORD,
@@ -25517,7 +25517,7 @@ unsafe extern "C" {
         lpdwUrlLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCanonicalizeUrlA(
         lpszUrl: LPCSTR,
         lpszBuffer: LPSTR,
@@ -25525,7 +25525,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCanonicalizeUrlW(
         lpszUrl: LPCWSTR,
         lpszBuffer: LPWSTR,
@@ -25533,7 +25533,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCombineUrlA(
         lpszBaseUrl: LPCSTR,
         lpszRelativeUrl: LPCSTR,
@@ -25542,7 +25542,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCombineUrlW(
         lpszBaseUrl: LPCWSTR,
         lpszRelativeUrl: LPCWSTR,
@@ -25551,7 +25551,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetOpenA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -25560,7 +25560,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetOpenW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -25569,10 +25569,10 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCloseHandle(arg1: HINTERNET) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetConnectA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -25584,7 +25584,7 @@ unsafe extern "C" {
         arg8: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetConnectW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -25596,7 +25596,7 @@ unsafe extern "C" {
         arg8: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetOpenUrlA(
         hInternet: HINTERNET,
         lpszUrl: LPCSTR,
@@ -25606,7 +25606,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetOpenUrlW(
         hInternet: HINTERNET,
         lpszUrl: LPCWSTR,
@@ -25616,7 +25616,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetReadFile(
         hFile: HINTERNET,
         lpBuffer: LPVOID,
@@ -25624,7 +25624,7 @@ unsafe extern "C" {
         lpdwNumberOfBytesRead: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetReadFileExA(
         hFile: HINTERNET,
         lpBuffersOut: LPINTERNET_BUFFERSA,
@@ -25632,7 +25632,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetReadFileExW(
         hFile: HINTERNET,
         lpBuffersOut: LPINTERNET_BUFFERSW,
@@ -25640,7 +25640,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetFilePointer(
         arg1: HINTERNET,
         arg2: LONG,
@@ -25649,7 +25649,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetWriteFile(
         hFile: HINTERNET,
         lpBuffer: LPCVOID,
@@ -25657,7 +25657,7 @@ unsafe extern "C" {
         lpdwNumberOfBytesWritten: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetQueryDataAvailable(
         hFile: HINTERNET,
         lpdwNumberOfBytesAvailable: LPDWORD,
@@ -25665,13 +25665,13 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetFindNextFileA(arg1: HINTERNET, arg2: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetFindNextFileW(arg1: HINTERNET, arg2: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetQueryOptionA(
         hInternet: HINTERNET,
         dwOption: DWORD,
@@ -25679,7 +25679,7 @@ unsafe extern "C" {
         lpdwBufferLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetQueryOptionW(
         hInternet: HINTERNET,
         dwOption: DWORD,
@@ -25687,13 +25687,13 @@ unsafe extern "C" {
         lpdwBufferLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetOptionA(arg1: HINTERNET, arg2: DWORD, arg3: LPVOID, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetOptionW(arg1: HINTERNET, arg2: DWORD, arg3: LPVOID, arg4: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetOptionExA(
         arg1: HINTERNET,
         arg2: DWORD,
@@ -25702,7 +25702,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetOptionExW(
         arg1: HINTERNET,
         arg2: DWORD,
@@ -25711,20 +25711,20 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetLockRequestFile(arg1: HINTERNET, arg2: *mut HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetUnlockRequestFile(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetLastResponseInfoA(
         lpdwError: LPDWORD,
         lpszBuffer: LPSTR,
         lpdwBufferLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetLastResponseInfoW(
         lpdwError: LPDWORD,
         lpszBuffer: LPWSTR,
@@ -25735,19 +25735,19 @@ pub type INTERNET_STATUS_CALLBACK = ::core::option::Option<
     unsafe extern "system" fn(arg1: HINTERNET, arg2: DWORD_PTR, arg3: DWORD, arg4: LPVOID, arg5: DWORD),
 >;
 pub type LPINTERNET_STATUS_CALLBACK = *mut INTERNET_STATUS_CALLBACK;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetStatusCallbackA(
         arg1: HINTERNET,
         arg2: INTERNET_STATUS_CALLBACK,
     ) -> INTERNET_STATUS_CALLBACK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetStatusCallbackW(
         arg1: HINTERNET,
         arg2: INTERNET_STATUS_CALLBACK,
     ) -> INTERNET_STATUS_CALLBACK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpCommandA(
         arg1: HINTERNET,
         arg2: BOOL,
@@ -25757,7 +25757,7 @@ unsafe extern "C" {
         arg6: *mut HINTERNET,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpCommandW(
         arg1: HINTERNET,
         arg2: BOOL,
@@ -25767,7 +25767,7 @@ unsafe extern "C" {
         arg6: *mut HINTERNET,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpFindFirstFileA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -25776,7 +25776,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpFindFirstFileW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -25785,7 +25785,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpGetFileA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -25796,7 +25796,7 @@ unsafe extern "C" {
         arg7: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpGetFileW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -25807,10 +25807,10 @@ unsafe extern "C" {
         arg7: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpGetFileSize(arg1: HINTERNET, arg2: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpPutFileA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -25819,7 +25819,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpPutFileW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -25828,19 +25828,19 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpDeleteFileA(arg1: HINTERNET, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpDeleteFileW(arg1: HINTERNET, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpRenameFileA(arg1: HINTERNET, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpRenameFileW(arg1: HINTERNET, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpOpenFileA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -25849,7 +25849,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpOpenFileW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -25858,32 +25858,32 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpCreateDirectoryA(arg1: HINTERNET, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpCreateDirectoryW(arg1: HINTERNET, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpRemoveDirectoryA(arg1: HINTERNET, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpRemoveDirectoryW(arg1: HINTERNET, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpSetCurrentDirectoryA(arg1: HINTERNET, arg2: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpSetCurrentDirectoryW(arg1: HINTERNET, arg2: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpGetCurrentDirectoryA(
         hConnect: HINTERNET,
         lpszCurrentDirectory: LPSTR,
         lpdwCurrentDirectory: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FtpGetCurrentDirectoryW(
         hConnect: HINTERNET,
         lpszCurrentDirectory: LPWSTR,
@@ -26142,7 +26142,7 @@ pub struct GOPHER_ATTRIBUTE_TYPEW__bindgen_ty_1 {
 pub type LPGOPHER_ATTRIBUTE_TYPEW = *mut GOPHER_ATTRIBUTE_TYPEW;
 pub type GOPHER_ATTRIBUTE_TYPE = GOPHER_ATTRIBUTE_TYPEW;
 pub type LPGOPHER_ATTRIBUTE_TYPE = LPGOPHER_ATTRIBUTE_TYPEW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherCreateLocatorA(
         lpszHost: LPCSTR,
         nServerPort: INTERNET_PORT,
@@ -26153,7 +26153,7 @@ unsafe extern "C" {
         lpdwBufferLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherCreateLocatorW(
         lpszHost: LPCWSTR,
         nServerPort: INTERNET_PORT,
@@ -26164,13 +26164,13 @@ unsafe extern "C" {
         lpdwBufferLength: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherGetLocatorTypeA(arg1: LPCSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherGetLocatorTypeW(arg1: LPCWSTR, arg2: LPDWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherFindFirstFileA(
         hConnect: HINTERNET,
         lpszLocator: LPCSTR,
@@ -26180,7 +26180,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherFindFirstFileW(
         hConnect: HINTERNET,
         lpszLocator: LPCWSTR,
@@ -26190,7 +26190,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherOpenFileA(
         arg1: HINTERNET,
         arg2: LPCSTR,
@@ -26199,7 +26199,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherOpenFileW(
         arg1: HINTERNET,
         arg2: LPCWSTR,
@@ -26215,7 +26215,7 @@ pub type GOPHER_ATTRIBUTE_ENUMERATORW = ::core::option::Option<
     unsafe extern "system" fn(arg1: LPGOPHER_ATTRIBUTE_TYPEW, arg2: DWORD) -> BOOL,
 >;
 pub type GOPHER_ATTRIBUTE_ENUMERATOR = GOPHER_ATTRIBUTE_ENUMERATORW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherGetAttributeA(
         hConnect: HINTERNET,
         lpszLocator: LPCSTR,
@@ -26227,7 +26227,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GopherGetAttributeW(
         hConnect: HINTERNET,
         lpszLocator: LPCWSTR,
@@ -26239,7 +26239,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpOpenRequestA(
         hConnect: HINTERNET,
         lpszVerb: LPCSTR,
@@ -26251,7 +26251,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpOpenRequestW(
         hConnect: HINTERNET,
         lpszVerb: LPCWSTR,
@@ -26263,7 +26263,7 @@ unsafe extern "C" {
         dwContext: DWORD_PTR,
     ) -> HINTERNET;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpAddRequestHeadersA(
         hRequest: HINTERNET,
         lpszHeaders: LPCSTR,
@@ -26271,7 +26271,7 @@ unsafe extern "C" {
         dwModifiers: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpAddRequestHeadersW(
         hRequest: HINTERNET,
         lpszHeaders: LPCWSTR,
@@ -26279,7 +26279,7 @@ unsafe extern "C" {
         dwModifiers: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpSendRequestA(
         hRequest: HINTERNET,
         lpszHeaders: LPCSTR,
@@ -26288,7 +26288,7 @@ unsafe extern "C" {
         dwOptionalLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpSendRequestW(
         hRequest: HINTERNET,
         lpszHeaders: LPCWSTR,
@@ -26297,7 +26297,7 @@ unsafe extern "C" {
         dwOptionalLength: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpSendRequestExA(
         arg1: HINTERNET,
         arg2: LPINTERNET_BUFFERSA,
@@ -26306,7 +26306,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpSendRequestExW(
         arg1: HINTERNET,
         arg2: LPINTERNET_BUFFERSW,
@@ -26315,7 +26315,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpEndRequestA(
         arg1: HINTERNET,
         arg2: LPINTERNET_BUFFERSA,
@@ -26323,7 +26323,7 @@ unsafe extern "C" {
         arg4: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpEndRequestW(
         arg1: HINTERNET,
         arg2: LPINTERNET_BUFFERSW,
@@ -26331,7 +26331,7 @@ unsafe extern "C" {
         arg4: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpQueryInfoA(
         hRequest: HINTERNET,
         dwInfoLevel: DWORD,
@@ -26340,7 +26340,7 @@ unsafe extern "C" {
         lpdwIndex: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HttpQueryInfoW(
         hRequest: HINTERNET,
         dwInfoLevel: DWORD,
@@ -26357,10 +26357,10 @@ pub const InternetCookieState_COOKIE_STATE_DOWNGRADE: InternetCookieState = 4;
 pub const InternetCookieState_COOKIE_STATE_REJECT: InternetCookieState = 5;
 pub const InternetCookieState_COOKIE_STATE_MAX: InternetCookieState = 5;
 pub type InternetCookieState = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetClearAllPerSiteCookieDecisions() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetEnumPerSiteCookieDecisionA(
         pszSiteName: LPSTR,
         pcSiteNameSize: *mut ULONG,
@@ -26368,7 +26368,7 @@ unsafe extern "C" {
         dwIndex: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetEnumPerSiteCookieDecisionW(
         pszSiteName: LPWSTR,
         pcSiteNameSize: *mut ULONG,
@@ -26376,7 +26376,7 @@ unsafe extern "C" {
         dwIndex: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetCookieExA(
         lpszUrl: LPCSTR,
         lpszCookieName: LPCSTR,
@@ -26386,7 +26386,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetCookieExW(
         lpszUrl: LPCWSTR,
         lpszCookieName: LPCWSTR,
@@ -26396,7 +26396,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetCookieExA(
         arg1: LPCSTR,
         arg2: LPCSTR,
@@ -26405,7 +26405,7 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetCookieExW(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -26414,25 +26414,25 @@ unsafe extern "C" {
         arg5: DWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetPerSiteCookieDecisionA(arg1: LPCSTR, arg2: *mut ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetPerSiteCookieDecisionW(arg1: LPCWSTR, arg2: *mut ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetPerSiteCookieDecisionA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetPerSiteCookieDecisionW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetCookieA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetCookieW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetCookieA(
         lpszUrl: LPCSTR,
         lpszCookieName: LPCSTR,
@@ -26440,7 +26440,7 @@ unsafe extern "C" {
         lpdwSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetCookieW(
         lpszUrl: LPCWSTR,
         lpszCookieName: LPCWSTR,
@@ -26448,13 +26448,13 @@ unsafe extern "C" {
         lpdwSize: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetAttemptConnect(arg1: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCheckConnectionA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetCheckConnectionW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
 unsafe extern "C" {
@@ -26470,7 +26470,7 @@ pub struct INTERNET_AUTH_NOTIFY_DATA {
     pub pfnNotify: PFN_AUTH_NOTIFY,
     pub dwContext: DWORD_PTR,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetErrorDlg(
         arg1: HWND,
         arg2: HINTERNET,
@@ -26479,10 +26479,10 @@ unsafe extern "C" {
         arg5: *mut LPVOID,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetConfirmZoneCrossingA(arg1: HWND, arg2: LPSTR, arg3: LPSTR, arg4: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetConfirmZoneCrossingW(
         arg1: HWND,
         arg2: LPWSTR,
@@ -26490,11 +26490,11 @@ unsafe extern "C" {
         arg4: BOOL,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivacySetZonePreferenceW(arg1: DWORD, arg2: DWORD, arg3: DWORD, arg4: LPCWSTR)
         -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PrivacyGetZonePreferenceW(
         dwZone: DWORD,
         dwType: DWORD,
@@ -26566,7 +26566,7 @@ pub struct _INTERNET_CACHE_TIMESTAMPS {
 }
 pub type INTERNET_CACHE_TIMESTAMPS = _INTERNET_CACHE_TIMESTAMPS;
 pub type LPINTERNET_CACHE_TIMESTAMPS = *mut _INTERNET_CACHE_TIMESTAMPS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUrlCacheEntryA(
         lpszUrlName: LPCSTR,
         dwExpectedFileSize: DWORD,
@@ -26575,7 +26575,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUrlCacheEntryW(
         lpszUrlName: LPCWSTR,
         dwExpectedFileSize: DWORD,
@@ -26584,7 +26584,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CommitUrlCacheEntryA(
         lpszUrlName: LPCSTR,
         lpszLocalFileName: LPCSTR,
@@ -26597,7 +26597,7 @@ unsafe extern "C" {
         lpszOriginalUrl: LPCSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CommitUrlCacheEntryW(
         lpszUrlName: LPCWSTR,
         lpszLocalFileName: LPCWSTR,
@@ -26610,10 +26610,10 @@ unsafe extern "C" {
         lpszOriginalUrl: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ResumeSuspendedDownload(arg1: HINTERNET, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RetrieveUrlCacheEntryFileA(
         lpszUrlName: LPCSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
@@ -26621,7 +26621,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RetrieveUrlCacheEntryFileW(
         lpszUrlName: LPCWSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
@@ -26629,13 +26629,13 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnlockUrlCacheEntryFileA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnlockUrlCacheEntryFileW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RetrieveUrlCacheEntryStreamA(
         lpszUrlName: LPCSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
@@ -26644,7 +26644,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RetrieveUrlCacheEntryStreamW(
         lpszUrlName: LPCWSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
@@ -26653,7 +26653,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadUrlCacheEntryStream(
         hUrlCacheStream: HANDLE,
         dwLocation: DWORD,
@@ -26662,24 +26662,24 @@ unsafe extern "C" {
         Reserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UnlockUrlCacheEntryStream(arg1: HANDLE, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheEntryInfoA(
         lpszUrlName: LPCSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheEntryInfoW(
         lpszUrlName: LPCWSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheEntryInfoExA(
         lpszUrl: LPCSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
@@ -26690,7 +26690,7 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheEntryInfoExW(
         lpszUrl: LPCWSTR,
         lpCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
@@ -26701,14 +26701,14 @@ unsafe extern "C" {
         dwFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheEntryInfoA(
         arg1: LPCSTR,
         arg2: LPINTERNET_CACHE_ENTRY_INFOA,
         arg3: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheEntryInfoW(
         arg1: LPCWSTR,
         arg2: LPINTERNET_CACHE_ENTRY_INFOW,
@@ -26716,13 +26716,13 @@ unsafe extern "C" {
     ) -> BOOL;
 }
 pub type GROUPID = LONGLONG;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUrlCacheGroup(arg1: DWORD, arg2: LPVOID) -> GROUPID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteUrlCacheGroup(arg1: GROUPID, arg2: DWORD, arg3: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstUrlCacheGroup(
         arg1: DWORD,
         arg2: DWORD,
@@ -26732,10 +26732,10 @@ unsafe extern "C" {
         arg6: LPVOID,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextUrlCacheGroup(arg1: HANDLE, arg2: *mut GROUPID, arg3: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheGroupAttributeA(
         gid: GROUPID,
         dwFlags: DWORD,
@@ -26745,7 +26745,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUrlCacheGroupAttributeW(
         gid: GROUPID,
         dwFlags: DWORD,
@@ -26755,7 +26755,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheEntryGroupA(
         arg1: LPCSTR,
         arg2: DWORD,
@@ -26765,7 +26765,7 @@ unsafe extern "C" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheEntryGroupW(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -26775,7 +26775,7 @@ unsafe extern "C" {
         arg6: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheGroupAttributeA(
         arg1: GROUPID,
         arg2: DWORD,
@@ -26784,7 +26784,7 @@ unsafe extern "C" {
         arg5: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUrlCacheGroupAttributeW(
         arg1: GROUPID,
         arg2: DWORD,
@@ -26793,7 +26793,7 @@ unsafe extern "C" {
         arg5: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstUrlCacheEntryExA(
         lpszUrlSearchPattern: LPCSTR,
         dwFlags: DWORD,
@@ -26806,7 +26806,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstUrlCacheEntryExW(
         lpszUrlSearchPattern: LPCWSTR,
         dwFlags: DWORD,
@@ -26819,7 +26819,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextUrlCacheEntryExA(
         hEnumHandle: HANDLE,
         lpNextCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
@@ -26829,7 +26829,7 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextUrlCacheEntryExW(
         hEnumHandle: HANDLE,
         lpNextCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
@@ -26839,50 +26839,50 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstUrlCacheEntryA(
         lpszUrlSearchPattern: LPCSTR,
         lpFirstCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindFirstUrlCacheEntryW(
         lpszUrlSearchPattern: LPCWSTR,
         lpFirstCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextUrlCacheEntryA(
         hEnumHandle: HANDLE,
         lpNextCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOA,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNextUrlCacheEntryW(
         hEnumHandle: HANDLE,
         lpNextCacheEntryInfo: LPINTERNET_CACHE_ENTRY_INFOW,
         lpcbCacheEntryInfo: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindCloseUrlCache(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteUrlCacheEntryA(arg1: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteUrlCacheEntryW(arg1: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeUrlCacheSpaceA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeUrlCacheSpaceW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetDialA(
         arg1: HWND,
         arg2: LPSTR,
@@ -26891,7 +26891,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetDialW(
         arg1: HWND,
         arg2: LPWSTR,
@@ -26900,37 +26900,37 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetHangUp(arg1: DWORD_PTR, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMD5SSOHash(arg1: PWSTR, arg2: PWSTR, arg3: PWSTR, arg4: PBYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGoOnlineA(arg1: LPSTR, arg2: HWND, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGoOnlineW(arg1: LPWSTR, arg2: HWND, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetAutodial(arg1: DWORD, arg2: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetAutodialHangup(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetConnectedState(arg1: LPDWORD, arg2: DWORD) -> BOOL;
 }
 pub type PFN_DIAL_HANDLER = ::core::option::Option<
     unsafe extern "system" fn(arg1: HWND, arg2: LPCSTR, arg3: DWORD, arg4: LPDWORD) -> DWORD,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetDialStateA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetSetDialStateW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetConnectedStateExA(
         lpdwFlags: LPDWORD,
         lpszConnectionName: LPSTR,
@@ -26938,7 +26938,7 @@ unsafe extern "C" {
         dwReserved: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetGetConnectedStateExW(
         lpdwFlags: LPDWORD,
         lpszConnectionName: LPWSTR,
@@ -26980,17 +26980,17 @@ pub struct AUTO_PROXY_SCRIPT_BUFFER {
     pub dwScriptBufferSize: DWORD,
 }
 pub type LPAUTO_PROXY_SCRIPT_BUFFER = *mut AUTO_PROXY_SCRIPT_BUFFER;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InternetInitializeAutoProxyDll(arg1: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DetectAutoProxyUrl(
         pszAutoProxyUrl: PSTR,
         cchAutoProxyUrl: DWORD,
         dwDetectFlags: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitCommonControls();
 }
 #[repr(C)]
@@ -27000,7 +27000,7 @@ pub struct tagINITCOMMONCONTROLSEX {
 }
 pub type INITCOMMONCONTROLSEX = tagINITCOMMONCONTROLSEX;
 pub type LPINITCOMMONCONTROLSEX = *mut tagINITCOMMONCONTROLSEX;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitCommonControlsEx(arg1: *const INITCOMMONCONTROLSEX) -> BOOL;
 }
 #[repr(C)]
@@ -27105,7 +27105,7 @@ pub struct _IMAGELISTDRAWPARAMS {
 }
 pub type IMAGELISTDRAWPARAMS = _IMAGELISTDRAWPARAMS;
 pub type LPIMAGELISTDRAWPARAMS = *mut _IMAGELISTDRAWPARAMS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Create(
         cx: ::core::ffi::c_int,
         cy: ::core::ffi::c_int,
@@ -27114,50 +27114,50 @@ unsafe extern "C" {
         cGrow: ::core::ffi::c_int,
     ) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Destroy(himl: HIMAGELIST) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetImageCount(himl: HIMAGELIST) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetImageCount(himl: HIMAGELIST, uNewCount: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Add(
         himl: HIMAGELIST,
         hbmImage: HBITMAP,
         hbmMask: HBITMAP,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_ReplaceIcon(
         himl: HIMAGELIST,
         i: ::core::ffi::c_int,
         hicon: HICON,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetBkColor(himl: HIMAGELIST, clrBk: COLORREF) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetBkColor(himl: HIMAGELIST) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetOverlayImage(
         himl: HIMAGELIST,
         iImage: ::core::ffi::c_int,
         iOverlay: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HIMAGELIST_QueryInterface(
         arg1: HIMAGELIST,
         arg2: *const IID,
         arg3: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Draw(
         himl: HIMAGELIST,
         i: ::core::ffi::c_int,
@@ -27167,7 +27167,7 @@ unsafe extern "C" {
         fStyle: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Replace(
         himl: HIMAGELIST,
         i: ::core::ffi::c_int,
@@ -27175,14 +27175,14 @@ unsafe extern "C" {
         hbmMask: HBITMAP,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_AddMasked(
         himl: HIMAGELIST,
         hbmImage: HBITMAP,
         crMask: COLORREF,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DrawEx(
         himl: HIMAGELIST,
         i: ::core::ffi::c_int,
@@ -27196,16 +27196,16 @@ unsafe extern "C" {
         fStyle: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DrawIndirect(pimldp: *mut IMAGELISTDRAWPARAMS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Remove(himl: HIMAGELIST, i: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetIcon(himl: HIMAGELIST, i: ::core::ffi::c_int, flags: UINT) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_LoadImageA(
         hi: HINSTANCE,
         lpbmp: LPCSTR,
@@ -27216,7 +27216,7 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_LoadImageW(
         hi: HINSTANCE,
         lpbmp: LPCWSTR,
@@ -27227,7 +27227,7 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Copy(
         himlDst: HIMAGELIST,
         iDst: ::core::ffi::c_int,
@@ -27236,7 +27236,7 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_BeginDrag(
         himlTrack: HIMAGELIST,
         iTrack: ::core::ffi::c_int,
@@ -27244,23 +27244,23 @@ unsafe extern "C" {
         dyHotspot: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_EndDrag();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DragEnter(
         hwndLock: HWND,
         x: ::core::ffi::c_int,
         y: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DragLeave(hwndLock: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DragMove(x: ::core::ffi::c_int, y: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetDragCursorImage(
         himlDrag: HIMAGELIST,
         iDrag: ::core::ffi::c_int,
@@ -27268,19 +27268,19 @@ unsafe extern "C" {
         dyHotspot: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_DragShowNolock(fShow: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetDragImage(ppt: *mut POINT, pptHotspot: *mut POINT) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Read(pstm: LPSTREAM) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Write(himl: HIMAGELIST, pstm: LPSTREAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_ReadEx(
         dwFlags: DWORD,
         pstm: LPSTREAM,
@@ -27288,7 +27288,7 @@ unsafe extern "C" {
         ppv: *mut PVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_WriteEx(himl: HIMAGELIST, dwFlags: DWORD, pstm: LPSTREAM) -> HRESULT;
 }
 #[repr(C)]
@@ -27301,28 +27301,28 @@ pub struct _IMAGEINFO {
 }
 pub type IMAGEINFO = _IMAGEINFO;
 pub type LPIMAGEINFO = *mut _IMAGEINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetIconSize(
         himl: HIMAGELIST,
         cx: *mut ::core::ffi::c_int,
         cy: *mut ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetIconSize(
         himl: HIMAGELIST,
         cx: ::core::ffi::c_int,
         cy: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetImageInfo(
         himl: HIMAGELIST,
         i: ::core::ffi::c_int,
         pImageInfo: *mut IMAGEINFO,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Merge(
         himl1: HIMAGELIST,
         i1: ::core::ffi::c_int,
@@ -27332,7 +27332,7 @@ unsafe extern "C" {
         dy: ::core::ffi::c_int,
     ) -> HIMAGELIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_Duplicate(himl: HIMAGELIST) -> HIMAGELIST;
 }
 #[repr(C)]
@@ -27483,7 +27483,7 @@ pub struct _COLORMAP {
 }
 pub type COLORMAP = _COLORMAP;
 pub type LPCOLORMAP = *mut _COLORMAP;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateToolbarEx(
         hwnd: HWND,
         ws: DWORD,
@@ -27500,7 +27500,7 @@ unsafe extern "C" {
         uStructSize: UINT,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMappedBitmap(
         hInstance: HINSTANCE,
         idBitmap: INT_PTR,
@@ -27902,20 +27902,20 @@ pub struct tagNMTTDISPINFOW {
 }
 pub type NMTTDISPINFOW = tagNMTTDISPINFOW;
 pub type LPNMTTDISPINFOW = *mut tagNMTTDISPINFOW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawStatusTextA(hDC: HDC, lprc: LPCRECT, pszText: LPCSTR, uFlags: UINT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawStatusTextW(hDC: HDC, lprc: LPCRECT, pszText: LPCWSTR, uFlags: UINT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateStatusWindowA(style: LONG, lpszText: LPCSTR, hwndParent: HWND, wID: UINT) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateStatusWindowW(style: LONG, lpszText: LPCWSTR, hwndParent: HWND, wID: UINT)
         -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MenuHelp(
         uMsg: UINT,
         wParam: WPARAM,
@@ -27926,10 +27926,10 @@ unsafe extern "C" {
         lpwIDs: *mut UINT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShowHideMenuCtl(hWnd: HWND, uFlags: UINT_PTR, lpInfo: LPINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetEffectiveClientRect(hWnd: HWND, lprc: LPRECT, lpInfo: *const INT);
 }
 #[repr(C)]
@@ -27940,13 +27940,13 @@ pub struct tagDRAGLISTINFO {
 }
 pub type DRAGLISTINFO = tagDRAGLISTINFO;
 pub type LPDRAGLISTINFO = *mut tagDRAGLISTINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MakeDragList(hLB: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawInsert(handParent: HWND, hLB: HWND, nItem: ::core::ffi::c_int);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LBItemFromPt(hLB: HWND, pt: POINT, bAutoScroll: BOOL) -> ::core::ffi::c_int;
 }
 #[repr(C)]
@@ -27956,7 +27956,7 @@ pub struct _UDACCEL {
 }
 pub type UDACCEL = _UDACCEL;
 pub type LPUDACCEL = *mut _UDACCEL;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateUpDownControl(
         dwStyle: DWORD,
         x: ::core::ffi::c_int,
@@ -28870,10 +28870,10 @@ pub struct tagNMLINK {
 }
 pub type NMLINK = tagNMLINK;
 pub type PNMLINK = *mut tagNMLINK;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitMUILanguage(uiLang: LANGID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetMUILanguage() -> LANGID;
 }
 #[repr(C)]
@@ -28894,29 +28894,29 @@ pub type PFNDSAENUMCALLBACK = ::core::option::Option<
         pData: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_Create(cbItem: ::core::ffi::c_int, cItemGrow: ::core::ffi::c_int) -> HDSA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_Destroy(hdsa: HDSA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_DestroyCallback(
         hdsa: HDSA,
         pfnCB: PFNDSAENUMCALLBACK,
         pData: *mut ::core::ffi::c_void,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_EnumCallback(hdsa: HDSA, enumProc: PFNDSAENUMCALLBACK, lParam: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_GetItemPtr(hdsa: HDSA, i: ::core::ffi::c_int) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_DeleteAllItems(hdsa: HDSA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DSA_InsertItem(
         hdsa: HDSA,
         i: ::core::ffi::c_int,
@@ -28929,22 +28929,22 @@ pub struct _DPA {
     _unused: [u8; 0],
 }
 pub type HDPA = *mut _DPA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_Create(cItemGrow: ::core::ffi::c_int) -> HDPA;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_Destroy(hdpa: HDPA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_DeletePtr(hdpa: HDPA, i: ::core::ffi::c_int) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_DeleteAllPtrs(hdpa: HDPA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_EnumCallback(hdpa: HDPA, pfnCB: PFNDPAENUMCALLBACK, pData: *mut ::core::ffi::c_void);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_DestroyCallback(
         hdpa: HDPA,
         pfnCB: PFNDPAENUMCALLBACK,
@@ -28958,10 +28958,10 @@ pub type PFNDPACOMPARE = ::core::option::Option<
         lParam: LPARAM,
     ) -> ::core::ffi::c_int,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_Sort(hdpa: HDPA, pfnCompare: PFNDPACOMPARE, lParam: LPARAM) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_Search(
         hdpa: HDPA,
         pFind: *mut ::core::ffi::c_void,
@@ -28971,10 +28971,10 @@ unsafe extern "C" {
         options: UINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Str_SetPtrA(ppsz: *mut LPSTR, psz: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Str_SetPtrW(ppsz: *mut LPWSTR, psz: LPCWSTR) -> BOOL;
 }
 #[repr(C)]
@@ -29007,7 +29007,7 @@ pub type PFNDPAMERGECONST = ::core::option::Option<
         arg4: LPARAM,
     ) -> *const ::core::ffi::c_void,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_LoadStream(
         phdpa: *mut HDPA,
         pfn: PFNDPASTREAM,
@@ -29015,7 +29015,7 @@ unsafe extern "C" {
         pvInstData: *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_SaveStream(
         hdpa: HDPA,
         pfn: PFNDPASTREAM,
@@ -29023,35 +29023,35 @@ unsafe extern "C" {
         pvInstData: *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_Grow(pdpa: HDPA, cp: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_InsertPtr(
         hdpa: HDPA,
         i: ::core::ffi::c_int,
         p: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_GetPtr(hdpa: HDPA, i: INT_PTR) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_SetPtr(hdpa: HDPA, i: ::core::ffi::c_int, p: *mut ::core::ffi::c_void) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DPA_GetPtrIndex(hdpa: HDPA, p: *const ::core::ffi::c_void) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn _TrackMouseEvent(lpEventTrack: LPTRACKMOUSEEVENT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_EnableScrollBar(arg1: HWND, arg2: ::core::ffi::c_int, arg3: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_ShowScrollBar(arg1: HWND, code: ::core::ffi::c_int, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_GetScrollRange(
         arg1: HWND,
         code: ::core::ffi::c_int,
@@ -29059,13 +29059,13 @@ unsafe extern "C" {
         arg3: LPINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_GetScrollInfo(arg1: HWND, code: ::core::ffi::c_int, arg2: LPSCROLLINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_GetScrollPos(arg1: HWND, code: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_GetScrollProp(arg1: HWND, propIndex: ::core::ffi::c_int, arg2: LPINT) -> BOOL;
 }
 unsafe extern "C" {
@@ -29075,7 +29075,7 @@ unsafe extern "C" {
         arg2: PINT_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_SetScrollPos(
         arg1: HWND,
         code: ::core::ffi::c_int,
@@ -29083,7 +29083,7 @@ unsafe extern "C" {
         fRedraw: BOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_SetScrollInfo(
         arg1: HWND,
         code: ::core::ffi::c_int,
@@ -29091,7 +29091,7 @@ unsafe extern "C" {
         fRedraw: BOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_SetScrollRange(
         arg1: HWND,
         code: ::core::ffi::c_int,
@@ -29100,13 +29100,13 @@ unsafe extern "C" {
         fRedraw: BOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FlatSB_SetScrollProp(arg1: HWND, index: UINT, newValue: INT_PTR, arg2: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitializeFlatSB(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UninitializeFlatSB(arg1: HWND) -> HRESULT;
 }
 pub type SUBCLASSPROC = ::core::option::Option<
@@ -29119,7 +29119,7 @@ pub type SUBCLASSPROC = ::core::option::Option<
         dwRefData: DWORD_PTR,
     ) -> LRESULT,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowSubclass(
         hWnd: HWND,
         pfnSubclass: SUBCLASSPROC,
@@ -29127,7 +29127,7 @@ unsafe extern "C" {
         dwRefData: DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowSubclass(
         hWnd: HWND,
         pfnSubclass: SUBCLASSPROC,
@@ -29135,17 +29135,17 @@ unsafe extern "C" {
         pdwRefData: *mut DWORD_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RemoveWindowSubclass(
         hWnd: HWND,
         pfnSubclass: SUBCLASSPROC,
         uIdSubclass: UINT_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DefSubclassProc(hWnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawShadowText(
         hdc: HDC,
         pszText: LPCWSTR,
@@ -29281,7 +29281,7 @@ pub struct _TASKDIALOGCONFIG__bindgen_ty_2 {
     pub bindgen_union_field: [u8; 8usize],
 }
 pub type TASKDIALOGCONFIG = _TASKDIALOGCONFIG;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TaskDialogIndirect(
         arg1: *const TASKDIALOGCONFIG,
         arg2: *mut ::core::ffi::c_int,
@@ -30081,7 +30081,7 @@ pub struct INewWindowManager {
 unsafe extern "C" {
     pub static IID_IEnumShellItems: GUID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumShellItems_RemoteNext_Proxy(
         This: *mut IEnumShellItems,
         celt: ULONG,
@@ -30089,7 +30089,7 @@ unsafe extern "C" {
         pceltFetched: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumShellItems_RemoteNext_Stub(
         This: *mut IRpcStubBuffer,
         pRpcChannelBuffer: *mut IRpcChannelBuffer,
@@ -30097,7 +30097,7 @@ unsafe extern "C" {
         pdwStubPhase: *mut DWORD,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumShellItems_Next_Proxy(
         This: *mut IEnumShellItems,
         celt: ULONG,
@@ -30105,7 +30105,7 @@ unsafe extern "C" {
         pceltFetched: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumShellItems_Next_Stub(
         This: *mut IEnumShellItems,
         celt: ULONG,
@@ -30128,7 +30128,7 @@ pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_NO_HDROP: DATAOBJ_GET_ITEM_FLAGS = 2;
 pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_NO_URL: DATAOBJ_GET_ITEM_FLAGS = 4;
 pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_ONLY_IF_ONE: DATAOBJ_GET_ITEM_FLAGS = 8;
 pub type DATAOBJ_GET_ITEM_FLAGS = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateItemFromParsingName(
         pszPath: PCWSTR,
         pbc: *mut IBindCtx,
@@ -30136,21 +30136,21 @@ unsafe extern "C" {
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateItemFromIDList(
         pidl: PCIDLIST_ABSOLUTE,
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetItemFromObject(
         punk: *mut IUnknown,
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellItemArray(
         pidlParent: PCIDLIST_ABSOLUTE,
         psf: *mut IShellFolder,
@@ -30159,14 +30159,14 @@ unsafe extern "C" {
         ppsiItemArray: *mut *mut IShellItemArray,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellItemArrayFromShellItem(
         psi: *mut IShellItem,
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellItemArrayFromIDLists(
         cidl: UINT,
         pidl_array: PCIDLIST_ABSOLUTE_ARRAY,
@@ -30382,14 +30382,14 @@ pub struct IFolderView2__bindgen_vtable(::core::ffi::c_void);
 pub struct IFolderView2 {
     pub vtable_: *const IFolderView2__bindgen_vtable,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IFolderView2_RemoteGetGroupBy_Proxy(
         This: *mut IFolderView2,
         pkey: *mut PROPERTYKEY,
         ascending: *mut BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IFolderView2_RemoteGetGroupBy_Stub(
         This: *mut IRpcStubBuffer,
         pRpcChannelBuffer: *mut IRpcChannelBuffer,
@@ -30397,14 +30397,14 @@ unsafe extern "C" {
         pdwStubPhase: *mut DWORD,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IFolderView2_GetGroupBy_Proxy(
         This: *mut IFolderView2,
         pkey: *mut PROPERTYKEY,
         ascending: *mut BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IFolderView2_GetGroupBy_Stub(
         This: *mut IFolderView2,
         pkey: *mut PROPERTYKEY,
@@ -30908,7 +30908,7 @@ pub struct IEnumExplorerCommand__bindgen_vtable(::core::ffi::c_void);
 pub struct IEnumExplorerCommand {
     pub vtable_: *const IEnumExplorerCommand__bindgen_vtable,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumExplorerCommand_RemoteNext_Proxy(
         This: *mut IEnumExplorerCommand,
         celt: ULONG,
@@ -30916,7 +30916,7 @@ unsafe extern "C" {
         pceltFetched: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumExplorerCommand_RemoteNext_Stub(
         This: *mut IRpcStubBuffer,
         pRpcChannelBuffer: *mut IRpcChannelBuffer,
@@ -30924,7 +30924,7 @@ unsafe extern "C" {
         pdwStubPhase: *mut DWORD,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumExplorerCommand_Next_Proxy(
         This: *mut IEnumExplorerCommand,
         celt: ULONG,
@@ -30932,7 +30932,7 @@ unsafe extern "C" {
         pceltFetched: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IEnumExplorerCommand_Next_Stub(
         This: *mut IEnumExplorerCommand,
         celt: ULONG,
@@ -31399,10 +31399,10 @@ pub struct IModalWindow__bindgen_vtable(::core::ffi::c_void);
 pub struct IModalWindow {
     pub vtable_: *const IModalWindow__bindgen_vtable,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IModalWindow_RemoteShow_Proxy(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IModalWindow_RemoteShow_Stub(
         This: *mut IRpcStubBuffer,
         pRpcChannelBuffer: *mut IRpcChannelBuffer,
@@ -31410,10 +31410,10 @@ unsafe extern "C" {
         pdwStubPhase: *mut DWORD,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IModalWindow_Show_Proxy(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IModalWindow_Show_Stub(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
 }
 pub const FDAP_FDAP_BOTTOM: FDAP = 0;
@@ -31700,7 +31700,7 @@ pub struct IEnumAssocHandlers {
 pub const ASSOC_FILTER_ASSOC_FILTER_NONE: ASSOC_FILTER = 0;
 pub const ASSOC_FILTER_ASSOC_FILTER_RECOMMENDED: ASSOC_FILTER = 1;
 pub type ASSOC_FILTER = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAssocEnumHandlers(
         extra: PCWSTR,
         filter: ASSOC_FILTER,
@@ -31895,144 +31895,144 @@ pub struct IUserAssist__bindgen_vtable(::core::ffi::c_void);
 pub struct IUserAssist {
     pub vtable_: *const IUserAssist__bindgen_vtable,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HWND_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HWND) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HWND_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HWND,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HWND_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HWND,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HWND_UserFree(arg1: *mut ULONG, arg2: *mut HWND);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VARIANT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut VARIANT) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VARIANT_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut VARIANT,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VARIANT_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut VARIANT,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VARIANT_UserFree(arg1: *mut ULONG, arg2: *mut VARIANT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BSTR_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut BSTR) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BSTR_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut BSTR,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BSTR_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut BSTR,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BSTR_UserFree(arg1: *mut ULONG, arg2: *mut BSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LPSAFEARRAY_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut LPSAFEARRAY) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LPSAFEARRAY_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut LPSAFEARRAY,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LPSAFEARRAY_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut LPSAFEARRAY,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LPSAFEARRAY_UserFree(arg1: *mut ULONG, arg2: *mut LPSAFEARRAY);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HMENU_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HMENU) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HMENU_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HMENU,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HMENU_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HMENU,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HMENU_UserFree(arg1: *mut ULONG, arg2: *mut HMENU);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HGLOBAL_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HGLOBAL) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HGLOBAL_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HGLOBAL,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HGLOBAL_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HGLOBAL,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HGLOBAL_UserFree(arg1: *mut ULONG, arg2: *mut HGLOBAL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HICON_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HICON) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HICON_UserMarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HICON,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HICON_UserUnmarshal(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut HICON,
     ) -> *mut ::core::ffi::c_uchar;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HICON_UserFree(arg1: *mut ULONG, arg2: *mut HICON);
 }
 #[repr(C)]
@@ -32100,27 +32100,27 @@ pub struct _SFVM_PROPPAGE_DATA {
 }
 pub type SFVM_PROPPAGE_DATA = _SFVM_PROPPAGE_DATA;
 pub type LPSFVM_PROPPAGE_DATA = *mut _SFVM_PROPPAGE_DATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFormatDrive(arg1: HWND, arg2: UINT, arg3: UINT, arg4: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetFolderPathA(csidl: INT, hToken: HANDLE, dwFlags: DWORD, pszPath: LPCSTR)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSlowA(pszFile: LPCSTR, dwAttr: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHILCreateFromPath(
         arg1: PCWSTR,
         arg2: *mut PIDLIST_ABSOLUTE,
         arg3: *mut DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSimpleIDListFromPath(arg1: PCWSTR) -> PIDLIST_ABSOLUTE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PickIconDlg(
         arg1: HWND,
         arg2: LPWSTR,
@@ -32128,10 +32128,10 @@ unsafe extern "C" {
         arg3: *mut ::core::ffi::c_int,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RestartDialog(arg1: HWND, arg2: LPCWSTR, arg3: DWORD) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RestartDialogEx(
         arg1: HWND,
         arg2: LPCWSTR,
@@ -32139,11 +32139,11 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHStartNetConnectionDialogA(hwnd: HWND, pszRemoteName: LPCSTR, dwType: DWORD)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMakeUniqueName(
         pszUniqueName: PWSTR,
         cchMax: UINT,
@@ -32360,7 +32360,7 @@ pub struct _CSFV {
 }
 pub type CSFV = _CSFV;
 pub type LPCSFV = *mut _CSFV;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellFolderViewEx(pshfvi: LPCSFV, ppshv: *mut *mut IShellView) -> HRESULT;
 }
 #[repr(C)]
@@ -32371,7 +32371,7 @@ pub struct _SFV_CREATE {
     pub psfvcb: *mut IShellFolderViewCB,
 }
 pub type SFV_CREATE = _SFV_CREATE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateShellFolderView(pscfv: *const SFV_CREATE, ppsv: *mut *mut IShellView)
         -> HRESULT;
 }
@@ -34184,7 +34184,7 @@ pub struct _SHChangeNotifyEntry {
     pub fRecursive: BOOL,
 }
 pub type SHChangeNotifyEntry = _SHChangeNotifyEntry;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHChangeNotify(wEventId: LONG, uFlags: UINT, dwItem1: LPCVOID, dwItem2: LPCVOID);
 }
 pub const SHELL_LINK_DATA_FLAGS_SLDF_DEFAULT: SHELL_LINK_DATA_FLAGS = 0;
@@ -34298,7 +34298,7 @@ pub struct _SHChangeProductKeyAsIDList {
 }
 pub type SHChangeProductKeyAsIDList = _SHChangeProductKeyAsIDList;
 pub type LPSHChangeProductKeyAsIDList = *mut _SHChangeProductKeyAsIDList;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHChangeNotifyRegister(
         hwnd: HWND,
         fSources: ::core::ffi::c_int,
@@ -34308,10 +34308,10 @@ unsafe extern "C" {
         pshcne: *mut SHChangeNotifyEntry,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHChangeNotifyDeregister(ulID: ULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHChangeNotification_Lock(
         hChangeNotification: HANDLE,
         dwProcessId: DWORD,
@@ -34319,10 +34319,10 @@ unsafe extern "C" {
         plEvent: *mut LONG,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHChangeNotification_Unlock(hLock: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetRealIDL(
         psf: *mut IShellFolder,
         pidlSimple: PCUITEMID_CHILD,
@@ -34332,10 +34332,10 @@ unsafe extern "C" {
 pub const SHGFP_TYPE_SHGFP_TYPE_CURRENT: SHGFP_TYPE = 0;
 pub const SHGFP_TYPE_SHGFP_TYPE_DEFAULT: SHGFP_TYPE = 1;
 pub type SHGFP_TYPE = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetDesktopFolder(arg1: *mut *mut IShellFolder) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateFileExtractIconW(
         pszFile: LPCWSTR,
         dwFileAttributes: DWORD,
@@ -34800,10 +34800,10 @@ impl CABINETSTATE {
     }
 }
 pub type LPCABINETSTATE = *mut CABINETSTATE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetShortPath(pszPath: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathProcessCommand(
         arg1: LPCWSTR,
         arg2: LPWSTR,
@@ -34831,7 +34831,7 @@ pub struct DEFCONTEXTMENU {
     pub cKeys: UINT,
     pub aKeys: *const HKEY,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateDefaultContextMenu(
         arg1: *const DEFCONTEXTMENU,
         arg2: *const IID,
@@ -34848,7 +34848,7 @@ pub type LPFNDFMCALLBACK = ::core::option::Option<
         arg6: LPARAM,
     ) -> HRESULT,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CDefFolderMenu_Create2(
         arg1: PCIDLIST_ABSOLUTE,
         arg2: HWND,
@@ -34861,13 +34861,13 @@ unsafe extern "C" {
         arg7: *mut *mut IContextMenu,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateDefaultExtractIcon(
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateDataObject(
         pidlFolder: PCIDLIST_ABSOLUTE,
         cidl: UINT,
@@ -34892,7 +34892,7 @@ pub struct tagOPENASINFO {
     pub oaifInFlags: OPEN_AS_INFO_FLAGS,
 }
 pub type OPENASINFO = tagOPENASINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenWithDialog(hwndParent: HWND, poainfo: *const OPENASINFO) -> HRESULT;
 }
 #[repr(C)]
@@ -35027,7 +35027,7 @@ pub type CALLBACKCOMMAND = ::core::ffi::c_uint;
 pub type PFMIFSCALLBACK = ::core::option::Option<
     unsafe extern "system" fn(Command: CALLBACKCOMMAND, SubAction: ULONG, ActionInfo: PVOID) -> BOOLEAN,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Chkdsk(
         DriveRoot: PWCHAR,
         Format: PWCHAR,
@@ -35040,7 +35040,7 @@ unsafe extern "C" {
         Callback: PFMIFSCALLBACK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChkdskEx(
         DriveRoot: PWCHAR,
         Format: PWCHAR,
@@ -35053,16 +35053,16 @@ unsafe extern "C" {
         Callback: PFMIFSCALLBACK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ComputeFmMediaType(MediaType: ULONG) -> FMIFS_MEDIA_FLAG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DiskCopy();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableVolumeCompression(DriveRoot: PWCHAR, Compression: USHORT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Format(
         DriveRoot: PWCHAR,
         MediaFlag: FMIFS_MEDIA_FLAG,
@@ -35072,7 +35072,7 @@ unsafe extern "C" {
         Callback: PFMIFSCALLBACK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FormatEx(
         DriveRoot: PWCHAR,
         MediaFlag: FMIFS_MEDIA_FLAG,
@@ -35083,7 +35083,7 @@ unsafe extern "C" {
         Callback: PFMIFSCALLBACK,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryAvailableFileSystemFormat(
         Index: DWORD,
         FileSystem: PWCHAR,
@@ -35092,14 +35092,14 @@ unsafe extern "C" {
         LatestVersion: *mut BOOLEAN,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryDeviceInformation(
         DriveRoot: PCWSTR,
         DeviceInformation: PVOID,
         BufferSize: ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryFileSystemName(
         DriveRoot: PWCHAR,
         FileSystem: PWCHAR,
@@ -35108,14 +35108,14 @@ unsafe extern "C" {
         Unknown4: *mut ULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QueryLatestFileSystemVersion(
         FileSystem: PWCHAR,
         Major: *mut UCHAR,
         Minor: *mut UCHAR,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn QuerySupportedMedia(
         DriveRoot: PWCHAR,
         CurrentMedia: *mut FMIFS_MEDIA_FLAG,
@@ -35123,7 +35123,7 @@ unsafe extern "C" {
         Unknown4: PULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLabel(DriveRoot: PWCHAR, Label: PWCHAR) -> BOOL;
 }
 pub type PULIB_CHKDSK = ::core::option::Option<
@@ -35359,7 +35359,7 @@ pub struct _FILEMUIINFO {
 }
 pub type FILEMUIINFO = _FILEMUIINFO;
 pub type PFILEMUIINFO = *mut _FILEMUIINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CompareStringA(
         Locale: LCID,
         dwCmpFlags: DWORD,
@@ -35369,7 +35369,7 @@ unsafe extern "C" {
         cchCount2: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CompareStringW(
         Locale: LCID,
         dwCmpFlags: DWORD,
@@ -35379,10 +35379,10 @@ unsafe extern "C" {
         cchCount2: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ConvertDefaultLocale(arg1: LCID) -> LCID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumCalendarInfoA(
         arg1: CALINFO_ENUMPROCA,
         arg2: LCID,
@@ -35390,7 +35390,7 @@ unsafe extern "C" {
         arg4: CALTYPE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumCalendarInfoW(
         arg1: CALINFO_ENUMPROCW,
         arg2: LCID,
@@ -35398,28 +35398,28 @@ unsafe extern "C" {
         arg4: CALTYPE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDateFormatsA(arg1: DATEFMT_ENUMPROCA, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDateFormatsW(arg1: DATEFMT_ENUMPROCW, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemCodePagesA(arg1: CODEPAGE_ENUMPROCA, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemCodePagesW(arg1: CODEPAGE_ENUMPROCW, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemGeoID(arg1: GEOCLASS, arg2: GEOID, arg3: GEO_ENUMPROC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemLocalesA(arg1: LOCALE_ENUMPROCA, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemLocalesW(arg1: LOCALE_ENUMPROCW, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemLocalesEx(
         lpLocaleEnumProcEx: LOCALE_ENUMPROCEX,
         dwFlags: DWORD,
@@ -35427,13 +35427,13 @@ unsafe extern "C" {
         lpReserved: LPVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumTimeFormatsA(arg1: TIMEFMT_ENUMPROCA, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumTimeFormatsW(arg1: TIMEFMT_ENUMPROCW, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNLSString(
         Locale: LCID,
         dwFindNLSStringFlags: DWORD,
@@ -35444,7 +35444,7 @@ unsafe extern "C" {
         pcchFound: LPINT,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindNLSStringEx(
         lpLocaleName: LPCWSTR,
         dwFindNLSStringFlags: DWORD,
@@ -35458,7 +35458,7 @@ unsafe extern "C" {
         sortHandle: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FoldStringA(
         dwMapFlags: DWORD,
         lpSrcStr: LPCSTR,
@@ -35467,7 +35467,7 @@ unsafe extern "C" {
         cchDest: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FoldStringW(
         dwMapFlags: DWORD,
         lpSrcStr: LPCWSTR,
@@ -35476,10 +35476,10 @@ unsafe extern "C" {
         cchDest: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetACP() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCalendarInfoA(
         Locale: LCID,
         Calendar: CALID,
@@ -35489,7 +35489,7 @@ unsafe extern "C" {
         lpValue: LPDWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCalendarInfoW(
         Locale: LCID,
         Calendar: CALID,
@@ -35499,16 +35499,16 @@ unsafe extern "C" {
         lpValue: LPDWORD,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCPInfo(arg1: UINT, arg2: LPCPINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCPInfoExA(arg1: UINT, arg2: DWORD, arg3: LPCPINFOEXA) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCPInfoExW(arg1: UINT, arg2: DWORD, arg3: LPCPINFOEXW) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrencyFormatA(
         Locale: LCID,
         dwFlags: DWORD,
@@ -35518,7 +35518,7 @@ unsafe extern "C" {
         cchCurrency: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrencyFormatW(
         Locale: LCID,
         dwFlags: DWORD,
@@ -35528,7 +35528,7 @@ unsafe extern "C" {
         cchCurrency: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDateFormatA(
         arg1: LCID,
         arg2: DWORD,
@@ -35538,7 +35538,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDateFormatW(
         arg1: LCID,
         arg2: DWORD,
@@ -35548,7 +35548,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetDateFormatEx(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -35559,7 +35559,7 @@ unsafe extern "C" {
         arg7: LPCWSTR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGeoInfoA(
         Location: GEOID,
         GeoType: GEOTYPE,
@@ -35568,7 +35568,7 @@ unsafe extern "C" {
         LangId: LANGID,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetGeoInfoW(
         Location: GEOID,
         GeoType: GEOTYPE,
@@ -35577,7 +35577,7 @@ unsafe extern "C" {
         LangId: LANGID,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLocaleInfoA(
         Locale: LCID,
         LCType: LCTYPE,
@@ -35585,7 +35585,7 @@ unsafe extern "C" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLocaleInfoW(
         Locale: LCID,
         LCType: LCTYPE,
@@ -35593,17 +35593,17 @@ unsafe extern "C" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNLSVersion(arg1: NLS_FUNCTION, arg2: LCID, arg3: LPNLSVERSIONINFO) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNLSVersionEx(
         function: NLS_FUNCTION,
         lpLocaleName: LPCWSTR,
         lpVersionInformation: LPNLSVERSIONINFOEX,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNumberFormatA(
         Locale: LCID,
         dwFlags: DWORD,
@@ -35613,7 +35613,7 @@ unsafe extern "C" {
         cchNumber: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetNumberFormatW(
         Locale: LCID,
         dwFlags: DWORD,
@@ -35623,10 +35623,10 @@ unsafe extern "C" {
         cchNumber: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetOEMCP() -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStringTypeA(
         Locale: LCID,
         dwInfoType: DWORD,
@@ -35635,7 +35635,7 @@ unsafe extern "C" {
         lpCharType: LPWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStringTypeW(
         dwInfoType: DWORD,
         lpSrcStr: LPCWSTR,
@@ -35643,7 +35643,7 @@ unsafe extern "C" {
         lpCharType: LPWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStringTypeExA(
         Locale: LCID,
         dwInfoType: DWORD,
@@ -35652,7 +35652,7 @@ unsafe extern "C" {
         lpCharType: LPWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStringTypeExW(
         Locale: LCID,
         dwInfoType: DWORD,
@@ -35661,16 +35661,16 @@ unsafe extern "C" {
         lpCharType: LPWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemDefaultLangID() -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemDefaultLCID() -> LCID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadLocale() -> LCID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTimeFormatA(
         arg1: LCID,
         arg2: DWORD,
@@ -35680,7 +35680,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTimeFormatW(
         arg1: LCID,
         arg2: DWORD,
@@ -35690,7 +35690,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetTimeFormatEx(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -35700,28 +35700,28 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserDefaultLangID() -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserDefaultLocaleName(
         lpLocaleName: LPWSTR,
         cchLocaleName: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserDefaultLCID() -> LCID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserGeoID(arg1: GEOCLASS) -> GEOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDBCSLeadByte(arg1: BYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsDBCSLeadByteEx(arg1: UINT, arg2: BYTE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsNLSDefinedString(
         Function: NLS_FUNCTION,
         dwFlags: DWORD,
@@ -35730,13 +35730,13 @@ unsafe extern "C" {
         cchStr: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidCodePage(arg1: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidLocale(arg1: LCID, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LCMapStringA(
         Locale: LCID,
         dwMapFlags: DWORD,
@@ -35746,7 +35746,7 @@ unsafe extern "C" {
         cchDest: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LCMapStringW(
         Locale: LCID,
         dwMapFlags: DWORD,
@@ -35756,7 +35756,7 @@ unsafe extern "C" {
         cchDest: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MultiByteToWideChar(
         arg1: UINT,
         arg2: DWORD,
@@ -35766,7 +35766,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCalendarInfoA(
         arg1: LCID,
         arg2: CALID,
@@ -35774,7 +35774,7 @@ unsafe extern "C" {
         arg4: LPCSTR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetCalendarInfoW(
         arg1: LCID,
         arg2: CALID,
@@ -35782,28 +35782,28 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLocaleInfoA(arg1: LCID, arg2: LCTYPE, arg3: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetLocaleInfoW(arg1: LCID, arg2: LCTYPE, arg3: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadLocale(arg1: LCID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadUILanguage(arg1: LANGID) -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserDefaultLCID(arg1: LCID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserDefaultUILanguage(arg1: LANGID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetUserGeoID(arg1: GEOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WideCharToMultiByte(
         arg1: UINT,
         arg2: DWORD,
@@ -35815,7 +35815,7 @@ unsafe extern "C" {
         arg8: LPBOOL,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumCalendarInfoExA(
         arg1: CALINFO_ENUMPROCEXA,
         arg2: LCID,
@@ -35823,7 +35823,7 @@ unsafe extern "C" {
         arg4: CALTYPE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumCalendarInfoExW(
         arg1: CALINFO_ENUMPROCEXW,
         arg2: LCID,
@@ -35831,27 +35831,27 @@ unsafe extern "C" {
         arg4: CALTYPE,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDateFormatsExA(arg1: DATEFMT_ENUMPROCEXA, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumDateFormatsExW(arg1: DATEFMT_ENUMPROCEXW, arg2: LCID, arg3: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemLanguageGroupsA(
         arg1: LANGUAGEGROUP_ENUMPROCA,
         arg2: DWORD,
         arg3: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumSystemLanguageGroupsW(
         arg1: LANGUAGEGROUP_ENUMPROCW,
         arg2: DWORD,
         arg3: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumLanguageGroupLocalesA(
         arg1: LANGGROUPLOCALE_ENUMPROCA,
         arg2: LGRPID,
@@ -35859,7 +35859,7 @@ unsafe extern "C" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumLanguageGroupLocalesW(
         arg1: LANGGROUPLOCALE_ENUMPROCW,
         arg2: LGRPID,
@@ -35867,22 +35867,22 @@ unsafe extern "C" {
         arg4: LONG_PTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumUILanguagesA(arg1: UILANGUAGE_ENUMPROCA, arg2: DWORD, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumUILanguagesW(arg1: UILANGUAGE_ENUMPROCW, arg2: DWORD, arg3: LONG_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemDefaultUILanguage() -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserDefaultUILanguage() -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidLanguageGroup(arg1: LGRPID, arg2: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileMUIInfo(
         dwFlags: DWORD,
         pcwszFilePath: PCWSTR,
@@ -35890,7 +35890,7 @@ unsafe extern "C" {
         pcbFileMUIInfo: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileMUIPath(
         dwFlags: DWORD,
         pcwszFilePath: PCWSTR,
@@ -35901,7 +35901,7 @@ unsafe extern "C" {
         pululEnumerator: PULONGLONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetLocaleInfoEx(
         lpLocaleName: LPCWSTR,
         LCType: LCTYPE,
@@ -35909,10 +35909,10 @@ unsafe extern "C" {
         cchData: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetProcessPreferredUILanguages(
         dwFlags: DWORD,
         pulNumLanguages: PULONG,
@@ -35920,7 +35920,7 @@ unsafe extern "C" {
         pcchLanguagesBuffer: PULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetSystemPreferredUILanguages(
         dwFlags: DWORD,
         pulNumLanguages: PULONG,
@@ -35928,7 +35928,7 @@ unsafe extern "C" {
         pcchLanguagesBuffer: PULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadPreferredUILanguages(
         dwFlags: DWORD,
         pulNumLanguages: PULONG,
@@ -35936,10 +35936,10 @@ unsafe extern "C" {
         pcchLanguagesBuffer: PULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThreadUILanguage() -> LANGID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUILanguageInfo(
         dwFlags: DWORD,
         pwmszLanguage: PCZZWSTR,
@@ -35948,7 +35948,7 @@ unsafe extern "C" {
         pAttributes: PDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserPreferredUILanguages(
         dwFlags: DWORD,
         pulNumLanguages: PULONG,
@@ -35956,7 +35956,7 @@ unsafe extern "C" {
         pcchLanguagesBuffer: PULONG,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IdnToAscii(
         dwFlags: DWORD,
         lpUnicodeCharStr: LPCWSTR,
@@ -35965,7 +35965,7 @@ unsafe extern "C" {
         cchASCIIChar: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IdnToNameprepUnicode(
         dwFlags: DWORD,
         lpUnicodeCharStr: LPCWSTR,
@@ -35974,7 +35974,7 @@ unsafe extern "C" {
         cchNameprepChar: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IdnToUnicode(
         dwFlags: DWORD,
         lpASCIICharStr: LPCWSTR,
@@ -35983,14 +35983,14 @@ unsafe extern "C" {
         cchUnicodeChar: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsNormalizedString(
         NormForm: NORM_FORM,
         lpString: LPCWSTR,
         cwLength: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NormalizeString(
         NormForm: NORM_FORM,
         lpSrcString: LPCWSTR,
@@ -35999,7 +35999,7 @@ unsafe extern "C" {
         cwDstLength: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetStringScripts(
         dwFlags: DWORD,
         lpString: LPCWSTR,
@@ -36008,13 +36008,13 @@ unsafe extern "C" {
         cchScripts: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetProcessPreferredUILanguages(arg1: DWORD, arg2: PCZZWSTR, arg3: PULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThreadPreferredUILanguages(arg1: DWORD, arg2: PCZZWSTR, arg3: PULONG) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerifyScripts(
         arg1: DWORD,
         arg2: LPCWSTR,
@@ -36023,7 +36023,7 @@ unsafe extern "C" {
         arg5: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LCMapStringEx(
         lpLocaleName: LPCWSTR,
         dwMapFlags: DWORD,
@@ -36036,10 +36036,10 @@ unsafe extern "C" {
         sortHandle: LPARAM,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocaleNameToLCID(arg1: LPCWSTR, arg2: DWORD) -> LCID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CompareStringOrdinal(
         arg1: *const WCHAR,
         arg2: INT,
@@ -36048,7 +36048,7 @@ unsafe extern "C" {
         arg5: BOOL,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LCIDToLocaleName(
         Locale: LCID,
         lpName: LPWSTR,
@@ -36120,13 +36120,13 @@ pub struct ATL__ATL_CATMAP_ENTRY {
     pub pcatid: *const GUID,
 }
 pub type ATL__ATL_CREATORFUNC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pv: *mut ::core::ffi::c_void,
         riid: *const IID,
         ppv: *mut LPVOID,
     ) -> HRESULT,
 >;
-pub type ATL__ATL_DESCRIPTIONFUNC = ::core::option::Option<unsafe extern "C" fn() -> LPCTSTR>;
+pub type ATL__ATL_DESCRIPTIONFUNC = ::core::option::Option<unsafe extern "system" fn() -> LPCTSTR>;
 pub type ATL__ATL_CATMAPFUNC =
     ::core::option::Option<unsafe extern "C" fn() -> *const ATL__ATL_CATMAP_ENTRY>;
 #[repr(C)]
@@ -36142,7 +36142,7 @@ pub struct ATL__ATL_OBJMAP_ENTRY30 {
     pub pfnObjectMain: ::core::option::Option<unsafe extern "system" fn(bStarting: bool)>,
 }
 pub type ATL__ATL_OBJMAP_ENTRY = ATL__ATL_OBJMAP_ENTRY30;
-pub type ATL__ATL_TERMFUNC = ::core::option::Option<unsafe extern "C" fn(dw: DWORD_PTR)>;
+pub type ATL__ATL_TERMFUNC = ::core::option::Option<unsafe extern "system" fn(dw: DWORD_PTR)>;
 #[repr(C)]
 pub struct ATL__ATL_TERMFUNC_ELEM {
     pub pFunc: ATL__ATL_TERMFUNC,
@@ -36158,7 +36158,7 @@ pub struct ATL__ATL_MODULE70 {
 }
 pub type ATL__ATL_MODULE = ATL__ATL_MODULE70;
 pub type ATL__ATL_CREATORARGFUNC = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         pv: *mut ::core::ffi::c_void,
         riid: *const IID,
         ppv: *mut LPVOID,
@@ -36896,7 +36896,7 @@ pub type PWRSCHEMESENUMPROC = ::core::option::Option<
 >;
 pub type HPOWERNOTIFY = PVOID;
 pub type PHPOWERNOTIFY = *mut PVOID;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CallNtPowerInformation(
         arg1: POWER_INFORMATION_LEVEL,
         arg2: PVOID,
@@ -36905,40 +36905,40 @@ unsafe extern "C" {
         arg5: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CanUserWritePwrScheme() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeletePwrScheme(arg1: UINT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumPwrSchemes(arg1: PWRSCHEMESENUMPROC, arg2: LPARAM) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetActivePwrScheme(arg1: PUINT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentPowerPolicies(arg1: PGLOBAL_POWER_POLICY, arg2: PPOWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPwrCapabilities(arg1: PSYSTEM_POWER_CAPABILITIES) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetPwrDiskSpindownRange(arg1: PUINT, arg2: PUINT) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsAdminOverrideActive(arg1: PADMINISTRATOR_POWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsPwrHibernateAllowed() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsPwrShutdownAllowed() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsPwrSuspendAllowed() -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerEnumerate(
         arg1: HKEY,
         arg2: *const GUID,
@@ -36949,17 +36949,17 @@ unsafe extern "C" {
         arg7: *mut DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerRegisterSuspendResumeNotification(
         arg1: DWORD,
         arg2: HANDLE,
         arg3: PHPOWERNOTIFY,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerUnregisterSuspendResumeNotification(arg1: HPOWERNOTIFY) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerSettingRegisterNotification(
         arg1: *const GUID,
         arg2: DWORD,
@@ -36967,10 +36967,10 @@ unsafe extern "C" {
         arg4: PHPOWERNOTIFY,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerSettingUnregisterNotification(arg1: HPOWERNOTIFY) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerWriteACValueIndex(
         arg1: HKEY,
         arg2: *const GUID,
@@ -36979,38 +36979,38 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadGlobalPwrPolicy(arg1: PGLOBAL_POWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadProcessorPwrScheme(arg1: UINT, arg2: PMACHINE_PROCESSOR_POWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ReadPwrScheme(arg1: UINT, arg2: PPOWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetActivePwrScheme(
         arg1: UINT,
         arg2: PGLOBAL_POWER_POLICY,
         arg3: PPOWER_POLICY,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetSuspendState(arg1: BOOLEAN, arg2: BOOLEAN, arg3: BOOLEAN) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteGlobalPwrPolicy(arg1: PGLOBAL_POWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WriteProcessorPwrScheme(arg1: UINT, arg2: PMACHINE_PROCESSOR_POWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ValidatePowerPolicies(arg1: PGLOBAL_POWER_POLICY, arg2: PPOWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WritePwrScheme(arg1: PUINT, arg2: LPWSTR, arg3: LPWSTR, arg4: PPOWER_POLICY) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PowerDeterminePlatformRole() -> POWER_PLATFORM_ROLE;
 }
 #[repr(C)]
@@ -37150,13 +37150,13 @@ pub struct _NETCONNECTINFOSTRUCT {
 }
 pub type NETCONNECTINFOSTRUCT = _NETCONNECTINFOSTRUCT;
 pub type LPNETCONNECTINFOSTRUCT = *mut _NETCONNECTINFOSTRUCT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnectionA(arg1: LPCSTR, arg2: LPCSTR, arg3: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnectionW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnection2A(
         arg1: LPNETRESOURCEA,
         arg2: LPCSTR,
@@ -37164,7 +37164,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnection2W(
         arg1: LPNETRESOURCEW,
         arg2: LPCWSTR,
@@ -37172,7 +37172,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnection3A(
         arg1: HWND,
         arg2: LPNETRESOURCEA,
@@ -37181,7 +37181,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetAddConnection3W(
         arg1: HWND,
         arg2: LPNETRESOURCEW,
@@ -37190,33 +37190,33 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCancelConnectionA(arg1: LPCSTR, arg2: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCancelConnectionW(arg1: LPCWSTR, arg2: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCancelConnection2A(arg1: LPCSTR, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCancelConnection2W(arg1: LPCWSTR, arg2: DWORD, arg3: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetConnectionA(
         lpLocalName: LPCSTR,
         lpRemoteName: LPSTR,
         lpnLength: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetConnectionW(
         lpLocalName: LPCWSTR,
         lpRemoteName: LPWSTR,
         lpnLength: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetUseConnectionA(
         hwndOwner: HWND,
         lpNetResource: LPNETRESOURCEA,
@@ -37228,7 +37228,7 @@ unsafe extern "C" {
         lpResult: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetUseConnectionW(
         hwndOwner: HWND,
         lpNetResource: LPNETRESOURCEW,
@@ -37240,31 +37240,31 @@ unsafe extern "C" {
         lpResult: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetSetConnectionA(arg1: LPCSTR, arg2: DWORD, arg3: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetSetConnectionW(arg1: LPCWSTR, arg2: DWORD, arg3: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetConnectionDialog(arg1: HWND, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetDisconnectDialog(arg1: HWND, arg2: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetConnectionDialog1A(arg1: LPCONNECTDLGSTRUCTA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetConnectionDialog1W(arg1: LPCONNECTDLGSTRUCTW) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetDisconnectDialog1A(arg1: LPDISCDLGSTRUCTA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetDisconnectDialog1W(arg1: LPDISCDLGSTRUCTW) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetOpenEnumA(
         arg1: DWORD,
         arg2: DWORD,
@@ -37273,7 +37273,7 @@ unsafe extern "C" {
         arg5: LPHANDLE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetOpenEnumW(
         arg1: DWORD,
         arg2: DWORD,
@@ -37282,7 +37282,7 @@ unsafe extern "C" {
         arg5: LPHANDLE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetEnumResourceA(
         hEnum: HANDLE,
         lpcCount: LPDWORD,
@@ -37290,7 +37290,7 @@ unsafe extern "C" {
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetEnumResourceW(
         hEnum: HANDLE,
         lpcCount: LPDWORD,
@@ -37298,10 +37298,10 @@ unsafe extern "C" {
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCloseEnum(arg1: HANDLE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetUniversalNameA(
         lpLocalPath: LPCSTR,
         dwInfoLevel: DWORD,
@@ -37309,7 +37309,7 @@ unsafe extern "C" {
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetUniversalNameW(
         lpLocalPath: LPCWSTR,
         dwInfoLevel: DWORD,
@@ -37317,33 +37317,33 @@ unsafe extern "C" {
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetUserA(lpName: LPCSTR, lpUserName: LPSTR, lpnLength: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetUserW(lpName: LPCWSTR, lpUserName: LPWSTR, lpnLength: LPDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetProviderNameA(
         dwNetType: DWORD,
         lpProviderName: LPSTR,
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetProviderNameW(
         dwNetType: DWORD,
         lpProviderName: LPWSTR,
         lpBufferSize: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetNetworkInformationA(arg1: LPCSTR, arg2: LPNETINFOSTRUCT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetNetworkInformationW(arg1: LPCWSTR, arg2: LPNETINFOSTRUCT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetResourceInformationA(
         lpNetResource: LPNETRESOURCEA,
         lpBuffer: LPVOID,
@@ -37351,7 +37351,7 @@ unsafe extern "C" {
         lplpSystem: *mut LPSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetResourceInformationW(
         lpNetResource: LPNETRESOURCEW,
         lpBuffer: LPVOID,
@@ -37359,7 +37359,7 @@ unsafe extern "C" {
         lplpSystem: *mut LPWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetLastErrorA(
         lpError: LPDWORD,
         lpErrorBuf: LPSTR,
@@ -37368,7 +37368,7 @@ unsafe extern "C" {
         nNameBufSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetLastErrorW(
         lpError: LPDWORD,
         lpErrorBuf: LPWSTR,
@@ -37377,19 +37377,19 @@ unsafe extern "C" {
         nNameBufSize: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetRestoreConnectionA(arg1: HWND, arg2: LPCSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetRestoreConnectionW(arg1: HWND, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MultinetGetConnectionPerformanceA(
         arg1: LPNETRESOURCEA,
         arg2: LPNETCONNECTINFOSTRUCT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MultinetGetConnectionPerformanceW(
         arg1: LPNETRESOURCEW,
         arg2: LPNETCONNECTINFOSTRUCT,
@@ -37408,7 +37408,7 @@ pub type PASSWORD_CACHE_ENTRY = tagPASSWORD_CACHE_ENTRY;
 pub type ENUMPASSWORDPROC = ::core::option::Option<
     unsafe extern "system" fn(arg1: *mut PASSWORD_CACHE_ENTRY, arg2: DWORD) -> BOOL,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetCachePassword(
         arg1: LPSTR,
         arg2: WORD,
@@ -37418,7 +37418,7 @@ unsafe extern "C" {
         arg6: WORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetEnumCachedPasswords(
         arg1: LPSTR,
         arg2: WORD,
@@ -37427,7 +37427,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn WNetGetCachedPassword(
         arg1: LPSTR,
         arg2: WORD,
@@ -37504,13 +37504,13 @@ pub struct _MRUINFOW {
 }
 pub type MRUINFOW = _MRUINFOW;
 pub type LPMRUINFOW = *mut _MRUINFOW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMRUListA(arg1: LPMRUINFOA) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMRUListW(arg1: LPMRUINFOW) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMRUListLazyW(
         lpcml: *const MRUINFOW,
         dwParam2: DWORD,
@@ -37518,7 +37518,7 @@ unsafe extern "C" {
         dwParam4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CreateMRUListLazyA(
         lpcml: *const MRUINFOA,
         dwParam2: DWORD,
@@ -37526,34 +37526,34 @@ unsafe extern "C" {
         dwParam4: DWORD,
     ) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddMRUData(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddMRUStringA(hList: HANDLE, lpszString: LPCSTR) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn AddMRUStringW(hList: HANDLE, lpszString: LPCWSTR) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumMRUListA(hList: HANDLE, nItemPos: INT, lpBuffer: LPVOID, nBufferSize: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumMRUListW(hList: HANDLE, nItemPos: INT, lpBuffer: LPVOID, nBufferSize: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindMRUData(arg1: HANDLE, arg2: LPCVOID, arg3: DWORD, arg4: LPINT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindMRUStringW(hList: HANDLE, lpszString: LPCWSTR, lpRegNum: LPINT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FindMRUStringA(hList: HANDLE, lpszString: LPCSTR, lpRegNum: LPINT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DelMRUString(hList: HANDLE, nItemPos: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FreeMRUList(arg1: HANDLE);
 }
 pub type FN_CreateMRUListA =
@@ -37588,10 +37588,10 @@ pub type FN_FindMRUStringW =
 pub type FN_DelMRUString =
     ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE, arg2: INT) -> BOOL>;
 pub type FN_FreeMRUList = ::core::option::Option<unsafe extern "system" fn(arg1: HANDLE) -> INT>;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_GetFlags(himl: HIMAGELIST) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ImageList_SetFlags(himl: HIMAGELIST, flags: DWORD) -> BOOL;
 }
 unsafe extern "C" {
@@ -38053,19 +38053,19 @@ pub struct tagPOLICYDATA {
 }
 pub type POLICYDATA = tagPOLICYDATA;
 pub type LPPOLICYDATA = *mut tagPOLICYDATA;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGlobalCounterCreate(guid: *const GUID) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInterlockedCompareExchange(dest: *mut PVOID, xchg: PVOID, compare: PVOID) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGlobalCounterGetValue(hGlobalCounter: HANDLE) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGlobalCounterIncrement(hGlobalCounter: HANDLE) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRestrictionLookup(
         policy: DWORD,
         key: LPCWSTR,
@@ -38073,19 +38073,19 @@ unsafe extern "C" {
         polArr: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAboutInfoA(lpszDest: LPSTR, dwDestLen: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAboutInfoW(lpszDest: LPWSTR, dwDestLen: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CLSIDFromStringWrap(idstr: LPCWSTR, id: *mut CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPinDllOfCLSID(refiid: *const IID) -> HMODULE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_QueryStatus(
         lpUnknown: *mut IUnknown,
         pguidCmdGroup: *const GUID,
@@ -38094,7 +38094,7 @@ unsafe extern "C" {
         pCmdText: *mut OLECMDTEXT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_Exec(
         lpUnknown: *mut IUnknown,
         pguidCmdGroup: *const GUID,
@@ -38104,13 +38104,13 @@ unsafe extern "C" {
         pvaOut: *mut VARIANT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetWindowBits(hwnd: HWND, offset: INT, wMask: UINT, wFlags: UINT) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetParentHwnd(hWnd: HWND, hWndParent: HWND) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ConnectToConnectionPoint(
         lpUnkSink: *mut IUnknown,
         riid: *const IID,
@@ -38120,13 +38120,13 @@ unsafe extern "C" {
         lppCP: *mut *mut IConnectionPoint,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsSameObject(lpInt1: *mut IUnknown, lpInt2: *mut IUnknown) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLoadMenuPopup(hInst: HINSTANCE, szName: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropagateMessage(
         hWnd: HWND,
         uiMsgId: UINT,
@@ -38135,19 +38135,19 @@ unsafe extern "C" {
         bSend: BOOL,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRemoveAllSubMenus(hMenu: HMENU) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnableMenuItem(hMenu: HMENU, wItemID: UINT, bEnable: BOOL) -> UINT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCheckMenuItem(hMenu: HMENU, uID: UINT, bCheck: BOOL) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegisterClassA(wndclass: *mut WNDCLASSA) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSimulateDrop(
         pDrop: *mut IDropTarget,
         pDataObj: *mut IDataObject,
@@ -38156,28 +38156,28 @@ unsafe extern "C" {
         pdwEffect: *mut DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetCurColorRes() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetMenuFromID(hMenu: HMENU, uID: UINT) -> HMENU;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHMenuIndexFromID(hMenu: HMENU, uID: UINT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHWaitForSendMessageThread(hand: HANDLE, dwTimeout: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSendMessageBroadcastW(uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsExpandableFolder(lpFolder: LPSHELLFOLDER, pidl: LPCITEMIDLIST) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFillRectClr(hDC: HDC, pRect: LPCRECT, cRef: COLORREF) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSearchMapInt(
         lpKeys: *const ::core::ffi::c_int,
         lpValues: *const ::core::ffi::c_int,
@@ -38185,7 +38185,7 @@ unsafe extern "C" {
         iKey: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MayQSForward(
         lpUnknown: *mut IUnknown,
         nUnknown: INT,
@@ -38195,7 +38195,7 @@ unsafe extern "C" {
         pCmdText: *mut OLECMDTEXT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn MayExecForward(
         lpUnknown: *mut IUnknown,
         nUnknown: INT,
@@ -38206,13 +38206,13 @@ unsafe extern "C" {
         pvaOut: *mut VARIANT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsQSForward(pguidCmdGroup: *const GUID, cCmds: ULONG, prgCmds: *mut OLECMD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsChildOrSelf(hParent: HWND, hChild: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHForwardContextMenuMsg(
         pUnk: *mut IUnknown,
         uMsg: UINT,
@@ -38222,13 +38222,13 @@ unsafe extern "C" {
         useIContextMenu2: BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetDefaultDialogFont(hWnd: HWND, id: INT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHBoolSystemParametersInfo(uiAction: UINT, pvParam: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRegGetCLSIDKeyW(
         guid: *const GUID,
         lpszValue: LPCWSTR,
@@ -38237,25 +38237,25 @@ unsafe extern "C" {
         phKey: PHKEY,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAddDataBlock(lppList: *mut LPDBLIST, lpNewItem: *const DATABLOCK_HEADER) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRemoveDataBlock(lppList: *mut LPDBLIST, dwSignature: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFindDataBlock(lpList: LPDBLIST, dwSignature: DWORD) -> *mut DATABLOCK_HEADER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHWriteDataBlockList(lpStream: *mut IStream, lpList: LPDBLIST) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHReadDataBlockList(lpStream: *mut IStream, lppList: *mut LPDBLIST) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFreeDataBlockList(lpList: LPDBLIST);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegCreateKeyExWrapW(
         hKey: HKEY,
         lpSubKey: LPCWSTR,
@@ -38268,13 +38268,13 @@ unsafe extern "C" {
         lpdwDisposition: LPDWORD,
     ) -> LONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHExpandEnvironmentStringsA(arg1: LPCSTR, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHExpandEnvironmentStringsW(arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHExpandEnvironmentStringsForUserA(
         arg1: HANDLE,
         arg2: LPCSTR,
@@ -38282,7 +38282,7 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHExpandEnvironmentStringsForUserW(
         arg1: HANDLE,
         arg2: LPCWSTR,
@@ -38290,17 +38290,17 @@ unsafe extern "C" {
         arg4: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsEmptyStream(arg1: *mut IStream) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInvokeDefaultCommand(
         arg1: HWND,
         arg2: *mut IShellFolder,
         arg3: LPCITEMIDLIST,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadType(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
@@ -38308,56 +38308,56 @@ unsafe extern "C" {
         vt: VARTYPE,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadBOOL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pbValue: *mut BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadBOOLOld(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         bDefValue: BOOL,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadSHORT(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         psValue: *mut SHORT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadInt(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pnValue: LPINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadLONG(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pValue: LPLONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadDWORD(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pdwValue: *mut DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadBSTR(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pbstr: *mut BSTR,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadStr(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
@@ -38365,132 +38365,132 @@ unsafe extern "C" {
         cchMax: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadPOINTL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pptl: *mut POINTL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadPOINTS(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         ppts: *mut POINTS,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadRECTL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         prcl: *mut RECTL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadGUID(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pguid: *mut GUID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_ReadStream(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         ppStream: *mut *mut IStream,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetPerScreenResName(pszBuffer: LPWSTR, cchBuffer: INT, dwReserved: DWORD) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_Delete(ppb: *mut IPropertyBag, pszPropName: LPCWSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteBOOL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         bValue: BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteSHORT(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         sValue: SHORT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteInt(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         nValue: INT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteLONG(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         lValue: LONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteDWORD(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         dwValue: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteStr(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pszValue: LPCWSTR,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteGUID(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pguid: *const GUID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteStream(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pStream: *mut IStream,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WritePOINTL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         pptl: *const POINTL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WritePOINTS(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         ppts: *const POINTS,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPropertyBag_WriteRECTL(
         ppb: *mut IPropertyBag,
         pszPropName: LPCWSTR,
         prcl: *const RECTL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreatePropertyBagOnMemory(
         dwMode: DWORD,
         riid: *const IID,
         ppvObj: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreatePropertyBagOnRegKey(
         hKey: HKEY,
         pszSubKey: LPCWSTR,
@@ -38499,7 +38499,7 @@ unsafe extern "C" {
         ppvObj: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreatePropertyBagOnProfileSection(
         lpFileName: LPCWSTR,
         pszSection: LPCWSTR,
@@ -38508,7 +38508,7 @@ unsafe extern "C" {
         ppvObj: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_QueryServicePropertyBag(
         punk: *mut IUnknown,
         flags: ::core::ffi::c_long,
@@ -38516,7 +38516,7 @@ unsafe extern "C" {
         ppvObj: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateWorkerWindowA(
         wndProc: WNDPROC,
         hWndParent: HWND,
@@ -38526,7 +38526,7 @@ unsafe extern "C" {
         wnd_extra: LONG_PTR,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateWorkerWindowW(
         wndProc: WNDPROC,
         hWndParent: HWND,
@@ -38536,13 +38536,13 @@ unsafe extern "C" {
         wnd_extra: LONG_PTR,
     ) -> HWND;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_SetOwner(iface: *mut IUnknown, pUnk: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_GetClassID(lpUnknown: *mut IUnknown, lpClassId: *mut CLSID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_QueryServiceExec(
         lpUnknown: *mut IUnknown,
         service: *const IID,
@@ -38553,20 +38553,20 @@ unsafe extern "C" {
         pOut: *mut VARIANT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_UIActivateIO(unknown: *mut IUnknown, activate: BOOL, msg: LPMSG) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_TranslateAcceleratorOCS(
         lpUnknown: *mut IUnknown,
         lpMsg: LPMSG,
         dwModifiers: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_OnFocusOCS(lpUnknown: *mut IUnknown, fGotFocus: BOOL) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_HandleIRestrict(
         lpUnknown: LPUNKNOWN,
         lpArg1: PVOID,
@@ -38575,26 +38575,26 @@ unsafe extern "C" {
         lpArg4: PVOID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_HasFocusIO(punk: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_TranslateAcceleratorIO(punk: *mut IUnknown, pmsg: *mut MSG) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_OnFocusChangeIS(
         lpUnknown: LPUNKNOWN,
         pFocusObject: LPUNKNOWN,
         bFocus: BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAnsiToUnicode(lpSrcStr: LPCSTR, lpDstStr: LPWSTR, iLen: INT) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHUnicodeToAnsi(lpSrcStr: LPCWSTR, lpDstStr: LPSTR, iLen: INT) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHAnsiToUnicodeCP(
         dwCp: DWORD,
         lpSrcStr: LPCSTR,
@@ -38602,7 +38602,7 @@ unsafe extern "C" {
         iLen: ::core::ffi::c_int,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHUnicodeToAnsiCP(
         CodePage: UINT,
         lpSrcStr: LPCWSTR,
@@ -38610,10 +38610,10 @@ unsafe extern "C" {
         dstlen: ::core::ffi::c_int,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLockSharedEx(hData: HANDLE, dwProcessId: DWORD, bWriteAccess: BOOL) -> PVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetValueGoodBootA(
         hkey: HKEY,
         pSubKey: LPCSTR,
@@ -38623,7 +38623,7 @@ unsafe extern "C" {
         pbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetValueGoodBootW(
         hkey: HKEY,
         pSubKey: LPCWSTR,
@@ -38633,13 +38633,13 @@ unsafe extern "C" {
         pbData: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLoadRegUIStringA(hkey: HKEY, value: LPCSTR, buf: LPSTR, size: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHLoadRegUIStringW(hkey: HKEY, value: LPCWSTR, buf: LPWSTR, size: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetIniStringW(
         appName: LPCWSTR,
         keyName: LPCWSTR,
@@ -38648,7 +38648,7 @@ unsafe extern "C" {
         filename: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetIniStringW(
         appName: LPCWSTR,
         keyName: LPCWSTR,
@@ -38656,7 +38656,7 @@ unsafe extern "C" {
         filename: LPCWSTR,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetIniStringUTF7W(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -38665,7 +38665,7 @@ unsafe extern "C" {
         lpFileName: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetIniStringUTF7W(
         lpAppName: LPCWSTR,
         lpKeyName: LPCWSTR,
@@ -38687,7 +38687,7 @@ pub const _shellkey_flags_SHKEY_Subkey_Volatile: _shellkey_flags = 16384;
 pub const _shellkey_flags_SHKEY_Subkey_MUICache: _shellkey_flags = 20480;
 pub const _shellkey_flags_SHKEY_Subkey_FileExts: _shellkey_flags = 24576;
 pub type _shellkey_flags = ::core::ffi::c_uint;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetShellKey(flags: DWORD, sub_key: LPCWSTR, create: BOOL) -> HKEY;
 }
 unsafe extern "C" {
@@ -38700,42 +38700,42 @@ unsafe extern "C" {
         ...
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsDefExtW(lpszPath: LPWSTR, dwWhich: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsDefExtAndAttributesW(
         pszPath: LPWSTR,
         dwWhich: DWORD,
         pdwFileAttributes: LPDWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindOnPathExW(
         lpszFile: LPWSTR,
         lppszOtherDirs: *mut LPCWSTR,
         dwWhich: DWORD,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FixSlashesAndColonW(arg1: LPWSTR);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsValidCharA(c: ::core::ffi::c_char, dwClass: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsValidCharW(c: WCHAR, dwClass: DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetPathFromIDListWrapW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsAndAttributesA(lpszPath: LPCSTR, dwAttr: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFileExistsAndAttributesW(lpszPath: LPCWSTR, dwAttr: *mut DWORD) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IContextMenu_Invoke(
         pContextMenu: *mut IContextMenu,
         hwnd: HWND,
@@ -38743,10 +38743,10 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RunRegCommand(hWnd: HWND, hKey: HKEY, pszSubKey: PCWSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RunIndirectRegCommand(
         hWnd: HWND,
         hKey: HKEY,
@@ -38754,13 +38754,13 @@ unsafe extern "C" {
         pszVerb: PCWSTR,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHRunIndirectRegClientCommand(hWnd: HWND, pszClientType: PCWSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetObjectCompatFlags(pUnk: *mut IUnknown, clsid: *const CLSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetAppCompatFlags(dwMask: DWORD) -> DWORD;
 }
 #[repr(C)]
@@ -39062,13 +39062,13 @@ pub struct IAssociationArray__bindgen_vtable(::core::ffi::c_void);
 pub struct IAssociationArray {
     pub vtable_: *const IAssociationArray__bindgen_vtable,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateDesktop(arg1: *mut IShellDesktopTray) -> HANDLE;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDesktopMessageLoop(arg1: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateFileDataObject(
         pidlFolder: PCIDLIST_ABSOLUTE,
         cidl: UINT,
@@ -39077,7 +39077,7 @@ unsafe extern "C" {
         ppDataObj: *mut *mut IDataObject,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IShellFolder_GetDisplayNameOf(
         psf: *mut IShellFolder,
         pidl: LPCITEMIDLIST,
@@ -39086,7 +39086,7 @@ unsafe extern "C" {
         dwRetryFlags: DWORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IShellFolder_ParseDisplayName(
         psf: *mut IShellFolder,
         hwndOwner: HWND,
@@ -39097,7 +39097,7 @@ unsafe extern "C" {
         pdwAttributes: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IShellFolder_CompareIDs(
         psf: *mut IShellFolder,
         lParam: LPARAM,
@@ -39356,26 +39356,26 @@ unsafe extern "C" {
         ...
     ) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryRecycleBinA(pszRootPath: LPCSTR, pSHQueryRBInfo: LPSHQUERYRBINFO) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHQueryRecycleBinW(pszRootPath: LPCWSTR, pSHQueryRBInfo: LPSHQUERYRBINFO) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEmptyRecycleBinA(hwnd: HWND, pszRootPath: LPCSTR, dwFlags: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEmptyRecycleBinW(hwnd: HWND, pszRootPath: LPCWSTR, dwFlags: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHSetUnreadMailCountW(
         pszMailAddress: PCWSTR,
         dwCount: DWORD,
         pszShellExecuteCommand: PCWSTR,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumerateUnreadMailAccountsW(
         hKeyUser: HKEY,
         dwIndex: DWORD,
@@ -39383,7 +39383,7 @@ unsafe extern "C" {
         cchMailAddress: INT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetUnreadMailCountW(
         hKeyUser: HKEY,
         pszMailAddress: PCWSTR,
@@ -39517,7 +39517,7 @@ pub struct _TRAYNOTIFYDATAW {
 }
 pub type TRAYNOTIFYDATAW = _TRAYNOTIFYDATAW;
 pub type PTRAYNOTIFYDATAW = *mut _TRAYNOTIFYDATAW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DisplayNameOfW(
         psf: *mut IShellFolder,
         pidl: LPCITEMIDLIST,
@@ -39526,7 +39526,7 @@ unsafe extern "C" {
         cchBuf: UINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInvokeCommand(
         hWnd: HWND,
         lpFolder: *mut IShellFolder,
@@ -39534,7 +39534,7 @@ unsafe extern "C" {
         lpVerb: LPCSTR,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInvokeCommandOnContextMenu(
         hWnd: HWND,
         pUnk: *mut IUnknown,
@@ -39549,7 +39549,7 @@ pub struct _SHCNF_PRINTJOB_INFO {
 }
 pub type SHCNF_PRINTJOB_INFO = _SHCNF_PRINTJOB_INFO;
 pub type PSHCNF_PRINTJOB_INFO = *mut _SHCNF_PRINTJOB_INFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHUpdateRecycleBinIcon() -> HRESULT;
 }
 #[repr(C)]
@@ -39565,7 +39565,7 @@ pub type LPNMRUNFILEDLGW = *mut _NMRUNFILEDLGW;
 pub type NMRUNFILEDLG = NMRUNFILEDLGW;
 pub type PNMRUNFILEDLG = PNMRUNFILEDLGW;
 pub type LPNMRUNFILEDLG = LPNMRUNFILEDLGW;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RunFileDlg(
         hWndOwner: HWND,
         hIcon: HICON,
@@ -39575,22 +39575,22 @@ unsafe extern "C" {
         uFlags: UINT,
     );
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LogoffWindowsDialog(hWndOwner: HWND) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExitWindowsDialog(hWndOwner: HWND);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedSearch: LPCITEMIDLIST) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHShouldShowWizards(pUnknown: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsTempDisplayMode() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetUserDisplayName(pName: PWSTR, puSize: PULONG) -> HRESULT;
 }
 #[repr(C)]
@@ -39599,7 +39599,7 @@ pub struct CWTESTPATHSTRUCT {
     pub idl: ITEMIDLIST,
 }
 pub type LPCWTESTPATHSTRUCT = *mut CWTESTPATHSTRUCT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetFileIcon(
         dwReserved: DWORD,
         lpszPath: LPCSTR,
@@ -39607,7 +39607,7 @@ unsafe extern "C" {
         uFlags: UINT,
     ) -> HICON;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ExtractIconResInfoA(
         hHandle: HANDLE,
         lpFileName: LPCSTR,
@@ -39616,7 +39616,7 @@ unsafe extern "C" {
         lpIcon: LPHANDLE,
     ) -> WORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileMenu_AppendItem(
         hMenu: HMENU,
         lpszText: LPCSTR,
@@ -39629,76 +39629,76 @@ unsafe extern "C" {
 pub type LPFNFMCALLBACK = ::core::option::Option<
     unsafe extern "system" fn(pidlFolder: LPCITEMIDLIST, pidlFile: LPCITEMIDLIST),
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FileMenu_DeleteMenuItemByFirstID(hMenu: HMENU, uID: UINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathCombineAW(szDest: LPVOID, lpszDir: LPCVOID, lpszFile: LPCVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathAddBackslashAW(path: LPVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathBuildRootAW(lpszPath: LPVOID, drive: ::core::ffi::c_int) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindExtensionAW(path: LPCVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindFileNameAW(path: LPCVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetExtensionAW(lpszPath: LPCVOID, void1: DWORD, void2: DWORD) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathGetArgsAW(lpszPath: LPVOID) -> LPVOID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveBlanksAW(lpszPath: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathQuoteSpacesAW(path: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathUnquoteSpacesAW(lpszPath: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsUNCAW(lpszPath: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsRelativeAW(lpszPath: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsDirectoryAW(lpszPath: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathMatchSpecAW(lpszPath: LPVOID, lpszSpec: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathSetDlgItemPathAW(hDlg: HWND, nIDDlgItem: ::core::ffi::c_int, lpszPath: LPCVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripPathAW(lpszPath: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathStripToRootAW(lpszPath: LPVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveArgsAW(lpszPath: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathRemoveExtensionAW(lpszPath: LPVOID);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathParseIconLocationAW(lpszPath: LPVOID) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsSameRootAW(lpszPath1: LPCVOID, lpszPath2: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathFindOnPathAW(sFile: LPVOID, sOtherDirs: *mut LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn PathIsEqualOrSubFolder(pszFile1OrCSIDL: LPCWSTR, pszFile2: LPCWSTR) -> BOOL;
 }
 #[repr(C)]
@@ -39749,10 +39749,10 @@ pub struct SFVCOLUMNINFO {
     pub lpText: STRRET,
 }
 pub type LPSFVCOLUMNINFO = *mut SFVCOLUMNINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RegenerateUserEnvironment(lpEnvironment: *mut LPVOID, bUpdateSelf: BOOL) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShellExec_RunDLL(hwnd: HWND, hInstance: HINSTANCE, pszCmdLine: PCSTR, nCmdShow: INT);
 }
 pub type LPFNCDCOCALLBACK = ::core::option::Option<
@@ -39762,7 +39762,7 @@ pub type LPFNCDCOCALLBACK = ::core::option::Option<
         ppvObject: *mut LPVOID,
     ) -> HRESULT,
 >;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateDefClassObject(
         riidFactory: *const IID,
         ppvFactory: *mut LPVOID,
@@ -39771,25 +39771,25 @@ unsafe extern "C" {
         riidObject: *const IID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInitRestricted(unused: LPCVOID, inpRegKey: LPCVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreatePropertyBag(riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRStrA(pszSrc: PCSTR, pszLast: PCSTR, pszSearch: PCSTR) -> PSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn StrRStrW(pszSrc: PCWSTR, pszLast: PCWSTR, pszSearch: PCWSTR) -> PWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SheRemoveQuotesA(psz: LPSTR) -> LPSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SheRemoveQuotesW(psz: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Int64ToString(
         llValue: LONGLONG,
         pszOut: LPWSTR,
@@ -39799,7 +39799,7 @@ unsafe extern "C" {
         dwNumberFlags: DWORD,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LargeIntegerToString(
         pLargeInt: *const LARGE_INTEGER,
         pszOut: LPWSTR,
@@ -39809,37 +39809,37 @@ unsafe extern "C" {
         dwNumberFlags: DWORD,
     ) -> INT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShortSizeFormatW(dwNumber: DWORD, pszBuffer: LPWSTR) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenEffectiveToken(phToken: LPHANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetUserSessionId(hToken: HANDLE) -> DWORD;
 }
 pub type PRIVILEGED_FUNCTION =
     ::core::option::Option<unsafe extern "system" fn(lParam: LPARAM) -> HRESULT>;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHInvokePrivilegedFunctionW(
         pszName: LPCWSTR,
         fn_: PRIVILEGED_FUNCTION,
         lParam: LPARAM,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHTestTokenPrivilegeW(hToken: HANDLE, lpName: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsSuspendAllowed() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Activate_RunDLL(hwnd: HWND, hinst: HINSTANCE, cmdline: LPCWSTR, cmdshow: INT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ShellDDEInit(bInit: BOOL);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetViewStream(
         arg1: LPCITEMIDLIST,
         arg2: DWORD,
@@ -39848,10 +39848,10 @@ unsafe extern "C" {
         arg5: LPCTSTR,
     ) -> *mut IStream;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsBadInterfacePtr(pv: LPCVOID, ucb: UINT_PTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CopyStreamUI(
         pSrc: *mut IStream,
         pDst: *mut IStream,
@@ -39859,7 +39859,7 @@ unsafe extern "C" {
         dwlSize: DWORDLONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetComputerDisplayNameW(
         pszServerName: LPWSTR,
         dwFlags: DWORD,
@@ -40070,32 +40070,32 @@ pub struct ExplorerCommandLineParseResults {
 }
 pub type EXPLORER_CMDLINE_PARSE_RESULTS = ExplorerCommandLineParseResults;
 pub type PEXPLORER_CMDLINE_PARSE_RESULTS = *mut ExplorerCommandLineParseResults;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn InitOCHostClass(param8: ::core::ffi::c_long);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenFolderWindow(parameters: PIE_THREAD_PARAM_BLOCK) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateSavedWindows();
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateFromDesktop(parseResults: PEXPLORER_CMDLINE_PARSE_RESULTS) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHExplorerParseCmdLine(pInfo: PEXPLORER_CMDLINE_PARSE_RESULTS) -> UINT_PTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn UEMRegisterNotify(param8: ::core::ffi::c_long, paramC: ::core::ffi::c_long);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateBandForPidl(
         param8: LPCITEMIDLIST,
         paramC: *mut IUnknown,
         param10: BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHPidlFromDataObject(
         param8: *mut IDataObject,
         paramC: *mut ::core::ffi::c_long,
@@ -40103,10 +40103,10 @@ unsafe extern "C" {
         param14: *mut FILEDESCRIPTORW,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IDataObject_GetDeskBandState(param8: ::core::ffi::c_long) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCreateIETHREADPARAM(
         param8: ::core::ffi::c_long,
         paramC: ::core::ffi::c_long,
@@ -40114,37 +40114,37 @@ unsafe extern "C" {
         param14: *mut IUnknown,
     ) -> PIE_THREAD_PARAM_BLOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHCloneIETHREADPARAM(param: PIE_THREAD_PARAM_BLOCK) -> PIE_THREAD_PARAM_BLOCK;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHParseIECommandLine(
         param8: ::core::ffi::c_long,
         paramC: ::core::ffi::c_long,
     ) -> ::core::ffi::c_long;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHDestroyIETHREADPARAM(param: PIE_THREAD_PARAM_BLOCK);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOnCWMCommandLine(hSharedInfo: HANDLE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Channel_GetFolderPidl() -> LPITEMIDLIST;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ChannelBand_Create(pidl: LPITEMIDLIST) -> *mut IUnknown;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Channels_SetBandInfoSFB(param8: *mut IUnknown) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IUnknown_SetBandInfoSFB(param8: *mut IUnknown, paramC: ::core::ffi::c_long) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn Channel_QuickLaunch() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHGetNavigateTarget(
         param8: ::core::ffi::c_long,
         paramC: ::core::ffi::c_long,
@@ -40152,7 +40152,7 @@ unsafe extern "C" {
         param14: ::core::ffi::c_long,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetInfoTip(
         param8: *mut IUnknown,
         paramC: ::core::ffi::c_long,
@@ -40160,7 +40160,7 @@ unsafe extern "C" {
         cchMax: ::core::ffi::c_long,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHEnumClassesOfCategories(
         cImplemented: ULONG,
         pImplemented: *mut CATID,
@@ -40169,7 +40169,7 @@ unsafe extern "C" {
         out: *mut *mut IEnumGUID,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHWriteClassesOfCategories(
         param8: ::core::ffi::c_long,
         paramC: ::core::ffi::c_long,
@@ -40180,10 +40180,10 @@ unsafe extern "C" {
         param20: ::core::ffi::c_long,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHIsExplorerBrowser() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHOpenNewFrame(
         pidl: LPITEMIDLIST,
         paramC: *mut IUnknown,
@@ -40257,7 +40257,7 @@ pub struct tagVS_FIXEDFILEINFO {
     pub dwFileDateLS: DWORD,
 }
 pub type VS_FIXEDFILEINFO = tagVS_FIXEDFILEINFO;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerFindFileA(
         arg1: DWORD,
         arg2: LPCSTR,
@@ -40269,7 +40269,7 @@ unsafe extern "C" {
         arg8: PUINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerFindFileW(
         arg1: DWORD,
         arg2: LPCWSTR,
@@ -40281,7 +40281,7 @@ unsafe extern "C" {
         arg8: PUINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerInstallFileA(
         arg1: DWORD,
         arg2: LPCSTR,
@@ -40293,7 +40293,7 @@ unsafe extern "C" {
         arg8: PUINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerInstallFileW(
         arg1: DWORD,
         arg2: LPCWSTR,
@@ -40305,38 +40305,38 @@ unsafe extern "C" {
         arg8: PUINT,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoSizeA(arg1: LPCSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoSizeW(arg1: LPCWSTR, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoA(arg1: LPCSTR, arg2: DWORD, arg3: DWORD, arg4: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoW(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD, arg4: PVOID) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerLanguageNameA(arg1: DWORD, arg2: LPSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerLanguageNameW(arg1: DWORD, arg2: LPWSTR, arg3: DWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerQueryValueA(arg1: LPCVOID, arg2: LPCSTR, arg3: *mut LPVOID, arg4: PUINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn VerQueryValueW(arg1: LPCVOID, arg2: LPCWSTR, arg3: *mut LPVOID, arg4: PUINT) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoSizeExA(
         dwFlags: DWORD,
         lpwstrFilename: LPCSTR,
         lpdwHandle: LPDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetFileVersionInfoSizeExW(
         dwFlags: DWORD,
         lpwstrFilename: LPCWSTR,
@@ -40380,32 +40380,32 @@ unsafe extern "C" {
 }
 pub type PENUMERATE_RECYCLEBIN_CALLBACK =
     ::core::option::Option<unsafe extern "system" fn(Context: PVOID, hDeletedFile: HDELFILE) -> BOOL>;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseRecycleBinHandle(hDeletedFile: HDELFILE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFileToRecycleBinA(FileName: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFileToRecycleBinW(FileName: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DeleteFileInRecycleBin(hDeletedFile: HDELFILE) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EmptyRecycleBinA(pszRoot: LPCSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EmptyRecycleBinW(pszRoot: LPCWSTR) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumerateRecycleBinA(
         pszRoot: LPCSTR,
         pFnCallback: PENUMERATE_RECYCLEBIN_CALLBACK,
         Context: PVOID,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnumerateRecycleBinW(
         pszRoot: LPCWSTR,
         pFnCallback: PENUMERATE_RECYCLEBIN_CALLBACK,
@@ -40421,7 +40421,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn RemoveFromRecycleBinDatabase(pFI: *const RECYCLEBINFILEIDENTITY) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RestoreFileFromRecycleBin(hDeletedFile: HDELFILE) -> BOOL;
 }
 #[repr(C)]
@@ -40624,7 +40624,7 @@ unsafe extern "C" {
         uItemCount: UINT,
     ) -> *mut IContextMenu2;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn INewItem_Constructor(
         pUnkOuter: *mut IUnknown,
         riif: *const IID,
@@ -40643,14 +40643,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn ISvBgCm_Constructor(pSFParent: LPSHELLFOLDER, bDesktop: BOOL) -> *mut IContextMenu2;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CDefViewDual_Constructor(riid: *const IID, ppvOut: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IFileSystemBindData_Constructor(pfd: *const WIN32_FIND_DATAW, ppV: *mut LPBC)
         -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CPanel_ExtractIconA(
         pidl: LPITEMIDLIST,
         pszFile: LPCSTR,
@@ -40660,7 +40660,7 @@ unsafe extern "C" {
         nIconSize: UINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CPanel_ExtractIconW(
         pidl: LPITEMIDLIST,
         pszFile: LPCWSTR,
@@ -40695,10 +40695,10 @@ unsafe extern "C" {
         cchBuf: UINT,
     ) -> LPWSTR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DoRegisterServer() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DoUnregisterServer() -> HRESULT;
 }
 pub type APPLET_PROC = ::core::option::Option<
@@ -40804,10 +40804,10 @@ pub struct _CI_STATE {
     pub dwPropCacheSize: DWORD,
 }
 pub type CI_STATE = _CI_STATE;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CIState(arg1: *const WCHAR, arg2: *const WCHAR, arg3: *mut CI_STATE) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocateCatalogsA(
         arg1: *const CHAR,
         arg2: ULONG,
@@ -40817,7 +40817,7 @@ unsafe extern "C" {
         arg6: *mut ULONG,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn LocateCatalogsW(
         arg1: *const WCHAR,
         arg2: ULONG,
@@ -41613,10 +41613,10 @@ pub struct _BP_ANIMATIONPARAMS {
 }
 pub type BP_ANIMATIONPARAMS = _BP_ANIMATIONPARAMS;
 pub type PBP_ANIMATIONPARAMS = *mut _BP_ANIMATIONPARAMS;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn CloseThemeData(arg1: HTHEME) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeBackground(
         arg1: HTHEME,
         arg2: HDC,
@@ -41626,7 +41626,7 @@ unsafe extern "C" {
         arg6: *const RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeBackgroundEx(
         arg1: HTHEME,
         arg2: HDC,
@@ -41636,7 +41636,7 @@ unsafe extern "C" {
         arg6: *const DTBGOPTS,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeEdge(
         arg1: HTHEME,
         arg2: HDC,
@@ -41648,7 +41648,7 @@ unsafe extern "C" {
         arg8: *mut RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeIcon(
         arg1: HTHEME,
         arg2: HDC,
@@ -41659,10 +41659,10 @@ unsafe extern "C" {
         arg7: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeParentBackground(arg1: HWND, arg2: HDC, arg3: *mut RECT) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeText(
         arg1: HTHEME,
         arg2: HDC,
@@ -41675,13 +41675,13 @@ unsafe extern "C" {
         arg9: *const RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableThemeDialogTexture(arg1: HWND, arg2: DWORD) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EnableTheming(arg1: BOOL) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetCurrentThemeName(
         arg1: LPWSTR,
         arg2: ::core::ffi::c_int,
@@ -41691,10 +41691,10 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeAppProperties() -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeBackgroundContentRect(
         arg1: HTHEME,
         arg2: HDC,
@@ -41704,7 +41704,7 @@ unsafe extern "C" {
         arg6: *mut RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeBackgroundExtent(
         arg1: HTHEME,
         arg2: HDC,
@@ -41714,7 +41714,7 @@ unsafe extern "C" {
         arg6: *mut RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeBackgroundRegion(
         arg1: HTHEME,
         arg2: HDC,
@@ -41724,7 +41724,7 @@ unsafe extern "C" {
         arg6: *mut HRGN,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeBool(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41733,7 +41733,7 @@ unsafe extern "C" {
         arg5: *mut BOOL,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeColor(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41742,7 +41742,7 @@ unsafe extern "C" {
         arg5: *mut COLORREF,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeDocumentationProperty(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -41750,7 +41750,7 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeEnumValue(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41759,7 +41759,7 @@ unsafe extern "C" {
         arg5: *mut ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeFilename(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41769,7 +41769,7 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeFont(
         arg1: HTHEME,
         arg2: HDC,
@@ -41779,7 +41779,7 @@ unsafe extern "C" {
         arg6: *mut LOGFONTW,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeInt(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41788,7 +41788,7 @@ unsafe extern "C" {
         arg5: *mut ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeIntList(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41797,7 +41797,7 @@ unsafe extern "C" {
         arg5: *mut INTLIST,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeMargins(
         arg1: HTHEME,
         arg2: HDC,
@@ -41808,7 +41808,7 @@ unsafe extern "C" {
         arg7: *mut MARGINS,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeMetric(
         arg1: HTHEME,
         arg2: HDC,
@@ -41818,7 +41818,7 @@ unsafe extern "C" {
         arg6: *mut ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemePartSize(
         arg1: HTHEME,
         arg2: HDC,
@@ -41829,7 +41829,7 @@ unsafe extern "C" {
         arg7: *mut SIZE,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemePosition(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41838,7 +41838,7 @@ unsafe extern "C" {
         arg5: *mut POINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemePropertyOrigin(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41847,7 +41847,7 @@ unsafe extern "C" {
         arg5: *mut PROPERTYORIGIN,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeRect(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41856,7 +41856,7 @@ unsafe extern "C" {
         arg5: *mut RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeString(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41866,29 +41866,29 @@ unsafe extern "C" {
         arg6: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysBool(arg1: HTHEME, arg2: ::core::ffi::c_int) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysColor(arg1: HTHEME, arg2: ::core::ffi::c_int) -> COLORREF;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysColorBrush(arg1: HTHEME, arg2: ::core::ffi::c_int) -> HBRUSH;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysFont(arg1: HTHEME, arg2: ::core::ffi::c_int, arg3: *mut LOGFONTW) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysInt(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
         arg3: *mut ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysSize(arg1: HTHEME, arg2: ::core::ffi::c_int) -> ::core::ffi::c_int;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeSysString(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
@@ -41896,7 +41896,7 @@ unsafe extern "C" {
         arg4: ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeTextExtent(
         arg1: HTHEME,
         arg2: HDC,
@@ -41909,7 +41909,7 @@ unsafe extern "C" {
         arg9: *mut RECT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetThemeTextMetrics(
         arg1: HTHEME,
         arg2: HDC,
@@ -41918,10 +41918,10 @@ unsafe extern "C" {
         arg5: *mut TEXTMETRICW,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetWindowTheme(arg1: HWND) -> HTHEME;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn HitTestThemeBackground(
         arg1: HTHEME,
         arg2: HDC,
@@ -41934,42 +41934,42 @@ unsafe extern "C" {
         arg9: *mut WORD,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsAppThemed() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsThemeActive() -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsThemeBackgroundPartiallyTransparent(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsThemeDialogTextureEnabled(arg1: HWND) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn IsThemePartDefined(
         arg1: HTHEME,
         arg2: ::core::ffi::c_int,
         arg3: ::core::ffi::c_int,
     ) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenThemeData(arg1: HWND, arg2: LPCWSTR) -> HTHEME;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn OpenThemeDataEx(arg1: HWND, arg2: LPCWSTR, arg3: DWORD) -> HTHEME;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetThemeAppProperties(arg1: DWORD);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetWindowTheme(arg1: HWND, arg2: LPCWSTR, arg3: LPCWSTR) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn DrawThemeTextEx(
         hTheme: HTHEME,
         hdc: HDC,
@@ -41982,13 +41982,13 @@ unsafe extern "C" {
         options: *const DTTOPTS,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintInit() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintUnInit() -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginBufferedPaint(
         arg1: HDC,
         arg2: *const RECT,
@@ -41997,32 +41997,32 @@ unsafe extern "C" {
         arg5: *mut HDC,
     ) -> HPAINTBUFFER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndBufferedPaint(arg1: HPAINTBUFFER, arg2: BOOL) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintClear(arg1: HPAINTBUFFER, arg2: *const RECT) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintSetAlpha(arg1: HPAINTBUFFER, arg2: *const RECT, arg3: BYTE) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBufferedPaintBits(
         arg1: HPAINTBUFFER,
         arg2: *mut *mut RGBQUAD,
         arg3: *mut ::core::ffi::c_int,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBufferedPaintDC(arg1: HPAINTBUFFER) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBufferedPaintTargetDC(arg1: HPAINTBUFFER) -> HDC;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetBufferedPaintTargetRect(arg1: HPAINTBUFFER, prc: *mut RECT) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BeginBufferedAnimation(
         arg1: HWND,
         arg2: HDC,
@@ -42034,13 +42034,13 @@ unsafe extern "C" {
         arg8: *mut HDC,
     ) -> HANIMATIONBUFFER;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintRenderAnimation(arg1: HWND, arg2: HDC) -> BOOL;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn BufferedPaintStopAllAnimations(arg1: HWND) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn EndBufferedAnimation(arg1: HANIMATIONBUFFER, arg2: BOOL) -> HRESULT;
 }
 #[repr(C)]
@@ -42063,22 +42063,22 @@ pub struct CTreeView {
 pub struct CTooltips {
     pub _base: ATL_CWindow,
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RSHELL_CStartMenu_CreateInstance(
         riid: *const IID,
         ppv: *mut *mut ::core::ffi::c_void,
     ) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RSHELL_CMenuDeskBar_CreateInstance(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RSHELL_CMenuSite_CreateInstance(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RSHELL_CMenuBand_CreateInstance(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn RSHELL_CMergedFolder_CreateInstance(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
 #[repr(C)]
@@ -42101,7 +42101,7 @@ pub struct CUserNotification {
     pub m_szInfoTitle: ATL_CStringW,
 }
 pub type CUserNotification__CreatorClass = ATL_CComCreator2;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn FolderOptionsFileTypesDlg(
         hwndDlg: HWND,
         uMsg: UINT,
@@ -42165,7 +42165,7 @@ pub struct CCidaChildArrayHelper {
 unsafe extern "C" {
     pub static CLSID_OpenWith: GUID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SHMultiFileProperties(pDataObject: *mut IDataObject, dwFlags: DWORD) -> HRESULT;
 }
 unsafe extern "C" {
@@ -42444,19 +42444,19 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static GUID_DEVCLASS_VOLUME: GUID;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferAllocate(arg1: DWORD, arg2: *mut PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferFree(arg1: PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferReallocate(arg1: PVOID, arg2: DWORD, arg3: *mut PVOID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetApiBufferSize(arg1: PVOID, arg2: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetapipBufferAllocate(arg1: DWORD, arg2: *mut PVOID) -> DWORD;
 }
 #[repr(C)]
@@ -43116,10 +43116,10 @@ pub struct _NETLOGON_INFO_3 {
 }
 pub type NETLOGON_INFO_3 = _NETLOGON_INFO_3;
 pub type PNETLOGON_INFO_3 = *mut _NETLOGON_INFO_3;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43131,10 +43131,10 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43143,10 +43143,10 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43157,7 +43157,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserSetGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43166,7 +43166,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserGetLocalGroups(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43178,13 +43178,13 @@ unsafe extern "C" {
         arg8: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserModalsGet(arg1: LPCWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserModalsSet(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetUserChangePassword(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43192,13 +43192,13 @@ unsafe extern "C" {
         arg4: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupAddUser(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43209,10 +43209,10 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupGetInfo(arg1: LPCWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43221,13 +43221,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupDelUser(arg1: LPCWSTR, arg2: LPCWSTR, arg3: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupGetUsers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43239,7 +43239,7 @@ unsafe extern "C" {
         arg8: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGroupSetUsers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43248,13 +43248,13 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAdd(arg1: LPCWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAddMember(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43265,7 +43265,7 @@ unsafe extern "C" {
         arg7: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupGetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43273,7 +43273,7 @@ unsafe extern "C" {
         arg4: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupSetInfo(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43282,13 +43282,13 @@ unsafe extern "C" {
         arg5: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDel(arg1: LPCWSTR, arg2: LPCWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDelMember(arg1: LPCWSTR, arg2: LPCWSTR, arg3: PSID) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupGetMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43300,7 +43300,7 @@ unsafe extern "C" {
         arg8: PDWORD_PTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupSetMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43309,7 +43309,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupAddMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43318,7 +43318,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetLocalGroupDelMembers(
         arg1: LPCWSTR,
         arg2: LPCWSTR,
@@ -43327,7 +43327,7 @@ unsafe extern "C" {
         arg5: DWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetQueryDisplayInformation(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43338,7 +43338,7 @@ unsafe extern "C" {
         arg7: *mut PVOID,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetDisplayInformationIndex(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43346,16 +43346,16 @@ unsafe extern "C" {
         arg4: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetDCName(arg1: LPCWSTR, arg2: LPCWSTR, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetGetAnyDCName(arg1: LPCWSTR, arg2: LPCWSTR, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn I_NetLogonControl(arg1: LPCWSTR, arg2: DWORD, arg3: DWORD, arg4: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn I_NetLogonControl2(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -43364,7 +43364,7 @@ unsafe extern "C" {
         arg5: *mut PBYTE,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetEnumerateTrustedDomains(arg1: LPWSTR, arg2: *mut LPWSTR) -> NTSTATUS;
 }
 #[repr(C)]
@@ -44276,7 +44276,7 @@ pub struct _SERVER_TRANSPORT_INFO_3 {
 pub type SERVER_TRANSPORT_INFO_3 = _SERVER_TRANSPORT_INFO_3;
 pub type PSERVER_TRANSPORT_INFO_3 = *mut _SERVER_TRANSPORT_INFO_3;
 pub type LPSERVER_TRANSPORT_INFO_3 = *mut _SERVER_TRANSPORT_INFO_3;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerEnum(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -44289,7 +44289,7 @@ unsafe extern "C" {
         arg9: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerEnumEx(
         arg1: LPCWSTR,
         arg2: DWORD,
@@ -44302,16 +44302,16 @@ unsafe extern "C" {
         arg9: LPCWSTR,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerGetInfo(arg1: LPWSTR, arg2: DWORD, arg3: *mut PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerSetInfo(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE, arg4: PDWORD) -> DWORD;
 }
 unsafe extern "C" {
     pub fn NetServerSetInfoCommandLine(arg1: WORD, arg2: *mut LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerDiskEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -44322,22 +44322,22 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerComputerNameAdd(arg1: LPWSTR, arg2: LPWSTR, arg3: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerComputerNameDel(arg1: LPWSTR, arg2: LPWSTR) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportAdd(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportAddEx(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportDel(arg1: LPWSTR, arg2: DWORD, arg3: PBYTE) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn NetServerTransportEnum(
         arg1: LPWSTR,
         arg2: DWORD,
@@ -44348,7 +44348,7 @@ unsafe extern "C" {
         arg7: PDWORD,
     ) -> DWORD;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn SetServiceBits(arg1: SERVICE_STATUS_HANDLE, arg2: DWORD, arg3: BOOL, arg4: BOOL)
         -> BOOL;
 }
@@ -44364,24 +44364,24 @@ pub const EXTENDED_NAME_FORMAT_NameServicePrincipal: EXTENDED_NAME_FORMAT = 10;
 pub const EXTENDED_NAME_FORMAT_NameDnsDomain: EXTENDED_NAME_FORMAT = 12;
 pub type EXTENDED_NAME_FORMAT = ::core::ffi::c_uint;
 pub type PEXTENDED_NAME_FORMAT = *mut EXTENDED_NAME_FORMAT;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerObjectNameA(arg1: EXTENDED_NAME_FORMAT, arg2: LPSTR, arg3: PULONG)
         -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetComputerObjectNameW(
         arg1: EXTENDED_NAME_FORMAT,
         arg2: LPWSTR,
         arg3: PULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserNameExA(arg1: EXTENDED_NAME_FORMAT, arg2: LPSTR, arg3: PULONG) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn GetUserNameExW(arg1: EXTENDED_NAME_FORMAT, arg2: LPWSTR, arg3: PULONG) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateNameA(
         arg1: LPCSTR,
         arg2: EXTENDED_NAME_FORMAT,
@@ -44390,7 +44390,7 @@ unsafe extern "C" {
         arg5: PULONG,
     ) -> BOOLEAN;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn TranslateNameW(
         arg1: LPCWSTR,
         arg2: EXTENDED_NAME_FORMAT,

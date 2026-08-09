@@ -23,32 +23,17 @@ fn ROUND_UP(n: SIZE_T, align: SIZE_T) -> SIZE_T {
     (n.wrapping_add(align).wrapping_sub(1)) & !(align.wrapping_sub(1))
 }
 
-// Function-pointer typedefs (NTAPI). The bindgen Rtl* fn items spell the literal
-// per-arch ABI ("stdcall" on i386, "C" on amd64/arm64); Rust will not coerce a
-// "stdcall"/"C" fn item into a "system" fn pointer even when the convention is
-// identical, so spell the typedef ABI to match bindgen per-arch. The file's own
-// Basep*Size fns below use the matching ABI too.
-#[cfg(target_arch = "x86")]
+// Function-pointer typedefs (NTAPI). These were forked per arch because the bindgen Rtl* fn
+// items used to spell the literal per-arch convention, and Rust compares fn-pointer ABIs
+// nominally — `system` unified with neither. The islands are normalized now, so the whole
+// NTAPI surface is `system` on every arch and so are the file's own Basep*Size fns below.
 pub type PRTL_CONVERT_STRING =
-    Option<unsafe extern "stdcall" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS>;
-#[cfg(target_arch = "x86")]
+    Option<unsafe extern "system" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS>;
 pub type PRTL_CONVERT_STRINGA =
-    Option<unsafe extern "stdcall" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS>;
-#[cfg(target_arch = "x86")]
-pub type PRTL_COUNT_STRING = Option<unsafe extern "stdcall" fn(PUNICODE_STRING) -> ULONG>;
-#[cfg(target_arch = "x86")]
-pub type PRTL_COUNT_STRINGA = Option<unsafe extern "stdcall" fn(PANSI_STRING) -> ULONG>;
+    Option<unsafe extern "system" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS>;
+pub type PRTL_COUNT_STRING = Option<unsafe extern "system" fn(PUNICODE_STRING) -> ULONG>;
+pub type PRTL_COUNT_STRINGA = Option<unsafe extern "system" fn(PANSI_STRING) -> ULONG>;
 
-#[cfg(not(target_arch = "x86"))]
-pub type PRTL_CONVERT_STRING =
-    Option<unsafe extern "C" fn(PUNICODE_STRING, PCANSI_STRING, BOOLEAN) -> NTSTATUS>;
-#[cfg(not(target_arch = "x86"))]
-pub type PRTL_CONVERT_STRINGA =
-    Option<unsafe extern "C" fn(PANSI_STRING, PCUNICODE_STRING, BOOLEAN) -> NTSTATUS>;
-#[cfg(not(target_arch = "x86"))]
-pub type PRTL_COUNT_STRING = Option<unsafe extern "C" fn(PUNICODE_STRING) -> ULONG>;
-#[cfg(not(target_arch = "x86"))]
-pub type PRTL_COUNT_STRINGA = Option<unsafe extern "C" fn(PANSI_STRING) -> ULONG>;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -77,33 +62,27 @@ pub static mut BasepUnicodeStringTo8BitSize: PRTL_COUNT_STRING =
 
 pub static mut Basep8BitStringToUnicodeSize: PRTL_COUNT_STRINGA =
     Some(BasepAnsiStringToUnicodeSize);
-// NTAPI ABI spelled to match the PRTL_COUNT_STRING* typedefs above so these
-// coerce into the fn-pointer statics without a cross-ABI cast. ABI strings can't
-// come from a macro, so cfg-duplicate (i386 stdcall vs amd64/arm64 C).
-macro_rules! count_size_fns {
-    ($abi:literal) => {
-        #[no_mangle]
-        pub unsafe extern $abi fn BasepUnicodeStringToOemSize(String: PUNICODE_STRING) -> ULONG {
-            return RtlUnicodeStringToOemSize(String as PCUNICODE_STRING);
-        }
-        #[no_mangle]
-        pub unsafe extern $abi fn BasepOemStringToUnicodeSize(String: PANSI_STRING) -> ULONG {
-            RtlOemStringToUnicodeSize(String)
-        }
-        #[no_mangle]
-        pub unsafe extern $abi fn BasepUnicodeStringToAnsiSize(String: PUNICODE_STRING) -> ULONG {
-            RtlUnicodeStringToAnsiSize(String)
-        }
-        #[no_mangle]
-        pub unsafe extern $abi fn BasepAnsiStringToUnicodeSize(String: PANSI_STRING) -> u32 {
-            RtlAnsiStringToUnicodeSize(String)
-        }
-    };
+// NTAPI ABI spelled to match the PRTL_COUNT_STRING* typedefs above so these coerce into the
+// fn-pointer statics without a cross-ABI cast. That used to mean the arch's literal
+// convention, which an ABI string cannot take from a macro parameter — hence the macro and
+// its cfg'd pair of invocations. The typedefs are `system` now, so there is one spelling and
+// the macro has nothing left to vary.
+#[no_mangle]
+pub unsafe extern "system" fn BasepUnicodeStringToOemSize(String: PUNICODE_STRING) -> ULONG {
+    return RtlUnicodeStringToOemSize(String as PCUNICODE_STRING);
 }
-#[cfg(target_arch = "x86")]
-count_size_fns!("stdcall");
-#[cfg(not(target_arch = "x86"))]
-count_size_fns!("C");
+#[no_mangle]
+pub unsafe extern "system" fn BasepOemStringToUnicodeSize(String: PANSI_STRING) -> ULONG {
+    RtlOemStringToUnicodeSize(String)
+}
+#[no_mangle]
+pub unsafe extern "system" fn BasepUnicodeStringToAnsiSize(String: PUNICODE_STRING) -> ULONG {
+    RtlUnicodeStringToAnsiSize(String)
+}
+#[no_mangle]
+pub unsafe extern "system" fn BasepAnsiStringToUnicodeSize(String: PANSI_STRING) -> u32 {
+    RtlAnsiStringToUnicodeSize(String)
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn BaseGetNamedObjectDirectory() -> HANDLE {
@@ -865,12 +844,8 @@ pub unsafe extern "system" fn SetFileApisToOEM() {
     // RtlOemStringToUnicodeString's SourceString is PCOEM_STRING (*const STRING), while
     // PRTL_CONVERT_STRING expects PCANSI_STRING (*mut STRING); the C cast erases that, so
     // transmute the differing fn-pointer type here.
-    #[cfg(target_arch = "x86")]
     type OemConvert =
-        Option<unsafe extern "stdcall" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>;
-    #[cfg(not(target_arch = "x86"))]
-    type OemConvert =
-        Option<unsafe extern "C" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>;
+        Option<unsafe extern "system" fn(PUNICODE_STRING, PCOEM_STRING, BOOLEAN) -> NTSTATUS>;
     Basep8BitStringToUnicodeString =
         ::core::mem::transmute::<OemConvert, PRTL_CONVERT_STRING>(Some(RtlOemStringToUnicodeString));
     // RtlUnicodeStringToOemString: (POEM_STRING, PCUNICODE_STRING, BOOLEAN); POEM_STRING ==

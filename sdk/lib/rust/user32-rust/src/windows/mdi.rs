@@ -2116,12 +2116,7 @@ pub unsafe extern "system" fn ScrollChildren(
 }
 
 // WNDENUMPROC is `extern "stdcall"` on i386, `extern "C"` on amd64/arm64 in win32k_sys.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn GetCascadeChildProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
-    GetCascadeChildProcImpl(hwnd, lParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn GetCascadeChildProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
+unsafe extern "system" fn GetCascadeChildProc(hwnd: HWND, lParam: LPARAM) -> BOOL {
     GetCascadeChildProcImpl(hwnd, lParam)
 }
 

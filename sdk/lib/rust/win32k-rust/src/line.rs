@@ -934,48 +934,8 @@ pub unsafe extern "C" fn IntGdiPolyPolyline(
 
     return ret;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiLineTo(
-    hDC: HDC,
-    XEnd: i32,
-    YEnd: i32,
-) -> i32 {
-    let dc: *mut DC;
-    let mut Ret: i32;
-    let mut rcLockRect: RECT = core::mem::zeroed();
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    rcLockRect.left = (*(*dc).pdcattr).ptlCurrent.x;
-    rcLockRect.top = (*(*dc).pdcattr).ptlCurrent.y;
-    rcLockRect.right = XEnd;
-    rcLockRect.bottom = YEnd;
-
-    IntLPtoDP(dc, &mut rcLockRect as *mut RECT as PPOINT, 2);
-
-    rcLockRect.left += (*dc).ptlDCOrig.x;
-    rcLockRect.top += (*dc).ptlDCOrig.y;
-    rcLockRect.right += (*dc).ptlDCOrig.x;
-    rcLockRect.bottom += (*dc).ptlDCOrig.y;
-
-    DC_vPrepareDCsForBlit(dc, core::ptr::addr_of_mut!(rcLockRect) as *const RECTL, core::ptr::null_mut(), core::ptr::null_mut());
-
-    Ret = IntGdiLineTo(dc, XEnd, YEnd);
-
-    DC_vFinishBlit(dc, core::ptr::null_mut());
-
-    DC_UnlockDc(dc);
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiLineTo(
+pub unsafe extern "system" fn NtGdiLineTo(
     hDC: HDC,
     XEnd: i32,
     YEnd: i32,
@@ -1194,9 +1154,8 @@ unsafe fn GdiPolyDraw(
 
     result
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPolyDraw(
+pub unsafe extern "system" fn NtGdiPolyDraw(
     hdc: HDC,
     ppt: LPPOINT,
     pjAttr: LPBYTE,
@@ -1241,88 +1200,8 @@ pub unsafe extern "stdcall" fn NtGdiPolyDraw(
 
     bResult
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPolyDraw(
-    hdc: HDC,
-    ppt: LPPOINT,
-    pjAttr: LPBYTE,
-    cpt: u32,
-) -> i32 {
-    let pjBuffer: PBYTE;
-    let pptSafe: PPOINT;
-    let pjSafe: PBYTE;
-    let cjSizePt: usize;
-    let mut bResult: i32;
-
-    if cpt == 0 {
-        ERR!(b"cpt is 0\n\0".as_ptr() as *const i8);
-        return 0;
-    }
-
-    if cpt > ((MAXULONG - cpt) / core::mem::size_of::<POINT>() as u32) {
-        ERR!(b"cpt is too large\n\0".as_ptr() as *const i8, cpt);
-        return 0;
-    }
-
-    cjSizePt = (cpt as usize) * core::mem::size_of::<POINT>();
-
-    pjBuffer = ExAllocatePoolWithTag(PagedPool, (cjSizePt + cpt as usize) as SIZE_T, TAG_SHAPE) as PBYTE;
-    if pjBuffer.is_null() {
-        ERR!(b"Failed to allocate buffer\n\0".as_ptr() as *const i8);
-        return 0;
-    }
-
-    pptSafe = pjBuffer as PPOINT;
-    pjSafe = pjBuffer.add(cjSizePt);
-
-    ProbeArrayForRead(ppt as *const core::ffi::c_void, core::mem::size_of::<POINT>(), cpt, core::mem::size_of::<u32>());
-    ProbeArrayForRead(pjAttr as *const core::ffi::c_void, core::mem::size_of::<u8>(), cpt, core::mem::size_of::<u8>());
-
-    core::ptr::copy_nonoverlapping(ppt as *const u8, pptSafe as *mut u8, cjSizePt);
-    core::ptr::copy_nonoverlapping(pjAttr as *const u8, pjSafe as *mut u8, cpt as usize);
-
-    bResult = GdiPolyDraw(hdc, pptSafe, pjSafe, cpt);
-
-    ExFreePoolWithTag(pjBuffer as *mut core::ffi::c_void, TAG_SHAPE);
-
-    bResult
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMoveTo(
-    hdc: HDC,
-    x: i32,
-    y: i32,
-    pptOut: LPPOINT,
-) -> BOOL {
-    let pdc: PDC = DC_LockDc(hdc);
-    if pdc.is_null() {
-        return 0;
-    }
-
-    let mut Point: POINT = core::mem::zeroed();
-    let mut Ret: BOOL = IntGdiMoveToEx(pdc, x, y, &mut Point);
-
-    if Ret != 0 && !pptOut.is_null() {
-        let Status: NTSTATUS = SafeProbeForWrite(pptOut as *mut core::ffi::c_void, core::mem::size_of::<POINT>() as SIZE_T, 1);
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            Ret = 0;
-        } else {
-            core::ptr::copy_nonoverlapping(&Point as *const POINT, pptOut, 1);
-        }
-    }
-
-    DC_UnlockDc(pdc);
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiMoveTo(
+pub unsafe extern "system" fn NtGdiMoveTo(
     hdc: HDC,
     x: i32,
     y: i32,

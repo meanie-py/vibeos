@@ -65,7 +65,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(OLEAUT32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE OLEAUT32_RUST_SRCS "${OLEAUT32_RUST_WORKSPACE_DIR}/oleaut32-rust/src/*.rs")
+rust_crate_sources(OLEAUT32_RUST_SRCS "${OLEAUT32_RUST_WORKSPACE_DIR}" oleaut32-rust)
 # oleaut32 is user-mode and its VARIANT/date/currency math passes f64 by value.
 # The workspace .cargo/config.toml disables SSE for the whole i686-pc-windows-gnu
 # triple (a KERNEL requirement — CR4.OSFXSR isn't set until Phase 1), which makes

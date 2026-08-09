@@ -6,26 +6,8 @@ extern "system" {
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngDebugPrint(
-    StandardPrefix: PCHAR,
-    DebugMessage: PCHAR,
-    ap: va_list,
-) {
-
-    vDbgPrintExWithPrefix(
-        StandardPrefix,
-        -1,
-        DPFLTR_ERROR_LEVEL,
-        DebugMessage,
-        ap,
-    );
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn EngDebugPrint(
+pub unsafe extern "system" fn EngDebugPrint(
     StandardPrefix: PCHAR,
     DebugMessage: PCHAR,
     ap: va_list,

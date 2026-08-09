@@ -19,7 +19,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(TCPSVCS_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-tcpsvcs-target")
 set(TCPSVCS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libtcpsvcs_rust.a")
-file(GLOB_RECURSE TCPSVCS_RUST_SRCS "${TCPSVCS_RUST_WORKSPACE_DIR}/tcpsvcs-rust/src/*.rs")
+rust_crate_sources(TCPSVCS_RUST_SRCS "${TCPSVCS_RUST_WORKSPACE_DIR}" tcpsvcs-rust)
 add_custom_command(
     OUTPUT ${TCPSVCS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
