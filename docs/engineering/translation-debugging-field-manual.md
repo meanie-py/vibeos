@@ -4806,6 +4806,25 @@ implementation of the function it lives in — per arch AND per build flavour �
 suspect path actually reaches it.** A tripwire in a shared funnel is only as broad as the set of
 callers that genuinely funnel.
 
+**In a pipeline with two halves, check the guard is on BOTH — an `if` that returns early is a
+reachability hole with no arch to blame.** rustconv's `_audit_paid_body` returns for every
+non-`cpp_com` body *before* it reaches `audit_worker_body`, so the `--free-functions` half of a
+C++ TU — the half that owns the `*_Constructor` family, i.e. the functions that ALLOCATE — was
+never audited at all, while its class half was fully graded. The same `cpp_com_mode` test had
+already hidden the deterministic `new`/`delete` lowering from that half, which is how a CRT
+`free` shipped over `HeapAlloc(GetProcessHeap())` memory. One flag gating both the fix and the
+check for the same defect is the worst case: the half that most needs grading gets none, and
+the green half is what you look at. **Then, transplanting the guard, expect some of its rules to
+INVERT rather than merely relax.** The class-half audit forbids `#[no_mangle]` and
+`extern "C" fn` because there the scaffold owns the export — but a free function *is* the
+exported symbol, so both are required of it; wiring the audit across unchanged would have
+rejected every body. Split the checks by what OWNS the thing (`scaffold_owned`), not by
+severity. Land it report-only and read the findings before it can reject anything: on this tree
+it scored 12 free functions with 0 findings, and the only reason that is evidence rather than
+silence is a negative control — inject the defect the check exists to catch and confirm it
+fires, because **a report-only check that reports nothing is indistinguishable from one that
+never ran.**
+
 **Reachability is not the only way an instrument can be structurally blind. Three more, all
 found on one wedge:** *(1)* **An instrument driven by the mechanism under suspicion goes silent
 exactly when it should fire.** The `[CENSUS]` sync watchdog loops on

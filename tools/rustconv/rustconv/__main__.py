@@ -878,6 +878,26 @@ def _unseal_worker(
     return rust
 
 
+# Findings from the `--free-functions` half, which until now was never audited at all:
+# `_audit_paid_body` returns for every non-cpp_com body BEFORE it reaches
+# `audit_worker_body`. So the half that owns the `*_Constructor` family — the functions that
+# ALLOCATE — had no check that the model hadn't invented a deallocator, reversed a call
+# nesting, or dropped a constant.
+#
+# REPORT-ONLY, and it stays that way until these have been read. The class-half audit does
+# not transfer wholesale: a free function legitimately carries `#[no_mangle]` and an
+# `extern "C"` definition, both of which the class half forbids because there the scaffold
+# owns the export. So a finding here is evidence about the CHECK as much as about the body.
+FREE_HALF_AUDIT_FINDINGS: list[str] = []
+
+
+def _report_free_half_audit(dep, rust: str) -> None:
+    """Run the language-neutral worker audit over one free function, report-only."""
+    for finding in audit_worker_body(dep.body_text, rust, dep.name, None, scaffold_owned=False):
+        FREE_HALF_AUDIT_FINDINGS.append(f"{dep.name}: {finding}")
+        print(f"    [{dep.name}] FREE-HALF AUDIT: {finding}", file=sys.stderr)
+
+
 def _cpp_free_half_semantics(dep, rust: str) -> str:
     """Apply the C++ semantic lowerings to the FREE half of a C++ TU.
 
@@ -891,8 +911,14 @@ def _cpp_free_half_semantics(dep, rust: str) -> str:
 
     Scoped to `is_cpp_source` at the call sites, so a plain-C module's cached bodies keep
     replaying byte-identically; these rewrites are all keyed on C++ syntax anyway.
+
+    The report-only audit rides along here rather than at each of the five call sites: a
+    check you must remember to invoke in five places is a check that will be missed in one,
+    which is how the free half went unaudited to begin with.
     """
-    return normalize_worker_semantics(dep.body_text, rust)
+    rust = normalize_worker_semantics(dep.body_text, rust)
+    _report_free_half_audit(dep, rust)
+    return rust
 
 
 def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
@@ -4092,6 +4118,13 @@ def cmd_translate(args):
     if REORDERED_WIDE_LITERAL_BODIES:
         audit_findings.setdefault("WIDE LITERALS REORDERED (check each slot)", []).extend(
             REORDERED_WIDE_LITERAL_BODIES
+        )
+
+    # The `--free-functions` half, audited for the first time. Report-only: these have never
+    # been graded, so the first runs are calibrating the CHECK as much as the bodies.
+    if FREE_HALF_AUDIT_FINDINGS:
+        audit_findings.setdefault("FREE-HALF AUDIT (report-only, first pass)", []).extend(
+            FREE_HALF_AUDIT_FINDINGS
         )
 
     # A `--skip-fn` name no file in the worklist carried. Per-file this is normal (the name

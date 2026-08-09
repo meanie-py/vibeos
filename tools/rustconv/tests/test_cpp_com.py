@@ -1411,6 +1411,71 @@ def test_worker_audit_preserves_constants_and_rejects_abi_surface():
     assert any("numeric C literal" in finding for finding in findings)
 
 
+class TestFreeHalfAudit:
+    """`scaffold_owned=False` — the `--free-functions` half of a C++ TU.
+
+    The free half was never audited at all (`_audit_paid_body` returned before reaching
+    `audit_worker_body` for every non-cpp_com body), and the class-half audit cannot be
+    wired onto it wholesale: a free function IS the exported C symbol, so the two checks
+    that encode "the scaffold owns the export" invert.
+    """
+
+    C_BODY = "{ return DoThing(x); }"
+
+    def _free(self, rust: str, name: str = "Mod_f") -> list[str]:
+        return audit_worker_body(self.C_BODY, rust, name, None, scaffold_owned=False)
+
+    def test_a_free_function_may_carry_the_export_the_class_half_forbids(self):
+        rust = '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT { DoThing(x) }'
+        assert self._free(rust) == []
+        # Same body, judged as a class worker: both halves of the export are refused.
+        findings = audit_worker_body(self.C_BODY, rust, "Mod_f")
+        assert any("export attribute" in finding for finding in findings)
+        assert any("ABI declaration" in finding for finding in findings)
+
+    def test_an_extern_BLOCK_is_refused_on_the_free_half_too(self):
+        # The `fn` DEFINITION is the free half's job; a BLOCK declares substrate the model
+        # could not see, and an invented forward declaration compiles, links, and is wrong.
+        rust = (
+            'extern "C" { pub fn DoThing(x: DWORD) -> HRESULT; }\n'
+            '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT { DoThing(x) }'
+        )
+        findings = self._free(rust)
+        assert any("extern" in finding and "{ }" in finding for finding in findings)
+
+    def test_the_language_neutral_checks_still_apply(self):
+        rust = (
+            '#[no_mangle]\npub unsafe extern "C" fn Mod_f(x: DWORD) -> HRESULT '
+            "{ let _leak = Box::from_raw(x); DoThing(x) }"
+        )
+        assert any("deallocator" in finding for finding in self._free(rust))
+
+
+class TestStrayDeallocatorsComparedToSource:
+    """A deallocator is stray because the C never called it, not because of its name."""
+
+    def test_a_free_the_C_also_called_is_kept(self):
+        c_body = "{ void *p = malloc(n); free(p); return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { let p = malloc(n); free(p); S_OK }"
+        assert [f for f in audit_worker_body(c_body, rust, "C_f_body") if "deallocator" in f] == []
+
+    def test_a_free_the_C_never_called_is_still_refused(self):
+        c_body = "{ delete this; return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { free(this); S_OK }"
+        assert any("deallocator" in f for f in audit_worker_body(c_body, rust, "C_f_body"))
+
+    def test_a_free_mentioned_only_in_a_C_COMMENT_does_not_launder_it(self):
+        c_body = "{ /* we used to free(p) here */ delete this; return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { free(this); S_OK }"
+        assert any("deallocator" in f for f in audit_worker_body(c_body, rust, "C_f_body"))
+
+    def test_Box_from_raw_has_no_C_spelling_so_it_is_always_invented(self):
+        c_body = "{ free(p); return S_OK; }"
+        rust = "pub unsafe fn C_f_body() -> HRESULT { drop(Box::from_raw(p)); S_OK }"
+        findings = [f for f in audit_worker_body(c_body, rust, "C_f_body") if "deallocator" in f]
+        assert any("Box::from_raw" in f for f in findings)
+
+
 def test_worker_audit_allows_vtable_calls_but_rejects_option_guessing():
     source = "{ return object->GetData(out); }"
     good = "pub unsafe fn C_f_body() -> HRESULT { ((*(*object).lpVtbl).GetData)(object, out) }"

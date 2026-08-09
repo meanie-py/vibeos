@@ -5795,14 +5795,53 @@ def _rust_local_struct_fields(rust: str) -> dict[str, tuple[str, ...]]:
     return result
 
 
+_DEALLOCATOR_CALL = re.compile(r"\b(Box::from_raw|__rustconv_\w*|free|malloc|calloc|realloc)\s*\(")
+
+
+def _stray_deallocators(c_body: str, rust: str) -> list[str]:
+    """Deallocators the RUST calls that the C source never did.
+
+    Keyed on "the source did not call this", not on the bare name. A body translating a
+    genuine C `free(p)` must keep it, and a check that refused the name outright would
+    reject a correct translation — the defect is an INVENTED deallocator, not the concept
+    of freeing. `Box::from_raw`/`__rustconv_*` have no C spelling at all, so they are
+    always invented.
+    """
+    in_source = {
+        match.group(1)
+        for match in _DEALLOCATOR_CALL.finditer(
+            re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", c_body, flags=re.S)
+        )
+    }
+    return sorted(
+        {
+            match.group(1)
+            for match in _DEALLOCATOR_CALL.finditer(rust)
+            if match.group(1) not in in_source
+        }
+    )
+
+
 def audit_worker_body(
-    c_body: str, rust: str, expected_name: str, expected_signature: str | None = None
+    c_body: str,
+    rust: str,
+    expected_name: str,
+    expected_signature: str | None = None,
+    *,
+    scaffold_owned: bool = True,
 ) -> list[str]:
     """Verify the narrow contract for an LLM-translated COM method body.
 
     This is intentionally not a semantic verifier.  It protects the boundary that
     matters for the hybrid pipeline: the response must remain a plain worker, must
     preserve source-level symbolic constants, and must not attempt to own COM ABI.
+
+    ``scaffold_owned=False`` audits the `--free-functions` half of the same TU, where the
+    generated scaffold owns neither the export nor the ABI: a free function IS the exported
+    C symbol, so `#[no_mangle]` and an `extern "C"` DEFINITION are required there and
+    forbidden here. Everything else — invented deallocators, reversed call nesting, dropped
+    constants, an `extern` BLOCK declaring substrate the model could not see — is
+    language-neutral and applies to both halves.
     """
     findings: list[str] = []
     # A worker never owns deallocation. The scaffold allocates with HeapAlloc(GetProcessHeap())
@@ -5810,9 +5849,7 @@ def audit_worker_body(
     # is a cross-heap free waiting for a crate where the name happens to resolve — it is silent
     # everywhere until it corrupts. The deterministic lowering above should have claimed these;
     # reaching here means it did not recognise the spelling, which must be loud, not quiet.
-    stray_frees = sorted(
-        set(re.findall(r"\b(Box::from_raw|__rustconv_\w*|free|malloc|calloc|realloc)\s*\(", rust))
-    )
+    stray_frees = _stray_deallocators(c_body, rust)
     if stray_frees:
         findings.append(
             "worker owns a deallocator it must not: "
@@ -5893,18 +5930,25 @@ def audit_worker_body(
             + ", ".join(f"{outer}({inner}(...))" for outer, inner in reversed_pairs)
         )
     forbidden = {
-        "#[no_mangle]": "export attribute",
         ".unwrap()": "Option/panic ABI guess",
         "scopeguard::": "model-owned ownership guard",
     }
+    if scaffold_owned:
+        # The scaffold emits the export and the vtable slot; a worker that also exports its
+        # own symbol competes with it. A free function, by contrast, IS the exported symbol.
+        forbidden["#[no_mangle]"] = "export attribute"
     for token, description in forbidden.items():
         if token in executable_rust:
             findings.append(f"worker emitted forbidden {description}: {token}")
     abi_surface = re.sub(r"/\*.*?\*/|//[^\n]*", " ", rust, flags=re.S)
-    if re.search(
-        r'\bextern\s+"(?:C|system)"\s*\{|'
-        r'\b(?:pub\s+)?(?:unsafe\s+)?extern\s+"(?:C|system)"\s+fn\s+[A-Za-z_]\w*',
-        abi_surface,
+    # An extern BLOCK is forbidden in BOTH halves and for the same reason: it declares
+    # substrate the model could not see, and an invented forward declaration compiles,
+    # links, and is silently wrong (AGENTS.md, substrate closure). Only the extern `fn`
+    # DEFINITION is legitimate on the free half, where it carries the C ABI of a real export.
+    if re.search(r'\bextern\s+"(?:C|system)"\s*\{', abi_surface):
+        findings.append('worker emitted forbidden ABI declaration: extern "…" { }')
+    if scaffold_owned and re.search(
+        r'\b(?:pub\s+)?(?:unsafe\s+)?extern\s+"(?:C|system)"\s+fn\s+[A-Za-z_]\w*', abi_surface
     ):
         findings.append('worker emitted forbidden ABI declaration: extern "')
     if re.search(r"(?m)\bgoto\s+[A-Za-z_]\w*\s*;|^\s*[A-Za-z_]\w*\s*:\s*$", executable_rust):
