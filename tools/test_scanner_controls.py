@@ -676,6 +676,45 @@ _ALIAS_GOOD_B = "use crate::types::VBO;\n"
 # It also pins the trap that made counting occurrences unusable: a fix's own
 # explanatory comment QUOTES the C, so the C statement appears twice while the
 # live code masks once. That must stay silent.
+# scan_macro_fn_shadow. Seeded from shell32-rust 2026-08-08: the crate had the correct
+# `#[macro_export] macro_rules! UNREFERENCED_PARAMETER` in win32.rs — its own comment citing
+# the ud2/BUGCHECK class — and two modules carried an empty `fn` shadow anyway, because both
+# are declared BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward.
+# The GOOD case pins the two ways this scanner must NOT fire, because a false positive here
+# is a lint you cannot satisfy by doing the right thing:
+#   * a same-named `fn` with a REAL body is an ordinary inline helper, not a shadow
+#     (shell32-rust's `pub fn LOWORD(l: DWORD) -> WORD { (l & 0xFFFF) as WORD }`);
+#   * importing the macro and calling it with `!` is the FIX, and must come back clean.
+_MACROSHADOW_BAD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+#[inline] fn UNREFERENCED_PARAMETER<T>(_: T) {}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER(pbc);
+}
+"""
+
+_MACROSHADOW_GOOD = """\
+#[macro_export]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($arg:tt)*) => {{}};
+}
+
+// A real body is a helper, not a barrier — this must stay silent.
+#[inline]
+pub fn LOWORD(l: u32) -> u16 {
+    (l & 0xFFFF) as u16
+}
+
+pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
+    UNREFERENCED_PARAMETER!(pbc);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -915,6 +954,14 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
         good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"recycle_bin.rs": _MACROSHADOW_BAD},
+        good={"recycle_bin.rs": _MACROSHADOW_GOOD},
         pass_files=True,
     ),
     Control(

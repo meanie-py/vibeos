@@ -1987,6 +1987,19 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   its own system thread with no dependency on the usermode components. Owed: either give the
   marker wait a load-proportional budget or make the poll worker's completion deterministic —
   and stop treating 3 retries as sufficient cover.
+  **Escalation 2026-08-09: this now takes the WHOLE MERGE QUEUE down, so it is no longer a
+  per-lane annoyance.** Across 13 conductor batches on the evening of 08-08 the net lane was
+  OK 5 times and NET_FLAKE 8 — and in one drain every one of four queued lanes
+  (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`) was rejected on it in
+  succession, leaving the queue empty with nothing landed for ~100 minutes. The batch-splitting
+  logic makes it worse rather than better: a red batch splits to find the culprit, so ONE
+  flaky lane-independent stage rejects each lane SEPARATELY and burns a gate per lane. Two
+  consequences worth pricing in: the conductor cannot distinguish "this lane is bad" from
+  "the shared stage is flaky" (both look like a red gate against the same base), and a lane
+  whose diff cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still
+  pays full freight. Cheap mitigations if the real fix stays owed: retry the net lane against
+  a quiet host rather than mid-batch, raise the retry count for a stage classified as a known
+  flake, or let a lane touching no build input skip it entirely.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

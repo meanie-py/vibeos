@@ -602,6 +602,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
+    # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
+    # covers the names that emit nothing and were therefore outside every scanner here.
+    # UNREFERENCED_PARAMETER was one: shell32-rust had the correct #[macro_export] macro in
+    # win32.rs and two modules carried an empty `fn` shadow anyway, because both are declared
+    # BEFORE win32 in lib.rs and macro_rules! textual scoping only runs forward. The baseline
+    # holds 20 inherited rows, most of them kernel-side (win32k NT_ASSERT/ASSERT_REFS_CO),
+    # where the out-of-line barrier is the ud2 uncloaker AGENTS.md forbids outright.
+    smfs = repo / "tools" / "scan_macro_fn_shadow.py"
+    specs.append(
+        (
+            "scan_macro_fn_shadow",
+            [py, str(smfs), "--lint"] if smfs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     stac = repo / "tools" / "scan_type_alias_contradictions.py"
     specs.append(
         (
