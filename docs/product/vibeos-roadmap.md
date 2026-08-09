@@ -1987,6 +1987,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   waiting out its marker timeout, and "the engine-level echo to the very same endpoint succeeds
   in the same boot" identified the thief, not an alibi. Field manual, "`NET_FLAKE` that is not
   a flake". Cost: ~90% gate failure and a day of wedged merge queue.
+- **A lane-independent flaky STAGE costs one gate per lane, and the conductor cannot tell it
+  from a bad lane** (observed 2026-08-09 on the net flake above; kept because it is a property
+  of the queue, not of that bug). A red batch splits recursively to find the culprit, so a
+  single flaky shared stage rejects each lane SEPARATELY and burns a full gate on each — in one
+  drain all four queued lanes (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`)
+  were rejected in succession and the queue emptied with nothing landed for ~100 minutes. Both
+  cases look identical from the outside: a red gate against the same base. A lane whose diff
+  cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still pays full
+  freight. If this bites again: retry the flaky stage against a quiet host rather than
+  mid-batch, raise the retry count for a stage already classified a known flake, or let a lane
+  touching no build input skip it.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

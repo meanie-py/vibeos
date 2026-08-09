@@ -792,8 +792,6 @@ pub const fn RGB(r: DWORD, g: DWORD, b: DWORD) -> COLORREF {
 pub const fn MAKEINTRESOURCEW(id: UINT) -> LPCWSTR { (id & 0xffff) as usize as LPCWSTR }
 #[inline]
 pub const fn HIWORD(v: WPARAM) -> WORD { ((v >> 16) & 0xffff) as WORD }
-#[inline]
-pub fn UNREFERENCED_PARAMETER<T>(_param: T) {}
 
 // prsht.h: PropSheet_Changed(hDlg, hwnd) macro (donor shell_link.rs:5030).
 #[inline]
@@ -1123,6 +1121,11 @@ impl Drop for CDrop {
 use core::ffi::c_void;
 use crate::shellcom::*;
 use crate::types::*;
+// A no-op debug macro must stay a macro: an out-of-line no-op `fn` is an optimization barrier
+// that can uncloak a latent ABI mismatch. `#[macro_export]` puts this at the crate root, so an
+// explicit import reaches it from anywhere — `macro_rules!` TEXTUAL scoping does not, because
+// this module is declared before `win32` in lib.rs, which is why a `fn` shadow grew here.
+use crate::UNREFERENCED_PARAMETER;
 
 pub unsafe fn CDrvDefExt_PaintStaticControls_body(this: *mut CDrvDefExt, hwndDlg: HWND, pDrawItem: LPDRAWITEMSTRUCT) -> () {
     if (*pDrawItem).CtlID == 14013 {
@@ -1649,8 +1652,8 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
 }
 
 pub unsafe fn CDrvDefExt_HardwarePageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
-    UNREFERENCED_PARAMETER(lParam);
-    UNREFERENCED_PARAMETER(wParam);
+    UNREFERENCED_PARAMETER!(lParam);
+    UNREFERENCED_PARAMETER!(wParam);
 
     match uMsg {
         WM_INITDIALOG => {
