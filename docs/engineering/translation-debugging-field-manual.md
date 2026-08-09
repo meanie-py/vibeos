@@ -2822,6 +2822,47 @@ one function.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### Re-translating an integrated module silently reverts every post-integration repair
+
+**Symptom.** A module that has been flipped, ground green and booted for weeks is
+re-translated — better model, new seal flags, a fidelity audit — and the new output looks
+strictly better in the diff: real type names instead of erased `u32`, named constants instead
+of `0 /* RPC_S_OK */`, deterministic UTF-16 instead of hand-spelled arrays. Integrate it and
+the module breaks in ways nobody touched.
+
+**Cause.** The model sees only the C. Every repair made *after* integration is invisible to
+it, because none of those repairs is expressible in the C — so a re-emit reverts all of them
+at once, and each reverted one looks like an ordinary translation choice rather than a
+regression. Measured on browser-rust (one $0.03 DeepSeek re-roll, all three classes in two
+files):
+
+- **ABI-twin re-fork.** `extern "system"` came back as `#[cfg(target_arch = "x86")] extern
+  "stdcall"` + a `not(x86)` twin — undoing the repo-wide twin collapse, since the C only says
+  `WINAPI` and the model resolves it per arch.
+- **Symbol capitalisation.** `MIDL_user_allocate` → `midl_user_allocate`, the C's source
+  spelling. `rpcndr.h` `#define`s the lowercase name to the CAPITALISED symbol, which is what
+  the generated `*_s.c` marshaller binds to, so the `#[no_mangle]` definition stops answering
+  the only caller. Object-like macros are not covered by the call seal's function-like macro
+  set, so nothing protects the name.
+- **`static mut` discipline.** `core::ptr::addr_of_mut!(ServiceStatus)` → `&ServiceStatus`,
+  which is the deny-by-default `static_mut_refs`.
+- **Diagnostics.** `UNIMPLEMENTED!()` invocations became `// UNIMPLEMENTED;` comments — the
+  no-op-macro class again.
+
+The comments recording *why* each fix exists are deleted with the code they annotate, so the
+next reader cannot tell a revert from a fresh translation.
+
+**Fix.** `rustconv translate` now refuses to assemble a whole-TU run over a destination that
+is committed and unmodified — i.e. integrated shipping code — and points at the run's
+`.responses/` copy instead; `--reassemble` is the explicit opt-out. Treat a re-roll of an
+integrated module as an AUDIT: read the diff, port anything genuinely better by hand, and keep
+the shipping file. The `.responses/` artifact is durable and costs nothing to consult twice.
+
+**Corollary — the deterministic oracles do not cover this.** `scan_const_contradictions`
+validates a closed SET of constants, so it is clean on all three of wkssvc/browser/wlansvc and
+says nothing about any of the above. "The free checks are green" is not evidence a re-roll
+would be safe, and it is not evidence one is needed either.
+
 ### A "stuck sampler" is almost always a harness bug wearing the model's clothes
 
 **Symptom.** A TU will not assemble. One or two functions in it fail the deterministic audit
