@@ -25,7 +25,7 @@ elseif(ARCH STREQUAL "arm64")
     set(NPFS_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(NPFS_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE NPFS_RUST_SRCS ${NPFS_RUST_WORKSPACE_DIR}/npfs-rust/src/*.rs)
+rust_crate_sources(NPFS_RUST_SRCS "${NPFS_RUST_WORKSPACE_DIR}" npfs-rust)
 add_custom_command(
     OUTPUT ${NPFS_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

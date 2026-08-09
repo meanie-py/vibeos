@@ -507,12 +507,7 @@ unsafe fn FontLoadThreadImpl(_lpParam: LPVOID) -> DWORD {
     0
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
-    FontLoadThreadImpl(lpParam)
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
+unsafe extern "system" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
     FontLoadThreadImpl(lpParam)
 }
 

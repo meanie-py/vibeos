@@ -801,7 +801,7 @@ pub struct _DEVPROPKEY {
     pub pid: DEVPROPID,
 }
 pub type DEVPROPKEY = _DEVPROPKEY;
-pub type WDFFUNC = ::core::option::Option<unsafe extern "stdcall" fn()>;
+pub type WDFFUNC = ::core::option::Option<unsafe extern "system" fn()>;
 unsafe extern "C" {
     pub static mut WdfFunctions_01017: *const WDFFUNC;
 }
@@ -1470,13 +1470,13 @@ pub const _WDFFUNCENUM_WdfDeviceOpenDevicemapKeyTableIndex: _WDFFUNCENUM = 443;
 pub const _WDFFUNCENUM_WdfFunctionTableNumEntries: _WDFFUNCENUM = 444;
 pub type _WDFFUNCENUM = ::core::ffi::c_uint;
 pub use self::_WDFFUNCENUM as WDFFUNCENUM;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PSTR);
 }
 pub type PFN_WDFVERIFIERDBGBREAKPOINT =
-    ::core::option::Option<unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS)>;
+    ::core::option::Option<unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS)>;
 pub type PFN_WDFVERIFIERKEBUGCHECK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         BugCheckCode: ULONG,
         BugCheckParameter1: ULONG_PTR,
@@ -1486,7 +1486,7 @@ pub type PFN_WDFVERIFIERKEBUGCHECK = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFGETTRIAGEINFO =
-    ::core::option::Option<unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS) -> PVOID>;
+    ::core::option::Option<unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS) -> PVOID>;
 pub const _WDF_EXECUTION_LEVEL_WdfExecutionLevelInvalid: _WDF_EXECUTION_LEVEL = 0;
 pub const _WDF_EXECUTION_LEVEL_WdfExecutionLevelInheritFromParent: _WDF_EXECUTION_LEVEL = 1;
 pub const _WDF_EXECUTION_LEVEL_WdfExecutionLevelPassive: _WDF_EXECUTION_LEVEL = 2;
@@ -1502,9 +1502,9 @@ pub const _WDF_SYNCHRONIZATION_SCOPE_WdfSynchronizationScopeNone: _WDF_SYNCHRONI
 pub type _WDF_SYNCHRONIZATION_SCOPE = ::core::ffi::c_uint;
 pub use self::_WDF_SYNCHRONIZATION_SCOPE as WDF_SYNCHRONIZATION_SCOPE;
 pub type PFN_WDF_OBJECT_CONTEXT_CLEANUP =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFOBJECT)>;
 pub type PFN_WDF_OBJECT_CONTEXT_DESTROY =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFOBJECT)>;
 pub type PCWDF_OBJECT_CONTEXT_TYPE_INFO = *const _WDF_OBJECT_CONTEXT_TYPE_INFO;
 #[repr(C)]
 pub struct _WDF_OBJECT_ATTRIBUTES {
@@ -1545,7 +1545,7 @@ pub type PFN_WDFOBJECTGETTYPEDCONTEXTWORKER = ::core::option::Option<
     ) -> PVOID,
 >;
 pub type PFN_WDFOBJECTALLOCATECONTEXT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Handle: WDFOBJECT,
         ContextAttributes: PWDF_OBJECT_ATTRIBUTES,
@@ -1559,7 +1559,7 @@ pub type PFN_WDFOBJECTCONTEXTGETOBJECT = ::core::option::Option<
     ) -> WDFOBJECT,
 >;
 pub type PFN_WDFOBJECTREFERENCEACTUAL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Handle: WDFOBJECT,
         Tag: PVOID,
@@ -1568,7 +1568,7 @@ pub type PFN_WDFOBJECTREFERENCEACTUAL = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFOBJECTDEREFERENCEACTUAL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Handle: WDFOBJECT,
         Tag: PVOID,
@@ -1577,17 +1577,17 @@ pub type PFN_WDFOBJECTDEREFERENCEACTUAL = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFOBJECTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
         Object: *mut WDFOBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFOBJECTDELETE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
 >;
 pub type PFN_WDFOBJECTQUERY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Object: WDFOBJECT,
         Guid: *const GUID,
@@ -1596,40 +1596,40 @@ pub type PFN_WDFOBJECTQUERY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFOBJECTACQUIRELOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
 >;
 pub type PFN_WDFOBJECTRELEASELOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Object: WDFOBJECT),
 >;
 pub type PFN_WDFWAITLOCKCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         LockAttributes: PWDF_OBJECT_ATTRIBUTES,
         Lock: *mut WDFWAITLOCK,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWAITLOCKACQUIRE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Lock: WDFWAITLOCK,
         Timeout: PLONGLONG,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWAITLOCKRELEASE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Lock: WDFWAITLOCK),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Lock: WDFWAITLOCK),
 >;
 pub type PFN_WDFSPINLOCKCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         SpinLockAttributes: PWDF_OBJECT_ATTRIBUTES,
         SpinLock: *mut WDFSPINLOCK,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFSPINLOCKACQUIRE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, SpinLock: WDFSPINLOCK),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, SpinLock: WDFSPINLOCK),
 >;
 pub type PFN_WDFSPINLOCKRELEASE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, SpinLock: WDFSPINLOCK),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, SpinLock: WDFSPINLOCK),
 >;
 pub const _WDF_DRIVER_INIT_FLAGS_WdfDriverInitNonPnpDriver: _WDF_DRIVER_INIT_FLAGS = 1;
 pub const _WDF_DRIVER_INIT_FLAGS_WdfDriverInitNoDispatchOverride: _WDF_DRIVER_INIT_FLAGS = 2;
@@ -1638,12 +1638,12 @@ pub const _WDF_DRIVER_INIT_FLAGS_WdfVerifierOn: _WDF_DRIVER_INIT_FLAGS = 8;
 pub type _WDF_DRIVER_INIT_FLAGS = ::core::ffi::c_uint;
 pub use self::_WDF_DRIVER_INIT_FLAGS as WDF_DRIVER_INIT_FLAGS;
 pub type PFN_WDF_DRIVER_DEVICE_ADD = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDRIVER, arg2: PWDFDEVICE_INIT) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDRIVER, arg2: PWDFDEVICE_INIT) -> NTSTATUS,
 >;
 pub type PFN_WDF_DRIVER_UNLOAD =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDRIVER)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDRIVER)>;
 pub type PFN_WDF_TRACE_CALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: UCHAR,
         arg2: PVOID,
         arg3: ULONG,
@@ -1671,7 +1671,7 @@ pub struct _WDF_DRIVER_VERSION_AVAILABLE_PARAMS {
 pub type WDF_DRIVER_VERSION_AVAILABLE_PARAMS = _WDF_DRIVER_VERSION_AVAILABLE_PARAMS;
 pub type PWDF_DRIVER_VERSION_AVAILABLE_PARAMS = *mut _WDF_DRIVER_VERSION_AVAILABLE_PARAMS;
 pub type PFN_WDFDRIVERCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DriverObject: PDRIVER_OBJECT,
         RegistryPath: PCUNICODE_STRING,
@@ -1681,16 +1681,16 @@ pub type PFN_WDFDRIVERCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDRIVERGETREGISTRYPATH = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Driver: WDFDRIVER) -> PWSTR,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Driver: WDFDRIVER) -> PWSTR,
 >;
 pub type PFN_WDFDRIVERWDMGETDRIVEROBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Driver: WDFDRIVER,
     ) -> PDRIVER_OBJECT,
 >;
 pub type PFN_WDFDRIVEROPENPARAMETERSREGISTRYKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Driver: WDFDRIVER,
         DesiredAccess: ACCESS_MASK,
@@ -1699,13 +1699,13 @@ pub type PFN_WDFDRIVEROPENPARAMETERSREGISTRYKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWDMDRIVERGETWDFDRIVERHANDLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DriverObject: PDRIVER_OBJECT,
     ) -> WDFDRIVER,
 >;
 pub type PFN_WDFDRIVERREGISTERTRACEINFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DriverObject: PDRIVER_OBJECT,
         EvtTraceCallback: PFN_WDF_TRACE_CALLBACK,
@@ -1713,21 +1713,21 @@ pub type PFN_WDFDRIVERREGISTERTRACEINFO = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDRIVERRETRIEVEVERSIONSTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Driver: WDFDRIVER,
         String: WDFSTRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDRIVERISVERSIONAVAILABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Driver: WDFDRIVER,
         VersionAvailableParams: PWDF_DRIVER_VERSION_AVAILABLE_PARAMS,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDF_DEVICE_PROCESS_QUERY_INTERFACE_REQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDEVICE,
         arg2: LPGUID,
         arg3: PINTERFACE,
@@ -1746,7 +1746,7 @@ pub struct _WDF_QUERY_INTERFACE_CONFIG {
 pub type WDF_QUERY_INTERFACE_CONFIG = _WDF_QUERY_INTERFACE_CONFIG;
 pub type PWDF_QUERY_INTERFACE_CONFIG = *mut _WDF_QUERY_INTERFACE_CONFIG;
 pub type PFN_WDFDEVICEADDQUERYINTERFACE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         InterfaceConfig: PWDF_QUERY_INTERFACE_CONFIG,
@@ -1800,7 +1800,7 @@ pub struct _WDF_MEMORY_DESCRIPTOR__bindgen_ty_1__bindgen_ty_3 {
 pub type WDF_MEMORY_DESCRIPTOR = _WDF_MEMORY_DESCRIPTOR;
 pub type PWDF_MEMORY_DESCRIPTOR = *mut _WDF_MEMORY_DESCRIPTOR;
 pub type PFN_WDFMEMORYCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
         PoolType: POOL_TYPE,
@@ -1811,7 +1811,7 @@ pub type PFN_WDFMEMORYCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFMEMORYCREATEPREALLOCATED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
         Buffer: PVOID,
@@ -1820,14 +1820,14 @@ pub type PFN_WDFMEMORYCREATEPREALLOCATED = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFMEMORYGETBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Memory: WDFMEMORY,
         BufferSize: *mut usize,
     ) -> PVOID,
 >;
 pub type PFN_WDFMEMORYASSIGNBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Memory: WDFMEMORY,
         Buffer: PVOID,
@@ -1835,7 +1835,7 @@ pub type PFN_WDFMEMORYASSIGNBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFMEMORYCOPYTOBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         SourceMemory: WDFMEMORY,
         SourceOffset: usize,
@@ -1844,7 +1844,7 @@ pub type PFN_WDFMEMORYCOPYTOBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFMEMORYCOPYFROMBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DestinationMemory: WDFMEMORY,
         DestinationOffset: usize,
@@ -1853,7 +1853,7 @@ pub type PFN_WDFMEMORYCOPYFROMBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFLOOKASIDELISTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         LookasideAttributes: PWDF_OBJECT_ATTRIBUTES,
         BufferSize: usize,
@@ -1864,7 +1864,7 @@ pub type PFN_WDFLOOKASIDELISTCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFMEMORYCREATEFROMLOOKASIDE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Lookaside: WDFLOOKASIDE,
         Memory: *mut WDFMEMORY,
@@ -1903,60 +1903,60 @@ pub struct _WDF_CHILD_ADDRESS_DESCRIPTION_HEADER {
 pub type WDF_CHILD_ADDRESS_DESCRIPTION_HEADER = _WDF_CHILD_ADDRESS_DESCRIPTION_HEADER;
 pub type PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER = *mut _WDF_CHILD_ADDRESS_DESCRIPTION_HEADER;
 pub type PFN_WDF_CHILD_LIST_CREATE_DEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
         arg3: PWDFDEVICE_INIT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_CHILD_LIST_SCAN_FOR_CHILDREN =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFCHILDLIST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFCHILDLIST)>;
 pub type PFN_WDF_CHILD_LIST_IDENTIFICATION_DESCRIPTION_COPY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
         arg3: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ),
 >;
 pub type PFN_WDF_CHILD_LIST_IDENTIFICATION_DESCRIPTION_DUPLICATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
         arg3: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_CHILD_LIST_IDENTIFICATION_DESCRIPTION_COMPARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
         arg3: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDF_CHILD_LIST_IDENTIFICATION_DESCRIPTION_CLEANUP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ),
 >;
 pub type PFN_WDF_CHILD_LIST_ADDRESS_DESCRIPTION_COPY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
         arg3: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
     ),
 >;
 pub type PFN_WDF_CHILD_LIST_ADDRESS_DESCRIPTION_DUPLICATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
         arg3: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_CHILD_LIST_ADDRESS_DESCRIPTION_CLEANUP = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFCHILDLIST, arg2: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER),
+    unsafe extern "system" fn(arg1: WDFCHILDLIST, arg2: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER),
 >;
 pub type PFN_WDF_CHILD_LIST_DEVICE_REENUMERATED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFCHILDLIST,
         arg2: WDFDEVICE,
         arg3: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
@@ -2005,7 +2005,7 @@ pub struct _WDF_CHILD_LIST_ITERATOR {
 pub type WDF_CHILD_LIST_ITERATOR = _WDF_CHILD_LIST_ITERATOR;
 pub type PWDF_CHILD_LIST_ITERATOR = *mut _WDF_CHILD_LIST_ITERATOR;
 pub type PFN_WDFCHILDLISTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Config: PWDF_CHILD_LIST_CONFIG,
@@ -2014,20 +2014,20 @@ pub type PFN_WDFCHILDLISTCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCHILDLISTGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFCHILDLISTRETRIEVEPDO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         RetrieveInfo: PWDF_CHILD_RETRIEVE_INFO,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFCHILDLISTRETRIEVEADDRESSDESCRIPTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         IdentificationDescription: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
@@ -2035,20 +2035,20 @@ pub type PFN_WDFCHILDLISTRETRIEVEADDRESSDESCRIPTION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCHILDLISTBEGINSCAN = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
 >;
 pub type PFN_WDFCHILDLISTENDSCAN = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
 >;
 pub type PFN_WDFCHILDLISTBEGINITERATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         Iterator: PWDF_CHILD_LIST_ITERATOR,
     ),
 >;
 pub type PFN_WDFCHILDLISTRETRIEVENEXTDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         Iterator: PWDF_CHILD_LIST_ITERATOR,
@@ -2057,14 +2057,14 @@ pub type PFN_WDFCHILDLISTRETRIEVENEXTDEVICE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCHILDLISTENDITERATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         Iterator: PWDF_CHILD_LIST_ITERATOR,
     ),
 >;
 pub type PFN_WDFCHILDLISTADDORUPDATECHILDDESCRIPTIONASPRESENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         IdentificationDescription: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
@@ -2072,42 +2072,42 @@ pub type PFN_WDFCHILDLISTADDORUPDATECHILDDESCRIPTIONASPRESENT = ::core::option::
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCHILDLISTUPDATECHILDDESCRIPTIONASMISSING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         IdentificationDescription: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCHILDLISTUPDATEALLCHILDDESCRIPTIONSASPRESENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, ChildList: WDFCHILDLIST),
 >;
 pub type PFN_WDFCHILDLISTREQUESTCHILDEJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ChildList: WDFCHILDLIST,
         IdentificationDescription: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFFILEOBJECTGETFILENAME = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         FileObject: WDFFILEOBJECT,
     ) -> PUNICODE_STRING,
 >;
 pub type PFN_WDFFILEOBJECTGETFLAGS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         FileObject: WDFFILEOBJECT,
     ) -> ULONG,
 >;
 pub type PFN_WDFFILEOBJECTGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         FileObject: WDFFILEOBJECT,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFFILEOBJECTWDMGETFILEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         FileObject: WDFFILEOBJECT,
     ) -> PFILE_OBJECT,
@@ -2765,12 +2765,12 @@ pub const _WDF_REQUEST_TYPE_WdfRequestTypeMax: _WDF_REQUEST_TYPE = 256;
 pub type _WDF_REQUEST_TYPE = ::core::ffi::c_uint;
 pub use self::_WDF_REQUEST_TYPE as WDF_REQUEST_TYPE;
 pub type PFN_WDF_DEVICE_FILE_CREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFREQUEST, arg3: WDFFILEOBJECT),
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFREQUEST, arg3: WDFFILEOBJECT),
 >;
 pub type PFN_WDF_FILE_CLOSE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFFILEOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFFILEOBJECT)>;
 pub type PFN_WDF_FILE_CLEANUP =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFFILEOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFFILEOBJECT)>;
 #[repr(C)]
 pub struct _WDF_FILEOBJECT_CONFIG {
     pub Size: ULONG,
@@ -2880,75 +2880,75 @@ pub type WDF_DEVICE_POWER_POLICY_NOTIFICATION_DATA = _WDF_DEVICE_POWER_POLICY_NO
 pub type PCWDF_DEVICE_POWER_POLICY_NOTIFICATION_DATA =
     *const WDF_DEVICE_POWER_POLICY_NOTIFICATION_DATA;
 pub type PFN_WDF_DEVICE_PNP_STATE_CHANGE_NOTIFICATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_PNP_NOTIFICATION_DATA),
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_PNP_NOTIFICATION_DATA),
 >;
 pub type PFN_WDF_DEVICE_POWER_STATE_CHANGE_NOTIFICATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_POWER_NOTIFICATION_DATA),
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_POWER_NOTIFICATION_DATA),
 >;
 pub type PFN_WDF_DEVICE_POWER_POLICY_STATE_CHANGE_NOTIFICATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_POWER_POLICY_NOTIFICATION_DATA),
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: PCWDF_DEVICE_POWER_POLICY_NOTIFICATION_DATA),
 >;
 pub type PFN_WDF_DEVICE_D0_ENTRY = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_D0_ENTRY_POST_INTERRUPTS_ENABLED = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_D0_EXIT = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_D0_EXIT_PRE_INTERRUPTS_DISABLED = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDF_POWER_DEVICE_STATE) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_PREPARE_HARDWARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST, arg3: WDFCMRESLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST, arg3: WDFCMRESLIST) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_RELEASE_HARDWARE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_SELF_MANAGED_IO_CLEANUP =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_SELF_MANAGED_IO_FLUSH =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_SELF_MANAGED_IO_INIT =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_SELF_MANAGED_IO_SUSPEND =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_SELF_MANAGED_IO_RESTART =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_QUERY_STOP =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_QUERY_REMOVE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_SURPRISE_REMOVAL =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_USAGE_NOTIFICATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDF_SPECIAL_FILE_TYPE, arg3: BOOLEAN),
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDF_SPECIAL_FILE_TYPE, arg3: BOOLEAN),
 >;
 pub type PFN_WDF_DEVICE_USAGE_NOTIFICATION_EX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDEVICE,
         arg2: WDF_SPECIAL_FILE_TYPE,
         arg3: BOOLEAN,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_RELATIONS_QUERY =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: DEVICE_RELATION_TYPE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: DEVICE_RELATION_TYPE)>;
 pub type PFN_WDF_DEVICE_ARM_WAKE_FROM_S0 =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_ARM_WAKE_FROM_SX =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_ARM_WAKE_FROM_SX_WITH_REASON = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: BOOLEAN, arg3: BOOLEAN) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: BOOLEAN, arg3: BOOLEAN) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_DISARM_WAKE_FROM_S0 =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_DISARM_WAKE_FROM_SX =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_WAKE_FROM_S0_TRIGGERED =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_WAKE_FROM_SX_TRIGGERED =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 #[repr(C)]
 pub struct _WDF_PNPPOWER_EVENT_CALLBACKS {
     pub Size: ULONG,
@@ -3079,9 +3079,9 @@ pub struct _WDF_REMOVE_LOCK_OPTIONS {
 pub type WDF_REMOVE_LOCK_OPTIONS = _WDF_REMOVE_LOCK_OPTIONS;
 pub type PWDF_REMOVE_LOCK_OPTIONS = *mut _WDF_REMOVE_LOCK_OPTIONS;
 pub type PFN_WDFDEVICE_WDM_IRP_PREPROCESS =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: PIRP) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: PIRP) -> NTSTATUS>;
 pub type PFN_WDFDEVICE_WDM_IRP_DISPATCH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDEVICE,
         arg2: UCHAR,
         arg3: UCHAR,
@@ -3092,11 +3092,11 @@ pub type PFN_WDFDEVICE_WDM_IRP_DISPATCH = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_IO_IN_CALLER_CONTEXT =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFREQUEST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFREQUEST)>;
 pub type PFN_WDFDEVICE_WDM_POST_PO_FX_REGISTER_DEVICE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: POHANDLE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: POHANDLE) -> NTSTATUS>;
 pub type PFN_WDFDEVICE_WDM_PRE_PO_FX_UNREGISTER_DEVICE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: POHANDLE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: POHANDLE)>;
 #[repr(C)]
 pub struct _WDF_POWER_FRAMEWORK_SETTINGS {
     pub Size: ULONG,
@@ -3130,52 +3130,52 @@ pub struct _WDF_DEVICE_PROPERTY_DATA {
 pub type WDF_DEVICE_PROPERTY_DATA = _WDF_DEVICE_PROPERTY_DATA;
 pub type PWDF_DEVICE_PROPERTY_DATA = *mut _WDF_DEVICE_PROPERTY_DATA;
 pub type PFN_WDFDEVICEGETDEVICESTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceState: PWDF_DEVICE_STATE,
     ),
 >;
 pub type PFN_WDFDEVICESETDEVICESTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceState: PWDF_DEVICE_STATE,
     ),
 >;
 pub type PFN_WDFWDMDEVICEGETWDFDEVICEHANDLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceObject: PDEVICE_OBJECT,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFDEVICEWDMGETDEVICEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFDEVICEWDMGETATTACHEDDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFDEVICEWDMGETPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFDEVICEWDMDISPATCHPREPROCESSEDIRP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Irp: PIRP,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEWDMDISPATCHIRP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Irp: PIRP,
@@ -3183,7 +3183,7 @@ pub type PFN_WDFDEVICEWDMDISPATCHIRP = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEWDMDISPATCHIRPTOIOQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Irp: PIRP,
@@ -3192,93 +3192,93 @@ pub type PFN_WDFDEVICEWDMDISPATCHIRPTOIOQUEUE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEADDDEPENDENTUSAGEDEVICEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DependentDevice: PDEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEREMOVEDEPENDENTUSAGEDEVICEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DependentDevice: PDEVICE_OBJECT,
     ),
 >;
 pub type PFN_WDFDEVICEADDREMOVALRELATIONSPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PhysicalDevice: PDEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEREMOVEREMOVALRELATIONSPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PhysicalDevice: PDEVICE_OBJECT,
     ),
 >;
 pub type PFN_WDFDEVICECLEARREMOVALRELATIONSDEVICES = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
 >;
 pub type PFN_WDFDEVICEGETDRIVER = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFDRIVER,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFDRIVER,
 >;
 pub type PFN_WDFDEVICERETRIEVEDEVICENAME = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         String: WDFSTRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEASSIGNMOFRESOURCENAME = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         MofResourceName: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEGETIOTARGET = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> WDFIOTARGET,
 >;
 pub type PFN_WDFDEVICEGETDEVICEPNPSTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> WDF_DEVICE_PNP_STATE,
 >;
 pub type PFN_WDFDEVICEGETDEVICEPOWERSTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> WDF_DEVICE_POWER_STATE,
 >;
 pub type PFN_WDFDEVICEGETDEVICEPOWERPOLICYSTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> WDF_DEVICE_POWER_POLICY_STATE,
 >;
 pub type PFN_WDFDEVICEASSIGNS0IDLESETTINGS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Settings: PWDF_DEVICE_POWER_POLICY_IDLE_SETTINGS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEASSIGNSXWAKESETTINGS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Settings: PWDF_DEVICE_POWER_POLICY_WAKE_SETTINGS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEOPENREGISTRYKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceInstanceKeyType: ULONG,
@@ -3288,7 +3288,7 @@ pub type PFN_WDFDEVICEOPENREGISTRYKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEOPENDEVICEMAPKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         KeyName: PCUNICODE_STRING,
@@ -3298,7 +3298,7 @@ pub type PFN_WDFDEVICEOPENDEVICEMAPKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICESETSPECIALFILESUPPORT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         FileType: WDF_SPECIAL_FILE_TYPE,
@@ -3306,51 +3306,51 @@ pub type PFN_WDFDEVICESETSPECIALFILESUPPORT = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDEVICESETCHARACTERISTICS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceCharacteristics: ULONG,
     ),
 >;
 pub type PFN_WDFDEVICEGETCHARACTERISTICS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> ULONG,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> ULONG,
 >;
 pub type PFN_WDFDEVICEGETALIGNMENTREQUIREMENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> ULONG,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> ULONG,
 >;
 pub type PFN_WDFDEVICESETALIGNMENTREQUIREMENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         AlignmentRequirement: ULONG,
     ),
 >;
 pub type PFN_WDFDEVICEINITFREE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFDEVICEINITSETPNPPOWEREVENTCALLBACKS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         PnpPowerEventCallbacks: PWDF_PNPPOWER_EVENT_CALLBACKS,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETPOWERPOLICYEVENTCALLBACKS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         PowerPolicyEventCallbacks: PWDF_POWER_POLICY_EVENT_CALLBACKS,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETPOWERPOLICYOWNERSHIP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         IsPowerPolicyOwner: BOOLEAN,
     ),
 >;
 pub type PFN_WDFDEVICEINITREGISTERPNPSTATECHANGECALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         PnpState: WDF_DEVICE_PNP_STATE,
@@ -3359,7 +3359,7 @@ pub type PFN_WDFDEVICEINITREGISTERPNPSTATECHANGECALLBACK = ::core::option::Optio
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITREGISTERPOWERSTATECHANGECALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         PowerState: WDF_DEVICE_POWER_STATE,
@@ -3368,7 +3368,7 @@ pub type PFN_WDFDEVICEINITREGISTERPOWERSTATECHANGECALLBACK = ::core::option::Opt
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITREGISTERPOWERPOLICYSTATECHANGECALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         PowerPolicyState: WDF_DEVICE_POWER_POLICY_STATE,
@@ -3377,58 +3377,58 @@ pub type PFN_WDFDEVICEINITREGISTERPOWERPOLICYSTATECHANGECALLBACK = ::core::optio
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITSETEXCLUSIVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         IsExclusive: BOOLEAN,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETIOTYPE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         IoType: WDF_DEVICE_IO_TYPE,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETPOWERNOTPAGEABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFDEVICEINITSETPOWERPAGEABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFDEVICEINITSETPOWERINRUSH = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFDEVICEINITSETDEVICETYPE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceType: ULONG,
     ),
 >;
 pub type PFN_WDFDEVICEINITASSIGNNAME = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceName: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITASSIGNSDDLSTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         SDDLString: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITSETDEVICECLASS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceClassGuid: *const GUID,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETCHARACTERISTICS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceCharacteristics: ULONG,
@@ -3436,7 +3436,7 @@ pub type PFN_WDFDEVICEINITSETCHARACTERISTICS = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDEVICEINITSETFILEOBJECTCONFIG = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         FileObjectConfig: PWDF_FILEOBJECT_CONFIG,
@@ -3444,14 +3444,14 @@ pub type PFN_WDFDEVICEINITSETFILEOBJECTCONFIG = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDEVICEINITSETREQUESTATTRIBUTES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         RequestAttributes: PWDF_OBJECT_ATTRIBUTES,
     ),
 >;
 pub type PFN_WDFDEVICEINITASSIGNWDMIRPPREPROCESSCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         EvtDeviceWdmIrpPreprocess: PFN_WDFDEVICE_WDM_IRP_PREPROCESS,
@@ -3461,21 +3461,21 @@ pub type PFN_WDFDEVICEINITASSIGNWDMIRPPREPROCESSCALLBACK = ::core::option::Optio
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITSETIOINCALLERCONTEXTCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         EvtIoInCallerContext: PFN_WDF_IO_IN_CALLER_CONTEXT,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETREMOVELOCKOPTIONS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         Options: PWDF_REMOVE_LOCK_OPTIONS,
     ),
 >;
 pub type PFN_WDFDEVICECREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: *mut PWDFDEVICE_INIT,
         DeviceAttributes: PWDF_OBJECT_ATTRIBUTES,
@@ -3483,14 +3483,14 @@ pub type PFN_WDFDEVICECREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICESETSTATICSTOPREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Stoppable: BOOLEAN,
     ),
 >;
 pub type PFN_WDFDEVICECREATEDEVICEINTERFACE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         InterfaceClassGUID: *const GUID,
@@ -3498,7 +3498,7 @@ pub type PFN_WDFDEVICECREATEDEVICEINTERFACE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICESETDEVICEINTERFACESTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         InterfaceClassGUID: *const GUID,
@@ -3507,7 +3507,7 @@ pub type PFN_WDFDEVICESETDEVICEINTERFACESTATE = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDEVICERETRIEVEDEVICEINTERFACESTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         InterfaceClassGUID: *const GUID,
@@ -3516,14 +3516,14 @@ pub type PFN_WDFDEVICERETRIEVEDEVICEINTERFACESTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICECREATESYMBOLICLINK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         SymbolicLinkName: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEQUERYPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -3533,7 +3533,7 @@ pub type PFN_WDFDEVICEQUERYPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEALLOCANDQUERYPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -3543,52 +3543,52 @@ pub type PFN_WDFDEVICEALLOCANDQUERYPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICESETPNPCAPABILITIES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PnpCapabilities: PWDF_DEVICE_PNP_CAPABILITIES,
     ),
 >;
 pub type PFN_WDFDEVICESETPOWERCAPABILITIES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PowerCapabilities: PWDF_DEVICE_POWER_CAPABILITIES,
     ),
 >;
 pub type PFN_WDFDEVICESETBUSINFORMATIONFORCHILDREN = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         BusInformation: PPNP_BUS_INFORMATION,
     ),
 >;
 pub type PFN_WDFDEVICEINDICATEWAKESTATUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         WaitWakeStatus: NTSTATUS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICESETFAILED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         FailedAction: WDF_DEVICE_FAILED_ACTION,
     ),
 >;
 pub type PFN_WDFDEVICESTOPIDLENOTRACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         WaitForD0: BOOLEAN,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICERESUMEIDLENOTRACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
 >;
 pub type PFN_WDFDEVICESTOPIDLEACTUAL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         WaitForD0: BOOLEAN,
@@ -3598,7 +3598,7 @@ pub type PFN_WDFDEVICESTOPIDLEACTUAL = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICERESUMEIDLEACTUAL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Tag: PVOID,
@@ -3607,24 +3607,24 @@ pub type PFN_WDFDEVICERESUMEIDLEACTUAL = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDEVICEGETFILEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         FileObject: PFILE_OBJECT,
     ) -> WDFFILEOBJECT,
 >;
 pub type PFN_WDFDEVICEENQUEUEREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Request: WDFREQUEST,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEGETDEFAULTQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFQUEUE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFQUEUE,
 >;
 pub type PFN_WDFDEVICECONFIGUREREQUESTDISPATCHING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Queue: WDFQUEUE,
@@ -3632,7 +3632,7 @@ pub type PFN_WDFDEVICECONFIGUREREQUESTDISPATCHING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICECONFIGUREWDMIRPDISPATCHCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Driver: WDFDRIVER,
@@ -3642,34 +3642,34 @@ pub type PFN_WDFDEVICECONFIGUREWDMIRPDISPATCHCALLBACK = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEGETSYSTEMPOWERACTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
     ) -> POWER_ACTION,
 >;
 pub type PFN_WDFDEVICEWDMASSIGNPOWERFRAMEWORKSETTINGS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PowerFrameworkSettings: PWDF_POWER_FRAMEWORK_SETTINGS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEINITSETRELEASEHARDWAREORDERONFAILURE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         ReleaseHardwareOrderOnFailure: WDF_RELEASE_HARDWARE_ORDER_ON_FAILURE,
     ),
 >;
 pub type PFN_WDFDEVICEINITSETIOTYPEEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         IoTypeConfig: PWDF_IO_TYPE_CONFIG,
     ),
 >;
 pub type PFN_WDFDEVICEQUERYPROPERTYEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceProperty: PWDF_DEVICE_PROPERTY_DATA,
@@ -3680,7 +3680,7 @@ pub type PFN_WDFDEVICEQUERYPROPERTYEX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEALLOCANDQUERYPROPERTYEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceProperty: PWDF_DEVICE_PROPERTY_DATA,
@@ -3691,7 +3691,7 @@ pub type PFN_WDFDEVICEALLOCANDQUERYPROPERTYEX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDEVICEASSIGNPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         DeviceProperty: PWDF_DEVICE_PROPERTY_DATA,
@@ -3701,59 +3701,59 @@ pub type PFN_WDFDEVICEASSIGNPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCOLLECTIONCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         CollectionAttributes: PWDF_OBJECT_ATTRIBUTES,
         Collection: *mut WDFCOLLECTION,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCOLLECTIONGETCOUNT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
     ) -> ULONG,
 >;
 pub type PFN_WDFCOLLECTIONADD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
         Object: WDFOBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCOLLECTIONREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
         Item: WDFOBJECT,
     ),
 >;
 pub type PFN_WDFCOLLECTIONREMOVEITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
         Index: ULONG,
     ),
 >;
 pub type PFN_WDFCOLLECTIONGETITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
         Index: ULONG,
     ) -> WDFOBJECT,
 >;
 pub type PFN_WDFCOLLECTIONGETFIRSTITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
     ) -> WDFOBJECT,
 >;
 pub type PFN_WDFCOLLECTIONGETLASTITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Collection: WDFCOLLECTION,
     ) -> WDFOBJECT,
 >;
-pub type PFN_WDF_DPC = ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDPC)>;
+pub type PFN_WDF_DPC = ::core::option::Option<unsafe extern "system" fn(arg1: WDFDPC)>;
 #[repr(C)]
 pub struct _WDF_DPC_CONFIG {
     pub Size: ULONG,
@@ -3763,7 +3763,7 @@ pub struct _WDF_DPC_CONFIG {
 pub type WDF_DPC_CONFIG = _WDF_DPC_CONFIG;
 pub type PWDF_DPC_CONFIG = *mut _WDF_DPC_CONFIG;
 pub type PFN_WDFDPCCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Config: PWDF_DPC_CONFIG,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
@@ -3771,22 +3771,22 @@ pub type PFN_WDFDPCCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDPCENQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> BOOLEAN,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> BOOLEAN,
 >;
 pub type PFN_WDFDPCCANCEL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Dpc: WDFDPC,
         Wait: BOOLEAN,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFDPCGETPARENTOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> WDFOBJECT,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> WDFOBJECT,
 >;
 pub type PFN_WDFDPCWDMGETDPC = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> PKDPC,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Dpc: WDFDPC) -> PKDPC,
 >;
-pub type PFN_WDF_TIMER = ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFTIMER)>;
+pub type PFN_WDF_TIMER = ::core::option::Option<unsafe extern "system" fn(arg1: WDFTIMER)>;
 #[repr(C)]
 #[repr(align(8))]
 pub struct _WDF_TIMER_CONFIG {
@@ -3801,7 +3801,7 @@ pub struct _WDF_TIMER_CONFIG {
 pub type WDF_TIMER_CONFIG = _WDF_TIMER_CONFIG;
 pub type PWDF_TIMER_CONFIG = *mut _WDF_TIMER_CONFIG;
 pub type PFN_WDFTIMERCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Config: PWDF_TIMER_CONFIG,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
@@ -3809,23 +3809,23 @@ pub type PFN_WDFTIMERCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFTIMERSTART = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Timer: WDFTIMER,
         DueTime: LONGLONG,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFTIMERSTOP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Timer: WDFTIMER,
         Wait: BOOLEAN,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFTIMERGETPARENTOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Timer: WDFTIMER) -> WDFOBJECT,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Timer: WDFTIMER) -> WDFOBJECT,
 >;
-pub type PFN_WDF_WORKITEM = ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFWORKITEM)>;
+pub type PFN_WDF_WORKITEM = ::core::option::Option<unsafe extern "system" fn(arg1: WDFWORKITEM)>;
 #[repr(C)]
 pub struct _WDF_WORKITEM_CONFIG {
     pub Size: ULONG,
@@ -3835,7 +3835,7 @@ pub struct _WDF_WORKITEM_CONFIG {
 pub type WDF_WORKITEM_CONFIG = _WDF_WORKITEM_CONFIG;
 pub type PWDF_WORKITEM_CONFIG = *mut _WDF_WORKITEM_CONFIG;
 pub type PFN_WDFWORKITEMCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Config: PWDF_WORKITEM_CONFIG,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
@@ -3843,16 +3843,16 @@ pub type PFN_WDFWORKITEMCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWORKITEMENQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WorkItem: WDFWORKITEM),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WorkItem: WDFWORKITEM),
 >;
 pub type PFN_WDFWORKITEMGETPARENTOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WorkItem: WDFWORKITEM,
     ) -> WDFOBJECT,
 >;
 pub type PFN_WDFWORKITEMFLUSH = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WorkItem: WDFWORKITEM),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WorkItem: WDFWORKITEM),
 >;
 pub const _WDF_INTERRUPT_POLARITY_WdfInterruptPolarityUnknown: _WDF_INTERRUPT_POLARITY = 0;
 pub const _WDF_INTERRUPT_POLARITY_WdfInterruptActiveHigh: _WDF_INTERRUPT_POLARITY = 1;
@@ -3878,19 +3878,19 @@ pub type _WDF_INTERRUPT_PRIORITY = ::core::ffi::c_uint;
 pub use self::_WDF_INTERRUPT_PRIORITY as WDF_INTERRUPT_PRIORITY;
 pub type PWDF_INTERRUPT_PRIORITY = *mut _WDF_INTERRUPT_PRIORITY;
 pub type PFN_WDF_INTERRUPT_ISR =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: ULONG) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: ULONG) -> BOOLEAN>;
 pub type PFN_WDF_INTERRUPT_SYNCHRONIZE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: WDFCONTEXT) -> BOOLEAN,
+    unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: WDFCONTEXT) -> BOOLEAN,
 >;
 pub type PFN_WDF_INTERRUPT_DPC =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: WDFOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: WDFOBJECT)>;
 pub type PFN_WDF_INTERRUPT_WORKITEM =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: WDFOBJECT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: WDFOBJECT)>;
 pub type PFN_WDF_INTERRUPT_ENABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: WDFDEVICE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: WDFDEVICE) -> NTSTATUS,
 >;
 pub type PFN_WDF_INTERRUPT_DISABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFINTERRUPT, arg2: WDFDEVICE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFINTERRUPT, arg2: WDFDEVICE) -> NTSTATUS,
 >;
 #[repr(C)]
 pub struct _WDF_INTERRUPT_CONFIG {
@@ -3941,7 +3941,7 @@ pub struct _WDF_INTERRUPT_EXTENDED_POLICY {
 pub type WDF_INTERRUPT_EXTENDED_POLICY = _WDF_INTERRUPT_EXTENDED_POLICY;
 pub type PWDF_INTERRUPT_EXTENDED_POLICY = *mut _WDF_INTERRUPT_EXTENDED_POLICY;
 pub type PFN_WDFINTERRUPTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Configuration: PWDF_INTERRUPT_CONFIG,
@@ -3950,19 +3950,19 @@ pub type PFN_WDFINTERRUPTCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFINTERRUPTQUEUEDPCFORISR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFINTERRUPTQUEUEWORKITEMFORISR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFINTERRUPTSYNCHRONIZE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
         Callback: PFN_WDF_INTERRUPT_SYNCHRONIZE,
@@ -3970,32 +3970,32 @@ pub type PFN_WDFINTERRUPTSYNCHRONIZE = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFINTERRUPTACQUIRELOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFINTERRUPTRELEASELOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFINTERRUPTENABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFINTERRUPTDISABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFINTERRUPTWDMGETINTERRUPT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
     ) -> PKINTERRUPT,
 >;
 pub type PFN_WDFINTERRUPTGETINFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
         Info: PWDF_INTERRUPT_INFO,
     ),
 >;
 pub type PFN_WDFINTERRUPTSETPOLICY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
         Policy: WDF_INTERRUPT_POLICY,
@@ -4004,53 +4004,53 @@ pub type PFN_WDFINTERRUPTSETPOLICY = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFINTERRUPTSETEXTENDEDPOLICY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
         PolicyAndGroup: PWDF_INTERRUPT_EXTENDED_POLICY,
     ),
 >;
 pub type PFN_WDFINTERRUPTGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFINTERRUPTTRYTOACQUIRELOCK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Interrupt: WDFINTERRUPT,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFINTERRUPTREPORTACTIVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFINTERRUPTREPORTINACTIVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Interrupt: WDFINTERRUPT),
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTSETSLOTNUMBER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         SlotNumber: ULONG,
     ),
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTSETINTERFACETYPE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         InterfaceType: INTERFACE_TYPE,
     ),
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTAPPENDIORESLIST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         IoResList: WDFIORESLIST,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTINSERTIORESLIST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         IoResList: WDFIORESLIST,
@@ -4058,34 +4058,34 @@ pub type PFN_WDFIORESOURCEREQUIREMENTSLISTINSERTIORESLIST = ::core::option::Opti
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTGETCOUNT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
     ) -> ULONG,
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTGETIORESLIST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         Index: ULONG,
     ) -> WDFIORESLIST,
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         Index: ULONG,
     ),
 >;
 pub type PFN_WDFIORESOURCEREQUIREMENTSLISTREMOVEBYIORESLIST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         IoResList: WDFIORESLIST,
     ),
 >;
 pub type PFN_WDFIORESOURCELISTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequirementsList: WDFIORESREQLIST,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
@@ -4093,14 +4093,14 @@ pub type PFN_WDFIORESOURCELISTCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIORESOURCELISTAPPENDDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Descriptor: PIO_RESOURCE_DESCRIPTOR,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIORESOURCELISTINSERTDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Descriptor: PIO_RESOURCE_DESCRIPTOR,
@@ -4108,7 +4108,7 @@ pub type PFN_WDFIORESOURCELISTINSERTDESCRIPTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIORESOURCELISTUPDATEDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Descriptor: PIO_RESOURCE_DESCRIPTOR,
@@ -4116,41 +4116,41 @@ pub type PFN_WDFIORESOURCELISTUPDATEDESCRIPTOR = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFIORESOURCELISTGETCOUNT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
     ) -> ULONG,
 >;
 pub type PFN_WDFIORESOURCELISTGETDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Index: ULONG,
     ) -> PIO_RESOURCE_DESCRIPTOR,
 >;
 pub type PFN_WDFIORESOURCELISTREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Index: ULONG,
     ),
 >;
 pub type PFN_WDFIORESOURCELISTREMOVEBYDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ResourceList: WDFIORESLIST,
         Descriptor: PIO_RESOURCE_DESCRIPTOR,
     ),
 >;
 pub type PFN_WDFCMRESOURCELISTAPPENDDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         List: WDFCMRESLIST,
         Descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCMRESOURCELISTINSERTDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         List: WDFCMRESLIST,
         Descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -4158,24 +4158,24 @@ pub type PFN_WDFCMRESOURCELISTINSERTDESCRIPTOR = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCMRESOURCELISTGETCOUNT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, List: WDFCMRESLIST) -> ULONG,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, List: WDFCMRESLIST) -> ULONG,
 >;
 pub type PFN_WDFCMRESOURCELISTGETDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         List: WDFCMRESLIST,
         Index: ULONG,
     ) -> PCM_PARTIAL_RESOURCE_DESCRIPTOR,
 >;
 pub type PFN_WDFCMRESOURCELISTREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         List: WDFCMRESLIST,
         Index: ULONG,
     ),
 >;
 pub type PFN_WDFCMRESOURCELISTREMOVEBYDESCRIPTOR = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         List: WDFCMRESLIST,
         Descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -4210,7 +4210,7 @@ pub const _WDF_REQUEST_SEND_OPTIONS_FLAGS_WDF_REQUEST_SEND_OPTION_IMPERSONATION_
 pub type _WDF_REQUEST_SEND_OPTIONS_FLAGS = ::core::ffi::c_uint;
 pub use self::_WDF_REQUEST_SEND_OPTIONS_FLAGS as WDF_REQUEST_SEND_OPTIONS_FLAGS;
 pub type PFN_WDF_REQUEST_CANCEL =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFREQUEST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFREQUEST)>;
 #[repr(C)]
 pub struct _WDF_REQUEST_PARAMETERS {
     pub Size: USHORT,
@@ -4357,7 +4357,7 @@ pub struct _WDF_REQUEST_COMPLETION_PARAMS__bindgen_ty_1__bindgen_ty_5 {
 pub type WDF_REQUEST_COMPLETION_PARAMS = _WDF_REQUEST_COMPLETION_PARAMS;
 pub type PWDF_REQUEST_COMPLETION_PARAMS = *mut _WDF_REQUEST_COMPLETION_PARAMS;
 pub type PFN_WDF_REQUEST_COMPLETION_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFREQUEST,
         arg2: WDFIOTARGET,
         arg3: PWDF_REQUEST_COMPLETION_PARAMS,
@@ -4393,7 +4393,7 @@ pub struct _WDF_REQUEST_FORWARD_OPTIONS {
 pub type WDF_REQUEST_FORWARD_OPTIONS = _WDF_REQUEST_FORWARD_OPTIONS;
 pub type PWDF_REQUEST_FORWARD_OPTIONS = *mut _WDF_REQUEST_FORWARD_OPTIONS;
 pub type PFN_WDFREQUESTCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequestAttributes: PWDF_OBJECT_ATTRIBUTES,
         IoTarget: WDFIOTARGET,
@@ -4401,7 +4401,7 @@ pub type PFN_WDFREQUESTCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTCREATEFROMIRP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         RequestAttributes: PWDF_OBJECT_ATTRIBUTES,
         Irp: PIRP,
@@ -4410,31 +4410,31 @@ pub type PFN_WDFREQUESTCREATEFROMIRP = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTREUSE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         ReuseParams: PWDF_REQUEST_REUSE_PARAMS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTCHANGETARGET = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         IoTarget: WDFIOTARGET,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTFORMATREQUESTUSINGCURRENTTYPE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST),
 >;
 pub type PFN_WDFREQUESTWDMFORMATUSINGSTACKLOCATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Stack: PIO_STACK_LOCATION,
     ),
 >;
 pub type PFN_WDFREQUESTSEND = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Target: WDFIOTARGET,
@@ -4442,36 +4442,36 @@ pub type PFN_WDFREQUESTSEND = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFREQUESTGETSTATUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTMARKCANCELABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         EvtRequestCancel: PFN_WDF_REQUEST_CANCEL,
     ),
 >;
 pub type PFN_WDFREQUESTMARKCANCELABLEEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         EvtRequestCancel: PFN_WDF_REQUEST_CANCEL,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTUNMARKCANCELABLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTISCANCELED = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
 >;
 pub type PFN_WDFREQUESTCANCELSENTREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
 >;
 pub type PFN_WDFREQUESTISFROM32BITPROCESS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
 >;
 pub type PFN_WDFREQUESTSETCOMPLETIONROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         CompletionRoutine: PFN_WDF_REQUEST_COMPLETION_ROUTINE,
@@ -4479,24 +4479,24 @@ pub type PFN_WDFREQUESTSETCOMPLETIONROUTINE = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFREQUESTGETCOMPLETIONPARAMS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Params: PWDF_REQUEST_COMPLETION_PARAMS,
     ),
 >;
 pub type PFN_WDFREQUESTALLOCATETIMER = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTCOMPLETE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Status: NTSTATUS,
     ),
 >;
 pub type PFN_WDFREQUESTCOMPLETEWITHPRIORITYBOOST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Status: NTSTATUS,
@@ -4504,7 +4504,7 @@ pub type PFN_WDFREQUESTCOMPLETEWITHPRIORITYBOOST = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFREQUESTCOMPLETEWITHINFORMATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Status: NTSTATUS,
@@ -4512,28 +4512,28 @@ pub type PFN_WDFREQUESTCOMPLETEWITHINFORMATION = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFREQUESTGETPARAMETERS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Parameters: PWDF_REQUEST_PARAMETERS,
     ),
 >;
 pub type PFN_WDFREQUESTRETRIEVEINPUTMEMORY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Memory: *mut WDFMEMORY,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEOUTPUTMEMORY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Memory: *mut WDFMEMORY,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEINPUTBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         MinimumRequiredLength: usize,
@@ -4542,7 +4542,7 @@ pub type PFN_WDFREQUESTRETRIEVEINPUTBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEOUTPUTBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         MinimumRequiredSize: usize,
@@ -4551,21 +4551,21 @@ pub type PFN_WDFREQUESTRETRIEVEOUTPUTBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEINPUTWDMMDL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Mdl: *mut PMDL,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEOUTPUTWDMMDL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Mdl: *mut PMDL,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEUNSAFEUSERINPUTBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         MinimumRequiredLength: usize,
@@ -4574,7 +4574,7 @@ pub type PFN_WDFREQUESTRETRIEVEUNSAFEUSERINPUTBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTRETRIEVEUNSAFEUSEROUTPUTBUFFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         MinimumRequiredLength: usize,
@@ -4583,26 +4583,26 @@ pub type PFN_WDFREQUESTRETRIEVEUNSAFEUSEROUTPUTBUFFER = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTSETINFORMATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Information: ULONG_PTR,
     ),
 >;
 pub type PFN_WDFREQUESTGETINFORMATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
     ) -> ULONG_PTR,
 >;
 pub type PFN_WDFREQUESTGETFILEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
     ) -> WDFFILEOBJECT,
 >;
 pub type PFN_WDFREQUESTPROBEANDLOCKUSERBUFFERFORREAD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Buffer: PVOID,
@@ -4611,7 +4611,7 @@ pub type PFN_WDFREQUESTPROBEANDLOCKUSERBUFFERFORREAD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTPROBEANDLOCKUSERBUFFERFORWRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Buffer: PVOID,
@@ -4620,39 +4620,39 @@ pub type PFN_WDFREQUESTPROBEANDLOCKUSERBUFFERFORWRITE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTGETREQUESTORMODE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
     ) -> KPROCESSOR_MODE,
 >;
 pub type PFN_WDFREQUESTFORWARDTOIOQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         DestinationQueue: WDFQUEUE,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTGETIOQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> WDFQUEUE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> WDFQUEUE,
 >;
 pub type PFN_WDFREQUESTREQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDFREQUESTSTOPACKNOWLEDGE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         Requeue: BOOLEAN,
     ),
 >;
 pub type PFN_WDFREQUESTWDMGETIRP = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> PIRP,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> PIRP,
 >;
 pub type PFN_WDFREQUESTISRESERVED = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Request: WDFREQUEST) -> BOOLEAN,
 >;
 pub type PFN_WDFREQUESTFORWARDTOPARENTDEVICEIOQUEUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Request: WDFREQUEST,
         ParentDeviceQueue: WDFQUEUE,
@@ -4693,11 +4693,11 @@ pub const _WDF_IO_TARGET_PURGE_IO_ACTION_WdfIoTargetPurgeIo: _WDF_IO_TARGET_PURG
 pub type _WDF_IO_TARGET_PURGE_IO_ACTION = ::core::ffi::c_uint;
 pub use self::_WDF_IO_TARGET_PURGE_IO_ACTION as WDF_IO_TARGET_PURGE_IO_ACTION;
 pub type PFN_WDF_IO_TARGET_QUERY_REMOVE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFIOTARGET) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFIOTARGET) -> NTSTATUS>;
 pub type PFN_WDF_IO_TARGET_REMOVE_CANCELED =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFIOTARGET)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFIOTARGET)>;
 pub type PFN_WDF_IO_TARGET_REMOVE_COMPLETE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFIOTARGET)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFIOTARGET)>;
 #[repr(C)]
 pub struct _WDF_IO_TARGET_OPEN_PARAMS {
     pub Size: ULONG,
@@ -4722,7 +4722,7 @@ pub struct _WDF_IO_TARGET_OPEN_PARAMS {
 pub type WDF_IO_TARGET_OPEN_PARAMS = _WDF_IO_TARGET_OPEN_PARAMS;
 pub type PWDF_IO_TARGET_OPEN_PARAMS = *mut _WDF_IO_TARGET_OPEN_PARAMS;
 pub type PFN_WDFIOTARGETCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         IoTargetAttributes: PWDF_OBJECT_ATTRIBUTES,
@@ -4730,52 +4730,52 @@ pub type PFN_WDFIOTARGETCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETOPEN = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         OpenParams: PWDF_IO_TARGET_OPEN_PARAMS,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETCLOSEFORQUERYREMOVE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET),
 >;
 pub type PFN_WDFIOTARGETCLOSE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET),
 >;
 pub type PFN_WDFIOTARGETSTART = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETSTOP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Action: WDF_IO_TARGET_SENT_IO_ACTION,
     ),
 >;
 pub type PFN_WDFIOTARGETPURGE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Action: WDF_IO_TARGET_PURGE_IO_ACTION,
     ),
 >;
 pub type PFN_WDFIOTARGETGETSTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> WDF_IO_TARGET_STATE,
 >;
 pub type PFN_WDFIOTARGETGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFIOTARGETQUERYTARGETPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -4785,7 +4785,7 @@ pub type PFN_WDFIOTARGETQUERYTARGETPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETALLOCANDQUERYTARGETPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -4795,7 +4795,7 @@ pub type PFN_WDFIOTARGETALLOCANDQUERYTARGETPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETQUERYFORINTERFACE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         InterfaceType: LPCGUID,
@@ -4806,28 +4806,28 @@ pub type PFN_WDFIOTARGETQUERYFORINTERFACE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETWDMGETTARGETDEVICEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFIOTARGETWDMGETTARGETPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFIOTARGETWDMGETTARGETFILEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
     ) -> PFILE_OBJECT,
 >;
 pub type PFN_WDFIOTARGETWDMGETTARGETFILEHANDLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET) -> HANDLE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, IoTarget: WDFIOTARGET) -> HANDLE,
 >;
 pub type PFN_WDFIOTARGETSENDREADSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4838,7 +4838,7 @@ pub type PFN_WDFIOTARGETSENDREADSYNCHRONOUSLY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETFORMATREQUESTFORREAD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4848,7 +4848,7 @@ pub type PFN_WDFIOTARGETFORMATREQUESTFORREAD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETSENDWRITESYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4859,7 +4859,7 @@ pub type PFN_WDFIOTARGETSENDWRITESYNCHRONOUSLY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETFORMATREQUESTFORWRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4869,7 +4869,7 @@ pub type PFN_WDFIOTARGETFORMATREQUESTFORWRITE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETSENDIOCTLSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4881,7 +4881,7 @@ pub type PFN_WDFIOTARGETSENDIOCTLSYNCHRONOUSLY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETFORMATREQUESTFORIOCTL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4893,7 +4893,7 @@ pub type PFN_WDFIOTARGETFORMATREQUESTFORIOCTL = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETSENDINTERNALIOCTLSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4905,7 +4905,7 @@ pub type PFN_WDFIOTARGETSENDINTERNALIOCTLSYNCHRONOUSLY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETFORMATREQUESTFORINTERNALIOCTL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4917,7 +4917,7 @@ pub type PFN_WDFIOTARGETFORMATREQUESTFORINTERNALIOCTL = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETSENDINTERNALIOCTLOTHERSSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4930,7 +4930,7 @@ pub type PFN_WDFIOTARGETSENDINTERNALIOCTLOTHERSSYNCHRONOUSLY = ::core::option::O
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOTARGETFORMATREQUESTFORINTERNALIOCTLOTHERS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         IoTarget: WDFIOTARGET,
         Request: WDFREQUEST,
@@ -4958,20 +4958,20 @@ pub const _WDF_IO_QUEUE_STATE_WdfIoQueuePnpHeld: _WDF_IO_QUEUE_STATE = 16;
 pub type _WDF_IO_QUEUE_STATE = ::core::ffi::c_uint;
 pub use self::_WDF_IO_QUEUE_STATE as WDF_IO_QUEUE_STATE;
 pub type PFN_WDF_IO_QUEUE_IO_DEFAULT =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
 pub type PFN_WDF_IO_QUEUE_IO_STOP = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: ULONG),
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: ULONG),
 >;
 pub type PFN_WDF_IO_QUEUE_IO_RESUME =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
 pub type PFN_WDF_IO_QUEUE_IO_READ = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: usize),
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: usize),
 >;
 pub type PFN_WDF_IO_QUEUE_IO_WRITE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: usize),
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST, arg3: usize),
 >;
 pub type PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFQUEUE,
         arg2: WDFREQUEST,
         arg3: usize,
@@ -4980,7 +4980,7 @@ pub type PFN_WDF_IO_QUEUE_IO_DEVICE_CONTROL = ::core::option::Option<
     ),
 >;
 pub type PFN_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFQUEUE,
         arg2: WDFREQUEST,
         arg3: usize,
@@ -4989,9 +4989,9 @@ pub type PFN_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL = ::core::option::Option<
     ),
 >;
 pub type PFN_WDF_IO_QUEUE_IO_CANCELED_ON_QUEUE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST)>;
 pub type PFN_WDF_IO_QUEUE_STATE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFCONTEXT)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFCONTEXT)>;
 #[repr(C)]
 pub struct _WDF_IO_QUEUE_CONFIG {
     pub Size: ULONG,
@@ -5039,13 +5039,13 @@ pub const _WDF_IO_FORWARD_PROGRESS_RESERVED_POLICY_WdfIoForwardProgressReservedP
 pub type _WDF_IO_FORWARD_PROGRESS_RESERVED_POLICY = ::core::ffi::c_uint;
 pub use self::_WDF_IO_FORWARD_PROGRESS_RESERVED_POLICY as WDF_IO_FORWARD_PROGRESS_RESERVED_POLICY;
 pub type PFN_WDF_IO_ALLOCATE_RESOURCES_FOR_RESERVED_REQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDF_IO_ALLOCATE_REQUEST_RESOURCES = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: WDFREQUEST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: WDFREQUEST) -> NTSTATUS,
 >;
 pub type PFN_WDF_IO_WDM_IRP_FOR_FORWARD_PROGRESS = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFQUEUE, arg2: PIRP) -> WDF_IO_FORWARD_PROGRESS_ACTION,
+    unsafe extern "system" fn(arg1: WDFQUEUE, arg2: PIRP) -> WDF_IO_FORWARD_PROGRESS_ACTION,
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -5078,7 +5078,7 @@ pub struct _WDF_IO_QUEUE_FORWARD_PROGRESS_POLICY {
 pub type WDF_IO_QUEUE_FORWARD_PROGRESS_POLICY = _WDF_IO_QUEUE_FORWARD_PROGRESS_POLICY;
 pub type PWDF_IO_QUEUE_FORWARD_PROGRESS_POLICY = *mut _WDF_IO_QUEUE_FORWARD_PROGRESS_POLICY;
 pub type PFN_WDFIOQUEUECREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Config: PWDF_IO_QUEUE_CONFIG,
@@ -5087,7 +5087,7 @@ pub type PFN_WDFIOQUEUECREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUEGETSTATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         QueueRequests: PULONG,
@@ -5095,10 +5095,10 @@ pub type PFN_WDFIOQUEUEGETSTATE = ::core::option::Option<
     ) -> WDF_IO_QUEUE_STATE,
 >;
 pub type PFN_WDFIOQUEUESTART = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
 >;
 pub type PFN_WDFIOQUEUESTOP = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         StopComplete: PFN_WDF_IO_QUEUE_STATE,
@@ -5106,20 +5106,20 @@ pub type PFN_WDFIOQUEUESTOP = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFIOQUEUESTOPSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
 >;
 pub type PFN_WDFIOQUEUEGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE) -> WDFDEVICE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE) -> WDFDEVICE,
 >;
 pub type PFN_WDFIOQUEUERETRIEVENEXTREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         OutRequest: *mut WDFREQUEST,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUERETRIEVEREQUESTBYFILEOBJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         FileObject: WDFFILEOBJECT,
@@ -5127,7 +5127,7 @@ pub type PFN_WDFIOQUEUERETRIEVEREQUESTBYFILEOBJECT = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUEFINDREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         FoundRequest: WDFREQUEST,
@@ -5137,7 +5137,7 @@ pub type PFN_WDFIOQUEUEFINDREQUEST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUERETRIEVEFOUNDREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         FoundRequest: WDFREQUEST,
@@ -5145,10 +5145,10 @@ pub type PFN_WDFIOQUEUERETRIEVEFOUNDREQUEST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUEDRAINSYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
 >;
 pub type PFN_WDFIOQUEUEDRAIN = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         DrainComplete: PFN_WDF_IO_QUEUE_STATE,
@@ -5156,10 +5156,10 @@ pub type PFN_WDFIOQUEUEDRAIN = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFIOQUEUEPURGESYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
 >;
 pub type PFN_WDFIOQUEUEPURGE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         PurgeComplete: PFN_WDF_IO_QUEUE_STATE,
@@ -5167,7 +5167,7 @@ pub type PFN_WDFIOQUEUEPURGE = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFIOQUEUEREADYNOTIFY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         QueueReady: PFN_WDF_IO_QUEUE_STATE,
@@ -5175,14 +5175,14 @@ pub type PFN_WDFIOQUEUEREADYNOTIFY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUEASSIGNFORWARDPROGRESSPOLICY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         ForwardProgressPolicy: PWDF_IO_QUEUE_FORWARD_PROGRESS_POLICY,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFIOQUEUESTOPANDPURGE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Queue: WDFQUEUE,
         StopAndPurgeComplete: PFN_WDF_IO_QUEUE_STATE,
@@ -5190,13 +5190,13 @@ pub type PFN_WDFIOQUEUESTOPANDPURGE = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFIOQUEUESTOPANDPURGESYNCHRONOUSLY = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Queue: WDFQUEUE),
 >;
 pub type PFN_WDF_DEVICE_FILTER_RESOURCE_REQUIREMENTS = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFIORESREQLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFIORESREQLIST) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_REMOVE_ADDED_RESOURCES = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST, arg3: WDFCMRESLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST, arg3: WDFCMRESLIST) -> NTSTATUS,
 >;
 #[repr(C)]
 pub struct _WDF_FDO_EVENT_CALLBACKS {
@@ -5208,13 +5208,13 @@ pub struct _WDF_FDO_EVENT_CALLBACKS {
 pub type WDF_FDO_EVENT_CALLBACKS = _WDF_FDO_EVENT_CALLBACKS;
 pub type PWDF_FDO_EVENT_CALLBACKS = *mut _WDF_FDO_EVENT_CALLBACKS;
 pub type PFN_WDFFDOINITWDMGETPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
     ) -> PDEVICE_OBJECT,
 >;
 pub type PFN_WDFFDOINITOPENREGISTRYKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceInstanceKeyType: ULONG,
@@ -5224,7 +5224,7 @@ pub type PFN_WDFFDOINITOPENREGISTRYKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOINITQUERYPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -5234,7 +5234,7 @@ pub type PFN_WDFFDOINITQUERYPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOINITALLOCANDQUERYPROPERTY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceProperty: DEVICE_REGISTRY_PROPERTY,
@@ -5244,7 +5244,7 @@ pub type PFN_WDFFDOINITALLOCANDQUERYPROPERTY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOINITQUERYPROPERTYEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceProperty: PWDF_DEVICE_PROPERTY_DATA,
@@ -5255,7 +5255,7 @@ pub type PFN_WDFFDOINITQUERYPROPERTYEX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOINITALLOCANDQUERYPROPERTYEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceProperty: PWDF_DEVICE_PROPERTY_DATA,
@@ -5266,17 +5266,17 @@ pub type PFN_WDFFDOINITALLOCANDQUERYPROPERTYEX = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOINITSETEVENTCALLBACKS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         FdoEventCallbacks: PWDF_FDO_EVENT_CALLBACKS,
     ),
 >;
 pub type PFN_WDFFDOINITSETFILTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFFDOINITSETDEFAULTCHILDLISTCONFIG = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         Config: PWDF_CHILD_LIST_CONFIG,
@@ -5284,7 +5284,7 @@ pub type PFN_WDFFDOINITSETDEFAULTCHILDLISTCONFIG = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFFDOQUERYFORINTERFACE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Fdo: WDFDEVICE,
         InterfaceType: LPCGUID,
@@ -5295,20 +5295,20 @@ pub type PFN_WDFFDOQUERYFORINTERFACE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOGETDEFAULTCHILDLIST = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE) -> WDFCHILDLIST,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE) -> WDFCHILDLIST,
 >;
 pub type PFN_WDFFDOADDSTATICCHILD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Fdo: WDFDEVICE,
         Child: WDFDEVICE,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFFDOLOCKSTATICCHILDLISTFORITERATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE),
 >;
 pub type PFN_WDFFDORETRIEVENEXTSTATICCHILD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Fdo: WDFDEVICE,
         PreviousChild: WDFDEVICE,
@@ -5316,25 +5316,25 @@ pub type PFN_WDFFDORETRIEVENEXTSTATICCHILD = ::core::option::Option<
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFFDOUNLOCKSTATICCHILDLISTFROMITERATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Fdo: WDFDEVICE),
 >;
 pub type PFN_WDF_DEVICE_RESOURCES_QUERY = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFCMRESLIST) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_RESOURCE_REQUIREMENTS_QUERY = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: WDFIORESREQLIST) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: WDFIORESREQLIST) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_EJECT =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_SET_LOCK =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: BOOLEAN) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE, arg2: BOOLEAN) -> NTSTATUS>;
 pub type PFN_WDF_DEVICE_ENABLE_WAKE_AT_BUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFDEVICE, arg2: SYSTEM_POWER_STATE) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFDEVICE, arg2: SYSTEM_POWER_STATE) -> NTSTATUS,
 >;
 pub type PFN_WDF_DEVICE_DISABLE_WAKE_AT_BUS =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub type PFN_WDF_DEVICE_REPORTED_MISSING =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 #[repr(C)]
 pub struct _WDF_PDO_EVENT_CALLBACKS {
     pub Size: ULONG,
@@ -5349,55 +5349,55 @@ pub struct _WDF_PDO_EVENT_CALLBACKS {
 pub type WDF_PDO_EVENT_CALLBACKS = _WDF_PDO_EVENT_CALLBACKS;
 pub type PWDF_PDO_EVENT_CALLBACKS = *mut _WDF_PDO_EVENT_CALLBACKS;
 pub type PFN_WDFPDOINITALLOCATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ParentDevice: WDFDEVICE,
     ) -> PWDFDEVICE_INIT,
 >;
 pub type PFN_WDFPDOINITSETEVENTCALLBACKS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DispatchTable: PWDF_PDO_EVENT_CALLBACKS,
     ),
 >;
 pub type PFN_WDFPDOINITASSIGNDEVICEID = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceID: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITASSIGNINSTANCEID = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         InstanceID: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITADDHARDWAREID = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         HardwareID: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITADDCOMPATIBLEID = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         CompatibleID: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITASSIGNCONTAINERID = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         ContainerID: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITADDDEVICETEXT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceDescription: PCUNICODE_STRING,
@@ -5406,84 +5406,84 @@ pub type PFN_WDFPDOINITADDDEVICETEXT = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITSETDEFAULTLOCALE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         LocaleId: LCID,
     ),
 >;
 pub type PFN_WDFPDOINITASSIGNRAWDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         DeviceClassGuid: *const GUID,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOINITALLOWFORWARDINGREQUESTTOPARENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, DeviceInit: PWDFDEVICE_INIT),
 >;
 pub type PFN_WDFPDOMARKMISSING = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOREQUESTEJECT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
 >;
 pub type PFN_WDFPDOGETPARENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFDEVICE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE) -> WDFDEVICE,
 >;
 pub type PFN_WDFPDORETRIEVEIDENTIFICATIONDESCRIPTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         IdentificationDescription: PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDORETRIEVEADDRESSDESCRIPTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         AddressDescription: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOUPDATEADDRESSDESCRIPTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         AddressDescription: PWDF_CHILD_ADDRESS_DESCRIPTION_HEADER,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOADDEJECTIONRELATIONSPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PhysicalDevice: PDEVICE_OBJECT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFPDOREMOVEEJECTIONRELATIONSPHYSICALDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         PhysicalDevice: PDEVICE_OBJECT,
     ),
 >;
 pub type PFN_WDFPDOCLEAREJECTIONRELATIONSDEVICES = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
 >;
 pub type PFN_WDF_DEVICE_SHUTDOWN_NOTIFICATION =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDEVICE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDEVICE)>;
 pub const _WDF_DEVICE_SHUTDOWN_FLAGS_WdfDeviceShutdown: _WDF_DEVICE_SHUTDOWN_FLAGS = 1;
 pub const _WDF_DEVICE_SHUTDOWN_FLAGS_WdfDeviceLastChanceShutdown: _WDF_DEVICE_SHUTDOWN_FLAGS = 2;
 pub type _WDF_DEVICE_SHUTDOWN_FLAGS = ::core::ffi::c_uint;
 pub use self::_WDF_DEVICE_SHUTDOWN_FLAGS as WDF_DEVICE_SHUTDOWN_FLAGS;
 pub type PFN_WDFCONTROLDEVICEINITALLOCATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Driver: WDFDRIVER,
         SDDLString: *const UNICODE_STRING,
     ) -> PWDFDEVICE_INIT,
 >;
 pub type PFN_WDFCONTROLDEVICEINITSETSHUTDOWNNOTIFICATION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DeviceInit: PWDFDEVICE_INIT,
         Notification: PFN_WDF_DEVICE_SHUTDOWN_NOTIFICATION,
@@ -5491,7 +5491,7 @@ pub type PFN_WDFCONTROLDEVICEINITSETSHUTDOWNNOTIFICATION = ::core::option::Optio
     ),
 >;
 pub type PFN_WDFCONTROLFINISHINITIALIZING = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Device: WDFDEVICE),
 >;
 pub const _WDF_WMI_PROVIDER_CONTROL_WdfWmiControlInvalid: _WDF_WMI_PROVIDER_CONTROL = 0;
 pub const _WDF_WMI_PROVIDER_CONTROL_WdfWmiEventControl: _WDF_WMI_PROVIDER_CONTROL = 1;
@@ -5505,7 +5505,7 @@ pub const _WDF_WMI_PROVIDER_FLAGS_WdfWmiProviderValidFlags: _WDF_WMI_PROVIDER_FL
 pub type _WDF_WMI_PROVIDER_FLAGS = ::core::ffi::c_uint;
 pub use self::_WDF_WMI_PROVIDER_FLAGS as WDF_WMI_PROVIDER_FLAGS;
 pub type PFN_WDF_WMI_INSTANCE_QUERY_INSTANCE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFWMIINSTANCE,
         arg2: ULONG,
         arg3: PVOID,
@@ -5513,10 +5513,10 @@ pub type PFN_WDF_WMI_INSTANCE_QUERY_INSTANCE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_WMI_INSTANCE_SET_INSTANCE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: WDFWMIINSTANCE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
+    unsafe extern "system" fn(arg1: WDFWMIINSTANCE, arg2: ULONG, arg3: PVOID) -> NTSTATUS,
 >;
 pub type PFN_WDF_WMI_INSTANCE_SET_ITEM = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFWMIINSTANCE,
         arg2: ULONG,
         arg3: ULONG,
@@ -5524,7 +5524,7 @@ pub type PFN_WDF_WMI_INSTANCE_SET_ITEM = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_WMI_INSTANCE_EXECUTE_METHOD = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFWMIINSTANCE,
         arg2: ULONG,
         arg3: ULONG,
@@ -5534,7 +5534,7 @@ pub type PFN_WDF_WMI_INSTANCE_EXECUTE_METHOD = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDF_WMI_PROVIDER_FUNCTION_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFWMIPROVIDER,
         arg2: WDF_WMI_PROVIDER_CONTROL,
         arg3: BOOLEAN,
@@ -5565,7 +5565,7 @@ pub struct _WDF_WMI_INSTANCE_CONFIG {
 pub type WDF_WMI_INSTANCE_CONFIG = _WDF_WMI_INSTANCE_CONFIG;
 pub type PWDF_WMI_INSTANCE_CONFIG = *mut _WDF_WMI_INSTANCE_CONFIG;
 pub type PFN_WDFWMIPROVIDERCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         WmiProviderConfig: PWDF_WMI_PROVIDER_CONFIG,
@@ -5574,26 +5574,26 @@ pub type PFN_WDFWMIPROVIDERCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWMIPROVIDERGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiProvider: WDFWMIPROVIDER,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFWMIPROVIDERISENABLED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiProvider: WDFWMIPROVIDER,
         ProviderControl: WDF_WMI_PROVIDER_CONTROL,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFWMIPROVIDERGETTRACINGHANDLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiProvider: WDFWMIPROVIDER,
     ) -> ULONGLONG,
 >;
 pub type PFN_WDFWMIINSTANCECREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         InstanceConfig: PWDF_WMI_INSTANCE_CONFIG,
@@ -5602,28 +5602,28 @@ pub type PFN_WDFWMIINSTANCECREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWMIINSTANCEREGISTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiInstance: WDFWMIINSTANCE,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFWMIINSTANCEDEREGISTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WmiInstance: WDFWMIINSTANCE),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, WmiInstance: WDFWMIINSTANCE),
 >;
 pub type PFN_WDFWMIINSTANCEGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiInstance: WDFWMIINSTANCE,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFWMIINSTANCEGETPROVIDER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiInstance: WDFWMIINSTANCE,
     ) -> WDFWMIPROVIDER,
 >;
 pub type PFN_WDFWMIINSTANCEFIREEVENT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         WmiInstance: WDFWMIINSTANCE,
         EventDataSize: ULONG,
@@ -5631,7 +5631,7 @@ pub type PFN_WDFWMIINSTANCEFIREEVENT = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFSTRINGCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         UnicodeString: PCUNICODE_STRING,
         StringAttributes: PWDF_OBJECT_ATTRIBUTES,
@@ -5639,14 +5639,14 @@ pub type PFN_WDFSTRINGCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFSTRINGGETUNICODESTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         String: WDFSTRING,
         UnicodeString: PUNICODE_STRING,
     ),
 >;
 pub type PFN_WDFREGISTRYOPENKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ParentKey: WDFKEY,
         KeyName: PCUNICODE_STRING,
@@ -5656,7 +5656,7 @@ pub type PFN_WDFREGISTRYOPENKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYCREATEKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         ParentKey: WDFKEY,
         KeyName: PCUNICODE_STRING,
@@ -5668,23 +5668,23 @@ pub type PFN_WDFREGISTRYCREATEKEY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYCLOSE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY),
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY),
 >;
 pub type PFN_WDFREGISTRYWDMGETHANDLE = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY) -> HANDLE,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY) -> HANDLE,
 >;
 pub type PFN_WDFREGISTRYREMOVEKEY = ::core::option::Option<
-    unsafe extern "stdcall" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY) -> NTSTATUS,
+    unsafe extern "system" fn(DriverGlobals: PWDF_DRIVER_GLOBALS, Key: WDFKEY) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYREMOVEVALUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYVALUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5695,7 +5695,7 @@ pub type PFN_WDFREGISTRYQUERYVALUE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYMEMORY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5706,7 +5706,7 @@ pub type PFN_WDFREGISTRYQUERYMEMORY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYMULTISTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5715,7 +5715,7 @@ pub type PFN_WDFREGISTRYQUERYMULTISTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYUNICODESTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5724,7 +5724,7 @@ pub type PFN_WDFREGISTRYQUERYUNICODESTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYSTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5732,7 +5732,7 @@ pub type PFN_WDFREGISTRYQUERYSTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYQUERYULONG = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5740,7 +5740,7 @@ pub type PFN_WDFREGISTRYQUERYULONG = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNVALUE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5750,7 +5750,7 @@ pub type PFN_WDFREGISTRYASSIGNVALUE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNMEMORY = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5760,7 +5760,7 @@ pub type PFN_WDFREGISTRYASSIGNMEMORY = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNMULTISTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5768,7 +5768,7 @@ pub type PFN_WDFREGISTRYASSIGNMULTISTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNUNICODESTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5776,7 +5776,7 @@ pub type PFN_WDFREGISTRYASSIGNUNICODESTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNSTRING = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5784,7 +5784,7 @@ pub type PFN_WDFREGISTRYASSIGNSTRING = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFREGISTRYASSIGNULONG = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Key: WDFKEY,
         ValueName: PCUNICODE_STRING,
@@ -5807,17 +5807,17 @@ pub const _WDF_DMA_DIRECTION_WdfDmaDirectionWriteToDevice: _WDF_DMA_DIRECTION = 
 pub type _WDF_DMA_DIRECTION = ::core::ffi::c_uint;
 pub use self::_WDF_DMA_DIRECTION as WDF_DMA_DIRECTION;
 pub type PFN_WDF_DMA_ENABLER_FILL =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub type PFN_WDF_DMA_ENABLER_FLUSH =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub type PFN_WDF_DMA_ENABLER_ENABLE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub type PFN_WDF_DMA_ENABLER_DISABLE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub type PFN_WDF_DMA_ENABLER_SELFMANAGED_IO_START =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub type PFN_WDF_DMA_ENABLER_SELFMANAGED_IO_STOP =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMAENABLER) -> NTSTATUS>;
 pub const _WDF_DMA_ENABLER_CONFIG_FLAGS_WDF_DMA_ENABLER_CONFIG_NO_SGLIST_PREALLOCATION:
     _WDF_DMA_ENABLER_CONFIG_FLAGS = 1;
 pub type _WDF_DMA_ENABLER_CONFIG_FLAGS = ::core::ffi::c_uint;
@@ -5851,7 +5851,7 @@ pub struct _WDF_DMA_SYSTEM_PROFILE_CONFIG {
 pub type WDF_DMA_SYSTEM_PROFILE_CONFIG = _WDF_DMA_SYSTEM_PROFILE_CONFIG;
 pub type PWDF_DMA_SYSTEM_PROFILE_CONFIG = *mut _WDF_DMA_SYSTEM_PROFILE_CONFIG;
 pub type PFN_WDFDMAENABLERCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         Device: WDFDEVICE,
         Config: PWDF_DMA_ENABLER_CONFIG,
@@ -5860,7 +5860,7 @@ pub type PFN_WDFDMAENABLERCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMAENABLERCONFIGURESYSTEMPROFILE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         ProfileConfig: PWDF_DMA_SYSTEM_PROFILE_CONFIG,
@@ -5868,40 +5868,40 @@ pub type PFN_WDFDMAENABLERCONFIGURESYSTEMPROFILE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMAENABLERGETMAXIMUMLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
     ) -> usize,
 >;
 pub type PFN_WDFDMAENABLERGETMAXIMUMSCATTERGATHERELEMENTS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
     ) -> usize,
 >;
 pub type PFN_WDFDMAENABLERSETMAXIMUMSCATTERGATHERELEMENTS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         MaximumFragments: usize,
     ),
 >;
 pub type PFN_WDFDMAENABLERGETFRAGMENTLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         DmaDirection: WDF_DMA_DIRECTION,
     ) -> usize,
 >;
 pub type PFN_WDFDMAENABLERWDMGETDMAADAPTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         DmaDirection: WDF_DMA_DIRECTION,
     ) -> PDMA_ADAPTER,
 >;
 pub type PFN_WDF_PROGRAM_DMA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDMATRANSACTION,
         arg2: WDFDEVICE,
         arg3: WDFCONTEXT,
@@ -5910,7 +5910,7 @@ pub type PFN_WDF_PROGRAM_DMA = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDF_DMA_TRANSACTION_CONFIGURE_DMA_CHANNEL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDMATRANSACTION,
         arg2: WDFDEVICE,
         arg3: PVOID,
@@ -5920,7 +5920,7 @@ pub type PFN_WDF_DMA_TRANSACTION_CONFIGURE_DMA_CHANNEL = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDF_DMA_TRANSACTION_DMA_TRANSFER_COMPLETE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: WDFDMATRANSACTION,
         arg2: WDFDEVICE,
         arg3: WDFCONTEXT,
@@ -5929,9 +5929,9 @@ pub type PFN_WDF_DMA_TRANSACTION_DMA_TRANSFER_COMPLETE = ::core::option::Option<
     ),
 >;
 pub type PFN_WDF_RESERVE_DMA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: WDFDMATRANSACTION, arg2: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: WDFDMATRANSACTION, arg2: PVOID)>;
 pub type PFN_WDFDMATRANSACTIONCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         Attributes: PWDF_OBJECT_ATTRIBUTES,
@@ -5939,7 +5939,7 @@ pub type PFN_WDFDMATRANSACTIONCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONINITIALIZE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         EvtProgramDmaFunction: PFN_WDF_PROGRAM_DMA,
@@ -5950,7 +5950,7 @@ pub type PFN_WDFDMATRANSACTIONINITIALIZE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONINITIALIZEUSINGOFFSET = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         EvtProgramDmaFunction: PFN_WDF_PROGRAM_DMA,
@@ -5961,7 +5961,7 @@ pub type PFN_WDFDMATRANSACTIONINITIALIZEUSINGOFFSET = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONINITIALIZEUSINGREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         Request: WDFREQUEST,
@@ -5970,27 +5970,27 @@ pub type PFN_WDFDMATRANSACTIONINITIALIZEUSINGREQUEST = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONEXECUTE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         Context: WDFCONTEXT,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONRELEASE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONDMACOMPLETED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         Status: *mut NTSTATUS,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFDMATRANSACTIONDMACOMPLETEDWITHLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         TransferredLength: usize,
@@ -5998,7 +5998,7 @@ pub type PFN_WDFDMATRANSACTIONDMACOMPLETEDWITHLENGTH = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFDMATRANSACTIONDMACOMPLETEDFINAL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         FinalTransferredLength: usize,
@@ -6006,38 +6006,38 @@ pub type PFN_WDFDMATRANSACTIONDMACOMPLETEDFINAL = ::core::option::Option<
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFDMATRANSACTIONGETBYTESTRANSFERRED = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> usize,
 >;
 pub type PFN_WDFDMATRANSACTIONSETMAXIMUMLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         MaximumLength: usize,
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONGETREQUEST = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> WDFREQUEST,
 >;
 pub type PFN_WDFDMATRANSACTIONGETCURRENTDMATRANSFERLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> usize,
 >;
 pub type PFN_WDFDMATRANSACTIONGETDEVICE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> WDFDEVICE,
 >;
 pub type PFN_WDFDMATRANSACTIONGETTRANSFERINFO = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         MapRegisterCount: *mut ULONG,
@@ -6045,7 +6045,7 @@ pub type PFN_WDFDMATRANSACTIONGETTRANSFERINFO = ::core::option::Option<
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONSETCHANNELCONFIGURATIONCALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         ConfigureRoutine: PFN_WDF_DMA_TRANSACTION_CONFIGURE_DMA_CHANNEL,
@@ -6053,7 +6053,7 @@ pub type PFN_WDFDMATRANSACTIONSETCHANNELCONFIGURATIONCALLBACK = ::core::option::
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONSETTRANSFERCOMPLETECALLBACK = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         DmaCompletionRoutine: PFN_WDF_DMA_TRANSACTION_DMA_TRANSFER_COMPLETE,
@@ -6061,14 +6061,14 @@ pub type PFN_WDFDMATRANSACTIONSETTRANSFERCOMPLETECALLBACK = ::core::option::Opti
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONSETIMMEDIATEEXECUTION = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         UseImmediateExecution: BOOLEAN,
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONALLOCATERESOURCES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         DmaDirection: WDF_DMA_DIRECTION,
@@ -6078,32 +6078,32 @@ pub type PFN_WDFDMATRANSACTIONALLOCATERESOURCES = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFDMATRANSACTIONSETDEVICEADDRESSOFFSET = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
         Offset: ULONG,
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONFREERESOURCES = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ),
 >;
 pub type PFN_WDFDMATRANSACTIONCANCEL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> BOOLEAN,
 >;
 pub type PFN_WDFDMATRANSACTIONWDMGETTRANSFERCONTEXT = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ) -> PVOID,
 >;
 pub type PFN_WDFDMATRANSACTIONSTOPSYSTEMTRANSFER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaTransaction: WDFDMATRANSACTION,
     ),
@@ -6116,7 +6116,7 @@ pub struct _WDF_COMMON_BUFFER_CONFIG {
 pub type WDF_COMMON_BUFFER_CONFIG = _WDF_COMMON_BUFFER_CONFIG;
 pub type PWDF_COMMON_BUFFER_CONFIG = *mut _WDF_COMMON_BUFFER_CONFIG;
 pub type PFN_WDFCOMMONBUFFERCREATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         Length: usize,
@@ -6125,7 +6125,7 @@ pub type PFN_WDFCOMMONBUFFERCREATE = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCOMMONBUFFERCREATEWITHCONFIG = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         DmaEnabler: WDFDMAENABLER,
         Length: usize,
@@ -6135,19 +6135,19 @@ pub type PFN_WDFCOMMONBUFFERCREATEWITHCONFIG = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PFN_WDFCOMMONBUFFERGETALIGNEDVIRTUALADDRESS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         CommonBuffer: WDFCOMMONBUFFER,
     ) -> PVOID,
 >;
 pub type PFN_WDFCOMMONBUFFERGETALIGNEDLOGICALADDRESS = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         CommonBuffer: WDFCOMMONBUFFER,
     ) -> PHYSICAL_ADDRESS,
 >;
 pub type PFN_WDFCOMMONBUFFERGETLENGTH = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DriverGlobals: PWDF_DRIVER_GLOBALS,
         CommonBuffer: WDFCOMMONBUFFER,
     ) -> usize,

@@ -510,7 +510,7 @@ unsafe fn IntCheckFontPathNames(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAddFontResourceW(
+pub unsafe extern "system" fn NtGdiAddFontResourceW(
     pwcFiles: PCWCH,
     cwc: ULONG,
     cFiles: ULONG,
@@ -559,7 +559,7 @@ pub unsafe extern "stdcall" fn NtGdiAddFontResourceW(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAddFontResourceW(
+pub unsafe extern "system" fn NtGdiAddFontResourceW(
     pwcFiles: PCWCH,
     cwc: ULONG,
     cFiles: ULONG,
@@ -605,63 +605,8 @@ pub unsafe extern "C" fn NtGdiAddFontResourceW(
     ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRemoveFontResourceW(
-    pwszFiles: PCWCH,
-    cwc: ULONG,
-    cFiles: ULONG,
-    fl: ULONG,
-    dwPidTid: DWORD,
-    pdv: *const DESIGNVECTOR,
-) -> BOOL {
-    let mut SafeFileName: _UNICODE_STRING = core::mem::zeroed();
-    let Ret: BOOL;
-
-    let _ = dwPidTid;
-    let _ = pdv;
-
-    /* cwc = Length + trailing zero. */
-    if (cwc <= 1) || (cwc > UNICODE_STRING_MAX_CHARS) {
-        return 0;
-    }
-
-    SafeFileName.Length = ((cwc - 1) * core::mem::size_of::<u16>() as ULONG) as USHORT;
-    SafeFileName.MaximumLength =
-        SafeFileName.Length + core::mem::size_of::<u16>() as USHORT;
-    SafeFileName.Buffer = ExAllocatePoolWithTag(
-        PagedPool,
-        SafeFileName.MaximumLength as usize,
-        TAG_STRING,
-    ) as *mut u16;
-    if SafeFileName.Buffer.is_null() {
-        return 0;
-    }
-
-    if IntCheckFontPathNames(pwszFiles, cFiles, cwc) == 0 {
-        return 0;
-    }
-
-    RtlCopyMemory(
-        SafeFileName.Buffer as PVOID,
-        pwszFiles as PVOID,
-        SafeFileName.Length as usize,
-    );
-
-    *SafeFileName
-        .Buffer
-        .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
-
-    Ret = IntGdiRemoveFontResource(&mut SafeFileName, cFiles, fl);
-
-    ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiRemoveFontResourceW(
+pub unsafe extern "system" fn NtGdiRemoveFontResourceW(
     pwszFiles: PCWCH,
     cwc: ULONG,
     cFiles: ULONG,
@@ -714,7 +659,7 @@ pub unsafe extern "C" fn NtGdiRemoveFontResourceW(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiAddFontMemResourceEx(
+pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
     pvBuffer: *const core::ffi::c_void,
     cjBuffer: DWORD,
     pdv: *const DESIGNVECTOR,
@@ -754,7 +699,7 @@ pub unsafe extern "stdcall" fn NtGdiAddFontMemResourceEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiAddFontMemResourceEx(
+pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
     pvBuffer: *const core::ffi::c_void,
     cjBuffer: DWORD,
     pdv: *const DESIGNVECTOR,
@@ -791,33 +736,12 @@ pub unsafe extern "C" fn NtGdiAddFontMemResourceEx(
     *pNumFonts = NumFonts;
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL {
+pub unsafe extern "system" fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL {
     IntGdiRemoveFontMemResource(hMMFont)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiRemoveFontMemResourceEx(hMMFont: HANDLE) -> BOOL {
-    IntGdiRemoveFontMemResource(hMMFont)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetCharacterPlacementW(
-    hdc: HDC,
-    pwsz: PCWCH,
-    nCount: INT,
-    nMaxExtent: INT,
-    pgcpw: LPGCP_RESULTSW,
-    dwFlags: DWORD,
-) -> DWORD {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetCharacterPlacementW(
+pub unsafe extern "system" fn NtGdiGetCharacterPlacementW(
     hdc: HDC,
     pwsz: PCWCH,
     nCount: INT,
@@ -829,7 +753,7 @@ pub unsafe extern "C" fn NtGdiGetCharacterPlacementW(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetFontData(
+pub unsafe extern "system" fn NtGdiGetFontData(
     hDC: HDC,
     Table: DWORD,
     Offset: DWORD,
@@ -879,7 +803,7 @@ pub unsafe extern "stdcall" fn NtGdiGetFontData(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetFontData(
+pub unsafe extern "system" fn NtGdiGetFontData(
     hDC: HDC,
     Table: DWORD,
     Offset: DWORD,
@@ -928,7 +852,7 @@ pub unsafe extern "C" fn NtGdiGetFontData(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
+pub unsafe extern "system" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
     let pDc: PDC;
     let pdcattr: PDC_ATTR;
     let hFont: HFONT;
@@ -989,7 +913,7 @@ pub unsafe extern "stdcall" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHS
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
+pub unsafe extern "system" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) -> DWORD {
     let pDc: PDC;
     let pdcattr: PDC_ATTR;
     let hFont: HFONT;
@@ -1049,7 +973,7 @@ pub unsafe extern "C" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSET) ->
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetGlyphOutline(
+pub unsafe extern "system" fn NtGdiGetGlyphOutline(
     hdc: HDC,
     wch: u16,
     iFormat: u32,
@@ -1133,7 +1057,7 @@ pub unsafe extern "stdcall" fn NtGdiGetGlyphOutline(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetGlyphOutline(
+pub unsafe extern "system" fn NtGdiGetGlyphOutline(
     hdc: HDC,
     wch: u16,
     iFormat: u32,
@@ -1216,7 +1140,7 @@ pub unsafe extern "C" fn NtGdiGetGlyphOutline(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetKerningPairs(
+pub unsafe extern "system" fn NtGdiGetKerningPairs(
     hDC: HDC,
     NumPairs: ULONG,
     krnpair: LPKERNINGPAIR,
@@ -1287,7 +1211,7 @@ pub unsafe extern "stdcall" fn NtGdiGetKerningPairs(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetKerningPairs(
+pub unsafe extern "system" fn NtGdiGetKerningPairs(
     hDC: HDC,
     NumPairs: ULONG,
     krnpair: LPKERNINGPAIR,
@@ -1357,7 +1281,7 @@ pub unsafe extern "C" fn NtGdiGetKerningPairs(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetOutlineTextMetricsInternalW(
+pub unsafe extern "system" fn NtGdiGetOutlineTextMetricsInternalW(
     hDC: HDC,
     Data: ULONG,
     otm: POUTLINETEXTMETRICW,
@@ -1424,7 +1348,7 @@ pub unsafe extern "stdcall" fn NtGdiGetOutlineTextMetricsInternalW(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
+pub unsafe extern "system" fn NtGdiGetOutlineTextMetricsInternalW(
     hDC: HDC,
     Data: ULONG,
     otm: POUTLINETEXTMETRICW,
@@ -1488,95 +1412,8 @@ pub unsafe extern "C" fn NtGdiGetOutlineTextMetricsInternalW(
     ExFreePoolWithTag(potm as *mut _, GDITAG_TEXT);
     Size
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetFontResourceInfoInternalW(
-    pwszFiles: PCWCH,
-    cwc: ULONG,
-    cFiles: ULONG,
-    cjIn: UINT,
-    pdwBytes: PDWORD,
-    pvBuf: PVOID,
-    dwType: DWORD,
-) -> BOOL {
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut dwBytes: DWORD;
-    let dwBytesRequested: DWORD;
-    let mut SafeFileNames: _UNICODE_STRING = core::mem::zeroed();
-    let mut bRet: BOOL = 0;
-    let cbStringSize: ULONG;
-    let Buffer: LPVOID;
-
-    /* Check for valid dwType values */
-    if dwType > 5 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    /* Allocate a safe unicode string buffer */
-    cbStringSize = cwc * core::mem::size_of::<u16>() as ULONG;
-    SafeFileNames.Length = (cbStringSize as u16).wrapping_sub(core::mem::size_of::<u16>() as u16);
-    SafeFileNames.MaximumLength = SafeFileNames.Length;
-    SafeFileNames.Buffer = ExAllocatePoolWithTag(PagedPool, cbStringSize as usize, TAG_USTR) as *mut u16;
-    if SafeFileNames.Buffer.is_null() {
-        EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return 0;
-    }
-    RtlZeroMemory(SafeFileNames.Buffer as *mut core::ffi::c_void, SafeFileNames.MaximumLength as usize);
-
-    /* Check buffers and copy pwszFiles to safe unicode string */
-    dwBytes = *pdwBytes;
-    dwBytesRequested = dwBytes;
-
-    RtlCopyMemory(
-        SafeFileNames.Buffer as *mut core::ffi::c_void,
-        pwszFiles as *const core::ffi::c_void,
-        cbStringSize as usize,
-    );
-    if dwBytes > 0 {
-        Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
-    } else {
-        Buffer = ExAllocatePoolWithTag(PagedPool, core::mem::size_of::<DWORD>(), TAG_FINF);
-    }
-
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
-        return 0;
-    }
-
-    /* Do the actual call */
-    bRet = IntGdiGetFontResourceInfo(
-        core::ptr::addr_of_mut!(SafeFileNames),
-        if !pvBuf.is_null() { Buffer } else { core::ptr::null_mut() },
-        core::ptr::addr_of_mut!(dwBytes),
-        dwType,
-    );
-
-    /* Check if succeeded */
-    if bRet != 0 {
-        /* Copy the data back to caller */
-        if !pvBuf.is_null() && dwBytesRequested > 0 {
-            let count = if dwBytesRequested < dwBytes { dwBytesRequested } else { dwBytes };
-            RtlCopyMemory(pvBuf, Buffer, count as usize);
-        }
-        *pdwBytes = dwBytes;
-
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            bRet = 0;
-        }
-    }
-
-    ExFreePoolWithTag(Buffer, TAG_FINF);
-    ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
-
-    bRet
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetFontResourceInfoInternalW(
+pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     pwszFiles: PCWCH,
     cwc: ULONG,
     cFiles: ULONG,
@@ -1661,7 +1498,7 @@ pub unsafe extern "C" fn NtGdiGetFontResourceInfoInternalW(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetRealizationInfo(
+pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     hdc: HDC,
     pri: PREALIZATION_INFO,
     hf: HFONT,
@@ -1733,7 +1570,7 @@ pub unsafe extern "stdcall" fn NtGdiGetRealizationInfo(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetRealizationInfo(
+pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     hdc: HDC,
     pri: PREALIZATION_INFO,
     hf: HFONT,
@@ -1854,7 +1691,7 @@ pub unsafe extern "system" fn HfontCreate(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiHfontCreate(
+pub unsafe extern "system" fn NtGdiHfontCreate(
     pelfw: *const ENUMLOGFONTEXDVW,
     cjElfw: ULONG,
     lft: LFTYPE,
@@ -1899,7 +1736,7 @@ pub unsafe extern "stdcall" fn NtGdiHfontCreate(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiHfontCreate(
+pub unsafe extern "system" fn NtGdiHfontCreate(
     pelfw: *const ENUMLOGFONTEXDVW,
     cjElfw: ULONG,
     lft: LFTYPE,

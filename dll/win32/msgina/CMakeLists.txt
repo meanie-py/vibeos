@@ -40,7 +40,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(MSGINA_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE MSGINA_RUST_SRCS "${MSGINA_RUST_WORKSPACE_DIR}/msgina-rust/src/*.rs")
+rust_crate_sources(MSGINA_RUST_SRCS "${MSGINA_RUST_WORKSPACE_DIR}" msgina-rust)
 add_custom_command(
     OUTPUT ${MSGINA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

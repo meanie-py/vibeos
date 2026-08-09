@@ -1428,7 +1428,7 @@ unsafe extern "C" fn BrFolder_OnChange(info: *mut BrFolder, wParam: WPARAM, lPar
     SHChangeNotification_Unlock(hLock);
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn BrFolderDlgProc(
+unsafe extern "system" fn BrFolderDlgProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1540,7 +1540,7 @@ unsafe extern "stdcall" fn BrFolderDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn BrFolderDlgProc(
+unsafe extern "system" fn BrFolderDlgProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

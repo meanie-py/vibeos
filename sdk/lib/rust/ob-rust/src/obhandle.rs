@@ -214,40 +214,25 @@ unsafe fn ObpReferenceProcessObjectByHandle(
 }
 
 // Callback function wrappers — stdcall on i386, C on 64-bit (matching bindgen)
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ObpEnumFindHandleProcedure(
-    handle_entry: PHANDLE_TABLE_ENTRY, _handle: HANDLE, context: PVOID,
-) -> BOOLEAN { _ObpEnumFindHandleProcedure(handle_entry, _handle, context) }
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ObpEnumFindHandleProcedure(
+unsafe extern "system" fn ObpEnumFindHandleProcedure(
     handle_entry: PHANDLE_TABLE_ENTRY, _handle: HANDLE, context: PVOID,
 ) -> BOOLEAN { _ObpEnumFindHandleProcedure(handle_entry, _handle, context) }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn ObpSetHandleAttributes(
+pub unsafe extern "system" fn ObpSetHandleAttributes(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, context: u32,
 ) -> BOOLEAN { _ObpSetHandleAttributes(handle_entry, context as ULONG_PTR) }
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn ObpSetHandleAttributes(
+pub unsafe extern "system" fn ObpSetHandleAttributes(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, context: u64,
 ) -> BOOLEAN { _ObpSetHandleAttributes(handle_entry, context as ULONG_PTR) }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ObpCloseHandleCallback(
-    handle_entry: *mut _HANDLE_TABLE_ENTRY, handle: HANDLE, context: PVOID,
-) -> BOOLEAN { _ObpCloseHandleCallback(handle_entry, handle, context) }
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ObpCloseHandleCallback(
+unsafe extern "system" fn ObpCloseHandleCallback(
     handle_entry: *mut _HANDLE_TABLE_ENTRY, handle: HANDLE, context: PVOID,
 ) -> BOOLEAN { _ObpCloseHandleCallback(handle_entry, handle, context) }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ObpDuplicateHandleCallback(
-    process: PEPROCESS, handle_table: PHANDLE_TABLE, old_entry: PHANDLE_TABLE_ENTRY, new_entry: PHANDLE_TABLE_ENTRY,
-) -> BOOLEAN { _ObpDuplicateHandleCallback(process, handle_table, old_entry, new_entry) }
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ObpDuplicateHandleCallback(
+unsafe extern "system" fn ObpDuplicateHandleCallback(
     process: PEPROCESS, handle_table: PHANDLE_TABLE, old_entry: PHANDLE_TABLE_ENTRY, new_entry: PHANDLE_TABLE_ENTRY,
 ) -> BOOLEAN { _ObpDuplicateHandleCallback(process, handle_table, old_entry, new_entry) }
 

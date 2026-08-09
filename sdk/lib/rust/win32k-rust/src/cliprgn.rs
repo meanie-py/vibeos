@@ -371,43 +371,8 @@ unsafe fn IntGdiExtSelectClipRgn_impl(dc: PDC, prgn: PREGION, fnMode: i32) -> i3
     }
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExtSelectClipRgn(hDC: HDC, hrgn: HRGN, fnMode: i32) -> i32 {
-    let retval: i32;
-    let dc: *mut DC;
-    let prgn: PREGION;
-
-    if fnMode < RGN_AND as i32 || fnMode > RGN_COPY as i32 {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return ERROR as i32;
-    }
-
-    dc = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return ERROR as i32;
-    }
-
-    prgn = REGION_LockRgn(hrgn);
-
-    if prgn.is_null() && fnMode != RGN_COPY as i32 {
-        retval = ERROR as i32;
-    } else {
-        retval = IntGdiExtSelectClipRgn(dc, prgn, fnMode);
-    }
-
-    if !prgn.is_null() {
-        REGION_UnlockRgn(prgn);
-    }
-
-    DC_UnlockDc(dc);
-    retval
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiExtSelectClipRgn(hDC: HDC, hrgn: HRGN, fnMode: i32) -> i32 {
+pub unsafe extern "system" fn NtGdiExtSelectClipRgn(hDC: HDC, hrgn: HRGN, fnMode: i32) -> i32 {
     let retval: i32;
     let dc: *mut DC;
     let prgn: PREGION;
@@ -477,9 +442,8 @@ unsafe fn GdiGetClipBox_impl(hdc: HDC, prc: LPRECT) -> i32 {
 
     iComplexity
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECT) -> i32 {
+pub unsafe extern "system" fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECT) -> i32 {
 
     let mut rect: RECT = core::mem::zeroed();
     let mut iComplexity: i32;
@@ -498,31 +462,8 @@ pub unsafe extern "stdcall" fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECT) -> i32 
 
     iComplexity
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECT) -> i32 {
-
-    let mut rect: RECT = core::mem::zeroed();
-    let mut iComplexity: i32;
-    let Status: i32;
-
-    iComplexity = GdiGetClipBox(hdc, &mut rect);
-
-    if iComplexity != ERROR as i32 {
-        Status = SafeProbeForWrite(prc as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-        if !NT_SUCCESS(Status) {
-            iComplexity = ERROR as i32;
-        } else {
-            *prc = rect;
-        }
-    }
-
-    iComplexity
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiExcludeClipRect(
+pub unsafe extern "system" fn NtGdiExcludeClipRect(
     hdc: HDC,
     xLeft: i32,
     yTop: i32,
@@ -562,52 +503,8 @@ pub unsafe extern "stdcall" fn NtGdiExcludeClipRect(
 
     iComplexity
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiExcludeClipRect(
-    hdc: HDC,
-    xLeft: i32,
-    yTop: i32,
-    xRight: i32,
-    yBottom: i32,
-) -> i32 {
-
-    let mut iComplexity: i32 = ERROR as i32;
-    let mut rect: RECTL = core::mem::zeroed();
-    let pdc: PDC;
-    let prgn: PREGION;
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return ERROR as i32;
-    }
-
-    rect.left = xLeft;
-    rect.top = yTop;
-    rect.right = xRight;
-    rect.bottom = yBottom;
-    RECTL_vMakeWellOrdered(&mut rect);
-    IntLPtoDP(pdc, &mut rect as *mut RECTL as LPPOINT, 2);
-
-    prgn = IntSysCreateRectpRgnIndirect(&mut rect);
-    if !prgn.is_null() {
-        iComplexity = IntSelectClipRgn(pdc, prgn, RGN_DIFF as i32);
-        REGION_Delete(prgn);
-    }
-
-    if iComplexity == SIMPLEREGION as i32 {
-        iComplexity = COMPLEXREGION as i32;
-    }
-
-    DC_UnlockDc(pdc);
-
-    iComplexity
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiIntersectClipRect(
+pub unsafe extern "system" fn NtGdiIntersectClipRect(
     hdc: HDC,
     xLeft: i32,
     yTop: i32,
@@ -645,50 +542,8 @@ pub unsafe extern "stdcall" fn NtGdiIntersectClipRect(
 
     iComplexity
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiIntersectClipRect(
-    hdc: HDC,
-    xLeft: i32,
-    yTop: i32,
-    xRight: i32,
-    yBottom: i32,
-) -> i32 {
-
-    let mut iComplexity: i32 = ERROR as i32;
-    let mut rect: RECTL = core::mem::zeroed();
-
-    let pdc: PDC = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return ERROR as i32;
-    }
-
-    rect.left = xLeft;
-    rect.top = yTop;
-    rect.right = xRight;
-    rect.bottom = yBottom;
-    RECTL_vMakeWellOrdered(core::ptr::addr_of_mut!(rect));
-    IntLPtoDP(pdc, core::ptr::addr_of_mut!(rect) as LPPOINT, 2);
-
-    let prgn: PREGION = IntSysCreateRectpRgnIndirect(core::ptr::addr_of_mut!(rect));
-    if !prgn.is_null() {
-        iComplexity = IntSelectClipRgn(pdc, prgn, RGN_AND as i32);
-        REGION_Delete(prgn);
-    }
-
-    if iComplexity == SIMPLEREGION as i32 {
-        iComplexity = COMPLEXREGION as i32;
-    }
-
-    DC_UnlockDc(pdc);
-
-    iComplexity
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiOffsetClipRgn(hdc: HDC, xOffset: i32, yOffset: i32) -> i32 {
+pub unsafe extern "system" fn NtGdiOffsetClipRgn(hdc: HDC, xOffset: i32, yOffset: i32) -> i32 {
     let mut iComplexity: i32 = 0;
     let pdc: PDC;
     let mut apt: [POINTL; 2] = core::mem::zeroed();
@@ -729,53 +584,8 @@ pub unsafe extern "stdcall" fn NtGdiOffsetClipRgn(hdc: HDC, xOffset: i32, yOffse
     DC_UnlockDc(pdc);
     iComplexity
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiOffsetClipRgn(hdc: HDC, xOffset: i32, yOffset: i32) -> i32 {
-    let mut iComplexity: i32 = 0;
-    let pdc: PDC;
-    let mut apt: [POINTL; 2] = core::mem::zeroed();
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        if hdc.is_null() {
-            EngSetLastError(ERROR_INVALID_HANDLE);
-        }
-        return ERROR as i32;
-    }
-
-    if !(*pdc).dclevel.prgnClip.is_null() {
-        apt[0].x = 0;
-        apt[0].y = 0;
-        apt[1].x = xOffset;
-        apt[1].y = yOffset;
-        IntLPtoDP(pdc, apt.as_mut_ptr() as LPPOINT, 2);
-
-        if REGION_bOffsetRgn(
-            (*pdc).dclevel.prgnClip,
-            apt[1].x - apt[0].x,
-            apt[1].y - apt[0].y,
-        ) == 0
-        {
-            iComplexity = ERROR as i32;
-        } else {
-            IntGdiReleaseRaoRgn(pdc);
-            UpdateVisRgn(pdc);
-            iComplexity = REGION_Complexity((*pdc).dclevel.prgnClip) as i32;
-        }
-
-        (*pdc).fs |= DC_DIRTY_RAO as i32;
-    } else {
-        iComplexity = SIMPLEREGION as i32;
-    }
-
-    DC_UnlockDc(pdc);
-    iComplexity
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL {
+pub unsafe extern "system" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL {
     let mut ret: BOOL = 0;
     let dc: PDC = DC_LockDc(hDC);
     if dc.is_null() {
@@ -799,75 +609,8 @@ pub unsafe extern "stdcall" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL 
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiPtVisible(hDC: HDC, X: i32, Y: i32) -> BOOL {
-    let mut ret: BOOL = 0;
-    let dc: PDC = DC_LockDc(hDC);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    let prgn: PREGION = if !(*dc).prgnRao.is_null() {
-        (*dc).prgnRao
-    } else {
-        (*dc).prgnVis
-    };
-
-    if !prgn.is_null() {
-        let mut pt: POINT = POINT { x: X, y: Y };
-        IntLPtoDP(dc, core::ptr::addr_of_mut!(pt), 1);
-        ret = REGION_PtInRegion(prgn, pt.x, pt.y) as i32;
-    }
-
-    DC_UnlockDc(dc);
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiRectVisible(hDC: HDC, UnsafeRect: LPRECT) -> BOOL {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let dc: PDC = DC_LockDc(hDC);
-    let mut Result: BOOL = 0;
-    let mut Rect: RECTL = core::mem::zeroed();
-    let prgn: PREGION;
-
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    Status = SafeProbeForRead(UnsafeRect as *const core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-    if NT_SUCCESS(Status) {
-        Rect = *(UnsafeRect as *mut RECTL);
-    }
-
-    if !NT_SUCCESS(Status) {
-        DC_UnlockDc(dc);
-        SetLastNtError(Status);
-        return 0;
-    }
-
-    if ((*dc).fs as u32 & DC_DIRTY_RAO) != 0 {
-        CLIPPING_UpdateGCRegion(dc);
-    }
-
-    prgn = if !(*dc).prgnRao.is_null() { (*dc).prgnRao } else { (*dc).prgnVis };
-    if !prgn.is_null() {
-        IntLPtoDP(dc, core::ptr::addr_of_mut!(Rect) as LPPOINT, 2);
-        Result = REGION_RectInRegion(prgn, core::ptr::addr_of_mut!(Rect));
-    }
-    DC_UnlockDc(dc);
-
-    Result
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiRectVisible(hDC: HDC, UnsafeRect: LPRECT) -> BOOL {
+pub unsafe extern "system" fn NtGdiRectVisible(hDC: HDC, UnsafeRect: LPRECT) -> BOOL {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let dc: PDC = DC_LockDc(hDC);
     let mut Result: BOOL = 0;
@@ -952,25 +695,8 @@ unsafe fn IntGdiSetMetaRgnImpl(pDC: PDC) -> INT {
 
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetMetaRgn(hDC: HDC) -> i32 {
-    let pDC: PDC = DC_LockDc(hDC);
-
-    if pDC.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return ERROR as i32;
-    }
-
-    let Ret = IntGdiSetMetaRgn(pDC);
-
-    DC_UnlockDc(pDC);
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetMetaRgn(hDC: HDC) -> i32 {
+pub unsafe extern "system" fn NtGdiSetMetaRgn(hDC: HDC) -> i32 {
     let pDC: PDC = DC_LockDc(hDC);
 
     if pDC.is_null() {

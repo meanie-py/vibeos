@@ -89,7 +89,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(OLE32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/src/*.rs")
+rust_crate_sources(OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}" ole32-rust)
 add_custom_command(
     OUTPUT ${OLE32_RUST_LIB}
     # No RUSTC_BOOTSTRAP: ole32-rust builds on plain stable. The ring's debug shims are

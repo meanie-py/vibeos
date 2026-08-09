@@ -33,7 +33,7 @@ elseif(ARCH STREQUAL "arm64")
     set(SCSIPORT_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(SCSIPORT_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE SCSIPORT_RUST_SRCS ${SCSIPORT_RUST_WORKSPACE_DIR}/scsiport-rust/src/*.rs)
+rust_crate_sources(SCSIPORT_RUST_SRCS "${SCSIPORT_RUST_WORKSPACE_DIR}" scsiport-rust)
 add_custom_command(
     OUTPUT ${SCSIPORT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

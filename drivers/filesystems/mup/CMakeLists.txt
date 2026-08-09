@@ -24,7 +24,7 @@ elseif(ARCH STREQUAL "arm64")
     set(MUP_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(MUP_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE MUP_RUST_SRCS ${MUP_RUST_WORKSPACE_DIR}/mup-rust/src/*.rs)
+rust_crate_sources(MUP_RUST_SRCS "${MUP_RUST_WORKSPACE_DIR}" mup-rust)
 add_custom_command(
     OUTPUT ${MUP_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

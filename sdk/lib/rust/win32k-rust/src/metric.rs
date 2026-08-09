@@ -266,14 +266,8 @@ pub unsafe extern "system" fn InitMetrics() -> BOOL {
 }
 
 // UserGetSystemMetrics — NTAPI (stdcall i386).
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserGetSystemMetrics(index: ULONG) -> LONG {
-    user_get_system_metrics(index)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserGetSystemMetrics(index: ULONG) -> LONG {
+pub unsafe extern "system" fn UserGetSystemMetrics(index: ULONG) -> LONG {
     user_get_system_metrics(index)
 }
 

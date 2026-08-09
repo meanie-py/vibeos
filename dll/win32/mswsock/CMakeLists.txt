@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(MSWSOCK_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mswsock-target")
 set(MSWSOCK_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmswsock_rust.a")
-file(GLOB_RECURSE MSWSOCK_RUST_SRCS "${MSWSOCK_RUST_WORKSPACE_DIR}/mswsock-rust/src/*.rs")
+rust_crate_sources(MSWSOCK_RUST_SRCS "${MSWSOCK_RUST_WORKSPACE_DIR}" mswsock-rust)
 add_custom_command(
     OUTPUT ${MSWSOCK_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

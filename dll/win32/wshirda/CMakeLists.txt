@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WSHIRDA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshirda-target")
 set(WSHIRDA_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwshirda_rust.a")
-file(GLOB_RECURSE WSHIRDA_RUST_SRCS "${WSHIRDA_RUST_WORKSPACE_DIR}/wshirda-rust/src/*.rs")
+rust_crate_sources(WSHIRDA_RUST_SRCS "${WSHIRDA_RUST_WORKSPACE_DIR}" wshirda-rust)
 add_custom_command(
     OUTPUT ${WSHIRDA_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

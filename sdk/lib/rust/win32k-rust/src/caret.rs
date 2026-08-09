@@ -174,14 +174,8 @@ unsafe fn co_IntDrawCaret_impl(pWnd: PWND, CaretInfo: PTHRDCARETINFO) {
 
 // CaretSystemTimerProc is a TIMERPROC (CALLBACK = stdcall i386); the type must
 // be "stdcall" not "system" to coerce into TIMERPROC at IntSetTimer call sites.
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn CaretSystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD) {
-    caret_system_timer_proc(hwnd, uMsg, idEvent, dwTime)
-}
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn CaretSystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD) {
+pub unsafe extern "system" fn CaretSystemTimerProc(hwnd: HWND, uMsg: UINT, idEvent: UINT_PTR, dwTime: DWORD) {
     caret_system_timer_proc(hwnd, uMsg, idEvent, dwTime)
 }
 
@@ -421,9 +415,8 @@ unsafe fn co_UserShowCaret_impl(Window: PWND) -> BOOL {
     }
     1
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserCreateCaret(
+pub unsafe extern "system" fn NtUserCreateCaret(
     hWnd: HWND,
     hBitmap: HBITMAP,
     mut nWidth: core::ffi::c_int,
@@ -490,79 +483,8 @@ pub unsafe extern "stdcall" fn NtUserCreateCaret(
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserCreateCaret(
-    hWnd: HWND,
-    hBitmap: HBITMAP,
-    mut nWidth: core::ffi::c_int,
-    mut nHeight: core::ffi::c_int,
-) -> BOOL {
-    let Window: PWND;
-    let pti: PTHREADINFO;
-    let ThreadQueue: PUSER_MESSAGE_QUEUE;
-    let mut Ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'exit: {
-        Window = UserGetWindowObject(hWnd);
-        if Window.is_null() {
-            break 'exit;
-        }
-
-        if wnd_pethread(Window) != (PsGetCurrentThread() as PETHREAD) {
-            EngSetLastError(ERROR_ACCESS_DENIED);
-            break 'exit;
-        }
-
-        pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-        ThreadQueue = (*pti).MessageQueue;
-
-        if (*ThreadQueue).CaretInfo.Visible != 0 {
-            IntKillTimer(Window, IDCARETTIMER as _, 1u8 as BOOL);
-            co_IntHideCaret(core::ptr::addr_of_mut!((*ThreadQueue).CaretInfo));
-        }
-
-        (*ThreadQueue).CaretInfo.hWnd = hWnd;
-        if !hBitmap.is_null() {
-            (*ThreadQueue).CaretInfo.Bitmap = hBitmap;
-            (*ThreadQueue).CaretInfo.Size.cy = 0;
-            (*ThreadQueue).CaretInfo.Size.cx = 0;
-        } else {
-            if nWidth == 0 {
-                nWidth = UserGetSystemMetrics(SM_CXBORDER as _);
-            }
-            if nHeight == 0 {
-                nHeight = UserGetSystemMetrics(SM_CYBORDER as _);
-            }
-            (*ThreadQueue).CaretInfo.Bitmap = core::ptr::null_mut();
-            (*ThreadQueue).CaretInfo.Size.cx = nWidth;
-            (*ThreadQueue).CaretInfo.Size.cy = nHeight;
-        }
-        (*ThreadQueue).CaretInfo.Visible = 0;
-        (*ThreadQueue).CaretInfo.Showing = 0;
-
-        IntSetTimer(
-            Window,
-            IDCARETTIMER as _,
-            (*pusi(gpsi)).dtCaretBlink,
-            Some(CaretSystemTimerProc),
-            TMRF_SYSTEM as _,
-        );
-
-        IntNotifyWinEvent(EVENT_OBJECT_CREATE as _, Window, OBJID_CARET as _, CHILDID_SELF as _, 0);
-
-        Ret = 1u8 as BOOL;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetCaretBlinkTime() -> UINT {
+pub unsafe extern "system" fn NtUserGetCaretBlinkTime() -> UINT {
     let ret: UINT;
 
     UserEnterShared();
@@ -573,23 +495,8 @@ pub unsafe extern "stdcall" fn NtUserGetCaretBlinkTime() -> UINT {
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetCaretBlinkTime() -> UINT {
-    let ret: UINT;
-
-    UserEnterShared();
-
-    ret = (*pusi(gpsi)).dtCaretBlink;
-
-    UserLeave();
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetCaretPos(lpPoint: LPPOINT) -> BOOL {
+pub unsafe extern "system" fn NtUserGetCaretPos(lpPoint: LPPOINT) -> BOOL {
     let pti: PTHREADINFO;
     let ThreadQueue: PUSER_MESSAGE_QUEUE;
     let Status: NTSTATUS;
@@ -613,36 +520,8 @@ pub unsafe extern "stdcall" fn NtUserGetCaretPos(lpPoint: LPPOINT) -> BOOL {
     UserLeave();
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetCaretPos(lpPoint: LPPOINT) -> BOOL {
-    let pti: PTHREADINFO;
-    let ThreadQueue: PUSER_MESSAGE_QUEUE;
-    let Status: NTSTATUS;
-    let mut Ret: BOOL = 1;
-
-    UserEnterShared();
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-    ThreadQueue = (*pti).MessageQueue;
-
-    Status = _MmCopyToCaller(
-        lpPoint as *mut core::ffi::c_void,
-        core::ptr::addr_of_mut!((*ThreadQueue).CaretInfo.Pos) as *mut core::ffi::c_void,
-        core::mem::size_of::<POINT>() as UINT,
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        Ret = 0;
-    }
-
-    UserLeave();
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserShowCaret(hWnd: HWND) -> BOOL {
+pub unsafe extern "system" fn NtUserShowCaret(hWnd: HWND) -> BOOL {
     let mut Window: PWND = core::ptr::null_mut();
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
     let mut ret: BOOL = 0;
@@ -671,73 +550,8 @@ pub unsafe extern "stdcall" fn NtUserShowCaret(hWnd: HWND) -> BOOL {
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserShowCaret(hWnd: HWND) -> BOOL {
-    let mut Window: PWND = core::ptr::null_mut();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        if !hWnd.is_null() {
-            Window = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                break 'block;
-            }
-        }
-
-        if !Window.is_null() {
-            user_ref_object_co(Window as PVOID, core::ptr::addr_of_mut!(Ref));
-        }
-
-        ret = co_UserShowCaret(Window);
-
-        if !Window.is_null() {
-            user_deref_object_co(Window as PVOID);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserHideCaret(hWnd: HWND) -> BOOL {
-    let mut Window: PWND = core::ptr::null_mut();
-    let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
-    let mut ret: BOOL = 0;
-
-    UserEnterExclusive();
-
-    'block: {
-        if !hWnd.is_null() {
-            Window = UserGetWindowObject(hWnd);
-            if Window.is_null() {
-                break 'block;
-            }
-        }
-
-        if !Window.is_null() {
-            user_ref_object_co(Window as PVOID, core::ptr::addr_of_mut!(Ref));
-        }
-
-        ret = co_UserHideCaret(Window);
-
-        if !Window.is_null() {
-            user_deref_object_co(Window as PVOID);
-        }
-    }
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserHideCaret(hWnd: HWND) -> BOOL {
+pub unsafe extern "system" fn NtUserHideCaret(hWnd: HWND) -> BOOL {
     let mut Window: PWND = core::ptr::null_mut();
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
     let mut ret: BOOL = 0;

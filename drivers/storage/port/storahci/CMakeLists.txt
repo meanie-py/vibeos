@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
     set(STORAHCI_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(STORAHCI_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE STORAHCI_RUST_SRCS ${STORAHCI_RUST_WORKSPACE_DIR}/storahci-rust/src/*.rs)
+rust_crate_sources(STORAHCI_RUST_SRCS "${STORAHCI_RUST_WORKSPACE_DIR}" storahci-rust)
 add_custom_command(
     OUTPUT ${STORAHCI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

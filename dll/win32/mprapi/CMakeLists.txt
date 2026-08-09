@@ -15,7 +15,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(MPRAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-mprapi-target")
 set(MPRAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmprapi_rust.a")
-file(GLOB_RECURSE MPRAPI_RUST_SRCS "${MPRAPI_RUST_WORKSPACE_DIR}/mprapi-rust/src/*.rs")
+rust_crate_sources(MPRAPI_RUST_SRCS "${MPRAPI_RUST_WORKSPACE_DIR}" mprapi-rust)
 add_custom_command(
     OUTPUT ${MPRAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

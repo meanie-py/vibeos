@@ -571,36 +571,8 @@ unsafe fn LoadSystemCursors() {
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_HELP, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_HELP);
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32SetupDefaultCursors(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let DefaultCursor: *mut BOOL = Arguments as *mut BOOL;
-    let mut hCursor: HCURSOR;
-
-    LoadSystemCursors();
-
-    if *DefaultCursor != 0 {
-        hCursor = LoadCursorW(core::ptr::null_mut(), IDC_ARROW);
-        SetCursor(hCursor);
-    } else {
-        SetCursor(core::ptr::null_mut());
-        hCursor = LoadCursorW(core::ptr::null_mut(), IDC_ARROW);
-        SetCursor(hCursor);
-    }
-
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(hCursor) as PVOID,
-        core::mem::size_of::<HCURSOR>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32SetupDefaultCursors(
+pub unsafe extern "system" fn User32SetupDefaultCursors(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -2842,32 +2814,8 @@ unsafe fn CURSORICON_CopyImage(
 
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32CallCopyImageFromKernel(
-    Arguments: LPVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let Common = Arguments as PCOPYIMAGE_CALLBACK_ARGUMENTS;
-
-    let mut Result: HANDLE = CopyImage(
-        (*Common).hImage,
-        (*Common).uType,
-        (*Common).cxDesired,
-        (*Common).cyDesired,
-        (*Common).fuFlags,
-    );
-
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(Result) as LPVOID,
-        core::mem::size_of::<HANDLE>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32CallCopyImageFromKernel(
+pub unsafe extern "system" fn User32CallCopyImageFromKernel(
     Arguments: LPVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {

@@ -28,7 +28,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(DNSAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dnsapi-target")
 set(DNSAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdnsapi_rust.a")
-file(GLOB_RECURSE DNSAPI_RUST_SRCS "${DNSAPI_RUST_WORKSPACE_DIR}/dnsapi-rust/src/*.rs")
+rust_crate_sources(DNSAPI_RUST_SRCS "${DNSAPI_RUST_WORKSPACE_DIR}" dnsapi-rust)
 add_custom_command(
     OUTPUT ${DNSAPI_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

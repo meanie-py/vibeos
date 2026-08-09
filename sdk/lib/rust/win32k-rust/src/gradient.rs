@@ -61,22 +61,7 @@ unsafe fn rgb_pack(r: i32, g: i32, b: i32) -> ULONG {
 // `Option<unsafe extern "<cc>" fn(...) -> BOOL>` — `stdcall` on i386,
 // `C` on amd64/arm64 (matches the driver DDI ABI). The C macro just
 // dereferences the slot.
-#[cfg(target_arch = "x86")]
-type FnDrvGradientFill = unsafe extern "stdcall" fn(
-    psoDest: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pVertex: *mut TRIVERTEX,
-    nVertex: ULONG,
-    pMesh: PVOID,
-    nMesh: ULONG,
-    prclExtents: *mut RECTL,
-    pptlDitherOrg: *mut POINTL,
-    ulMode: ULONG,
-) -> BOOL;
-
-#[cfg(not(target_arch = "x86"))]
-type FnDrvGradientFill = unsafe extern "C" fn(
+type FnDrvGradientFill = unsafe extern "system" fn(
     psoDest: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
@@ -1171,9 +1156,8 @@ unsafe fn IntEngIsNULLTriangle(pVertex: *mut TRIVERTEX, gt: *mut GRADIENT_TRIANG
     }
     0
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn EngGradientFill(
+pub unsafe extern "system" fn EngGradientFill(
     psoDest: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,
@@ -1274,165 +1258,8 @@ pub unsafe extern "stdcall" fn EngGradientFill(
 
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn EngGradientFill(
-    psoDest: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pVertex: *mut TRIVERTEX,
-    nVertex: u32,
-    pMesh: *mut core::ffi::c_void,
-    nMesh: u32,
-    prclExtents: *mut RECTL,
-    pptlDitherOrg: *mut POINTL,
-    ulMode: u32,
-) -> BOOL {
-    let mut i: u32;
-    let mut ret: BOOL = 0;
-    let mut pco_local = pco;
-
-    if pco.is_null() {
-        pco_local = core::ptr::addr_of_mut!(gxcoTrivial) as *mut CLIPOBJ;
-    }
-
-    match ulMode {
-        GRADIENT_FILL_RECT_H | GRADIENT_FILL_RECT_V => {
-            let mut gr = pMesh as PGRADIENT_RECT;
-            i = 0;
-            while i < nMesh {
-                #[cfg(target_arch = "x86")]
-                let result = IntEngGradientFillRect(
-                    psoDest,
-                    pco_local,
-                    pxlo,
-                    pVertex,
-                    nVertex,
-                    gr,
-                    prclExtents,
-                    pptlDitherOrg,
-                    if ulMode == GRADIENT_FILL_RECT_H { 1 } else { 0 },
-                );
-                #[cfg(not(target_arch = "x86"))]
-                let result = IntEngGradientFillRect(
-                    psoDest,
-                    pco_local,
-                    pxlo,
-                    pVertex,
-                    nVertex,
-                    gr,
-                    prclExtents,
-                    pptlDitherOrg,
-                    if ulMode == GRADIENT_FILL_RECT_H { 1 } else { 0 },
-                );
-                if result == 0 {
-                    break;
-                }
-                i += 1;
-                gr = gr.offset(1);
-            }
-            ret = 1;
-        }
-        GRADIENT_FILL_TRIANGLE => {
-            let mut gt = pMesh as PGRADIENT_TRIANGLE;
-            i = 0;
-            while i < nMesh {
-                if IntEngIsNULLTriangle(pVertex, gt) != 0 {
-                    i += 1;
-                    gt = gt.offset(1);
-                    continue;
-                }
-                #[cfg(target_arch = "x86")]
-                let result = IntEngGradientFillTriangle(
-                    psoDest,
-                    pco_local,
-                    pxlo,
-                    pVertex,
-                    nVertex,
-                    gt,
-                    prclExtents,
-                    pptlDitherOrg,
-                );
-                #[cfg(not(target_arch = "x86"))]
-                let result = IntEngGradientFillTriangle(
-                    psoDest,
-                    pco_local,
-                    pxlo,
-                    pVertex,
-                    nVertex,
-                    gt,
-                    prclExtents,
-                    pptlDitherOrg,
-                );
-                if result == 0 {
-                    break;
-                }
-                i += 1;
-                gt = gt.offset(1);
-            }
-            ret = 1;
-        }
-        _ => {}
-    }
-
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn IntEngGradientFill(
-    psoDest: *mut SURFOBJ,
-    pco: *mut CLIPOBJ,
-    pxlo: *mut XLATEOBJ,
-    pVertex: *mut TRIVERTEX,
-    nVertex: u32,
-    pMesh: *mut core::ffi::c_void,
-    nMesh: u32,
-    prclExtents: *mut RECTL,
-    pptlDitherOrg: *mut POINTL,
-    ulMode: u32,
-) -> BOOL {
-    let Ret: BOOL;
-    let psurf: *mut SURFACE;
-
-    psurf = (psoDest as *mut u8).offset(-(core::mem::offset_of!(SURFACE, SurfObj) as isize)) as *mut SURFACE;
-
-    if ((*psurf).flags & HOOK_GRADIENTFILL) != 0 {
-        // GDIDEVFUNCS(psoDest).GradientFill — see gdidev_gradientfill above.
-        // Same pattern as alphablend.rs::gdidev_alphablend.
-        Ret = (gdidev_gradientfill(psoDest))(
-            psoDest,
-            pco,
-            pxlo,
-            pVertex,
-            nVertex,
-            pMesh,
-            nMesh,
-            prclExtents,
-            pptlDitherOrg,
-            ulMode,
-        );
-    } else {
-        Ret = EngGradientFill(
-            psoDest,
-            pco,
-            pxlo,
-            pVertex,
-            nVertex,
-            pMesh,
-            nMesh,
-            prclExtents,
-            pptlDitherOrg,
-            ulMode,
-        );
-    }
-
-    Ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntEngGradientFill(
+pub unsafe extern "system" fn IntEngGradientFill(
     psoDest: *mut SURFOBJ,
     pco: *mut CLIPOBJ,
     pxlo: *mut XLATEOBJ,

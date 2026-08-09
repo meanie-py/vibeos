@@ -16,7 +16,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(RASAPI32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-rasapi32-target")
 set(RASAPI32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/librasapi32_rust.a")
-file(GLOB_RECURSE RASAPI32_RUST_SRCS "${RASAPI32_RUST_WORKSPACE_DIR}/rasapi32-rust/src/*.rs")
+rust_crate_sources(RASAPI32_RUST_SRCS "${RASAPI32_RUST_WORKSPACE_DIR}" rasapi32-rust)
 add_custom_command(
     OUTPUT ${RASAPI32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

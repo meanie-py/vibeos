@@ -490,7 +490,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ForwardIrpAndForget(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 unsafe extern "C" {

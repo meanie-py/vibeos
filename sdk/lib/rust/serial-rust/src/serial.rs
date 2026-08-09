@@ -13,9 +13,8 @@ unsafe extern "system" fn DriverUnload(mut DriverObject: PDRIVER_OBJECT) {
     // nothing to do here yet
 }
 
-// All dispatch routines are forward-declared in types_i386.rs as extern "stdcall",
-// matching PDRIVER_DISPATCH = Option<unsafe extern "stdcall" fn(...)>.
-// DriverUnload is local (extern "system" = stdcall on i386) — transmute once.
+// The dispatch routines and PDRIVER_DISPATCH are all spelled `extern "system"` now
+// (normalize_island_abi.py), so every slot here takes `Some(f)` directly.
 
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
@@ -28,19 +27,9 @@ pub unsafe extern "system" fn DriverEntry(
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    // DriverUnload: our local fn is extern "system"; slot is extern "stdcall".
-    // Same ABI on i386 — transmute is zero-cost.
-    #[cfg(target_arch = "x86")]
-    { (*DriverObject).DriverUnload = Some(unsafe { core::mem::transmute::<
-        unsafe extern "system" fn(PDRIVER_OBJECT),
-        unsafe extern "stdcall" fn(*mut _DRIVER_OBJECT),
-    >(DriverUnload) }); }
-    #[cfg(not(target_arch = "x86"))]
-    { (*DriverObject).DriverUnload = Some(unsafe { core::mem::transmute::<
-        unsafe extern "system" fn(PDRIVER_OBJECT),
-        unsafe extern "C" fn(*mut _DRIVER_OBJECT),
-    >(DriverUnload) }); }
-    // AddDevice and dispatch routines: types_i386.rs declares them extern "stdcall" → slot matches.
+    // DriverUnload used to need a per-arch transmute into the slot's literal ABI. That
+    // transmute erased the whole fn type, so a signature drift here would have compiled.
+    (*DriverObject).DriverUnload = Some(DriverUnload);
     (*(*DriverObject).DriverExtension).AddDevice = Some(SerialAddDevice);
 
     i = 0 as ULONG;

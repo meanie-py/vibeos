@@ -1213,36 +1213,6 @@ unsafe extern "system" fn StatusMessageWindowProc(
     }
     return (FALSE) as i64;
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "system" fn ShowStatusMessageThread(
-    lpParameter: LPVOID
-) -> u32 {
-    let mut hWnd: HWND;
-    let mut Msg: MSG = core::mem::zeroed();
-    UNREFERENCED_PARAMETER!(lpParameter);
-
-    hWnd = CreateDialogParam(hDllInstance,
-                             MAKEINTRESOURCE!(IDD_STATUSWINDOW_DLG),
-                             GetDesktopWindow(),
-                             Some(StatusMessageWindowProc),
-                             0 as LPARAM);
-    if hWnd.is_null() {
-        return 0;
-    }
-
-    ShowWindow(hWnd, (SW_SHOW) as i32);
-
-    while GetMessage(&mut Msg, core::ptr::null_mut(), 0, 0) != 0 {
-        TranslateMessage(&Msg);
-        DispatchMessage(&Msg);
-    }
-
-    EndDialog(hWnd, 0);
-
-    return 0;
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe extern "system" fn ShowStatusMessageThread(
     lpParameter: LPVOID
 ) -> u32 {

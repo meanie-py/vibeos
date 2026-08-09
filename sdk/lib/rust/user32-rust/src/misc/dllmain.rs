@@ -279,22 +279,7 @@ pub static mut szAppInit: [WCHAR; KEY_LENGTH] = [0; KEY_LENGTH];
 // kernel indexes KernelCallbackTable by USER32_CALLBACK id). Callbacks defined in
 // sibling modules are referenced via the local extern block below; the ones defined
 // in this file are referenced directly.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn User32CallWindowProcFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallSendAsyncProcForKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32LoadSysMenuTemplateForKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32SetupDefaultCursors(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallHookProcFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallEventProcFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallLoadMenuFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallClientLoadLibraryFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallCopyImageFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallDDEPostFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-    fn User32CallDDEGetFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
-}
-#[cfg(not(target_arch = "x86"))]
-extern "C" {
+extern "system" {
     fn User32CallWindowProcFromKernel(a: PVOID, n: ULONG) -> NTSTATUS;
     fn User32CallSendAsyncProcForKernel(a: PVOID, n: ULONG) -> NTSTATUS;
     fn User32LoadSysMenuTemplateForKernel(a: PVOID, n: ULONG) -> NTSTATUS;
@@ -754,26 +739,15 @@ pub unsafe extern "system" fn DllMain(
     }
     gdiResult
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn User32CallClientThreadSetupFromKernel(
+pub unsafe extern "system" fn User32CallClientThreadSetupFromKernel(
     Arguments: *mut core::ffi::c_void,
     ArgumentLength: u32,
 ) -> i32 {
     ZwCallbackReturn(core::ptr::null_mut(), 0, STATUS_SUCCESS)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallClientThreadSetupFromKernel(
-    Arguments: *mut core::ffi::c_void,
-    ArgumentLength: u32,
-) -> i32 {
-    ZwCallbackReturn(core::ptr::null_mut(), 0, STATUS_SUCCESS)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallGetCharsetInfo(
+pub unsafe extern "system" fn User32CallGetCharsetInfo(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -791,30 +765,8 @@ pub unsafe extern "stdcall" fn User32CallGetCharsetInfo(
         if Ret != 0 { STATUS_SUCCESS } else { STATUS_UNSUCCESSFUL },
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallGetCharsetInfo(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let pgci: PGET_CHARSET_INFO = Arguments as PGET_CHARSET_INFO;
-
-    let Ret = TranslateCharsetInfo(
-        (*pgci).Locale as ULONG_PTR as *mut DWORD,
-        core::ptr::addr_of_mut!((*pgci).Cs) as PVOID,
-        TCI_SRCLOCALE,
-    );
-
-    ZwCallbackReturn(
-        Arguments,
-        ArgumentLength,
-        if Ret != 0 { STATUS_SUCCESS } else { STATUS_UNSUCCESSFUL },
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallSetWndIconsFromKernel(
+pub unsafe extern "system" fn User32CallSetWndIconsFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -887,102 +839,15 @@ pub unsafe extern "stdcall" fn User32CallSetWndIconsFromKernel(
     );
     ZwCallbackReturn(Arguments, ArgumentLength, STATUS_SUCCESS)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallSetWndIconsFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let Common: PSETWNDICONS_CALLBACK_ARGUMENTS = Arguments as PSETWNDICONS_CALLBACK_ARGUMENTS;
-
-    if gpsi.is_null() || (*gpsi_perusr()).hIconSmWindows.is_null() {
-        (*Common).hIconSample = LoadImageW(
-            0 as HINSTANCE,
-            IDI_APPLICATION,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconHand = LoadImageW(
-            0 as HINSTANCE,
-            IDI_HAND,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconQuestion = LoadImageW(
-            0 as HINSTANCE,
-            IDI_QUESTION,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconBang = LoadImageW(
-            0 as HINSTANCE,
-            IDI_EXCLAMATION,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconNote = LoadImageW(
-            0 as HINSTANCE,
-            IDI_ASTERISK,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconWindows = LoadImageW(
-            0 as HINSTANCE,
-            IDI_WINLOGO,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        ) as HICON;
-        (*Common).hIconSmWindows = LoadImageW(
-            0 as HINSTANCE,
-            IDI_WINLOGO,
-            IMAGE_ICON,
-            GetSystemMetrics(SM_CXSMICON as INT),
-            GetSystemMetrics(SM_CYSMICON as INT),
-            0,
-        ) as HICON;
-        hIconWindows = (*Common).hIconWindows;
-        hIconSmWindows = (*Common).hIconSmWindows;
-    }
-    ERR!(
-        b"hIconSmWindows %p hIconWindows %p \n\0".as_ptr() as *const i8,
-        hIconSmWindows,
-        hIconWindows,
-    );
-    ZwCallbackReturn(Arguments, ArgumentLength, STATUS_SUCCESS)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32DeliverUserAPC(
+pub unsafe extern "system" fn User32DeliverUserAPC(
     Arguments: *mut core::ffi::c_void,
     ArgumentLength: u32,
 ) -> i32 {
     ZwCallbackReturn(core::ptr::null_mut(), 0, STATUS_SUCCESS)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32DeliverUserAPC(
-    Arguments: *mut core::ffi::c_void,
-    ArgumentLength: u32,
-) -> i32 {
-    ZwCallbackReturn(core::ptr::null_mut(), 0, STATUS_SUCCESS)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallOBMFromKernel(
+pub unsafe extern "system" fn User32CallOBMFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -1040,70 +905,8 @@ pub unsafe extern "stdcall" fn User32CallOBMFromKernel(
 
     ZwCallbackReturn(Arguments, ArgumentLength, STATUS_SUCCESS)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallOBMFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-
-    let mut bmp: BITMAP = core::mem::zeroed();
-    let Common = Arguments as PSETOBM_CALLBACK_ARGUMENTS;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_CLOSE as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_CLOSE as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_CLOSE as usize].cy = bmp.bmHeight;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_MNARROW as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_MNARROW as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_MNARROW as usize].cy = bmp.bmHeight;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_DNARROW as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_DNARROW as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_DNARROW as usize].cy = bmp.bmHeight;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_DNARROWI as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_DNARROWI as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_DNARROWI as usize].cy = bmp.bmHeight;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_UPARROW as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_UPARROW as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_UPARROW as usize].cy = bmp.bmHeight;
-
-    GetObjectW(
-        LoadBitmapW(core::ptr::null_mut(), OBM_UPARROWI as usize as LPCWSTR) as HANDLE,
-        core::mem::size_of::<BITMAP>() as core::ffi::c_int,
-        core::ptr::addr_of_mut!(bmp) as PVOID,
-    );
-    (*Common).oembmi[OBI_UPARROWI as usize].cx = bmp.bmWidth;
-    (*Common).oembmi[OBI_UPARROWI as usize].cy = bmp.bmHeight;
-
-    ZwCallbackReturn(Arguments, ArgumentLength, STATUS_SUCCESS)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallLPKFromKernel(
+pub unsafe extern "system" fn User32CallLPKFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -1136,45 +939,8 @@ pub unsafe extern "stdcall" fn User32CallLPKFromKernel(
         STATUS_SUCCESS,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallLPKFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let bResult: BOOL;
-    let Argument: PLPK_CALLBACK_ARGUMENTS;
-
-    Argument = Arguments as PLPK_CALLBACK_ARGUMENTS;
-
-    (*Argument).lpString =
-        ((*Argument).lpString as ULONG_PTR + Argument as ULONG_PTR) as LPWSTR;
-
-    bResult = ExtTextOutW(
-        (*Argument).hdc,
-        (*Argument).x,
-        (*Argument).y,
-        (*Argument).flags,
-        if (*Argument).bRect != 0 {
-            core::ptr::addr_of_mut!((*Argument).rect) as *const RECT
-        } else {
-            core::ptr::null_mut()
-        },
-        (*Argument).lpString,
-        (*Argument).count,
-        core::ptr::null_mut(),
-    );
-
-    ZwCallbackReturn(
-        core::ptr::addr_of!(bResult) as PVOID,
-        core::mem::size_of::<BOOL>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallUMPDFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
+pub unsafe extern "system" fn User32CallUMPDFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
     let mut Buffer: [DWORD; MAX_USER_MODE_DRV_BUFFER as usize] = [0; MAX_USER_MODE_DRV_BUFFER as usize];
     let mut cbSize: INT = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -1196,34 +962,8 @@ pub unsafe extern "stdcall" fn User32CallUMPDFromKernel(Arguments: PVOID, Argume
 
     ZwCallbackReturn(pktOut as PVOID, cbSize as ULONG, Status)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallUMPDFromKernel(Arguments: PVOID, ArgumentLength: ULONG) -> NTSTATUS {
-    let mut Buffer: [DWORD; MAX_USER_MODE_DRV_BUFFER as usize] = [0; MAX_USER_MODE_DRV_BUFFER as usize];
-    let mut cbSize: INT = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let pkt: PUMPDPKTHEAD = Arguments as PUMPDPKTHEAD;
-    let mut pktOut: PUMPDPKTHEAD = core::ptr::null_mut();
-
-    if (*pkt).RetSize as usize <= core::mem::size_of_val(&Buffer) {
-        pktOut = Buffer.as_mut_ptr() as PUMPDPKTHEAD;
-
-        if GdiPrinterThunk(pkt as PVOID, pktOut as PVOID, (*pkt).RetSize as ULONG) == GDI_ERROR as ULONG {
-            pktOut = core::ptr::null_mut();
-            Status = STATUS_UNSUCCESSFUL;
-        } else {
-            cbSize = (*pkt).RetSize;
-        }
-    } else {
-        Status = STATUS_NO_MEMORY;
-    }
-
-    ZwCallbackReturn(pktOut as PVOID, cbSize as ULONG, Status)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallImmProcessKeyFromKernel(
+pub unsafe extern "system" fn User32CallImmProcessKeyFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {
@@ -1242,47 +982,8 @@ pub unsafe extern "stdcall" fn User32CallImmProcessKeyFromKernel(
         STATUS_SUCCESS,
     )
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn User32CallImmProcessKeyFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let Common: PIMMPROCESSKEY_CALLBACK_ARGUMENTS = Arguments as PIMMPROCESSKEY_CALLBACK_ARGUMENTS;
-    let mut Result: DWORD = IMM_FN_ImmProcessKey(
-        (*Common).hWnd,
-        (*Common).hKL,
-        (*Common).vKey,
-        (*Common).lParam,
-        (*Common).dwHotKeyID,
-    );
-
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(Result) as PVOID,
-        core::mem::size_of::<DWORD>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn User32CallImmLoadLayoutFromKernel(
-    Arguments: PVOID,
-    ArgumentLength: ULONG,
-) -> NTSTATUS {
-    let Common: PIMMLOADLAYOUT_CALLBACK_ARGUMENTS = Arguments as PIMMLOADLAYOUT_CALLBACK_ARGUMENTS;
-    let mut Result: IMMLOADLAYOUT_CALLBACK_OUTPUT = core::mem::zeroed();
-    Result.ret = ImmLoadLayout((*Common).hKL, core::ptr::addr_of_mut!(Result.iiex));
-    ZwCallbackReturn(
-        core::ptr::addr_of_mut!(Result) as PVOID,
-        core::mem::size_of::<IMMLOADLAYOUT_CALLBACK_OUTPUT>() as ULONG,
-        STATUS_SUCCESS,
-    )
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn User32CallImmLoadLayoutFromKernel(
+pub unsafe extern "system" fn User32CallImmLoadLayoutFromKernel(
     Arguments: PVOID,
     ArgumentLength: ULONG,
 ) -> NTSTATUS {

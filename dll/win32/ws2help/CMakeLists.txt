@@ -25,7 +25,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WS2HELP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ws2help-target")
 set(WS2HELP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libws2help_rust.a")
-file(GLOB_RECURSE WS2HELP_RUST_SRCS "${WS2HELP_RUST_WORKSPACE_DIR}/ws2help-rust/src/*.rs")
+rust_crate_sources(WS2HELP_RUST_SRCS "${WS2HELP_RUST_WORKSPACE_DIR}" ws2help-rust)
 add_custom_command(
     OUTPUT ${WS2HELP_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

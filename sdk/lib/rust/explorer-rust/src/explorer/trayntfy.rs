@@ -742,19 +742,8 @@ unsafe fn tsdb_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CTrayShowDesktopButton_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CTrayShowDesktopButton_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CTrayShowDesktopButton_WindowProc(
+pub unsafe extern "system" fn CTrayShowDesktopButton_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -1614,19 +1603,8 @@ unsafe fn CTrayNotifyWnd_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CTrayNotifyWnd_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CTrayNotifyWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CTrayNotifyWnd_WindowProc(
+pub unsafe extern "system" fn CTrayNotifyWnd_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

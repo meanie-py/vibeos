@@ -2467,17 +2467,17 @@ pub struct _SCSI_WMI_REQUEST_BLOCK {
 pub type SCSI_WMI_REQUEST_BLOCK = _SCSI_WMI_REQUEST_BLOCK;
 pub type PSCSI_WMI_REQUEST_BLOCK = *mut _SCSI_WMI_REQUEST_BLOCK;
 pub type PHW_INITIALIZE =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
 pub type PHW_STARTIO = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, Srb: PSCSI_REQUEST_BLOCK) -> BOOLEAN,
 >;
 pub type PHW_INTERRUPT =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID) -> BOOLEAN>;
-pub type PHW_TIMER = ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID) -> BOOLEAN>;
+pub type PHW_TIMER = ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_DMA_STARTED =
-    ::core::option::Option<unsafe extern "stdcall" fn(DeviceExtension: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(DeviceExtension: PVOID)>;
 pub type PHW_FIND_ADAPTER = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         HwContext: PVOID,
         BusInformation: PVOID,
@@ -2487,17 +2487,17 @@ pub type PHW_FIND_ADAPTER = ::core::option::Option<
     ) -> ULONG,
 >;
 pub type PHW_RESET_BUS = ::core::option::Option<
-    unsafe extern "stdcall" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
+    unsafe extern "system" fn(DeviceExtension: PVOID, PathId: ULONG) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_STATE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         Context: PVOID,
         SaveState: BOOLEAN,
     ) -> BOOLEAN,
 >;
 pub type PHW_ADAPTER_CONTROL = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         DeviceExtension: PVOID,
         ControlType: SCSI_ADAPTER_CONTROL_TYPE,
         Parameters: PVOID,
@@ -2560,7 +2560,7 @@ pub struct _HW_INITIALIZATION_DATA_COMMON {
 }
 pub type HW_INITIALIZATION_DATA_COMMON = _HW_INITIALIZATION_DATA_COMMON;
 pub type PHW_INITIALIZATION_DATA_COMMON = *mut _HW_INITIALIZATION_DATA_COMMON;
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortInitialize(
         Argument1: PVOID,
         Argument2: PVOID,
@@ -2568,10 +2568,10 @@ unsafe extern "stdcall" {
         HwContext: PVOID,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortFreeDeviceBase(HwDeviceExtension: PVOID, MappedAddress: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetBusData(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -2581,7 +2581,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortSetBusDataByOffset(
         DeviceExtension: PVOID,
         BusDataType: ULONG,
@@ -2592,7 +2592,7 @@ unsafe extern "stdcall" {
         Length: ULONG,
     ) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetDeviceBase(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -2602,7 +2602,7 @@ unsafe extern "stdcall" {
         InIoSpace: BOOLEAN,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetLogicalUnit(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2610,7 +2610,7 @@ unsafe extern "stdcall" {
         Lun: UCHAR,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetSrb(
         DeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2619,7 +2619,7 @@ unsafe extern "stdcall" {
         QueueTag: LONG,
     ) -> PSCSI_REQUEST_BLOCK;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetPhysicalAddress(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2627,23 +2627,23 @@ unsafe extern "stdcall" {
         Length: *mut ULONG,
     ) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetVirtualAddress(
         HwDeviceExtension: PVOID,
         PhysicalAddress: SCSI_PHYSICAL_ADDRESS,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortGetUncachedExtension(
         HwDeviceExtension: PVOID,
         ConfigInfo: PPORT_CONFIGURATION_INFORMATION,
         NumberOfBytes: ULONG,
     ) -> PVOID;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortFlushDma(DeviceExtension: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortIoMapTransfer(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2658,7 +2658,7 @@ unsafe extern "C" {
         ...
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortLogError(
         HwDeviceExtension: PVOID,
         Srb: PSCSI_REQUEST_BLOCK,
@@ -2669,7 +2669,7 @@ unsafe extern "stdcall" {
         UniqueId: ULONG,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortCompleteRequest(
         HwDeviceExtension: PVOID,
         PathId: UCHAR,
@@ -2678,91 +2678,91 @@ unsafe extern "stdcall" {
         SrbStatus: UCHAR,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortMoveMemory(WriteBuffer: PVOID, ReadBuffer: PVOID, Length: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUchar(Port: PUCHAR) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUshort(Port: PUSHORT) -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortUlong(Port: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUchar(Port: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUshort(Port: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadPortBufferUlong(Port: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUchar(Register: PUCHAR) -> UCHAR;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUshort(Register: PUSHORT) -> USHORT;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterUlong(Register: PULONG) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUchar(Register: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUshort(Register: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortReadRegisterBufferUlong(Register: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortStallExecution(Delay: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUchar(Port: PUCHAR, Value: UCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUshort(Port: PUSHORT, Value: USHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortUlong(Port: PULONG, Value: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUchar(Port: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUshort(Port: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWritePortBufferUlong(Port: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUchar(Register: PUCHAR, Value: UCHAR);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUshort(Register: PUSHORT, Value: USHORT);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterUlong(Register: PULONG, Value: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUchar(Register: PUCHAR, Buffer: PUCHAR, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUshort(Register: PUSHORT, Buffer: PUSHORT, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortWriteRegisterBufferUlong(Register: PULONG, Buffer: PULONG, Count: ULONG);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortConvertUlongToPhysicalAddress(UlongAddress: ULONG) -> SCSI_PHYSICAL_ADDRESS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortConvertPhysicalAddressToUlong(Address: SCSI_PHYSICAL_ADDRESS) -> ULONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ScsiPortValidateRange(
         HwDeviceExtension: PVOID,
         BusType: INTERFACE_TYPE,
@@ -27499,7 +27499,7 @@ unsafe extern "stdcall" {
 }
 unsafe extern "stdcall" {
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AtapiHexToString(Value: ULONG, Buffer: *mut PCHAR);
 }
 unsafe extern "stdcall" {

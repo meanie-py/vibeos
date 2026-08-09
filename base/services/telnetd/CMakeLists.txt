@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(TELNETD_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-telnetd-target")
 set(TELNETD_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libtelnetd_rust.a")
-file(GLOB_RECURSE TELNETD_RUST_SRCS "${TELNETD_RUST_WORKSPACE_DIR}/telnetd-rust/src/*.rs")
+rust_crate_sources(TELNETD_RUST_SRCS "${TELNETD_RUST_WORKSPACE_DIR}" telnetd-rust)
 add_custom_command(
     OUTPUT ${TELNETD_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

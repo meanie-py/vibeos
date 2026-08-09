@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
     set(WMILIB_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(WMILIB_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE WMILIB_RUST_SRCS ${WMILIB_RUST_WORKSPACE_DIR}/wmilib-rust/src/*.rs)
+rust_crate_sources(WMILIB_RUST_SRCS "${WMILIB_RUST_WORKSPACE_DIR}" wmilib-rust)
 add_custom_command(
     OUTPUT ${WMILIB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

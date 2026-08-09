@@ -31,7 +31,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(DHCPCSVC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-dhcpcsvc-target")
 set(DHCPCSVC_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libdhcpcsvc_rust.a")
-file(GLOB_RECURSE DHCPCSVC_RUST_SRCS "${DHCPCSVC_RUST_WORKSPACE_DIR}/dhcpcsvc-rust/src/*.rs")
+rust_crate_sources(DHCPCSVC_RUST_SRCS "${DHCPCSVC_RUST_WORKSPACE_DIR}" dhcpcsvc-rust)
 add_custom_command(
     OUTPUT ${DHCPCSVC_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -21,7 +21,7 @@ elseif(ARCH STREQUAL "arm64")
     set(ARBITER_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(ARBITER_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE ARBITER_RUST_SRCS ${ARBITER_RUST_WORKSPACE_DIR}/arbiter-rust/src/*.rs)
+rust_crate_sources(ARBITER_RUST_SRCS "${ARBITER_RUST_WORKSPACE_DIR}" arbiter-rust)
 add_custom_command(
     OUTPUT ${ARBITER_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

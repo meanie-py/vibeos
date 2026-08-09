@@ -704,23 +704,23 @@ pub type GEOID = DWORD;
 pub type GEOTYPE = DWORD;
 pub type GEOCLASS = DWORD;
 pub type CALINFO_ENUMPROCEXEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID, arg3: LPWSTR, arg4: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPWSTR, arg4: LPARAM) -> BOOL,
 >;
 pub type DATEFMT_ENUMPROCEXEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPARAM) -> BOOL,
 >;
 pub type TIMEFMT_ENUMPROCEX =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
 pub type CALINFO_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type CALINFO_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type CALINFO_ENUMPROCEXA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
 pub type CALINFO_ENUMPROCEXW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
 pub type LANGUAGEGROUP_ENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LGRPID,
         arg2: LPSTR,
         arg3: LPSTR,
@@ -729,7 +729,7 @@ pub type LANGUAGEGROUP_ENUMPROCA = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LANGUAGEGROUP_ENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: LGRPID,
         arg2: LPWSTR,
         arg3: LPWSTR,
@@ -738,38 +738,38 @@ pub type LANGUAGEGROUP_ENUMPROCW = ::core::option::Option<
     ) -> BOOL,
 >;
 pub type LANGGROUPLOCALE_ENUMPROCA = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LGRPID, arg2: LCID, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type LANGGROUPLOCALE_ENUMPROCW = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LGRPID, arg2: LCID, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
 >;
 pub type UILANGUAGE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: LONG_PTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LONG_PTR) -> BOOL>;
 pub type UILANGUAGE_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: LONG_PTR) -> BOOL>;
-pub type LOCALE_ENUMPROCA = ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LONG_PTR) -> BOOL>;
+pub type LOCALE_ENUMPROCA = ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type LOCALE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type LOCALE_ENUMPROCEX = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
 >;
 pub type CODEPAGE_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type CODEPAGE_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
 pub type DATEFMT_ENUMPROCEXA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
 pub type DATEFMT_ENUMPROCEXW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
 pub type TIMEFMT_ENUMPROCA =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPSTR) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
 pub type TIMEFMT_ENUMPROCW =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: LPWSTR) -> BOOL>;
-pub type GEO_ENUMPROC = ::core::option::Option<unsafe extern "stdcall" fn(arg1: GEOID) -> BOOL>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type GEO_ENUMPROC = ::core::option::Option<unsafe extern "system" fn(arg1: GEOID) -> BOOL>;
 pub const NLS_FUNCTION_COMPARE_STRING: NLS_FUNCTION = 1;
 pub type NLS_FUNCTION = ::core::ffi::c_uint;
 pub const SYSGEOCLASS_GEOCLASS_ALL: SYSGEOCLASS = 0;
@@ -1506,7 +1506,7 @@ pub struct _RPC_MESSAGE {
 }
 pub type PRPC_MESSAGE = *mut _RPC_MESSAGE;
 pub type RPC_DISPATCH_FUNCTION =
-    ::core::option::Option<unsafe extern "stdcall" fn(Message: PRPC_MESSAGE)>;
+    ::core::option::Option<unsafe extern "system" fn(Message: PRPC_MESSAGE)>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct RPC_DISPATCH_TABLE {
@@ -1527,9 +1527,9 @@ pub struct _NDR_SCONTEXT {
 }
 pub type NDR_SCONTEXT = *mut _NDR_SCONTEXT;
 pub type NDR_RUNDOWN =
-    ::core::option::Option<unsafe extern "stdcall" fn(context: *mut ::core::ffi::c_void)>;
-pub type NDR_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "stdcall" fn()>;
-pub type NDR_NOTIFY2_ROUTINE = ::core::option::Option<unsafe extern "stdcall" fn(flag: boolean)>;
+    ::core::option::Option<unsafe extern "system" fn(context: *mut ::core::ffi::c_void)>;
+pub type NDR_NOTIFY_ROUTINE = ::core::option::Option<unsafe extern "system" fn()>;
+pub type NDR_NOTIFY2_ROUTINE = ::core::option::Option<unsafe extern "system" fn(flag: boolean)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct NDR_ALLOC_ALL_NODES_CONTEXT {
@@ -1543,7 +1543,7 @@ pub struct NDR_POINTER_QUEUE_STATE {
 pub type RPC_BUFPTR = *mut ::core::ffi::c_uchar;
 pub type RPC_LENGTH = ULONG;
 pub type EXPR_EVAL =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut _MIDL_STUB_MESSAGE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut _MIDL_STUB_MESSAGE)>;
 pub type PFORMAT_STRING = *const ::core::ffi::c_uchar;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1612,8 +1612,8 @@ pub struct _MIDL_STUB_MESSAGE {
     pub MaxCount: ULONG_PTR,
     pub Offset: ULONG,
     pub ActualCount: ULONG,
-    pub pfnAllocate: ::core::option::Option< unsafe extern "stdcall" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
-    pub pfnFree: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void)>,
+    pub pfnAllocate: ::core::option::Option< unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub StackTop: *mut ::core::ffi::c_uchar,
     pub pPresentedType: *mut ::core::ffi::c_uchar,
     pub pTransmitType: *mut ::core::ffi::c_uchar,
@@ -2233,10 +2233,10 @@ impl _MIDL_STUB_MESSAGE {
 pub type MIDL_STUB_MESSAGE = _MIDL_STUB_MESSAGE;
 pub type PMIDL_STUB_MESSAGE = *mut _MIDL_STUB_MESSAGE;
 pub type GENERIC_BINDING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void) -> *mut ::core::ffi::c_void,
+    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> *mut ::core::ffi::c_void,
 >;
 pub type GENERIC_UNBIND_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void, arg2: *mut ::core::ffi::c_uchar),
+    unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void, arg2: *mut ::core::ffi::c_uchar),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -2257,7 +2257,7 @@ pub struct __GENERIC_BINDING_INFO {
 pub type GENERIC_BINDING_INFO = __GENERIC_BINDING_INFO;
 pub type PGENERIC_BINDING_INFO = *mut __GENERIC_BINDING_INFO;
 pub type XMIT_HELPER_ROUTINE =
-    ::core::option::Option<unsafe extern "stdcall" fn(arg1: PMIDL_STUB_MESSAGE)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PMIDL_STUB_MESSAGE)>;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _XMIT_ROUTINE_QUINTUPLE {
@@ -2269,28 +2269,28 @@ pub struct _XMIT_ROUTINE_QUINTUPLE {
 pub type XMIT_ROUTINE_QUINTUPLE = _XMIT_ROUTINE_QUINTUPLE;
 pub type PXMIT_ROUTINE_QUINTUPLE = *mut _XMIT_ROUTINE_QUINTUPLE;
 pub type USER_MARSHAL_SIZING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut ULONG,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
     ) -> ULONG,
 >;
 pub type USER_MARSHAL_MARSHALLING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut ::core::ffi::c_void,
     ) -> *mut ::core::ffi::c_uchar,
 >;
 pub type USER_MARSHAL_UNMARSHALLING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: *mut ULONG,
         arg2: *mut ::core::ffi::c_uchar,
         arg3: *mut ::core::ffi::c_void,
     ) -> *mut ::core::ffi::c_uchar,
 >;
 pub type USER_MARSHAL_FREEING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(arg1: *mut ULONG, arg2: *mut ::core::ffi::c_void),
+    unsafe extern "system" fn(arg1: *mut ULONG, arg2: *mut ::core::ffi::c_void),
 >;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -2321,8 +2321,8 @@ pub type USER_MARSHAL_CB = _USER_MARSHAL_CB;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _MALLOC_FREE_STRUCT {
-    pub pfnAllocate: ::core::option::Option< unsafe extern "stdcall" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
-    pub pfnFree: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void)>,
+    pub pfnAllocate: ::core::option::Option< unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
 }
 pub type MALLOC_FREE_STRUCT = _MALLOC_FREE_STRUCT;
 #[repr(C)]
@@ -2338,7 +2338,7 @@ pub const _IDL_CS_CONVERT_IDL_CS_NEW_BUFFER_CONVERT: _IDL_CS_CONVERT = 2;
 pub type _IDL_CS_CONVERT = ::core::ffi::c_uint;
 pub use self::_IDL_CS_CONVERT as IDL_CS_CONVERT;
 pub type CS_TYPE_NET_SIZE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: ULONG,
@@ -2348,7 +2348,7 @@ pub type CS_TYPE_NET_SIZE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_TO_NETCS_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: *mut ::core::ffi::c_void,
@@ -2359,7 +2359,7 @@ pub type CS_TYPE_TO_NETCS_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_LOCAL_SIZE_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: ULONG,
@@ -2369,7 +2369,7 @@ pub type CS_TYPE_LOCAL_SIZE_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TYPE_FROM_NETCS_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ULONG,
         arg3: *mut byte,
@@ -2381,7 +2381,7 @@ pub type CS_TYPE_FROM_NETCS_ROUTINE = ::core::option::Option<
     ),
 >;
 pub type CS_TAG_GETTING_ROUTINE = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         arg1: RPC_BINDING_HANDLE,
         arg2: ::core::ffi::c_int,
         arg3: *mut ULONG,
@@ -2417,8 +2417,8 @@ pub type NDR_EXPR_DESC = _NDR_EXPR_DESC;
 #[repr(C)]
 pub struct _MIDL_STUB_DESC {
     pub RpcInterfaceInformation: *mut ::core::ffi::c_void,
-    pub pfnAllocate: ::core::option::Option< unsafe extern "stdcall" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
-    pub pfnFree: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void)>,
+    pub pfnAllocate: ::core::option::Option< unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub IMPLICIT_HANDLE_INFO: _MIDL_STUB_DESC__bindgen_ty_1,
     pub apfnNdrRundownRoutines: *const NDR_RUNDOWN,
     pub aGenericBindingRoutinePairs: *const GENERIC_BINDING_ROUTINE_PAIR,
@@ -2490,8 +2490,8 @@ pub struct _MIDL_SYNTAX_INFO {
 }
 pub type MIDL_SYNTAX_INFO = _MIDL_SYNTAX_INFO;
 pub type PMIDL_SYNTAX_INFO = *mut _MIDL_SYNTAX_INFO;
-pub type STUB_THUNK = ::core::option::Option<unsafe extern "stdcall" fn(arg1: PMIDL_STUB_MESSAGE)>;
-pub type SERVER_ROUTINE = ::core::option::Option<unsafe extern "stdcall" fn() -> LONG>;
+pub type STUB_THUNK = ::core::option::Option<unsafe extern "system" fn(arg1: PMIDL_STUB_MESSAGE)>;
+pub type SERVER_ROUTINE = ::core::option::Option<unsafe extern "system" fn() -> LONG>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MIDL_SERVER_INFO_ {
@@ -2592,8 +2592,8 @@ pub type PSCONTEXT_QUEUE = *mut _SCONTEXT_QUEUE;
 pub struct _NDR_USER_MARSHAL_INFO_LEVEL1 {
     pub Buffer: *mut ::core::ffi::c_void,
     pub BufferSize: ULONG,
-    pub pfnAllocate: ::core::option::Option< unsafe extern "stdcall" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
-    pub pfnFree: ::core::option::Option<unsafe extern "stdcall" fn(arg1: *mut ::core::ffi::c_void)>,
+    pub pfnAllocate: ::core::option::Option< unsafe extern "system" fn(arg1: SIZE_T) -> *mut ::core::ffi::c_void, >,
+    pub pfnFree: ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void)>,
     pub pRpcChannelBuffer: *mut IRpcChannelBuffer,
     pub Reserved: [ULONG_PTR; 5usize],
 }

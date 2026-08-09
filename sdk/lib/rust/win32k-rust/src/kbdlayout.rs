@@ -718,33 +718,8 @@ unsafe extern "C" fn W32kGetDefaultKeyLayout() -> PKL {
 
     core::ptr::null_mut()
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserHklToKbl(hKl: HKL) -> PKL {
-    let mut pKl: PKL = gspklBaseLayout;
-
-    if gspklBaseLayout.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    loop {
-        if (*pKl).hkl == hKl {
-            return pKl;
-        }
-
-        pKl = (*pKl).pklNext;
-
-        if pKl == gspklBaseLayout {
-            break;
-        }
-    }
-
-    core::ptr::null_mut()
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserHklToKbl(hKl: HKL) -> PKL {
+pub unsafe extern "system" fn UserHklToKbl(hKl: HKL) -> PKL {
     let mut pKl: PKL = gspklBaseLayout;
 
     if gspklBaseLayout.is_null() {
@@ -800,23 +775,8 @@ unsafe fn IntReorderKeyboardLayouts_impl(
     (*pOldKL).pklPrev = pNewKL;
     gspklBaseLayout = pNewKL;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserSetDefaultInputLang(hKl: HKL) -> BOOL {
-    let pKl: PKL;
-
-    pKl = UserHklToKbl(hKl);
-    if pKl.is_null() {
-        return 0;
-    }
-
-    IntReorderKeyboardLayouts(IntGetProcessWindowStation(core::ptr::null_mut()), pKl);
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserSetDefaultInputLang(hKl: HKL) -> BOOL {
+pub unsafe extern "system" fn UserSetDefaultInputLang(hKl: HKL) -> BOOL {
     let pKl: PKL;
 
     pKl = UserHklToKbl(hKl);
@@ -1288,9 +1248,8 @@ unsafe fn UserGetKeyboardLayout_impl(dwThreadId: DWORD) -> HKL {
 
     core::ptr::null_mut()
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetKeyboardLayoutList(
+pub unsafe extern "system" fn NtUserGetKeyboardLayoutList(
     mut nBuff: ULONG,
     pHklBuff: *mut HKL,
 ) -> UINT {
@@ -1327,49 +1286,8 @@ pub unsafe extern "stdcall" fn NtUserGetKeyboardLayoutList(
     UserLeave();
     ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetKeyboardLayoutList(
-    mut nBuff: ULONG,
-    pHklBuff: *mut HKL,
-) -> UINT {
-    let mut ret: UINT = 0;
-    let pWinSta: PWINSTATION_OBJECT;
-
-    if pHklBuff.is_null() {
-        nBuff = 0;
-    }
-
-    UserEnterShared();
-
-    'quit: {
-        if nBuff > MAXULONG / core::mem::size_of::<HKL>() as ULONG {
-            SetLastNtError(ERROR_INVALID_PARAMETER as NTSTATUS);
-            break 'quit;
-        }
-
-        let __SehStatus = SafeProbeForWrite(
-            pHklBuff as *mut core::ffi::c_void,
-            (nBuff as usize * core::mem::size_of::<HKL>()) as usize,
-            1,
-        );
-        if !NT_SUCCESS(__SehStatus) {
-            SetLastNtError(__SehStatus);
-            break 'quit;
-        }
-
-        pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-
-        ret = IntGetKeyboardLayoutList(pWinSta, nBuff, pHklBuff);
-    }
-
-    UserLeave();
-    ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetKeyboardLayoutName(
+pub unsafe extern "system" fn NtUserGetKeyboardLayoutName(
     pustrName: PUNICODE_STRING,
 ) -> BOOL {
     let mut bRet: BOOL = 0;
@@ -1420,63 +1338,8 @@ pub unsafe extern "stdcall" fn NtUserGetKeyboardLayoutName(
     UserLeave();
     bRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetKeyboardLayoutName(
-    pustrName: PUNICODE_STRING,
-) -> BOOL {
-    let mut bRet: BOOL = 0;
-    let pKl: PKL;
-    let pti: PTHREADINFO;
-    let mut ustrNameSafe: _UNICODE_STRING = core::mem::zeroed();
-    let Status: NTSTATUS;
-
-    UserEnterShared();
-
-    pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
-    pKl = (*pti).KeyboardLayout;
-
-    'cleanup: {
-        if pKl.is_null() {
-            break 'cleanup;
-        }
-
-        ustrNameSafe = *pustrName;
-
-        if IS_IME_HKL((*pKl).hkl) != 0 {
-            Status = RtlIntegerToUnicodeString(
-                HandleToUlong((*pKl).hkl as *mut core::ffi::c_void),
-                16,
-                (&mut ustrNameSafe as *mut _UNICODE_STRING).cast(),
-            );
-        } else {
-            if (ustrNameSafe.MaximumLength as usize)
-                < KL_NAMELENGTH as usize * core::mem::size_of::<u16>()
-            {
-                EngSetLastError(ERROR_INVALID_PARAMETER);
-                break 'cleanup;
-            }
-
-            ustrNameSafe.Length = 0;
-            Status = RtlAppendUnicodeToString(
-                (&mut ustrNameSafe as *mut _UNICODE_STRING).cast(),
-                (*(*pKl).spkf).awchKF.as_ptr(),
-            );
-        }
-
-        if NT_SUCCESS(Status) {
-            *pustrName = ustrNameSafe;
-            bRet = 1;
-        }
-    }
-
-    UserLeave();
-    bRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserLoadKeyboardLayoutEx(
+pub unsafe extern "system" fn NtUserLoadKeyboardLayoutEx(
     hFile: HANDLE,
     offTable: DWORD,
     pTables: PVOID,
@@ -1541,77 +1404,8 @@ pub unsafe extern "stdcall" fn NtUserLoadKeyboardLayoutEx(
     UserLeave();
     hRetKL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserLoadKeyboardLayoutEx(
-    hFile: HANDLE,
-    offTable: DWORD,
-    pTables: PVOID,
-    hOldKL: HKL,
-    puszKLID: PUNICODE_STRING,
-    dwNewKL: DWORD,
-    Flags: UINT,
-) -> HKL {
-    let hRetKL: HKL;
-    let mut Buffer: [WCHAR; KL_NAMELENGTH as usize] = [0; KL_NAMELENGTH as usize];
-    let mut uszSafeKLID: _UNICODE_STRING = core::mem::zeroed();
-    let pWinSta: PWINSTATION_OBJECT;
-    let hSafeFile: HANDLE;
-
-    let _ = offTable;
-    let _ = pTables;
-
-    if (Flags
-        & !(KLF_ACTIVATE
-            | KLF_NOTELLSHELL
-            | KLF_REORDER
-            | KLF_REPLACELANG
-            | KLF_SUBSTITUTE_OK
-            | KLF_SETFORPROCESS
-            | KLF_UNLOADPREVIOUS
-            | KLF_RESET
-            | KLF_SHIFTLOCK))
-        != 0
-    {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return core::ptr::null_mut();
-    }
-
-    RtlInitEmptyUnicodeString(
-        (&mut uszSafeKLID as *mut _UNICODE_STRING).cast(),
-        Buffer.as_mut_ptr(),
-        core::mem::size_of::<[WCHAR; KL_NAMELENGTH as usize]>() as USHORT,
-    );
-
-    RtlCopyUnicodeString((&mut uszSafeKLID as *mut _UNICODE_STRING).cast(), puszKLID as *mut _UNICODE_STRING as *mut _);
-
-    UserEnterExclusive();
-
-    hSafeFile = if !hFile.is_null() {
-        IntVerifyKeyboardFileHandle(hFile)
-    } else {
-        core::ptr::null_mut()
-    };
-    pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-    hRetKL = co_IntLoadKeyboardLayoutEx(
-        pWinSta,
-        hSafeFile,
-        hOldKL,
-        &mut uszSafeKLID,
-        dwNewKL as HKL,
-        Flags,
-    );
-    if !hSafeFile.is_null() {
-        ZwClose(hSafeFile);
-    }
-
-    UserLeave();
-    hRetKL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserActivateKeyboardLayout(
+pub unsafe extern "system" fn NtUserActivateKeyboardLayout(
     hKL: HKL,
     Flags: ULONG,
 ) -> HKL {
@@ -1626,42 +1420,8 @@ pub unsafe extern "stdcall" fn NtUserActivateKeyboardLayout(
 
     hOldKL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserActivateKeyboardLayout(
-    hKL: HKL,
-    Flags: ULONG,
-) -> HKL {
-    let pWinSta: PWINSTATION_OBJECT;
-    let hOldKL: HKL;
-
-    UserEnterExclusive();
-
-    pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-    hOldKL = co_IntActivateKeyboardLayout(pWinSta, hKL, Flags, core::ptr::null_mut());
-    UserLeave();
-
-    hOldKL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserUnloadKeyboardLayout(hKl: HKL) -> BOOL {
-    let ret: BOOL;
-    let pWinSta: PWINSTATION_OBJECT;
-
-    UserEnterExclusive();
-
-    pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
-    ret = IntUnloadKeyboardLayout(pWinSta, hKl);
-
-    UserLeave();
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserUnloadKeyboardLayout(hKl: HKL) -> BOOL {
+pub unsafe extern "system" fn NtUserUnloadKeyboardLayout(hKl: HKL) -> BOOL {
     let ret: BOOL;
     let pWinSta: PWINSTATION_OBJECT;
 

@@ -510,18 +510,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             TRACE_(SERIAL, b"IOCTL_SERIAL_CLEAR_STATS\n\0".as_ptr() as *const i8);
             KeSynchronizeExecution(
                 (*DeviceExtension).Interrupt,
-                {
-                    #[cfg(target_arch = "x86")]
-                    { unsafe { Some(core::mem::transmute::<
-                        unsafe extern "system" fn(PVOID) -> BOOLEAN,
-                        unsafe extern "stdcall" fn(PVOID) -> BOOLEAN,
-                    >(SerialClearPerfStats)) } }
-                    #[cfg(not(target_arch = "x86"))]
-                    { unsafe { Some(core::mem::transmute::<
-                        unsafe extern "system" fn(PVOID) -> BOOLEAN,
-                        unsafe extern "C" fn(PVOID) -> BOOLEAN,
-                    >(SerialClearPerfStats)) } }
-                },
+                Some(SerialClearPerfStats),
                 DeviceExtension as PVOID,
             );
             Status = STATUS_SUCCESS;
@@ -703,18 +692,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             } else {
                 KeSynchronizeExecution(
                     (*DeviceExtension).Interrupt,
-                    {
-                        #[cfg(target_arch = "x86")]
-                        { unsafe { Some(core::mem::transmute::<
-                            unsafe extern "system" fn(PVOID) -> BOOLEAN,
-                            unsafe extern "stdcall" fn(PVOID) -> BOOLEAN,
-                        >(SerialGetPerfStats)) } }
-                        #[cfg(not(target_arch = "x86"))]
-                        { unsafe { Some(core::mem::transmute::<
-                            unsafe extern "system" fn(PVOID) -> BOOLEAN,
-                            unsafe extern "C" fn(PVOID) -> BOOLEAN,
-                        >(SerialGetPerfStats)) } }
-                    },
+                    Some(SerialGetPerfStats),
                     Irp as PVOID,
                 );
                 Information = core::mem::size_of::<SERIALPERF_STATS>() as ULONG_PTR;

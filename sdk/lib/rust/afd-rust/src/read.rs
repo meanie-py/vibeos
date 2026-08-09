@@ -301,18 +301,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn ReceiveComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    receive_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn ReceiveComplete(
+pub unsafe extern "system" fn ReceiveComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,
@@ -633,18 +622,7 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
 }
 
 #[no_mangle]
-#[cfg(target_arch = "x86")]
-pub unsafe extern "stdcall" fn PacketSocketRecvComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
-    packet_socket_recv_complete_impl(DeviceObject, Irp, Context)
-}
-
-#[no_mangle]
-#[cfg(not(target_arch = "x86"))]
-pub unsafe extern "C" fn PacketSocketRecvComplete(
+pub unsafe extern "system" fn PacketSocketRecvComplete(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

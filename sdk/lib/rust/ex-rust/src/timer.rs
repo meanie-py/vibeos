@@ -160,12 +160,7 @@ pub unsafe extern "system" fn ExTimerRundown() {
 // On i386, bindgen's OB_DELETE_METHOD is `extern "stdcall"` (not `extern "system"`).
 // On amd64/arm64, it's `extern "C"`. Both match "system" at ABI level, but Rust
 // treats them as distinct types. Use cfg to match the exact convention bindgen expects.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ExpDeleteTimer(ObjectBody: PVOID) {
-    ExpDeleteTimerInner(ObjectBody);
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn ExpDeleteTimer(ObjectBody: PVOID) {
+unsafe extern "system" fn ExpDeleteTimer(ObjectBody: PVOID) {
     ExpDeleteTimerInner(ObjectBody);
 }
 #[inline(always)]

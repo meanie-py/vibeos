@@ -354,12 +354,7 @@ pub unsafe extern "system" fn KdbpReleaseLock(SpinLock: *mut KSPIN_LOCK, OldIrql
 // ============================================================================
 
 // PKSTART_ROUTINE calling convention: i386 uses stdcall, amd64/arm64 use C.
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpLoggerThread(_Context: PVOID) {
-    KdpLoggerThreadBody()
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpLoggerThread(_Context: PVOID) {
+unsafe extern "system" fn KdpLoggerThread(_Context: PVOID) {
     KdpLoggerThreadBody()
 }
 
@@ -432,8 +427,7 @@ unsafe fn KdpLoggerThreadBody() {
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpPrintToLogFile(String: PCCH, Length: ULONG) {
+unsafe extern "system" fn KdpPrintToLogFile(String: PCCH, Length: ULONG) {
     if KdpDebugBuffer.is_null() {
         return;
     }
@@ -474,229 +468,8 @@ unsafe extern "C" fn KdpPrintToLogFile(String: PCCH, Length: ULONG) {
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpPrintToLogFile(String: PCCH, Length: ULONG) {
-    if KdpDebugBuffer.is_null() {
-        return;
-    }
-
-    let OldIrql: KIRQL = KdbpAcquireLock(core::ptr::addr_of_mut!(KdpDebugLogSpinLock));
-
-    let beg: ULONG = KdpCurrentPosition;
-    let num: ULONG = core::cmp::min(Length, KdpFreeBytes);
-    if num != 0 {
-        let end: ULONG = (beg + num) % KdpBufferSize;
-        KdpCurrentPosition = end;
-        KdpFreeBytes -= num;
-
-        if end > beg {
-            RtlCopyMemory(
-                KdpDebugBuffer.add(beg as usize) as PVOID,
-                String as *const core::ffi::c_void,
-                num as SIZE_T,
-            );
-        } else {
-            RtlCopyMemory(
-                KdpDebugBuffer.add(beg as usize) as PVOID,
-                String as *const core::ffi::c_void,
-                (KdpBufferSize - beg) as SIZE_T,
-            );
-            RtlCopyMemory(
-                KdpDebugBuffer as PVOID,
-                String.add((KdpBufferSize - beg) as usize) as *const core::ffi::c_void,
-                end as SIZE_T,
-            );
-        }
-    }
-
-    KdbpReleaseLock(core::ptr::addr_of_mut!(KdpDebugLogSpinLock), OldIrql);
-
-    if OldIrql <= DISPATCH_LEVEL_IRQL && KdpLoggingEnabled != 0 {
-        KeSetEvent(core::ptr::addr_of_mut!(KdpLoggerThreadEvent) as ddk::PRKEVENT, 0i32, 0u8);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KdpDebugLogInit(
-    dispatch_table: PKD_DISPATCH_TABLE,
-    BootPhase: ULONG,
-) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-
-    if KdpDebugMode.File == 0 {
-        return STATUS_PORT_DISCONNECTED;
-    }
-
-    if BootPhase == 0 {
-        (*dispatch_table).KdpPrintRoutine = Some(KdpPrintToLogFile);
-        (*dispatch_table).KdpInitRoutine = Some(KdpDebugLogInit);
-        InsertTailList(
-            core::ptr::addr_of_mut!(KdProviders),
-            core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList),
-        );
-    } else if BootPhase == 1 {
-        KdpDebugBuffer = ExAllocatePoolZero(
-            _POOL_TYPE_NonPagedPool,
-            KdpBufferSize as ddk::SIZE_T,
-            TAG_KDBG,
-        ) as PCHAR;
-        if KdpDebugBuffer.is_null() {
-            KdpDebugMode.File = 0u8;
-            RemoveEntryList(core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList));
-            return STATUS_NO_MEMORY;
-        }
-        KdpFreeBytes = KdpBufferSize;
-
-        KeInitializeSpinLock(core::ptr::addr_of_mut!(KdpDebugLogSpinLock));
-
-        (*dispatch_table).KdpInitRoutine = Some(KdpDebugLogInit);
-
-        HalDisplayString(b"   File log debugging enabled\r\n\0".as_ptr() as PCHAR);
-    } else if BootPhase >= 2 {
-        let mut FileName: _UNICODE_STRING = core::mem::zeroed();
-        let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
-        let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-        let mut ThreadHandle: HANDLE = core::ptr::null_mut();
-
-        if !KdpLogFileHandle.is_null() {
-            return STATUS_SUCCESS;
-        }
-
-        Status = RtlAnsiStringToUnicodeString(
-            &mut FileName,
-            core::ptr::addr_of_mut!(KdpLogFileName),
-            1u8,
-        );
-        if !NT_SUCCESS(Status) {
-            // Failure: drop our buffer and bail out.
-            KdpFreeBytes = 0;
-            ExFreePoolWithTag(KdpDebugBuffer as PVOID, TAG_KDBG);
-            KdpDebugBuffer = core::ptr::null_mut();
-            KdpDebugMode.File = 0u8;
-            RemoveEntryList(core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList));
-            return Status;
-        }
-
-        ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
-        ObjectAttributes.RootDirectory = core::ptr::null_mut();
-        ObjectAttributes.ObjectName = &mut FileName;
-        ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
-        ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-        ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
-
-        Status = ZwCreateFile(
-            core::ptr::addr_of_mut!(KdpLogFileHandle),
-            FILE_APPEND_DATA | SYNCHRONIZE,
-            &mut ObjectAttributes,
-            &mut Iosb,
-            core::ptr::null_mut(),
-            FILE_ATTRIBUTE_NORMAL,
-            FILE_SHARE_READ,
-            FILE_OPEN_IF,
-            FILE_NON_DIRECTORY_FILE
-                | FILE_SYNCHRONOUS_IO_NONALERT
-                | FILE_SEQUENTIAL_ONLY
-                | FILE_WRITE_THROUGH,
-            core::ptr::null_mut(),
-            0,
-        );
-
-        RtlFreeUnicodeString(&mut FileName);
-
-        if !NT_SUCCESS(Status) {
-            if Status == STATUS_OBJECT_NAME_NOT_FOUND
-                || Status == STATUS_OBJECT_PATH_NOT_FOUND
-            {
-                (*dispatch_table).KdpInitRoutine = Some(KdpDebugLogInit);
-                return Status;
-            }
-            // Failure cleanup
-            KdpFreeBytes = 0;
-            ExFreePoolWithTag(KdpDebugBuffer as PVOID, TAG_KDBG);
-            KdpDebugBuffer = core::ptr::null_mut();
-            KdpDebugMode.File = 0u8;
-            RemoveEntryList(core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList));
-            return Status;
-        }
-
-        // HACK for FILE_APPEND_DATA — seek to EOF.
-        {
-            let mut FileInfo: ddk::FILE_STANDARD_INFORMATION = core::mem::zeroed();
-            let mut FilePosInfo: ddk::FILE_POSITION_INFORMATION = core::mem::zeroed();
-
-            Status = ZwQueryInformationFile(
-                KdpLogFileHandle,
-                &mut Iosb,
-                &mut FileInfo as *mut _ as PVOID,
-                core::mem::size_of::<ddk::FILE_STANDARD_INFORMATION>() as ULONG,
-                _FILE_INFORMATION_CLASS_FileStandardInformation,
-            );
-
-            Status = ZwQueryInformationFile(
-                KdpLogFileHandle,
-                &mut Iosb,
-                &mut FilePosInfo as *mut _ as PVOID,
-                core::mem::size_of::<ddk::FILE_POSITION_INFORMATION>() as ULONG,
-                _FILE_INFORMATION_CLASS_FilePositionInformation,
-            );
-
-            FilePosInfo.CurrentByteOffset.QuadPart = FileInfo.EndOfFile.QuadPart;
-            Status = ZwSetInformationFile(
-                KdpLogFileHandle,
-                &mut Iosb,
-                &mut FilePosInfo as *mut _ as PVOID,
-                core::mem::size_of::<ddk::FILE_POSITION_INFORMATION>() as ULONG,
-                _FILE_INFORMATION_CLASS_FilePositionInformation,
-            );
-            // Suppress unused warning on Status (logging printfs were here in C).
-            let _ = Status;
-        }
-
-        KeInitializeEvent(
-            core::ptr::addr_of_mut!(KdpLoggerThreadEvent) as ddk::PRKEVENT,
-            _EVENT_TYPE_SynchronizationEvent,
-            1u8,
-        );
-
-        Status = PsCreateSystemThread(
-            &mut ThreadHandle,
-            THREAD_ALL_ACCESS,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            Some(KdpLoggerThread),
-            core::ptr::null_mut(),
-        );
-        if !NT_SUCCESS(Status) {
-            ZwClose(KdpLogFileHandle);
-            // Failure cleanup
-            KdpFreeBytes = 0;
-            ExFreePoolWithTag(KdpDebugBuffer as PVOID, TAG_KDBG);
-            KdpDebugBuffer = core::ptr::null_mut();
-            KdpDebugMode.File = 0u8;
-            RemoveEntryList(core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList));
-            return Status;
-        }
-
-        let mut Priority: KPRIORITY = HIGH_PRIORITY;
-        ZwSetInformationThread(
-            ThreadHandle,
-            _THREADINFOCLASS_ThreadPriority,
-            &mut Priority as *mut _ as PVOID,
-            core::mem::size_of::<KPRIORITY>() as ULONG,
-        );
-
-        ZwClose(ThreadHandle);
-        return Status;
-    }
-
-    Status
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn KdpDebugLogInit(
+pub unsafe extern "system" fn KdpDebugLogInit(
     dispatch_table: PKD_DISPATCH_TABLE,
     BootPhase: ULONG,
 ) -> NTSTATUS {
@@ -876,8 +649,7 @@ pub unsafe extern "stdcall" fn KdpDebugLogInit(
 // SERIAL FUNCTIONS
 // ============================================================================
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
+unsafe extern "system" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
     let mut pch: PCCH = String;
     let OldIrql: KIRQL = KdbpAcquireLock(core::ptr::addr_of_mut!(KdpSerialSpinLock));
 
@@ -892,58 +664,8 @@ unsafe extern "C" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
     KdbpReleaseLock(core::ptr::addr_of_mut!(KdpSerialSpinLock), OldIrql);
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
-    let mut pch: PCCH = String;
-    let OldIrql: KIRQL = KdbpAcquireLock(core::ptr::addr_of_mut!(KdpSerialSpinLock));
-
-    while pch < String.add(Length as usize) && *pch != 0 {
-        if *pch == b'\n' as CHAR {
-            KdPortPutByteEx(core::ptr::addr_of_mut!(SerialPortInfo), b'\r');
-        }
-        KdPortPutByteEx(core::ptr::addr_of_mut!(SerialPortInfo), *pch as UCHAR);
-        pch = pch.add(1);
-    }
-
-    KdbpReleaseLock(core::ptr::addr_of_mut!(KdpSerialSpinLock), OldIrql);
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KdpSerialInit(
-    dispatch_table: PKD_DISPATCH_TABLE,
-    BootPhase: ULONG,
-) -> NTSTATUS {
-    if KdpDebugMode.Serial == 0 {
-        return STATUS_PORT_DISCONNECTED;
-    }
-
-    if BootPhase == 0 {
-        (*dispatch_table).KdpPrintRoutine = Some(KdpSerialPrint);
-
-        if KdPortInitializeEx(core::ptr::addr_of_mut!(SerialPortInfo), SerialPortNumber) == 0 {
-            KdpDebugMode.Serial = 0u8;
-            return STATUS_DEVICE_DOES_NOT_EXIST;
-        }
-        KdpRustSetComPortInUse(SerialPortInfo.Address);
-
-        KeInitializeSpinLock(core::ptr::addr_of_mut!(KdpSerialSpinLock));
-
-        (*dispatch_table).KdpInitRoutine = Some(KdpSerialInit);
-        InsertTailList(
-            core::ptr::addr_of_mut!(KdProviders),
-            core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList),
-        );
-    } else if BootPhase == 1 {
-        HalDisplayString(b"   Serial debugging enabled\r\n\0".as_ptr() as PCHAR);
-    }
-
-    STATUS_SUCCESS
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn KdpSerialInit(
+pub unsafe extern "system" fn KdpSerialInit(
     dispatch_table: PKD_DISPATCH_TABLE,
     BootPhase: ULONG,
 ) -> NTSTATUS {
@@ -998,8 +720,7 @@ pub unsafe extern "C" fn KdpScreenRelease() {
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
+unsafe extern "system" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
     let mut pch: PCCH = String;
 
     while pch < String.add(Length as usize) && *pch != 0 {
@@ -1042,78 +763,8 @@ unsafe extern "C" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn KdpScreenPrint(String: PCCH, Length: ULONG) {
-    let mut pch: PCCH = String;
-
-    while pch < String.add(Length as usize) && *pch != 0 {
-        if *pch == b'\x08' as CHAR {
-            // Backspace: rewind buffer and reprint line.
-            if KdpScreenLineLength > 0 {
-                KdpScreenLineLength -= 1;
-                KdpScreenLineBuffer[KdpScreenLineLength as usize] = 0;
-                KdpScreenLineBufferPos = KdpScreenLineLength;
-
-                HalDisplayString(b"\r\0".as_ptr() as PCHAR);
-                HalDisplayString((*(&raw mut KdpScreenLineBuffer)).as_mut_ptr());
-            }
-        } else {
-            KdpScreenLineBuffer[KdpScreenLineLength as usize] = *pch;
-            KdpScreenLineLength += 1;
-            KdpScreenLineBuffer[KdpScreenLineLength as usize] = 0;
-        }
-
-        if *pch == b'\n' as CHAR || KdpScreenLineLength == KdpScreenLineLengthDefault {
-            if KdpScreenLineBufferPos != KdpScreenLineLength {
-                HalDisplayString(
-                    (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
-                );
-            }
-
-            KdpScreenLineBuffer[0] = 0;
-            KdpScreenLineLength = 0;
-            KdpScreenLineBufferPos = 0;
-        }
-
-        pch = pch.add(1);
-    }
-
-    if KdpScreenLineBufferPos != KdpScreenLineLength {
-        HalDisplayString(
-            (*(&raw mut KdpScreenLineBuffer)).as_mut_ptr().add(KdpScreenLineBufferPos as usize),
-        );
-        KdpScreenLineBufferPos = KdpScreenLineLength;
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn KdpScreenInit(
-    dispatch_table: PKD_DISPATCH_TABLE,
-    BootPhase: ULONG,
-) -> NTSTATUS {
-    if KdpDebugMode.Screen == 0 {
-        return STATUS_PORT_DISCONNECTED;
-    }
-
-    if BootPhase == 0 {
-        (*dispatch_table).KdpPrintRoutine = Some(KdpScreenPrint);
-        (*dispatch_table).KdpInitRoutine = Some(KdpScreenInit);
-        InsertTailList(
-            core::ptr::addr_of_mut!(KdProviders),
-            core::ptr::addr_of_mut!((*dispatch_table).KdProvidersList),
-        );
-    } else if BootPhase == 1 {
-        KdpScreenAcquire();
-        HalDisplayString(b"   Screen debugging enabled\r\n\0".as_ptr() as PCHAR);
-    }
-
-    STATUS_SUCCESS
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn KdpScreenInit(
+pub unsafe extern "system" fn KdpScreenInit(
     dispatch_table: PKD_DISPATCH_TABLE,
     BootPhase: ULONG,
 ) -> NTSTATUS {

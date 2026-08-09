@@ -34,7 +34,7 @@ elseif(ARCH STREQUAL "arm64")
     set(PCIX_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PCIX_RUST_RUSTFLAGS "")
 endif()
-file(GLOB_RECURSE PCIX_RUST_SRCS ${PCIX_RUST_WORKSPACE_DIR}/pcix-rust/src/*.rs)
+rust_crate_sources(PCIX_RUST_SRCS "${PCIX_RUST_WORKSPACE_DIR}" pcix-rust)
 add_custom_command(
     OUTPUT ${PCIX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

@@ -698,7 +698,7 @@ unsafe extern "C" fn SHELL_GetUsableDialogOwner(hWnd: HWND) -> HWND {
     core::ptr::null_mut()
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn RunAsDlgProc(
+unsafe extern "system" fn RunAsDlgProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -829,7 +829,7 @@ unsafe extern "stdcall" fn RunAsDlgProc(
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn RunAsDlgProc(
+unsafe extern "system" fn RunAsDlgProc(
     hwnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

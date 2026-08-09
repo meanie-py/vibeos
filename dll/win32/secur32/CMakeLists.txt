@@ -35,7 +35,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(SECUR32_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE SECUR32_RUST_SRCS "${SECUR32_RUST_WORKSPACE_DIR}/secur32-rust/src/*.rs")
+rust_crate_sources(SECUR32_RUST_SRCS "${SECUR32_RUST_WORKSPACE_DIR}" secur32-rust)
 add_custom_command(
     OUTPUT ${SECUR32_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

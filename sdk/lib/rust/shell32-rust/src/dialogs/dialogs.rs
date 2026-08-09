@@ -117,15 +117,14 @@ pub const CW_USEDEFAULT: INT = 0x8000_0000u32 as INT;
 // two spellings as distinct nominal types on fn pointers, so a plain `as` cast is rejected as
 // non-primitive and a transmute has to name whichever one the target actually uses. Hardcoding
 // `stdcall` compiles on i386 and fails everywhere else.
-#[cfg(target_arch = "x86")]
-type BindgenDlgProc = unsafe extern "stdcall" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
-#[cfg(not(target_arch = "x86"))]
-type BindgenDlgProc = unsafe extern "C" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
+// These forked per arch to mirror what bindgen wrote (stdcall on i386, C on the 64-bit pair)
+// so a translated `system` fn could be TRANSMUTED into the island's slot type. The slots are
+// spelled `system` now, which is the same ABI under one portable name, so a single alias
+// matches on all three arches — and the transmutes below are identity conversions kept only
+// where the surrounding call still names the alias.
+type BindgenDlgProc = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_PTR;
 
-#[cfg(target_arch = "x86")]
-type BindgenEnumResNameProc = unsafe extern "stdcall" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL;
-#[cfg(not(target_arch = "x86"))]
-type BindgenEnumResNameProc = unsafe extern "C" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL;
+type BindgenEnumResNameProc = unsafe extern "system" fn(HMODULE, LPCWSTR, LPWSTR, LONG_PTR) -> BOOL;
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]

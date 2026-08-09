@@ -17,10 +17,7 @@ extern "C" {
 /// per arch (`extern "stdcall"` on i386, `extern "C"` elsewhere) — exactly what
 /// STDMETHODCALLTYPE lowers to — and rustc will not unify `extern "system"` with either,
 /// so it is mirrored here rather than hand-rolled with a single ABI.
-#[cfg(target_arch = "x86")]
-pub type PFN_CONTINUE = Option<unsafe extern "stdcall" fn(dwContinue: ULONG_PTR) -> BOOL>;
-#[cfg(not(target_arch = "x86"))]
-pub type PFN_CONTINUE = Option<unsafe extern "C" fn(dwContinue: ULONG_PTR) -> BOOL>;
+pub type PFN_CONTINUE = Option<unsafe extern "system" fn(dwContinue: ULONG_PTR) -> BOOL>;
 
 /// oleidl.idl:509 `tagDISCARDCACHE` — NOT in crate::win_consts yet (owed).
 /// NOTE `DISCARDCACHE_SAVEIFDIRTY` is **0**, and `DISCARDCACHE_NOSAVE` is 1.
@@ -34,13 +31,8 @@ macro_rules! stdmethod {
         $(#[$attr:meta])*
         unsafe fn $name:ident ( $($arg:ident : $ty:ty),* $(,)? ) -> $ret:ty $body:block
     )*) => {$(
-        #[cfg(target_arch = "x86")]
         $(#[$attr])*
-        unsafe extern "stdcall" fn $name($($arg: $ty),*) -> $ret $body
-
-        #[cfg(not(target_arch = "x86"))]
-        $(#[$attr])*
-        unsafe extern "C" fn $name($($arg: $ty),*) -> $ret $body
+        unsafe extern "system" fn $name($($arg: $ty),*) -> $ret $body
     )*};
 }
 

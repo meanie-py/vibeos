@@ -530,7 +530,7 @@ pub struct _QualityOfService {
 pub type LPQOS = *mut _QualityOfService;
 pub type GROUP = ::core::ffi::c_uint;
 pub type LPCONDITIONPROC = ::core::option::Option<
-    unsafe extern "stdcall" fn(
+    unsafe extern "system" fn(
         lpCallerId: LPWSABUF,
         lpCallerData: LPWSABUF,
         lpSQOS: LPQOS,
@@ -1727,7 +1727,7 @@ pub type PAFD_FCB = *mut _AFD_FCB;
 unsafe extern "C" {
     pub fn WarmSocketForBind(FCB: PAFD_FCB, ShareType: ULONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdBindSocket(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -1740,105 +1740,105 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn WarmSocketForConnection(FCB: PAFD_FCB) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdStreamSocketConnect(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdStreamSocketSuperConnect(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetConnectData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetConnectData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetConnectDataSize(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetConnectOptions(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetConnectOptions(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetConnectOptionsSize(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetContext(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetContextSize(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetContext(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetInfo(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSetInfo(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetSockName(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdGetPeerName(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -1883,7 +1883,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn SocketAcquireStateLock(FCB: PAFD_FCB) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn UnlockAndMaybeComplete(
         FCB: PAFD_FCB,
         Status: NTSTATUS,
@@ -1929,7 +1929,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DestroySocket(FCB: PAFD_FCB);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdCancelHandler(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP);
 }
 unsafe extern "C" {
@@ -1938,17 +1938,17 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn CheckUnlockExtraBuffers(FCB: PAFD_FCB, IrpSp: PIO_STACK_LOCATION) -> BOOLEAN;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReceiveComplete(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP, arg3: PVOID) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn PacketSocketRecvComplete(
         arg1: *mut _DEVICE_OBJECT,
         arg2: *mut _IRP,
         arg3: PVOID,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdConnectedSocketReadData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -1956,28 +1956,28 @@ unsafe extern "stdcall" {
         Short: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdPacketSocketReadData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdSelect(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdEventSelect(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
         IrpSp: PIO_STACK_LOCATION,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdEnumEvents(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -2005,7 +2005,7 @@ unsafe extern "C" {
         Status: NTSTATUS,
     );
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdConnectedSocketWriteData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,
@@ -2013,7 +2013,7 @@ unsafe extern "stdcall" {
         Short: BOOLEAN,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn AfdPacketSocketWriteData(
         DeviceObject: PDEVICE_OBJECT,
         Irp: PIRP,

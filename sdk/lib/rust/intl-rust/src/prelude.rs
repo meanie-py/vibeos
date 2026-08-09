@@ -10,10 +10,29 @@ pub use core::ffi::{
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+// reactos/debug.h DPRINT/DPRINT1 — MACROS, never out-of-line fns (field manual §9.65: an
+// out-of-line no-op is an optimization barrier).
+//
+// DPRINT1 is NOT a no-op. In debug.h it sits under `#if DBG` above the comment "These are
+// always printed", and only DPRINT is further gated on `#ifndef NDEBUG`. Our builds set
+// DBG=TRUE, so every DPRINT1 in the C we replaced prints — and a no-op here is a diagnostic
+// silently deleted, on exactly the failure paths that need one.
+extern "C" {
+    pub fn DbgPrint(Format: *const c_char, ...) -> u32;
+}
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {{
+        unsafe { $crate::prelude::DbgPrint(concat!($fmt, "\0").as_ptr() as *const _ $(, $arg)*) };
+    }};
+    // Some grind output already lowered the format to a NUL-terminated `*const c_char`
+    // (dhcpcsvc's util.rs writes `"ERROR: %s\n\0".as_ptr() as *const i8`). Tried second, so a
+    // plain literal still takes the arm above and gets its NUL appended exactly once.
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        unsafe { $crate::prelude::DbgPrint($fmt $(, $arg)*) };
+    }};
+}
 pub use crate::{DPRINT, DPRINT1};
 
 // ================= CRT ========================================================================

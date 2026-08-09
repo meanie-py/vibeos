@@ -20,7 +20,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(AUTHZ_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-authz-target")
 set(AUTHZ_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libauthz_rust.a")
-file(GLOB_RECURSE AUTHZ_RUST_SRCS "${AUTHZ_RUST_WORKSPACE_DIR}/authz-rust/src/*.rs")
+rust_crate_sources(AUTHZ_RUST_SRCS "${AUTHZ_RUST_WORKSPACE_DIR}" authz-rust)
 add_custom_command(
     OUTPUT ${AUTHZ_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

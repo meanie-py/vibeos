@@ -312,6 +312,10 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     # Generic macros
     include(sdk/cmake/CMakeMacros.cmake)
 
+    # rust_crate_sources() — a cargo edge's DEPENDS must span the crate's path-dependency
+    # closure, or a change to a shared -sys crate leaves every dependent .a silently stale.
+    include(sdk/cmake/rust-crate-deps.cmake)
+
     # IDL macros for widl/midl
     # We're using widl now for both MSVC and GCC builds
     include(sdk/cmake/widl-support.cmake)
@@ -411,7 +415,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     elseif(ARCH STREQUAL "arm64")
         set(MENUBAND_RUST_TARGET "aarch64-pc-windows-gnullvm")
     endif()
-    file(GLOB_RECURSE MENUBAND_RUST_SRCS "${MENUBAND_RUST_WORKSPACE_DIR}/menuband-rust/src/*.rs")
+    rust_crate_sources(MENUBAND_RUST_SRCS "${MENUBAND_RUST_WORKSPACE_DIR}" menuband-rust)
     add_custom_command(
         OUTPUT ${MENUBAND_RUST_LIB}
         COMMAND ${CMAKE_COMMAND} -E env

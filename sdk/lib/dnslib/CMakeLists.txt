@@ -32,7 +32,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm64")
     set(DNSLIB_RUST_TARGET "aarch64-pc-windows-gnullvm")
 endif()
-file(GLOB_RECURSE DNSLIB_RUST_SRCS ${DNSLIB_RUST_WORKSPACE_DIR}/dnslib-rust/src/*.rs)
+rust_crate_sources(DNSLIB_RUST_SRCS "${DNSLIB_RUST_WORKSPACE_DIR}" dnslib-rust)
 add_custom_command(
     OUTPUT ${DNSLIB_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

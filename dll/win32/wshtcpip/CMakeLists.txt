@@ -22,7 +22,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 set(WSHTCPIP_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-wshtcpip-target")
 set(WSHTCPIP_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libwshtcpip_rust.a")
-file(GLOB_RECURSE WSHTCPIP_RUST_SRCS "${WSHTCPIP_RUST_WORKSPACE_DIR}/wshtcpip-rust/src/*.rs")
+rust_crate_sources(WSHTCPIP_RUST_SRCS "${WSHTCPIP_RUST_WORKSPACE_DIR}" wshtcpip-rust)
 add_custom_command(
     OUTPUT ${WSHTCPIP_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env

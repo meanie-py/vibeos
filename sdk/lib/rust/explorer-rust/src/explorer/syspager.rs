@@ -2038,17 +2038,7 @@ unsafe fn CNotifyToolbar_process(
 // Internal (not #[no_mangle]) — only referenced via the WNDPROC fn pointer, and
 // taskswnd.cpp has an unrelated C++ class also named CNotifyToolbar, so keep
 // this symbol module-private to avoid any collision.
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn CNotifyToolbar_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CNotifyToolbar_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn CNotifyToolbar_WindowProc(
+unsafe extern "system" fn CNotifyToolbar_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -2516,19 +2506,8 @@ unsafe fn CSysPagerWnd_process(
     }
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn CSysPagerWnd_WindowProc(
-    hWnd: HWND,
-    uMsg: UINT,
-    wParam: WPARAM,
-    lParam: LPARAM,
-) -> LRESULT {
-    CSysPagerWnd_window_proc_impl(hWnd, uMsg, wParam, lParam)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn CSysPagerWnd_WindowProc(
+pub unsafe extern "system" fn CSysPagerWnd_WindowProc(
     hWnd: HWND,
     uMsg: UINT,
     wParam: WPARAM,

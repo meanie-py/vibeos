@@ -317,9 +317,8 @@ pub unsafe extern "system" fn GreCombineTransform(
     1
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiCombineTransform(
+pub unsafe extern "system" fn NtGdiCombineTransform(
     UnsafeXFormResult: LPXFORM,
     Unsafexform1: LPXFORM,
     Unsafexform2: LPXFORM,
@@ -334,82 +333,8 @@ pub unsafe extern "stdcall" fn NtGdiCombineTransform(
 
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiCombineTransform(
-    UnsafeXFormResult: LPXFORM,
-    Unsafexform1: LPXFORM,
-    Unsafexform2: LPXFORM,
-) -> BOOL {
-    let Ret: BOOL;
-
-    Ret = GreCombineTransform(
-        UnsafeXFormResult as *mut XFORML,
-        Unsafexform1 as *mut XFORML,
-        Unsafexform2 as *mut XFORML,
-    );
-
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetTransform(
-    hdc: HDC,
-    iXform: u32,
-    pXForm: LPXFORM,
-) -> i32 {
-
-    let pdc: PDC;
-    let mut ret: i32 = 1;
-    let mut mxPageToDevice: MATRIX = core::mem::zeroed();
-    let mut xo: EXFORMOBJ = core::mem::zeroed();
-    let pmx: PMATRIX;
-
-    if pXForm.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    pdc = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    'leave: {
-        match iXform {
-            x if x == GdiWorldSpaceToPageSpace => {
-                pmx = DC_pmxWorldToPage(pdc);
-            }
-            x if x == GdiWorldSpaceToDeviceSpace => {
-                pmx = DC_pmxWorldToDevice(pdc);
-            }
-            x if x == GdiDeviceSpaceToWorldSpace => {
-                pmx = DC_pmxDeviceToWorld(pdc);
-            }
-            x if x == GdiPageSpaceToDeviceSpace => {
-                DC_vGetPageToDevice(pdc, core::ptr::addr_of_mut!(mxPageToDevice));
-                pmx = core::ptr::addr_of_mut!(mxPageToDevice);
-            }
-            _ => {
-                ret = 0;
-                break 'leave;
-            }
-        }
-
-        XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo), pmx);
-
-        XFORMOBJ_iGetXform(core::ptr::addr_of!(xo), pXForm as *mut XFORML);
-    }
-
-    DC_UnlockDc(pdc);
-    ret
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiGetTransform(
+pub unsafe extern "system" fn NtGdiGetTransform(
     hdc: HDC,
     iXform: u32,
     pXForm: LPXFORM,
@@ -463,7 +388,7 @@ pub unsafe extern "C" fn NtGdiGetTransform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiTransformPoints(
+pub unsafe extern "system" fn NtGdiTransformPoints(
     hDC: HDC,
     UnsafePtsIn: PPOINT,
     UnsafePtOut: PPOINT,
@@ -535,7 +460,7 @@ pub unsafe extern "stdcall" fn NtGdiTransformPoints(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiTransformPoints(
+pub unsafe extern "system" fn NtGdiTransformPoints(
     hDC: HDC,
     UnsafePtsIn: PPOINT,
     UnsafePtOut: PPOINT,
@@ -604,54 +529,8 @@ pub unsafe extern "C" fn NtGdiTransformPoints(
     ExFreePoolWithTag(Points as *mut _, GDITAG_TEMP);
     ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreModifyWorldTransform(
-    pdc: PDC,
-    pxform: *const XFORML,
-    dwMode: u32,
-) -> i32 {
-    let mut mxSrc: MATRIX = core::mem::zeroed();
-    let mut xoSrc: EXFORMOBJ = core::mem::zeroed();
-    let mut xoDC: EXFORMOBJ = core::mem::zeroed();
-
-    match dwMode {
-        MWT_IDENTITY => {
-            (*(*pdc).pdcattr).mxWorldToPage = gmxIdentity;
-        }
-        MWT_LEFTMULTIPLY => {
-            XFORMOBJ_vInit(&mut xoDC, core::ptr::addr_of_mut!((*(*pdc).pdcattr).mxWorldToPage));
-            XFORMOBJ_vInit(&mut xoSrc, &mut mxSrc);
-            if XFORMOBJ_iSetXform(&mut xoSrc, pxform) == DDI_ERROR {
-                return 0;
-            }
-            XFORMOBJ_iCombine(&mut xoDC, &mut xoSrc, &mut xoDC);
-        }
-        MWT_RIGHTMULTIPLY => {
-            XFORMOBJ_vInit(&mut xoDC, core::ptr::addr_of_mut!((*(*pdc).pdcattr).mxWorldToPage));
-            XFORMOBJ_vInit(&mut xoSrc, &mut mxSrc);
-            if XFORMOBJ_iSetXform(&mut xoSrc, pxform) == DDI_ERROR {
-                return 0;
-            }
-            XFORMOBJ_iCombine(&mut xoDC, &mut xoDC, &mut xoSrc);
-        }
-        MWT_SET => {
-            XFORMOBJ_vInit(&mut xoDC, core::ptr::addr_of_mut!((*(*pdc).pdcattr).mxWorldToPage));
-            if XFORMOBJ_iSetXform(&mut xoDC, pxform) == DDI_ERROR {
-                return 0;
-            }
-        }
-        _ => return 0,
-    }
-
-    (*(*pdc).pdcattr).flXform |= (WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID) as u32;
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreModifyWorldTransform(
+pub unsafe extern "system" fn GreModifyWorldTransform(
     pdc: PDC,
     pxform: *const XFORML,
     dwMode: u32,
@@ -695,7 +574,7 @@ pub unsafe extern "C" fn GreModifyWorldTransform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiModifyWorldTransform(
+pub unsafe extern "system" fn NtGdiModifyWorldTransform(
     hdc: HDC,
     pxformUnsafe: LPXFORM,
     dwMode: u32,
@@ -740,7 +619,7 @@ pub unsafe extern "stdcall" fn NtGdiModifyWorldTransform(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiModifyWorldTransform(
+pub unsafe extern "system" fn NtGdiModifyWorldTransform(
     hdc: HDC,
     pxformUnsafe: LPXFORM,
     dwMode: u32,
@@ -784,7 +663,7 @@ pub unsafe extern "C" fn NtGdiModifyWorldTransform(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiOffsetViewportOrgEx(
+pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     hDC: HDC,
     mut XOffset: i32,
     YOffset: i32,
@@ -832,7 +711,7 @@ pub unsafe extern "stdcall" fn NtGdiOffsetViewportOrgEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiOffsetViewportOrgEx(
+pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     hDC: HDC,
     mut XOffset: i32,
     YOffset: i32,
@@ -879,7 +758,7 @@ pub unsafe extern "C" fn NtGdiOffsetViewportOrgEx(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiOffsetWindowOrgEx(
+pub unsafe extern "system" fn NtGdiOffsetWindowOrgEx(
     hDC: HDC,
     XOffset: i32,
     YOffset: i32,
@@ -922,7 +801,7 @@ pub unsafe extern "stdcall" fn NtGdiOffsetWindowOrgEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiOffsetWindowOrgEx(
+pub unsafe extern "system" fn NtGdiOffsetWindowOrgEx(
     hDC: HDC,
     XOffset: i32,
     YOffset: i32,
@@ -964,7 +843,7 @@ pub unsafe extern "C" fn NtGdiOffsetWindowOrgEx(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiScaleViewportExtEx(
+pub unsafe extern "system" fn NtGdiScaleViewportExtEx(
     hDC: HDC,
     Xnum: i32,
     Xdenom: i32,
@@ -1038,7 +917,7 @@ pub unsafe extern "stdcall" fn NtGdiScaleViewportExtEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiScaleViewportExtEx(
+pub unsafe extern "system" fn NtGdiScaleViewportExtEx(
     hDC: HDC,
     Xnum: i32,
     Xdenom: i32,
@@ -1111,7 +990,7 @@ pub unsafe extern "C" fn NtGdiScaleViewportExtEx(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiScaleWindowExtEx(
+pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     hDC: HDC,
     Xnum: i32,
     Xdenom: i32,
@@ -1184,7 +1063,7 @@ pub unsafe extern "stdcall" fn NtGdiScaleWindowExtEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiScaleWindowExtEx(
+pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     hDC: HDC,
     Xnum: i32,
     Xdenom: i32,
@@ -1254,86 +1133,8 @@ pub unsafe extern "C" fn NtGdiScaleWindowExtEx(
     DC_UnlockDc(pDC);
     Ret
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn IntGdiSetMapMode(dc: PDC, MapMode: i32) -> i32 {
-    let iPrevMapMode: i32;
-    let mut flXform: FLONG;
-    let pdcattr: PDC_ATTR = (*dc).pdcattr;
-
-    if MapMode == (*pdcattr).iMapMode {
-        return MapMode;
-    }
-
-    flXform = (*pdcattr).flXform & !(ISO_OR_ANISO_MAP_MODE | PTOD_EFM22_NEGATIVE
-        | PTOD_EFM11_NEGATIVE | POSITIVE_Y_IS_UP | PAGE_TO_DEVICE_SCALE_IDENTITY
-        | PAGE_TO_DEVICE_IDENTITY);
-
-    match MapMode as u32 {
-        MM_TEXT => {
-            (*pdcattr).szlWindowExt.cx = 1;
-            (*pdcattr).szlWindowExt.cy = 1;
-            (*pdcattr).szlViewportExt.cx = 1;
-            (*pdcattr).szlViewportExt.cy = 1;
-            flXform |= PAGE_TO_DEVICE_SCALE_IDENTITY;
-        }
-        MM_ISOTROPIC => {
-            flXform |= ISO_OR_ANISO_MAP_MODE;
-            (*pdcattr).szlWindowExt.cx = (*pdcattr).szlVirtualDeviceMm.cx * 10;
-            (*pdcattr).szlWindowExt.cy = (*pdcattr).szlVirtualDeviceMm.cy * 10;
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_LOMETRIC => {
-            (*pdcattr).szlWindowExt.cx = (*pdcattr).szlVirtualDeviceMm.cx * 10;
-            (*pdcattr).szlWindowExt.cy = (*pdcattr).szlVirtualDeviceMm.cy * 10;
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_HIMETRIC => {
-            (*pdcattr).szlWindowExt.cx = (*pdcattr).szlVirtualDeviceMm.cx * 100;
-            (*pdcattr).szlWindowExt.cy = (*pdcattr).szlVirtualDeviceMm.cy * 100;
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_LOENGLISH => {
-            (*pdcattr).szlWindowExt.cx = EngMulDiv(1000, (*pdcattr).szlVirtualDeviceMm.cx, 254);
-            (*pdcattr).szlWindowExt.cy = EngMulDiv(1000, (*pdcattr).szlVirtualDeviceMm.cy, 254);
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_HIENGLISH => {
-            (*pdcattr).szlWindowExt.cx = EngMulDiv(10000, (*pdcattr).szlVirtualDeviceMm.cx, 254);
-            (*pdcattr).szlWindowExt.cy = EngMulDiv(10000, (*pdcattr).szlVirtualDeviceMm.cy, 254);
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_TWIPS => {
-            (*pdcattr).szlWindowExt.cx = EngMulDiv(14400, (*pdcattr).szlVirtualDeviceMm.cx, 254);
-            (*pdcattr).szlWindowExt.cy = EngMulDiv(14400, (*pdcattr).szlVirtualDeviceMm.cy, 254);
-            (*pdcattr).szlViewportExt.cx = (*pdcattr).szlVirtualDevicePixel.cx;
-            (*pdcattr).szlViewportExt.cy = -(*pdcattr).szlVirtualDevicePixel.cy;
-        }
-        MM_ANISOTROPIC => {
-            flXform &= !(PAGE_TO_DEVICE_IDENTITY | POSITIVE_Y_IS_UP);
-            flXform |= ISO_OR_ANISO_MAP_MODE;
-        }
-        _ => return 0,
-    }
-
-    iPrevMapMode = (*pdcattr).iMapMode;
-    (*pdcattr).iMapMode = MapMode;
-
-    (*pdcattr).flXform = flXform | (PAGE_XLATE_CHANGED | PAGE_EXTENTS_CHANGED
-        | INVALIDATE_ATTRIBUTES | DEVICE_TO_PAGE_INVALID
-        | WORLD_XFORM_CHANGED | DEVICE_TO_WORLD_INVALID);
-
-    iPrevMapMode
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn IntGdiSetMapMode(dc: PDC, MapMode: i32) -> i32 {
+pub unsafe extern "system" fn IntGdiSetMapMode(dc: PDC, MapMode: i32) -> i32 {
     let iPrevMapMode: i32;
     let mut flXform: FLONG;
     let pdcattr: PDC_ATTR = (*dc).pdcattr;
@@ -1457,7 +1258,7 @@ unsafe fn GreSetViewportOrgEx_impl(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetViewportOrgEx(
+pub unsafe extern "system" fn NtGdiSetViewportOrgEx(
     hDC: HDC,
     X: core::ffi::c_int,
     Y: core::ffi::c_int,
@@ -1502,7 +1303,7 @@ pub unsafe extern "stdcall" fn NtGdiSetViewportOrgEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetViewportOrgEx(
+pub unsafe extern "system" fn NtGdiSetViewportOrgEx(
     hDC: HDC,
     X: core::ffi::c_int,
     Y: core::ffi::c_int,
@@ -1546,7 +1347,7 @@ pub unsafe extern "C" fn NtGdiSetViewportOrgEx(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetWindowOrgEx(
+pub unsafe extern "system" fn NtGdiSetWindowOrgEx(
     hDC: HDC,
     X: core::ffi::c_int,
     Y: core::ffi::c_int,
@@ -1589,7 +1390,7 @@ pub unsafe extern "stdcall" fn NtGdiSetWindowOrgEx(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetWindowOrgEx(
+pub unsafe extern "system" fn NtGdiSetWindowOrgEx(
     hDC: HDC,
     X: core::ffi::c_int,
     Y: core::ffi::c_int,
@@ -1696,9 +1497,8 @@ pub unsafe extern "system" fn DC_vSetLayout(
         | WORLD_XFORM_CHANGED
         | DEVICE_TO_WORLD_INVALID;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetLayout(
+pub unsafe extern "system" fn NtGdiSetLayout(
     hdc: HDC,
     wox: LONG,
     dwLayout: DWORD,
@@ -1715,29 +1515,8 @@ pub unsafe extern "stdcall" fn NtGdiSetLayout(
     DC_UnlockDc(pdc);
     dwOldLayout
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetLayout(
-    hdc: HDC,
-    wox: LONG,
-    dwLayout: DWORD,
-) -> DWORD {
-    let pdc: PDC = DC_LockDc(hdc);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return GDI_ERROR;
-    }
-
-    let dwOldLayout: DWORD = (*(*pdc).pdcattr).dwLayout;
-    DC_vSetLayout(pdc, wox, dwLayout);
-
-    DC_UnlockDc(pdc);
-    dwOldLayout
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG {
+pub unsafe extern "system" fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG {
     let dc: PDC;
     let Ret: LONG;
     dc = DC_LockDc(hdc);
@@ -1749,24 +1528,8 @@ pub unsafe extern "stdcall" fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG {
     DC_UnlockDc(dc);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG {
-    let dc: PDC;
-    let Ret: LONG;
-    dc = DC_LockDc(hdc);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-    Ret = (*dc).erclWindow.right - (*dc).erclWindow.left;
-    DC_UnlockDc(dc);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiMirrorWindowOrg(hdc: HDC) -> u8 {
+pub unsafe extern "system" fn NtGdiMirrorWindowOrg(hdc: HDC) -> u8 {
     let dc: PDC = DC_LockDc(hdc);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -1776,22 +1539,8 @@ pub unsafe extern "stdcall" fn NtGdiMirrorWindowOrg(hdc: HDC) -> u8 {
     DC_UnlockDc(dc);
     1u8
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiMirrorWindowOrg(hdc: HDC) -> u8 {
-    let dc: PDC = DC_LockDc(hdc);
-    if dc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
-    }
-    IntMirrorWindowOrg(dc);
-    DC_UnlockDc(dc);
-    1u8
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetSizeDevice(
+pub unsafe extern "system" fn NtGdiSetSizeDevice(
     hdc: HDC,
     cxVirtualDevice: i32,
     cyVirtualDevice: i32,
@@ -1817,80 +1566,8 @@ pub unsafe extern "stdcall" fn NtGdiSetSizeDevice(
 
     1
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiSetSizeDevice(
-    hdc: HDC,
-    cxVirtualDevice: i32,
-    cyVirtualDevice: i32,
-) -> u32 {
-    let dc: PDC;
-    let pdcattr: PDC_ATTR;
-
-    if cxVirtualDevice == 0 || cyVirtualDevice == 0 {
-        return 0;
-    }
-
-    dc = DC_LockDc(hdc);
-    if dc.is_null() {
-        return 0;
-    }
-
-    pdcattr = (*dc).pdcattr;
-
-    (*pdcattr).szlVirtualDeviceSize.cx = cxVirtualDevice;
-    (*pdcattr).szlVirtualDeviceSize.cy = cyVirtualDevice;
-
-    DC_UnlockDc(dc);
-
-    1
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiSetVirtualResolution(
-    hdc: HDC,
-    mut cxVirtualDevicePixel: i32,
-    mut cyVirtualDevicePixel: i32,
-    mut cxVirtualDeviceMm: i32,
-    mut cyVirtualDeviceMm: i32,
-) -> u32 {
-    let dc: PDC;
-    let pdcattr: PDC_ATTR;
-
-    if cxVirtualDevicePixel == 0 && cyVirtualDevicePixel == 0 &&
-       cxVirtualDeviceMm == 0 && cyVirtualDeviceMm == 0
-    {
-        cxVirtualDevicePixel = NtGdiGetDeviceCaps(hdc, HORZRES as i32);
-        cyVirtualDevicePixel = NtGdiGetDeviceCaps(hdc, VERTRES as i32);
-        cxVirtualDeviceMm = NtGdiGetDeviceCaps(hdc, HORZSIZE as i32);
-        cyVirtualDeviceMm = NtGdiGetDeviceCaps(hdc, VERTSIZE as i32);
-    }
-    else if cxVirtualDevicePixel == 0 || cyVirtualDevicePixel == 0 ||
-            cxVirtualDeviceMm == 0 || cyVirtualDeviceMm == 0
-    {
-        return 0;
-    }
-
-    dc = DC_LockDc(hdc);
-    if dc.is_null() {
-        return 0;
-    }
-
-    pdcattr = (*dc).pdcattr;
-
-    (*pdcattr).szlVirtualDevicePixel.cx = cxVirtualDevicePixel;
-    (*pdcattr).szlVirtualDevicePixel.cy = cyVirtualDevicePixel;
-    (*pdcattr).szlVirtualDeviceMm.cx = cxVirtualDeviceMm;
-    (*pdcattr).szlVirtualDeviceMm.cy = cyVirtualDeviceMm;
-
-    DC_UnlockDc(dc);
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtGdiSetVirtualResolution(
+pub unsafe extern "system" fn NtGdiSetVirtualResolution(
     hdc: HDC,
     mut cxVirtualDevicePixel: i32,
     mut cyVirtualDevicePixel: i32,
@@ -1949,9 +1626,8 @@ unsafe fn DC_vGetAspectRatioFilter_impl(pDC: PDC, AspectRatio: LPSIZE) {
         (*AspectRatio).cy = 0;
     }
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn GreGetDCPoint(
+pub unsafe extern "system" fn GreGetDCPoint(
     hDC: HDC,
     iPoint: UINT,
     Point: PPOINTL,
@@ -2005,66 +1681,8 @@ pub unsafe extern "stdcall" fn GreGetDCPoint(
     DC_UnlockDc(pdc);
     Ret
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetDCPoint(
-    hDC: HDC,
-    iPoint: UINT,
-    Point: PPOINTL,
-) -> BOOL {
-    let mut Ret: BOOL = 1;
-    let pdc: *mut DC;
-    let mut Size: SIZE = core::mem::zeroed();
-    let pszlViewportExt: PSIZEL;
-
-    if Point.is_null() {
-        EngSetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    pdc = DC_LockDc(hDC);
-    if pdc.is_null() {
-        EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    match iPoint {
-        GdiGetViewPortExt => {
-            pszlViewportExt = DC_pszlViewportExt(pdc);
-            (*Point).x = (*pszlViewportExt).cx;
-            (*Point).y = (*pszlViewportExt).cy;
-        }
-        GdiGetWindowExt => {
-            (*Point).x = (*(*pdc).pdcattr).szlWindowExt.cx;
-            (*Point).y = (*(*pdc).pdcattr).szlWindowExt.cy;
-        }
-        GdiGetViewPortOrg => {
-            *Point = (*(*pdc).pdcattr).ptlViewportOrg;
-        }
-        GdiGetWindowOrg => {
-            *Point = (*(*pdc).pdcattr).ptlWindowOrg;
-        }
-        GdiGetDCOrg => {
-            *Point = (*pdc).ptlDCOrig;
-        }
-        GdiGetAspectRatioFilter => {
-            DC_vGetAspectRatioFilter(pdc, &mut Size);
-            (*Point).x = Size.cx;
-            (*Point).y = Size.cy;
-        }
-        _ => {
-            EngSetLastError(ERROR_INVALID_PARAMETER);
-            Ret = 0;
-        }
-    }
-
-    DC_UnlockDc(pdc);
-    Ret
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreSetDCOrg(
+pub unsafe extern "system" fn GreSetDCOrg(
     hdc: HDC,
     x: LONG,
     y: LONG,
@@ -2088,36 +1706,8 @@ pub unsafe extern "stdcall" fn GreSetDCOrg(
     DC_UnlockDc(dc);
     TRUE as BOOL
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreSetDCOrg(
-    hdc: HDC,
-    x: LONG,
-    y: LONG,
-    Rect: PRECTL,
-) -> BOOL {
-    let dc: PDC = DC_LockDc(hdc);
-    if dc.is_null() {
-        return FALSE as BOOL;
-    }
-
-    (*dc).ptlDCOrig.x = x;
-    (*dc).ptlDCOrig.y = y;
-
-    (*dc).ptlFillOrigin.x = (*dc).dclevel.ptlBrushOrigin.x + x;
-    (*dc).ptlFillOrigin.y = (*dc).dclevel.ptlBrushOrigin.y + y;
-
-    if !Rect.is_null() {
-        (*dc).erclWindow = *Rect;
-    }
-
-    DC_UnlockDc(dc);
-    TRUE as BOOL
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetDCOrgEx(
+pub unsafe extern "system" fn GreGetDCOrgEx(
     hdc: HDC,
     Point: PPOINTL,
     Rect: PRECTL,
@@ -2135,56 +1725,15 @@ pub unsafe extern "stdcall" fn GreGetDCOrgEx(
 
     GreGetDCPoint(hdc, GdiGetDCOrg, Point)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetDCOrgEx(
-    hdc: HDC,
-    Point: PPOINTL,
-    Rect: PRECTL,
-) -> BOOL {
-    let dc: PDC;
-
-    dc = DC_LockDc(hdc);
-    if dc.is_null() {
-        return 0;
-    }
-
-    *Rect = (*dc).erclWindow;
-
-    DC_UnlockDc(dc);
-
-    GreGetDCPoint(hdc, GdiGetDCOrg, Point)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetWindowExtEx(
+pub unsafe extern "system" fn GreGetWindowExtEx(
     hdc: HDC,
     lpSize: LPSIZE,
 ) -> BOOL {
     GreGetDCPoint(hdc, GdiGetWindowExt, lpSize as PPOINTL)
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn GreGetWindowExtEx(
-    hdc: HDC,
-    lpSize: LPSIZE,
-) -> BOOL {
-    GreGetDCPoint(hdc, GdiGetWindowExt, lpSize as PPOINTL)
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn GreGetViewportExtEx(
-    hdc: HDC,
-    lpSize: LPSIZE,
-) -> BOOL {
-    GreGetDCPoint(hdc, GdiGetViewPortExt, lpSize as PPOINTL)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn GreGetViewportExtEx(
+pub unsafe extern "system" fn GreGetViewportExtEx(
     hdc: HDC,
     lpSize: LPSIZE,
 ) -> BOOL {
@@ -2192,7 +1741,7 @@ pub unsafe extern "C" fn GreGetViewportExtEx(
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtGdiGetDCPoint(
+pub unsafe extern "system" fn NtGdiGetDCPoint(
     hDC: HDC,
     iPoint: u32,
     Point: PPOINTL,
@@ -2221,7 +1770,7 @@ pub unsafe extern "stdcall" fn NtGdiGetDCPoint(
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtGdiGetDCPoint(
+pub unsafe extern "system" fn NtGdiGetDCPoint(
     hDC: HDC,
     iPoint: u32,
     Point: PPOINTL,

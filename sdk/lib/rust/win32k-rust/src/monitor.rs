@@ -179,9 +179,8 @@ unsafe fn IntDestroyMonitorObject(pMonitor: PMONITOR) {
     UserDereferenceObject(pMonitor as *mut core::ffi::c_void);
     UserDeleteObject(UserHMGetHandle(pMonitor as *mut core::ffi::c_void), TYPE_MONITOR);
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserGetMonitorObject(hMonitor: HMONITOR) -> PMONITOR {
+pub unsafe extern "system" fn UserGetMonitorObject(hMonitor: HMONITOR) -> PMONITOR {
     let pMonitor: PMONITOR;
 
     if hMonitor.is_null() {
@@ -197,28 +196,8 @@ pub unsafe extern "stdcall" fn UserGetMonitorObject(hMonitor: HMONITOR) -> PMONI
 
     pMonitor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserGetMonitorObject(hMonitor: HMONITOR) -> PMONITOR {
-    let pMonitor: PMONITOR;
-
-    if hMonitor.is_null() {
-        EngSetLastError(ERROR_INVALID_MONITOR_HANDLE);
-        return core::ptr::null_mut();
-    }
-
-    pMonitor = UserGetObject(gHandleTable, hMonitor as _, TYPE_MONITOR) as PMONITOR;
-    if pMonitor.is_null() {
-        EngSetLastError(ERROR_INVALID_MONITOR_HANDLE);
-        return core::ptr::null_mut();
-    }
-
-    pMonitor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserGetPrimaryMonitor() -> PMONITOR {
+pub unsafe extern "system" fn UserGetPrimaryMonitor() -> PMONITOR {
     let mut pMonitor: PMONITOR = gMonitorList;
 
     while pMonitor != core::ptr::null_mut() {
@@ -230,24 +209,8 @@ pub unsafe extern "stdcall" fn UserGetPrimaryMonitor() -> PMONITOR {
 
     pMonitor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserGetPrimaryMonitor() -> PMONITOR {
-    let mut pMonitor: PMONITOR = gMonitorList;
-
-    while pMonitor != core::ptr::null_mut() {
-        if mon_is_primary(pMonitor) != 0 {
-            break;
-        }
-        pMonitor = (*pMonitor).pMonitorNext;
-    }
-
-    pMonitor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserAttachMonitor(hDev: HDEV) -> NTSTATUS {
+pub unsafe extern "system" fn UserAttachMonitor(hDev: HDEV) -> NTSTATUS {
     let pMonitor: PMONITOR;
 
     /* Create new monitor object */
@@ -275,40 +238,8 @@ pub unsafe extern "stdcall" fn UserAttachMonitor(hDev: HDEV) -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserAttachMonitor(hDev: HDEV) -> NTSTATUS {
-    let pMonitor: PMONITOR;
-
-    /* Create new monitor object */
-    pMonitor = IntCreateMonitorObject();
-    if pMonitor == core::ptr::null_mut() {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    (*pMonitor).hDev = hDev;
-    (*pMonitor).cWndStack = 0;
-
-    if gMonitorList == core::ptr::null_mut() {
-        mon_set_primary(pMonitor, 1);
-        gMonitorList = pMonitor;
-    } else {
-        let mut pmonLast: PMONITOR = gMonitorList;
-        while (*pmonLast).pMonitorNext != core::ptr::null_mut() {
-            pmonLast = (*pmonLast).pMonitorNext;
-        }
-
-        (*pmonLast).pMonitorNext = pMonitor;
-    }
-
-    UserUpdateMonitorSize(hDev);
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserDetachMonitor(hDev: HDEV) -> NTSTATUS {
+pub unsafe extern "system" fn UserDetachMonitor(hDev: HDEV) -> NTSTATUS {
     let mut pMonitor: PMONITOR = gMonitorList;
     let mut pLink: *mut PMONITOR = core::ptr::addr_of_mut!(gMonitorList);
 
@@ -335,94 +266,8 @@ pub unsafe extern "stdcall" fn UserDetachMonitor(hDev: HDEV) -> NTSTATUS {
 
     STATUS_SUCCESS
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn UserDetachMonitor(hDev: HDEV) -> NTSTATUS {
-    let mut pMonitor: PMONITOR = gMonitorList;
-    let mut pLink: *mut PMONITOR = core::ptr::addr_of_mut!(gMonitorList);
-
-    while !pMonitor.is_null() {
-        if (*pMonitor).hDev == hDev {
-            break;
-        }
-
-        pLink = core::ptr::addr_of_mut!((*pMonitor).pMonitorNext);
-        pMonitor = (*pMonitor).pMonitorNext;
-    }
-
-    if pMonitor.is_null() {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    if mon_is_primary(pMonitor) != 0 && !(*pMonitor).pMonitorNext.is_null() {
-        mon_set_primary((*pMonitor).pMonitorNext, 1);
-    }
-
-    *pLink = (*pMonitor).pMonitorNext;
-
-    IntDestroyMonitorObject(pMonitor);
-
-    STATUS_SUCCESS
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn UserUpdateMonitorSize(hDev: HDEV) -> NTSTATUS {
-    let mut pMonitor: PMONITOR;
-    let mut DeviceSize: SIZEL = core::mem::zeroed();
-
-    /* Find monitor attached to given device */
-    pMonitor = gMonitorList;
-    while pMonitor != core::ptr::null_mut() {
-        if (*pMonitor).hDev == hDev {
-            break;
-        }
-        pMonitor = (*pMonitor).pMonitorNext;
-    }
-
-    if pMonitor == core::ptr::null_mut() {
-        /* No monitor has been found */
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    /* Get the size of the hdev */
-    PDEVOBJ_sizl(hDev as PPDEVOBJ, &mut DeviceSize);
-
-    /* Update monitor size */
-    (*pMonitor).rcMonitor.left = 0;
-    (*pMonitor).rcMonitor.top = 0;
-    (*pMonitor).rcMonitor.right = (*pMonitor).rcMonitor.left + DeviceSize.cx;
-    (*pMonitor).rcMonitor.bottom = (*pMonitor).rcMonitor.top + DeviceSize.cy;
-    (*pMonitor).rcWork = (*pMonitor).rcMonitor;
-
-    /* Destroy monitor region... */
-    if (*pMonitor).hrgnMonitor != core::ptr::null_mut() {
-        GreSetObjectOwner((*pMonitor).hrgnMonitor as _, GDI_OBJ_HMGR_POWNED);
-        GreDeleteObject((*pMonitor).hrgnMonitor as _);
-    }
-
-    /* ...and create new one */
-    (*pMonitor).hrgnMonitor = NtGdiCreateRectRgn(
-        (*pMonitor).rcMonitor.left,
-        (*pMonitor).rcMonitor.top,
-        (*pMonitor).rcMonitor.right,
-        (*pMonitor).rcMonitor.bottom,
-    );
-    if (*pMonitor).hrgnMonitor != core::ptr::null_mut() {
-        IntGdiSetRegionOwner((*pMonitor).hrgnMonitor, GDI_OBJ_HMGR_PUBLIC);
-    }
-
-    //
-    // Should be Virtual accumulation of all the available monitors.
-    //
-    (*peruser(gpsi)).rcScreenReal = (*pMonitor).rcMonitor;
-
-    STATUS_SUCCESS
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserUpdateMonitorSize(hDev: HDEV) -> NTSTATUS {
+pub unsafe extern "system" fn UserUpdateMonitorSize(hDev: HDEV) -> NTSTATUS {
     let mut pMonitor: PMONITOR;
     let mut DeviceSize: SIZEL = core::mem::zeroed();
 
@@ -641,26 +486,8 @@ unsafe fn IntGetMonitorFromRectImpl(pRect: LPCRECTL, dwFlags: DWORD) -> HMONITOR
     }
     hMonitor
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn UserMonitorFromRect(pRect: PRECTL, dwFlags: DWORD) -> PMONITOR {
-    let hMonitor: HMONITOR;
-
-    if dwFlags != MONITOR_DEFAULTTONULL
-        && dwFlags != MONITOR_DEFAULTTOPRIMARY
-        && dwFlags != MONITOR_DEFAULTTONEAREST
-    {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return core::ptr::null_mut();
-    }
-
-    hMonitor = IntGetMonitorFromRect(pRect, dwFlags);
-    UserGetMonitorObject(hMonitor)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn UserMonitorFromRect(pRect: PRECTL, dwFlags: DWORD) -> PMONITOR {
+pub unsafe extern "system" fn UserMonitorFromRect(pRect: PRECTL, dwFlags: DWORD) -> PMONITOR {
     let hMonitor: HMONITOR;
 
     if dwFlags != MONITOR_DEFAULTTONULL
@@ -714,9 +541,8 @@ unsafe fn UserMonitorFromPoint_impl(pt: POINT, dwFlags: DWORD) -> PMONITOR {
 
     UserGetMonitorObject(hMonitor)
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "stdcall" fn NtUserEnumDisplayMonitors(
+pub unsafe extern "system" fn NtUserEnumDisplayMonitors(
     hdc: HDC,
     pUnsafeRect: LPCRECTL,
     phUnsafeMonitorList: *mut HMONITOR,
@@ -883,179 +709,8 @@ pub unsafe extern "stdcall" fn NtUserEnumDisplayMonitors(
     UserLeave();
     iRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserEnumDisplayMonitors(
-    hdc: HDC,
-    pUnsafeRect: LPCRECTL,
-    phUnsafeMonitorList: *mut HMONITOR,
-    prcUnsafeMonitorList: PRECTL,
-    dwListSize: DWORD,
-) -> INT {
-    let mut cMonitors: UINT;
-    let mut i: UINT;
-    let mut iRet: INT = -1;
-    let mut phMonitorList: *mut HMONITOR = core::ptr::null_mut();
-    let mut prcMonitorList: PRECTL = core::ptr::null_mut();
-    let mut rc: RECTL = core::mem::zeroed();
-    let pRect: PRECTL;
-    let mut DcRect: RECTL = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-
-    if pUnsafeRect != core::ptr::null_mut() {
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(rc) as *mut core::ffi::c_void,
-            pUnsafeRect as *const core::ffi::c_void,
-            core::mem::size_of::<RECT>(),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            return -1;
-        }
-    }
-
-    if hdc != core::ptr::null_mut() {
-        let pDc: PDC;
-        let iRgnType: INT;
-
-        pDc = DC_LockDc(hdc);
-        if pDc == core::ptr::null_mut() {
-            return -1;
-        }
-        iRgnType = REGION_GetRgnBox((*pDc).prgnVis, core::ptr::addr_of_mut!(DcRect));
-        DC_UnlockDc(pDc);
-
-        if iRgnType == 0 {
-            return -1;
-        }
-        if iRgnType == NULLREGION as INT {
-            return 0;
-        }
-        if iRgnType == COMPLEXREGION as INT {
-            /* TODO: Warning */
-        }
-
-        if pUnsafeRect != core::ptr::null_mut() {
-            rc.left += DcRect.left;
-            rc.right += DcRect.left;
-            rc.top += DcRect.top;
-            rc.bottom += DcRect.top;
-        } else {
-            rc = DcRect;
-        }
-    }
-
-    if hdc == core::ptr::null_mut() && pUnsafeRect == core::ptr::null_mut() {
-        pRect = core::ptr::null_mut();
-    } else {
-        pRect = core::ptr::addr_of_mut!(rc);
-    }
-
-    UserEnterShared();
-
-    'cleanup: {
-        cMonitors = IntGetMonitorsFromRect(
-            pRect,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            0,
-            MONITOR_DEFAULTTONULL,
-        );
-        if cMonitors == 0
-            || dwListSize == 0
-            || (phUnsafeMonitorList == core::ptr::null_mut()
-                && prcUnsafeMonitorList == core::ptr::null_mut())
-        {
-            iRet = cMonitors as INT;
-            break 'cleanup;
-        }
-
-        if phUnsafeMonitorList != core::ptr::null_mut() && dwListSize != 0 {
-            phMonitorList = ExAllocatePoolWithTag(
-                PagedPool,
-                (core::mem::size_of::<HMONITOR>() * dwListSize as usize) as _,
-                USERTAG_MONITORRECTS,
-            ) as *mut HMONITOR;
-            if phMonitorList == core::ptr::null_mut() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'cleanup;
-            }
-        }
-        if prcUnsafeMonitorList != core::ptr::null_mut() && dwListSize != 0 {
-            prcMonitorList = ExAllocatePoolWithTag(
-                PagedPool,
-                (core::mem::size_of::<RECT>() * dwListSize as usize) as _,
-                USERTAG_MONITORRECTS,
-            ) as PRECTL;
-            if prcMonitorList == core::ptr::null_mut() {
-                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                break 'cleanup;
-            }
-        }
-
-        cMonitors = IntGetMonitorsFromRect(
-            pRect,
-            phMonitorList,
-            prcMonitorList,
-            dwListSize,
-            MONITOR_DEFAULTTONULL,
-        );
-
-        if hdc != core::ptr::null_mut()
-            && pRect != core::ptr::null_mut()
-            && prcMonitorList != core::ptr::null_mut()
-        {
-            let limit = if cMonitors < dwListSize { cMonitors } else { dwListSize };
-            i = 0;
-            while i < limit {
-                (*prcMonitorList.add(i as usize)).left -= DcRect.left;
-                (*prcMonitorList.add(i as usize)).right -= DcRect.left;
-                (*prcMonitorList.add(i as usize)).top -= DcRect.top;
-                (*prcMonitorList.add(i as usize)).bottom -= DcRect.top;
-                i += 1;
-            }
-        }
-
-        if phUnsafeMonitorList != core::ptr::null_mut() && dwListSize != 0 {
-            Status = MmCopyToCaller(
-                phUnsafeMonitorList as *mut core::ffi::c_void,
-                phMonitorList as *const core::ffi::c_void,
-                (core::mem::size_of::<HMONITOR>() * dwListSize as usize) as _,
-            );
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-        }
-        if prcUnsafeMonitorList != core::ptr::null_mut() && dwListSize != 0 {
-            Status = MmCopyToCaller(
-                prcUnsafeMonitorList as *mut core::ffi::c_void,
-                prcMonitorList as *const core::ffi::c_void,
-                (core::mem::size_of::<RECT>() * dwListSize as usize) as _,
-            );
-            if !NT_SUCCESS(Status) {
-                SetLastNtError(Status);
-                break 'cleanup;
-            }
-        }
-
-        iRet = cMonitors as INT;
-    }
-
-    if phMonitorList != core::ptr::null_mut() {
-        ExFreePoolWithTag(phMonitorList as *mut core::ffi::c_void, USERTAG_MONITORRECTS);
-    }
-    if prcMonitorList != core::ptr::null_mut() {
-        ExFreePoolWithTag(prcMonitorList as *mut core::ffi::c_void, USERTAG_MONITORRECTS);
-    }
-
-    UserLeave();
-    iRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserGetMonitorInfo(
+pub unsafe extern "system" fn NtUserGetMonitorInfo(
     hMonitor: HMONITOR,
     pMonitorInfoUnsafe: LPMONITORINFO,
 ) -> BOOL {
@@ -1142,99 +797,8 @@ pub unsafe extern "stdcall" fn NtUserGetMonitorInfo(
     UserLeave();
     bRet
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserGetMonitorInfo(
-    hMonitor: HMONITOR,
-    pMonitorInfoUnsafe: LPMONITORINFO,
-) -> BOOL {
-    let pMonitor: PMONITOR;
-    let mut MonitorInfo: MONITORINFOEXW = core::mem::zeroed();
-    let mut Status: NTSTATUS;
-    let mut bRet: BOOL = 0;
-    let pwstrDeviceName: PWCHAR;
-
-    UserEnterShared();
-
-    'cleanup: loop {
-        /* Get monitor object */
-        pMonitor = UserGetMonitorObject(hMonitor);
-        if pMonitor.is_null() {
-            break 'cleanup;
-        }
-
-        /* Check if pMonitorInfoUnsafe is valid */
-        if pMonitorInfoUnsafe.is_null() {
-            SetLastNtError(STATUS_INVALID_PARAMETER);
-            break 'cleanup;
-        }
-
-        pwstrDeviceName = core::ptr::addr_of_mut!(
-            (*(*((*pMonitor).hDev as PPDEVOBJ)).pGraphicsDevice).szWinDeviceName
-        ) as PWCHAR;
-
-        /* Get size of pMonitorInfoUnsafe */
-        Status = MmCopyFromCaller(
-            core::ptr::addr_of_mut!(MonitorInfo.cbSize) as _,
-            core::ptr::addr_of_mut!((*pMonitorInfoUnsafe).cbSize) as _,
-            core::mem::size_of_val(&MonitorInfo.cbSize),
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'cleanup;
-        }
-
-        /* Check if size of struct is valid */
-        if MonitorInfo.cbSize != core::mem::size_of::<MONITORINFO>() as u32
-            && MonitorInfo.cbSize != core::mem::size_of::<MONITORINFOEXW>() as u32
-        {
-            SetLastNtError(STATUS_INVALID_PARAMETER);
-            break 'cleanup;
-        }
-
-        /* Fill monitor info */
-        MonitorInfo.rcMonitor = (*pMonitor).rcMonitor;
-        MonitorInfo.rcWork = (*pMonitor).rcWork;
-        MonitorInfo.dwFlags = 0;
-        if mon_is_primary(pMonitor) != 0 {
-            MonitorInfo.dwFlags |= MONITORINFOF_PRIMARY;
-        }
-
-        /* Fill device name */
-        if MonitorInfo.cbSize == core::mem::size_of::<MONITORINFOEXW>() as u32 {
-            RtlStringCbCopyNExW(
-                MonitorInfo.szDevice.as_mut_ptr(),
-                core::mem::size_of_val(&MonitorInfo.szDevice),
-                pwstrDeviceName,
-                (wcslen(pwstrDeviceName) + 1) * core::mem::size_of::<u16>(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                STRSAFE_FILL_BEHIND_NULL,
-            );
-        }
-
-        /* Output data */
-        Status = MmCopyToCaller(
-            pMonitorInfoUnsafe as _,
-            core::ptr::addr_of_mut!(MonitorInfo) as _,
-            MonitorInfo.cbSize as usize,
-        );
-        if !NT_SUCCESS(Status) {
-            SetLastNtError(Status);
-            break 'cleanup;
-        }
-
-        bRet = 1;
-        break 'cleanup;
-    }
-
-    UserLeave();
-    bRet
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMonitorFromPoint(
+pub unsafe extern "system" fn NtUserMonitorFromPoint(
     pt: POINT,
     dwFlags: DWORD,
 ) -> HMONITOR {
@@ -1267,45 +831,8 @@ pub unsafe extern "stdcall" fn NtUserMonitorFromPoint(
     UserLeave();
     hMonitor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMonitorFromPoint(
-    pt: POINT,
-    dwFlags: DWORD,
-) -> HMONITOR {
-    let mut rc: RECTL = core::mem::zeroed();
-    let mut hMonitor: HMONITOR = core::ptr::null_mut();
-
-    if dwFlags != MONITOR_DEFAULTTONULL
-        && dwFlags != MONITOR_DEFAULTTOPRIMARY
-        && dwFlags != MONITOR_DEFAULTTONEAREST
-    {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return core::ptr::null_mut();
-    }
-
-    rc.left = pt.x;
-    rc.right = pt.x + 1;
-    rc.top = pt.y;
-    rc.bottom = pt.y + 1;
-
-    UserEnterShared();
-
-    IntGetMonitorsFromRect(
-        &rc,
-        &mut hMonitor,
-        core::ptr::null_mut(),
-        1,
-        dwFlags,
-    );
-
-    UserLeave();
-    hMonitor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMonitorFromRect(
+pub unsafe extern "system" fn NtUserMonitorFromRect(
     pRectUnsafe: LPCRECTL,
     dwFlags: DWORD,
 ) -> HMONITOR {
@@ -1342,88 +869,8 @@ pub unsafe extern "stdcall" fn NtUserMonitorFromRect(
 
     hMonitor
 }
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn NtUserMonitorFromRect(
-    pRectUnsafe: LPCRECTL,
-    dwFlags: DWORD,
-) -> HMONITOR {
-    let mut Rect: RECTL = core::mem::zeroed();
-    let Status: NTSTATUS;
-    let hMonitor: HMONITOR;
-
-    if dwFlags != MONITOR_DEFAULTTONULL
-        && dwFlags != MONITOR_DEFAULTTOPRIMARY
-        && dwFlags != MONITOR_DEFAULTTONEAREST
-    {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return core::ptr::null_mut();
-    }
-
-    Status = MmCopyFromCaller(
-        core::ptr::addr_of_mut!(Rect) as *mut core::ffi::c_void,
-        pRectUnsafe as *const core::ffi::c_void,
-        core::mem::size_of::<RECT>(),
-    );
-    if !NT_SUCCESS(Status) {
-        SetLastNtError(Status);
-        return core::ptr::null_mut();
-    }
-
-    if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!(Rect)) != 0 {
-        Rect.right = Rect.left + 1;
-        Rect.bottom = Rect.top + 1;
-    }
-
-    UserEnterShared();
-    hMonitor = IntGetMonitorFromRect(core::ptr::addr_of_mut!(Rect) as LPCRECTL, dwFlags);
-    UserLeave();
-
-    hMonitor
-}
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "stdcall" fn NtUserMonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR {
-    let pWnd: PWND;
-    let mut hMonitor: HMONITOR = core::ptr::null_mut();
-    let mut Rect: RECTL = RECTL { left: 0, top: 0, right: 0, bottom: 0 };
-
-    if dwFlags != MONITOR_DEFAULTTONULL
-        && dwFlags != MONITOR_DEFAULTTOPRIMARY
-        && dwFlags != MONITOR_DEFAULTTONEAREST
-    {
-        EngSetLastError(ERROR_INVALID_FLAGS);
-        return core::ptr::null_mut();
-    }
-
-    UserEnterShared();
-
-    if !hWnd.is_null() {
-        pWnd = UserGetWindowObject(hWnd);
-        if !pWnd.is_null() {
-            Rect = if ((*pWnd).style & WS_MINIMIZE as ULONG) != 0 {
-                (*pWnd).InternalPos.NormalRect
-            } else {
-                (*pWnd).rcWindow
-            };
-            if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!(Rect)) != 0 {
-                Rect.right = Rect.left + 1;
-                Rect.bottom = Rect.top + 1;
-            }
-        }
-    }
-
-    hMonitor = IntGetMonitorFromRect(core::ptr::addr_of_mut!(Rect), dwFlags);
-
-    UserLeave();
-
-    hMonitor
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn NtUserMonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR {
+pub unsafe extern "system" fn NtUserMonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR {
     let pWnd: PWND;
     let mut hMonitor: HMONITOR = core::ptr::null_mut();
     let mut Rect: RECTL = RECTL { left: 0, top: 0, right: 0, bottom: 0 };

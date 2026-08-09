@@ -4374,7 +4374,7 @@ pub struct _ROOTHUB_PDO_EXTENSION {
 pub type ROOTHUB_PDO_EXTENSION = _ROOTHUB_PDO_EXTENSION;
 pub type PROOTHUB_PDO_EXTENSION = *mut _ROOTHUB_PDO_EXTENSION;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -4405,7 +4405,7 @@ pub struct _USB_CD_ERROR_INFORMATION {
 pub type USB_CD_ERROR_INFORMATION = _USB_CD_ERROR_INFORMATION;
 pub type PUSB_CD_ERROR_INFORMATION = *mut _USB_CD_ERROR_INFORMATION;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HsHubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -4424,7 +4424,7 @@ pub struct _USB_PORT_PATH {
 pub type USB_PORT_PATH = _USB_PORT_PATH;
 pub type PUSB_PORT_PATH = *mut _USB_PORT_PATH;
 pub type USB_BUSIFFN_CREATE_USB_DEVICE_V7 = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         NewDeviceHandle: *mut PUSB_DEVICE_HANDLE,
         HsHubDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -4456,11 +4456,11 @@ pub struct _USB_ID_ERROR_INFORMATION {
 pub type USB_ID_ERROR_INFORMATION = _USB_ID_ERROR_INFORMATION;
 pub type PUSB_ID_ERROR_INFORMATION = *mut _USB_ID_ERROR_INFORMATION;
 pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_USB_DEVICE = USB_BUSIFFN_INITIALIZE_USB_DEVICE;
 pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         IdErrInfo: PUSB_ID_ERROR_INFORMATION,
@@ -4468,7 +4468,7 @@ pub type USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_USB_DEVICE_EX = USB_BUSIFFN_INITIALIZE_USB_DEVICE_EX;
 pub type USB_BUSIFFN_REMOVE_USB_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Flags: ULONG,
@@ -4476,7 +4476,7 @@ pub type USB_BUSIFFN_REMOVE_USB_DEVICE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_REMOVE_USB_DEVICE = USB_BUSIFFN_REMOVE_USB_DEVICE;
 pub type USB_BUSIFFN_GET_USB_DESCRIPTORS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceDescriptorBuffer: PUCHAR,
@@ -4487,7 +4487,7 @@ pub type USB_BUSIFFN_GET_USB_DESCRIPTORS = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_USB_DESCRIPTORS = USB_BUSIFFN_GET_USB_DESCRIPTORS;
 pub type USB_BUSIFFN_RESTORE_DEVICE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         OldDeviceHandle: PUSB_DEVICE_HANDLE,
         NewDeviceHandle: PUSB_DEVICE_HANDLE,
@@ -4495,10 +4495,10 @@ pub type USB_BUSIFFN_RESTORE_DEVICE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_RESTORE_DEVICE = USB_BUSIFFN_RESTORE_DEVICE;
 pub type USB_BUSIFFN_GET_POTRTHACK_FLAGS =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Flags: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Flags: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_GET_POTRTHACK_FLAGS = USB_BUSIFFN_GET_POTRTHACK_FLAGS;
 pub type USB_BUSIFFN_GET_DEVICE_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceInformationBuffer: PVOID,
@@ -4508,7 +4508,7 @@ pub type USB_BUSIFFN_GET_DEVICE_INFORMATION = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_INFORMATION = USB_BUSIFFN_GET_DEVICE_INFORMATION;
 pub type USB_BUSIFFN_GET_CONTROLLER_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         ControllerInformationBuffer: PVOID,
         ControllerInformationBufferLength: ULONG,
@@ -4517,10 +4517,10 @@ pub type USB_BUSIFFN_GET_CONTROLLER_INFORMATION = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_CONTROLLER_INFORMATION = USB_BUSIFFN_GET_CONTROLLER_INFORMATION;
 pub type USB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Enable: BOOLEAN) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND = USB_BUSIFFN_CONTROLLER_SELECTIVE_SUSPEND;
 pub type USB_BUSIFFN_GET_EXTENDED_HUB_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubPhysicalDeviceObject: PDEVICE_OBJECT,
         HubInformationBuffer: PVOID,
@@ -4530,7 +4530,7 @@ pub type USB_BUSIFFN_GET_EXTENDED_HUB_INFO = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_EXTENDED_HUB_INFO = USB_BUSIFFN_GET_EXTENDED_HUB_INFO;
 pub type USB_BUSIFFN_GET_ROOTHUB_SYM_NAME = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubSymNameBuffer: PVOID,
         HubSymNameBufferLength: ULONG,
@@ -4539,11 +4539,11 @@ pub type USB_BUSIFFN_GET_ROOTHUB_SYM_NAME = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_ROOTHUB_SYM_NAME = USB_BUSIFFN_GET_ROOTHUB_SYM_NAME;
 pub type USB_BUSIFFN_GET_DEVICE_BUSCONTEXT = ::core::option::Option<
-    unsafe extern "C" fn(HubBusContext: PVOID, DeviceHandle: PVOID) -> PVOID,
+    unsafe extern "system" fn(HubBusContext: PVOID, DeviceHandle: PVOID) -> PVOID,
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_BUSCONTEXT = USB_BUSIFFN_GET_DEVICE_BUSCONTEXT;
 pub type USB_BUSIFFN_INITIALIZE_20HUB = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         HubDeviceHandle: PUSB_DEVICE_HANDLE,
         TtCount: ULONG,
@@ -4551,18 +4551,18 @@ pub type USB_BUSIFFN_INITIALIZE_20HUB = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_INITIALIZE_20HUB = USB_BUSIFFN_INITIALIZE_20HUB;
 pub type USB_BUSIFFN_IS_ROOT =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, DeviceObject: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, DeviceObject: PVOID) -> BOOLEAN>;
 pub type PUSB_BUSIFFN_IS_ROOT = USB_BUSIFFN_IS_ROOT;
 pub type USB_BUSIFFN_ACQUIRE_SEMAPHORE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID)>;
 pub type PUSB_BUSIFFN_ACQUIRE_SEMAPHORE = USB_BUSIFFN_ACQUIRE_SEMAPHORE;
 pub type USB_BUSIFFN_RELEASE_SEMAPHORE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID)>;
 pub type PUSB_BUSIFFN_RELEASE_SEMAPHORE = USB_BUSIFFN_RELEASE_SEMAPHORE;
-pub type RH_INIT_CALLBACK = ::core::option::Option<unsafe extern "C" fn(CallBackContext: PVOID)>;
+pub type RH_INIT_CALLBACK = ::core::option::Option<unsafe extern "system" fn(CallBackContext: PVOID)>;
 pub type PRH_INIT_CALLBACK = RH_INIT_CALLBACK;
 pub type USB_BUSIFFN_ROOTHUB_INIT_NOTIFY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         CallbackContext: PVOID,
         CallbackRoutine: PRH_INIT_CALLBACK,
@@ -4570,10 +4570,10 @@ pub type USB_BUSIFFN_ROOTHUB_INIT_NOTIFY = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_ROOTHUB_INIT_NOTIFY = USB_BUSIFFN_ROOTHUB_INIT_NOTIFY;
 pub type USB_BUSIFFN_FLUSH_TRANSFERS =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PVOID)>;
 pub type PUSB_BUSIFFN_FLUSH_TRANSFERS = USB_BUSIFFN_FLUSH_TRANSFERS;
 pub type USB_BUSIFFN_CALC_PIPE_BANDWIDTH = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         PipeInfo: PUSBD_PIPE_INFORMATION,
         DeviceSpeed: USB_DEVICE_SPEED,
@@ -4581,10 +4581,10 @@ pub type USB_BUSIFFN_CALC_PIPE_BANDWIDTH = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_CALC_PIPE_BANDWIDTH = USB_BUSIFFN_CALC_PIPE_BANDWIDTH;
 pub type USB_BUSIFFN_SET_BUS_WAKE_MODE =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID, Mode: ULONG)>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID, Mode: ULONG)>;
 pub type PUSB_BUSIFFN_SET_BUS_WAKE_MODE = USB_BUSIFFN_SET_BUS_WAKE_MODE;
 pub type USB_BUSIFFN_SET_DEVICE_FLAG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceFlagGuid: *mut GUID,
         ValueData: PVOID,
@@ -4593,11 +4593,11 @@ pub type USB_BUSIFFN_SET_DEVICE_FLAG = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_SET_DEVICE_FLAG = USB_BUSIFFN_SET_DEVICE_FLAG;
 pub type USB_BUSIFFN_SET_DEVHANDLE_DATA = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PVOID, UsbDevicePdo: PDEVICE_OBJECT),
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PVOID, UsbDevicePdo: PDEVICE_OBJECT),
 >;
 pub type PUSB_BUSIFFN_SET_DEVHANDLE_DATA = USB_BUSIFFN_SET_DEVHANDLE_DATA;
 pub type USB_BUSIFFN_TEST_POINT = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PVOID,
         Opcode: ULONG,
@@ -4606,7 +4606,7 @@ pub type USB_BUSIFFN_TEST_POINT = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_TEST_POINT = USB_BUSIFFN_TEST_POINT;
 pub type USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceInformationBuffer: PVOID,
@@ -4616,10 +4616,10 @@ pub type USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO = USB_BUSIFFN_GET_DEVICE_PERFORMANCE_INFO;
 pub type USB_BUSIFFN_WAIT_ASYNC_POWERUP =
-    ::core::option::Option<unsafe extern "C" fn(BusContext: PVOID) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(BusContext: PVOID) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_WAIT_ASYNC_POWERUP = USB_BUSIFFN_WAIT_ASYNC_POWERUP;
 pub type USB_BUSIFFN_GET_DEVICE_ADDRESS = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceAddress: PUSHORT,
@@ -4627,7 +4627,7 @@ pub type USB_BUSIFFN_GET_DEVICE_ADDRESS = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_GET_DEVICE_ADDRESS = USB_BUSIFFN_GET_DEVICE_ADDRESS;
 pub type USB_BUSIFFN_DEREF_DEVICE_HANDLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Object: PVOID,
@@ -4636,7 +4636,7 @@ pub type USB_BUSIFFN_DEREF_DEVICE_HANDLE = ::core::option::Option<
 >;
 pub type PUSB_BUSIFFN_DEREF_DEVICE_HANDLE = USB_BUSIFFN_DEREF_DEVICE_HANDLE;
 pub type USB_BUSIFFN_REF_DEVICE_HANDLE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         Object: PVOID,
@@ -4654,19 +4654,19 @@ pub type USB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE = ::core::option::Option
 pub type PUSB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE =
     USB_BUSIFFN_SET_DEVICE_HANDLE_IDLE_READY_STATE;
 pub type USB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT = USB_BUSIFFN_GET_CONTAINER_ID_FOR_PORT;
 pub type USB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID),
+    unsafe extern "system" fn(BusContext: PVOID, PortNumber: USHORT, ContainerId: LPGUID),
 >;
 pub type PUSB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT = USB_BUSIFFN_SET_CONTAINER_ID_FOR_PORT;
 pub type USB_BUSIFFN_ABORT_ALL_DEVICE_PIPES = ::core::option::Option<
-    unsafe extern "C" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
+    unsafe extern "system" fn(BusContext: PVOID, DeviceHandle: PUSB_DEVICE_HANDLE) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_ABORT_ALL_DEVICE_PIPES = USB_BUSIFFN_ABORT_ALL_DEVICE_PIPES;
 pub type USB_BUSIFFN_SET_DEVICE_ERRATA_FLAG = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         BusContext: PVOID,
         DeviceHandle: PUSB_DEVICE_HANDLE,
         DeviceErrataFlag: ULONG,
@@ -4888,7 +4888,7 @@ unsafe extern "C" {
     pub static USB_BUS_INTERFACE_HUB_MINIDUMP_GUID: GUID;
 }
 pub type PUSB_BUSIFFN_SET_MINIDUMP_FLAGS =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID)>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID)>;
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_MINIDUMP {
     pub Size: USHORT,
@@ -4904,9 +4904,9 @@ unsafe extern "C" {
     pub static USB_BUS_INTERFACE_HUB_SS_GUID: GUID;
 }
 pub type PUSB_BUSIFFN_SUSPEND_HUB =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_RESUME_HUB =
-    ::core::option::Option<unsafe extern "C" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(Pdo: PDEVICE_OBJECT) -> NTSTATUS>;
 #[repr(C)]
 pub struct _USB_BUS_INTERFACE_HUB_SELECTIVE_SUSPEND {
     pub Size: USHORT,
@@ -5014,14 +5014,14 @@ pub struct _USB_DEVICE_PERFORMANCE_INFO_0 {
 pub type USB_DEVICE_PERFORMANCE_INFO_0 = _USB_DEVICE_PERFORMANCE_INFO_0;
 pub type PUSB_DEVICE_PERFORMANCE_INFO_0 = *mut _USB_DEVICE_PERFORMANCE_INFO_0;
 pub type PUSB_BUSIFFN_SUBMIT_ISO_OUT_URB =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PURB) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_GETUSBDI_VERSION = ::core::option::Option<
-    unsafe extern "C" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
+    unsafe extern "system" fn(arg1: PVOID, arg2: PUSBD_VERSION_INFORMATION, arg3: PULONG),
 >;
 pub type PUSB_BUSIFFN_QUERY_BUS_TIME =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_ENUM_LOG_ENTRY = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: ULONG,
@@ -5046,7 +5046,7 @@ pub struct _USB_BUS_INFORMATION_LEVEL_1 {
 pub type USB_BUS_INFORMATION_LEVEL_1 = _USB_BUS_INFORMATION_LEVEL_1;
 pub type PUSB_BUS_INFORMATION_LEVEL_1 = *mut _USB_BUS_INFORMATION_LEVEL_1;
 pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: ULONG,
         arg3: PVOID,
@@ -5055,7 +5055,7 @@ pub type PUSB_BUSIFFN_QUERY_BUS_INFORMATION = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type PUSB_BUSIFFN_IS_DEVICE_HIGH_SPEED =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID) -> BOOLEAN>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID) -> BOOLEAN>;
 unsafe extern "C" {
     pub static USB_BUS_INTERFACE_USBDI_GUID: GUID;
 }
@@ -5105,9 +5105,9 @@ pub struct _USB_BUS_INTERFACE_USBDI_V2 {
 pub type USB_BUS_INTERFACE_USBDI_V2 = _USB_BUS_INTERFACE_USBDI_V2;
 pub type PUSB_BUS_INTERFACE_USBDI_V2 = *mut _USB_BUS_INTERFACE_USBDI_V2;
 pub type PUSB_BUSIFFN_QUERY_BUS_TIME_EX =
-    ::core::option::Option<unsafe extern "C" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
+    ::core::option::Option<unsafe extern "system" fn(arg1: PVOID, arg2: PULONG) -> NTSTATUS>;
 pub type PUSB_BUSIFFN_QUERY_CONTROLLER_TYPE = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         arg1: PVOID,
         arg2: PULONG,
         arg3: PUSHORT,
@@ -5153,7 +5153,7 @@ pub struct _USBC_FUNCTION_DESCRIPTOR {
 pub type USBC_FUNCTION_DESCRIPTOR = _USBC_FUNCTION_DESCRIPTOR;
 pub type PUSBC_FUNCTION_DESCRIPTOR = *mut _USBC_FUNCTION_DESCRIPTOR;
 pub type USBC_START_DEVICE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         DeviceDescriptor: PUSB_DEVICE_DESCRIPTOR,
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         FunctionDescriptorBuffer: *mut PUSBC_FUNCTION_DESCRIPTOR,
@@ -5163,7 +5163,7 @@ pub type USBC_START_DEVICE_CALLBACK = ::core::option::Option<
     ) -> NTSTATUS,
 >;
 pub type USBC_PDO_ENABLE_CALLBACK = ::core::option::Option<
-    unsafe extern "C" fn(
+    unsafe extern "system" fn(
         Context: PVOID,
         FirstInterfaceNumber: USHORT,
         NumberOfInterfaces: USHORT,
@@ -5199,23 +5199,23 @@ pub struct USBD_HANDLE__ {
     pub unused: ::core::ffi::c_int,
 }
 pub type USBD_HANDLE = *mut USBD_HANDLE__;
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetUSBDIVersion(VersionInformation: PUSBD_VERSION_INFORMATION);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptor(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceNumber: UCHAR,
         AlternateSetting: UCHAR,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequest(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         Siz: PUSHORT,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseDescriptors(
         DescriptorBuffer: PVOID,
         TotalLength: ULONG,
@@ -5223,7 +5223,7 @@ unsafe extern "C" {
         DescriptorType: LONG,
     ) -> PUSB_COMMON_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ParseConfigurationDescriptorEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         StartPosition: PVOID,
@@ -5234,22 +5234,22 @@ unsafe extern "C" {
         InterfaceProtocol: LONG,
     ) -> PUSB_INTERFACE_DESCRIPTOR;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CreateConfigurationRequestEx(
         ConfigurationDescriptor: PUSB_CONFIGURATION_DESCRIPTOR,
         InterfaceList: PUSBD_INTERFACE_LIST_ENTRY,
     ) -> PURB;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetInterfaceLength(
         InterfaceDescriptor: PUSB_INTERFACE_DESCRIPTOR,
         BufferEnd: PUCHAR,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_RegisterHcFilter(DeviceObject: PDEVICE_OBJECT, FilterDeviceObject: PDEVICE_OBJECT);
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_GetPdoRegistryParameter(
         PhysicalDeviceObject: PDEVICE_OBJECT,
         Parameter: PVOID,
@@ -5258,17 +5258,17 @@ unsafe extern "C" {
         KeyNameLength: ULONG,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_QueryBusTime(RootHubPdo: PDEVICE_OBJECT, CurrentFrame: PULONG) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_CalculateUsbBandwidth(
         MaxPacketSize: ULONG,
         EndpointType: UCHAR,
         LowSpeed: BOOLEAN,
     ) -> ULONG;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn USBD_ValidateConfigurationDescriptor(
         ConfigDesc: PUSB_CONFIGURATION_DESCRIPTOR,
         BufferLength: ULONG,

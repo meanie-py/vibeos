@@ -396,7 +396,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut Unloading: LONG;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn DriverEntry(arg1: *mut _DRIVER_OBJECT, arg2: PUNICODE_STRING) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -410,7 +410,7 @@ unsafe extern "C" {
         FileObject: PFILE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MountMgrCancel(DeviceObject: PDEVICE_OBJECT, Irp: PIRP);
 }
 unsafe extern "C" {
@@ -520,10 +520,10 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn DeleteRemoteDatabaseEntry(Database: HANDLE, StartingOffset: LONG) -> NTSTATUS;
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn ReconcileThisDatabaseWithMasterWorker(Parameter: PVOID);
 }
-unsafe extern "stdcall" {
+unsafe extern "system" {
     pub fn MountMgrDeviceControl(arg1: *mut _DEVICE_OBJECT, arg2: *mut _IRP) -> NTSTATUS;
 }
 unsafe extern "C" {

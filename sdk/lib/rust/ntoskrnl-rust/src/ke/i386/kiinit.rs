@@ -210,8 +210,10 @@ extern "C" {
     fn strstr(str1: *const i8, str2: *const i8) -> *const i8;
 }
 
-// KeIpiGenericCall callback functions — stdcall with c_ulong ULONG_PTR on i386
-extern "stdcall" {
+// KeIpiGenericCall callback functions — `system` is stdcall here (this module is i386-only),
+// and it is how patpge.rs actually defines them and how the KeIpiGenericCall slot is spelled,
+// so all three agree nominally instead of only lowering the same.
+extern "system" {
     fn Ki386EnableTargetLargePage(Arg: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableGlobalPage(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
     fn Ki386EnableDE(CpuCount: ::core::ffi::c_ulong) -> ::core::ffi::c_ulong;
