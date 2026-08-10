@@ -44,19 +44,29 @@ def _resolve_responses_dir() -> Path:
     anywhere — the exact silent-degradation class that costs real money.
 
     So: always follow config. The legacy module-relative location is checked only to
-    HARD FAIL when it still holds paid work we would now be ignoring. An explicit
-    RUSTCONV_RESPONSES_DIR is a deliberate choice (tests, a relocated bank) and is
-    always honoured without complaint.
+    HARD FAIL when work is genuinely STRANDED there — the legacy bank holds paid work AND
+    the active one holds none, so following config would look like a fresh start and
+    silently re-buy everything. An explicit RUSTCONV_RESPONSES_DIR is a deliberate choice
+    (tests, a relocated bank) and is always honoured without complaint.
+
+    A NON-empty active bank is not a strand, and this distinction matters in practice: the
+    vibeos fleet runs many worktrees, each with its own bank, all importing one
+    pip-install-e'd package. Every one of those has a populated legacy path that is not
+    its own, and failing there would break the whole fleet to warn about the normal case.
+    Divergence is only a problem when it would cost money.
     """
     active = RUSTCONV_RESPONSES_DIR
     if os.environ.get("RUSTCONV_RESPONSES_DIR"):
         return active  # explicitly chosen — the caller means it
 
+    def _has_work(path: Path) -> bool:
+        return path.is_dir() and any(path.iterdir())
+
     legacy = Path(__file__).resolve().parent.parent / ".responses"
-    if legacy != active and legacy.is_dir() and any(legacy.iterdir()):
+    if legacy != active and _has_work(legacy) and not _has_work(active):
         raise RuntimeError(
             f"rustconv: paid-response bank is stranded.\n"
-            f"  active (project-anchored): {active}\n"
+            f"  active (project-anchored): {active}  <-- empty\n"
             f"  legacy (module-anchored):  {legacy}  <-- holds work you already paid for\n"
             f"This happens when rustconv is imported from outside the project tree.\n"
             f"fix: point at the bank explicitly, e.g.\n"

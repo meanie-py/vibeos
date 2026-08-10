@@ -6,6 +6,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from . import project as _project_mod
+
+# The project rustconv is operating on, declared by a `rustconv.toml` at or above CWD.
+# None when there is no anchor, in which case every consumer below falls back to the
+# legacy inference. Resolved ONCE at import so a chdir mid-run cannot move the tree —
+# and the paid-response bank — out from under an in-flight translation.
+PROJECT = _project_mod.load()
+
 
 # Root paths
 def _detect_reactos_root() -> Path:
@@ -19,14 +27,24 @@ def _detect_reactos_root() -> Path:
     `python -m rustconv translate` assemble into the main repo (and park paid
     .responses there).
 
-    Order: $RUSTCONV_REACTOS_ROOT → CWD's git toplevel (if it looks like a
-    ReactOS tree carrying this tool) → module-relative (historical behaviour).
+    Order: $RUSTCONV_REACTOS_ROOT → a `rustconv.toml` anchor at or above CWD → CWD's git
+    toplevel (if it looks like a ReactOS tree carrying this tool) → module-relative
+    (historical behaviour).
+
+    The anchor outranks the sniffing because it is a DECLARATION rather than a guess, and
+    because the guess stops working the moment rustconv lives outside the tree it
+    translates — it looks for a directory named `ntoskrnl`, which no other project has.
+    The sniffing stays as a fallback so a checkout without an anchor is unaffected.
     """
     import subprocess
 
     env = os.environ.get("RUSTCONV_REACTOS_ROOT")
     if env:
         return Path(env).resolve()
+
+    if PROJECT is not None:
+        return PROJECT.root
+
     module_root = Path(__file__).resolve().parents[3]
     try:
         top = subprocess.run(
@@ -160,7 +178,13 @@ DATA_DIR = TOOLS_DIR / "data"
 # survives reboots, tmp-reaping, and process kills. RUSTCONV_RESPONSES_DIR can
 # be overridden via env for tests.
 RUSTCONV_RESPONSES_DIR = Path(
-    os.environ.get("RUSTCONV_RESPONSES_DIR", str(TOOLS_DIR / ".responses"))
+    os.environ.get(
+        "RUSTCONV_RESPONSES_DIR",
+        # A project that declares its bank in rustconv.toml gets exactly that path; the
+        # declaration is the point, since this is where the paid work lives. Only an
+        # anchorless checkout falls back to the tool-relative default.
+        str(PROJECT.responses if PROJECT is not None else TOOLS_DIR / ".responses"),
+    )
 )
 
 # ntkrnl-sys source files

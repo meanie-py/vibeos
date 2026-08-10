@@ -11,6 +11,8 @@ dependencies = [
     "anthropic>=0.97",
     "openai>=2.0",
     "python-dotenv>=1.0",
+    # rustconv.toml project anchor. tomllib is stdlib from 3.11; tomli is the backport.
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

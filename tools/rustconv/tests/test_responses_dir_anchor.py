@@ -100,6 +100,24 @@ def test_empty_legacy_dir_is_not_a_strand(monkeypatch, tmp_path):
     assert rc._resolve_responses_dir() == active
 
 
+def test_populated_active_bank_is_never_a_strand(monkeypatch, tmp_path):
+    """The normal fleet case: many worktrees, each with its own bank, one installed package.
+
+    Every worktree sees a populated legacy path that is not its own. Failing there would
+    break the whole fleet to warn about business as usual — divergence only matters when
+    it would cost money, and it cannot when the active bank already holds the work.
+    """
+    fake_install = tmp_path / "install"
+    _bank_with_work(fake_install)
+    active = _bank_with_work(tmp_path / "worktree")
+
+    monkeypatch.delenv("RUSTCONV_RESPONSES_DIR", raising=False)
+    monkeypatch.setattr(rc, "RUSTCONV_RESPONSES_DIR", active)
+    monkeypatch.setattr(rc, "__file__", str(fake_install / "pkg" / "response_cache.py"))
+
+    assert rc._resolve_responses_dir() == active
+
+
 def test_live_tree_agrees(monkeypatch):
     """In the real vibeos checkout the two resolutions must actually coincide."""
     import rustconv.config as config
