@@ -130,6 +130,39 @@ def _preprocess_defines(argv: list[str]) -> str:
     return result.stdout
 
 
+_SOURCE_SUFFIXES = (".c", ".cpp", ".cc", ".cxx")
+_CXX_SUFFIXES = (".cpp", ".cc", ".cxx")
+
+
+def _is_cxx(path: Path) -> bool:
+    return path.suffix in _CXX_SUFFIXES
+
+
+def _drop_language_flags(argv: list[str]) -> list[str]:
+    """Strip the flags that select a SOURCE LANGUAGE from a borrowed command.
+
+    Only meaningful when borrowing across languages. `-std=` and `-x <lang>` describe the
+    sibling's own dialect, not the module's include environment, and clang hard-errors when a
+    C dialect meets a C++ input. Everything else (`-I`, `-D`, sysroot, target) is the module's
+    and must survive untouched — that closure is the entire reason to borrow.
+    """
+    out: list[str] = []
+    skip_next = False
+    for i, arg in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg.startswith("-std="):
+            continue
+        if arg == "-x":
+            skip_next = True
+            continue
+        if arg.startswith("-x") and len(arg) > 2 and i:
+            continue
+        out.append(arg)
+    return out
+
+
 def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None:
     """A compiled TU from the SAME module directory, with `source` substituted in.
 
@@ -142,6 +175,14 @@ def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str]
 
     A fully-flipped module often has only its GENERATED MIDL `*_s.c` left, which lives under
     `build-<arch>/<same relative dir>` — so both spellings of the module directory count.
+
+    LANGUAGE MUST MATCH FIRST. The "borrowing is exact" argument above holds only within one
+    language: a C sibling's command carries `-std=gnu99`, which clang REFUSES on a C++ input
+    ("invalid argument '-std=gnu99' not allowed with 'C++'"), so a C++ TU in a module whose
+    other TUs are C used to fail the preprocess on every arch and abort the run. Prefer a
+    same-language sibling; fall back to a cross-language one only after dropping the
+    language-selecting flags, which are the sibling's alone — the `-I`/`-D` closure being
+    borrowed is the module's and stays intact.
     """
     db_path = repo_root / f"build-{arch}" / "compile_commands.json"
     if not db_path.is_file():
@@ -152,15 +193,21 @@ def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str]
         raise MacroAuthorityError(f"unreadable {db_path}: {error}") from error
     rel_dir = source.parent.relative_to(repo_root)
     wanted_dirs = {repo_root / rel_dir, repo_root / f"build-{arch}" / rel_dir}
-    # Sorted so the choice of sibling is deterministic across runs; the resume cache keys on
-    # the derived macro set, and a set that flip-flops with dict order would thrash it.
-    for entry in sorted(db, key=lambda e: e.get("file", "")):
+    want_cxx = _is_cxx(source)
+    # Same-language siblings first, then the rest. Within each group, sorted so the choice is
+    # deterministic across runs; the resume cache keys on the derived macro set, and a set that
+    # flip-flops with dict order would thrash it.
+    candidates = sorted(db, key=lambda e: e.get("file", ""))
+    candidates.sort(key=lambda e: _is_cxx(Path(e.get("file", ""))) != want_cxx)
+    for entry in candidates:
         recorded = entry.get("file", "").replace(CANONICAL_BUILD_ROOT, str(repo_root))
         tu = Path(recorded)
-        if tu.parent not in wanted_dirs or tu.suffix not in (".c", ".cpp"):
+        if tu.parent not in wanted_dirs or tu.suffix not in _SOURCE_SUFFIXES:
             continue
         argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
         argv = [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
+        if _is_cxx(tu) != want_cxx:
+            argv = _drop_language_flags(argv)
         # Point the borrowed command at OUR file. Match on the sibling's full recorded path
         # as well as its basename: `-o …/wkssvc_s.c.obj` also ends in the basename, and
         # rewriting the output path instead of the input silently preprocesses the sibling.
