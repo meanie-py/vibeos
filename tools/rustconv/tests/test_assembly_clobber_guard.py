@@ -133,3 +133,63 @@ def test_no_match_falls_back_to_the_whole_source():
     out, elided = _c_source_for_slice(C_SRC, SCAN, {"not_a_function_here"}, "free-functions")
     assert out == C_SRC
     assert elided == 0
+
+
+# ---------------------------------------------------------------------------
+# A whole-TU run over INTEGRATED code
+# ---------------------------------------------------------------------------
+
+
+def _git_repo(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    return tmp_path
+
+
+def test_whole_tu_refuses_to_overwrite_committed_integrated_code(tmp_path):
+    """The measured loss: a re-roll reverts every repair made after integration.
+
+    browser-rust's re-translation re-forked `extern "system"` into `#[cfg]` ABI twins, put
+    `&ServiceStatus` back on a `static mut`, and renamed `MIDL_user_allocate` to the C's
+    lowercase spelling — the marshaller binds the capitalised one. The model only ever sees
+    the C, so none of those repairs can survive a re-emit, and none of them looks wrong in
+    the output.
+    """
+    import subprocess
+
+    import pytest
+
+    from rustconv.assembler import AssemblyClobberError, _guard_assembly_target
+
+    repo = _git_repo(tmp_path)
+    out = repo / "shipped.rs"
+    out.write_text("// rustconv-assembly: whole-tu\npub fn repaired() {}\n")
+    subprocess.run(["git", "add", "shipped.rs"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "integrate"], cwd=repo, check=True)
+
+    with pytest.raises(AssemblyClobberError, match="INTEGRATED code"):
+        _guard_assembly_target(out, "whole-tu")
+    # The escape hatch is explicit, never implied.
+    _guard_assembly_target(out, "whole-tu", reassemble=True)
+
+
+def test_an_in_flight_grind_is_still_free_to_reassemble(tmp_path):
+    """Initial translation re-assembles the same TU repeatedly; only COMMITTED code is shielded."""
+    import subprocess
+
+    from rustconv.assembler import _guard_assembly_target
+
+    repo = _git_repo(tmp_path)
+    untracked = repo / "fresh.rs"
+    untracked.write_text("// rustconv-assembly: whole-tu\npub fn a() {}\n")
+    _guard_assembly_target(untracked, "whole-tu")  # untracked -> allowed
+
+    dirty = repo / "dirty.rs"
+    dirty.write_text("// rustconv-assembly: whole-tu\npub fn b() {}\n")
+    subprocess.run(["git", "add", "dirty.rs"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "wip"], cwd=repo, check=True)
+    dirty.write_text("// rustconv-assembly: whole-tu\npub fn b() { /* edited */ }\n")
+    _guard_assembly_target(dirty, "whole-tu")  # already modified -> mid-grind, allowed

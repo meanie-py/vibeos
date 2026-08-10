@@ -130,6 +130,53 @@ def _preprocess_defines(argv: list[str]) -> str:
     return result.stdout
 
 
+def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None:
+    """A compiled TU from the SAME module directory, with `source` substituted in.
+
+    A cohab flip comments the translated .c out of the source list, so it has no compile
+    command of its own — and a flipped module is exactly the one you want to re-translate or
+    audit against its C. The module's surviving TUs carry the same `-I`/`-D` environment, so
+    borrowing their flags and preprocessing THIS file is exact rather than a guess: the
+    include closure is the target's real one and the source is the real source. Only the
+    flags are borrowed; nothing is inferred from the sibling's own text.
+
+    A fully-flipped module often has only its GENERATED MIDL `*_s.c` left, which lives under
+    `build-<arch>/<same relative dir>` — so both spellings of the module directory count.
+    """
+    db_path = repo_root / f"build-{arch}" / "compile_commands.json"
+    if not db_path.is_file():
+        return None
+    try:
+        db = json.loads(db_path.read_text())
+    except (OSError, ValueError) as error:
+        raise MacroAuthorityError(f"unreadable {db_path}: {error}") from error
+    rel_dir = source.parent.relative_to(repo_root)
+    wanted_dirs = {repo_root / rel_dir, repo_root / f"build-{arch}" / rel_dir}
+    # Sorted so the choice of sibling is deterministic across runs; the resume cache keys on
+    # the derived macro set, and a set that flip-flops with dict order would thrash it.
+    for entry in sorted(db, key=lambda e: e.get("file", "")):
+        recorded = entry.get("file", "").replace(CANONICAL_BUILD_ROOT, str(repo_root))
+        tu = Path(recorded)
+        if tu.parent not in wanted_dirs or tu.suffix not in (".c", ".cpp"):
+            continue
+        argv = shlex.split(entry.get("command") or " ".join(entry.get("arguments", [])))
+        argv = [a.replace(CANONICAL_BUILD_ROOT, str(repo_root)) for a in argv]
+        # Point the borrowed command at OUR file. Match on the sibling's full recorded path
+        # as well as its basename: `-o …/wkssvc_s.c.obj` also ends in the basename, and
+        # rewriting the output path instead of the input silently preprocesses the sibling.
+        swapped = False
+        for i, arg in enumerate(argv):
+            if i and argv[i - 1] in ("-o", "-MF", "-MT", "-MQ"):
+                continue
+            if Path(arg.replace(CANONICAL_BUILD_ROOT, str(repo_root))) == tu:
+                argv[i] = str(source)
+                swapped = True
+        if not swapped:
+            continue
+        return argv
+    return None
+
+
 @lru_cache(maxsize=64)
 def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """Every `#define NAME(...)` visible to ``source``, unioned over built arches.
@@ -141,15 +188,36 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """
     names: set[str] = set()
     found: list[str] = []
+    borrowed_failures: list[str] = []
     is_header = source.suffix in (".h", ".hpp")
     for arch in _ARCHES:
+        borrowed = False
         argv = _compile_entry(repo_root, arch, source)
         if argv is None and is_header:
             # See _includer_entry: a header's macro set is its includers' macro set.
             argv = _includer_entry(repo_root, arch, source)
+            borrowed = argv is not None
+        if argv is None and not is_header:
+            # See _sibling_target_entry: a FLIPPED .c has no command of its own.
+            argv = _sibling_target_entry(repo_root, arch, source)
+            borrowed = argv is not None
         if argv is None:
             continue
-        names |= set(_DEFINE_FN_LIKE.findall(_preprocess_defines(argv)))
+        if borrowed:
+            # A BORROWED command can fail on an arch whose tree is built less far than the
+            # one lent it — arm64 may not have run the MIDL step that generates the `*_s.h`
+            # this TU includes. That is the same situation as "this arch has no entry", which
+            # the loop already skips, so skip it rather than failing the whole derivation.
+            # It stays loud: every skipped arch is reported below if NO arch succeeds, and a
+            # file's OWN command still raises on the spot, because that is a real breakage.
+            try:
+                dump = _preprocess_defines(argv)
+            except MacroAuthorityError as error:
+                borrowed_failures.append(f"{arch}: {str(error).splitlines()[-1][:200]}")
+                continue
+        else:
+            dump = _preprocess_defines(argv)
+        names |= set(_DEFINE_FN_LIKE.findall(dump))
         found.append(arch)
     # `-dM` dumps only macros STILL DEFINED when preprocessing ends, so one that the TU
     # `#undef`s again is invisible to it — and a function-like macro missing from this set
@@ -163,11 +231,17 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
         pass
     if not found:
         via = " and no compiled TU in its own directory #includes it" if is_header else ""
+        tried = (
+            "\nborrowed a sibling TU's flags but the preprocessor failed on every arch:\n  "
+            + "\n  ".join(borrowed_failures)
+            if borrowed_failures
+            else ""
+        )
         raise MacroAuthorityError(
             f"no compile command for {source} in any build-<arch>/compile_commands.json "
             f"under {repo_root}{via}. The call seal needs the real function-like macro set; "
             f"without it every macro occurrence becomes an unsatisfiable envelope and "
-            f"the TU assembles nothing.\n"
+            f"the TU assembles nothing.{tried}\n"
             f"fix: ./vibeos-cli build --arch i386"
         )
     return frozenset(names)

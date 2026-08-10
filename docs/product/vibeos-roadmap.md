@@ -1974,43 +1974,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   NOT be silenced — `pfnlist.rs` is arch-generic and amd64 never trips it, so it is detecting the
   real arm64 divergence (§9.136). Blocked on offline symbolication of the `0x50` PC: the kernel
   runtime base is not printed on serial, so `addr2sym --reloc` cannot be used (task #33).
-- **net suite `test_tdi_selftest_roundtrip` — flake rate measured 2026-07-24, and it is BAD
-  under host load.** 1 pass / 6 attempts in one evening while a sibling lane ran a full arm64
-  ninja (host load 4–6). The gate's `NET_FLAKE` auto-retry is 3 attempts, so at this rate a
-  green gate is roughly a coin flip. **Timing signature is the useful discriminator: a passing
-  run finishes in ~36s, a failing one burns ~122s and dies on the marker wait** — i.e. it is a
-  timeout, not a wrong result. TDI CONNECT reaches `ESTABLISHED` and the *engine-level* echo to
-  the very same guestfwd endpoint (`10.0.2.100:9999`) succeeds in the same boot, so the host
-  echo is alive and only the TDI pended-IRP completion misses its window. Ruled out as a code
-  regression: the merge of 2026-07-24 touched **no** netstack source (only `afd-rust`, which
-  this self-test bypasses by being the TDI client itself), and the self-test is kernel-mode on
-  its own system thread with no dependency on the usermode components. Owed: either give the
-  marker wait a load-proportional budget or make the poll worker's completion deterministic —
-  and stop treating 3 retries as sufficient cover.
-  **Escalation 2026-08-09: this now takes the WHOLE MERGE QUEUE down, so it is no longer a
-  per-lane annoyance.** Across 13 conductor batches on the evening of 08-08 the net lane was
-  OK 5 times and NET_FLAKE 8 — and in one drain every one of four queued lanes
-  (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`) was rejected on it in
-  succession, leaving the queue empty with nothing landed for ~100 minutes. The batch-splitting
-  logic makes it worse rather than better: a red batch splits to find the culprit, so ONE
-  flaky lane-independent stage rejects each lane SEPARATELY and burns a gate per lane. Two
-  consequences worth pricing in: the conductor cannot distinguish "this lane is bad" from
-  "the shared stage is flaky" (both look like a red gate against the same base), and a lane
-  whose diff cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still
-  pays full freight. Cheap mitigations if the real fix stays owed: retry the net lane against
-  a quiet host rather than mid-batch, raise the retry count for a stage classified as a known
-  flake, or let a lane touching no build input skip it entirely.
-  **Host networking / VPN is RULED OUT (2026-08-09) — don't spend an evening re-testing it.**
-  The obvious suspicion, something on the host re-routing traffic away from the
-  `10.0.2.100:9999` guestfwd echo, is refuted by the failing boot's OWN serial log: every other
-  host-touching path works in that same boot. `outbound TCP connected -> 10.0.2.100:9999, probe
-  sent` is followed by `outbound TCP echo received (25 bytes) OK` — the exact endpoint the TDI
-  client is waiting on, answering feet away from the failure — plus `RECEIVE_DATAGRAM OK — UDP
-  round-trip works` and `TDI server: echoed 13 bytes — server round-trip OK`. A broken host path
-  would have taken all three with it. Only the TDI *client's* pended-IRP receive misses its
-  window, i.e. the 2026-07-24 timing signature unchanged. So the discriminator to run BEFORE
-  blaming the environment is that one grep: if the outbound echo line is present, the host is
-  fine and the bug is ours.
+- **net suite one-test timeout (`test_tdi_selftest_roundtrip` et al) — FIXED 2026-08-09, root
+  cause was the HARNESS.** Three independent guest consumers (netstack `engine.rs`'s outbound
+  client, `tditest.rs`'s TDI roundtrip, `nettest.exe`) all dialled the same slirp guestfwd
+  endpoint `10.0.2.100:9999`, and slirp hands an echo to the FIRST socket matching (addr, port)
+  — so one consumer got the reply and the others timed out. `-cmd:cat` masks this on the native
+  backend by forking a fresh `cat` per CONNECTION; the windows-host rewrite bound the whole
+  forward to ONE `-chardev` byte stream, making it a coin flip. Fixed by giving each consumer
+  its own port + chardev + echo server (`vm.GUESTFWD_ECHO_PORTS`). **Every earlier diagnosis
+  here was wrong** — host contention, a VPN, the host resolver, a red base — and two of the
+  discriminators this registry recommended were backwards: the ~4× wall clock is just the loser
+  waiting out its marker timeout, and "the engine-level echo to the very same endpoint succeeds
+  in the same boot" identified the thief, not an alibi. Field manual, "`NET_FLAKE` that is not
+  a flake". Cost: ~90% gate failure and a day of wedged merge queue.
+- **A lane-independent flaky STAGE costs one gate per lane, and the conductor cannot tell it
+  from a bad lane** (observed 2026-08-09 on the net flake above; kept because it is a property
+  of the queue, not of that bug). A red batch splits recursively to find the culprit, so a
+  single flaky shared stage rejects each lane SEPARATELY and burns a full gate on each — in one
+  drain all four queued lanes (`shell32-com` ×2, `smp-bringup`, `msvcrt-homebrew`, `research`)
+  were rejected in succession and the queue emptied with nothing landed for ~100 minutes. Both
+  cases look identical from the outside: a red gate against the same base. A lane whose diff
+  cannot possibly affect the stage — docs, `tools/rustconv` Python, tests — still pays full
+  freight. If this bites again: retry the flaky stage against a quiet host rather than
+  mid-batch, raise the retry count for a stage already classified a known flake, or let a lane
+  touching no build input skip it.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack

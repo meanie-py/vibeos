@@ -2822,6 +2822,47 @@ one function.
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### Re-translating an integrated module silently reverts every post-integration repair
+
+**Symptom.** A module that has been flipped, ground green and booted for weeks is
+re-translated — better model, new seal flags, a fidelity audit — and the new output looks
+strictly better in the diff: real type names instead of erased `u32`, named constants instead
+of `0 /* RPC_S_OK */`, deterministic UTF-16 instead of hand-spelled arrays. Integrate it and
+the module breaks in ways nobody touched.
+
+**Cause.** The model sees only the C. Every repair made *after* integration is invisible to
+it, because none of those repairs is expressible in the C — so a re-emit reverts all of them
+at once, and each reverted one looks like an ordinary translation choice rather than a
+regression. Measured on browser-rust (one $0.03 DeepSeek re-roll, all three classes in two
+files):
+
+- **ABI-twin re-fork.** `extern "system"` came back as `#[cfg(target_arch = "x86")] extern
+  "stdcall"` + a `not(x86)` twin — undoing the repo-wide twin collapse, since the C only says
+  `WINAPI` and the model resolves it per arch.
+- **Symbol capitalisation.** `MIDL_user_allocate` → `midl_user_allocate`, the C's source
+  spelling. `rpcndr.h` `#define`s the lowercase name to the CAPITALISED symbol, which is what
+  the generated `*_s.c` marshaller binds to, so the `#[no_mangle]` definition stops answering
+  the only caller. Object-like macros are not covered by the call seal's function-like macro
+  set, so nothing protects the name.
+- **`static mut` discipline.** `core::ptr::addr_of_mut!(ServiceStatus)` → `&ServiceStatus`,
+  which is the deny-by-default `static_mut_refs`.
+- **Diagnostics.** `UNIMPLEMENTED!()` invocations became `// UNIMPLEMENTED;` comments — the
+  no-op-macro class again.
+
+The comments recording *why* each fix exists are deleted with the code they annotate, so the
+next reader cannot tell a revert from a fresh translation.
+
+**Fix.** `rustconv translate` now refuses to assemble a whole-TU run over a destination that
+is committed and unmodified — i.e. integrated shipping code — and points at the run's
+`.responses/` copy instead; `--reassemble` is the explicit opt-out. Treat a re-roll of an
+integrated module as an AUDIT: read the diff, port anything genuinely better by hand, and keep
+the shipping file. The `.responses/` artifact is durable and costs nothing to consult twice.
+
+**Corollary — the deterministic oracles do not cover this.** `scan_const_contradictions`
+validates a closed SET of constants, so it is clean on all three of wkssvc/browser/wlansvc and
+says nothing about any of the above. "The free checks are green" is not evidence a re-roll
+would be safe, and it is not evidence one is needed either.
+
 ### A "stuck sampler" is almost always a harness bug wearing the model's clothes
 
 **Symptom.** A TU will not assemble. One or two functions in it fail the deterministic audit
@@ -7326,6 +7367,24 @@ excluded — and the conclusion was still wrong: the developer's **VPN** was up,
 turned the suite green with no code change. Do not stop at "not contention"; the host is a third
 suspect, and one the guest cannot see.
 
+**Prove the VPN case in five seconds, and test the RIGHT resolver.** Slirp runs inside QEMU, so on
+the windows-host backend it forwards `10.0.2.3` to the **Windows** resolver list, not WSL's —
+`getent hosts` / `nslookup` from your shell can be perfectly green while every guest query dies.
+Ask Windows which servers it has, then query each one *directly*; a VPN interface usually wins the
+metric, so its server is the one slirp picks:
+
+```powershell
+Get-DnsClientServerAddress -AddressFamily IPv4 | ? { $_.ServerAddresses.Count } |
+    select InterfaceAlias,ServerAddresses
+Resolve-DnsName example.com -Server <each-address> -DnsOnly -QuickTimeout
+```
+
+2026-08-09 that printed `AirVPN_… {10.128.0.1}` alongside `Ethernet {192.168.1.1}`, and
+`10.128.0.1` **timed out** while `192.168.1.1` answered — i.e. the tunnel was up but its resolver
+was not serving, so the guest's DNS was dead while every host-level tool looked fine. Note
+`Resolve-DnsName` with no `-Server` goes through the Windows resolver *service* and can succeed
+by falling back to another interface; only the per-server form tests what slirp actually uses.
+
 **Read the PASS/FAIL SET, not the timings — it names the culprit directly.** Our slirp
 mini-internet has two kinds of endpoint, and the failures partitioned perfectly along that line:
 
@@ -7362,6 +7421,35 @@ matter as much as the rule: a stage the base did not RUN proves nothing (an earl
 gate must not convict by omission), and smoke stages are excluded because they are exactly the
 timing-sensitive ones this section is about. Generalise it: **when a control experiment fails,
 check that it failed the same WAY before you let it absolve anything.**
+
+**ROOT CAUSE, 2026-08-09 — three guests shared one echo endpoint and stole each other's replies.
+Everything above this paragraph is a wrong diagnosis of THIS bug.** Symptom: exactly one net test
+times out on its marker, the identity of the loser moves between runs
+(`test_tdi_selftest_roundtrip` / `test_usermode_winsock_roundtrip` / `test_dns_resolve`), and the
+rate climbed to ~13 of 14 gates until the merge queue wedged for a day on `BASE_RED`. Cause: three
+independent consumers — netstack `engine.rs`'s outbound client, `tditest.rs`'s TDI roundtrip, and
+`nettest.exe` — all dialled the same guestfwd endpoint `10.0.2.100:9999`, and **slirp delivers an
+echo to the FIRST socket matching (addr, port)**. One consumer got its bytes; the others waited out
+their timeout. On the native backend `-cmd:cat` hides this by forking a fresh `cat` per
+CONNECTION, so the sharing was invisible until the windows-host rewrite redirected the whole
+forward to ONE `-chardev` byte stream. Fix: one guestfwd port per consumer
+(`vm.GUESTFWD_ECHO_PORTS`), one chardev and one echo server each.
+
+Four lessons, because each one is a discriminator this section previously got backwards:
+
+- **`VIBEOS_ECHO_PROBE=<path>` settles it in one boot.** Three different probe payloads
+  (`VIBEOS-NETSTACK-OUTBOUND`, `VIBEOS-USERMODE-WINSOCK`, `TDI-SELFTEST-PROBE`) arriving on one
+  numbered connection IS the diagnosis. Nothing else can see it: from the guest a stolen echo is
+  indistinguishable from a transport that dropped the reply.
+- **"Slow ⇒ contention" is not a discriminator.** The loser of the race waits out its full marker
+  timeout, so it produces exactly the ~4× wall-clock signature (~186 s vs ~44 s) this section
+  attributed to host load.
+- **"A sibling test hit the SAME endpoint successfully, so the transport is healthy" is backwards.**
+  That sibling is the thief. A working peer on a shared resource is evidence ABOUT the sharing,
+  not an alibi for it.
+- **A test that fails and passes on the same unchanged tree is not thereby environmental.** Four
+  investigations reached for contention, a VPN, the host resolver and a red base — all external,
+  all wrong. Nondeterminism localises the bug to something SHARED; the harness is shared too.
 
 ### A smoke that dies with a Python traceback naming ANOTHER arch's directory
 

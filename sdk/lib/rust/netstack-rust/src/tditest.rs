@@ -1,6 +1,6 @@
 //! Kernel-mode TDI client self-test — exercises netstack's own \Device\Tcp via
 //! real IRPs (the exact path AFD uses): open address + connection objects,
-//! associate, connect to the slirp `cmd:cat` echo (10.0.2.100:9999), send, then
+//! associate, connect to the slirp `cmd:cat` echo (10.0.2.100:9998), send, then
 //! receive the echo. Proves the TDI dispatch + completion bridge end to end with
 //! no usermode harness. Runs on its own system thread so the poll worker is free
 //! to drive smoltcp and complete the pended IRPs.
@@ -409,8 +409,13 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     });
     nsprint!("[NETSTACK] TDI self-test: associate {:#010x}\n", st as u32);
 
-    // CONNECT to the host echo (10.0.2.100:9999).
-    let mut remote = TaIp::new([10, 0, 2, 100], 9999);
+    // CONNECT to the host echo (10.0.2.100:9998). This test owns :9998 exclusively —
+    // see tests/qemu/vm.py GUESTFWD_ECHO_PORTS. It shared :9999 with the engine's
+    // outbound client and nettest.exe until 2026-08-09, and slirp routes an echo to
+    // the FIRST socket matching (addr, port), so whichever of the three was connected
+    // first swallowed the others' replies and they timed out looking like a transport
+    // bug. Never point two consumers at one guestfwd.
+    let mut remote = TaIp::new([10, 0, 2, 100], 9998);
     let mut info: tdi::TDI_CONNECTION_INFORMATION = zeroed();
     info.RemoteAddress = &mut remote as *mut _ as *mut core::ffi::c_void;
     info.RemoteAddressLength = size_of::<TaIp>() as i32;
