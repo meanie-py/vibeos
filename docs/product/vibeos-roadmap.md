@@ -1989,6 +1989,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   its own system thread with no dependency on the usermode components. Owed: either give the
   marker wait a load-proportional budget or make the poll worker's completion deterministic —
   and stop treating 3 retries as sufficient cover.
+  **UPDATE 2026-08-09: it has degraded to a total landing block, and the retry cover is now
+  provably gone.** Per-day failure share across every gate `smoke-net` run on this host —
+  08-05 1/33, 08-07 20/43, 08-08 41/57, 08-09 37/45 (82%). At that rate all 3 attempts fail
+  ~55% of the time on paper and 100% of the time in practice: the 2026-08-09 07:00 drain
+  rejected **all four** queued lanes (shell32-com, smp-bringup, research, msvcrt-homebrew) on
+  `NET_FLAKE`, each after 3 attempts, each gated against the same master — and one lane has
+  since sat in the queue 6.5h. When a batch splits to singletons and *every* singleton is
+  still red, the fault is in master or the harness, never in the lanes. Two things follow.
+  (1) The classification is actively misleading at this point: `_net_once` labels the FIRST
+  failure `NET_FLAKE` by construction, so a permanent red still gets reported to the lane
+  owner as a flake, which is why nobody has picked it up. (2) The serial evidence is
+  unchanged in kind — `TDI self-test: CONNECT OK` then `set-event(receive) 0x00000000` then
+  `send 0x00000000`, and `RECEIVE OK` never arrives.
+  A host VPN was raised as the suspect for the 08-07 step-change — the echo peer
+  `10.0.2.100:9999` is a **guestfwd** endpoint, and slirp completes the handshake itself, so
+  captured host routing would break the round-trip while leaving CONNECT green. Plausible, and
+  **wrong**: see the RULED OUT note below, where the failing boot's own log shows the outbound
+  echo to that same endpoint succeeding. Recorded because it is the hypothesis everyone reaches
+  for; the refutation is one grep, so run that before touching the host.
+  **The transferable lesson is narrower than "suspect the host".** When a batch splits to
+  singletons and every singleton is red, that localises the fault to master-or-harness and no
+  further — it does not say which, and the harness cannot see the host's routing table, so it
+  will report either one as a guest-side flake. Pick between them with evidence from inside the
+  failing boot, not by toggling the environment.
 - **amd64 CLIENTINFO-on-Ctrl+Esc** (§9.41) — NOT reproducing since the §9.40 DesktopHeapReAlloc
   fix (4/4 start-menu opens; `test_start_menu_opens` gates it). Watch item only.
 - **i386 "session-pool gate" `BAD gate Type=0x80`** (§9.24) — REFRAMED to pushlock-class (stack
